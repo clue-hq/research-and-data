@@ -66,12 +66,8 @@ BROWSER_LAUNCH_FAILED_CODE = "review.browser_launch_failed"
 #: The `because` code the console class abstains with when not one pass opened a page.
 CONSOLE_NO_PASS_OPENED = "no_pass_opened"
 
-#: How long a probe pass waits for the page's utilities to compile before giving up and calling
-#: the evidence unsettled. Generous enough for a cold JIT on a loaded CI host, and a small
-#: fraction of `WALK_TIMEOUT_MS`, so a page that will never be ready costs this once per probe
-#: pass rather than holding the turn open.
-#:
-#: The names the three passes are recorded under, in walk order.
+#: The names the three passes are recorded under, in walk order. (The readiness deadline these
+#: passes wait to lives beside its predicate: `walk.STYLES_READY_TIMEOUT_MS`.)
 PASS_DESKTOP = "desktop"
 PASS_MOBILE = "mobile"
 PASS_REDUCED_MOTION = "reduced_motion"
@@ -162,7 +158,10 @@ def console_observation(
     forbids, and a *partial* failure was worse: the note still named a pass that never ran, so a
     phone-only error was silently absent from a "made" observation.
 
-    Now the note lists the real passes, and no pass opening is an abstention.
+    Now the note lists the real passes, and the class abstains only when there is nothing to
+    report at all — no pass opened AND nothing was heard. (Console handlers attach before
+    `set_content`, so a pass whose load then timed out can still have put real lines on the
+    console; that evidence is kept, named, and carried beside `opened`.)
     """
     order = (PASS_DESKTOP, PASS_MOBILE, PASS_REDUCED_MOTION)
     opened = tuple(name for name, outcome in zip(order, passes) if outcome.opened)
@@ -261,9 +260,13 @@ def _desktop_pass(
     outcome.opened = True
     try:
         page.wait_for_timeout(plan.settle_ms)
+        # Readiness FIRST, geometry second (round-2 re-review, breakage #1): the scroll plan and
+        # the height notes must describe the COMPILED page. Read the other way round, a slow JIT
+        # hands `_scroll_through` the unstyled document's height — several captions, one clamped
+        # position (the M3 defect back again), or a page whose bottom is never photographed.
+        outcome.styles_ready = _styles_ready(page)
         geometry = _geometry(page)
         outcome.document_height = geometry.get("height")
-        outcome.styles_ready = _styles_ready(page)
 
         outcome.observations[WALK_CLASS_FULL_PAGE] = _try(
             WALK_CLASS_FULL_PAGE,
@@ -381,8 +384,9 @@ def _mobile_pass(
     outcome.opened = True
     try:
         page.wait_for_timeout(plan.settle_ms)
-        geometry = _geometry(page)
+        # Same order as the desktop pass: the width note must be the compiled page's.
         outcome.styles_ready = _styles_ready(page)
+        geometry = _geometry(page)
         destination = output_dir / "walk_mobile.png"
         page.screenshot(path=str(destination), full_page=True)
         raw = page.evaluate(SECTION_PROBE_SCRIPT, probes) if probes else []

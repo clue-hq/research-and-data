@@ -578,11 +578,13 @@ TAILWIND_RUNTIME_MARKER = "data-lumen-tailwind-runtime"
 #: could not run) both mean **not settled**, and a not-settled walk writes no durable marker at
 #: all — it reports the same findings as advice. Every way this signal can be wrong therefore errs
 #: toward writing nothing.
+#: (Substituted with `str.replace`, not ``%``-formatting: this body is JavaScript, and any future
+#: ``%`` inside it — a `width: 100%`, a `%c` console format — would break the module at import.)
 STYLES_READY_SCRIPT = """
 () => {
   const head = document.head;
   if (!head) return false;
-  const runtime = head.querySelector('script[%s]');
+  const runtime = head.querySelector('script[__MARKER__]');
   if (!runtime) return false;
   let node = runtime.nextElementSibling;
   while (node) {
@@ -597,7 +599,7 @@ STYLES_READY_SCRIPT = """
   }
   return false;
 }
-""" % TAILWIND_RUNTIME_MARKER
+""".replace("__MARKER__", TAILWIND_RUNTIME_MARKER)
 
 #: The document's own scroll height, read once per pass. The reduced-motion comparison is made of
 #: it: a page whose content only exists once an animation has run is SHORTER with motion off.

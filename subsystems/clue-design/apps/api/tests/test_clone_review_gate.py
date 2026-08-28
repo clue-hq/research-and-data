@@ -657,6 +657,11 @@ class _FakePage:
         self.owner.waits.append(timeout)
         if self.owner.styles_ready is not True:
             raise TimeoutError("styles never became ready")
+        # The JIT finishing is exactly when a real page's geometry settles: a test that hands
+        # `geometry_after_ready` is describing a page whose unstyled height differs from its
+        # compiled one, which is the page the readiness wait exists for.
+        if self.owner.geometry_after_ready is not None:
+            self.owner.geometry = dict(self.owner.geometry_after_ready)
 
     def evaluate(self, script: str, arg: Any = None) -> Any:
         from lumen_api.clone_review.walk import (
@@ -689,11 +694,13 @@ class _FakeBrowser:
         self,
         *,
         geometry: dict | None = None,
+        geometry_after_ready: dict | None = None,
         probe_rows: list | None = None,
         styles_ready: Any = True,
         fail_passes: tuple[str, ...] = (),
     ) -> None:
         self.geometry = geometry or {"height": 4000, "width": 1440, "viewport": 1440}
+        self.geometry_after_ready = geometry_after_ready
         self.probe_rows = probe_rows or []
         self.styles_ready = styles_ready
         self.fail_passes = fail_passes
@@ -1082,6 +1089,38 @@ def test_readiness_is_waited_for_not_sampled(tmp_path):
     walk = _run(slow, tmp_path / "slow")
     assert slow.waits == [STYLES_READY_TIMEOUT_MS, STYLES_READY_TIMEOUT_MS]
     assert walk.by_class(WALK_CLASS_HEIGHT_COLLAPSE).notes["styles_ready"] is False
+
+
+def test_the_scroll_plan_is_built_from_post_readiness_geometry(tmp_path):
+    """The stop offsets must come from the COMPILED page's height, not the unstyled one.
+
+    On a slow JIT — the exact page the readiness wait exists for — the unstyled document can
+    tower over the compiled one (12,000px of unwrapped flow vs 4,000px of grid). Planning the
+    scroll stops off the pre-readiness height re-claims the M3 defect (several captions, one
+    clamped position) and the taller-compiled converse never photographs the page bottom. So
+    geometry is read only after the readiness wait has resolved.
+    """
+    plan = walk_plan()
+    browser = _FakeBrowser(
+        geometry={"height": 12_000, "width": 1440, "viewport": 1440},
+        geometry_after_ready={"height": 4_000, "width": 1440, "viewport": 1440},
+    )
+    walk = _run(browser, tmp_path, plan)
+    scrollable = 4_000.0 - plan.desktop.height
+
+    scroll = walk.by_class(WALK_CLASS_SCROLL_THROUGH)
+    assert scroll.made
+    assert scroll.notes["scrollable_px"] == round(scrollable, 1)
+
+    desktop = browser.pages[0]
+    assert desktop.scrolled, "the scroll-through pass scrolled nowhere"
+    assert max(desktop.scrolled) <= scrollable, (
+        "an offset was planned from the pre-readiness height: "
+        f"{max(desktop.scrolled)} > {scrollable}"
+    )
+
+    full_page = walk.by_class(WALK_CLASS_FULL_PAGE)
+    assert full_page.notes["document_height_px"] == 4_000
 
 
 def test_a_wrapper_with_a_stray_text_node_can_still_be_convicted_of_dead_height():
