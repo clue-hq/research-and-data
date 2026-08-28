@@ -267,6 +267,16 @@ def _resolve_lineages(rows: List[JsonObject]) -> Dict[str, LineageVerdict]:
     return verdicts
 
 
+#: The ONE lineage resolution, under its public name (F3.2).
+#:
+#: Ruling R-X1 settled these semantics after they moved three times in three review rounds, and
+#: the record of what "settled" means is the fifteen-shape matrix in the task-17 report. The
+#: human-facing inspector card (:mod:`lumen_api.fragment_inspector`) is the second consumer, and
+#: it reads THIS function's answers rather than asking the same question again — a second
+#: implementation of "which repair supersedes which" would be a second answer.
+resolve_fragment_lineages = _resolve_lineages
+
+
 def _slot_summary(slot_manifest: Any) -> List[JsonObject]:
     """``[{key, kind}, …]`` — the half of an artifact's slot manifest an author must see.
 

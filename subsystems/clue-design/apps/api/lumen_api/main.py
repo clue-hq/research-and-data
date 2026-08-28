@@ -81,6 +81,21 @@ from .fragments.render import (
     fragment_render_map,
     web_doc_fragment_ids,
 )
+from .fragments import (
+    ISOLATION_PREVIEW_MEDIA_TYPE,
+    IsolationRenderFailed,
+    attach_web_fragment_preview,
+    read_web_fragment,
+    render_isolation_preview,
+    set_web_fragment_status,
+)
+from .fragment_inspector import (
+    FRAGMENT_CARD_SCHEMA_VERSION,
+    activation_target,
+    dormant_fragment_cards,
+    fragment_card,
+    retirement_verdict,
+)
 from .custom_components import (
     CUSTOM_COMPONENT_MEMBER_MEDIA_TYPES,
     resolve_custom_component_artifact_blob,
@@ -186,6 +201,7 @@ from clue_db import db_lifespan, get_engine
 from clue_design import storage as design_storage
 from clue_design.envelopes import DesignIngestionEnvelope, DesignTurnEnvelope
 from clue_design.enums import DesignIngestionKind
+from clue_design.errors import DesignFragmentActivationError, DesignFragmentPreviewError
 from clue_design.leg_context import render_leg_turn_prompt
 from clue_design.runs import work_id_for_run as design_work_id_for_run
 from clue_design.storage import location_digest
@@ -841,6 +857,46 @@ def create_app(
                     "code": error.code,
                     "message": error.message,
                     "node_id": error.node_id,
+                    "fragment_id": error.fragment_id,
+                }
+            },
+        )
+
+    @app.exception_handler(DesignFragmentActivationError)
+    def fragment_activation_handler(
+        _request: Request, error: DesignFragmentActivationError
+    ) -> JSONResponse:
+        """D-F8's refusal, worded for the person who has to act on it (T16 §6.6).
+
+        409 rather than 422: nothing about the request is malformed — the section simply is not
+        in a state where waking it is a decision anybody could make. The ``reason`` code is the
+        whole point of the mapping: a human must read "get a preview first", never a 500 and
+        never a sentence a surface has to parse to find the button it should offer.
+        """
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": f"fragment.activation_{error.reason}",
+                    "reason": error.reason,
+                    "message": str(error),
+                    "fragment_id": error.fragment_id,
+                }
+            },
+        )
+
+    @app.exception_handler(DesignFragmentPreviewError)
+    def fragment_preview_handler(
+        _request: Request, error: DesignFragmentPreviewError
+    ) -> JSONResponse:
+        """A preview is attached once (F3.2). Its sibling refusal, mapped on the same terms."""
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": f"fragment.preview_{error.reason}",
+                    "reason": error.reason,
+                    "message": str(error),
                     "fragment_id": error.fragment_id,
                 }
             },
@@ -4497,6 +4553,152 @@ def create_app(
             for doc in repo.list_web_templates()
         ]
         return {"templates": templates}
+
+    # --- the fragment inspector card (clone-fidelity F3.2) ------------------------------------
+    # Four thin routes over machinery that already exists: the registry reads, the F3.0
+    # activation gate, the F3.1 lineage resolver, and P-7's isolation render. No rule is
+    # restated here — the routes are a surface, and every refusal below is somebody else's,
+    # translated into a status code.
+    #
+    # The literal-segment route is registered BEFORE the `{fragment_id}` one for the same reason
+    # the ingestion routes are (FastAPI matches in registration order).
+
+    @app.get("/web/fragments/dormant")
+    def list_dormant_fragments(repo: HybridRepository = Depends(repository)) -> JsonObject:
+        """Every section the source site HIDES (D-F8).
+
+        Dormant sections are on no page, so nothing can select one — and D-F8 makes the inspector
+        the one place a human sees and activates them. This is how the inspector reaches them.
+        """
+        return {
+            "schema_version": FRAGMENT_CARD_SCHEMA_VERSION,
+            "sections": dormant_fragment_cards(
+                app.state.storage, workspace_id=store_workspace_id(repo)
+            ),
+        }
+
+    @app.get("/web/fragments/{fragment_id}")
+    def read_fragment_card(
+        fragment_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        return fragment_card(
+            app.state.storage,
+            workspace_id=store_workspace_id(repo),
+            fragment_id=fragment_id,
+        )
+
+    @app.post("/web/fragments/{fragment_id}/preview")
+    def generate_fragment_preview(
+        fragment_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """Photograph this section's own bytes in isolation, and keep the picture (P-7).
+
+        The two rows that reach here are the two nothing ever photographed: a hidden-on-source
+        clone (D-F8 asks for a preview before a human may activate it) and a composed repair
+        (ruling R17-2 — otherwise the human releasing it is approving a section nobody can see).
+        A row that already has a preview is refused: a preview is attached once, because a
+        decision was made against the picture that is there.
+        """
+        workspace_id = store_workspace_id(repo)
+        loaded = read_web_fragment(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        )
+        # No brand kit is threaded in: a harvested clone carries all of its own styling, and a
+        # repair's artifact carries a stylesheet compiled against its kit at repair time —
+        # including the theme's own custom properties (F3.1 §1.3). Handing a kit here would be a
+        # second opinion about how the section looks.
+        try:
+            png, _page = render_isolation_preview(
+                app.state.core, loaded, read_blob=blob_store(repo).read_blob
+            )
+        except IsolationRenderFailed as failure:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": failure.code,
+                    "message": failure.message,
+                    "fragment_id": fragment_id,
+                },
+            ) from failure
+        attach_web_fragment_preview(
+            app.state.storage,
+            workspace_id=workspace_id,
+            fragment_id=fragment_id,
+            preview=png,
+            media_type=ISOLATION_PREVIEW_MEDIA_TYPE,
+        )
+        return fragment_card(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        )
+
+    @app.post("/web/fragments/{fragment_id}/activate")
+    def activate_fragment(
+        fragment_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """A human wakes a hidden-on-source section (D-F8). The gate is the DAL's, not this.
+
+        Straight to ``approved``, deliberately: the person pressing this IS the approval D-F8
+        asks for, and leaving it ``draft`` would mean the next brand-kit approval released it as
+        a side effect of an unrelated decision — the automatic release dormancy exists to prevent.
+        """
+        workspace_id = store_workspace_id(repo)
+        row = read_web_fragment(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        ).row
+        target = activation_target(row)
+        if target is None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "fragment.not_dormant",
+                    "message": (
+                        f"fragment {fragment_id} is {row.get('status')!r}, not a section the "
+                        "source site hides — there is nothing to activate."
+                    ),
+                    "fragment_id": fragment_id,
+                },
+            )
+        set_web_fragment_status(
+            workspace_id=workspace_id, fragment_id=fragment_id, status=target
+        )
+        return fragment_card(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        )
+
+    @app.post("/web/fragments/{fragment_id}/retire")
+    def retire_fragment(
+        fragment_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """Retire a REPAIR (ruling R17-2). Never the harvested original (ruling R17-3).
+
+        The only in-product way out of a lineage holding two released repairs, which the recreate
+        walk refuses to assemble — correctly, since ranking two deliberate repairs of the same
+        band silently would discard one. Retire is not release: no new approval granularity is
+        introduced, this is the ``deprecated`` move every section has always had.
+
+        The original is refused because it is the EVIDENCE D-F6 preserves: retiring it to settle
+        an argument between two of its repairs throws away the thing the argument is about.
+        """
+        workspace_id = store_workspace_id(repo)
+        row = read_web_fragment(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        ).row
+        verdict = retirement_verdict(row)
+        if not verdict["retirable"]:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": f"fragment.{verdict['reason']}",
+                    "message": verdict["message"],
+                    "fragment_id": fragment_id,
+                },
+            )
+        set_web_fragment_status(
+            workspace_id=workspace_id, fragment_id=fragment_id, status="deprecated"
+        )
+        return fragment_card(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        )
 
     @app.post("/documents/{document_id}/web/derive")
     def derive_web_document(
