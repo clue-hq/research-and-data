@@ -401,9 +401,14 @@ def test_the_selection_bridge_tolerates_a_fragment_node(
     """The other Python surface that enumerates node kinds.
 
     `render_bridge_script` builds the editor's movable/droppable/resizable id lists from a kind
-    allowlist. A fragment is in none of them — the canvas gestures for one are Phase F3's — and
-    what this pins is that an unlisted kind is simply not offered, rather than breaking the
-    script that carries the rest of the page's gestures.
+    allowlist, and what this file pins is that a page carrying a fragment still renders WITH the
+    bridge on it.
+
+    **Amended by F3.2.** The gestures a fragment is offered were "none of them" while Phase F3
+    had not ruled; founder ruling D-F3 (Option A, top-level reordering only) since put it in the
+    movable list and left it out of the other two. That is one line here and a whole file over in
+    `test_fragment_mobility.py`, which owns the ruling's four assertions — this one keeps its own
+    subject, which is that the script survives the node at all.
     """
     artifact = _mint(workspace_id, design_storage)
     store = HybridRepository(workspace_id=workspace_id)
@@ -426,7 +431,8 @@ def test_the_selection_bridge_tolerates_a_fragment_node(
     )
     assert root_id == "root"
     assert "sec_a" in movable, "the section is still gesture-capable"
-    assert "n1" not in movable
+    # D-F3: the whole band moves up and down the page, and does nothing else.
+    assert "n1" in movable
     assert "n1" not in resizable
     assert "n1" not in drop_parents
 
