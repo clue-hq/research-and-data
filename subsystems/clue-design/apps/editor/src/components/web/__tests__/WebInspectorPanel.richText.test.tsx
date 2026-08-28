@@ -6,6 +6,8 @@ import type {
   CustomComponentArtifact,
   WebNode
 } from "@/engine/webDocuments";
+import type { FragmentAssetOption } from "../WebFragmentInspector";
+import type { FragmentCard } from "@/engine/webFragmentCards";
 
 const NODE: WebNode = {
   id: "headline",
@@ -34,11 +36,17 @@ function renderPanel(params: {
   node?: WebNode;
   artifact?: CustomComponentArtifact | null;
   republishRequired?: boolean;
+  fragmentCard?: FragmentCard | null;
+  dormantSections?: FragmentCard[];
+  documentAssets?: FragmentAssetOption[];
 }) {
   const applyOps = vi.fn();
   const formatRichText = vi.fn();
   const onEditCustomComponentWithAI = vi.fn();
   const onRepublish = vi.fn();
+  const onGenerateFragmentPreview = vi.fn();
+  const onActivateFragment = vi.fn();
+  const onRetireFragment = vi.fn();
   render(
     <WebInspectorPanel
       node={params.node ?? NODE}
@@ -61,6 +69,16 @@ function renderPanel(params: {
       customComponentRepublishRequired={params.republishRequired ?? false}
       onEditCustomComponentWithAI={onEditCustomComponentWithAI}
       onRepublish={onRepublish}
+      fragmentCard={params.fragmentCard ?? null}
+      fragmentCardStatus={params.fragmentCard ? "ready" : "idle"}
+      fragmentCardError={null}
+      dormantSections={params.dormantSections ?? []}
+      documentAssets={params.documentAssets ?? []}
+      onGenerateFragmentPreview={onGenerateFragmentPreview}
+      onActivateFragment={onActivateFragment}
+      onRetireFragment={onRetireFragment}
+      fragmentActionBusy={false}
+      fragmentActionError={null}
       applyOps={applyOps}
       busy={false}
       note={null}
@@ -71,7 +89,10 @@ function renderPanel(params: {
     applyOps,
     formatRichText,
     onEditCustomComponentWithAI,
-    onRepublish
+    onRepublish,
+    onGenerateFragmentPreview,
+    onActivateFragment,
+    onRetireFragment
   };
 }
 

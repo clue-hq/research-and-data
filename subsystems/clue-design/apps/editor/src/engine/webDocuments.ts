@@ -605,7 +605,18 @@ export type WebNodeProps =
   | { kind: "icon"; icon: string }
   | WebEmbedProps
   | WebComponentProps
-  | WebCustomComponentProps;
+  | WebCustomComponentProps
+  | WebFragmentProps;
+
+/** A cloned section's whole-props write (clone-fidelity F3.2). The artifact pin is repeated
+ * because SetNodeProps replaces the node's props wholesale — and it is the ONE thing the
+ * inspector never varies: editing a frozen artifact's identity would produce a different
+ * fragment wearing this one's name (D-F3 / R1: slot VALUES only). */
+export interface WebFragmentProps {
+  kind: "fragment";
+  fragment_id: string;
+  slots: Record<string, WebFragmentSlotValue>;
+}
 
 /** The three actions a button can take — the inspector's "Action" control. */
 export type WebButtonAction = "link" | "show_modal" | "close";
