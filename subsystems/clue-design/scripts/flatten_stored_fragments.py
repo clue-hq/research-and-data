@@ -95,6 +95,31 @@ def main() -> int:
                 if not new_path.exists():
                     new_path.write_bytes(raw)
                     new_path.chmod(0o600)
+                # A design blob is only readable when its CUSTODY ROW exists — the DAL
+                # resolves the digest through the `artifact` table before touching bytes
+                # (learned live 2026-08-29: the first pass of this script wrote files
+                # only, and every fragment read died with `design_blob … not found`
+                # while the bytes sat on disk). Mirror the old digest's row.
+                conn.execute(
+                    "INSERT INTO artifact"
+                    " (storage_key, workspace_id, content_sha256, media_type,"
+                    "  size_bytes, source_key)"
+                    " SELECT %(key)s, workspace_id, %(digest)s, media_type,"
+                    "        %(size)s, source_key"
+                    " FROM artifact"
+                    " WHERE content_sha256 = %(old)s AND workspace_id = %(ws)s"
+                    "   AND NOT EXISTS ("
+                    "     SELECT 1 FROM artifact"
+                    "     WHERE content_sha256 = %(digest)s AND workspace_id = %(ws)s)"
+                    " LIMIT 1",
+                    {
+                        "key": f"{workspace_id}/design/{new_digest}",
+                        "digest": new_digest,
+                        "size": len(raw),
+                        "old": payload_digest,
+                        "ws": workspace_id,
+                    },
+                )
                 prov = dict(provenance or {})
                 prov["layer_flatten"] = {
                     "previous_payload_digest": payload_digest,
