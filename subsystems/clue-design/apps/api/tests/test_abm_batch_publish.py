@@ -996,3 +996,35 @@ def test_an_exported_stamped_document_carries_the_robots_meta(
         manifest = bundle.read("manifest.json").decode()
     assert ROBOTS_NOINDEX_META in index
     assert "stamped noindex" in manifest
+
+
+def test_the_bind_door_refuses_the_walks_sprite_and_stamps_nothing(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """Wave round 2 (the re-walk's N-2 — the door had NO test; reverting it left every suite
+    green): the CP2 walk's sprite shape, through the REAL binder — refused by name, account
+    unstamped, registry unregistered. The fail-open read path is also closed (N-4): this door
+    can refuse, never skip."""
+    sprite = (
+        b'<svg xmlns="http://www.w3.org/2000/svg">'
+        b'<use href="/sprite.svg#logo"></use></svg>'
+    )
+    cache = tmp_path / "cache"
+    _stage_bytes(cache, sprite)
+    record = _fetched_record(sprite, asset_id="asset_ing_spritespritespri")
+    record["kind"] = "vector_image"
+    record["media"]["mime_type"] = "image/svg+xml"
+    account = _account(client, "Cityblock Health")
+
+    from lumen_api.agent_account_logos import AccountLogoRefused
+
+    with pytest.raises(AccountLogoRefused) as refusal:
+        _binder(client, workspace_id, design_storage, cache).bind(
+            account_id=account, record=dict(record)
+        )
+
+    assert refusal.value.code == "account_logo.no_renderable_mark"
+    repo = HybridRepository(workspace_id=workspace_id)
+    assert repo.require_web_account(account)["logo_asset_id"] is None
+    with pytest.raises(Exception):
+        repo.require_asset_record(record["id"])

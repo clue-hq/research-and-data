@@ -220,11 +220,20 @@ class DurableAgentAccountLogoBinder:
         media = stored_record.get("media") if isinstance(stored_record, dict) else None
         mime = str((media or {}).get("mime_type") or "").lower()
         if "svg" in mime:
+            # FAIL CLOSED (wave round 2, the re-walk's N-4): the custody probe above just
+            # vouched READABLE, so a read that raises here is a real inconsistency — skipping
+            # the check on it would bind a mark nobody inspected. A guard never fails open
+            # silently.
             try:
                 svg_bytes = self.blobs.read(digest_value)
-            except Exception:  # noqa: BLE001 - the custody probe above already vouched
-                svg_bytes = None
-            if svg_bytes is not None and not svg_is_renderable(svg_bytes):
+            except Exception as error:  # noqa: BLE001 - refused, never skipped
+                raise AccountLogoRefused(
+                    "account_logo.bytes_unavailable",
+                    f"asset {asset_id!r} passed the custody probe but its bytes could not be "
+                    f"read back ({type(error).__name__}) — binding a mark nobody could inspect "
+                    "would be a co-brand on faith. The account was left as it was.",
+                ) from error
+            if not svg_is_renderable(svg_bytes):
                 raise AccountLogoRefused(
                     "account_logo.no_renderable_mark",
                     f"asset {asset_id!r} is an SVG that cannot paint anything on its own — no "
