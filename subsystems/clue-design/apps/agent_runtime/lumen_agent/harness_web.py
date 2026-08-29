@@ -293,6 +293,12 @@ def create_web_deepagent(
                 # Both write to the document, so both belong to the author and to no one else.
                 tools.recreate_cloned_page,
                 tools.repair_cloned_section,
+                # F4.4 (FOUNDER RULING R-X9): a repair is released ONE AT A TIME, by a human who
+                # was shown it and asked. The brand-kit approval no longer sweeps repairs along
+                # with the harvested sections, so this is the only door — and it is the author's
+                # because the author is who composed the repair and who can explain it. It
+                # enacts an answer; it never decides one (see the prompt's release law).
+                tools.release_repair,
                 # F4.1: the ABM page's own chrome. A library operation, not a document write —
                 # it mints the two shells and touches no page — but it belongs to the author for
                 # the same reason the other two do: the author is the role that decides what a

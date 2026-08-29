@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from clue_design import site_snapshots as snapshot_dal
+from py_lumen_config import settings
 
 from .asset_custody import cache_blob_path, ensure_materialized
 from .clone_review import (
@@ -75,6 +76,7 @@ from .fragments import (
     read_web_fragment,
     repair_reason,
     set_web_fragment_degraded,
+    set_web_fragment_status,
 )
 from .fragments.cssscope import PRELUDE_REFERENCE_STRIP
 from .fragments.render import slot_kinds
@@ -148,6 +150,37 @@ def _probe_web_doc(fragment_id: str) -> JsonObject:
     }
 
 
+#: The two answers ruling R-X4 (founder, 2026-08-29) settled between, when EVERY released member
+#: of a repair family is marked broken and something still has to go on the page.
+#:
+#: * :data:`DEGRADED_REPAIR_KEEP_FLAGGED` — the DEFAULT, and the founder's own words: "keep the
+#:   newer repair selected, but clearly flag it as degraded and requiring review. Never silently
+#:   return to a known-broken original." The NEWEST approved member wins.
+#: * :data:`DEGRADED_REPAIR_FALLBACK_ORIGINAL` — the pre-ruling behaviour, kept as a deliberate
+#:   deployment choice rather than deleted: the OLDEST approved member wins, which for a family
+#:   that still holds its harvested original IS the original.
+#:
+#: One env option, two values: ``LUMEN_DEGRADED_REPAIR_SELECTION`` (see the repo-root and design
+#: ``.env.example``). Nothing else about the resolver looks at it — every family with a healthy
+#: member, and every ambiguous family, answers identically under both.
+DEGRADED_REPAIR_KEEP_FLAGGED = "keep_flagged"
+DEGRADED_REPAIR_FALLBACK_ORIGINAL = "fallback_original"
+DEGRADED_REPAIR_SELECTIONS = (
+    DEGRADED_REPAIR_KEEP_FLAGGED,
+    DEGRADED_REPAIR_FALLBACK_ORIGINAL,
+)
+
+
+def degraded_repair_selection() -> str:
+    """The configured selection, read at CALL time rather than at import.
+
+    Import-time capture would freeze whatever the first module to touch this held, which in a
+    fleet worker is decided by import order rather than by the deployment. The read is a
+    settings attribute lookup — free beside the row scan it accompanies.
+    """
+    return str(settings.lumen_degraded_repair_selection)
+
+
 @dataclass(frozen=True)
 class LineageVerdict:
     """One repair lineage, resolved to the single section a page should carry (ruling R-C1).
@@ -164,19 +197,28 @@ class LineageVerdict:
     at by picking the newest: both are somebody's deliberate repair of the same band.
 
     ``ranked_over`` is the other half of that honesty. When NO releasable repair exists the family
-    falls back to its oldest approved member, and if more than one approved member was in the
-    running that fallback is a ranking — of BROKEN candidates, so it cannot refuse the way
-    ``ambiguous`` does (refusing would leave the page with a hole where the band goes). It names
-    what it passed over instead, so a silent choice becomes a stated one.
+    falls back to ONE approved member, and if more than one approved member was in the running
+    that fallback is a ranking — of BROKEN candidates, so it cannot refuse the way ``ambiguous``
+    does (refusing would leave the page with a hole where the band goes). It names what it passed
+    over instead, so a silent choice becomes a stated one.
+
+    ``degraded_fallback`` says that that arm is the one this verdict came out of: every released
+    member of the family is broken, so whatever is pinned needs review (ruling R-X4). It is
+    ``True`` even when nothing was ranked — a family whose single approved member is broken is
+    still a page carrying a band nobody has fixed — which is exactly the case ``ranked_over``
+    alone cannot report.
     """
 
     root: str
     representative: Optional[str]
     ambiguous: tuple[str, ...] = ()
     ranked_over: tuple[str, ...] = ()
+    degraded_fallback: bool = False
 
 
-def _resolve_lineages(rows: List[JsonObject]) -> Dict[str, LineageVerdict]:
+def _resolve_lineages(
+    rows: List[JsonObject], *, selection: Optional[str] = None
+) -> Dict[str, LineageVerdict]:
     """``{fragment id: the verdict for its lineage}`` over every row this workspace holds.
 
     Three passes, and each answers a question the one before it could not:
@@ -202,13 +244,33 @@ def _resolve_lineages(rows: List[JsonObject]) -> Dict[str, LineageVerdict]:
        an antichain (a member with a healthy descendant is not in the set at all, so none of them
        can be an ancestor of another), which is what makes "neither replaces the other" true
        rather than merely unproven. None — every repair itself broken, or none released — falls
-       back to the family's oldest approved member, exactly ONE, and NAMES what it passed over,
-       so the pin is reported through ``needs_repair`` rather than chosen in silence.
+       back to exactly ONE approved member and NAMES what it passed over, so the pin is reported
+       through ``needs_repair`` rather than chosen in silence.
+
+    **Which member the fallback picks is FOUNDER RULING R-X4 (2026-08-29), and it is the one
+    thing here a deployment chooses.** Under the default ``keep_flagged`` it is the NEWEST
+    approved member — "never silently return to a known-broken original" — and under
+    ``fallback_original`` it is the oldest, which for a family that still holds its harvested
+    original is that original. Either way the verdict comes back with ``degraded_fallback`` set,
+    because the answer is a broken band whichever end of the family it came from.
+
+    ``selection`` is a PARAMETER with an env-backed default rather than a read inside the loop:
+    one resolution must not straddle two policies, and a caller that wants to reason about both
+    (the matrix test) should not have to mutate the process.
 
     Cycles cannot exist (``derived_from`` must resolve to an existing row at insert time and the
     column is frozen), but both walks carry a seen-set anyway: a lineage walk that could loop
     forever on corrupt data is not a thing to leave to an invariant.
     """
+    chosen = selection if selection is not None else degraded_repair_selection()
+    if chosen not in DEGRADED_REPAIR_SELECTIONS:
+        # Loud, not defaulted. The two values differ in exactly the way ruling R-X4 is about —
+        # whether a page may seat a known-broken original — so guessing one would be the system
+        # silently deciding for a deployment that believed it had decided.
+        raise ValueError(
+            f"unknown degraded-repair selection {chosen!r}: expected one of "
+            + " | ".join(DEGRADED_REPAIR_SELECTIONS)
+        )
     by_id = {str(row["fragment_id"]): row for row in rows}
 
     def is_healthy(row: JsonObject) -> bool:
@@ -294,12 +356,29 @@ def _resolve_lineages(rows: List[JsonObject]) -> Dict[str, LineageVerdict]:
             # more broken candidates this pick is a ranking, and an unstated ranking is the thing
             # the ambiguity refusal exists to avoid. It cannot refuse here (every candidate is
             # broken, and a hole where the band goes is worse than a flagged band), so it states.
+            #
+            # R-X4: WHICH end of `approved` (it is sorted oldest first) is the deployment's one
+            # choice. `keep_flagged` takes the last — the newest repair stays on the page,
+            # flagged — and `fallback_original` takes the first, which for a family that still
+            # holds its harvested original is that original.
+            keeps_newest = chosen == DEGRADED_REPAIR_KEEP_FLAGGED
+            chosen_row = (approved[-1] if keeps_newest else approved[0]) if approved else None
+            passed_over = [row for row in approved if row is not chosen_row]
             verdict = LineageVerdict(
                 root=root,
-                representative=str(approved[0]["fragment_id"]) if approved else None,
+                representative=str(chosen_row["fragment_id"]) if chosen_row else None,
                 ranked_over=tuple(
-                    sorted(str(row["fragment_id"]) for row in approved[1:])
+                    sorted(str(row["fragment_id"]) for row in passed_over)
                 ),
+                # "Every released member of this family is broken", which is the thing a human
+                # has to be told — including in the single-broken-member family, where nothing
+                # was ranked but the band on the page still needs somebody. A family with NO
+                # approved member pins nothing, so there is nothing to flag; and it is asked of
+                # the MEMBERS rather than of this arm being reached, because the arm is also
+                # (harmlessly) reached by the corrupt-data cycle shape, where the answer is a
+                # perfectly healthy row and calling it degraded would be a lie.
+                degraded_fallback=chosen_row is not None
+                and not any(is_healthy(row) for row in members),
             )
         for row in members:
             verdicts[str(row["fragment_id"])] = verdict
@@ -529,6 +608,11 @@ class DurableAgentClonedSectionRegistry:
             # The broken candidates the fallback passed over, when it had to rank. Empty in every
             # ordinary shape; present only when the whole family is broken.
             "lineage_ranked_over": list(verdict.ranked_over),
+            # Ruling R-X4: every released member of this family is broken, so whatever is pinned
+            # from it is degraded AND REQUIRING REVIEW. `lineage_ranked_over` alone cannot say
+            # this — it is empty when the family holds exactly one approved member, which is
+            # still a page carrying a band nobody has fixed.
+            "lineage_degraded_fallback": verdict.degraded_fallback,
         }
 
     def describe(self, fragment_ids: Iterable[str]) -> Dict[str, JsonObject]:
@@ -644,6 +728,13 @@ class DurableAgentClonedSectionRegistry:
                 else None
             ),
             "lineage_ambiguous": list(verdict.ambiguous) if verdict is not None else [],
+            # R-X4, on the PIN path too: the band about to go on the page is the newest of a
+            # wholly broken family, which the warning has to say out loud rather than reporting
+            # a repair as if releasing it had fixed anything.
+            "lineage_ranked_over": list(verdict.ranked_over) if verdict is not None else [],
+            "lineage_degraded_fallback": (
+                verdict.degraded_fallback if verdict is not None else False
+            ),
             # Exactly the entry `build_fragment_render_package` writes, so a section inserted
             # mid-turn renders in the agent's own preview through the map that is already
             # threaded — no second render path, and no shape for the two to disagree on.
@@ -943,6 +1034,132 @@ class DurableAgentClonedSectionRegistry:
             "insertable": row.get("status") == "approved",
         }
 
+    # --- releasing ONE repair (F4.4, FOUNDER RULING R-X9) --------------------------------------
+
+    def render_repair_preview(
+        self, fragment_id: str, core: Any, *, shoot: Optional[Any] = None
+    ) -> Optional[str]:
+        """Photograph a repair's own bytes in isolation and hang the picture on its row (P-7).
+
+        The same machinery ``POST /web/fragments/{id}/preview`` runs, reachable from a turn: a
+        repair is composed and minted with ``preview=None`` (nobody ever photographed it), and
+        ruling R-X9 says a human may not be asked to approve a section nobody can look at. So the
+        evidence has to be MAKEABLE from where the asking happens.
+
+        Returns the attached digest, or ``None`` when the row already carries a preview (a
+        preview is attached once, never replaced — the decision that was made was made against
+        the picture that is there). Every genuine failure raises
+        :class:`~lumen_api.fragments.isolation.IsolationRenderFailed` with a code, because a
+        release flow that quietly proceeds without a picture is the thing the ruling forbids.
+
+        ``shoot`` is the browser half, injectable for the same reason the route's is (F3.4): a
+        test that had to reach in and rebind a module attribute to avoid launching Chromium is a
+        test that can silently stop exercising the seam it was written for.
+        """
+        from .fragments import (
+            ISOLATION_PREVIEW_MEDIA_TYPE,
+            attach_web_fragment_preview,
+            render_isolation_preview,
+        )
+
+        loaded = read_web_fragment(
+            self.blobs.storage, workspace_id=self.workspace_id, fragment_id=fragment_id
+        )
+        if loaded.row.get("preview_digest"):
+            return None
+        # No brand kit, for the route's own reason: a repair's artifact carries the stylesheet
+        # compiled against its kit at repair time, and handing one here would be a second opinion
+        # about how the section looks.
+        kwargs = {"shoot": shoot} if shoot is not None else {}
+        png, page = render_isolation_preview(
+            core, loaded, read_blob=self.blobs.read_blob, **kwargs
+        )
+        row = attach_web_fragment_preview(
+            self.blobs.storage,
+            workspace_id=self.workspace_id,
+            fragment_id=fragment_id,
+            preview=png,
+            preview_basis=page.basis,
+            media_type=ISOLATION_PREVIEW_MEDIA_TYPE,
+        )
+        return row.get("preview_digest")
+
+    def release_repair(self, fragment_id: str) -> JsonObject:
+        """Release exactly ONE draft repair, because a human said so (ruling R-X9).
+
+        FOUNDER RULING R-X9 (2026-08-29): "require individual approval for each repair; brand-kit
+        approval should not silently approve later repairs". The kit cascade no longer moves a
+        row with ``derived_from`` set (``clue_design.web_fragments.sync_kit_fragment_approval``),
+        which leaves repairs with no release surface at all — this is that surface, and it is the
+        enactment of a human's answer in a conversation, never a decision of its own.
+
+        Three structural gates, all fail-closed and all typed:
+
+        * **it must be a repair.** ``derived_from IS NULL`` is a harvested original or a composed
+          campaign shell, and those keep the release law they already have (the kit approval, and
+          T23's re-approval for shells). Releasing one through here would be a second, quieter
+          door onto a surface that already has one.
+        * **it must still be a draft.** An already-approved row is nothing to release, and
+          ``deprecated``/``dormant`` are narrower decisions somebody made deliberately — a
+          "release" that undid a retirement would be this tool overruling a human by accident.
+        * **it must have a usable preview.** Nothing here can decide blindly on a human's behalf,
+          so a repair no picture exists of is refused by name rather than released on trust. The
+          remedy is one call away (:meth:`render_repair_preview`), which is why the refusal names
+          it instead of merely reporting the gap.
+
+        One id per call, deliberately. "Individual approval for each repair" is not a shape a
+        batch can have.
+        """
+        repository = self._repository()
+        row = repository.find_web_fragment(fragment_id)
+        if row is None:
+            raise FragmentRefused(
+                "fragment.unresolved",
+                f"this workspace holds no fragment {fragment_id!r}, so there is nothing to "
+                "release",
+                reference=fragment_id,
+            )
+        if not row.get("derived_from"):
+            raise FragmentRefused(
+                "repair.not_a_repair",
+                f"{fragment_id} is not a repair — it is a harvested section or a composed "
+                "shell, and those are released by approving the brand kit they belong to. This "
+                "door exists only for a repair somebody composed to replace a broken band.",
+                reference=fragment_id,
+            )
+        status = str(row.get("status") or "")
+        if status != "draft":
+            raise FragmentRefused(
+                "repair.not_releasable",
+                f"repair {fragment_id} is {status!r}, not 'draft': "
+                + (
+                    "it is already released, so there is nothing to do"
+                    if status == "approved"
+                    else "a retired or dormant section is somebody's deliberate narrower "
+                    "decision, and releasing it here would overrule them"
+                ),
+                reference=fragment_id,
+            )
+        if not row.get("preview_digest"):
+            raise FragmentRefused(
+                "repair.no_preview",
+                f"repair {fragment_id} has no preview image, so nobody can see what they would "
+                "be approving. Render one first — the isolation render draws the repair's own "
+                "bytes — and show it, then ask.",
+                reference=fragment_id,
+            )
+        released = set_web_fragment_status(
+            workspace_id=self.workspace_id, fragment_id=fragment_id, status="approved"
+        )
+        return {
+            "fragment_id": fragment_id,
+            "status": released.get("status"),
+            "derived_from": released.get("derived_from"),
+            "derived_reason": released.get("derived_reason"),
+            "label": released.get("label"),
+            "section_role": released.get("section_role"),
+            "preview_digest": released.get("preview_digest"),
+        }
 
     # --- the campaign shells (F4.1, rulings R23-1/2/3) -----------------------------------------
 

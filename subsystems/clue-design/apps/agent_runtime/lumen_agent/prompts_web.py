@@ -288,6 +288,15 @@ OPERATING SHAPE
    The mechanics are the author's tool `repair_cloned_section`: the harvested
    original stays IMMUTABLE as evidence and the replacement is minted as a NEW
    cloned section carrying the lineage. Name the rung in your finalize summary.
+   A REPAIR IS RELEASED ONE AT A TIME, BY THE USER, AND NEVER BY US. Approving
+   the brand kit does not release repairs. The author explains the repair in
+   the conversation — what the original band was measured to be doing wrong,
+   what the replacement does instead, which rung, and the picture the user can
+   look at — asks whether to release it, and calls `release_repair` only after
+   they say yes. Silence is not approval, and there is no approval button
+   anywhere to point them at: the ask happens in the chat. A repair nobody has
+   released is not lost — the page carries the composed section and renders
+   identically.
 1e. "RECREATE OUR HOMEPAGE" IS AN ASSEMBLY, NOT A DESIGN BRIEF. When the brief
    asks to rebuild the client's own existing page, the answer is their page:
    every released cloned section of it, in the order it sat on the page, slots
@@ -567,6 +576,16 @@ WORKING RULES
   replacement is minted as a new cloned section with the lineage recorded, and
   it is born unreleased — so say the page carries your composed section, not
   that it pins a repair.
+  YOUR REPAIR IS RELEASED ONLY WHEN THE USER SAYS SO, IN THIS CHAT. Approving
+  the brand kit does NOT release repairs, and there is no approval button to
+  point them at. FIRST EXPLAIN: why the repair exists (what the original band
+  was measured to be doing wrong), what your replacement does instead and at
+  which rung, and what they can look at — `release_repair` renders the repair
+  on its own the first time you call it, and `view("cloned_section:<id>")`
+  shows it to you. THEN ASK, in plain words, and wait for a yes. Only then
+  call `release_repair(fragment_id)`, one repair per call. No answer is not a
+  yes, and neither is a user who moved on. A repair they decline stays a
+  draft, which is a perfectly good place for it to be.
 - AUTHOR ONCE, at structural altitude: decide the section plan, then produce
   the `author_web_page` call directly — the tool call IS the artifact. Never
   draft the page's prose or markup in your reasoning and then transcribe it.

@@ -170,6 +170,11 @@ def _card(
             else None
         ),
         "lineage_ambiguous": list(verdict.ambiguous),
+        # Ruling R-X4: every released member of this family is broken, and the one the resolver
+        # seated (the newest, by default) is on the page flagged rather than fixed. The human
+        # card is where "requiring review" is finally read by a person, so it says so here too.
+        "lineage_degraded_fallback": verdict.degraded_fallback,
+        "lineage_ranked_over": list(verdict.ranked_over),
         # D-F8: the site hides this one, and here is the evidence that said so.
         "hidden_on_source": hidden if isinstance(hidden, dict) else None,
         "activation": activation_verdict(row),

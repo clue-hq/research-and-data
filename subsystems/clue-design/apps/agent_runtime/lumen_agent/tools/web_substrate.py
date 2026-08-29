@@ -5473,7 +5473,9 @@ class LumenWebTools:
                             f"{entry['fragment_id']} (over {', '.join(entry['ranked_over'])})"
                             for entry in ranked
                         )
-                        + " is marked broken, so the oldest was pinned rather than none. If the "
+                        + " is marked broken, so the one now on the page was SELECTED rather "
+                        "than fixed: it is degraded and requires review. It is there because a "
+                        "hole where the band goes is worse. Say so in your report, and if the "
                         "one you want is not the one on the page, pin it explicitly."
                     ),
                     "hint": "",
@@ -5514,6 +5516,12 @@ class LumenWebTools:
             # replaces the other" — and reading the second as the first is how the warning ended
             # up advising a THIRD repair of the one band that could least afford another.
             "lineage_ambiguous": list(resolved.get("lineage_ambiguous") or []),
+            # ...and the THIRD world ruling R-X4 named: every released member of this band's
+            # family is broken, so the section on the page was selected, not fixed. Without it
+            # a pin made through `insert_cloned_section` (which never sees the recreate walk's
+            # `ranked` list) reported the newest repair as though releasing it had helped.
+            "degraded_fallback": bool(resolved.get("lineage_degraded_fallback")),
+            "ranked_over": list(resolved.get("lineage_ranked_over") or []),
         }
 
     def _note_degraded_pins(
@@ -5577,6 +5585,18 @@ class LumenWebTools:
         message = f"{len(needs_repair)} cloned section(s) on this page are marked BROKEN: {named}"
         if unrepaired == len(needs_repair):
             message += " — and none of them has a released repair"
+        # Ruling R-X4: a band whose WHOLE family is broken was selected, never fixed, and that is
+        # a different sentence from "this clone is broken" — the section on the page may well be
+        # somebody's released repair, and reporting it as an unrepaired clone would tell an
+        # author to go and compose the repair that is already under their nose.
+        selected = [entry for entry in needs_repair if entry.get("degraded_fallback")]
+        if selected:
+            message += (
+                f" — {len(selected)} of them ("
+                + ", ".join(str(entry["fragment_id"]) for entry in selected)
+                + ") had NO healthy version at all, so what is on the page was selected as the "
+                "least-bad of a broken family and REQUIRES REVIEW"
+            )
         hint_parts = []
         if replaceable:
             swaps = "; ".join(
@@ -5656,10 +5676,11 @@ class LumenWebTools:
         `derived_from` (the original) and your rung + note. The original artifact is untouched —
         it stays in the library as the evidence of what the source site actually did.
 
-        The repair is born UNRELEASED, like every cloned section: a human releases it by approving
-        the brand kit. So `pinned` is normally false and the page carries your composed section
-        directly, which renders identically. Say so in your report; do not claim the page pins a
-        repair it does not.
+        The repair is born UNRELEASED, and approving the brand kit does NOT release it: a repair
+        is approved individually, by the user, after you explain it and ask (`release_repair`).
+        So `pinned` is normally false and the page carries your composed section directly, which
+        renders identically. Say so in your report; do not claim the page pins a repair it does
+        not.
         """
         registry = self._cloned_section_registry()
         if registry is None:
@@ -5870,10 +5891,13 @@ class LumenWebTools:
         else:
             result["pinned"] = False
             result["release"] = (
-                f"the repair {minted.get('fragment_id')} is {minted.get('status')}: a human "
-                "releases it by approving the brand kit it belongs to, exactly as for every "
-                "other cloned section. Until then the page carries your composed section, which "
-                "renders identically. Say this in your report rather than claiming a pin."
+                f"the repair {minted.get('fragment_id')} is {minted.get('status')}: it is "
+                "released ONE AT A TIME, by the user, after you explain it and ask — approving "
+                "the brand kit does NOT release repairs. Explain what was broken, what your "
+                "replacement does and at which rung, show them the picture, and if they say yes "
+                "call release_repair(fragment_id). Until then the page carries your composed "
+                "section, which renders identically. Say this in your report rather than "
+                "claiming a pin."
             )
         self.record(
             "author",
@@ -5890,6 +5914,134 @@ class LumenWebTools:
             sink_extra={"fragment_id": minted.get("fragment_id")},
         )
         return json.dumps(result, indent=2)
+
+    def release_repair(self, fragment_id: str) -> str:
+        """Release ONE repair into the library — only after the user has said yes, in this chat.
+
+        A repair you compose is born unreleased and NOTHING releases it automatically: approving
+        the brand kit no longer sweeps repairs along with the harvested sections, because
+        approving a kit is not the same decision as approving your replacement for one band.
+
+        NEVER CALL THIS WITHOUT THE USER'S EXPLICIT APPROVAL IN THIS CONVERSATION. Before you
+        ask, EXPLAIN the repair — why it exists (what the original band was measured to be doing
+        wrong), what your replacement does instead and at which rung, and what they can look at.
+        Show them the picture: this tool renders the repair on its own the first time you call
+        it, and `view("cloned_section:<fragment_id>")` puts it in front of you. Then ask, in
+        plain words, and wait. "They did not object" is not approval. If they say no, say so and
+        leave it as a draft — a draft repair is not lost, it is unreleased.
+
+        One repair per call, deliberately: approval is per repair, so a call is per repair too.
+
+        It refuses, by name, a section that is not a repair (a harvested clone or a campaign
+        shell — those are released by approving the brand kit), a repair that is already
+        released, and a repair no picture exists of yet.
+        """
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+        clean_id = (fragment_id or "").strip()
+        if not clean_id:
+            return self._tool_error(
+                "release.bad_request",
+                "release_repair needs the `fragment_id` of the repair the user approved.",
+            )
+
+        # The picture FIRST, and this call cannot release on the round that makes it. Ruling R-X9
+        # says a human may never be asked to approve something nobody can see, so a repair with
+        # no preview is not "released once we have rendered one" — it is rendered, refused, and
+        # handed back so the render can actually be shown and the question actually asked.
+        try:
+            rendered = registry.render_repair_preview(clean_id, self.core)
+        except Exception as error:  # noqa: BLE001 - capability + browser boundary
+            rendered = None
+            render_refusal = f"{getattr(error, 'code', type(error).__name__)}: {error}"
+        else:
+            render_refusal = None
+        if rendered:
+            self._refresh_cloned_section_preview(registry, clean_id)
+            return self._tool_error(
+                "release.preview_rendered",
+                f"nothing was released. Repair {clean_id} had no preview, so one has just been "
+                f"rendered from its own bytes. Look at it with view(\"cloned_section:{clean_id}\"), "
+                "explain the repair to the user — what was broken, what your replacement does, "
+                "which rung — and ask whether to release it. Call release_repair again only "
+                "after they say yes.",
+                fragment_id=clean_id,
+            )
+
+        try:
+            released = registry.release_repair(clean_id)
+        except FragmentRefused as refusal:
+            message = str(refusal.message)
+            if refusal.code == "repair.no_preview" and render_refusal:
+                # The gate's sentence plus the reason the remedy it names did not work. Without
+                # this the agent is told to render a preview it has just failed to render.
+                message = (
+                    f"{message} The render was attempted here and could not be made: "
+                    f"{render_refusal}. Tell the user the repair cannot be shown, and leave it "
+                    "as a draft."
+                )
+            self.record(
+                "author",
+                "cloned_section_release_refused",
+                input_summary=clean_id,
+                output_summary=f"{refusal.code}: {message}"[:500],
+                payload={"fragment_id": clean_id, "error_code": refusal.code},
+            )
+            return self._tool_error(str(refusal.code), message, fragment_id=clean_id)
+        except Exception as error:  # noqa: BLE001 - capability boundary
+            return self._tool_error(
+                "release.failed",
+                f"the repair could not be released: {type(error).__name__}: {error}",
+                fragment_id=clean_id,
+            )
+
+        self.record(
+            "author",
+            "cloned_section_released",
+            input_summary=clean_id,
+            output_summary=f"{released.get('label') or clean_id} -> approved"[:500],
+            payload={
+                "fragment_id": clean_id,
+                "derived_from": released.get("derived_from"),
+            },
+            sink_extra={"fragment_id": clean_id},
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                "fragment_id": clean_id,
+                "repair_status": released.get("status"),
+                "replaces": released.get("derived_from"),
+                "derived_reason": released.get("derived_reason"),
+                "label": released.get("label"),
+                "note": (
+                    f"{clean_id} is released, so it can now be pinned on this page and on any "
+                    "other. It changes no page by itself — a page shows it once somebody pins "
+                    f"it with insert_cloned_section. The section it replaces "
+                    f"({released.get('derived_from')}) is untouched and stays in the library as "
+                    "the evidence of what the source site actually did. Only this one repair "
+                    "was released; every other draft repair still needs its own approval."
+                ),
+            },
+            indent=2,
+        )
+
+    def _refresh_cloned_section_preview(self, registry: Any, fragment_id: str) -> None:
+        """Make a just-rendered preview viewable in THIS turn.
+
+        `view("cloned_section:<id>")` reads the turn-local map, so a picture that exists durably
+        but was never resolved here would still answer "it has no preview image to look at" —
+        which, one line after saying a render was made, is the kind of contradiction that costs
+        a whole round to recover from.
+        """
+        try:
+            detail = (registry.describe([fragment_id]) or {}).get(fragment_id) or {}
+        except Exception:  # noqa: BLE001 - a viewable picture is not worth failing the turn
+            return
+        self._cloned_section_previews[fragment_id] = detail.get("preview_path")
+        seen = dict(self._cloned_section_seen.get(fragment_id) or {})
+        self._cloned_section_seen[fragment_id] = seen
 
     # --- the campaign shells (F4.1, rulings R23-1/2/3) -----------------------------------------
 

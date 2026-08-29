@@ -125,9 +125,21 @@ def _registry(
 # member is SUPERSEDED iff any descendant of it is healthy — at any depth, through links of any
 # status. The REPRESENTATIVE SET is the healthy members with no healthy descendant, and it is
 # necessarily an antichain. Exactly one → pin it. Two or more → ambiguous, nothing pinned. None →
-# fall back to exactly ONE member (the oldest approved), naming what it passed over.
+# fall back to exactly ONE approved member, naming what it passed over.
 #
-# Every expectation below is read off that paragraph, not off the implementation.
+# FOUNDER RULING R-X4 (2026-08-29) AMENDS THE LAST SENTENCE, AND ONLY THE LAST SENTENCE. Which
+# approved member the fallback picks is now a deployment choice with two values:
+#
+#   keep_flagged (DEFAULT) — the NEWEST approved member. "Never silently return to a
+#                            known-broken original": the newest repair stays selected and is
+#                            reported degraded and requiring review.
+#   fallback_original      — the OLDEST approved member (the pre-ruling behaviour), i.e. the
+#                            harvested original where the family still has one.
+#
+# Every other arm is identical in both modes, which is why the matrix carries ONE expectation per
+# case and an override only where the ruling actually moved the answer.
+#
+# Every expectation below is read off those paragraphs, not off the implementation.
 
 
 def _lineage_row(
@@ -153,12 +165,17 @@ def _lineage_row(
     }
 
 
-#: ``(name, rows, {root: (representative, ambiguous, ranked_over)})``.
+#: ``(name, rows, {root: (representative, ambiguous, ranked_over)})`` under the DEFAULT
+#: ``keep_flagged`` selection.
 #:
 #: The expectation is keyed by FAMILY ROOT and the test asserts three things from it: that the
 #: families are exactly these, that every member of a family resolves to the same verdict, and
 #: that the verdict is this one. A shape that splits into two families therefore cannot pass by
 #: accident — it has to name both.
+#:
+#: :data:`FALLBACK_ORIGINAL_OVERRIDES` names the handful of cases where the OTHER selection
+#: answers differently; every case not listed there must answer identically in both modes, and
+#: the test asserts that too rather than assuming it.
 LINEAGE_MATRIX: tuple[tuple[str, list[dict], dict[str, tuple]], ...] = (
     # --- the fifteen shapes ruling R-X1 was settled against ------------------------------------
     (
@@ -227,12 +244,12 @@ LINEAGE_MATRIX: tuple[tuple[str, list[dict], dict[str, tuple]], ...] = (
         {"a": ("r2", (), ())},
     ),
     (
-        "else-the-original — nothing healthy anywhere falls back to the oldest approved",
+        "R-X4 — nothing healthy anywhere keeps the NEWEST repair, flagged, never the original",
         [
             _lineage_row("a", degraded=True),
             _lineage_row("r1", derived_from="a", degraded=True),
         ],
-        {"a": ("a", (), ("r1",))},
+        {"a": ("r1", (), ("a",))},
     ),
     (
         "a degraded child is the only APPROVED member — it is the fallback, and ranks over nothing",
@@ -249,7 +266,7 @@ LINEAGE_MATRIX: tuple[tuple[str, list[dict], dict[str, tuple]], ...] = (
             _lineage_row("r1", derived_from="a", degraded=True),
             _lineage_row("r2", derived_from="r1", degraded=True),
         ],
-        {"a": ("a", (), ("r1", "r2"))},
+        {"a": ("r2", (), ("a", "r1"))},
     ),
     (
         "a draft repair is not released, so it supersedes nothing",
@@ -323,7 +340,7 @@ LINEAGE_MATRIX: tuple[tuple[str, list[dict], dict[str, tuple]], ...] = (
             _lineage_row("a", degraded=True, created_at="2026-08-02"),
             _lineage_row("r1", derived_from="a", degraded=True, created_at="2026-08-01"),
         ],
-        {"a": ("r1", (), ("a",))},
+        {"a": ("a", (), ("r1",))},
     ),
     (
         "a family with no approved member at all pins nothing and blames nobody",
@@ -346,13 +363,68 @@ LINEAGE_MATRIX: tuple[tuple[str, list[dict], dict[str, tuple]], ...] = (
 )
 
 
+#: ``{case name: {root: (representative, ambiguous, ranked_over)}}`` under
+#: ``fallback_original``, for the cases where R-X4's toggle actually changes the answer.
+#:
+#: There are exactly three, and all three are entirely-unhealthy families with MORE THAN ONE
+#: approved member — which is the whole reach of the ruling. A family whose only approved member
+#: is a broken repair has nothing to fall back TO, so it answers the same either way, and every
+#: family with a healthy member never enters this arm at all.
+FALLBACK_ORIGINAL_OVERRIDES: dict[str, dict[str, tuple]] = {
+    "R-X4 — nothing healthy anywhere keeps the NEWEST repair, flagged, never the original": {
+        "a": ("a", (), ("r1",))
+    },
+    "the whole family degraded — the fallback names both members it passed over": {
+        "a": ("a", (), ("r1", "r2"))
+    },
+    "the fallback reads its age off created_at, not off the id": {"a": ("r1", (), ("a",))},
+}
+
+
+def _expected_degraded_fallback(rows: list[dict], root: str, parents: dict) -> bool:
+    """Ruling R-X4's flag, restated from the ROWS rather than read off the implementation.
+
+    A family is a degraded fallback when it has at least one approved member and NO healthy one
+    (approved and un-degraded). That is precisely the arm the toggle governs, and it is the arm
+    whose answer must reach every surface that reports degraded.
+    """
+    members = [row for row in rows if _root_of(row["fragment_id"], parents) == root]
+    approved = [row for row in members if row["status"] == "approved"]
+    healthy = [row for row in approved if not row["degraded"]]
+    return bool(approved) and not healthy
+
+
+def _root_of(fragment_id: str, parents: dict) -> str:
+    seen: set = set()
+    current = fragment_id
+    while current not in seen:
+        seen.add(current)
+        parent = parents.get(current)
+        if not isinstance(parent, str) or parent not in parents:
+            return current
+        current = parent
+    return current
+
+
+@pytest.mark.parametrize("selection", ["keep_flagged", "fallback_original"])
 @pytest.mark.parametrize(
-    "rows, expected",
-    [pytest.param(rows, expected, id=name) for name, rows, expected in LINEAGE_MATRIX],
+    "name, rows, expected",
+    [pytest.param(name, rows, expected, id=name) for name, rows, expected in LINEAGE_MATRIX],
 )
-def test_the_lineage_resolution_matrix(rows: list[dict], expected: dict[str, tuple]) -> None:
-    """Every shape ruling R-X1 was settled against, resolved by the one production resolver."""
-    verdicts = resolve_fragment_lineages(list(rows))
+def test_the_lineage_resolution_matrix(
+    name: str, rows: list[dict], expected: dict[str, tuple], selection: str
+) -> None:
+    """Every shape rulings R-X1 and R-X4 were settled against, under BOTH selections.
+
+    The selection is INJECTED, never set through the environment: this is a pure function of its
+    rows plus one named argument, and a test that mutated process env would be pinning the
+    deployment's plumbing instead of the law.
+    """
+    if selection == "fallback_original":
+        expected = {**expected, **FALLBACK_ORIGINAL_OVERRIDES.get(name, {})}
+    parents = {row["fragment_id"]: row.get("derived_from") for row in rows}
+
+    verdicts = resolve_fragment_lineages(list(rows), selection=selection)
 
     assert set(verdicts) == {row["fragment_id"] for row in rows}
     assert {verdict.root for verdict in verdicts.values()} == set(expected)
@@ -363,6 +435,39 @@ def test_the_lineage_resolution_matrix(rows: list[dict], expected: dict[str, tup
         assert verdict.representative == representative
         assert verdict.ambiguous == ambiguous
         assert verdict.ranked_over == ranked_over
+        assert verdict.degraded_fallback == _expected_degraded_fallback(
+            rows, verdict.root, parents
+        )
+
+
+def test_the_default_selection_is_keep_flagged_when_nobody_names_one() -> None:
+    """R-X4's default, at the seam a production caller actually uses (no argument at all).
+
+    The whole ruling is "never silently return to a known-broken original", so the value a
+    deployment gets by doing nothing is the load-bearing half of it.
+    """
+    from lumen_api.agent_cloned_sections import (
+        DEGRADED_REPAIR_KEEP_FLAGGED,
+        degraded_repair_selection,
+    )
+
+    rows = [
+        _lineage_row("a", degraded=True),
+        _lineage_row("r1", derived_from="a", degraded=True),
+    ]
+
+    assert degraded_repair_selection() == DEGRADED_REPAIR_KEEP_FLAGGED
+    assert resolve_fragment_lineages(rows)["a"].representative == "r1"
+
+
+def test_an_unrecognized_selection_refuses_rather_than_guessing() -> None:
+    """The two answers differ in exactly the way the founder ruled about, so a typo may not
+    quietly resolve to either one."""
+    with pytest.raises(ValueError) as excinfo:
+        resolve_fragment_lineages([_lineage_row("a")], selection="newest")
+
+    assert "keep_flagged" in str(excinfo.value)
+    assert "fallback_original" in str(excinfo.value)
 
 
 def test_a_lineage_deeper_than_the_interpreters_stack_still_resolves() -> None:
