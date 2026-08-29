@@ -99,11 +99,20 @@ def publish_web_document(
     public_base: str,
     noindex: bool = False,
 ) -> WebPublishRef:
-    """Build, persist and point one publish at ``slug``. The ONE publish write path."""
+    """Build, persist and point one publish at ``slug``. The ONE publish write path.
+
+    ``noindex`` is the REQUEST's answer; ``document["web_noindex"]`` is the PAGE's own, stored
+    on the row (clone-fidelity F4.3, ruling R-F1). They are OR'd here, at the single write every
+    publish path goes through — the plain HTTP route, the governed tool, the ABM batch — which
+    is what makes "applied on every republish, whichever route publishes it" a property of the
+    system rather than a promise each caller has to keep. The direction is one-way on purpose: a
+    publish can only ever ADD the robots meta, and nothing that publishes can take it off.
+    """
 
     from .. import web_export
     from ..database import utc_now
 
+    noindex = bool(noindex) or bool(document.get("web_noindex"))
     package = web_export.build_publish_package(
         core,
         repository,
@@ -174,6 +183,12 @@ class PublishWebDocumentInput(ToolInput):
     #: URL and by nothing else, so they ask for it; a homepage publish never does and stays
     #: byte-identical. Like ``public_base`` it is part of the rendered bytes, so it belongs in
     #: the idempotency body — an indexed and a de-indexed page are two publishes.
+    #:
+    #: R-F1 added the page's OWN durable ``web_noindex``, and it deliberately does NOT appear
+    #: here. It is a property of the document row, exactly like the scene the publish renders,
+    #: and the document's content was never in this body either: the body names WHICH document,
+    #: and the run reads the row. A same-operation retry still replays its recorded result; a new
+    #: operation reads the row as it now stands, which is the whole point of a durable flag.
     noindex: bool = False
 
 

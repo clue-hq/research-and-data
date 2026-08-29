@@ -272,6 +272,18 @@ class SetLayoutManagedEditingRequest(BaseModel):
     enabled: bool = False
 
 
+class SetWebNoindexRequest(BaseModel):
+    """Stamp or clear a web document's durable ``noindex`` (clone-fidelity F4.3, ruling R-F1).
+
+    ``noindex`` is REQUIRED and has NO default. That is the ruling's "removing it requires an
+    explicit action", made structural: a body that merely omits the field is a 422, so no caller
+    can clear the flag by forgetting to mention it — which is exactly how the publish routes
+    (which carry no such field at all) lost it before this ruling.
+    """
+
+    noindex: bool
+
+
 class FinalizeTemplateRequest(BaseModel):
     template_revision_id: Optional[str] = None
     snapshot_id: Optional[str] = None

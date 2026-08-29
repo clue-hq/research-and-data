@@ -715,6 +715,22 @@ class HybridRepository:
             )
         )
 
+    def set_web_noindex(self, document_id: str, enabled: bool) -> JsonObject:
+        """Clone-fidelity F4.3, ruling R-F1: the durable ``noindex`` stamp on ONE web document.
+
+        Governed (``design_set_web_noindex``) like its ``set_layout_managed_editing`` sibling —
+        it is a caller-initiated document mutation, and the CLEAR direction is the only door in
+        the system that can take the robots meta off a page.
+        """
+        return self._bridge._run(
+            lambda conn: design_documents.set_web_noindex(
+                conn,
+                workspace_id=self.workspace_id,
+                document_id=document_id,
+                enabled=enabled,
+            )
+        )
+
     def create_web_template(
         self,
         web_doc: JsonObject,

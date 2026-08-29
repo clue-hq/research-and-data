@@ -92,6 +92,10 @@ _GOVERNED: dict[str, tuple[str, tuple[str, ...]]] = {
     "update_document_state": ("method", ("lumen_api/design_store.py",)),
     "set_agent_instructions": ("method", ("lumen_api/design_store.py",)),
     "set_layout_managed_editing": ("method", ("lumen_api/design_store.py",)),
+    # Clone-fidelity F4.3, ruling R-F1: the durable `noindex` stamp. Governed like its two
+    # per-document siblings above — the CLEAR direction is the only door in the system that can
+    # take the robots meta off a published account page, so it may not be reachable off-toolbelt.
+    "set_web_noindex": ("method", ("lumen_api/design_store.py",)),
     "create_snapshot": ("method", ("lumen_api/design_store.py",)),
     "create_template_revision": ("method", ("lumen_api/design_store.py",)),
     "store_diagnostics": ("method", ("lumen_api/design_store.py",)),

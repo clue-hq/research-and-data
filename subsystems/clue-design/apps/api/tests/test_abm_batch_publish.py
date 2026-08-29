@@ -341,6 +341,154 @@ def test_an_ordinary_publish_is_byte_identical_to_what_it_was_before_this_task(
 
 
 # --------------------------------------------------------------------------- #
+# R-F1 — noindex is DURABLE on the document, applied by every publish route
+# --------------------------------------------------------------------------- #
+#
+# FOUNDER RULING R-F1 (2026-08-29) supersedes R25-4's publish-time-argument shape above: the
+# flag is stored permanently on the page and applied on EVERY republish, whichever route
+# publishes it, and only an EXPLICIT named action clears it. The R25-4 tests above are kept
+# rather than rewritten — the option still exists and still behaves exactly as they pin it;
+# what these add is the half that outlives one request body.
+
+
+def test_the_batch_stamps_the_durable_flag_on_every_abm_page_it_publishes(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """R-F1's first writer. The batch's always-ask became the stamp: the DOCUMENT carries it."""
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    body = client.post(
+        f"/documents/{template}/web/batch",
+        json={"account_ids": [_account(client, "Acme Health")], "publish": True, "abm": True},
+    ).json()
+
+    repo = HybridRepository(workspace_id=workspace_id)
+    document = repo.require_document(body["manifest"][0]["document_id"])
+    assert document["web_noindex"] is True
+    # The template it was derived from is NOT stamped — the stamp is about a published account
+    # page, and the template never publishes at all (R25-7).
+    assert repo.require_document(template)["web_noindex"] is False
+
+
+def test_a_plain_republish_of_an_abm_page_keeps_the_robots_meta(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """THE red case R-F1 exists for. `POST /documents/{id}/web/publish` carries no `noindex`
+    field at all, and before this ruling that re-published the account page INDEXED."""
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    body = client.post(
+        f"/documents/{template}/web/batch",
+        json={"account_ids": [_account(client, "Acme Health")], "publish": True, "abm": True},
+    ).json()
+    row = body["manifest"][0]
+    assert ROBOTS_META in client.get(row["url"]).text
+
+    republished = client.post(
+        f"/documents/{row['document_id']}/web/publish", json={"slug": row["slug"]}
+    )
+
+    assert republished.status_code == 200, republished.text
+    assert ROBOTS_META in client.get(row["url"]).text
+    publish = HybridRepository(workspace_id=workspace_id).get_web_publish(row["slug"])
+    assert publish["manifest"]["robots"] == "noindex"
+
+
+def test_the_toolbelt_publish_tool_honors_the_durable_flag_without_being_asked(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """Every publish path, not only the HTTP one: the OR lives at the single publish write."""
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    account = _account(client, "Acme Health")
+    derived = client.post(
+        f"/documents/{template}/web/derive", json={"account_id": account}
+    ).json()["document_id"]
+    stamped = client.put(f"/documents/{derived}/web-noindex", json={"noindex": True})
+    assert stamped.status_code == 200, stamped.text
+
+    client.app.state.design_tools.invoke(
+        "design_publish_web",
+        {
+            "document_id": derived,
+            "public_base": "http://testserver",
+            "slug": "tool-published",
+        },
+        workspace_id=workspace_id,
+    )
+
+    assert ROBOTS_META in client.get(f"/w/{workspace_id}/p/tool-published").text
+
+
+def test_clearing_the_durable_flag_is_an_explicit_named_call_and_a_publish_cannot_do_it(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """Both halves of "removing it requires an explicit action".
+
+    The toggle names the field and the field is REQUIRED, so a body that merely omits it is a
+    422 rather than a silent clear — which is the same guarantee the publish routes give by
+    never carrying the field at all.
+    """
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    body = client.post(
+        f"/documents/{template}/web/batch",
+        json={"account_ids": [_account(client, "Acme Health")], "publish": True, "abm": True},
+    ).json()
+    row = body["manifest"][0]
+
+    # A toggle call that names no value clears nothing.
+    assert client.put(f"/documents/{row['document_id']}/web-noindex", json={}).status_code == 422
+    repo = HybridRepository(workspace_id=workspace_id)
+    assert repo.require_document(row["document_id"])["web_noindex"] is True
+
+    cleared = client.put(
+        f"/documents/{row['document_id']}/web-noindex", json={"noindex": False}
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["web_noindex"] is False
+    assert repo.require_document(row["document_id"])["web_noindex"] is False
+
+    republished = client.post(
+        f"/documents/{row['document_id']}/web/publish", json={"slug": row["slug"]}
+    )
+    assert republished.status_code == 200, republished.text
+    assert ROBOTS_META not in client.get(row["url"]).text
+
+
+def test_an_ordinary_document_is_born_un_stamped_and_publishes_exactly_as_before(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """The direction that matters more, at the DURABLE layer: a never-stamped document's publish
+    is byte-identical to what it produced before this ruling (the option test above pins the
+    package itself; this pins that nothing stamps a document behind anybody's back)."""
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    account = _account(client, "Acme Health")
+    derived = client.post(
+        f"/documents/{template}/web/derive", json={"account_id": account}
+    ).json()["document_id"]
+    repo = HybridRepository(workspace_id=workspace_id)
+    assert repo.require_document(derived)["web_noindex"] is False
+
+    assert (
+        client.post(f"/documents/{derived}/web/publish", json={"slug": "plain-home"}).status_code
+        == 200
+    )
+
+    page = client.get(f"/w/{workspace_id}/p/plain-home").text
+    assert "robots" not in page
+    assert "robots" not in (repo.get_web_publish("plain-home").get("manifest") or {})
+
+
+def test_the_toggle_refuses_a_scene_document(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """A scene has no publish surface, so the flag would be a lie stored on it."""
+    scene = client.post("/documents", json={}).json()["document"]["id"]
+
+    response = client.put(f"/documents/{scene}/web-noindex", json={"noindex": True})
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "document.kind_unsupported"
+
+
+# --------------------------------------------------------------------------- #
 # R25-7 — the template never publishes
 # --------------------------------------------------------------------------- #
 

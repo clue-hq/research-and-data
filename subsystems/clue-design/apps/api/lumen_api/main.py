@@ -151,6 +151,7 @@ from .models import (
     WebPublishRequest,
     SetAgentInstructionsRequest,
     SetLayoutManagedEditingRequest,
+    SetWebNoindexRequest,
     AttachBrandKitRequest,
     ApplyOperationsRequest,
     ApplyStructuredEditRequest,
@@ -2530,6 +2531,33 @@ def create_app(
             "schema_version": 1,
             "document_id": document_id,
             "layout_managed_editing": written["value"],
+        }
+
+    @app.put("/documents/{document_id}/web-noindex")
+    def set_web_noindex(
+        document_id: str,
+        payload: SetWebNoindexRequest,
+        repo: HybridRepository = Depends(repository),
+    ) -> JsonObject:
+        """THE explicit action ruling R-F1 asks for, in both directions.
+
+        `noindex` is stored on the DOCUMENT, so every publish route emits the robots meta on a
+        stamped page whether or not it knows the flag exists. This is the only surface that can
+        take it off again — and the field is required, so a caller who names no value gets a 422
+        rather than a silent clear. (The ABM batch is the stamp's first writer; a human turning
+        an account page back into an indexable one is what this route serves.)
+        """
+        require_web_document(require_document(repo, document_id))
+        written = run_design_tool(
+            "design_set_web_noindex",
+            {"document_id": document_id, "enabled": payload.noindex},
+            workspace_id=store_workspace_id(repo),
+            refusals=_document_refusals(document_id),
+        )
+        return {
+            "schema_version": 1,
+            "document_id": document_id,
+            "web_noindex": written["value"],
         }
 
     @app.put("/documents/{document_id}/scene")
@@ -4989,6 +5017,22 @@ def create_app(
                 # R25-4: an ABM account page is reachable by its explicit URL and by nothing else
                 # — absent from every navigation (F4.1's shells have no way out) and out of the
                 # index. `noindex` is asked for HERE, per page, rather than flipped globally.
+                #
+                # R-F1: and the ask is now a STAMP. The batch is the durable flag's first writer
+                # (founder ruling, 2026-08-29): it writes the page's own `web_noindex` BEFORE
+                # publishing, so every later republish — through the plain route that carries no
+                # such field, through the tool, through a re-run of this batch — still emits the
+                # robots meta. Stamped first, deliberately: a publish that lands with the flag
+                # unwritten would be an indexed page nobody asked for, while a stamp with no
+                # publish behind it is inert.
+                if abm:
+                    run_design_tool(
+                        "design_set_web_noindex",
+                        {"document_id": derived["id"], "enabled": True},
+                        workspace_id=store_workspace_id(repo),
+                    )
+                    # No re-read is owed: the publish tool resolves the document itself, so it
+                    # reads the row this stamp just wrote.
                 _publish_web(
                     repo, derived, slug=slug, public_base=public_base, noindex=abm
                 )
