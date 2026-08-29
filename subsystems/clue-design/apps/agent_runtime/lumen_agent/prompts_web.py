@@ -303,20 +303,20 @@ OPERATING SHAPE
      the page's own sections are authored. No cloned nav, no cloned site footer,
      no anchor menu, one call to action with one destination.
    - PERSONALIZATION IS MARKER-BOUND, NEVER BAKED. The page is a TEMPLATE: slots
-     hold `{{account.name}}`, `{{account.domain}}` and `{{account.logo}}`, which
+     hold `{{{{account.name}}}}`, `{{{{account.domain}}}}` and `{{{{account.logo}}}}`, which
      the account derive substitutes per account, so one document serves every
      account and stays re-derivable. Never write one account's name or logo into
      the markup.
-   - THE TARGET'S LOGO comes only from the ladder — the `{{account.logo}}`
+   - THE TARGET'S LOGO comes only from the ladder — the `{{{{account.logo}}}}`
      marker, or `fetch_logo` binding their real published asset. AN EMPTY LOGO
      SLOT IS CORRECT. Never redraw, letter, recolour or approximate a company's
      mark, and never accept a placeholder in its place. A fetched mark that is
      to serve a NAMED account is saved onto them with `bind_account_logo` —
-     once, per account, deliberately — after which `{{account.logo}}` resolves
+     once, per account, deliberately — after which `{{{{account.logo}}}}` resolves
      for them on every page derived from any template. Without that step the
      mark dies with the turn.
    - PUBLISH THE DERIVED PAGE, NEVER THE TEMPLATE. The assembled page shows its
-     `{{account.…}}` markers to anyone who opens it, so it is derived per
+     `{{{{account.…}}}}` markers to anyone who opens it, so it is derived per
      account first and the derived pages are what publish. The publish refuses
      a page still carrying markers; that refusal is correct, and the answer is
      to derive, never to bake one account's name into the template.
@@ -513,20 +513,20 @@ WORKING RULES
   `abm.no_campaign_shells`, say so and mint them; never reach for the cloned nav
   instead.
   THE PAGE IS A TEMPLATE, NOT ONE ACCOUNT'S PAGE. Bind slots to the account
-  MARKERS — `{{account.name}}`, `{{account.domain}}`, `{{account.logo}}` — which
+  MARKERS — `{{{{account.name}}}}`, `{{{{account.domain}}}}`, `{{{{account.logo}}}}` — which
   the account derive substitutes per account ("Clinical notes, written for
-  {{account.name}}"). Never write one account's name or logo into the markup.
-  THE TARGET'S LOGO comes only from the ladder: the `{{account.logo}}` marker,
+  {{{{account.name}}}}"). Never write one account's name or logo into the markup.
+  THE TARGET'S LOGO comes only from the ladder: the `{{{{account.logo}}}}` marker,
   or `fetch_logo` for their real published asset. AN EMPTY LOGO SLOT IS CORRECT
   — never redraw, letter, recolour or approximate a mark, and never put a
   placeholder where one would go. When a fetched mark belongs to a NAMED target
   account, `bind_account_logo(account_id, asset_id)` saves it onto them, and
-  from then on `{{account.logo}}` resolves for them on every page derived from
+  from then on `{{{{account.logo}}}}` resolves for them on every page derived from
   any template. Placing it dresses this page; binding it makes it theirs. If
   `fetch_logo` came back `needs_review` there is nothing to bind: say so and ask
   for the file.
   PUBLISH THE DERIVED PAGE, NEVER THE TEMPLATE. This page shows its
-  `{{account.…}}` markers to whoever opens it, so it is derived per account
+  `{{{{account.…}}}}` markers to whoever opens it, so it is derived per account
   first and the DERIVED pages are what publish. A publish of the template itself
   is refused by name; the answer is to derive it, never to bake one account into
   the markup.

@@ -614,3 +614,68 @@ def test_a_bound_record_resolves_by_digest_whichever_arm_the_resolver_takes(
     location = stored["media"]["location"]
     assert location["provider"] == DESIGN_LOCATION_PROVIDER  # not `local-store`
     assert location_digest(location) == stored["media"]["digest"]["value"] == digest
+
+
+def test_a_plain_batch_cannot_wander_into_abm_mode_by_name(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """T25 review I-3: `slug_base == "abm"` IS the persisted ABM mode, so a template TITLED
+    "ABM" (title-slugged) or a hand-passed `slug_base="abm"` silently switched a plain batch
+    into ABM semantics — noindex + in-place convergence nobody asked for. `abm: true` is now
+    the ONLY door; both accidental shapes refuse typed."""
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    registry.campaign_shell_placeholder()
+    header = _released_shell(registry, CAMPAIGN_SHELL_HEADER)
+    footer = _released_shell(registry, CAMPAIGN_SHELL_FOOTER)
+    hero = _released_hero(workspace_id, design_storage)
+    titled_abm = _assembled_doc("doc_titled_abm", header, hero, footer)
+    titled_abm["title"] = "ABM"
+    HybridRepository(workspace_id=workspace_id).create_document(titled_abm, doc_kind="web")
+    account = _account(client, "Acme Health")
+
+    by_title = client.post(
+        "/documents/doc_titled_abm/web/batch",
+        json={"account_ids": [account], "publish": False},
+    )
+    assert by_title.status_code == 422, by_title.text
+    assert by_title.json()["detail"]["code"] == "web_batch.slug_base_reserved"
+
+    explicit = client.post(
+        "/documents/doc_titled_abm/web/batch",
+        json={"account_ids": [account], "publish": False, "slug_base": "abm"},
+    )
+    assert explicit.status_code == 422, explicit.text
+    assert explicit.json()["detail"]["code"] == "web_batch.slug_base_reserved"
+
+
+def test_a_re_run_is_one_undo_away_never_a_destroyed_edit(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """T25 review I-1, live-reproduced there: the re-derive wrote `inverse_operations: None`,
+    so a re-run silently destroyed any manual edit to a derived page AND sealed its undo stack
+    (409 not_invertible). The inverse now carries the prior document, so a re-run is one undo
+    away — the shape the undo path already replays."""
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    account = _account(client, "Acme Health")
+    first = client.post(
+        f"/documents/{template}/web/batch",
+        json={"account_ids": [account], "publish": False, "abm": True},
+    ).json()
+    doc_id = first["manifest"][0]["document_id"]
+    repo = HybridRepository(workspace_id=workspace_id)
+    scene_before = repo.require_document(doc_id)["scene"]
+    assert "Acme Health" in str(scene_before)
+
+    renamed = client.patch(f"/web/accounts/{account}", json={"name": "Acme Health Group"})
+    assert renamed.status_code == 200, renamed.text
+    second = client.post(
+        f"/documents/{template}/web/batch",
+        json={"account_ids": [account], "publish": False, "abm": True},
+    ).json()
+    assert second["manifest"][0]["document_id"] == doc_id
+    assert "Acme Health Group" in str(repo.require_document(doc_id)["scene"])
+
+    undone = client.post(f"/documents/{doc_id}/web/undo")
+
+    assert undone.status_code == 200, undone.text
+    assert repo.require_document(doc_id)["scene"] == scene_before

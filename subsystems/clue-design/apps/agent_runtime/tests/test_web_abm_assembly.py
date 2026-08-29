@@ -1059,3 +1059,17 @@ def test_the_hero_note_with_no_candidates_does_not_dangle(tmp_path: Path) -> Non
     assert result["status"] == "ok"
     assert result["hero_candidates"] == []
     assert "Released heroes" not in result["hero_note"]
+
+
+@pytest.mark.parametrize("prompt_of", [_director_prompt, _author_prompt])
+def test_the_marker_grammar_the_agent_reads_is_double_braced(prompt_of) -> None:
+    """T25 review I-2, the silent law-breaker: the ABM blocks live inside f-strings, so
+    `{{account.name}}` in the SOURCE rendered as `{account.name}` to the agent — a compliant
+    author then writes a single-braced literal the derive never substitutes and the R25-7
+    guard never sees. The assertion is on the RENDERED prompt, which is what the agent reads."""
+    rendered = prompt_of()
+
+    assert "{{account.name}}" in rendered
+    assert "{{account.logo}}" in rendered
+    # And no single-braced variant anywhere — the broken rendering, pinned extinct.
+    assert re.search(r"(?<!\{)\{account\.(name|domain|logo)\}(?!\})", rendered) is None

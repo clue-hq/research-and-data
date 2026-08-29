@@ -1361,8 +1361,11 @@ def create_app(
         and gains a revision rather than a twin.
 
         The whole document is replaced, deliberately: a derivation is a projection of the
-        template plus one account's values, so there is nothing of the derived page's own to
-        preserve — and an operation list describing that is a lie about what happened.
+        template plus one account's values, so the forward operation is a bare replace. The
+        INVERSE carries the document as it stood (T25 review I-1) — the exact shape the undo
+        path replays for a replace envelope — so a re-run that overwrote a manual edit is one
+        undo away instead of an irrecoverable overwrite that also sealed the page's undo stack
+        (the reviewer reproduced both: the destroyed edit, and the 409 on undo).
         """
         run_design_tool(
             "design_apply_web_operations",
@@ -1370,7 +1373,9 @@ def create_app(
                 "document_id": existing["id"],
                 "web_doc": web_doc,
                 "operations": [{"kind": "replace_web_doc"}],
-                "inverse_operations": None,
+                "inverse_operations": [
+                    {"kind": "replace_web_doc", "web_doc": existing["scene"]}
+                ],
                 "intent": f"re-derive: {title}"[:120],
                 "checkpoint_label": "Account re-derive",
                 # `system`, not `editor`/`agent`: no human wrote this revision and no model did
@@ -5107,6 +5112,25 @@ def create_app(
             if payload.abm
             else requested_base or web_slugify(document["title"])
         )
+        if not payload.abm and slug_base == ABM_SLUG_BASE:
+            # `abm: true` is the ONLY door into ABM semantics (T25 review I-3). The persisted
+            # slug base IS the mode, so a template merely TITLED "ABM" (title-slugged to
+            # "abm") or a hand-passed slug_base="abm" would otherwise switch a plain batch
+            # into noindex + in-place convergence nobody asked for — silently, and durably,
+            # because a resumed batch reads the persisted base.
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "web_batch.slug_base_reserved",
+                    "message": (
+                        f"slug base {ABM_SLUG_BASE!r} is reserved for ABM runs, and this "
+                        "request did not ask for one. If you want ABM account pages "
+                        f"('{ABM_SLUG_BASE}-<account>', noindex, one converging document per "
+                        "account), say `abm: true`; otherwise pass a different slug_base — "
+                        "nothing was derived or published."
+                    ),
+                },
+            )
         public_base = str(request.base_url).rstrip("/")
         batch_ref = run_design_tool(
             "design_create_web_batch",
