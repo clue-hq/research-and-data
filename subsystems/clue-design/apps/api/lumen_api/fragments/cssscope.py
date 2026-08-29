@@ -8,9 +8,15 @@ around the markup.
 
 The rulings this file implements, and why:
 
-* **Media queries (and ``@supports``/``@container``/``@layer``) are preserved, and the selectors
+* **Media queries (and ``@supports``/``@container``) are preserved, and the selectors
   INSIDE them are scoped.** A responsive section that lost its breakpoints would be a different
   section.
+* **``@layer`` structure is FLATTENED into plain rule order** (2026-08-29 ruling; the scope
+  walk still descends into layer blocks, then :func:`~lumen_api.fragments.cssflatten.
+  flatten_css_layers` removes the structure from the final text). Stored css that carried its
+  own cascade layers was demoted to nested sub-layers inside the render's ``@layer base``
+  wrapper, where Tailwind's preflight reset — direct in that layer — outranked every clone rule
+  regardless of specificity. See cssflatten's module docstring for the full mechanism.
 * **``@import`` is stripped, loudly.** It is a live fetch of arbitrary CSS from a third party at
   render time — the one construct that could reintroduce everything the sanitizer just removed.
   It leaves a note rather than vanishing, because "your section's imported stylesheet is gone" is
@@ -71,6 +77,7 @@ from dataclasses import dataclass
 import tinycss2
 from tinycss2 import ast
 
+from .cssflatten import flatten_css_layers
 from .refs import FragmentRefused, asset_url, fragment_wrapper_class, resolve_asset_reference
 
 #: At-rules whose block holds declarations, not nested rules, and which are NOT scoped.
@@ -158,6 +165,10 @@ def scope_fragment_css(
     renames = {name: f"{name}--{wrapper}" for name in keyframe_names}
     body = _scope_rules(rules, wrapper=wrapper, renames=renames, rehosted=rehosted,
                         digests=digests, notes=notes, prelude_reference=prelude_reference)
+    # AFTER scoping, so the flattener reorders exactly the rules that will be stored — and
+    # BEFORE the breakout gate, which must run on the final text (2026-08-29 ruling; see
+    # cssflatten's module docstring for why stored css may not carry cascade layers).
+    body = flatten_css_layers(body, notes=notes)
     _refuse_markup_breakout(body)
     return ScopedCss(css=body, asset_digests=tuple(sorted(digests)), notes=tuple(notes))
 
