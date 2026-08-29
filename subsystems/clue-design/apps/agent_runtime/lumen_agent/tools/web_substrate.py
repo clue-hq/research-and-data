@@ -4730,6 +4730,17 @@ class LumenWebTools:
                 row["degraded_note"] = section.get("degraded_note")
             if section.get("superseded_by"):
                 row["superseded_by"] = section.get("superseded_by")
+            if section.get("lineage_degraded_fallback"):
+                # R-X4's flag, at the surface the author actually browses (T27 review I-2: the
+                # key existed on the projection and this whitelist dropped it — no production
+                # reader). A seated repair whose whole family is broken must SAY so here, not
+                # only at the pin.
+                row["lineage_degraded_fallback"] = True
+                row["lineage_degraded_note"] = (
+                    "this band's whole repair family is broken; the newest repair is kept per "
+                    "policy (keep_flagged) and needs review — repair it through the ladder or "
+                    "compose a replacement rather than treating it as healthy."
+                )
             if section.get("lineage_ambiguous"):
                 # Where the human is actually looking (ruling N5). Without it, the first contact
                 # with a family that has two released repairs is the recreate's total refusal,

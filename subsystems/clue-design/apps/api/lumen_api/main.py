@@ -5004,6 +5004,20 @@ def create_app(
                 )
             row["document_id"] = derived["id"]
             row["status"] = "derived"
+            # R-F1, corrected placement (T27 review C-1, reproduced live): the stamp rides the
+            # DERIVE, not the publish. It used to sit inside `if publish:`, so an
+            # `{"abm": true, "publish": false}` run derived real ABM account pages with
+            # `web_noindex = False` — and the next publish was the editor's plain button, which
+            # carries no noindex field, serving the account page INDEXED. An ABM page is born
+            # stamped (create AND redrive — a redrive also heals a pre-stamp document), publish
+            # or not; a stamp with no publish behind it is inert, which is exactly why it is
+            # safe to write here and wrong to defer.
+            if abm:
+                run_design_tool(
+                    "design_set_web_noindex",
+                    {"document_id": derived["id"], "enabled": True},
+                    workspace_id=store_workspace_id(repo),
+                )
             if publish:
                 slug = _unique_batch_slug(
                     repo,
@@ -5018,21 +5032,9 @@ def create_app(
                 # — absent from every navigation (F4.1's shells have no way out) and out of the
                 # index. `noindex` is asked for HERE, per page, rather than flipped globally.
                 #
-                # R-F1: and the ask is now a STAMP. The batch is the durable flag's first writer
-                # (founder ruling, 2026-08-29): it writes the page's own `web_noindex` BEFORE
-                # publishing, so every later republish — through the plain route that carries no
-                # such field, through the tool, through a re-run of this batch — still emits the
-                # robots meta. Stamped first, deliberately: a publish that lands with the flag
-                # unwritten would be an indexed page nobody asked for, while a stamp with no
-                # publish behind it is inert.
-                if abm:
-                    run_design_tool(
-                        "design_set_web_noindex",
-                        {"document_id": derived["id"], "enabled": True},
-                        workspace_id=store_workspace_id(repo),
-                    )
-                    # No re-read is owed: the publish tool resolves the document itself, so it
-                    # reads the row this stamp just wrote.
+                # R-F1: the durable stamp was written at DERIVE time above (T27 review C-1);
+                # the publish tool resolves the document itself, so it reads the row that
+                # stamp just wrote. The explicit `noindex=abm` below is belt to that braces.
                 _publish_web(
                     repo, derived, slug=slug, public_base=public_base, noindex=abm
                 )

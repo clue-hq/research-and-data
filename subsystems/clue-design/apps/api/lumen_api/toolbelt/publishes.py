@@ -38,6 +38,7 @@ from clue_toolbelt import (
 )
 
 from .base import DesignTool
+from ..web_export import ROBOTS_NOINDEX_META
 
 __all__ = [
     "PublishWebDocumentInput",
@@ -370,6 +371,34 @@ class RollbackWebPublishTool(DesignTool):
                 PreconditionFailure(
                     reason_code="design_publish_no_previous",
                     message=f"slug {inputs.slug!r} has no previous publish to roll back to",
+                ),
+            )
+        # R-F1 (T27 review I-1, reproduced live): rollback swaps STORED bytes with no
+        # re-render, so a previous revision that predates the durable noindex stamp would be
+        # re-served INDEXED while the document's flag still reads True — the robots meta taken
+        # off a stamped page with no explicit clearing act, by a tool a model role holds.
+        # Removal requires an explicit act (the founder's words), so a rollback that would
+        # unindex a stamped page refuses: republish (which applies the flag) or have a human
+        # clear the flag first.
+        try:
+            document = repository.require_document(str(publish.get("document_id")))
+        except Exception:
+            document = None
+        if (
+            isinstance(document, dict)
+            and document.get("web_noindex")
+            and ROBOTS_NOINDEX_META not in str(publish.get("previous_html") or "")
+        ):
+            return (
+                PreconditionFailure(
+                    reason_code="design_publish_rollback_would_unindex",
+                    message=(
+                        f"slug {inputs.slug!r} belongs to a document stamped noindex, and its "
+                        "previous revision predates the stamp — rolling back would serve the "
+                        "page INDEXED with no explicit clearing act. Republish the current "
+                        "document instead (the publish applies the stamp), or have a human "
+                        "clear the flag first."
+                    ),
                 ),
             )
         return ()

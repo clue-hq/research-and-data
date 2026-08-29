@@ -380,6 +380,10 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
 _HUMAN_ONLY_TOOLS = frozenset(
     {
         "adjust_budget",
+        # R-F1 (clone-fidelity T27): clearing a published account page's robots meta is a
+        # human act by founder ruling — the tool is registered ungranted, and this membership
+        # makes the human-only claim structural rather than a fact about today's grant table.
+        "design_set_web_noindex",
         "confirm_icp",
         "confirm_project_product",
         "confirm_account_research_directive",

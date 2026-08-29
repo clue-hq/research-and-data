@@ -827,3 +827,63 @@ def test_a_re_run_is_one_undo_away_never_a_destroyed_edit(
 
     assert undone.status_code == 200, undone.text
     assert repo.require_document(doc_id)["scene"] == scene_before
+
+
+def test_an_unpublished_abm_batch_still_stamps_the_durable_flag(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """T27 review C-1, reproduced live there: the stamp sat inside `if publish:`, so an
+    `{"abm": true, "publish": false}` run derived real ABM account pages UNSTAMPED — and the
+    next plain publish (the editor button, no noindex field) served them indexed. The stamp
+    rides the derive now, publish or not."""
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    account = _account(client, "Acme Health")
+
+    body = client.post(
+        f"/documents/{template}/web/batch",
+        json={"account_ids": [account], "publish": False, "abm": True},
+    ).json()
+    doc_id = body["manifest"][0]["document_id"]
+
+    repo = HybridRepository(workspace_id=workspace_id)
+    assert repo.require_document(doc_id)["web_noindex"] is True
+    # And the plain publish — no noindex field anywhere — serves the robots meta.
+    published = client.post(f"/documents/{doc_id}/web/publish", json={"slug": "abm-later"})
+    assert published.status_code == 200, published.text
+    from lumen_api.web_export import ROBOTS_NOINDEX_META
+
+    served = client.get(f"/w/{workspace_id}/p/abm-later")
+    assert ROBOTS_NOINDEX_META in served.text
+
+
+def test_rollback_refuses_to_serve_a_stamped_page_unindexed(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """T27 review I-1, reproduced live there: rollback swaps STORED bytes, so a previous
+    revision predating the stamp re-served the page indexed while the flag read True — the
+    meta taken off with no explicit clearing act, by a tool a model role holds. It refuses
+    now, naming the two honest ways out."""
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    account = _account(client, "Acme Health")
+    derived = client.post(
+        f"/documents/{template}/web/derive", json={"account_id": account}
+    ).json()
+    doc_id = derived["document_id"]
+    # First publish BEFORE any stamp (the pre-wave revision shape).
+    first = client.post(f"/documents/{doc_id}/web/publish", json={"slug": "abm-rollbk"})
+    assert first.status_code == 200, first.text
+    # The explicit human act stamps it; the republish applies the meta.
+    assert (
+        client.put(f"/documents/{doc_id}/web-noindex", json={"noindex": True}).status_code
+        == 200
+    )
+    second = client.post(f"/documents/{doc_id}/web/publish", json={"slug": "abm-rollbk"})
+    assert second.status_code == 200, second.text
+
+    rolled = client.post("/web/publishes/abm-rollbk/rollback")
+
+    assert rolled.status_code in (409, 422), rolled.text
+    assert "design_publish_rollback_would_unindex" in rolled.text
+    from lumen_api.web_export import ROBOTS_NOINDEX_META
+
+    assert ROBOTS_NOINDEX_META in client.get(f"/w/{workspace_id}/p/abm-rollbk").text

@@ -1127,3 +1127,21 @@ def test_losing_both_pins_of_one_band_still_reads_as_a_whole_drop(
     )
     assert "1 of them are no longer on the page at all" in warning["message"]
     assert "still on the page" not in warning["message"]
+
+
+def test_the_picker_flags_a_kept_despite_broken_family_repair(tmp_path) -> None:
+    """T27 review I-2: the R-X4 flag (`lineage_degraded_fallback`) existed on the projection
+    and the picker's whitelist dropped it — no production reader. An author browsing the
+    library must see that a seated repair's whole family is broken, not only at the pin."""
+    registry = FakeRegistry(tmp_path)
+    registry.add(HERO_ID, role="hero", label="Hero — kept per policy", html="<section/>")
+    registry.sections[HERO_ID]["degraded"] = True
+    registry.sections[HERO_ID]["degraded_reason"] = "dead_height"
+    registry.sections[HERO_ID]["lineage_degraded_fallback"] = True
+
+    result = json.loads(_tools(tmp_path, registry).search_cloned_sections())
+
+    row = next(r for r in result["results"] if r["fragment_id"] == HERO_ID)
+    assert row["lineage_degraded_fallback"] is True
+    assert "keep_flagged" in row["lineage_degraded_note"]
+    assert "needs review" in row["lineage_degraded_note"]
