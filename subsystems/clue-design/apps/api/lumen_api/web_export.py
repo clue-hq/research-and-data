@@ -1572,22 +1572,17 @@ def build_publish_package(
     )
     html = render.get("html") or ""
 
-    # R25-7 — THE TEMPLATE NEVER PUBLISHES. An ABM page is a template whose slots hold
-    # `{{account.name}}` / `{{account.logo}}` / `{{account.domain}}`; the F1.4 account derive
-    # substitutes them per account, and an UN-derived one renders the markers verbatim to
-    # whoever opens the URL. Refused here rather than warned, because this seam is the one a
-    # visitor reads: a warning on a manifest nobody opens is not a guard, and the remedy is one
-    # derive away. (The EXPORT path warns instead — see `build_export_bundle`: a zip is an
-    # inspection surface a human is already looking at, and refusing it would remove the only
-    # way to examine a template's package.)
+    # FOUNDER RULING 2026-08-29 (verbatim law: no mechanical gates on the design path that the
+    # founder did not order): the R25-7 unresolved-marker REFUSAL is demoted to a LOUD WARNING.
+    # A publish always proceeds; the manifest says what the page still shows, and deriving per
+    # account remains the way to substitute the markers. The refusal shape (and the
+    # WebExportUnresolvedMarkers type) stays available if the founder ever orders it back.
     markers = unresolved_account_markers(html)
     if markers:
-        raise WebExportUnresolvedMarkers(
-            f"document {document['id']!r} still carries unsubstituted account markers "
-            f"({', '.join(markers)}), so publishing it would show them to a visitor. This is a "
-            "TEMPLATE: derive it for an account (POST /documents/{id}/web/derive, or an ABM "
-            "batch) and publish the derived page.",
-            markers,
+        warnings.append(
+            f"this page still shows unsubstituted account markers ({', '.join(markers)}). "
+            "Published as-is per standing founder ruling; derive it for an account when you "
+            "want them personalized."
         )
 
     images = _resolve_images(web_doc)

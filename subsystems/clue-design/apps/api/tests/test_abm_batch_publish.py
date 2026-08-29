@@ -292,8 +292,9 @@ def test_an_ordinary_publish_is_byte_identical_to_what_it_was_before_this_task(
     published = client.post(
         f"/documents/{template}/web/publish", json={"slug": "insight-home"}
     )
-    # The template itself refuses (R25-7), so publish a DERIVED page through the ordinary route.
-    assert published.status_code == 422
+    # Founder ruling 2026-08-29: the template PUBLISHES (warn-loud, never refused). This
+    # test's subject is the derived page's byte-identity, so continue with the derived one.
+    assert published.status_code == 200
     account = _account(client, "Acme Health")
     derived = client.post(
         f"/documents/{template}/web/derive", json={"account_id": account}
@@ -493,24 +494,26 @@ def test_the_toggle_refuses_a_scene_document(
 # --------------------------------------------------------------------------- #
 
 
-def test_publishing_the_un_derived_template_is_refused_by_name(
+def test_publishing_the_un_derived_template_publishes_and_warns(
     client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
 ) -> None:
-    """T24 review M3. The un-derived page renders literal `{{account.name}}`; a visitor must
-    never see it, so the publish seam refuses rather than warning into a manifest nobody reads."""
+    """FOUNDER RULING 2026-08-29 (supersedes the R25-7 refusal, which the founder never
+    ordered): NO mechanical gate blocks the design path. An un-derived template PUBLISHES;
+    the manifest warns loudly about the markers it still shows; deriving remains the way to
+    personalize them."""
     template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
 
     response = client.post(
         f"/documents/{template}/web/publish", json={"slug": "abm-template"}
     )
 
-    assert response.status_code == 422, response.text
-    detail = response.json()["detail"]
-    assert detail["code"] == "web_publish.unresolved_markers"
-    assert "{{account.name}}" in detail["message"]
-    assert "derive" in detail["message"]
-    # Nothing was published.
-    assert HybridRepository(workspace_id=workspace_id).get_web_publish("abm-template") is None
+    assert response.status_code == 200, response.text
+    published = HybridRepository(workspace_id=workspace_id).get_web_publish("abm-template")
+    assert published is not None
+    manifest = published.get("manifest") or {}
+    joined = str(manifest)
+    assert "unsubstituted account markers" in joined
+    assert "{{account.name}}" in joined
 
 
 def test_the_derived_page_publishes_because_it_has_no_markers_left(
