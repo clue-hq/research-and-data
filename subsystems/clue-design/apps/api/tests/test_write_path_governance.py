@@ -329,6 +329,11 @@ def test_design_tool_names_are_stable() -> None:
         "design_create_document",
         "design_set_agent_instructions",
         "design_set_layout_managed_editing",
+        # Clone-fidelity F4.3, ruling R-F1: the durable `noindex` stamp on a WEB document. Its
+        # two neighbours above are scene-side; this one is here because it is the same kind of
+        # thing — one named value assigned to one document — and because the platform's C6
+        # authority map mirrors this set, so a new tool has to be a deliberate line.
+        "design_set_web_noindex",
         "design_replace_scene",
         "design_apply_operations",
         "design_apply_edits",

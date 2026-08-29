@@ -68,13 +68,18 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # tools) with this branch's own additions since the common base: 63 + 49 + 2 = 114.
     # Brand Ad Assets v1 W2 adds the ad-assets lane's four write envelopes, all UNGRANTED
     # (114 -> 118) — see the carve-out below.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 118
+    # Clone-fidelity F4.3 / FOUNDER RULING R-F1 (2026-08-29) adds `design_set_web_noindex`,
+    # UNGRANTED (118 -> 119). The ruling makes clearing a published ABM page's robots meta an
+    # explicit HUMAN act; the design API's route invokes the tool as actor="human" and the ABM
+    # batch stamps it ON through the same door. A model surface that held it could take the
+    # noindex off an account page, which is the one thing the ruling exists to prevent.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 119
     assert C6_AGENT_TOOL_AUTHORITY["open_design_leg"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["finish_design_leg"] == (AgentRole.DESIGN,)
     design_grants = {
         name: roles for name, roles in C6_AGENT_TOOL_AUTHORITY.items() if name.startswith("design_")
     }
-    assert len(design_grants) == 53
+    assert len(design_grants) == 54
     # The Brand Ad Assets lane is MACHINE-INVOKED, on exactly the terms `synthesize_entity_prose`
     # and `synthesize_value_narrative` already established below: its onboarding job's worker
     # calls these through the design toolbelt (actor="agent"), and no model surface plans a
@@ -90,10 +95,17 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     }
     assert AD_ASSETS_LANE <= set(design_grants)
     assert all(design_grants[name] == () for name in AD_ASSETS_LANE)
+    # Clone-fidelity F4.3 / ruling R-F1: the second ungranted design write, and for a different
+    # reason from the ad-assets lane's. That lane is machine-invoked and merely unplanned by any
+    # model; this one is HUMAN-ONLY by ruling — clearing a published ABM page's robots meta is an
+    # explicit act of the person, so no role may hold the tool that can do it.
+    HUMAN_ONLY_DESIGN = {"design_set_web_noindex"}
+    assert HUMAN_ONLY_DESIGN <= set(design_grants)
+    assert all(design_grants[name] == () for name in HUMAN_ONLY_DESIGN)
     assert all(
         roles == (AgentRole.DESIGN,)
         for name, roles in design_grants.items()
-        if name not in AD_ASSETS_LANE
+        if name not in AD_ASSETS_LANE | HUMAN_ONLY_DESIGN
     )
     assert C6_AGENT_TOOL_AUTHORITY["create_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["rename_thread"] == ()

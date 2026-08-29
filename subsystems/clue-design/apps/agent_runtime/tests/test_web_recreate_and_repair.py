@@ -1795,6 +1795,22 @@ def test_releasing_a_harvested_clone_is_refused_and_names_the_surface_that_does_
     assert registry.release_calls == []
 
 
+def test_a_preview_less_section_that_is_not_a_repair_is_refused_without_being_photographed(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """The gates run BEFORE the render, and that ordering is load-bearing: rendering first would
+    take a picture of a harvested clone on the way to refusing it anyway, and would answer
+    "a preview has been rendered" to a caller whose real problem is that this is not a repair."""
+    registry.rows[NAV_ID]["preview_digest"] = None
+    tools = _tools(tmp_path, registry)
+
+    refused = json.loads(tools.release_repair(NAV_ID))
+
+    assert refused["error_code"] == "repair.not_a_repair"
+    assert registry.render_calls == []
+    assert registry.release_calls == []
+
+
 def test_releasing_an_already_released_repair_says_so_rather_than_reporting_success(
     tmp_path: Path, registry: FakeRegistry
 ) -> None:

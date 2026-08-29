@@ -5946,49 +5946,29 @@ class LumenWebTools:
                 "release_repair needs the `fragment_id` of the repair the user approved.",
             )
 
-        # The picture FIRST, and this call cannot release on the round that makes it. Ruling R-X9
-        # says a human may never be asked to approve something nobody can see, so a repair with
-        # no preview is not "released once we have rendered one" — it is rendered, refused, and
-        # handed back so the render can actually be shown and the question actually asked.
-        try:
-            rendered = registry.render_repair_preview(clean_id, self.core)
-        except Exception as error:  # noqa: BLE001 - capability + browser boundary
-            rendered = None
-            render_refusal = f"{getattr(error, 'code', type(error).__name__)}: {error}"
-        else:
-            render_refusal = None
-        if rendered:
-            self._refresh_cloned_section_preview(registry, clean_id)
-            return self._tool_error(
-                "release.preview_rendered",
-                f"nothing was released. Repair {clean_id} had no preview, so one has just been "
-                f"rendered from its own bytes. Look at it with view(\"cloned_section:{clean_id}\"), "
-                "explain the repair to the user — what was broken, what your replacement does, "
-                "which rung — and ask whether to release it. Call release_repair again only "
-                "after they say yes.",
-                fragment_id=clean_id,
-            )
-
+        # THE GATES FIRST, the render second, and never the release on the round that renders.
+        #
+        # Order matters twice over. Asking the gate first means a harvested clone or an already
+        # released row is refused as what it is, rather than having a picture taken of it on the
+        # way to being refused anyway. And `repair.no_preview` is the ONE refusal this tool can
+        # do something about — ruling R-X9 says a human may never be asked to approve something
+        # nobody can see, so the answer is not "release once we have rendered one": it is render,
+        # refuse, and hand the picture back so the question can actually be asked.
         try:
             released = registry.release_repair(clean_id)
         except FragmentRefused as refusal:
-            message = str(refusal.message)
-            if refusal.code == "repair.no_preview" and render_refusal:
-                # The gate's sentence plus the reason the remedy it names did not work. Without
-                # this the agent is told to render a preview it has just failed to render.
-                message = (
-                    f"{message} The render was attempted here and could not be made: "
-                    f"{render_refusal}. Tell the user the repair cannot be shown, and leave it "
-                    "as a draft."
-                )
+            if refusal.code == "repair.no_preview":
+                return self._render_repair_preview_and_ask(registry, clean_id, refusal)
             self.record(
                 "author",
                 "cloned_section_release_refused",
                 input_summary=clean_id,
-                output_summary=f"{refusal.code}: {message}"[:500],
+                output_summary=f"{refusal.code}: {refusal.message}"[:500],
                 payload={"fragment_id": clean_id, "error_code": refusal.code},
             )
-            return self._tool_error(str(refusal.code), message, fragment_id=clean_id)
+            return self._tool_error(
+                str(refusal.code), str(refusal.message), fragment_id=clean_id
+            )
         except Exception as error:  # noqa: BLE001 - capability boundary
             return self._tool_error(
                 "release.failed",
@@ -6025,6 +6005,45 @@ class LumenWebTools:
                 ),
             },
             indent=2,
+        )
+
+    def _render_repair_preview_and_ask(
+        self, registry: Any, fragment_id: str, refusal: Any
+    ) -> str:
+        """Make the evidence, then refuse anyway — the second half of "explain first" (R-X9).
+
+        Reached only from the ONE refusal a render can answer, and only for a row the gates have
+        already agreed is a draft repair.
+        """
+        try:
+            rendered = registry.render_repair_preview(fragment_id, self.core)
+        except Exception as error:  # noqa: BLE001 - capability + browser boundary
+            # The gate's sentence PLUS why the remedy it names did not work. Without the second
+            # half the agent is told to render a preview it has just failed to render, and
+            # spends a round discovering that.
+            code = getattr(error, "code", None) or type(error).__name__
+            return self._tool_error(
+                str(refusal.code),
+                f"{refusal.message} The render was attempted here and could not be made: "
+                f"{code}: {error}. Tell the user the repair cannot be shown, and leave it as a "
+                "draft.",
+                fragment_id=fragment_id,
+            )
+        if not rendered:
+            # The gate said "no preview" and the render says one is already attached: a race,
+            # not a state. Report the gate's own words rather than inventing a third story.
+            return self._tool_error(
+                str(refusal.code), str(refusal.message), fragment_id=fragment_id
+            )
+        self._refresh_cloned_section_preview(registry, fragment_id)
+        return self._tool_error(
+            "release.preview_rendered",
+            f"nothing was released. Repair {fragment_id} had no preview, so one has just been "
+            f'rendered from its own bytes. Look at it with view("cloned_section:{fragment_id}"), '
+            "explain the repair to the user — what was broken, what your replacement does, "
+            "which rung — and ask whether to release it. Call release_repair again only after "
+            "they say yes.",
+            fragment_id=fragment_id,
         )
 
     def _refresh_cloned_section_preview(self, registry: Any, fragment_id: str) -> None:
