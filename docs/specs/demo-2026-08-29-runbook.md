@@ -83,7 +83,7 @@ curl -s -o /dev/null -w 'public:%{http_code}\n' https://app.cluehq.ai/
 ## Deferred/open items
 
 - Cursor landing page commit (previews built, never committed — see above)
-- SVG-in-editor real fix (D3 class, ~1–2 days, spec'd in ledger); the raster band-aid covers existing ads
+- ~~SVG-in-editor real fix~~ **CANVAS HALF DONE 2026-08-29 (commit 9c473d043):** the editor now renders SVG assets natively (browser-decode in imageCache, both editor copies, crisp-at-zoom ladder); new designs need no PNG twins. The four demo docs keep their raster band-aids (founder ruling: demo artifacts untouched). Still open: the agent-eyes D3 preview fix (corner field + LUME0210 no-cache guard + materialize)
 - OpenAI ad lane (video-only on LinkedIn; needs the Wave C second harvest source)
 - Old broken Apollo test project `prj_19a43a55…` (terra-era failures) — delete or keep, founder call
 - Wave C decision list (see `_memory/2026-08-26-brand-ad-assets-spec-and-w1.md`)

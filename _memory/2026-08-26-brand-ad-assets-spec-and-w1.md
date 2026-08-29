@@ -395,3 +395,158 @@ validating process freezes the refs, envelope becomes truth), and/or a loud
 "lane flag off in claiming process" log line. OPERATIONAL RULE NOW: any
 auxiliary/temporary API must set LUMEN_EMBEDDED_FLEET_WORKER=0 (knob
 exists); before the demo, verify EXACTLY ONE design API is running.
+
+## WAVE C CONSOLIDATED TO-DO LIST (compiled 2026-08-29, post-successful-demo)
+
+The runbook (docs/specs/demo-2026-08-29-runbook.md) points here as the Wave C
+decision list. Everything observed across Waves A/B and the demo sessions:
+
+**Structural pipeline fixes**
+1. W4 auto-attach: compose at OFFER time into the envelope (claiming-process
+   env divergence silently strips refs — the W-B2 root cause) + loud
+   "lane flag off in claiming process" log.
+2. W-B1 double-distill orphaning pregen assets (card_version drift) —
+   idempotency/re-drive guard, same multi-worker root-cause family.
+3. D3 real SVG fix (W-B5 forensic): raster node missing `corner` field,
+   bare except swallowing CoreError, stub-core tests. ~1-2 days. The
+   demo-night raster band-aid covers only 4 documents.
+4. W-B4: LUMB0810 logo guard covers kit slots only — harvested look-alike
+   placed as logo unguarded.
+
+**Harvest coverage & resolution**
+5. Second harvest source (video-only advertisers: OpenAI all-video,
+   Cursor 24/24 sponsored InMails — the OpenAI ad-lane blocker).
+6. W-B3 PDL advertiser-page vs legal-entity mis-resolution
+   (cursor.com → anysphere/0-ads, not Cursor/4489); W-B3b
+   advertiser_verified:true is VACUOUS on a 0-ad harvest.
+
+**Ingestion & extraction quality**
+7. D8 anchor artwork-blind (intercom customer-montage, cursor wallpaper,
+   notion calendar icon accepted as marks).
+8. reversed slot empty 12/12; wordmark slot 0/12 correct.
+9. BRAND-COLOR ELECTION DEFECT (demo forensics, previously unrecorded):
+   Apollo kit elected cyan (phone-widget focus rule) + purple (academy
+   course styling) as brand colors. Fix direction: weight candidate colors
+   by RENDERED PIXELS, not stylesheet presence. Fixed kit v2 was hand-
+   corrected for the demo (yellow/black).
+10. Ramp captured 1 asset while "succeeding"; WOFF2-in-SVG export;
+    brand preflight overwrites style($type.*) sizes.
+
+**Robustness / ops**
+11. R4-A: transient APIConnectionError kills whole turn (orchestrator
+    doesn't retry; leaves do).
+12. Unclaimable-job silence (A2 founder question).
+13. Stale-process hygiene: operational rule only, no structural guard.
+14. IMAGE_MODEL_TIMEOUT_S code-side default; 5 unclassified apps/api test
+    failures need base A/B (asset_base_url x2, theme-leak, brand_geometry x2).
+
+**Founder decisions pending**
+15. W1.9 ingestion-depth knob; pregeneration spend cap; spec §8 backstop
+    nod + Adyntel commercial plan; D6 skill-honesty fix (Images transport
+    cannot do transparent backgrounds); old Apollo project prj_19a43a55…
+    delete-or-keep.
+
+**Riding alongside (demo leftovers, not Wave C proper)**
+16. Cursor landing page never committed (run died overnight; iter_4
+    previews excellent) — re-run or direct-commit at next bring-up.
+CLOSED: input_references on the Images endpoint proven working (B4 probe).
+
+## D3 REAL-ENGINE DIAGNOSIS (2026-08-29, founder-requested, no stubs)
+
+Reproduced live against the release lumen-api-helper + the demo DB's real
+Apollo SVG assets (asset_ing_5b8ddd0394761a53 wordmark, asset_ing_bf83027…
+mark, ws_8163898e0d0e4420b578bdbc57d7f3e4). Script /tmp/d3_real_engine_repro.py.
+Four probes:
+A. Shipped rasterize_vector_preview → None for both (silent live failure).
+B. Swallow removed → CoreError [helper.operation] "missing field `corner`"
+   for both. Root cause CONFIRMED: _raster_image_node (asset_preview.py:139)
+   ends at transform; scene.rs:284 `pub corner: CornerRadii` has NO
+   serde(default). Working twin: lumen_ingestion/pipeline.py builder carries
+   corner + ensure_materialized read-through.
+C. corner supplied, nothing else → real PNGs (12KB wordmark renders genuine
+   yellow-asterisk+Apollo; 27KB mark). Rest of mechanism sound.
+D. NEW FINDING (worse than audit predicted): corner fixed + COLD engine
+   cache → engine does NOT fail; it paints a BLANK WHITE 512×512 and returns
+   it as a valid PNG with only a LUME0210 warning diagnostic
+   ("asset.bytes_missing", severity warning, artifacts still emitted).
+   rasterize_vector_preview would CACHE that blank under the content digest
+   (svg-preview/<digest>.png, cached.exists() short-circuit) → PERMANENT
+   poisoning: agent forever sees blank for that logo. Audit predicted
+   "fails silently"; reality is "succeeds wrongly and pins it".
+No svg-preview dir exists anywhere in the tree → nothing poisoned yet.
+Both lanes still route through the one function (view.py:263,
+web_substrate.py:7861 post-merge).
+
+FIX PLAN (agreed shape, pending founder go): (1) add corner to the node (or
+share one builder with ingestion); (2) refuse-to-cache/return-None when
+export diagnostics carry LUME0210 (or any bytes_missing) for the raster
+node — the poisoning guard; (3) materialize bytes before render (mirror
+ingestion's ensure_materialized) so cold-cache SVGs actually render;
+(4) narrow the bare except to CoreError + log at warning; (5) REAL-ENGINE
+pytest tier: red-case "node schema accepted by real helper", cold-cache
+"never caches a LUME0210 artifact", warm-cache "PNG has non-background
+pixels" — no _RasterizingCore stubs for these.
+
+## CANVAS SVG NATIVE-RENDER PLAN (Option A, ratified direction 2026-08-29; awaiting founder go)
+
+Founder ruling: SVG assets stay SVG — no PNG twins; rasterize invisibly at
+draw time at current zoom so always crisp. Codebase analysis findings:
+- Defect site: imageCache.load() feeds SVG bytes to ck.MakeImageFromEncoded
+  (PNG/JPEG/WebP only) → null → state failed → grey placeholder.
+- TWO COPIES (AD4.C pattern): apps/frontend/src/features/design-editor/
+  engine/scene/canvaskit/imageCache.ts:100 (the DEPLOYED editor — what the
+  founder saw) and subsystems/clue-design/apps/editor/src/engine/canvaskit/
+  imageCache.ts:100. Same line, same code. Fix lands in both.
+- Draw path needs ZERO changes: drawImage maps full src→dst; crop/focal
+  (focalCropGeometry) computed in dst space from RECORD aspect ratio;
+  decodedRatio fallback picks up the SVG raster's ratio correctly (vector
+  records have raster:null → naturalAspectRatio null → decoded fallback).
+- URL/mime: sceneAssetBytesUrl serves /asset-store/{digest}; cache sees only
+  bytes → detect SVG by byte-sniff (<?xml / <svg), no interface change.
+Design: SVG branch in load(): blob URL → new Image() → img.decode() →
+intrinsic from naturalWidth/viewBox (default 512) → offscreen 2D canvas at
+intrinsic×bucket → ck.MakeImageFromCanvasImageSource. Keep SVG text in entry
+for re-decode. Crispness ladder: stage flush() calls setViewScale(zoom×dpr);
+needed bucket = pow2 ≥ viewScale, raster longest side capped 4096; async
+re-decode+swap on bucket increase (onLoad→invalidate). Decode failure →
+existing failed semantics. NOT createImageBitmap(svgBlob) — unreliable
+cross-browser; Image-element route is universal.
+Tests: vitest unit (sniff/ladder/swap; decode seam injected — jsdom cannot
+rasterize SVG, stated honestly) + REAL Playwright proof in Chrome against
+live stack: seeded doc w/ real Apollo SVG wordmark, canvas screenshot
+non-grey assertion + 4× zoom sharpness; existing visual-regression suite
+untouched. Server untouched (Skia svg::Dom already renders SVG on export).
+Cleanup: re-point band-aided docs to SVG assets — doc_1c35a98d, doc_a25a2d79
+(Apollo), doc_c451f16c (Stripe); doc_75111d69 Cursor STAYS founder PNG
+lockup (content ruling, not band-aid). Estimate ~1.5 days both copies +
+tests + re-point. Risks: browser-vs-Skia SVG fidelity (goldens), 4096 cap
+memory, external-ref SVGs (blocked in <img> docs — logos self-contained).
+
+## CANVAS SVG NATIVE RENDER — SHIPPED (2026-08-29, commit 9c473d043)
+
+Wave-C item 3's CANVAS half is done (the agent-eyes D3 rasterize_vector_preview
+fix — corner field / LUME0210 guard / materialize — remains open, next up).
+Landed in BOTH editor copies (platform frontend scene editor + subsystem
+editor), identical files: imageCache byte-sniffs SVG and routes it to the
+browser's own renderer (objectURL → img → 2D canvas →
+MakeImageFromCanvasImageSource; NOT createImageBitmap(svgBlob) — flaky
+cross-engine); assets stay SVG everywhere, pixels are in-memory only.
+Crispness ladder = viewScale(zoom×dpr) × PLACEMENT STRETCH — the draw path
+reports each image's painted box via noteDrawSize (founder caught the
+zoom-only ladder as live pixelation: 152×26 intrinsic placed 280×56 at 200%
+retina → 608px raster painted over ~1120 device px). Pow2 buckets, 4096px
+side cap, swap-on-ready, no zoom-out re-decode, failed-sharpen retries only
+on new scale, invalidate-during-sharpen dropped (no resurrect/double-free).
+13 unit tests per copy (rasterizer seam injected — jsdom can't rasterize
+SVG) + REAL browser proof vs live design API: scratch doc
+doc_1dd1efb0d29048cf87edbcf5465456c1 (ws Apollo), SVG at intrinsic AND
+5×-stretch, crisp at deep zoom, performance-log proof only SVG bytes fetched.
+DEMO ARTIFACTS UNTOUCHED per founder mid-flight ruling: doc_1c35a98d was
+briefly re-pointed to SVG (v105) and REVERTED to its PNG twin (v106);
+doc_a25a2d79 / doc_75111d69 / doc_c451f16c never touched. The PNG-twin
+re-point cleanup is therefore OPTIONAL now (new designs need no twins).
+WASM-mirror clarification (chased during this work): apps/frontend/public/
+vendor/wasm is GENERATED by scripts/copy-design-vendor.mjs (pre-dev/build/
+test) from the COMMITTED subsystem artifact — Railway regenerates it per
+build, so e453218bd did fully fix the deployed handshake; only the local
+generated dir was stale (W5 stamp test caught it; refreshed).
