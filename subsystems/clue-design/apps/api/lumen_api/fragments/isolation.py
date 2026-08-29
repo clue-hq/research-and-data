@@ -243,18 +243,32 @@ async def _shoot(page_html: str, selector: str, assets: Mapping[str, tuple[str, 
                     "is nothing to photograph",
                 )
             if not await element.is_visible():
-                # The walk's F-3, said honestly instead of timed out: a dormant section's
-                # harvested CSS carries the source's own hiding rules, and an artifact minted
-                # BEFORE the phase fix wave's un-hide block still obeys them — Playwright would
-                # wait the full timeout for an element that can never become visible. New mints
-                # carry the counter-rules, so reaching this refusal means the artifact predates
-                # them and a re-ingest re-mints it renderable.
-                raise IsolationRenderFailed(
-                    "isolation.section_hidden_by_its_own_css",
-                    "the fragment rendered but is invisible: its harvested CSS still hides the "
-                    "section's root — this artifact predates the un-hide mint mechanics, so "
-                    "re-ingest the site to re-mint it with the counter-rules appended",
+                # F4 wave item 1 (the CP2 walk's F-2 — this class has now been missed at TWO
+                # checkpoints): the mint-side countermand is a CSS-specificity fight it can
+                # lose (the walk's live case: a source `.section:has(…)` rule outranks the
+                # single-compound counter-rule), so the isolation shell stops fighting in the
+                # stylesheet and forces the ROOT visible on the live DOM — an inline
+                # `!important` outranks any stylesheet rule regardless of selector
+                # specificity. The STORED artifact is untouched (this is a photograph, not an
+                # edit), and the old refusal's remedy ("re-ingest") was FALSE for artifacts
+                # minted with the un-hide mechanics active, so it only fires now when even the
+                # inline force cannot surface the element — with a message that says what is
+                # actually true.
+                await element.evaluate(
+                    "el => { el.style.setProperty('display', 'revert', 'important');"
+                    " el.style.setProperty('visibility', 'visible', 'important');"
+                    " el.style.setProperty('opacity', '1', 'important'); }"
                 )
+                if not await element.is_visible():
+                    raise IsolationRenderFailed(
+                        "isolation.section_hidden_by_its_own_css",
+                        "the fragment rendered but stays invisible even with its root forced "
+                        "visible inline — the hiding lives below the root (a hidden ancestor "
+                        "structure or a collapsed descendant), where an automatic un-hide "
+                        "would fabricate a layout the source never had. This section cannot "
+                        "be previewed honestly; repair it through the ladder instead of "
+                        "activating it blind.",
+                    )
             return await element.screenshot(type="png")
         finally:
             await browser.close()

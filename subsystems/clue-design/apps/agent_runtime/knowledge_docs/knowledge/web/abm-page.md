@@ -74,9 +74,14 @@ from cloned chrome. Pinned clones keep their own ids.
    tied to something the brief says about the account (their stack, their
    scale, their stated pain). A feature you cannot map to the account does
    not belong on this page.
-5. **verified resources** — 2–3 links (case study, docs, security page)
-   given in the brief or resolvable on the seller's real site. Never guess
-   resource paths; unverifiable → omit the item, and the section below 2.
+5. **verified resources** — NAMED, NOT LINKED. An ABM page exists to hold one
+   visitor on one argument, and the rubric makes any link beyond the single
+   CTA and the footer's legal links a BLOCKING finding (F4 wave: the old
+   "2–3 links" wording here instructed the exact escape routes the rubric
+   forbids — the recipe yields to the rubric). Cite the case study, doc or
+   security page by NAME as static text ("SOC 2 report available on the
+   first call"); the one CTA is the door to all of it. No resource is
+   verifiable → omit the item, and the section below 2.
 6. **"how we'd work together"** — 3 short numbered steps from first call to
    value, concrete to this account's context (pilot scope, rollout shape).
 7. **conversion CTA band** — statement background, h2 addressed to the

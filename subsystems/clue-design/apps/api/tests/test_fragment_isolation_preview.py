@@ -402,9 +402,12 @@ def test_a_foreign_workspaces_fragment_cannot_be_given_a_preview(
 
 def test_an_invisible_render_refuses_typed_instead_of_timing_out():
     """Phase fix wave, walk F-3's inspector half: a pre-wave dormant artifact still obeys the
-    source's hiding CSS, and screenshotting an invisible element would only wait out the
-    timeout. `_shoot` refuses first, with a code that tells the human the honest remedy
-    (re-ingest; new mints carry the un-hide counter-rules)."""
+    source's hiding CSS. F4 wave item 1 (the CP2 walk's F-2 — missed at TWO checkpoints):
+    the stylesheet countermand is a specificity fight it can lose (`.section:has(...)` outranks
+    it), so `_shoot` now FORCES the root visible inline on the live DOM (an inline !important
+    outranks any stylesheet rule), re-checks, and refuses only if the element STAYS invisible —
+    with a message that is true (the old "re-ingest" remedy was false for artifacts minted with
+    the mechanics active)."""
     import inspect
 
     from lumen_api.fragments.isolation import IsolationRenderFailed, _shoot
@@ -415,6 +418,14 @@ def test_an_invisible_render_refuses_typed_instead_of_timing_out():
     source = inspect.getsource(_shoot)
     assert "is_visible" in source
     assert source.index("is_visible") < source.index('element.screenshot(type="png")')
+    # The force-visible sits BETWEEN the first check and the refusal, targets the live DOM
+    # (element.evaluate, never the stored artifact), and the refusal fires only on a SECOND
+    # is_visible miss.
+    force_at = source.index("setProperty('display', 'revert', 'important')")
+    assert source.index("is_visible") < force_at < source.rindex("is_visible")
+    assert "element.evaluate" in source
+    assert "re-ingest the site" not in source  # the false remedy is gone
+    assert "repair it through the ladder" in source
 
     refusal = IsolationRenderFailed(
         "isolation.section_hidden_by_its_own_css", "hidden by its own css"

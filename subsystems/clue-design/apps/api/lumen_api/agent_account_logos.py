@@ -62,6 +62,11 @@ from .database import NotFoundError
 from .design_store import CustodyState, DesignBlobStore, HybridRepository
 from .observability import log_event
 
+# The ladder's own renderability predicate (one home, no drift): the bind door and the ladder
+# must agree about what "a renderable mark" means. Cross-package import is the established
+# direction (`lumen_ingestion` and `lumen_api` import each other at composition seams).
+from lumen_ingestion.logo_ladder import svg_is_renderable
+
 JsonObject = Dict[str, Any]
 
 _logger = get_logger("lumen_api.agent_account_logos")
@@ -205,6 +210,29 @@ class DurableAgentAccountLogoBinder:
                 "binding it would point this account at an image no page can serve. The account "
                 "was left as it was; an empty account logo is CORRECT.",
             )
+
+        # THE MARK MUST BE ABLE TO PAINT (F4 wave item 2, the CP2 walk's F-3): the ladder
+        # accepted a 124-byte sprite-reference SVG — no viewBox, no artwork — and the bind
+        # reported success while every derived page rendered a 0×0 nothing. "bound: true with
+        # nothing delivered" is the exact failure mode this plan's data model exists to
+        # prevent, so an SVG that cannot paint standalone refuses HERE, before any durable
+        # write. The predicate is the ladder's own (one home, no drift).
+        media = stored_record.get("media") if isinstance(stored_record, dict) else None
+        mime = str((media or {}).get("mime_type") or "").lower()
+        if "svg" in mime:
+            try:
+                svg_bytes = self.blobs.read(digest_value)
+            except Exception:  # noqa: BLE001 - the custody probe above already vouched
+                svg_bytes = None
+            if svg_bytes is not None and not svg_is_renderable(svg_bytes):
+                raise AccountLogoRefused(
+                    "account_logo.no_renderable_mark",
+                    f"asset {asset_id!r} is an SVG that cannot paint anything on its own — no "
+                    "intrinsic geometry or no drawable artwork (a sprite reference, not a "
+                    "logo). Binding it would report a co-brand that renders 0×0 on every "
+                    "page. The account was left as it was; an empty account logo is CORRECT, "
+                    "and a real file from the client beats a broken fetch.",
+                )
 
         # G1 — the registry `require_asset_record` (and therefore `account_values`) reads. The
         # store write is a content-addressed upsert, so re-binding the same mark converges.

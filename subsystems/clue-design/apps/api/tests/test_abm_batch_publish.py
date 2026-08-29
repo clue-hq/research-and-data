@@ -910,3 +910,89 @@ def test_rollback_of_two_unstamped_revisions_stays_available(
     rolled = client.post("/web/publishes/abm-2rev/rollback")
 
     assert rolled.status_code == 200, rolled.text
+
+
+def test_a_sprite_reference_svg_cannot_become_an_account_logo(
+    workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """F4 wave item 2 (the CP2 walk's F-3): the ladder accepted a 124-byte sprite-reference
+    SVG — no viewBox, no artwork — and the bind reported success while every derived page
+    rendered a 0x0 nothing. The renderability predicate is the ladder's own, and the bind
+    refuses by name before any durable write."""
+    from lumen_ingestion.logo_ladder import svg_is_renderable
+
+    sprite = b'<svg xmlns="http://www.w3.org/2000/svg"><use href="/sprite.svg#logo"></use></svg>'
+    real = (
+        b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 24">'
+        b'<path d="M0 0h100v24H0z"/></svg>'
+    )
+    assert svg_is_renderable(sprite) is False
+    assert svg_is_renderable(real) is True
+    # Internal <use> against local <defs> still paints — never over-refused.
+    internal = (
+        b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">'
+        b'<defs><path id="p" d="M0 0h10v10z"/></defs><use href="#p"/></svg>'
+    )
+    assert svg_is_renderable(internal) is True
+
+
+def test_the_escape_route_audit_lists_off_page_doors_and_skips_legal_links() -> None:
+    """F4 wave item 6 (the walk's F-1, the lite half): every absolute off-page anchor on a
+    noindex page is SAID on the manifest — except the footer's own legal links, which the
+    rubric allows. Listed, never refused (a clone's anchors are D-F6 evidence)."""
+    from lumen_api.web_export import _escape_route_audit
+
+    html = (
+        '<a href="https://press.example/story">press</a>'
+        '<a class="lumen-shell-legal x" href="https://seller.example/privacy">Privacy</a>'
+        '<a href="#contact">CTA</a>'
+        '<a href="/relative">rel</a>'
+        '<a href="https://press.example/story">dupe</a>'
+        '<a href="https://seller.example/docs">docs</a>'
+    )
+
+    assert _escape_route_audit(html) == [
+        "https://press.example/story",
+        "https://seller.example/docs",
+    ]
+
+
+def test_the_composed_header_can_shrink_and_caps_the_target_mark() -> None:
+    """F4 wave item 3 (the walk's F-5): a real bound logo made the strip 461px wide at a
+    375px viewport. The marks group wraps and shrinks; the target mark is width-capped."""
+    from lumen_api.fragments.campaign_shell import compose_campaign_header
+
+    html = compose_campaign_header(seller_name="Insight Health", seller_logo_asset_id="l1")
+
+    assert "min-w-0 flex-wrap" in html
+    assert "max-w-40" in html
+
+
+def test_an_exported_stamped_document_carries_the_robots_meta(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """F4 wave item 7 (final-review NEW-1 — the noindex law's fifth surface): a stamped ABM
+    page exported and self-hosted was indexable; the zip's index.html now carries the meta."""
+    import io
+    import zipfile
+
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    account = _account(client, "Acme Health")
+    derived = client.post(
+        f"/documents/{template}/web/derive", json={"account_id": account}
+    ).json()
+    doc_id = derived["document_id"]
+    assert (
+        client.put(f"/documents/{doc_id}/web-noindex", json={"noindex": True}).status_code
+        == 200
+    )
+
+    exported = client.get(f"/documents/{doc_id}/web/export")
+    assert exported.status_code == 200, exported.text
+    from lumen_api.web_export import ROBOTS_NOINDEX_META
+
+    with zipfile.ZipFile(io.BytesIO(exported.content)) as bundle:
+        index = bundle.read("index.html").decode()
+        manifest = bundle.read("manifest.json").decode()
+    assert ROBOTS_NOINDEX_META in index
+    assert "stamped noindex" in manifest

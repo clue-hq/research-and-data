@@ -368,6 +368,13 @@ def create_web_deepagent(
         # is the only role that writes to the document.
         tools.search_cloned_sections,
         tools.provenance,
+        # F4 wave item 4 (the CP2 walk's F-4): the logo ladder lived only on the author role,
+        # so a director's "bind logos, change nothing" delegation to a generic subagent bound
+        # NOTHING and reported success. Neither tool writes the document — fetch_logo ingests
+        # assets and bind_account_logo stamps the ACCOUNT row — so the author-owns-the-document
+        # law survives their presence here.
+        tools.fetch_logo,
+        tools.bind_account_logo,
         tools.list_custom_components,
         tools.inspect_custom_component,
         tools.render_web_preview,

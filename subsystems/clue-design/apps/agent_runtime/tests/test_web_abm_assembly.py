@@ -1073,3 +1073,18 @@ def test_the_marker_grammar_the_agent_reads_is_double_braced(prompt_of) -> None:
     assert "{{account.logo}}" in rendered
     # And no single-braced variant anywhere — the broken rendering, pinned extinct.
     assert re.search(r"(?<!\{)\{account\.(name|domain|logo)\}(?!\})", rendered) is None
+
+
+def test_the_ladder_reaches_the_orchestrator_role() -> None:
+    """F4 wave item 4 (the CP2 walk's F-4): the ladder lived only on the author role, so a
+    director's "bind logos" delegation to a generic subagent bound NOTHING and reported
+    success. Neither tool writes the document, so the author-owns-the-document law survives."""
+    import inspect
+
+    from lumen_agent import harness_web
+
+    source = inspect.getsource(harness_web)
+    start = source.index("orchestrator_tools = [")
+    block = source[start : source.index("]", start)]
+    assert "tools.fetch_logo" in block
+    assert "tools.bind_account_logo" in block

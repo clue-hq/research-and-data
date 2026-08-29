@@ -86,6 +86,30 @@ HOME_PAGE_ID = "home"
 # be absent from the index. Per page, never global.
 ROBOTS_NOINDEX_META = '<meta name="robots" content="noindex">'
 
+#: One anchor tag, for the escape-route audit below.
+_ANCHOR_TAG = re.compile(r"<a\b[^>]*>", re.I)
+_ANCHOR_HREF = re.compile(r'href\s*=\s*["\'](https?://[^"\']+)["\']', re.I)
+
+
+def _escape_route_audit(html: str) -> List[str]:
+    """Absolute off-page anchor destinations, minus the footer's legal links (F4 wave F-1c).
+
+    An ABM page exists to hold one visitor on one argument, and the rubric makes any link
+    beyond the CTA and the legal links BLOCKING — but the shape gate governs only the shells,
+    so a cloned proof band's press links or a composed band's resource links reach the page
+    ungated. This audit does not refuse (a clone's own anchors are somebody's real markup,
+    D-F6's evidence); it makes the doors VISIBLE on the publish manifest so a human judges
+    them instead of discovering them from analytics.
+    """
+    destinations: List[str] = []
+    for tag in _ANCHOR_TAG.findall(html):
+        if "lumen-shell-legal" in tag:
+            continue
+        href = _ANCHOR_HREF.search(tag)
+        if href and href.group(1) not in destinations:
+            destinations.append(href.group(1))
+    return destinations
+
 # SEO description budget.
 DESCRIPTION_MAX = 155
 
@@ -1410,6 +1434,18 @@ def build_export_bundle(
         og_image=og_image,
     )
     head += '<link rel="stylesheet" href="site.css">\n'
+    # F4 wave item 7 (final-review NEW-1 — the noindex law's FIFTH surface): the export bundle
+    # never read the durable flag, so a stamped ABM page exported and self-hosted was
+    # indexable. The document's own `web_noindex` rides into the zip's head, and the manifest
+    # says so, exactly as publish does.
+    if document.get("web_noindex"):
+        head += ROBOTS_NOINDEX_META + "\n"
+        warnings.append(
+            "this document is stamped noindex (an ABM account page): the exported index.html "
+            "carries the robots meta, and wherever this zip is hosted the page will ask not "
+            "to be indexed. Clearing the stamp is an explicit act on the document, not an "
+            "edit to this file."
+        )
     head += (
         '<meta http-equiv="Content-Security-Policy" content="'
         f'{_escape_attr(_delivery_csp(meta=True))}">\n'
@@ -1579,6 +1615,17 @@ def build_publish_package(
     )
     if noindex:
         head += ROBOTS_NOINDEX_META + "\n"
+        # F4 wave item 6 (the CP2 walk's F-1, the lite half): every off-page door on a
+        # noindex page, said on the manifest. Listed, never refused — see the audit's
+        # docstring for why.
+        escape_routes = _escape_route_audit(html)
+        if escape_routes:
+            warnings.append(
+                "escape-route audit (noindex account page): this page links off itself to "
+                + ", ".join(escape_routes)
+                + " — the rubric allows only the CTA and the footer's legal links; judge "
+                "each of these deliberately."
+            )
     head += f'<style id="lumen-static-css">{site_css}</style>\n'
     publish_manifest = {
         **_delivery_manifest(
