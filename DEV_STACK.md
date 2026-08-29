@@ -38,6 +38,7 @@ Then open **http://localhost:3020** and sign in:
 | `LUMEN_AGENT_API_KEY` + `LUMEN_AGENT_BASE_URL` | The design agent reads its OWN names; `CLUE_OPENROUTER_API_KEY` alone is not enough. Missing → design runs die in ~1s. |
 | `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES` includes `http://localhost:3020` | Else sign-in loops forever on "session expired" (the backend rejects every token minted by the tab). |
 | `CLUE_SCRAPE_BACKEND=scrapling` + `CLUE_STAGE0_PAGE_FETCHER=scrapling` | Standing rule; Firecrawl showing in logs means the env is wrong. |
+| `LUMEN_API_BASE_URL=http://127.0.0.1:8010` — in **`apps/frontend/.env.local`**, not `.env` | The frontend's design proxy (`/api/clue/design/*`) needs it. Missing → every design render 500s: **grey gallery thumbnails, editor canvas never renders** — while chat and generation work fine, which makes it look like the design finished "invisibly". Found live 2026-08-29 (was an ad-hoc shell export that evaporated at a stack rebuild). |
 | Model pins: grok-4.6 everywhere | Env alone is NOT enough — catalog profile (head-of-abm v40), registry promotion, composer pins, and the gateway chat-completions flag all matter. GPT-5.6-terra in the picker → `missing_finalize` step failures. |
 
 ## One-time machine prerequisites
@@ -96,4 +97,5 @@ psql -d clue_istanbul_dev -c "UPDATE design_agent_run SET status='failed' WHERE 
 | Design run dies in ~1 second | Worker missing `LUMEN_AGENT_API_KEY`/`LUMEN_AGENT_BASE_URL`. |
 | `missing_finalize` step failures | Wrong model (gpt-5.6-terra) — the platform's grok-4.6 pins aren't in effect. |
 | Editor tab opens with an empty grey canvas | Normal — the design session is open; generation starts on your next message. |
+| Design run FINISHED but gallery thumbnails stay grey / editor won't render the page | `LUMEN_API_BASE_URL` missing from `apps/frontend/.env.local` — the design proxy 500s. Check: `grep "LUMEN_API_BASE_URL is required" /tmp/browser_frontend.log`. |
 | Fresh-DB worker won't boot (recipe/schema errors) | Recipe seeding validates all revisions against today's registry — see `_memory/` 2026-08-29 notes (recipe0 v16–18 are replay-only; stale profile digests must be re-pinned). |
