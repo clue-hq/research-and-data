@@ -87,3 +87,12 @@ curl -s -o /dev/null -w 'public:%{http_code}\n' https://app.cluehq.ai/
 - OpenAI ad lane (video-only on LinkedIn; needs the Wave C second harvest source)
 - Old broken Apollo test project `prj_19a43a55…` (terra-era failures) — delete or keep, founder call
 - Wave C decision list (see `_memory/2026-08-26-brand-ad-assets-spec-and-w1.md`)
+
+## Post-demo fix (2026-08-29): deployed canvas editing restored
+Double-click text editing was dead on the Railway app because the COMMITTED wasm module carried a
+pre-merge engine stamp (4bf63781be19) while the API helper carried 2f8c4edaf3b6 — the editor's
+handshake correctly downgraded to view-only. Fixed: wasm rebuilt from merged sources, HANDSHAKE OK
+verified, committed + pushed (e453218bd) → next Railway deploy serves the matching module.
+**Standing rule: any merge touching `subsystems/clue-design/crates/lumen-core` ⇒
+`bash scripts/build_wasm_core.sh && cargo build -p lumen-api-helper --release &&
+node scripts/verify_handshake.mjs` (must print HANDSHAKE OK) BEFORE pushing/deploying.**
