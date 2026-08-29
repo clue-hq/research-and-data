@@ -38,7 +38,6 @@ from clue_toolbelt import (
 )
 
 from .base import DesignTool
-from ..web_export import ROBOTS_NOINDEX_META
 
 __all__ = [
     "PublishWebDocumentInput",
@@ -380,13 +379,23 @@ class RollbackWebPublishTool(DesignTool):
         # Removal requires an explicit act (the founder's words), so a rollback that would
         # unindex a stamped page refuses: republish (which applies the flag) or have a human
         # clear the flag first.
+        # Deferred import (T27 delta D-3): this module's load-bearing invariant is that it
+        # pulls clue_toolbelt + pydantic and nothing else at import time; web_export drags the
+        # DAL and FastAPI with it, so the constant is fetched only when the guard actually runs.
+        from ..database import NotFoundError
+        from ..web_export import ROBOTS_NOINDEX_META
+
         try:
             document = repository.require_document(str(publish.get("document_id")))
-        except Exception:
+        except NotFoundError:  # unreachable (FK, NOT NULL) — but never fail OPEN on a guard
             document = None
         if (
             isinstance(document, dict)
             and document.get("web_noindex")
+            # Refuse only when the rollback would REMOVE the meta from the live page (T27
+            # delta D-1): if the current revision does not carry it either, rolling back
+            # cannot worsen indexing and a content rollback stays available.
+            and ROBOTS_NOINDEX_META in str(publish.get("html") or "")
             and ROBOTS_NOINDEX_META not in str(publish.get("previous_html") or "")
         ):
             return (

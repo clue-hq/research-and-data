@@ -887,3 +887,26 @@ def test_rollback_refuses_to_serve_a_stamped_page_unindexed(
     from lumen_api.web_export import ROBOTS_NOINDEX_META
 
     assert ROBOTS_NOINDEX_META in client.get(f"/w/{workspace_id}/p/abm-rollbk").text
+
+
+def test_rollback_of_two_unstamped_revisions_stays_available(
+    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
+) -> None:
+    """T27 delta D-1: a flag stamped AFTER both publishes means neither revision carries the
+    meta — rolling back cannot worsen indexing, so a content rollback stays available."""
+    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
+    account = _account(client, "Acme Health")
+    derived = client.post(
+        f"/documents/{template}/web/derive", json={"account_id": account}
+    ).json()
+    doc_id = derived["document_id"]
+    assert client.post(f"/documents/{doc_id}/web/publish", json={"slug": "abm-2rev"}).status_code == 200
+    assert client.post(f"/documents/{doc_id}/web/publish", json={"slug": "abm-2rev"}).status_code == 200
+    assert (
+        client.put(f"/documents/{doc_id}/web-noindex", json={"noindex": True}).status_code
+        == 200
+    )
+
+    rolled = client.post("/web/publishes/abm-2rev/rollback")
+
+    assert rolled.status_code == 200, rolled.text
