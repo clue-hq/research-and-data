@@ -537,6 +537,18 @@ def test_a_rasterized_vector_resolves_to_its_png_thumbnail(tmp_path: Path):
 # asterisk-A mark, not a wordmark") because looking was not on offer.
 
 
+
+def _seed_svg_blob(tmp_path: Path) -> None:
+    """Materialized SVG bytes at the record's digest path — the production
+    contract (the API manifest read-throughs land bytes in the engine cache
+    before a turn). The rasterizer's byte precheck refuses to hand the engine
+    an absent blob (it would paint a BLANK plate and warn, and the blank would
+    be cached per digest — the Wave-C D3 probe-D poisoning)."""
+    blob = tmp_path / "store" / "sha256" / "bb" / ("b" * 64)
+    blob.parent.mkdir(parents=True, exist_ok=True)
+    blob.write_bytes(b"<svg xmlns='http://www.w3.org/2000/svg'/>")
+
+
 class _RasterizingCore:
     """Stand-in for the engine helper: renders any scene to one PNG artifact.
 
@@ -569,6 +581,7 @@ def test_an_svg_asset_is_rasterized_on_demand_and_becomes_viewable(tmp_path: Pat
     `test_svg_without_a_thumbnail_says_so_instead_of_faking_a_preview`, which
     pins the pre-fix answer: without an engine to rasterize with, that test
     still gets `asset_no_preview`. With one, the agent gets pixels."""
+    _seed_svg_blob(tmp_path)
     tools = _tools(
         tmp_path,
         brand_kit_assets={"asset_logo_svg": {"record": _svg_record("asset_logo_svg")}},
@@ -587,6 +600,7 @@ def test_an_svg_asset_is_rasterized_on_demand_and_becomes_viewable(tmp_path: Pat
 def test_a_legacy_self_referential_svg_thumbnail_is_rasterized_too(tmp_path: Path):
     """The pre-W1.2 shape -- a "thumbnail" that is the SVG bytes again. The
     resolver still refuses to serve it as a raster; the rasterizer supplies one."""
+    _seed_svg_blob(tmp_path)
     tools = _tools(
         tmp_path,
         brand_kit_assets={
@@ -602,6 +616,7 @@ def test_a_legacy_self_referential_svg_thumbnail_is_rasterized_too(tmp_path: Pat
 
 def test_the_rasterized_preview_is_cached_per_digest(tmp_path: Path):
     """An engine round-trip is expensive; looking twice must not pay twice."""
+    _seed_svg_blob(tmp_path)
     tools = _tools(
         tmp_path,
         brand_kit_assets={"asset_logo_svg": {"record": _svg_record("asset_logo_svg")}},
