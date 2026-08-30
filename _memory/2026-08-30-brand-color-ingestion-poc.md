@@ -48,6 +48,33 @@ accurate on color — pixels are sampled programmatically, LLM labels only.
 5. Media masking: `img/video/canvas/picture` + `background-image: url(...)` boxes; apollo's
    golden hero is imagery (~43% of pixels masked) — brand yellow still wins via buttons.
 
+## Iteration 2 (2026-08-30, after the 5-site sweep + founder's sarvam.ai challenge)
+Five more sites run (ramp, openai, sarvam, freshcontext, workspan; render.py builds the
+before/after HTML sheet over all out/*/result.json). New findings + PoC fixes now in poc.py:
+- ramp.com serves headless browsers an unstyled "machine version"; openai.com serves a
+  Cloudflare human-check. Shipped method fabricated the platform-fallback teal `#0F766E` as
+  "brand" on BOTH; Phase 1 must kill that fallback (flag, never invent) and route capture
+  through Scrapling (platform default backend) for anti-bot.
+- workspan.com: strong triple-corroborated win. freshcontext.ai: ranking flaw — 1-button
+  candidate outranked token-corroborated fold colors → single-button evidence demoted to the
+  weakest tier (fixed in poc).
+- sarvam.ai (founder challenge — missed indigo/brown): FOUR method gaps + one capture gap,
+  all now fixed/diagnosed: (1) computed gradient-stop harvest (getComputedStyle backgroundImage
+  rgb() stops over large visible elements) — census structurally can't elect a gradient;
+  (2) media masking made diversity-aware (photo = high-diversity stays masked; brand
+  wash/aurora = low-diversity ramp stays IN census; sarvam masking 14%→5%);
+  (3) chromatic accent-TEXT sampling (links/eyebrows/tabs) as a voting source;
+  (4) pastel chroma floor 0.04 for census/gradient/text candidates (SATURATED_C=0.07 keeps
+  gating buttons). Result: indigo family now elected (#A5BBFC + `--color-sr-indigo-300`
+  token; brown #6C5C54 surfaced in census). (5) UNFIXED capture gap: sarvam's full-saturation
+  saffron→indigo aurora is WebGL and does NOT paint in headless Chromium (SwiftShader) even
+  with reduced_motion="no-preference" + 6s dwell — production needs GPU-enabled/headed
+  capture (scrapling real-Chrome) for WebGL heroes. Election tiers now: buttons≥2 →
+  gradient-stop area → accent text≥2 → fold census (pastel-eligible) → single button.
+- Note: sarvam's BEFORE elected #393CC1 correctly *via token declarations* — the token-NAME
+  semantic layer is the good half of the old method and survives in Phase 1; only rule-text
+  mention-weighting dies.
+
 ## Open items for Phase 1
 - Where election evidence strings surface in the kit approval UI (founder wants auditability).
 - Threshold calibration → golden-brand regression fixtures (apollo yellow/black red-case first,
