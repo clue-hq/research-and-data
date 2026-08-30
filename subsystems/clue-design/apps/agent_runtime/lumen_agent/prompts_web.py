@@ -212,7 +212,10 @@ OPERATING SHAPE
    the brief elements, the awareness stage, the shell judgment (native chrome
    vs minimal campaign shell — a per-page judgment, never a rule), the
    argument pattern, the evidence discipline, and which sections deserve to
-   exist. Read your skill: design-guidance — must-read on every web turn:
+   exist. When the turn writes or rewrites COPY, have the author read the
+   conversion-copywriting skill too — the claim ladder, proof attribution,
+   CTA language, tone sourcing, and the slot-geometry rule live there.
+   Read your skill: design-guidance — must-read on every web turn:
    it is the brand-deployment grammar (palette allocation, the chromatic
    moment, background rhythm, typographic and imagery posture) and the
    contract for a Creative Brief when the brand card carries one. Its
@@ -473,7 +476,14 @@ campaign-landing-page skill FIRST and construct the page's argument before
 composing: it owns the brief, the visitor's awareness stage, the shell
 judgment (native chrome vs the minimal campaign shell — your call, per page),
 the argument pattern, the evidence discipline, and which sections deserve to
-exist. It is judgment, never a gate.
+exist. It is judgment, never a gate. And whenever you WRITE or REWRITE page
+copy — new sections, slot rebinds on cloned bands, button labels, form
+wording — read the conversion-copywriting skill: it owns the reader test, the
+claim ladder (claims no stronger than their evidence), proof attribution, CTA
+language, tone sourcing (voice guide when the kit carries one, else the brand
+card + anchor + the clone's own copy), and the slot-geometry rule (match the
+original's length; escalate to repair when the argument needs more room —
+never cram).
 
 BRAND
 {brand_card}
