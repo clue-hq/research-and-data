@@ -1,0 +1,422 @@
+{
+ "http": 200,
+ "elapsed": 2.5,
+ "body": {
+  "id": "5e587d3b-f14e-b656-005b-7e0db7cae0eb",
+  "identifier": "george-eliadis",
+  "profile": {
+   "first_name": "George",
+   "middle_name": null,
+   "last_name": "Eliadis",
+   "full_name": "George Eliadis",
+   "headline": "Co-Founder & CEO at Probook",
+   "title": "Co-Founder & CEO",
+   "picture": {
+    "source": "https://images.ai-ark.com/nKcMWViy4x9mcz3eR2W-3qDuaXVScaoVLPfD1a5vsps/exp:1788307199/rs:fill:80:80/plain/s3://ark-person/images/5e587d3b-f14e-b656-005b-7e0db7cae0eb.jpg"
+   },
+   "background": {
+    "source": "https://media.licdn.com/dms/image/v2/D4E16AQFrJQlprE6nNA/profile-displaybackgroundimage-shrink_350_1400/B4EZ70kuAHJMAc-/0/1782219727230?e=1786579200&v=beta&t=EMEmval9lm_UYt2As7ZZKIcvR19s7F3D2QGQVuqEN88"
+   },
+   "birth_date": null,
+   "summary": "I worked in the trades for 6 years. Now I build software for them."
+  },
+  "link": {
+   "linkedin": "https://www.linkedin.com/in/george-eliadis",
+   "twitter": null,
+   "github": null,
+   "facebook": null
+  },
+  "location": {
+   "default": "New York, New York, United States, North America",
+   "short": "New York, New York",
+   "country": "United States",
+   "state": "New York",
+   "city": "New York",
+   "position": null
+  },
+  "languages": {
+   "primary_locale": {
+    "country": "US",
+    "language": "en"
+   },
+   "supported_locales": [
+    {
+     "country": "US",
+     "language": "en"
+    }
+   ],
+   "profile_languages": [
+    {
+     "name": "English",
+     "proficiency": "NATIVE_OR_BILINGUAL"
+    },
+    {
+     "name": "Greek",
+     "proficiency": "NATIVE_OR_BILINGUAL"
+    },
+    {
+     "name": "Italian",
+     "proficiency": "PROFESSIONAL_WORKING"
+    }
+   ]
+  },
+  "industry": "Information Technology & Services",
+  "educations": [
+   {
+    "school": {
+     "id": "caa46f51-9215-60f2-e64a-b2964baeef5d",
+     "name": "The Wharton School",
+     "logo": "https://images.ai-ark.com/Aac-hOJ0Mgi3R-aDzJh8-wcwdbj_GzTqF8e4Wc1m480/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/caa46f51-9215-60f2-e64a-b2964baeef5d.jpg",
+     "url": "https://www.linkedin.com/school/the-wharton-school"
+    },
+    "degree_name": "Bachelor of Science in Economics",
+    "field_of_study": "Business Analytics",
+    "grade": null,
+    "date": {
+     "start": "2020-01-01",
+     "end": "2024-12-31"
+    }
+   },
+   {
+    "school": {
+     "id": "dacf3aa9-7cd9-867d-202a-6426942914b8",
+     "name": "Jerome Fisher M&T Program",
+     "logo": "https://images.ai-ark.com/nl_j3xrmicbrJoXqdXwGVsbVMQKkOHIj2jXcbMLtbWA/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/dacf3aa9-7cd9-867d-202a-6426942914b8.jpg",
+     "url": "https://www.linkedin.com/school/jerome-fisher-mandt-program"
+    },
+    "degree_name": "Bachelor of Science in Engineering and Bachelor of Science in Economics",
+    "field_of_study": "Systems Engineering and Business Analytics",
+    "grade": null,
+    "date": {
+     "start": "2020-08-01",
+     "end": "2024-05-31"
+    }
+   },
+   {
+    "school": {
+     "id": "d7bfc3dd-b7df-a163-eed6-eaddd7d82b66",
+     "name": "University of Pennsylvania",
+     "logo": "https://images.ai-ark.com/996LAv8CqHcMqPD3C05mdllhLWjGHcRwI2oBNNhj0sM/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/d7bfc3dd-b7df-a163-eed6-eaddd7d82b66.jpg",
+     "url": "https://www.linkedin.com/school/university-of-pennsylvania"
+    },
+    "degree_name": "Bachelor of Science in Engineering",
+    "field_of_study": "Electrical/Systems Engineering",
+    "grade": null,
+    "date": {
+     "start": "2020-01-01",
+     "end": "2024-12-31"
+    }
+   },
+   {
+    "school": {
+     "id": "75b6de80-61fd-437a-ea77-056265ea3ea4",
+     "name": "Newburgh Free Academy",
+     "logo": "https://images.ai-ark.com/42uPK9EFZCov6NMOalxJThRZQ25QCPdzoevrFAK8WDA/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/75b6de80-61fd-437a-ea77-056265ea3ea4.jpg",
+     "url": "https://www.linkedin.com/school/newburgh-free-academy"
+    },
+    "degree_name": "High School Student",
+    "field_of_study": null,
+    "grade": null,
+    "date": {
+     "start": "2016-01-01",
+     "end": "2020-12-31"
+    }
+   },
+   {
+    "school": {
+     "id": "c7237555-60c6-c4aa-06b6-7c2129698a37",
+     "name": "Yale Young Global Scholars",
+     "logo": "https://images.ai-ark.com/9KQq0Dk0U9eNhP_LLbauznxyAG3Ia76gU3l2uYWqlZ0/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/c7237555-60c6-c4aa-06b6-7c2129698a37.jpg",
+     "url": "https://www.linkedin.com/school/yaleygs"
+    },
+    "degree_name": null,
+    "field_of_study": "Frontiers of Science and Technology",
+    "grade": null,
+    "date": {
+     "start": "2018-01-01",
+     "end": null
+    }
+   }
+  ],
+  "awards": [
+   {
+    "title": "US Presidential Scholar",
+    "description": "One of 161 high school seniors named nationally to the 2020 class of US Presidential Scholars by Betsy DeVos and the US Department of Education.",
+    "issuer": "US Department of Education",
+    "date": "2020-05-01"
+   },
+   {
+    "title": "Eagle Scout",
+    "description": null,
+    "issuer": "Boy Scouts of America",
+    "date": "2020-04-01"
+   },
+   {
+    "title": "National Merit Scholarship Recipient",
+    "description": "Awarded a one-time $2500 National Merit Scholarship.",
+    "issuer": "National Merit Scholarship Corporation",
+    "date": "2020-03-01"
+   },
+   {
+    "title": "Spellman High Voltage Cleantech Competition Semifinalist",
+    "description": null,
+    "issuer": null,
+    "date": "2019-05-01"
+   },
+   {
+    "title": "American Nuclear Society Senior Division Award",
+    "description": "Earned at 2019 Greater Capital Region Science and Engineering Fair.",
+    "issuer": "American Nuclear Society",
+    "date": "2019-03-01"
+   },
+   {
+    "title": "Two-time National Speech and Debate Association National Tournament Qualifier",
+    "description": "Qualified for and competed at NSDA Nationals in June 2018 in the event of Public Forum debate. Qualified for NSDA Nationals again in 2020 in the same debate event.",
+    "issuer": "National Speech and Debate Association",
+    "date": "2018-03-01"
+   }
+  ],
+  "position_groups": [
+   {
+    "company": {
+     "id": "05108578-3649-f40c-a81b-22fe1965b0cd",
+     "name": "Probook",
+     "logo": "https://images.ai-ark.com/E-sI5Kv4lg4jwUeSq_nPQ6Yz9ehTAQBsg0Jo7gYFzoY/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/05108578-3649-f40c-a81b-22fe1965b0cd.jpg",
+     "url": "https://www.linkedin.com/company/probook-ai",
+     "employees": {
+      "start": 51,
+      "end": 200
+     }
+    },
+    "date": {
+     "start": "2021-11-01",
+     "end": null
+    },
+    "profile_positions": [
+     {
+      "company": "Probook",
+      "description": "The AI Operating System for Home Services. Backed by Sequoia and a16z.",
+      "title": "Co-Founder & CEO",
+      "employment_type": "Full-time",
+      "location": "New York, NY",
+      "date": {
+       "start": "2021-11-01",
+       "end": null
+      }
+     }
+    ]
+   },
+   {
+    "company": {
+     "id": "4e8554c8-2088-1e5d-a1b1-602a1d22d34a",
+     "name": "A2Z Exterior Pressure Washing",
+     "logo": "https://images.ai-ark.com/snRLhmN8fXMjpfESfuJerNz3I5mrHmVVctmo-SHUt5g/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/4e8554c8-2088-1e5d-a1b1-602a1d22d34a.jpg",
+     "url": "https://www.linkedin.com/company/a2z-exterior-pressure-washing",
+     "employees": {
+      "start": 2,
+      "end": 10
+     }
+    },
+    "date": {
+     "start": "2018-06-01",
+     "end": "2023-08-31"
+    },
+    "profile_positions": [
+     {
+      "company": "A2Z Exterior Pressure Washing",
+      "description": "Seasonal residential and commercial pressure washing in the Hudson Valley. Created hundreds of bids, launched weekly advertisements, and washed over 600 homes.",
+      "title": "Contractor",
+      "employment_type": "Self-employed",
+      "location": "Orange County, New York, United States",
+      "date": {
+       "start": "2018-06-01",
+       "end": "2023-08-31"
+      }
+     }
+    ]
+   },
+   {
+    "company": {
+     "id": "f13814a9-6eac-f374-d64d-cbba4859d51a",
+     "name": "Eliadis Numismatics",
+     "logo": "https://images.ai-ark.com/m9eeJ1CbQECmdN3wMgFqB0jIr_NztPiL1CsPQsfSCLI/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/f13814a9-6eac-f374-d64d-cbba4859d51a.jpg",
+     "url": "https://www.linkedin.com/company/eliadis-numismatics",
+     "employees": {
+      "start": 0,
+      "end": 1
+     }
+    },
+    "date": {
+     "start": "2015-06-01",
+     "end": "2021-08-31"
+    },
+    "profile_positions": [
+     {
+      "company": "Eliadis Numismatics",
+      "description": "Founded a collectable coin retailer specializing in US type. Ran every facet of the business, including purchasing, accounting, and sales.  We are @georgesstampsandcoins on Instagram and Facebook and have more than 6000 followers. We maintain over 2500 100% positive eBay feedback.",
+      "title": "Numismatist",
+      "employment_type": "Self-employed",
+      "location": "Newburgh, New York, United States",
+      "date": {
+       "start": "2015-06-01",
+       "end": "2021-08-31"
+      }
+     }
+    ]
+   }
+  ],
+  "skills": [
+   "Numismatics",
+   "Sales",
+   "Risk Analysis",
+   "Business Strategy",
+   "Spreadsheets",
+   "Data Analysis",
+   "Research",
+   "Scientific Writing",
+   "Purchasing",
+   "Store Management",
+   "Product Management",
+   "LaTeX",
+   "AutoCAD",
+   "Microsoft Word",
+   "Java",
+   "C (Programming Language)",
+   "Public Speaking",
+   "Management",
+   "Greek"
+  ],
+  "member_badges": {
+   "premium": true,
+   "creator": false,
+   "open_to_work": false,
+   "hiring": false,
+   "verified": true,
+   "influencer": false
+  },
+  "statistics": {
+   "network": {
+    "influencer": false,
+    "followable": null,
+    "followers_count": 3657,
+    "connections_count": 2207
+   },
+   "experience": {
+    "prev_job_titles": null,
+    "tenure": {
+     "company": "2021-11-01",
+     "start": "2015-06-01",
+     "title": "2021-11-01"
+    }
+   }
+  },
+  "company": {
+   "id": "05108578-3649-f40c-a81b-22fe1965b0cd",
+   "summary": {
+    "name": "Probook",
+    "description": "Increase flip rates, boost ticket sizes, and reduce windshield time\u2014 all without scaling your dispatch department. \n\nProbook learns from your historical sales data and sends your technicians to the right calls every time. \n\nOur dispatcher-friendly interface overlays your dispatch board so you never have to leave ServiceTitan. \n\nDispatchers can now focus on higher-value tasks like verifying job info and keeping customers updated. \n\nSee why top operators nationwide trust Probook!",
+    "founded_year": 2022,
+    "type": "PRIVATELY_HELD",
+    "industry": "software development",
+    "staff": {
+     "total": 30,
+     "range": {
+      "start": 2,
+      "end": 10
+     }
+    },
+    "logo": {
+     "source": "https://images.ai-ark.com/E-sI5Kv4lg4jwUeSq_nPQ6Yz9ehTAQBsg0Jo7gYFzoY/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/05108578-3649-f40c-a81b-22fe1965b0cd.jpg"
+    }
+   },
+   "link": {
+    "website": "https://www.probook.ai",
+    "domain": "probook.ai",
+    "linkedin": "https://www.linkedin.com/company/probook-ai"
+   },
+   "financial": {
+    "revenue": {
+     "annual": {
+      "start": 1000000,
+      "end": 5000000,
+      "amount": "1000000-5000000"
+     }
+    }
+   },
+   "location": {
+    "headquarter": {
+     "continent": "North America",
+     "country": "United States",
+     "state": "New York",
+     "city": "New York",
+     "postal_code": "10022",
+     "raw_address": "New York, New York, United States, North America",
+     "position": {
+      "lng": -73.98556,
+      "lat": 40.748295
+     }
+    },
+    "locations": [
+     {
+      "continent": "North America",
+      "country": "United States",
+      "state": "New York",
+      "city": "New York",
+      "postal_code": "10022",
+      "raw_address": "New York, New York, United States, North America",
+      "position": {
+       "lng": -73.98556,
+       "lat": 40.748295
+      }
+     }
+    ]
+   },
+   "industries": [
+    "software development"
+   ],
+   "hashtags": [
+    "airconditioning",
+    "heating",
+    "hvac"
+   ],
+   "languages": [
+    "english"
+   ],
+   "last_updated": "2026-08-22"
+  },
+  "department": {
+   "departments": [
+    "operations"
+   ],
+   "sub_departments": [
+    "business_operations"
+   ],
+   "functions": [
+    "entrepreneurship"
+   ],
+   "seniority": "founder"
+  },
+  "email": {
+   "state": "DONE",
+   "output": [
+    {
+     "address": "george@probook.ai",
+     "mx": {
+      "record": "smtp.google.com",
+      "google": false,
+      "found": true,
+      "provider": "g-suite"
+     },
+     "domainType": "SMTP",
+     "status": "VALID",
+     "subStatus": "EMPTY",
+     "date": "2026-08-30T00:49:46.000717",
+     "free": false,
+     "generic": false,
+     "found": true
+    }
+   ]
+  },
+  "last_updated": "2026-08-22"
+ }
+}

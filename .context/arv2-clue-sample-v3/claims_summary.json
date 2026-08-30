@@ -1,0 +1,164 @@
+{
+  "total_claims": 106,
+  "deduped_against_apollo_lane": 7,
+  "by_entity": {
+    "account:probook": 24,
+    "contact:george-eliadis": 20,
+    "contact:mark-hoffman": 15,
+    "contact:kate-blumberg": 17,
+    "contact:aaron-churba": 16,
+    "contact:lewis-zhang": 14
+  },
+  "by_source_tier": {
+    "1": 49,
+    "4": 57
+  },
+  "by_source_key": {
+    "apollo": 49,
+    "exa_research": 57
+  },
+  "priority_histogram": {
+    "1": 30,
+    "2": 48,
+    "3": 28
+  },
+  "priority_by_entity": {
+    "account:probook": {
+      "1": 8,
+      "2": 15,
+      "3": 1
+    },
+    "contact:george-eliadis": {
+      "1": 5,
+      "2": 7,
+      "3": 8
+    },
+    "contact:mark-hoffman": {
+      "1": 5,
+      "2": 6,
+      "3": 4
+    },
+    "contact:kate-blumberg": {
+      "1": 6,
+      "2": 7,
+      "3": 4
+    },
+    "contact:aaron-churba": {
+      "1": 6,
+      "2": 6,
+      "3": 4
+    },
+    "contact:lewis-zhang": {
+      "2": 7,
+      "3": 7
+    }
+  },
+  "distinct_fields_used": 30,
+  "fields_used": [
+    "account.hiring_velocity_eng",
+    "account.operational_pain",
+    "account.recent_funding",
+    "account.resonance.buying_culture",
+    "account.resonance.culture",
+    "account.strategic_moves",
+    "account.total_funding",
+    "contact.current_location",
+    "contact.current_title",
+    "contact.facet.alma_mater",
+    "contact.facet.career_history",
+    "contact.facet.communication_style",
+    "contact.facet.public_appearances",
+    "contact.facet.recent_award",
+    "contact.facet.recent_post",
+    "contact.facet.stated_interests",
+    "contact.job_function",
+    "contact.job_level",
+    "contact.persona",
+    "contact.role_on_committee",
+    "core.account_name",
+    "core.company_about",
+    "core.company_linkedin_url",
+    "core.employee_count",
+    "core.employee_range",
+    "core.hq_location",
+    "core.industry",
+    "core.primary_domain",
+    "core.primary_tech_stack",
+    "core.work_email"
+  ],
+  "registered_account_fields_left_empty": [
+    "account.resonance.attrition_signal",
+    "account.resonance.employee_sentiment",
+    "account.resonance.eng_blog_tone",
+    "account.resonance.public_frustrations",
+    "core.annual_revenue",
+    "core.company_email",
+    "core.company_phone",
+    "core.revenue_band"
+  ],
+  "schema_validation": {
+    "checked": 106,
+    "invalid": 0,
+    "details": []
+  },
+  "structuring_defects": {
+    "wrong_value_key": 0,
+    "string_confidence": 0,
+    "missing_priority": 0,
+    "unregistered_field": [],
+    "missing_source_url": [],
+    "unquoted_evidence": [
+      "account.strategic_moves@account:probook",
+      "account.resonance.culture@account:probook",
+      "contact.facet.career_history@contact:george-eliadis",
+      "contact.facet.career_history@contact:kate-blumberg",
+      "contact.facet.recent_post@contact:kate-blumberg",
+      "contact.facet.career_history@contact:aaron-churba"
+    ],
+    "unknown_entity": []
+  },
+  "claims_by_structuring_pass": {
+    "p1_broad_extraction": 30,
+    "p2_priority_sweep": 15,
+    "p4_intent_extractor_per_person": 12
+  },
+  "model_proposed_fields": [
+    {
+      "field_key": "core.founding_year",
+      "entity_type": "account",
+      "value_type": "int",
+      "value_schema": {
+        "type": "integer"
+      },
+      "description": "Founding year when available (not in provided catalog).",
+      "reuse_scope": "account",
+      "hypothesis": "Founding year helps qualify company maturity for ABM ICPs and affects go-to-market strategies; younger startups may prioritize hiring and GTM expansion post-funding.",
+      "example_value": 2024,
+      "example_evidence_span": "Founding year: 2024. A third-party company profile states \u201cFounded: 2024\u201d",
+      "example_source_url": "https://yespress.io/probook",
+      "priority": 2
+    },
+    {
+      "field_key": "account.named_customers",
+      "entity_type": "account",
+      "value_type": "list",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "description": "List of named customers mentioned in sources (not in catalog).",
+      "reuse_scope": "account",
+      "hypothesis": "Named customers help identify referenceability, buyer similarity, and credibility signals for ABM targeting and sales plays.",
+      "example_value": [
+        "Del-Air",
+        "Peterman Brothers",
+        "Summers Plumbing, Heating & Cooling"
+      ],
+      "example_evidence_span": "Named customers additionally visible in company materials: Lion Home Service, Del-Air, Peterman Brothers, Cardinal, Summers Plumbing, Anthony Plumbing, and TR Miller.",
+      "example_source_url": "https://www.probook.ai/customer-outcomes",
+      "priority": 2
+    }
+  ]
+}

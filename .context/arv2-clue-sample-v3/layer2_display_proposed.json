@@ -1,0 +1,228 @@
+{
+  "model": "openai/gpt-5.6-luna",
+  "variant": "proposed-slots",
+  "usage": {
+    "prompt_tokens": 18849,
+    "completion_tokens": 3810,
+    "total_tokens": 22659,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 18846,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0092841,
+      "upstream_inference_prompt_cost": 0.0047121,
+      "upstream_inference_completions_cost": 0.004572
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 929,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "cost_usd": 0.0092841,
+  "elapsed_s": 26.5,
+  "display": {
+    "accountSummary": "Probook is an AI operating system for home services, built around dispatch to unify intake, data cleaning, chat, outbound, and dispatch. It sells to US home-services contractors in plumbing, HVAC, and electrical, serving a fragmented SMB market. Probook is at the Series A stage with 52 employees, 14 open positions listed, and a stated plan to scale go-to-market, engineering, and customer success. It is on this list for review because its Series A funding and expanding GTM hiring align with the Series A vertical-AI project.",
+    "whyNow": [
+      {
+        "headline": "Series A funding creates a GTM and delivery expansion window",
+        "quote": "a16z is leading Probook\u2019s $34 million Series A",
+        "sourceDomain": "a16z.com"
+      },
+      {
+        "headline": "Probook is scaling GTM, engineering, and customer success for demand",
+        "quote": "Probook says it will \"scale its go-to-market team against surging demand, and grow engineering and customer success to deliver on it.\"",
+        "sourceDomain": "www.globenewswire.com"
+      },
+      {
+        "headline": "Six open GTM roles signal active customer acquisition investment",
+        "quote": "We have a clearly defined target: the top home service operators in America. The list exists. The product is proven. What we need now is someone to go get them.",
+        "sourceDomain": "jobs.ashbyhq.com"
+      },
+      {
+        "headline": "The GTM stack lacks CRM, sales engagement, data, and ABM tools",
+        "quote": "current_technologies (30 detected): no CRM, no sales-engagement tool, no data provider and no ABM/intent platform are present; LinkedIn Ads and LinkedIn Recruiter are the only GTM tools detected",
+        "sourceDomain": "apollo.io"
+      }
+    ],
+    "insightLabels": [
+      {
+        "fieldKey": "account.hiring_velocity_eng",
+        "label": "Engineering hiring velocity: 3",
+        "priority": 2
+      },
+      {
+        "fieldKey": "account.operational_pain",
+        "label": "Operational pain: Scaling delivery capacity is a bottleneck: need to grow engineering, customer success and GTM to meet surging demand.",
+        "priority": 2
+      },
+      {
+        "fieldKey": "account.recent_funding",
+        "label": "Recent funding: $34M Series A",
+        "priority": 1
+      },
+      {
+        "fieldKey": "account.resonance.buying_culture",
+        "label": "Buying culture: founder-led, operator-oriented, deployment-committed; Founder-led origin with hands-on customer discovery and in-person deployments; public commitment to scale GTM and deliver outcomes post-sale.",
+        "priority": 2
+      },
+      {
+        "fieldKey": "account.resonance.culture",
+        "label": "Culture: Built by people from the trades; small team with diverse backgrounds; deploys in person and configures alongside customers.",
+        "priority": 3
+      },
+      {
+        "fieldKey": "account.strategic_moves",
+        "label": "Strategic moves: Scale go-to-market team against surging demand; grow engineering and customer success",
+        "priority": 1
+      },
+      {
+        "fieldKey": "account.total_funding",
+        "label": "Total funding: $40M, reported",
+        "priority": 1
+      },
+      {
+        "fieldKey": "core.account_name",
+        "label": "Account name: Probook",
+        "priority": 2
+      },
+      {
+        "fieldKey": "core.company_about",
+        "label": "Company: The AI Operating System for home services; built around dispatch to unify intake, data cleaning, chat, outbound, and dispatch so operators can run customer experience as one connected system.",
+        "priority": 2
+      },
+      {
+        "fieldKey": "core.company_linkedin_url",
+        "label": "LinkedIn company page: http://www.linkedin.com/company/probook-ai",
+        "priority": 2
+      },
+      {
+        "fieldKey": "core.employee_count",
+        "label": "Employees: 52",
+        "priority": 2
+      },
+      {
+        "fieldKey": "core.employee_range",
+        "label": "Hiring: 14 open positions listed",
+        "priority": 2
+      },
+      {
+        "fieldKey": "core.hq_location",
+        "label": "Headquarters: New York, New York, United States, 10022",
+        "priority": 2
+      },
+      {
+        "fieldKey": "core.industry",
+        "label": "Industry: Information technology & services",
+        "priority": 2
+      },
+      {
+        "fieldKey": "core.primary_domain",
+        "label": "Primary domain: probook.ai",
+        "priority": 2
+      },
+      {
+        "fieldKey": "core.primary_tech_stack",
+        "label": "Primary tech stack: AI, Amazon AWS, Amazon CloudFront, Cursor, Excel Impact, Frame, Gmail, Google Meet, Google Search Console, Google Search Console, Google Sheets, Google Tag Manager, Google Workspace, HSTS, LinkedIn Ads, LinkedIn Recruiter, Microsoft 365, Microsoft 365 Apps & Services, Microsoft Email Providers, Microsoft Exchange, Microsoft Exchange Online, Mobile Friendly, Next.js, Outlook, Priority Hints, React, Vercel, Viewport Meta, YouTube, webpack",
+        "priority": 1
+      }
+    ],
+    "contacts": [
+      {
+        "contactId": "8de16b15-0723-5609-917c-df5bc64b9277",
+        "name": "George Eliadis",
+        "roleLabel": "Economic buyer - Co-Founder & CEO",
+        "overview": "George owns Probook as Co-Founder & CEO and previously worked as a contractor at A2Z Exterior Pressure Washing. He is publicly discussing the $40M funding, the move beyond founder-led sales, and his hands-on experience meeting customers, running demos, and visiting shops.",
+        "howToOpen": [
+          {
+            "line": "George, your move from personally running every demo to building beyond founder-led sales stood out.",
+            "hook": "Being stuck in founder-led sales isn't a flex. I wish I realized that sooner",
+            "sourceUrl": "https://www.linkedin.com/posts/george-eliadis_until-december-our-sales-team-was-just-activity-7441840906384683008-3s7v"
+          },
+          {
+            "line": "George, congratulations on the funding\u2014your experience operating a home-services business gives the raise a clear customer problem behind it.",
+            "hook": "Today, we're announcing $40M in funding from Sequoia and Andreessen Horowitz to solve a problem I faced in my own business.",
+            "sourceUrl": "https://www.linkedin.com/posts/george-eliadis_today-were-announcing-40m-in-funding-from-activity-7475172924774293504-mVOB"
+          }
+        ]
+      },
+      {
+        "contactId": "f31ccd75-f376-528f-8b6c-f2f823a60e56",
+        "name": "Mark Hoffman",
+        "roleLabel": "Economic buyer - Chief Revenue Officer",
+        "overview": "Mark owns revenue as Probook\u2019s Chief Revenue Officer, after serving as Chief Sales Officer at Tennr and holding sales leadership roles at VTS, Hightower, and ZocDoc. He is reachable around Probook\u2019s $40M raise and the effort to grow the GTM team, which he said is approaching 20.",
+        "howToOpen": [
+          {
+            "line": "Mark, congratulations on Probook\u2019s $40M raise from Sequoia and Andreessen Horowitz.",
+            "hook": "Today is a big day at Probook. We're announcing our $40M raise from Sequoia and Andreessen Horowitz",
+            "sourceUrl": "https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU"
+          },
+          {
+            "line": "Mark, you mentioned the GTM team is nearing 20 with more hiring ahead\u2014what are you prioritizing as it scales?",
+            "hook": "The GTM team is inching up towards 20 now, with many more to go.",
+            "sourceUrl": "https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU"
+          }
+        ]
+      },
+      {
+        "contactId": "0c49f3eb-9f51-579b-99f7-6acb965af754",
+        "name": "Kate Blumberg",
+        "roleLabel": "Champion - Director of Growth",
+        "overview": "Kate owns growth at Probook and joined to lead growth and build out the marketing organization. She came from BuildOps, Middesk, SafeGraph, Survata, and Branch, with experience building demand generation engines across inbound, ABM, events, lifecycle, and paid.",
+        "howToOpen": [
+          {
+            "line": "Kate, you joined Probook to lead growth and build the marketing organization\u2014congrats on the new role.",
+            "hook": "I\u2019m excited to share that I\u2019ve joined Probook to lead growth and build out the marketing organization",
+            "sourceUrl": "https://www.linkedin.com/posts/kibrady12_im-excited-to-share-that-ive-joined-probook-activity-7475235473679077376-nv9z"
+          },
+          {
+            "line": "Kate, your focus on demand generation systems across ABM, events, lifecycle, and paid is directly relevant to Probook\u2019s GTM buildout.",
+            "hook": "When I joined BuildOps, it was to join a high-performing, revenue-obsessed team where I could focus on one thing: building a demand generation engine that delivered for sales\u2026 hiring and leading a team, scaling programs across inbound, ABM, events, lifecycle, and paid\u2026 creating systems, scaling teams, sharpening positioning, and helping turn momentum into revenue.",
+            "sourceUrl": "https://www.linkedin.com/posts/kibrady12_after-two-years-at-buildops-i-activity-7459629371444703232-esk_"
+          }
+        ]
+      },
+      {
+        "contactId": "61006812-713c-5564-8c38-16620cbcc0b3",
+        "name": "Aaron Churba",
+        "roleLabel": "Champion - Director of Sales & Development",
+        "overview": "Aaron owns sales development at Probook and is currently leading a team of five sellers. He came from sales leadership and advisory roles at Bite, Zip Security, and Electric, and is publicly focused on helping more businesses discover Probook and building its GTM organization.",
+        "howToOpen": [
+          {
+            "line": "Aaron, you\u2019re currently leading five sellers at Probook\u2014how are you structuring the team as it grows?",
+            "hook": "Currently leading a team of 5 sellers and counting.",
+            "sourceUrl": "https://www.linkedin.com/in/aaronloganchurba"
+          },
+          {
+            "line": "Aaron, your focus on helping more businesses discover Probook and building the GTM organization caught my attention.",
+            "hook": "helping more businesses discover Probook, building a world-class GTM organization, and contributing to the next stage of growth.",
+            "sourceUrl": "https://www.linkedin.com/in/aaronloganchurba"
+          }
+        ]
+      },
+      {
+        "contactId": "f4ec4553-7a98-5f74-8e61-2e445319374b",
+        "name": "Lewis Zhang",
+        "roleLabel": "Technical evaluator - Co-Founder / CTO",
+        "overview": "Lewis owns the technical evaluation as Probook\u2019s Co-Founder / CTO, after working as a Senior ML Engineer at Roblox and research and engineering roles at Berkeley AI Research, Confluent, Rubrik, Tesla, and Intel. He is publicly focused on scalable data and ML systems, reliable engineering workflows, and sharing technical wins.",
+        "howToOpen": [
+          {
+            "line": "Lewis, your move from Senior ML Engineer at Roblox to Co-Founder / CTO at Probook stood out.",
+            "hook": "Co-Founder / CTO @ Probook (2024-01-01..present); Senior ML Engineer @ Roblox (2021-01-01..2024-01-01)",
+            "sourceUrl": "https://www.linkedin.com/in/lewisfzhang"
+          },
+          {
+            "line": "Lewis, I saw your note about sharing small wins\u2014what technical milestones are you tracking at Probook?",
+            "hook": "I'm certainly not the best writer (way better at math) but I am going to start to be more active on LinkedIn and share the small wins.",
+            "sourceUrl": "https://www.linkedin.com/posts/lewisfzhang_im-certainly-not-the-best-writer-way-better-activity-7387118180609085442-UJ-d"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,169 @@
+https://eve.dev
+
+For the account research that we plan to do for Clue, the account deep research agent which finds the community buying community as well, which is paired with Exa Apollo as well: what do you think? Should we build our agent on this, and what is this exactly? Is it a better version of Landgraf or something like that, or where should we host our agent? Do you think this is a durable way to build an agent? 
+
+Short answer: Eve is promising, but I would not make it the foundation Clue cannot operate without yet. I would use it for a controlled prototype, keep all important account intelligence in Clue’s database, and make Eve replaceable.
+
+I’m assuming you meant LangGraph.
+
+What Eve actually is
+
+Eve is not an alternative to Exa or Apollo. These occupy different layers:
+
+Technology	What it provides
+Exa	Public-web search, page retrieval, company research and multi-step research
+Apollo	Structured company, employee, contact and employment data
+Eve	Agent loop, tools, durable sessions, approvals, subagents, schedules and deployment
+LangGraph	Lower-level graph/state-machine orchestration for long-running workflows
+Clue	Identity resolution, evidence fusion, buying-committee logic and campaign intelligence
+
+Eve is Vercel’s open-source, TypeScript, filesystem-first agent framework. Instructions are Markdown files; integrations are TypeScript tools; skills, subagents, schedules and channels are organized as directories. It includes a default agent loop and durable execution runtime. It is Apache-2.0 licensed, but currently explicitly beta, and Vercel warns that its APIs and behavior may change before general availability. Eve repository and beta notice
+
+A helpful mental model:
+
+Eve is approximately an opinionated agent harness plus durable execution and deployment infrastructure.
+
+It is not simply a “better LangGraph.”
+
+Eve versus LangGraph
+
+LangGraph asks you to define the workflow:
+
+Resolve company → search sources → find people → verify → score → publish
+
+Eve lets an agent decide more dynamically:
+
+Here are your instructions and tools. Determine what research is missing,
+call the appropriate tools, delegate work and ask for approval if needed.
+Question	Eve	LangGraph
+Development style	Files, tools, instructions and agent loop	Explicit nodes, edges and state transitions
+Best language fit	TypeScript/Vercel	Python or TypeScript
+Agent autonomy	Higher by default	Precisely controlled
+Deterministic workflow	Possible, but not its core strength	Core strength
+Durable execution	Built in	Built in
+Human approval	Built in	Built in
+Sandboxed code	Integrated	Requires more assembly
+Maturity	New and beta	More established
+Best use	Quickly shipping backend agents	Complex, auditable production workflows
+
+LangGraph describes itself as a low-level orchestration runtime that deliberately mixes deterministic steps and LLM-driven steps. That is particularly relevant for research where costs, completeness and provenance need to be controlled. LangGraph overview
+
+My recommendation for Clue
+Use Eve as a replaceable research runner, not Clue’s system of record
+
+For the first experiment, Eve could coordinate:
+
+Account resolution
+Exa company research
+Apollo organization enrichment
+Apollo people search
+Public community discovery
+Entity matching
+Buying-committee inference
+Skeptical verification
+Human approval
+Final account dossier
+
+But Eve should receive a research_run_id, execute the work and write normalized results back into Clue-owned Postgres tables.
+
+Eve’s own documentation explicitly says its durable state is session-scoped working memory. Anything that must survive across sessions, be shared or queried independently belongs in an external store. Eve state documentation
+
+Clue should own these durable objects:
+
+Accounts and canonical company identities
+People and employment histories
+Sources and retrieved evidence
+Claims extracted from sources
+Person-account-community relationships
+Buying-committee candidates
+Confidence scores
+Research runs and tool costs
+Final approved account snapshots
+User corrections and campaign outcomes
+
+That makes Eve replaceable with LangGraph, Temporal, a custom worker or a future framework without losing Clue’s actual intelligence.
+
+The architecture I would use
+
+For V1, I would use only two agent roles:
+
+Research coordinator: determines gaps and invokes the correct retrieval tools.
+Verifier: challenges identities, claims, relationships and committee recommendations.
+
+Do not start with seven autonomous research subagents. Exa already offers an asynchronous multi-step Agent API for research and structured extraction, so another large agent swarm around it would add cost and unpredictability without necessarily adding intelligence. Exa Agent API
+
+How Exa and Apollo should be connected
+
+Although both can be exposed through MCP, I would use Clue-authored API wrappers in production.
+
+For example:
+
+search_company_evidence()
+search_public_community_signals()
+find_people_by_role()
+enrich_person()
+verify_employment()
+store_claim_with_source()
+
+Avoid giving the model Apollo’s entire API surface and letting it decide freely. Your wrappers should enforce:
+
+Tenant isolation
+Credit budgets
+Caching
+Rate limits
+Required filters
+Output normalization
+Data-retention rules
+Idempotency
+Audit logs
+
+Apollo now has an official MCP server and its APIs support organization search, people search and enrichment. MCP would be useful for prototyping or customer-connected Apollo accounts, but internal wrappers give Clue much more control. Apollo MCP, Apollo API
+
+Where I would host it
+
+If Clue is TypeScript-heavy:
+
+Deploy Eve as a separate Vercel service/project
+Put it behind an internal endpoint such as agent.cluehq.ai
+Let only the Clue backend start runs
+Keep account intelligence in Clue’s existing Postgres
+Keep Exa, Apollo and model credentials server-side
+Do not expose Eve directly to the frontend
+
+Using Vercel initially is the lowest-friction path because Eve’s managed deployment handles workflows, sandboxes, schedules and routing.
+
+Eve can be self-hosted as a Node service, but then you must provide persistent workflow storage, sandbox infrastructure, routing and process management. Its self-hosting documentation currently references a 5.0.0-beta Workflow protocol, which reinforces that this part of the stack is still moving. Eve self-hosting documentation
+
+If Clue’s backend is primarily Python and already has LangGraph code, do not introduce a separate Node/Vercel runtime solely to adopt Eve. Continue with LangGraph and adopt Eve’s useful architectural ideas instead.
+
+Is Eve “durable”?
+
+There are three different answers:
+
+Execution durability: Yes. Steps are checkpointed, sessions can pause for approvals and work can resume after restarts.
+Framework durability: Not proven yet. It is beta and changing quickly.
+Business durability: Irrelevant. Eve will not become Clue’s moat.
+
+There is also an important technical caveat: completed Eve tool steps are replayed rather than re-run, but if a step crashes during execution, that step can execute again. Therefore every Exa/Apollo request and every database write needs an idempotency key. Eve tools documentation
+
+The real durable advantage for Clue
+
+The framework is replaceable. This is the part Clue must own:
+
+Given scattered company, people and community evidence, determine who matters, why they should care, what relationship can open the door and what campaign should be run now.
+
+Your durable layer is:
+
+The account-research ontology
+Cross-source identity resolution
+Source-level citations
+Community-to-person-to-account graph
+Buying-role scoring
+Evidence freshness
+Customer corrections
+Campaign and pipeline outcome feedback
+An eval dataset showing that Clue finds people and insights competitors miss
+
+My final call: run a one-week Eve spike on 10 real Clue accounts. Host it separately on Vercel, use Exa and Apollo through narrow Clue-owned tools, and persist everything valuable outside Eve. Do not migrate the entire research backend until it beats the existing approach on accuracy, citation coverage, latency and cost.
+
+Because Eve is moving unusually fast, I can also help you keep track of when it becomes safe enough to standardize on.

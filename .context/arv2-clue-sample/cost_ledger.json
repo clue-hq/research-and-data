@@ -1,0 +1,494 @@
+[
+  {
+    "provider": "exa",
+    "label": "step1_d1",
+    "op": "auto",
+    "http": 200,
+    "elapsed_s": 2.1,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "step1_d2",
+    "op": "auto",
+    "http": 200,
+    "elapsed_s": 1.5,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  },
+  {
+    "provider": "apollo",
+    "label": "step2_apollo_org",
+    "op": "GET /organizations/enrich",
+    "http": 200,
+    "elapsed_s": 0.4,
+    "credits": 1,
+    "rate_headers": {
+      "x-minute-requests-left": "999",
+      "x-rate-limit-24-hour": "",
+      "x-rate-limit-hourly": "",
+      "x-rate-limit-minute": "1000"
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "step3_account_deep",
+    "op": "deep-reasoning",
+    "http": 200,
+    "elapsed_s": 29.3,
+    "cost_usd": 0.03,
+    "cost_breakdown": {
+      "total": 0.03
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "step3b_account_deep",
+    "op": "deep-reasoning",
+    "http": 200,
+    "elapsed_s": 27.9,
+    "cost_usd": 0.029,
+    "cost_breakdown": {
+      "total": 0.029
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "step4_g1_own_pages",
+    "op": "contents",
+    "http": 200,
+    "elapsed_s": 1.3,
+    "cost_usd": 0.004,
+    "cost_breakdown": {
+      "total": 0.004,
+      "contents": {
+        "text": 0.004
+      }
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "step4_g2_ehr_portal",
+    "op": "auto",
+    "http": 200,
+    "elapsed_s": 1.0,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "step4_g3_priorauth_jobs",
+    "op": "auto",
+    "http": 200,
+    "elapsed_s": 1.0,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "step4_g4_leadership",
+    "op": "auto",
+    "http": 200,
+    "elapsed_s": 1.9,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "step4b_modmed_confirm",
+    "op": "contents",
+    "http": 200,
+    "elapsed_s": 10.2,
+    "cost_usd": 0.003,
+    "cost_breakdown": {
+      "total": 0.003,
+      "contents": {
+        "text": 0.003
+      }
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "step4c_modmed_retry",
+    "op": "contents",
+    "http": 200,
+    "elapsed_s": 0.1,
+    "cost_usd": 0.001,
+    "cost_breakdown": {
+      "total": 0.001,
+      "contents": {
+        "text": 0.001
+      }
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "step4d_modmed_corroborate",
+    "op": "auto",
+    "http": 200,
+    "elapsed_s": 2.0,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  },
+  {
+    "provider": "apollo",
+    "label": "step5a_people_by_orgid",
+    "op": "POST /mixed_people/api_search",
+    "http": 200,
+    "elapsed_s": 0.3,
+    "credits": 0,
+    "rate_headers": {
+      "x-24-hour-requests-left": "49998",
+      "x-hourly-requests-left": "5998",
+      "x-minute-requests-left": "199",
+      "x-rate-limit-24-hour": "50000",
+      "x-rate-limit-hourly": "6000",
+      "x-rate-limit-minute": "200"
+    }
+  },
+  {
+    "provider": "apollo",
+    "label": "step5b_people_by_domain",
+    "op": "POST /mixed_people/api_search",
+    "http": 200,
+    "elapsed_s": 0.2,
+    "credits": 0,
+    "rate_headers": {
+      "x-24-hour-requests-left": "49997",
+      "x-hourly-requests-left": "5997",
+      "x-minute-requests-left": "198",
+      "x-rate-limit-24-hour": "50000",
+      "x-rate-limit-hourly": "6000",
+      "x-rate-limit-minute": "200"
+    }
+  },
+  {
+    "provider": "apollo",
+    "label": "step6a_match_tpunteney",
+    "op": "POST /people/match",
+    "http": 200,
+    "elapsed_s": 1.0,
+    "credits": 1,
+    "rate_headers": {
+      "x-minute-requests-left": "999",
+      "x-rate-limit-24-hour": "",
+      "x-rate-limit-hourly": "",
+      "x-rate-limit-minute": "1000"
+    }
+  },
+  {
+    "provider": "apollo",
+    "label": "step6b_match_wpunteney",
+    "op": "POST /people/match",
+    "http": 200,
+    "elapsed_s": 0.3,
+    "credits": 1,
+    "rate_headers": {
+      "x-minute-requests-left": "998",
+      "x-rate-limit-24-hour": "",
+      "x-rate-limit-hourly": "",
+      "x-rate-limit-minute": "1000"
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "step7_contact_deep",
+    "op": "deep-reasoning",
+    "http": 200,
+    "elapsed_s": 28.4,
+    "cost_usd": 0.029,
+    "cost_breakdown": {
+      "total": 0.029
+    }
+  },
+  {
+    "provider": "openrouter",
+    "label": "step8_structure_z-ai_glm-47",
+    "op": "z-ai/glm-4.7",
+    "http": 200,
+    "elapsed_s": 207.7,
+    "usage": {
+      "prompt_tokens": 10249,
+      "completion_tokens": 6240,
+      "total_tokens": 16489,
+      "cost": 0.0150196,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0150196,
+        "upstream_inference_prompt_cost": 0.0040996,
+        "upstream_inference_completions_cost": 0.01092
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 6120,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.0150196
+  },
+  {
+    "provider": "openrouter",
+    "label": "step8_structure_openai_gpt-5-mini",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 129.5,
+    "usage": {
+      "prompt_tokens": 10008,
+      "completion_tokens": 11599,
+      "total_tokens": 21607,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0257,
+        "upstream_inference_prompt_cost": 0.002502,
+        "upstream_inference_completions_cost": 0.023198
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 6144,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0
+  },
+  {
+    "provider": "openrouter",
+    "label": "step8b_z-ai_glm-47",
+    "op": "z-ai/glm-4.7",
+    "http": 200,
+    "elapsed_s": 335.4,
+    "usage": {
+      "prompt_tokens": 10300,
+      "completion_tokens": 8562,
+      "total_tokens": 18862,
+      "cost": 0.0191035,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0191035,
+        "upstream_inference_prompt_cost": 0.00412,
+        "upstream_inference_completions_cost": 0.0149835
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.0191035
+  },
+  {
+    "provider": "openrouter",
+    "label": "step8b_openai_gpt-5-mini",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 64.6,
+    "usage": {
+      "prompt_tokens": 10059,
+      "completion_tokens": 5046,
+      "total_tokens": 15105,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.01260675,
+        "upstream_inference_prompt_cost": 0.00251475,
+        "upstream_inference_completions_cost": 0.010092
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 192,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0
+  },
+  {
+    "provider": "openrouter",
+    "label": "step8c_account",
+    "op": "z-ai/glm-4.7",
+    "http": 200,
+    "elapsed_s": 214.0,
+    "usage": {
+      "prompt_tokens": 10610,
+      "completion_tokens": 10159,
+      "total_tokens": 20769,
+      "cost": 0.02297264,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.02297264,
+        "upstream_inference_prompt_cost": 0.0050928,
+        "upstream_inference_completions_cost": 0.01787984
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.02297264
+  },
+  {
+    "provider": "openrouter",
+    "label": "step8c_contacts",
+    "op": "z-ai/glm-4.7",
+    "http": 200,
+    "elapsed_s": 13.8,
+    "usage": {
+      "prompt_tokens": 10439,
+      "completion_tokens": 2814,
+      "total_tokens": 13253,
+      "cost": 0.0124542,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0124542,
+        "upstream_inference_prompt_cost": 0.0062634,
+        "upstream_inference_completions_cost": 0.0061908
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.0124542
+  },
+  {
+    "provider": "exa",
+    "label": "step11_qualify_asheville",
+    "op": "auto",
+    "http": 200,
+    "elapsed_s": 1.5,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "step11_qualify_athens",
+    "op": "auto",
+    "http": 200,
+    "elapsed_s": 1.4,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "step11_qualify_gainesville",
+    "op": "auto",
+    "http": 200,
+    "elapsed_s": 1.4,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  },
+  {
+    "provider": "openrouter",
+    "label": "step8d_pages",
+    "op": "z-ai/glm-4.7",
+    "http": 200,
+    "elapsed_s": 110.3,
+    "usage": {
+      "prompt_tokens": 4224,
+      "completion_tokens": 5703,
+      "total_tokens": 9927,
+      "cost": 0.015081,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.015081,
+        "upstream_inference_prompt_cost": 0.0025344,
+        "upstream_inference_completions_cost": 0.0125466
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.015081
+  }
+]

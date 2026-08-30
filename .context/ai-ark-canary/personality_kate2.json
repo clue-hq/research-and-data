@@ -1,0 +1,269 @@
+{
+ "http": 200,
+ "body": {
+  "model": "SKILL_BASED",
+  "source": {
+   "headline": "Growth @ Probook",
+   "refId": "kibrady12",
+   "skills": [
+    "Public Relations",
+    "Public Speaking",
+    "Event Planning",
+    "Research",
+    "Community Outreach",
+    "Event Management",
+    "Marketing",
+    "Strategy",
+    "Communication",
+    "Microsoft Office",
+    "Interpersonal Skill",
+    "Logistics Management",
+    "Social Networking",
+    "Event Marketing Strategy",
+    "Social Media",
+    "Media Relations"
+   ],
+   "summary": ""
+  },
+  "score": 100.0,
+  "selling": {
+   "email": {
+    "closingLine": {
+     "definition": "The final complete sentence of the email",
+     "advice": "Express your request in a casual manner",
+     "example": "For instance, 'Mostafa, can we finalize tomorrow if you're available?'"
+    },
+    "gif": {
+     "definition": "Any symbols, emoticons, multimedia elements in your message",
+     "advice": "Consider using them",
+     "example": ""
+    },
+    "subject": {
+     "definition": "The headline of the email",
+     "advice": "Make it enticing and to the point",
+     "example": "Like 'Mostafa, let's wrap this up tomorrow?', 'Empowering a significant increase in your sales conversion!'"
+    },
+    "bulletPoints": {
+     "definition": "Any structured points or lists in your message",
+     "advice": "Consider incorporating them",
+     "example": ""
+    },
+    "greeting": {
+     "definition": "The initial line following the opening greeting",
+     "advice": "Avoid the usual greetings (or introduce something distinctive)",
+     "example": "Omit standard greetings and opt for something unique like 'What an engaging conversation it has been!'"
+    },
+    "complimentaryClose": null,
+    "emailLength": {
+     "definition": "The recommended length of the email",
+     "advice": "Keep it moderately brief",
+     "example": "Preferably around 130-150 words"
+    },
+    "tone": {
+     "definition": "The specific phrases and terms that carry weight in your message",
+     "advice": "Keep it informal and straightforward",
+     "example": ""
+    },
+    "salutation": {
+     "definition": "The initial message addressing the recipient",
+     "advice": "Avoid formal salutations",
+     "example": "Forego 'Hi', 'Hey', etc., and use only the recipient's first name"
+    },
+    "messaging": {
+     "definition": "The core message you wish to convey to the reader",
+     "advice": "Focus on personal accomplishments",
+     "example": ""
+    }
+   },
+   "interests": [],
+   "communication": {
+    "types": [
+     "high dominance",
+     "medium influence"
+    ],
+    "descriptions": [
+     "Their evaluations depend on the quality of a product but are susceptible to compelling endorsements.",
+     "They are not afraid to take a firm stance when they are passionate about something.",
+     "Typically, they like to steer the dialogue."
+    ],
+    "adjectives": [
+     "Driven by Conviction",
+     "Focusing on Impact",
+     "Approachable Challenger"
+    ],
+    "whatToSay": [
+     "Concentrate your presentation on the outcomes while weaving in some illustrative stories.",
+     "Emphasize the broader perspective and the strategic importance of your offering.",
+     "Guide them towards championing your product internally."
+    ],
+    "whatToAvoid": [
+     "Steer clear of fixating solely on the product or its Return on Investment (ROI); subtly work on fostering trust.",
+     "Avoid repetitive information as it may lead to impatience.",
+     "Refrain from being overly talkative or excessively affable; a touch of warmth is acceptable though."
+    ],
+    "subject": null,
+    "body": null
+   },
+   "keyTraits": {
+    "risk": "They possess the capacity to make bold choices when required.",
+    "abilityToSayNo": "They are unafraid to reject something if they lack confidence in your offering.",
+    "speed": "They have the ability to make quick decisions if they are convinced of the product's value and trustworthiness.",
+    "decisionDrivers": "What holds the greatest importance is faith in the product's worth, the relationship, and a feeling of achievement."
+   }
+  },
+  "hiring": {
+   "email": {
+    "closingLine": {
+     "definition": "The final complete sentence of the email",
+     "advice": "Create anticipation, then casually state your request",
+     "example": "For instance, 'Mostafa, if you're interested, let's chat tomorrow for 10 minutes?'"
+    },
+    "gif": {
+     "definition": "Representation of emotions using symbols or images in your message",
+     "advice": "Consider using",
+     "example": ""
+    },
+    "subject": {
+     "definition": "The topic of the email",
+     "advice": "Focused on achievements, personalized tone",
+     "example": "For example, 'Mostafa, we are seeking a Project Manager to lead an innovative product', 'Mostafa, are you interested in a Development Lead role with a stellar team?' etc."
+    },
+    "bulletPoints": {
+     "definition": "Any listed points in your message",
+     "advice": "Consider incorporating",
+     "example": ""
+    },
+    "greeting": {
+     "definition": "The initial line following the first salutation",
+     "advice": "Avoid cliches (Or share a unique message)",
+     "example": "You can skip traditional greetings and go for something distinct like 'What a stimulating conversation it's been!'"
+    },
+    "complimentaryClose": {
+     "definition": "The segment where you bid farewell before signing off",
+     "advice": "Opt for an original, relaxed ending",
+     "example": "For example, 'Awaiting the future!', 'Here's to fresh beginnings!' etc."
+    },
+    "emailLength": {
+     "definition": "The ideal email length",
+     "advice": "Moderate",
+     "example": "Preferably around 250-300 words"
+    },
+    "tone": {
+     "definition": "The specific phrases and words with significance in your message",
+     "advice": "Be casual and straightforward",
+     "example": ""
+    },
+    "salutation": {
+     "definition": "The starting greeting that addresses the recipient",
+     "advice": "Avoid formalities",
+     "example": "Omit 'Hi', 'Hey', and solely utilize the first name"
+    },
+    "messaging": {
+     "definition": "The central message intended for the reader",
+     "advice": "Emphasize personal accomplishments, include praise, identify challenges",
+     "example": ""
+    }
+   },
+   "interests": [],
+   "communication": {
+    "types": [
+     "high dominance",
+     "medium influence"
+    ],
+    "descriptions": [
+     "They exhibit a proactive 'let's achieve it' mindset but dislike leaving anyone behind.",
+     "They can be challenging team members but truly excel when collaborating with inspiring managers and leaders.",
+     "Achieving significant milestones, receiving recognition from their peers greatly drives their motivation."
+    ],
+    "adjectives": [
+     "Innate Leader",
+     "Top Performer",
+     "Motivator"
+    ],
+    "whatToSay": [
+     "Initiate casual conversation initially, but maintain brevity overall.",
+     "Praise their accomplishments as they highly value appreciation for their hard work.",
+     "If applicable, highlight terms like 'adventurous spirit' and 'goal-oriented culture' to align with your organization's ethos."
+    ],
+    "whatToAvoid": [
+     "Avoid presenting the role as ordinary; instead, emphasize its unique and inspiring aspects.",
+     "Avoid discussing job stability, slow progression, as these factors contradict their preferences.",
+     "Ensure equal emphasis on both teamwork and goal achievement."
+    ],
+    "subject": "An engaging <role_name> opportunity awaits you",
+    "body": "<candidate_name> \n\nI have been tasked with finding a results-driven <role_name> position in <role_location> for <company_name>. Are you interested in exploring a role that challenges your limits? \n\nThis role demands a lot within a highly respected organization, offering substantial impact and promising growth opportunities. \n**b**<expectation_first> \n**b**<expectation_second> \n**b**<expectation_third> \n\n<role_extra_info> \n\nThis challenging role within a prestigious organization promises remarkable visibility and rapid advancement. You would collaborate with a highly skilled team in a dynamic setting that prioritizes innovation. \n\nDoes this proposition pique your interest? I can contact you to provide further details about the role. \n\nHere's to reaching greater heights! \n\n<your_name>"
+   },
+   "keyTraits": {
+    "risk": null,
+    "abilityToSayNo": null,
+    "speed": null,
+    "decisionDrivers": null
+   }
+  },
+  "assessments": {
+   "archetype": "Sharpshooter",
+   "ocean": {
+    "openness": {
+     "score": 9.14,
+     "level": "very high"
+    },
+    "conscientiousness": {
+     "score": 9.18,
+     "level": "very high"
+    },
+    "extraversion": {
+     "score": 4.06,
+     "level": "moderate"
+    },
+    "agreeableness": {
+     "score": 3.72,
+     "level": "low"
+    },
+    "emotionalStability": {
+     "score": 8.06,
+     "level": "very high"
+    },
+    "summary": {
+     "descriptions": [
+      "Balanced extraversion",
+      "Highly developed conscientiousness"
+     ],
+     "labels": [
+      "e",
+      "c"
+     ]
+    }
+   },
+   "disc": {
+    "dominance": {
+     "score": 8.21,
+     "level": "very high"
+    },
+    "influence": {
+     "score": 6.52,
+     "level": "high"
+    },
+    "steadiness": {
+     "score": 7.31,
+     "level": "high"
+    },
+    "calculativeness": {
+     "score": 8.18,
+     "level": "very high"
+    },
+    "summary": {
+     "descriptions": [
+      "Notable influence",
+      "Exceptionally dominance"
+     ],
+     "labels": [
+      "I",
+      "D"
+     ]
+    }
+   }
+  },
+  "status": "SUCCESS",
+  "success": true
+ }
+}

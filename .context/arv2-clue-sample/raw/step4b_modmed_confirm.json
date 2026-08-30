@@ -1,0 +1,79 @@
+{
+  "requestId": "a2ed946a3a138cfa2f00fb6f4c717ab2",
+  "results": [
+    {
+      "id": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "title": "Wanda W. Punteney | Charleston GI",
+      "url": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "publishedDate": "2020-06-15T01:39:25.000Z",
+      "author": null,
+      "text": "Wanda W. Punteney | Charleston GI\n\nX\n\n| Turn 45? It\u2019s Time to Screen For Colorectal Cancer. Learn More |\n| --- |\n\n# Wanda W. Punteney\n\n---\n\n## Wanda W. Punteney\n\nChief Executive Officer Member of Charleston GI since 1989\n\nGET IN TOUCH!\n\n## Wanda W. Punteney\n\nChief Executive Officer Member of Charleston GI since 1989\n\n#### Locations Served\n\n- Charleston Gastroenterology Specialists\n- Charleston Endoscopy Center\n- Summerville Endoscopy Center\n- Lowcountry Endoscopy Center\n\n---\n\nGET IN TOUCH!\n\n- PHONE 843-722-8000 (8437228000)\n- \u2022\n- FAX 843-647-6066 (8436476066)\n\nWEST ASHLEY OFFICE AND CHARLESTON ENDOSCOPY CENTER1962 Charlie Hall BoulevardCharleston, SC 29414\n\n---\n\nSUMMERVILLE OFFICE AND SUMMERVILLE ENDOSCOPY CENTER328 Midland ParkwaySummerville, SC 29485\n\n---\n\nCARNES CROSSROADS OFFICEWindmill Station2001 2nd Avenue, Suite 101 Summerville, SC 29486\n\n---\n\nLOWCOUNTRY ENDOSCOPY CENTER 207 McBride Ln. Summerville SC 29486\n\n---\n\n---\n\nMedical & Privacy Disclaimer: The content on this website is for informational purposes only and does not constitute medical advice or establish a doctor-patient relationship. Always consult a qualified healthcare provider for medical concerns or emergencies. Do not submit sensitive personal health information (PHI) through standard web contact forms, as unencrypted internet communications are not completely secure. Existing patients should use the secure [My GI Patient Portal] for confidential communications.",
+      "image": "https://charlestongi.com/wp-content/uploads/2020/06/CGI-DoctorsIndividual-WandaPunteney.png",
+      "favicon": "https://charlestongi.com/wp-content/uploads/2020/08/cropped-20-CGI-1767-Favicon-1-32x32.jpg"
+    },
+    {
+      "id": "https://charlestongi.com/careers-portal/",
+      "title": "Careers at Charleston GI | Charleston GI",
+      "url": "https://charlestongi.com/careers-portal/",
+      "publishedDate": "2020-07-02T00:38:41.000Z",
+      "author": null,
+      "text": "Careers at Charleston GI | Charleston GI\n\nX\n\n| Turn 45? It\u2019s Time to Screen For Colorectal Cancer. Learn More |\n| --- |\n\n# Careers Portal\n\n---\n\n## CAREERS AT CHARLESTON GI\n\nAre you ready for new challenges and new opportunities?\n\nJoin our team!\n\nCharleston Gastroenterology Specialist Lowcountry Endoscopy Center Charleston Endoscopy Center Summerville Endoscopy Center\n\n- PHONE 843-722-8000 (8437228000)\n- \u2022\n- FAX 843-647-6066 (8436476066)\n\nWEST ASHLEY OFFICE AND CHARLESTON ENDOSCOPY CENTER1962 Charlie Hall BoulevardCharleston, SC 29414\n\n---\n\nSUMMERVILLE OFFICE AND SUMMERVILLE ENDOSCOPY CENTER328 Midland ParkwaySummerville, SC 29485\n\n---\n\nCARNES CROSSROADS OFFICEWindmill Station2001 2nd Avenue, Suite 101 Summerville, SC 29486\n\n---\n\nLOWCOUNTRY ENDOSCOPY CENTER 207 McBride Ln. Summerville SC 29486\n\n---\n\n---\n\nMedical & Privacy Disclaimer: The content on this website is for informational purposes only and does not constitute medical advice or establish a doctor-patient relationship. Always consult a qualified healthcare provider for medical concerns or emergencies. Do not submit sensitive personal health information (PHI) through standard web contact forms, as unencrypted internet communications are not completely secure. Existing patients should use the secure [My GI Patient Portal] for confidential communications.",
+      "favicon": "https://charlestongi.com/wp-content/uploads/2020/08/cropped-20-CGI-1767-Favicon-1-32x32.jpg"
+    },
+    {
+      "id": "https://easyapply.co/a/e486079d-8a5c-4931-aed6-1ab674610d3e",
+      "title": "GetHired",
+      "url": "https://easyapply.co/a/e486079d-8a5c-4931-aed6-1ab674610d3e",
+      "author": null,
+      "text": "GetHired\n\nGetHired.com Already a member? Login\n\n---\n\nSorry! The job you are looking for is no longer accepting applications.\n\nHave questions? Call (888) 320-4456.\n\n\u00a9 Copyright 2026 GetHired, Inc. All rights reserved.\n\nBy using this software, you agree to our Privacy Policy and Terms of Service(collectively, \"Terms\"), effective as of June 18, 2021. These Terms are effective for all users as of this date.",
+      "image": "https://easyapply.co/v4/img/vega-chevron-right.svg",
+      "favicon": "https://easyapply.co/images/favicon.png?r=236"
+    }
+  ],
+  "statuses": [
+    {
+      "id": "https://www.modmed.com/resources/gi/charleston-gi-improves-revenue-cycle-with-modmed-suite-of-products",
+      "status": "error",
+      "error": {
+        "httpStatusCode": 504,
+        "tag": "CRAWL_LIVECRAWL_TIMEOUT"
+      }
+    },
+    {
+      "id": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "status": "success",
+      "source": "crawled"
+    },
+    {
+      "id": "https://charlestongi.com/careers-portal/",
+      "status": "success",
+      "source": "crawled"
+    },
+    {
+      "id": "https://easyapply.co/a/e486079d-8a5c-4931-aed6-1ab674610d3e",
+      "status": "success",
+      "source": "crawled"
+    }
+  ],
+  "costDollars": {
+    "total": 0.003,
+    "contents": {
+      "text": 0.003
+    }
+  },
+  "searchTime": 10011.656667999923,
+  "_http_status": 200,
+  "_elapsed_s": 10.2,
+  "_request": {
+    "urls": [
+      "https://www.modmed.com/resources/gi/charleston-gi-improves-revenue-cycle-with-modmed-suite-of-products",
+      "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "https://charlestongi.com/careers-portal/",
+      "https://easyapply.co/a/e486079d-8a5c-4931-aed6-1ab674610d3e"
+    ],
+    "text": {
+      "maxCharacters": 12000
+    },
+    "livecrawl": "always"
+  }
+}

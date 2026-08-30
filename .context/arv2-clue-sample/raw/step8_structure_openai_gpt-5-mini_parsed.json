@@ -1,0 +1,483 @@
+{
+  "claims": [
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.account_name",
+      "is_proposed_field": false,
+      "value_json": "Charleston GI Specialists",
+      "evidence_span": "Operating/public name: Charleston GI Specialists / Charleston GI; the official site is https://charlestongi.com.",
+      "source_url": "https://charlestongi.com/",
+      "origin": "exa_deep",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.primary_domain",
+      "is_proposed_field": false,
+      "value_json": "charlestongi.com",
+      "evidence_span": "\"primary_domain\": \"charlestongi.com\"",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.company_about",
+      "is_proposed_field": false,
+      "value_json": "As the first and largest independent group of GI specialists in Charleston, our qualified team includes eleven outstanding board-certified gastroenterologists. With combined experience of over 100 years, our staff is wholeheartedly committed to providing the highest standard of care \u0013 close to home! With four convenient locations and two state-of-the-art endoscopy centers, relief is never far away.",
+      "evidence_span": "short_description\": \"As the first and largest independent group of GI specialists in Charleston, our qualified team includes eleven outstanding board-certified gastroenterologists. With combined experience of over 100 years, our staff is wholeheartedly committed to providing the highest standard of care \u0013 close to home! With four convenient locations and two state-of-the-art endoscopy centers, relief is never far away.",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.industry",
+      "is_proposed_field": false,
+      "value_json": "hospital & health care",
+      "evidence_span": "\"industry\": \"hospital & health care\"",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.employee_count",
+      "is_proposed_field": false,
+      "value_json": 76,
+      "evidence_span": "\"estimated_num_employees\": 76",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.hq_location",
+      "is_proposed_field": false,
+      "value_json": {
+        "raw": "1962 Charlie Hall Blvd, Charleston, South Carolina 29414, US",
+        "city": "Charleston",
+        "region": "South Carolina",
+        "country": "United States",
+        "country_code": "US"
+      },
+      "evidence_span": "\"raw_address\": \"1962 Charlie Hall Blvd, Charleston, South Carolina 29414, US\"",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.company_phone",
+      "is_proposed_field": false,
+      "value_json": "+1 843-722-8000",
+      "evidence_span": "\"phone\": \"+1 843-722-8000\"",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.company_linkedin_url",
+      "is_proposed_field": false,
+      "value_json": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "evidence_span": "\"linkedin_url\": \"http://www.linkedin.com/company/charleston-gastroenterology\"",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.primary_tech_stack",
+      "is_proposed_field": false,
+      "value_json": [
+        "gGastro",
+        "gPM"
+      ],
+      "evidence_span": "Charleston GI Specialists implemented gGastro and its practice management system, gPM, in 2013.",
+      "source_url": "https://www.modmed.com/resources/blog/experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists",
+      "origin": "exa_cheap",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.primary_tech_stack",
+      "is_proposed_field": false,
+      "value_json": [
+        "Klara"
+      ],
+      "evidence_span": "gGastro Patient Collaboration Success Story Gastroenterology Charleston GI improves the patient experience and operational efficiency with Klara",
+      "source_url": "https://www.modmed.com/resources/educational-guides/one-gi-practice-improves-the-patient-experience-with-klara",
+      "origin": "exa_cheap",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.primary_tech_stack",
+      "is_proposed_field": false,
+      "value_json": [
+        "Nuance Dragon Medical One PowerMic"
+      ],
+      "evidence_span": "Nuance Dragon Medical One PowerMic",
+      "source_url": "https://www.mindwareconnections.com/hubfs/PDF's/Case%20Studies/DMO%20Case%20Studies/cs-charleston-gi-cloud-based-speech-recognition-en-us.pdf",
+      "origin": "exa_cheap",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.primary_tech_stack",
+      "is_proposed_field": false,
+      "value_json": [
+        "WordPress",
+        "CloudFlare",
+        "Google Analytics",
+        "Amazon AWS",
+        "Microsoft 365"
+      ],
+      "evidence_span": "\"technology_names\": [ \"Amazon AWS\", \"Amazon S3\", \"Apple iOS\", \"Bootstrap\", \"Clarity SDM\", \"CloudFlare\", \"Klara\", \"Microsoft 365\", \"Wordpress\", \"Yoast\", \"Google Analytics\"",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.company_about",
+      "is_proposed_field": false,
+      "value_json": "The practice lists Charleston Endoscopy Center at 1962 Charlie Hall Boulevard and Summerville Endoscopy Center at 328 Midland Parkway, and separately lists LOWCOUNTRY ENDOSCOPY CENTER 207 McBride Ln. Summerville SC 29486; the site states it has \"four convenient locations and two state-of-the-art endoscopy centers.\"",
+      "evidence_span": "the official site lists Charleston Endoscopy Center at \u201c1962 Charlie Hall Boulevard Charleston, SC 29414\u201d and Summerville Endoscopy Center at \u201c328 Midland Parkway Summerville, SC 29485,\u201d and separately lists \u201cLOWCOUNTRY ENDOSCOPY CENTER 207 McBride Ln. Summerville SC 29486.\u201d",
+      "source_url": "https://charlestongi.com/contact-us/",
+      "origin": "exa_deep",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.locations",
+      "is_proposed_field": true,
+      "value_json": [
+        {
+          "raw": "West Ashley: 1962 Charlie Hall Boulevard Charleston, SC 29414",
+          "address": "1962 Charlie Hall Boulevard",
+          "city": "Charleston",
+          "region": "SC",
+          "postal_code": "29414"
+        },
+        {
+          "raw": "Summerville: 328 Midland Parkway Summerville, SC 29485",
+          "address": "328 Midland Parkway",
+          "city": "Summerville",
+          "region": "SC",
+          "postal_code": "29485"
+        },
+        {
+          "raw": "Carnes Crossroads: Windmill Station 2001 2nd Avenue, Suite 101 Summerville, SC 29486",
+          "address": "Windmill Station 2001 2nd Avenue, Suite 101",
+          "city": "Summerville",
+          "region": "SC",
+          "postal_code": "29486"
+        },
+        {
+          "raw": "Mount Pleasant: 180 Wingo Way, Ste. 305 Mount Pleasant, SC 29464",
+          "address": "180 Wingo Way, Ste. 305",
+          "city": "Mount Pleasant",
+          "region": "SC",
+          "postal_code": "29464"
+        }
+      ],
+      "evidence_span": "Locations publicly listed:\n1. West Ashley: \u201c1962 Charlie Hall Boulevard Charleston, SC 29414.\u201d\n2. Summerville: \u201c328 Midland Parkway Summerville, SC 29485.\u201d\n3. Carnes Crossroads: \u201cWindmill Station 2001 2nd Avenue, Suite 101 Summerville, SC 29486.\u201d\n4. Mount Pleasant: \u201c180 Wingo Way, Ste. 305 Mount Pleasant, SC 29464.\u201d",
+      "source_url": "https://charlestongi.com/contact-us/",
+      "origin": "exa_deep",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.published_faxes",
+      "is_proposed_field": true,
+      "value_json": [
+        "843-647-6066",
+        "843-723-7850"
+      ],
+      "evidence_span": "The site publishes PHONE \u201c843-722-8000\u201d and FAX \u201c843-647-6066.\u201d ... 843-723-7850, listed by the Roper directory for all four Charleston Gastroenterology Specialists locations;",
+      "source_url": "https://charlestongi.com/referring-physicians/",
+      "origin": "exa_deep",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.patient_portal_name",
+      "is_proposed_field": true,
+      "value_json": "My GI Patient Portal",
+      "evidence_span": "The public site identifies the portal only as \u201cMy GI Patient Portal\u201d and says \u201cExisting patients should use the secure My GI Patient Portal for confidential communications.\u201d",
+      "source_url": "https://charlestongi.com/doctors&staff/r-sidney-g-smith/",
+      "origin": "exa_deep",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.billing_office_phone",
+      "is_proposed_field": true,
+      "value_json": "843-793-5182",
+      "evidence_span": "The patient-forms page also says \u201cWe now offer online bill pay\u201d and gives billing-office phone 843-793-5182.",
+      "source_url": "https://charlestongi.com/for-patients/patient-forms/",
+      "origin": "exa_deep",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.current_title",
+      "is_proposed_field": false,
+      "value_json": "Chief Executive Officer",
+      "evidence_span": "\u201cChief Executive Officer Wanda W. Punteney\u201d",
+      "source_url": "https://theorg.com/org/charleston-gastroenterology-specialist",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.organization_relationship",
+      "is_proposed_field": false,
+      "value_json": {
+        "relationship": "employee",
+        "basis": "employer bio and regulatory filings",
+        "organization_id": "charleston-gi-specialists"
+      },
+      "evidence_span": "Employer anchor: Charleston GI\u2019s official staff page is titled \u201cWanda W. Punteney\u201d and states, \u201cChief Executive Officer Member of Charleston GI since 1989.\u201d",
+      "source_url": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.facet.career_history",
+      "is_proposed_field": false,
+      "value_json": [
+        {
+          "org": "Charleston GI / Charleston Gastroenterology Specialists",
+          "role": "Chief Executive Officer",
+          "start": null,
+          "end": null
+        },
+        {
+          "org": "South Carolina Medical Group Management Association (SCMGMA)",
+          "role": "2005 Governor SCMGMA",
+          "start": 2005,
+          "end": 2005
+        }
+      ],
+      "evidence_span": "Current: Charleston GI / Charleston Gastroenterology Specialists \u2014 Chief Executive Officer; LinkedIn identifies her as \u201cAdministrator, CEO at Charleston GI.\u201d ... \"2005 Governor SCMGMA - Wanda Punteney.\"",
+      "source_url": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.facet.recent_post",
+      "is_proposed_field": false,
+      "value_json": "Member of Charleston GI since 1989.",
+      "evidence_span": "Service milestone: Charleston GI\u2019s official bio states, \u201cMember of Charleston GI since 1989.\u201d",
+      "source_url": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.facet.public_appearances",
+      "is_proposed_field": false,
+      "value_json": [
+        {
+          "title": "Quote re: Windmill Station/Carnes Crossroads expansion",
+          "venue": "Post and Courier / Berkeley Independent",
+          "url": "https://www.postandcourier.com/journal-scene/news/officials-break-ground-on-windmill-station/article_2adba5d9-8c5d-5db5-b641-44fbc3a76b94.html",
+          "date": "2017-04-30"
+        },
+        {
+          "title": "Project testimonial quoted as CEO, Charleston GI",
+          "venue": "Cypress Engineering project page",
+          "url": "https://www.cypresseng.com/project/lowcountry-endoscopy-center/",
+          "date": "2023-03-07"
+        }
+      ],
+      "evidence_span": "Post and Courier / Berkeley Independent, April 30, 2017: The article identifies her as \u201cWanda Punteney, CEO of Charleston GI\u201d and quotes her...  Cypress Engineering attributes this statement to her: \u201cExceptional experience in every way. Professional and customer focused...\"",
+      "source_url": "https://www.postandcourier.com/journal-scene/news/officials-break-ground-on-windmill-station/article_2adba5d9-8c5d-5db5-b641-44fbc3a76b94.html",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.class",
+      "is_proposed_field": false,
+      "value_json": "business",
+      "evidence_span": "Exact current title: \u201cChief Executive Officer\u201d on the Charleston GI employer bio; LinkedIn says \u201cAdministrator, CEO at Charleston GI.\u201d",
+      "source_url": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.core.work_email",
+      "is_proposed_field": false,
+      "value_json": "tommy.punteney@charlestongi.com",
+      "evidence_span": "\"email\": \"tommy.punteney@charlestongi.com\", \"email_status\": \"verified\"",
+      "source_url": "https://app.apollo.io/#/people/6a8e800333952b00141258ca",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.current_title",
+      "is_proposed_field": false,
+      "value_json": "Chief Operating Officer",
+      "evidence_span": "Thomas D. Punteney, Chief Operating Officer of Charleston (S.C.) GI Specialists",
+      "source_url": "https://www.beckersasc.com/gastroenterology-and-endoscopy/3-experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists/",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.organization_relationship",
+      "is_proposed_field": false,
+      "value_json": {
+        "relationship": "employee",
+        "basis": "industry press and Apollo people match",
+        "organization_id": "charleston-gi-specialists"
+      },
+      "evidence_span": "Thomas D. Punteney, Chief Operating Officer of Charleston (S.C.) GI Specialists, manages operations for three offices and two surgery centers with 11 providers on staff.",
+      "source_url": "https://www.modmed.com/resources/blog/experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.facet.career_history",
+      "is_proposed_field": false,
+      "value_json": [
+        {
+          "org": "Charleston GI Specialists",
+          "role": "Chief Operating Officer",
+          "start": null,
+          "end": null
+        }
+      ],
+      "evidence_span": "Thomas D. Punteney, Chief Operating Officer of Charleston (S.C.) GI Specialists",
+      "source_url": "https://www.beckersasc.com/gastroenterology-and-endoscopy/3-experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists/",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.current_location",
+      "is_proposed_field": false,
+      "value_json": {
+        "raw": "Charleston, South Carolina, United States",
+        "country": "United States"
+      },
+      "evidence_span": "\"city\": \"Charleston\",\"state\": \"South Carolina\",\"country\": \"United States\"",
+      "source_url": "https://app.apollo.io/#/people/6a8e800333952b00141258ca",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    }
+  ],
+  "proposed_fields": [
+    {
+      "field_key": "account.locations",
+      "entity_type": "account",
+      "value_type": "list[object]",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "raw": {
+              "type": "string"
+            },
+            "address": {
+              "type": "string"
+            },
+            "city": {
+              "type": "string"
+            },
+            "region": {
+              "type": "string"
+            },
+            "postal_code": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "raw",
+            "address",
+            "city"
+          ]
+        }
+      },
+      "description": "Structured list of the practice's published office and center locations (address, city, region, postal code).",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Many decisions (sales targeting, territory coverage, clinical service delivery) require explicit, queryable office addresses; existing fields provide only HQ or unstructured descriptions and cannot represent multiple published practice locations and centers."
+    },
+    {
+      "field_key": "account.published_faxes",
+      "entity_type": "account",
+      "value_type": "list[str]",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^[0-9\\-\\(\\) ]+$"
+        }
+      },
+      "description": "List of published fax numbers the practice advertises for referrals or general contact.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Referral and intake workflows often rely on published fax numbers; no existing account field captures multiple published faxes in a machine-friendly form to drive outreach or integration checks."
+    },
+    {
+      "field_key": "account.patient_portal_name",
+      "entity_type": "account",
+      "value_type": "str",
+      "value_schema": {
+        "type": "string"
+      },
+      "description": "Name/label of the patient portal as published on the public site.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Knowing the branded portal name helps map patient communication channels (portals, bill-pay) to vendor integrations and reduces discovery time when qualifying digital-front-door capabilities; existing fields do not capture portal branding."
+    },
+    {
+      "field_key": "account.billing_office_phone",
+      "entity_type": "account",
+      "value_type": "str",
+      "value_schema": {
+        "type": "string",
+        "pattern": "^[0-9\\-\\(\\) ]+$"
+      },
+      "description": "Phone number specifically published for billing-office contact on patient-facing pages.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Billing and revenue-cycle matching often requires the specific billing-office phone (separate from HQ/mainline); no existing field distinguishes a billing contact number from the general company phone."
+    }
+  ]
+}

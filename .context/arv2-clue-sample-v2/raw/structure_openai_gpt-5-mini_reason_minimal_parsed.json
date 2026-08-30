@@ -1,0 +1,445 @@
+{
+  "model": "openai/gpt-5-mini",
+  "claims": [
+    {
+      "entity": "account:lassie",
+      "field_key": "core.account_name",
+      "value_json": "Lassie",
+      "evidence_span": "Lassie, the company building autonomous systems to run small businesses, announced it has raised $35 million in Series A financing, bringing its total capital raised to $47 million.",
+      "source_url": "https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves.",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "core.primary_domain",
+      "value_json": "lassie.ai",
+      "evidence_span": "The company homepage headline is \u201cLassie \u2014 AI That Runs the Doctor's Office.\u201d",
+      "source_url": "https://www.lassie.ai/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "core.company_about",
+      "value_json": "Lassie is an AI that runs the doctor's office. It automates admin enrollments, payment posting, EFT reconciliation, and helps teams focus on patients.",
+      "evidence_span": "Lassie is an AI that runs the doctor's office. It automates admin enrollments, payment posting, EFT reconciliation, and helps teams focus on patients.",
+      "source_url": "https://lassie.ai/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "core.hq_location",
+      "value_json": {
+        "raw": "SAN FRANCISCO, Calif.--(BUSINESS WIRE)-- Lassie, the company building autonomous systems to run small businesses, announced it has raised $35 million in Series A financing, bringing its total capital raised to $47 million.",
+        "city": "San Francisco",
+        "country": "United States"
+      },
+      "evidence_span": "SAN FRANCISCO, Calif.--(BUSINESS WIRE)-- Lassie, the company building autonomous systems to run small businesses, announced it has raised $35 million in Series A financing, bringing its total capital raised to $47 million.",
+      "source_url": "https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves.",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "account.recent_funding",
+      "value_json": {
+        "amount_usd": 35000000,
+        "round": "Series A"
+      },
+      "evidence_span": "Lassie \u2026 announced it has raised $35 million in Series A financing, bringing its total capital raised to $47 million.",
+      "source_url": "https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves.",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.95
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "account.total_funding",
+      "value_json": {
+        "amount_usd": 47000000,
+        "estimate_kind": "reported"
+      },
+      "evidence_span": "Lassie, the company building autonomous systems to run small businesses, announced it has raised $35 million in Series A financing, bringing its total capital raised to $47 million.",
+      "source_url": "https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves.",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "account.strategic_moves",
+      "value_json": "Formalizing outbound and multi-channel prospecting to scale beyond referral/inbound-led growth; hiring Head of Marketing to find repeatable, scalable channels and messages.",
+      "evidence_span": "As Lassie's Head of Marketing, you'll be responsible for turning customer love into compounding demand. You'll connect product, data, marketing, sales, and customer insight to find the repeatable, scalable channels and messages that help Lassie reach far more doctors' offices efficiently.",
+      "source_url": "https://jobs.ashbyhq.com/lassie/297fd72f-fe6d-40f1-8931-89085e66fa2f",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.8
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "account.operational_pain",
+      "value_json": "Administrative labor and complexity in small medical/dental practices (insurance payment posting, reconciliations, denials/appeals) that is hard to staff and costly.",
+      "evidence_span": "Across roughly 160,000 dental practices in the U.S., this work is increasingly hard to staff and expensive to get wrong.",
+      "source_url": "https://a16z.com/announcement/investing-in-lassie/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "core.industry",
+      "value_json": "Healthcare / Practice administration software",
+      "evidence_span": "Lassie is an AI that runs the doctor's office. It automates admin enrollments, payment posting, EFT reconciliation, and helps teams focus on patients.",
+      "source_url": "https://lassie.ai/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "account.hiring_velocity_eng",
+      "value_json": 5,
+      "evidence_span": "Current hiring signal visible in the reviewed search results as of August 26, 2026 \u2014 GTM Associate, Head of Marketing, Customer Success Manager, Business Operations, and Head of Finance postings.",
+      "source_url": "https://jobs.ashbyhq.com/lassie",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.6
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "core.company_linkedin_url",
+      "value_json": "https://www.lassie.ai/company",
+      "evidence_span": "Lassie\u2019s company page describes the product as: \u201cLassie helps doctors run their offices by handling the busywork.\u201d",
+      "source_url": "https://www.lassie.ai/company",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "core.primary_tech_stack",
+      "value_json": [
+        "Dentrix",
+        "Eaglesoft",
+        "Open Dental"
+      ],
+      "evidence_span": "We automate EOB posting and payment matching across Dentrix, Eaglesoft, and Open Dental, without human intervention.",
+      "source_url": "https://www.lassie.ai/blog/ai-dental-admin-support",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "account.recent_funding",
+      "value_json": {
+        "amount_usd": 35000000,
+        "round": "Series A"
+      },
+      "evidence_span": "Today, we are thrilled to announce that a16z is leading Lassie\u2019s $35 million Series A.",
+      "source_url": "https://a16z.com/announcement/investing-in-lassie/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.95
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "account.recent_funding",
+      "value_json": {
+        "amount_usd": 35000000,
+        "round": "Series A"
+      },
+      "evidence_span": "Lassie Raises $35M Led by Andreessen Horowitz to Build AI for Small Businesses to Run Themselves",
+      "source_url": "https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves.",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.95
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.current_title",
+      "value_json": "CEO and Co-Founder - Lassie",
+      "evidence_span": "Small business owners should be freed up from doing busywork, so they can focus on what they are passionate about,\" said Steijn Pelle, CEO and co-founder of Lassie.",
+      "source_url": "https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves.",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.95,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.current_title",
+      "value_json": "CEO and Co-Founder - Lassie",
+      "evidence_span": "Co-founders Steijn Pelle and Fr\u00e9d\u00e9ric Renken did not find this problem from a distance.",
+      "source_url": "https://a16z.com/announcement/investing-in-lassie/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.current_title",
+      "value_json": "CEO & Co-Founder at Lassie",
+      "evidence_span": "His personal site identifies him as: \u201cCEO & Co-Founder at Lassie. Building AI that runs small businesses.\u201d",
+      "source_url": "https://steijn.com/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.persona",
+      "value_json": "champion",
+      "evidence_span": "To start, you'll have a handful of conversations with our team and founders. If there is mutual excitement, we'll invite you to the office where you'll work on a small project and meet the team.",
+      "source_url": "https://jobs.ashbyhq.com/lassie/d7f41c77-908c-4206-852b-a99a17f9a867",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.45,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "Today, we're introducing Lassie and $47M in funding led by a16z. We're building AI that runs small businesses, starting with doctors' offices.",
+      "evidence_span": "Today, we're introducing Lassie and $47M in funding led by a16z. We're building AI that runs small businesses, starting with doctors' offices.",
+      "source_url": "https://www.linkedin.com/posts/steijn_today-were-introducing-lassie-and-47m-activity-7467951103591038976-gfAQ",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.facet.publications",
+      "value_json": [
+        {
+          "title": "I\u2019m joining Coinbase",
+          "venue": "Medium",
+          "url": "https://medium.com/@steijnpelle/im-joining-coinbase-4c10b34bf161",
+          "date": "April 9, 2018"
+        }
+      ],
+      "evidence_span": "I\u2019ve joined Coinbase as a product lead to scale the company\u2019s growth team!",
+      "source_url": "https://medium.com/@steijnpelle/im-joining-coinbase-4c10b34bf161",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.facet.public_appearances",
+      "value_json": [
+        {
+          "title": "Getting Paid in the Age of AI: Back Office Automation from Silicon Valley Pt. 2",
+          "venue": "Dentalpreneur Podcast",
+          "url": "https://www.truedentalsuccess.com/the-dentalpreneur-podcast/2315-getting-paid-in-the-age-of-ai-back-office-automation-from-silicon-valley-pt-2/",
+          "date": "August 19, 2025"
+        },
+        {
+          "title": "Steijn Pelle on Dental AI Automation",
+          "venue": "MDIB Podcast",
+          "url": "https://mommydibs.com/steijn-pelle-lassie-ai/",
+          "date": "February 20, 2026"
+        }
+      ],
+      "evidence_span": "Steijn Pelle is the CEO and Co-founder of Lassie.",
+      "source_url": "https://mommydibs.com/steijn-pelle-lassie-ai/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.8,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    }
+  ],
+  "proposed_fields": [
+    {
+      "field_key": "company.founders",
+      "entity_type": "account",
+      "value_type": "list",
+      "value_schema": "{'type':'array','items':{'type':'string'}}",
+      "description": "List of named founders/co-founders as observed in primary sources (verbatim names).",
+      "reuse_scope": "public_footprint",
+      "hypothesis": "ABM sellers often need a distilled list of founders to target early-stage decision-makers and to personalize outreach; capturing founders explicitly helps routing and executive outreach strategies.",
+      "example_value": "[\"Steijn Pelle\", \"Fr\u00e9d\u00e9ric Renken\"]",
+      "example_evidence_span": "Co-founders Steijn Pelle and Fr\u00e9d\u00e9ric Renken did not find this problem from a distance.",
+      "example_source_url": "https://a16z.com/announcement/investing-in-lassie/"
+    },
+    {
+      "field_key": "account.practices_count",
+      "entity_type": "account",
+      "value_type": "integer",
+      "value_schema": "{'type':'integer'}",
+      "description": "Number of customer practices or small-business customers cited by the company or investor materials.",
+      "reuse_scope": "public_footprint",
+      "hypothesis": "Customer count (e.g., number of practices) is a high-signal traction metric for ABM prioritization; capturing it as structured numeric data enables ranking accounts by adoption and tailoring messaging.",
+      "example_value": 700,
+      "example_evidence_span": "Lassie already works with more than 700 practices across 49 states, generates more than $10 million in annualized revenue, and provides practices with 250,000 hours of labor a year.",
+      "example_source_url": "https://a16z.com/announcement/investing-in-lassie/"
+    },
+    {
+      "field_key": "account.claimed_annualized_revenue",
+      "entity_type": "account",
+      "value_type": "object",
+      "value_schema": "{'type':'object','required':['amount','currency','as_of'],'properties':{'amount':{'type':'number'},'currency':{'type':'string'},'as_of':{'type':'string'}}}",
+      "description": "Annualized revenue figure cited in company or investor materials, with as-of date.",
+      "reuse_scope": "public_footprint",
+      "hypothesis": "Reported annualized revenue is a key traction and segmentation signal for ABM targeting, helping prioritize accounts that have reached product-market fit and are scaling.",
+      "example_value": {
+        "amount": 10000000,
+        "currency": "USD",
+        "as_of": "June 3, 2026"
+      },
+      "example_evidence_span": "Lassie already works with more than 700 practices across 49 states, generates more than $10 million in annualized revenue, and provides practices with 250,000 hours of labor a year.",
+      "example_source_url": "https://a16z.com/announcement/investing-in-lassie/"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 17466,
+    "completion_tokens": 3742,
+    "total_tokens": 21208,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0118505,
+      "upstream_inference_prompt_cost": 0.0043665,
+      "upstream_inference_completions_cost": 0.007484
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "elapsed_s": 32.1,
+  "defects": {
+    "wrong_value_key": 0,
+    "string_confidence": 0,
+    "unregistered_field": [
+      "contact.career_history"
+    ],
+    "missing_source_url": [],
+    "unquoted_evidence": []
+  }
+}

@@ -1,0 +1,4 @@
+{
+ "http": 400,
+ "body": "{\"timestamp\":\"2026-08-30T00:51:42.067Z\",\"status\":400,\"error\":\"both domain and name are required\",\"path\":\"/v1/people/mobile-phone-finder\"}"
+}

@@ -1,0 +1,32 @@
+[
+  {
+    "key": "eliadis",
+    "name": "George Eliadis",
+    "chars": 21293,
+    "cost_usd": 0.015
+  },
+  {
+    "key": "hoffman",
+    "name": "Mark Hoffman",
+    "chars": 13492,
+    "cost_usd": 0.015
+  },
+  {
+    "key": "blumberg",
+    "name": "Kate Blumberg",
+    "chars": 18669,
+    "cost_usd": 0.015
+  },
+  {
+    "key": "churba",
+    "name": "Aaron Churba",
+    "chars": 13648,
+    "cost_usd": 0.015
+  },
+  {
+    "key": "zhang",
+    "name": "Lewis Zhang",
+    "chars": 14192,
+    "cost_usd": 0.015
+  }
+]
