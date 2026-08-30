@@ -75,6 +75,43 @@ before/after HTML sheet over all out/*/result.json). New findings + PoC fixes no
   semantic layer is the good half of the old method and survives in Phase 1; only rule-text
   mention-weighting dies.
 
+## Phase 1 SHIPPED (2026-08-30, two commits on integration/frontend-design-part-iv-v4)
+Founder approved scope: computed values + census first, logo = Phase 2, multi-page = agreed
+follow-up. Landed (commits "render probe + pixel census" + "rendered-truth palette election"):
+- `capture/rendered.py`: _PROBE_JS (probe-resolved tokens, visible element samples w/ boxes,
+  media boxes, gradient stops, canvas fraction, viewport width), Escape+overlay removal
+  (LUMI0530), 3s hero dwell, reduced_motion=no-preference, LUMI0532 probe-fail diag;
+  `SiteSnapshot.render_probe` (optional, back-compat).
+- `lumen_ingestion/census.py` (new): PIL point-LUT + getcolors census (NO numpy dep),
+  diversity-aware photo masking, fold census, button region modals, accent-text +
+  gradient-stop families, resolved tokens → `RenderTruth` (new models in evidence.py;
+  `BrandEvidence.render_truth` optional). PASTEL_C moved to colorspace.py (import-cycle-safe).
+- `normalizer/roles.py`: `_assign_from_render_truth` — tiered election (buttons≥2 → gradient
+  area → accent text≥2 → pastel fold census → single button), census presence = veto,
+  basis="measured" (0.8 confidence, pre-existing), evidence strings in provenance,
+  LUMI0531 blocked-capture flag, and `_visible_declaration`: a DECLARED role must also be
+  visible on the rendered page (LUMI0534) — live-caught apollo's
+  `--PhoneInputCountryFlag-backgroundColor--loading` #0000001A declared as surface.page.
+- `capture/parse.py`: rule-text palette candidates RETIRED; `_selector_role` deleted.
+  ONE deliberate survivor: dark-block rule colors, flat weight 1.0 hintless (dark capture
+  deferred; build_dark_colorway has no census substitute). Custom-prop/token evidence,
+  declared roles, fonts, state records all kept.
+- Tests: `tests/test_ingestion_render_truth.py` (11 tests incl. apollo red case, invisible
+  declaration, blocked-capture flag, ranking fix, retirement guard); 3 legacy tests rewritten
+  to the new contract (they asserted the retired behavior). Focused files green (107 pass).
+  KNOWN pre-existing env failure, NOT mine: test_ingestion_brief.py::
+  test_approval_does_not_mutate_the_brief — local dev DB missing `design_web_fragment`
+  migration (approval→web-fragment sync path).
+- LIVE-PROVEN on production code path (.context/poc-brand-colors/live_pipeline_proof.py):
+  apollo.io → page #FFFFFF / brand #ECF414 / text #212121 all [measured];
+  sarvam.ai → brand #A5BBFC (gradient stops + token). Full apps/api suite running in
+  background at session end (/tmp/full_api_suite.txt).
+
+## Phase 2 (logo corroboration) + follow-ups — NOT started
+Logo dual-pass (SVG markup + raster reconcile) via logo_ladder winners; multi-page capture;
+GPU/scrapling capture for WebGL heroes; approval-UI surfacing of evidence strings; golden
+12-brand sweep as acceptance.
+
 ## Open items for Phase 1
 - Where election evidence strings surface in the kit approval UI (founder wants auditability).
 - Threshold calibration → golden-brand regression fixtures (apollo yellow/black red-case first,
