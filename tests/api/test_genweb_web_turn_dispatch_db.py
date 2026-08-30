@@ -919,3 +919,65 @@ def test_an_account_less_web_document_carries_no_account_card_key(
             )
 
     run_async(scenario())
+
+
+def test_a_scene_leg_turn_freezes_the_ad_lane_at_offer_time(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """W4 offer-time freeze (Wave-C fix #1): the agent_turn envelope ALWAYS carries the
+    ``ad_lane`` key — a frozen null when the offering process's flag is off, the lane by
+    value when it is on — so the claiming worker's own flag can never silently strip the
+    turn's auto-references (the Wave-B W-B2 failure). The web executor never consumes the
+    lane, so a web_turn envelope carries no such key (pinned by the full-config assertion in
+    the account-less web test above)."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    frozen_by_value = {
+        "card": {"prose": "bold and yellow"},
+        "creative_assets": {"cr_1": "asset_1"},
+        "pregenerated": [],
+    }
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="adlane")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+
+            # Offer 1: flag OFF in the offering process — the frozen decision is "no lane".
+            monkeypatch.delenv("LUMEN_BRAND_AD_ASSETS", raising=False)
+            lane = _FakeLane(conn_factory=seeds["conn_factory"])
+            submission = await _submit_message(
+                conn, seeds, label="adlane", message="Sketch an ad."
+            )
+            await _run_turn(conn, seeds, registry, lane, submission)
+            envelope = lane.envelopes[0]
+            assert envelope.kind == "agent_turn"
+            assert "ad_lane" in envelope.config  # the key is the decision record
+            assert envelope.config["ad_lane"] is None
+
+            # Offer 2: flag ON — the reduced lane rides the envelope by value, through the
+            # shared substrate composer (stubbed here; its reduction is pinned by the design
+            # suite's round-trip tests over the same functions).
+            monkeypatch.setenv("LUMEN_BRAND_AD_ASSETS", "1")
+
+            async def fake_frozen_lane(conn: object, *, workspace_id: str) -> dict:
+                assert workspace_id == seeds["workspace_id"]
+                return dict(frozen_by_value)
+
+            from clue_api import design_leg_wiring as wiring_module
+
+            monkeypatch.setattr(
+                wiring_module.design_ad_assets, "frozen_ad_lane", fake_frozen_lane
+            )
+            lane_on = _FakeLane(conn_factory=seeds["conn_factory"])
+            submission_on = await _submit_message(
+                conn, seeds, label="adlane2", message="Sketch another ad."
+            )
+            await _run_turn(conn, seeds, registry, lane_on, submission_on)
+            assert lane_on.envelopes[0].config["ad_lane"] == frozen_by_value
+
+    run_async(scenario())

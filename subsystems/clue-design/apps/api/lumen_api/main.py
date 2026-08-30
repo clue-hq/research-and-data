@@ -3215,6 +3215,12 @@ def create_app(
             config={
                 "request": payload.model_dump(mode="json"),
                 "reference_assets": resolved_reference_assets,
+                # W4 offer-time freeze (Wave-C fix #1): the ad lane rides the envelope BY
+                # VALUE, decided by THIS process's flag and database — the claiming worker
+                # consumes it verbatim, so a flag-off claimant can no longer silently strip
+                # the turn's auto-references (the Wave-B W-B2 failure). A frozen None is a
+                # decision too: "this turn has no lane".
+                "ad_lane": ad_runtime.frozen_lane_payload(repo.workspace_id),
             },
         ).model_dump(mode="json")
         # D6 Round B: the ENQUEUE is the durable mutation, so it is the tool. Everything above
@@ -8025,6 +8031,7 @@ def run_agent_turn_preview(
     root: Path,
     event_sink=None,
     resolved_reference_assets=_REFERENCES_UNRESOLVED,
+    frozen_ad_lane=ad_runtime.FROZEN_LANE_ABSENT,
     *,
     workspace_id: str,
     blobs: Optional[DesignBlobStore] = None,
@@ -8075,15 +8082,15 @@ def run_agent_turn_preview(
     else:
         reference_assets = resolved_reference_assets
 
-    # W4 (Brand Ad Assets v1 §5): read the ad-assets lane ONCE, here, for both of the things a
-    # turn takes out of it — the auto-attached references below and the described card that
-    # rides the frame payload further down. Off unless the lane's flag is on, so a flag-off
-    # process does not even open a connection. This is the ONE hook both entry paths share:
-    # the standalone `/agent/turns` route resolves manual references in its handler and hands
-    # them in (a resolved None still lands here as "no references"), and a platform design-leg
-    # envelope carries no manifest key at all, so it takes the in-worker branch above. Neither
-    # can miss this line.
-    ad_lane = ad_runtime.read_ad_lane(turn_workspace_id)
+    # W4 (Brand Ad Assets v1 §5): the lane the turn runs with, resolved ONCE, here, for both
+    # of the things a turn takes out of it — the auto-attached references below and the
+    # described card that rides the frame payload further down. Since the Wave-C offer-time
+    # freeze, a fleet-claimed turn arrives with the lane FROZEN in its envelope and this line
+    # consumes it verbatim (no flag check, no database read — the offering process decided);
+    # only a legacy envelope, or a direct in-process caller like the sync preview route,
+    # composes at claim time — and a flag-off process doing that now says so loudly instead
+    # of silently declining (the Wave-B W-B2 failure shape).
+    ad_lane = ad_runtime.resolve_turn_ad_lane(frozen_ad_lane, workspace_id=turn_workspace_id)
     if ad_lane is not None and not reference_assets:
         # MANUAL REFERENCES ALWAYS WIN. The platform suggests; the human decides (the
         # minimum-input / client-has-the-wheel rule). A turn that already carries attachments
@@ -8785,6 +8792,11 @@ def execute_agent_turn_job(
     # missing manifest must take the normal in-worker resolution path. Using ``.get`` without the
     # sentinel made every accepted platform reference silently inert.
     reference_assets = envelope.config.get("reference_assets", _REFERENCES_UNRESOLVED)
+    # W4 offer-time freeze: same missing-key-vs-null discipline as the reference manifest
+    # above. A missing key is a LEGACY envelope (claim-time compose, now loud when this
+    # process's flag is off); a present key — even null — is the offerer's decision, consumed
+    # verbatim so the claiming process's env cannot change what the turn sees.
+    frozen_ad_lane = envelope.config.get("ad_lane", ad_runtime.FROZEN_LANE_ABSENT)
 
     # --- P3.7: consume the platform leg envelope's frozen context ------------------------------
     # A design-leg turn (PD-part3 §2.3/§2.4) carries the delegation bundle, the leg history,
@@ -8908,6 +8920,7 @@ def execute_agent_turn_job(
                 root,
                 event_sink=event_sink,
                 resolved_reference_assets=reference_assets,
+                frozen_ad_lane=frozen_ad_lane,
                 workspace_id=envelope.workspace_id,
                 # D5 Round C: the dispatching app's byte backend + engine-cache tree, so an
                 # injected backend cannot stage bytes in one place and read them from another.

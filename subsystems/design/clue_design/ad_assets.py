@@ -390,3 +390,111 @@ async def list_pregenerated_assets(
         }
         for row in rows
     ]
+
+
+# --------------------------------------------------------------------------------------
+# The turn-lane reduction (W4 offer-time freeze)
+# --------------------------------------------------------------------------------------
+#
+# Wave-C fix #1. A design turn's ad-lane references used to be composed at CLAIM time, by
+# whichever worker process happened to win the ``design_job`` row — so per-process env
+# divergence silently changed what a turn saw (Wave B: flag-off audit APIs drained the shared
+# queue and turns lost their references with zero log). The lane is now reduced ONCE, at
+# OFFER time, by the process that validates and posts the work, and frozen into the turn
+# envelope's ``config["ad_lane"]``; the claiming process consumes the frozen value verbatim.
+#
+# The reductions live HERE — the shared design substrate both the platform's leg dispatch and
+# the design API's own routes import — so the two offerers and the legacy claim-time path can
+# never drift on what "the lane" means. `lumen_api.ad_runtime` re-exports the bounds and calls
+# these reducers; nothing is written twice.
+
+#: How many creative rows a lane reduction reads. A harvest is tens of rows, not thousands,
+#: and the read exists to resolve creative ids to asset ids — a lookup, not a scan.
+CREATIVE_SCAN = 200
+
+#: How many pre-generated grounds one turn's opening context names. Pre-generation writes 2
+#: per style group and a card carries at most 6 groups, so twelve is the whole of a
+#: well-formed lane rather than an arbitrary slice.
+PREGENERATED_CONTEXT_MAX = 12
+
+#: ``aspect_ratio`` → the words pre-generation itself used for that shape. Mirrored rather
+#: than imported to keep this substrate module free of an ingestion-side import; a ratio with
+#: no entry renders as the bare ratio, which is still true.
+SHAPE_WORDS = {"16:9": "wide ground", "1:1": "square ground", "4:5": "portrait ground"}
+
+
+def reduce_creative_assets(creatives: list[JsonObject]) -> dict[str, str]:
+    """Creative id → the design asset id holding its bytes, in the rows' given order.
+
+    Rows arrive newest-harvested-first from :func:`list_ad_creatives`, which is also the
+    deterministic fallback order the selector uses. A row missing either id contributes
+    nothing — there are no bytes to reference.
+    """
+    return {
+        str(row["creative_id"]): str(row["asset_id"])
+        for row in creatives
+        if row.get("creative_id") and row.get("asset_id")
+    }
+
+
+def reduce_card_payload(card_row: Any) -> JsonObject | None:
+    """The card's PAYLOAD (``card_json`` contents), not the row wrapper, or ``None``."""
+    if not isinstance(card_row, dict):
+        return None
+    card = card_row.get("card")
+    return card if isinstance(card, dict) else None
+
+
+def reduce_pregenerated(
+    rows: list[JsonObject] | None, *, limit: int = PREGENERATED_CONTEXT_MAX
+) -> list[JsonObject]:
+    """Each pre-generated ground reduced to the three facts a turn's context needs."""
+    listed: list[JsonObject] = []
+    for row in rows or ():
+        if len(listed) >= limit:
+            break
+        asset_id = str((row or {}).get("asset_id") or "").strip()
+        if not asset_id:
+            continue
+        generation = row.get("generation")
+        ratio = str((generation or {}).get("aspect_ratio") or "").strip()
+        listed.append(
+            {
+                "asset_id": asset_id,
+                "style_group": str(row.get("visual_system") or "").strip(),
+                "shape": SHAPE_WORDS.get(ratio, ratio),
+            }
+        )
+    return listed
+
+
+async def frozen_ad_lane(conn: AsyncConnection, *, workspace_id: str) -> JsonObject | None:
+    """The workspace's ad lane reduced and serialized for an OFFER-time freeze.
+
+    ``None`` when the workspace holds no referencable creatives — an ordinary state, and the
+    frozen value the envelope then carries so the claiming process still knows the offer was
+    decided. Runs on ONE connection, so unlike the claim-time facade there is no per-piece
+    tolerance here: a database that answers the first read answers the rest, and a database
+    that answers none of them should fail THIS call — the offerer decides (both call sites
+    freeze ``None`` and log rather than failing the turn).
+    """
+    creatives = await list_ad_creatives(conn, workspace_id=workspace_id, limit=CREATIVE_SCAN)
+    creative_assets = reduce_creative_assets(creatives)
+    if not creative_assets:
+        return None
+    card_row = await latest_ad_dna_card(conn, workspace_id=workspace_id)
+    pregenerated: list[JsonObject] = []
+    if isinstance(card_row, dict) and card_row.get("card_id") and card_row.get("version") is not None:
+        pregenerated = reduce_pregenerated(
+            await list_pregenerated_assets(
+                conn,
+                workspace_id=workspace_id,
+                card_id=str(card_row["card_id"]),
+                card_version=int(card_row["version"]),
+            )
+        )
+    return {
+        "card": reduce_card_payload(card_row),
+        "creative_assets": creative_assets,
+        "pregenerated": pregenerated,
+    }
