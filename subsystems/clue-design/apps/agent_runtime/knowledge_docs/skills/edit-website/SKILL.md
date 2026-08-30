@@ -90,6 +90,10 @@ had. Its verbs, smallest blast radius first:
    slot set can't express it. The repair is a NEW lineage-tracked variant;
    the original survives untouched as evidence, and the page carries your
    variant. Use this when the argument outgrows the slots — never cram.
+   Before composing a repair, read the repair-cloned-sections skill: it
+   owns the faithful-repair discipline (lineage check, the behavior
+   inventory, ugly-is-not-wrong, the repair-scope contract, verification
+   against the original).
 3. **Replace it.** A different released clone fits better
    (`insert_cloned_section` + `remove_node`), or the library lacks the job
    and you compose a new band (see "Composing a new section" below).

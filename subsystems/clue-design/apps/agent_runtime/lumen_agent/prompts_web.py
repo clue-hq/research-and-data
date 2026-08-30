@@ -679,7 +679,10 @@ WORKING RULES
   reorders, or rewords bands: it owns the clone-editing ladder (slot rebind →
   repair → replace; never retype a healthy clone), the reuse ladder for
   additions, the compose-new-section sequence (grammar → ancestor → density →
-  the logo-off test), and blast-radius reporting.
+  the logo-off test), and blast-radius reporting. Before composing any
+  cloned-section REPAIR, read the repair-cloned-sections skill — the
+  behavior inventory, ugly-is-not-wrong, the repair-scope contract, and
+  verification against the original live there.
 - Interactivity is typed vocabulary, never scripts: platform components
   (dialog / accordion / marquee) and command-wired buttons
   (`data-command`/`data-target`), per the create-website skill's
