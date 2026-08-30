@@ -18,14 +18,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..colorspace import (
+    PASTEL_C,
     contrast_ratio,
+    hex_to_oklab,
     hex_to_oklch,
     hue_distance,
+    oklab_distance,
     with_lch,
     with_lightness,
 )
-from ..evidence import DeclaredRoleEvidence
-from .cluster import ColorCluster
+from ..evidence import DeclaredRoleEvidence, RenderTruth
+from .cluster import MERGE_DISTANCE, ColorCluster
 
 NEAR_NEUTRAL_C = 0.03
 SATURATED_C = 0.07
@@ -120,11 +123,279 @@ def _claim_matching_clusters(
             chosen_ids.add(id(cluster))
 
 
+# --- render-truth election (Phase-1 brand-color overhaul) -----------------------
+#
+# When the capture carries a pixel census, ELECTION AUTHORITY moves to the
+# rendered page: what the visitor actually saw decides which colors win, and
+# stylesheet-derived evidence keeps only its naming jobs (declared token roles,
+# extras labels). The failure this buries: a focus-ring custom prop out-voting
+# the real CTA color because CSS mentioned it more (live finding: apollo.io).
+
+#: A brand/accent candidate must cover at least this share of fold chrome when
+#: it arrives via the census alone (buttons/gradients/text carry their own
+#: region evidence and only need nonzero rendered presence).
+RENDER_BRAND_FLOOR = 0.002
+#: The page background family must cover at least this share of the census.
+RENDER_PAGE_FLOOR = 0.05
+#: Census top-cluster share above which a page reads as near-monochrome — with
+#: a large hero canvas that usually means WebGL never painted headless.
+MONOCHROME_SHARE = 0.97
+LARGE_CANVAS_FRACTION = 0.15
+
+
+def _truth_family_share(truth: RenderTruth, hex_value: str) -> float:
+    lab = hex_to_oklab(hex_value)
+    best = 0.0
+    for cl in list(truth.page_clusters) + list(truth.fold_clusters):
+        if oklab_distance(hex_to_oklab(cl.hex), lab) <= MERGE_DISTANCE:
+            best = max(best, cl.share)
+    return best
+
+
+def _truth_token_for(truth: RenderTruth, hex_value: str) -> str | None:
+    lab = hex_to_oklab(hex_value)
+    best, dist = None, MERGE_DISTANCE
+    for name, token_hex in truth.resolved_tokens.items():
+        d = oklab_distance(hex_to_oklab(token_hex), lab)
+        if d <= dist:
+            best, dist = name, d
+    return best
+
+
+def _render_truth_candidates(truth: RenderTruth) -> list[dict]:
+    """Brand/accent candidates in tier order, deduped perceptually.
+
+    Tier 1: >=2 rendered buttons agree (the CTA color is authoritative even at
+    tiny page share). Tier 2: computed gradient stops over large surfaces (a
+    census cannot elect a gradient; live finding: sarvam.ai). Tier 3: chromatic
+    accent text on >=2 elements. Tier 4: saturated-or-pastel fold-census
+    clusters above the floor. Tier 5: a single saturated button (weakest — one
+    button proved able to out-rank a token-corroborated hero color, live
+    finding: freshcontext.ai).
+    """
+    candidates: list[dict] = []
+
+    def add(hex_value: str, tier: int, strength: float, why: str) -> None:
+        lab = hex_to_oklab(hex_value)
+        for cand in candidates:
+            if oklab_distance(hex_to_oklab(cand["hex"]), lab) <= MERGE_DISTANCE:
+                cand["evidence"].append(why)
+                cand["tier"] = min(cand["tier"], tier)
+                cand["strength"] += strength
+                return
+        candidates.append({"hex": hex_value, "tier": tier, "strength": strength, "evidence": [why]})
+
+    for fam in truth.button_families:
+        if fam.count >= 2 and hex_to_oklch(fam.hex)[1] >= SATURATED_C and _truth_family_share(truth, fam.hex) > 0:
+            add(fam.hex, 1, float(fam.count), f"modal color of {fam.count} rendered buttons")
+    for stop in truth.gradient_stops:
+        add(stop.hex, 2, stop.area_fraction * 100, f"computed gradient stop over {stop.area_fraction:.0%} of page area")
+    for fam in truth.accent_text:
+        if fam.count >= 2 and _truth_family_share(truth, fam.hex) > 0:
+            add(fam.hex, 3, float(fam.count), f"accent text color on {fam.count} sampled elements")
+    for cl in truth.fold_clusters:
+        if hex_to_oklch(cl.hex)[1] >= PASTEL_C and cl.share >= RENDER_BRAND_FLOOR:
+            add(cl.hex, 4, cl.share * 100, f"{cl.share:.1%} of above-the-fold chrome")
+    for fam in truth.button_families:
+        if fam.count == 1 and hex_to_oklch(fam.hex)[1] >= SATURATED_C and _truth_family_share(truth, fam.hex) > 0:
+            add(fam.hex, 5, 1.0, "modal color of 1 rendered button")
+
+    for cand in candidates:
+        token = _truth_token_for(truth, cand["hex"])
+        if token:
+            cand["evidence"].append(f"token {token}")
+    candidates.sort(key=lambda c: (c["tier"], -c["strength"]))
+    return candidates
+
+
+def _measured(hex_value: str, evidence: list[str]) -> RoleAssignment:
+    return RoleAssignment(hex_value, "measured", "render:" + "; ".join(evidence))
+
+
+def _assign_from_render_truth(
+    light: list[ColorCluster],
+    declared: list[DeclaredRoleEvidence] | None,
+    truth: RenderTruth,
+) -> LightRoles:
+    diagnostics: list[dict] = []
+    assignments: dict[str, RoleAssignment] = {}
+    stated = _declared_map(declared)
+    claimed_hexes: set[str] = set()
+
+    def _visible_declaration(entry: DeclaredRoleEvidence | None, role: str) -> DeclaredRoleEvidence | None:
+        """A declaration must also be TRUE: visible somewhere on the rendered page.
+
+        The founder's original ruling, applied to the declared layer itself —
+        "even if it is being picked from the CSS, verify it is the color the
+        page shows". Live case: apollo.io's declared-role reader crowned
+        `--PhoneInputCountryFlag-backgroundColor--loading` (#0000001A, a
+        10%-alpha black) as surface.page, which then poisoned the text
+        contrast walk. An 8-digit declared value is compared by its opaque
+        base; near-zero census presence refuses the declaration loudly.
+        """
+        if entry is None:
+            return None
+        base = entry.value[:7]
+        if len(entry.value) == 9 and int(entry.value[7:9], 16) < 128:
+            diagnostics.append(
+                _diag(
+                    "LUMI0534",
+                    "warning",
+                    f"declared {role} ({entry.property_name} = {entry.value}) is mostly "
+                    "transparent — not a page-visible color; rendered evidence used",
+                )
+            )
+            return None
+        if _truth_family_share(truth, base) <= 0.0:
+            diagnostics.append(
+                _diag(
+                    "LUMI0534",
+                    "warning",
+                    f"declared {role} ({entry.property_name} = {entry.value}) is not visible "
+                    "anywhere on the rendered page; rendered evidence used",
+                )
+            )
+            return None
+        return entry
+
+    # 1. page background — declared beats measured, but only a declaration the
+    # page actually shows; measured = the computed body bg verified against the
+    # census, else the census's own top family.
+    declared_page = _visible_declaration(stated.get("surface.page"), "surface.page")
+    if declared_page is not None:
+        page = _declared_assignment(declared_page)
+    elif truth.body_bg and _truth_family_share(truth, truth.body_bg) >= RENDER_PAGE_FLOOR:
+        share = _truth_family_share(truth, truth.body_bg)
+        page = _measured(truth.body_bg, [f"computed body background; census family covers {share:.0%} of chrome"])
+    elif truth.page_clusters:
+        top = truth.page_clusters[0]
+        page = _measured(top.hex, [f"census top family ({top.share:.0%} of chrome)"])
+    else:
+        page = RoleAssignment("#FFFFFF", "default", "default:surface.page defaulted")
+        diagnostics.append(_diag("LUMI0201", "info", "surface.page defaulted"))
+    assignments["surface.page"] = page
+    claimed_hexes.add(page.hex.upper())
+
+    # 2. text — declared clears the same AA gate as ever; measured = computed
+    # body color, contrast-enforced.
+    declared_text = _visible_declaration(stated.get("text.primary"), "text.primary")
+    if declared_text is not None and contrast_ratio(declared_text.value, page.hex) < _CONTRAST_MIN:
+        diagnostics.append(
+            _diag(
+                "LUMI0518",
+                "warning",
+                f"declared text role {declared_text.property_name} ({declared_text.value}) "
+                f"cannot be read on the page surface ({page.hex}); rendered evidence used",
+            )
+        )
+        declared_text = None
+    if declared_text is not None:
+        text = _declared_assignment(declared_text)
+    elif truth.body_text:
+        text = _measured(truth.body_text, ["computed body text color"])
+    else:
+        text = RoleAssignment(with_lightness(page.hex, 0.25), "derived", "derived:text.primary(page-25)")
+    text = _ensure_contrast_light(text, page.hex, diagnostics)
+    assignments["text.primary"] = text
+    claimed_hexes.add(text.hex.upper())
+
+    # 3+4. brand and accent — declared keeps its gates; otherwise the tiered
+    # rendered-truth candidates. No candidate at all -> the honest teal default
+    # plus, when the census smells like a blocked/unpainted capture, a loud
+    # needs-review diagnostic instead of a confident fabrication.
+    candidates = _render_truth_candidates(truth)
+
+    declared_brand = _visible_declaration(stated.get("surface.brand"), "surface.brand")
+    if declared_brand is not None and _is_near_neutral_hex(declared_brand.value):
+        diagnostics.append(
+            _diag(
+                "LUMI0519",
+                "warning",
+                f"declared brand role {declared_brand.property_name} "
+                f"({declared_brand.value}) is a neutral, not a brand color; "
+                f"rendered evidence used",
+            )
+        )
+        declared_brand = None
+    if declared_brand is not None:
+        brand = _declared_assignment(declared_brand)
+    elif candidates:
+        top = candidates[0]
+        brand = _measured(top["hex"], top["evidence"])
+    else:
+        brand = RoleAssignment(_BRAND_FALLBACK, "default", "default:no brand color found")
+        diagnostics.append(_diag("LUMI0203", "warning", "no brand color found — platform teal used"))
+        top_share = truth.page_clusters[0].share if truth.page_clusters else 0.0
+        if top_share >= MONOCHROME_SHARE:
+            canvas_note = (
+                f"; a canvas covers {truth.canvas_viewport_fraction:.0%} of the first viewport "
+                "(WebGL hero may not have painted headless)"
+                if truth.canvas_viewport_fraction >= LARGE_CANVAS_FRACTION
+                else ""
+            )
+            diagnostics.append(
+                _diag(
+                    "LUMI0531",
+                    "warning",
+                    "rendered census is near-monochrome "
+                    f"({top_share:.0%} one family) — the capture was likely blocked or unpainted{canvas_note}; "
+                    "brand kit needs human review",
+                )
+            )
+    assignments["surface.brand"] = brand
+    claimed_hexes.add(brand.hex.upper())
+
+    declared_accent = _visible_declaration(stated.get("surface.accent"), "surface.accent")
+    if declared_accent is not None and declared_accent.value.upper() == brand.hex.upper():
+        declared_accent = None
+    elif declared_accent is not None and _is_near_neutral_hex(declared_accent.value):
+        diagnostics.append(
+            _diag(
+                "LUMI0519",
+                "warning",
+                f"declared accent role {declared_accent.property_name} "
+                f"({declared_accent.value}) is a neutral, not an accent color; "
+                f"rendered evidence used",
+            )
+        )
+        declared_accent = None
+    if declared_accent is not None:
+        assignments["surface.accent"] = _declared_assignment(declared_accent)
+        claimed_hexes.add(declared_accent.value.upper())
+    else:
+        brand_h = hex_to_oklch(brand.hex)[2]
+        brand_lab = hex_to_oklab(brand.hex)
+        for cand in candidates:
+            if oklab_distance(hex_to_oklab(cand["hex"]), brand_lab) <= MERGE_DISTANCE:
+                continue
+            if hue_distance(hex_to_oklch(cand["hex"])[2], brand_h) <= 30.0:
+                continue
+            assignments["surface.accent"] = _measured(cand["hex"], cand["evidence"])
+            claimed_hexes.add(cand["hex"].upper())
+            break
+
+    # 5. extras — named swatches from the evidence clusters keep their job (the
+    # census has no names); anything already elected stays out.
+    extras = [
+        c
+        for c in light
+        if c.representative.upper() not in claimed_hexes
+        and (c.name or any(h.startswith("named:") for h in c.role_hints))
+    ]
+    return LightRoles(assignments=assignments, extras=extras, diagnostics=diagnostics)
+
+
 def assign_light_roles(
     clusters: list[ColorCluster],
     declared: list[DeclaredRoleEvidence] | None = None,
+    render_truth: RenderTruth | None = None,
 ) -> LightRoles:
     light = [c for c in clusters if c.theme == "light"]
+    # Rendered-pixel election when the capture carries a census (website
+    # rendered tier). Every other producer — PDFs, uploads, pre-probe bundles —
+    # keeps the evidence-cluster election below, unchanged.
+    if render_truth is not None and render_truth.page_clusters:
+        return _assign_from_render_truth(light, declared, render_truth)
     diagnostics: list[dict] = []
     assignments: dict[str, RoleAssignment] = {}
     chosen_ids: set[int] = set()

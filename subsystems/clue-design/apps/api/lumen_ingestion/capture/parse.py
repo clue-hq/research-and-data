@@ -481,45 +481,12 @@ def _record_color_skip(diagnostics: list[dict] | None, message: str) -> None:
 
 
 # --- selector role hints --------------------------------------------------------
-
-
-def _selector_role(selector: str) -> tuple[list[str], list[str], float]:
-    """Return (bg_hints, fg_hints, weight) for a selector's role mapping."""
-    sel = selector.lower()
-    tokens = re.split(r"[\s>+~]+", sel)
-
-    def has(*names: str) -> bool:
-        for token in tokens:
-            compound = token.strip()
-            for name in names:
-                if name.startswith(".") or name.startswith("["):
-                    if name in compound:
-                        return True
-                elif re.search(r"(^|[.#:\[])" + re.escape(name) + r"($|[.#:\[])", compound) or compound == name or compound.startswith(name + "."):
-                    return True
-                if compound == name:
-                    return True
-        return False
-
-    # body/html
-    if has("body", "html"):
-        return (["page-bg"], ["body-text"], 5.0)
-    # headings
-    if has("h1", "h2", "h3"):
-        return ([], ["heading-text"], 4.0)
-    # paragraph/list body text
-    if has("p", "li"):
-        return ([], ["body-text"], 3.0)
-    # buttons / cta
-    if has("button", ".btn", ".button") or "[class*=cta]" in sel or "cta" in sel:
-        return (["button-bg"], ["button-text"], 4.0)
-    # links
-    if has("a"):
-        return ([], ["link"], 3.0)
-    # nav/header/footer
-    if has("nav", "header", "footer"):
-        return ([], [], 2.0)
-    return ([], [], 0.5)
+#
+# `_selector_role` — the selector-vocabulary weight table (body 5.0, headings
+# 4.0, buttons 4.0, …) that let rule-text mentions elect palette colors — was
+# DELETED 2026-08-30 (Phase-1 brand-color overhaul). It elected apollo.io's
+# phone-widget focus ring as the brand. Election now belongs to the rendered
+# census (`lumen_ingestion.census`); see `_parse_rule` for the retirement note.
 
 
 # --- interaction states ---------------------------------------------------------
@@ -539,8 +506,8 @@ _STATE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("disabled", re.compile(r":disabled(?![-\w])", re.IGNORECASE)),
 )
 
-#: Elements a user can actually interact with. Same vocabulary `_selector_role` weights,
-#: plus the form controls it never needed to name.
+#: Elements a user can actually interact with. Same vocabulary the retired
+#: `_selector_role` table used, plus the form controls it never needed to name.
 _INTERACTIVE_TAGS = frozenset(
     {"a", "button", "input", "select", "textarea", "summary", "option"}
 )
@@ -1117,8 +1084,22 @@ def _parse_rule(
     custom_props: dict[str, str],
     stylesheet_url: str,
 ) -> None:
+    # RETIRED 2026-08-30 (Phase-1 brand-color overhaul): this walk no longer
+    # emits LIGHT palette candidates. Weighting rule-text color mentions by
+    # selector vocabulary elected a phone-widget FOCUS ring as apollo.io's
+    # brand color — code mentioning a color is not the page showing it, and on
+    # hashed-class frontends the vocabulary misses the real CTA entirely while
+    # a `button:focus` rule inherits its credential. Light election authority
+    # now lives in the rendered census (`lumen_ingestion.census` +
+    # `RenderTruth`); stylesheets keep their naming jobs — custom-prop/token
+    # evidence, declared roles, fonts, and the interaction-state records.
+    #
+    # DARK-block rule colors are the one deliberate survivor: the capture takes
+    # no dark-scheme screenshot yet (deferred scope), so `build_dark_colorway`
+    # has no census to read and dark rules remain its only whole-page evidence.
+    # They are emitted FLAT — weight 1.0, no hints, no vocabulary table — and,
+    # being theme="dark", they can never vote in the light election.
     for selector in selectors:
-        bg_hints, fg_hints, weight = _selector_role(selector)
         locator = f"{stylesheet_url} :: {selector}"
         family = None
         size_px = None
@@ -1130,33 +1111,16 @@ def _parse_rule(
                 continue
             name = decl.name.lower()
             value = _decl_value_text(decl)
-            if name in ("color", "fill"):
+            if theme == "dark" and name in ("color", "fill", "background", "background-color"):
+                candidate = value.split()[0] if name == "background" and value else value
                 hex_value = parse_color_value(
-                    value, custom_props, diagnostics=parsed.diagnostics
+                    candidate, custom_props, diagnostics=parsed.diagnostics
                 )
                 if hex_value:
                     parsed.colors.append(
-                        ParsedColor(hex_value, weight, theme, list(fg_hints), None, locator)
+                        ParsedColor(hex_value, 1.0, "dark", [], None, locator)
                     )
-            elif name in ("background", "background-color"):
-                hex_value = parse_color_value(
-                    value.split()[0] if value else value,
-                    custom_props,
-                    diagnostics=parsed.diagnostics,
-                )
-                if hex_value:
-                    parsed.colors.append(
-                        ParsedColor(hex_value, weight, theme, list(bg_hints), None, locator)
-                    )
-            elif name in ("border-color", "border"):
-                hex_value = _extract_first_color(
-                    value, custom_props, diagnostics=parsed.diagnostics
-                )
-                if hex_value:
-                    parsed.colors.append(
-                        ParsedColor(hex_value, weight, theme, ["border"] if weight >= 2.0 else [], None, locator)
-                    )
-            elif name == "font-family":
+            if name == "font-family":
                 family = _first_family(value)
             elif name == "font-size":
                 size_px = _px_from_length(value)

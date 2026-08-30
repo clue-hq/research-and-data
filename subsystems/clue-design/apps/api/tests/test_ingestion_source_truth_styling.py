@@ -278,10 +278,21 @@ def test_an_all_neutral_brand_family_falls_back_to_clustering() -> None:
       --base-color-brand--white: #ffffff;
     }
     body { background: #ffffff; color: #101418; }
-    .btn { background: #0055ff; }
     """
+    # Phase-1 overhaul: the saturated fallback candidate must come from RENDERED
+    # evidence (a computed button sample) — a `.btn { background: #0055ff }`
+    # rule is no longer palette evidence.
+    snapshot = _snapshot(css)
+    snapshot = snapshot.model_copy(
+        update={
+            "computed_samples": [
+                {"tag": "button", "selectorish": "button", "bg": "rgb(0, 85, 255)",
+                 "color": "rgb(255, 255, 255)", "area": 4000.0}
+            ]
+        }
+    )
     result = normalize_evidence(
-        _evidence(_snapshot(css)),
+        _evidence(snapshot),
         brand_kit_id="brand_kit_f03",
         version=1,
         name="F0.3",
