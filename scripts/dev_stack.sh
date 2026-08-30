@@ -69,6 +69,11 @@ up() {
       "$ROOT/.venv/bin/python" -m clue_api.fleet_main \
       > /tmp/browser_fleet_worker.log 2>&1 & )
 
+  # Class fix 2026-08-31: hard-killed/overlapping dev-server starts corrupt the
+  # .next route graph (single routes 404 while siblings work — twice live on
+  # 2026-08-30/31). A cold route compile costs seconds; a corrupted cache costs
+  # a debugging session. Always start the frontend from a clean cache.
+  rm -rf "$ROOT/apps/frontend/.next"
   ( cd "$ROOT/apps/frontend" && npm run dev -- --port 3020 \
       > /tmp/browser_frontend.log 2>&1 & )
 
