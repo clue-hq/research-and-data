@@ -208,3 +208,13 @@ compliance, one review shows unexplained "Trust Score: 2%". Ruling proposed: $0 
 canary re-running the Probook committee vs v3 ground truth (5 checks incl. the Blumberg email
 Apollo missed) before touching the Apollo integration; either way it's a resolver swap behind the
 same seam. Committed locally, NOT pushed.
+
+## Addendum 2026-08-27b — AI Ark canary check (b) PASSED (founder manual test)
+
+Founder ran Kate Blumberg (linkedin.com/in/kibrady12 — the maiden-name-slug record where Apollo
+matched the profile but returned a NULL email while charging the credit) through the AI Ark
+studio: **returned `kate@probook.ai`** — matching the verified firstname@ pattern of her four
+teammates. Strongest possible single-record signal (the exact Apollo failure case). Remaining
+canary checks before any provider decision: validity metadata (BounceBan status VALID vs
+catch-all on probook.ai), all-5-committee retrieval, same-name contamination test, freshness
+(her Jun 2026 start date), phone hit rate. Protocol in docs/specs/ARV2-ai-ark-contract-notes.md §6.
