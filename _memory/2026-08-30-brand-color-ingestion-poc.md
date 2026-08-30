@@ -164,6 +164,21 @@ follow-up. Landed (commits "render probe + pixel census" + "rendered-truth palet
 - Stripe live finding fixed (b8e6c86a7): declared-accent-vs-brand dedup is now PERCEPTUAL
   (OKLab MERGE_DISTANCE), not exact-hex — #533AFD beside #543CFC was the same blurple.
 
+## Full-suite verdict with proper env (2026-08-30 close)
+31 FAILED (down from the bogus 293) across env-sensitive families, ALL classified NOT-ours:
+- test_ingestion_grammar_audit job-poll failures REPRODUCE AT THE PRE-PHASE-1 COMMIT
+  (worktree check at 30bdf7d7c, same env: 3 FAILED) — pre-existing branch/env issue
+  (ingestion-job polling against the accumulating shared dev DB; conftest itself says to use
+  a disposable CLUE_DATABASE_URL).
+- custom_component families (16): need the node toolchain + vendored tailwind runtime
+  (AGENTS.md §5) not present in this workspace.
+- test_api W14/W17 gateway tests (4): the sourced .env carries REAL api keys, which changes
+  gateway behavior these tests pin against no-key defaults.
+- asset custody/serving, web_turn base-url, web_fragment_render leftovers: same env classes.
+Canonical green full-suite run needs a curated test env (disposable DB, scrubbed keys, node
+toolchain) — dev-infra follow-up, unowned. Every ingestion/render-truth/stealth-touching test
+family is green under the proper env.
+
 ## Phase 2 (logo corroboration) + follow-ups — NOT started
 Logo dual-pass (SVG markup + raster reconcile) via logo_ladder winners; multi-page capture;
 GPU/scrapling capture for WebGL heroes; approval-UI surfacing of evidence strings; golden
