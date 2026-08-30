@@ -175,6 +175,11 @@ your evidence sources.)
 
 ## Step 6 — Derive the sections from the argument
 
+On a substantial build, what this step decides gets WRITTEN DOWN before
+any building: the plan-design skill owns `workspace/plan.md` (anchors,
+grammar audit, one spec per section with a named source, review tasks) —
+the argument you constructed in steps 1–5 is what that plan encodes.
+
 Now, and only now, decide the page's structure. Each section must answer
 exactly one visitor question:
 

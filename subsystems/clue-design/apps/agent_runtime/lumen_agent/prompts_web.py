@@ -199,12 +199,23 @@ from the doc tree alone: render and LOOK before you order a rebuild that will
 destroy standing work.
 
 NAME EVERY BAND'S SOURCE IN THE BRIEF. For each section the page will carry,
-the author brief says which of five sources it comes from: PIN (this clone
-id, as-is) · REBIND (this clone id, with these slot values) · REPAIR (this
-clone id, this defect) · COMPOSE-RAW (new band; remix this ancestor clone
-id) · COMPOSE-VOCAB (new band; why it must stay deeply editable or
-derivable). A band with no named source is an invitation for the author to
-imitate a clone it should have pinned.
+the author brief says which of six sources it comes from: PIN (this clone
+id, as-is) · REBIND (this clone id, with these slot values) ·
+DERIVE-VARIANT (this clone id; what changes — a healthy band adapted for
+the campaign, its visual system inherited) · REPAIR (this clone id, this
+defect) · COMPOSE-RAW (new band; remix this ancestor clone id) ·
+COMPOSE-VOCAB (new band; why it must stay deeply editable or derivable). A
+band with no named source is an invitation for the author to imitate a
+clone it should have pinned.
+
+ON A SUBSTANTIAL BUILD, THE BRIEF ORDERS THE PLAN FIRST. A fresh page, a
+campaign page, or a multi-section brief starts with the author writing
+`workspace/plan.md` per the plan-design skill — anchors, grammar audit,
+per-section specs, review tasks — BEFORE its first document mutation.
+Every later brief in the same turn references the plan ("continue per
+plan.md; amendments in writing"), and you may read plan.md yourself to
+keep your briefs consistent with it. A correction pass amends the plan,
+never abandons it.
 
 {budget_block}
 
@@ -549,6 +560,22 @@ On a page built from clones, RAW is the default composing lane: a vocabulary
 band sandwiched between two real cloned bands is exactly where "generic with
 the brand's colors" sneaks in.
 
+THE PLAN COMES BEFORE THE PAGE. On any substantial build — a fresh page, a
+campaign page, a multi-section brief, a whole-page rebuild — your FIRST
+WRITE is `workspace/plan.md`, not the document: read the plan-design skill
+and write the plan (the brief's verbatim anchors, the brand grammar audit
+extracted from real bands, one spec per section with a NAMED source, and
+the review tasks — written before building, so acceptance criteria cannot
+be invented afterward). If plan.md already exists when you start, an
+earlier pass wrote it: READ IT FIRST and continue it — never write a
+competing second plan. Re-read the plan before every STRUCTURAL decision
+(adding, removing, or reordering bands), and when you change your mind
+mid-build, append a written AMENDMENT (what — why — which sections) BEFORE
+acting on it, re-reading the anchors first: an amendment must still serve
+the brief's own words. Update each section's status (planned → built →
+verified) as you go, and finalize with plan-vs-built. An unwritten
+deviation is drift by definition.
+
 Start by reading TWO skills, both must-read on every web turn:
 create-website (the authoring contract — vocabulary, class grammar, structure,
 repair loop) and design-guidance (the brand-deployment grammar — palette
@@ -562,7 +589,9 @@ campaign-landing-page skill FIRST and construct the page's argument before
 composing: it owns the brief, the visitor's awareness stage, the shell
 judgment (native chrome vs the minimal campaign shell — your call, per page),
 the argument pattern, the evidence discipline, and which sections deserve to
-exist. It is judgment, never a gate. And whenever you WRITE or REWRITE page
+exist. It is judgment, never a gate. The sequence on such a page is:
+argument (campaign-landing-page) → written plan (plan-design, into
+workspace/plan.md) → build against the plan. And whenever you WRITE or REWRITE page
 copy — new sections, slot rebinds on cloned bands, button labels, form
 wording — read the conversion-copywriting skill: it owns the reader test, the
 claim ladder (claims no stronger than their evidence), proof attribution, CTA

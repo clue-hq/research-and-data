@@ -142,9 +142,10 @@ Two clone-specific situations you will meet mid-edit:
 An empty document is not an empty library. When the page you're building is
 NEW but the workspace holds released cloned sections, assembly comes before
 authorship: the campaign-landing-page skill decides WHICH sections the
-argument keeps and in what order; `assemble_cloned_sections` then pins that
-whole ordered subset in one atomic act, with slot rebinds for the new words
-in the same call. Only after the clone skeleton stands do you compose the
+argument keeps and in what order, the plan-design skill writes that
+decision into `workspace/plan.md` before anything mutates, and
+`assemble_cloned_sections` then pins the chosen ordered subset in one
+atomic act, with slot rebinds for the new words in the same call. Only after the clone skeleton stands do you compose the
 bands the library lacks — using this file's "Composing a new section"
 sequence — and place them into the gaps. Building a fresh page from scratch
 while ten released clones sit unused is the same defect as retyping a
