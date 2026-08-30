@@ -1,12 +1,15 @@
 ---
 name: repair-cloned-sections
-description: The faithful-repair discipline for cloned sections — read the band's lineage and behavior before composing, apply the rung ladder per behavior, preserve what the capture preserved (ugly is not wrong), fix only the defect, and verify the repair against the original and its neighbors. Read this BEFORE calling repair_cloned_section.
+description: The faithful-repair AND campaign-variant discipline for cloned sections — read the band's lineage and behavior before composing, apply the rung ladder per behavior, preserve what the capture preserved (ugly is not wrong), fix only the defect (repairs) or change only what the campaign needs while inheriting the visual system (variants), and verify against the original and its neighbors. Read this BEFORE calling repair_cloned_section for either intent.
 ---
 
 # Repair a Cloned Section — surgery a returning visitor shouldn't notice
 
 Read this before any `repair_cloned_section` call, and before deciding on
-rung 2 of the clone-editing ladder in edit-website.
+rung 2 (derive a variant) or rung 3 (repair) of the clone-editing ladder
+in edit-website. The tool serves BOTH intents — fixing a broken band, and
+adapting a healthy one for a campaign — and the "Adaptation is not
+repair" section below says which contract binds which.
 
 ## Why this is the highest-fidelity-risk edit
 
@@ -70,6 +73,40 @@ The lane changes WHO releases and WHAT the replacement is written in —
 never what quality means. Everything else in this file binds identically
 in both lanes: the behavior inventory, ugly-is-not-wrong, the repair-scope
 contract, and verification against the original.
+
+## Adaptation is not repair — same door, different contract
+
+`repair_cloned_section` serves a second intent: **deriving a campaign
+variant of a HEALTHY band** whose slots can't carry the campaign — a CTA
+to remove, a sub-element to hide, a new eyebrow, a different emphasis.
+This is the raw lane used deliberately on a band with no defect, and it is
+the RIGHT move: composing a fresh band while its ancestor sits in the
+library reinvents everything — including, too easily, the truth.
+
+The variant's contract differs from a repair's in what may change:
+
+- **Copy and cardinality MAY change.** A variant deliberately rewords,
+  removes elements, and reshapes structure to fit the campaign — the
+  repair-scope contract's "no drive-by rewrites" binds REPAIRS, not
+  variants.
+- **The visual system MAY NOT change.** Geometry, type scale, surfaces,
+  spacing rhythm, responsive behavior, and the brand's character are
+  inherited from the original's real bytes — that inheritance is the
+  entire reason to derive instead of compose. `view` the original first
+  and remix its actual markup and CSS; never reconstruct it from memory.
+- **The behavior inventory still binds.** Dropping the logo carousel or
+  the second CTA is a NAMED decision in your note and report, never a
+  silent loss.
+- **The lineage note names the intent**: "campaign variant: …" (what
+  changed and for which purpose), not a defect description. `derived_from`
+  still points at the original, which survives untouched.
+- **Released at mint like any raw-lane mint** — report the lineage-wide
+  effect unprompted, exactly as the two-lanes section requires.
+
+One more inheritance: the variant's own texts and links come back as
+detected slots, so a well-made variant is itself a parameterized,
+rebindable band — derive it once, then rebind per page for the rest of
+the campaign.
 
 ## The behavior inventory — every loss is a decision
 
@@ -137,9 +174,11 @@ A repair fixes THE DEFECT. It is not a redesign opportunity:
   same item counts, same image-to-copy ratio, same container behavior. If
   the original showed six customer stories, the repair does not show three
   bigger cards because they were easier to lay out.
-- When the brief genuinely asks for a redesign of the band, you are not
-  repairing anymore — say so, and treat it as composing a new section
-  (edit-website's compose sequence: grammar, ancestor, density, logo-off).
+- When the brief genuinely asks the band to change shape, you are not
+  repairing anymore — say so, and treat it as deriving a campaign variant
+  (the adaptation contract above) or, when no clone is structurally
+  close, composing a new section (edit-website's compose sequence:
+  grammar, ancestor, density, logo-off).
 
 ## Lineage, release honesty, and blast radius
 

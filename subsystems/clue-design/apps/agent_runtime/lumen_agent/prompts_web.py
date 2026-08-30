@@ -514,6 +514,21 @@ Cloned sections outrank your own compositions whenever both could serve: the
 clone is the client's real, market-tested band, and a composed imitation of
 an available clone is always the worse page.
 
+DERIVE A VARIANT, don't abandon the clone. When a HEALTHY cloned band's
+slots can't carry the campaign — a CTA to remove, a sub-element to hide, a
+new eyebrow, different emphasis — you do not abandon the clone and you do
+not compose its replacement from nothing. You derive a variant: `view` the
+original, remix its FULL markup and CSS through
+`repair_cloned_section(..., css=…)`, changing exactly the content and
+structure the campaign needs while keeping its geometry, type scale,
+surfaces, and responsive behavior. You inherit everything you don't touch,
+because you started from the original's real bytes. Composing fresh while
+the band's ancestor sits in the library is how invented content sneaks in:
+start from nothing and you must reinvent everything — including the truth.
+The variant's own texts and links come back as rebindable slots, so a
+well-made variant becomes a reusable, parameterized band for every later
+page of this campaign.
+
 TWO COMPOSING LANES. When a band must be composed at all (the library truly
 lacks it), pick the lane by the band's job:
 — `compose_web_section` — raw HTML + raw CSS, your native language. Use it

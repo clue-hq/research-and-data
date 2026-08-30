@@ -5939,7 +5939,18 @@ class LumenWebTools:
         self, fragment_id: str, html: str, rung: int, note: str,
         css: Optional[str] = None,
     ) -> str:
-        """Replace a BROKEN cloned section with one you compose — original preserved, lineage kept.
+        """Replace a pinned cloned section with one you compose — original preserved, lineage kept.
+
+        TWO INTENTS, one door. (1) REPAIR a BROKEN band — a defect you diagnosed. (2) DERIVE A
+        CAMPAIGN VARIANT of a HEALTHY band whose slots can't carry the campaign — a CTA to
+        remove, a sub-element to hide, a new eyebrow, restructured emphasis. For a variant, use
+        the RAW lane and remix the original's FULL markup and CSS, changing exactly what the
+        campaign needs while keeping its geometry, type scale, surfaces, and responsive
+        behavior — you inherit everything you don't touch because you started from the
+        original's real bytes, and the variant's own texts/links come back as rebindable slots
+        (derive once, rebind per page). A variant's note reads "campaign variant: …", its copy
+        and cardinality MAY change, its visual system may NOT. The repair-cloned-sections
+        skill's adaptation contract governs; read it first for either intent.
 
         TWO REPAIR LANES (founder ruling A, 2026-08-30). Pass `css` to repair in RAW HTML +
         RAW CSS — the fidelity lane: `view` the broken original first and remix its actual
@@ -5956,11 +5967,12 @@ class LumenWebTools:
         survive the repair — which is most repairs of real cloned bands.
 
         A clone is the starting reference, not an untouchable artifact. Never preserve a broken
-        result merely because it came from the original site. Use this the moment a cloned
-        section is visibly or functionally broken on the page you are building — a band that is
-        mostly dead scroll height, a control that does nothing, content that does not appear.
+        result merely because it came from the original site. For the REPAIR intent, use this
+        the moment a cloned section is visibly or functionally broken on the page you are
+        building — a band that is mostly dead scroll height, a control that does nothing,
+        content that does not appear.
 
-        WALK THE LADDER IN ORDER and say which rung you reached:
+        WALK THE LADDER IN ORDER (repair intent) and say which rung you reached:
           1. reproduce the original experience with supported primitives;
           2. build an equivalent interaction serving the same storytelling purpose;
           3. a deliberate, compact static fallback — the artificial height removed ENTIRELY.
@@ -5973,24 +5985,27 @@ class LumenWebTools:
         (in your brand card) governs the adaptation — it is the measured law of this brand's own
         site, and a repair that ignores it stops looking like the client.
 
-        `fragment_id` is the broken clone, which must be PINNED on the page right now.
+        `fragment_id` is the clone being repaired or adapted, which must be PINNED on the page
+        right now.
         `html` is the COMPLETE replacement markup for that band, in the same constrained-HTML wire
         format `author_web_subtree` takes: one `<section id="...">...</section>` using theme
         tokens, brand geometry utilities and the icon vocabulary. It is engine-validated exactly
         like any authored section.
-        `rung` is 1, 2 or 3. `note` is one line: what was broken, and what your replacement does
-        about it. Both are recorded permanently on the repair's lineage.
+        `rung` is 1, 2 or 3. `note` is one line — for a repair: what was broken and what your
+        replacement does about it; for a variant: "campaign variant: " + what changed and for
+        which purpose. Both are recorded permanently on the lineage.
 
         WHAT HAPPENS: the broken clone comes off the page and your section takes its exact place;
         the ENGINE's own render of that section is then minted as a NEW cloned section carrying
         `derived_from` (the original) and your rung + note. The original artifact is untouched —
         it stays in the library as the evidence of what the source site actually did.
 
-        The repair is born UNRELEASED, and approving the brand kit does NOT release it: a repair
-        is approved individually, by the user, after you explain it and ask (`release_repair`).
-        So `pinned` is normally false and the page carries your composed section directly, which
-        renders identically. Say so in your report; do not claim the page pins a repair it does
-        not.
+        In the VOCABULARY lane only: the repair is born UNRELEASED, and approving the brand kit
+        does NOT release it — it is approved individually, by the user, after you explain it and
+        ask (`release_repair`); `pinned` is then false and the page carries your composed section
+        directly, which renders identically. In the RAW lane the mint is released and pinned in
+        the same act, and your report states the lineage-wide effect instead of asking. Either
+        way, report the page's true state; never claim a pin that did not happen.
         """
         registry = self._cloned_section_registry()
         if registry is None:

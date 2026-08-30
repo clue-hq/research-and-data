@@ -86,28 +86,44 @@ had. Its verbs, smallest blast radius first:
    payload replaces, never merges). The copy you bind follows the
    conversion-copywriting skill's slot-geometry rule: match the original's
    approximate length and line count; markers count at rendered size.
-2. **Repair it** (`repair_cloned_section`). The change is structural — the
-   slot set can't express it. The repair is a NEW lineage-tracked variant;
-   the original survives untouched as evidence, and the page carries your
-   variant. Use this when the argument outgrows the slots — never cram.
-   A repair has two lanes: the RAW lane (pass `css=`) remixes the
-   original's own markup and stylesheet — the default when the band must
-   keep looking like the seller's site — and is released and swapped into
-   the page in one act; the VOCABULARY lane (no `css`) recomposes in the
-   constrained vocabulary and births a draft the user releases in chat.
-   Before composing a repair in either lane, read the
+2. **Derive a campaign variant** (`repair_cloned_section(..., css=…)`).
+   The band is HEALTHY but its shape can't carry the campaign: a second
+   CTA to remove, a logo carousel to hide, a new eyebrow, a different
+   emphasis. Do not abandon the clone and do not compose its replacement
+   from nothing — `view` the original and remix its FULL markup and CSS,
+   changing exactly the content and structure the campaign needs while
+   keeping its geometry, type scale, surfaces, and responsive behavior.
+   You inherit everything you don't touch, because you started from the
+   original's real bytes. The canonical example: the cloned hero with one
+   CTA instead of two, the carousel dropped, and a campaign eyebrow —
+   every visual property inherited. The variant is lineage-tracked
+   (`derived_from`), the original survives untouched, and the variant's
+   own texts and links come back as rebindable slots — so one well-made
+   variant becomes a reusable, parameterized band for every later page of
+   the campaign. Before deriving, read the repair-cloned-sections skill's
+   adaptation contract: the visual system is what's preserved, and every
+   removed element is a named decision.
+3. **Repair it** (`repair_cloned_section`). The band is BROKEN — a defect
+   you diagnosed. A repair has two lanes: the RAW lane (pass `css=`)
+   remixes the original's own markup and stylesheet — the default when
+   the band must keep looking like the seller's site — and is released
+   and swapped into the page in one act; the VOCABULARY lane (no `css`)
+   recomposes in the constrained vocabulary and births a draft the user
+   releases in chat. Before composing a repair in either lane, read the
    repair-cloned-sections skill: it owns the lane choice and the
    faithful-repair discipline (lineage check, the behavior inventory,
    ugly-is-not-wrong, the repair-scope contract, verification against the
    original).
-3. **Replace it.** A different released clone fits better
+4. **Replace it.** A different released clone fits better
    (`insert_cloned_section` + `remove_node`), or the library lacks the job
    and you compose a new band (see "Composing a new section" below).
 
-**Never retype a healthy clone's markup.** Reauthoring a working cloned band
-by hand is not an edit — it forges the seller's work and silently loses the
-spacing, responsive edge cases, and interaction hooks the capture preserved.
-The slots are the door; the repair flow is the bigger door.
+**Never retype a healthy clone's markup as ordinary authored content.**
+Reauthoring a working cloned band by hand is not an edit — it forges the
+seller's work and silently loses the spacing, responsive edge cases, and
+interaction hooks the capture preserved. The slots are the first door; a
+derived variant is the bigger door (it keeps the original's bytes and
+lineage); the repair flow is for defects.
 
 Two clone-specific situations you will meet mid-edit:
 
@@ -142,7 +158,9 @@ healthy clone: it discards the seller's real, market-tested work.
    (`insert_cloned_section`; on an empty page, `assemble_cloned_sections`
    pins the whole keeper set at once — see the fresh-page section above).
 2. A clone has the right bones, wrong words → pin it and rebind slots.
-3. A clone is structurally close → repair-variant it.
+3. A clone has the right bones, wrong shape → derive a campaign variant
+   (the clone-editing ladder's rung 2: remix its real bytes, inherit its
+   visual system).
 4. The library genuinely lacks the job → compose a new section (next
    section of this file).
 

@@ -206,8 +206,14 @@ On an existing page, act with the editing verbs you actually have:
   section only when the library genuinely lacks the job.
 - A cloned section whose bones are right but whose words serve the old
   argument — **rewrite through its slots.** Never retype a healthy clone's
-  markup; slots are the door. If the change is structural, repair the section
-  (`repair_cloned_section`) so the original survives with lineage.
+  markup; slots are the first door.
+- A cloned section whose bones are right but whose SHAPE can't carry the
+  campaign — a CTA to remove, a sub-element to hide, a new eyebrow —
+  **derive a campaign variant** (edit-website's clone-editing ladder,
+  rung 2) rather than composing a fresh imitation: the variant remixes the
+  original's real bytes, inherits its whole visual system, and survives
+  with lineage. If the band is BROKEN, that is a repair
+  (`repair_cloned_section`), a different contract.
 - Order the survivors by the awareness stage: the visitor's next unanswered
   question is always the next section.
 
