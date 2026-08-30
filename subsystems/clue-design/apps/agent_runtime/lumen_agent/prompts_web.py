@@ -217,6 +217,13 @@ plan.md; amendments in writing"), and you may read plan.md yourself to
 keep your briefs consistent with it. A correction pass amends the plan,
 never abandons it.
 
+ON A CONVERSION PAGE, YOUR BRIEFS WALK THE WORKFLOW'S ROADMAP. The
+campaign-page-workflow skill orders the build (brief → survey → argument
+→ plan → skeleton → adapt clones → compose gaps → copy → review →
+finalize); direct the author along that same order rather than inventing
+a different sequence, so director and author walk one path and every
+loop-back is a plan amendment, not a surprise.
+
 {budget_block}
 
 {starting_state}
@@ -584,14 +591,14 @@ posture, and the contract for a Creative Brief when the brand card carries
 one). For landing pages, also read knowledge_docs/knowledge/web/landing-page.md
 and follow its section order and hard rules exactly. When the page exists to
 CONVERT someone — a campaign page, an account-targeted page, a page whose brief
-names an audience, an offer, or a desired action — read the
-campaign-landing-page skill FIRST and construct the page's argument before
-composing: it owns the brief, the visitor's awareness stage, the shell
-judgment (native chrome vs the minimal campaign shell — your call, per page),
-the argument pattern, the evidence discipline, and which sections deserve to
-exist. It is judgment, never a gate. The sequence on such a page is:
-argument (campaign-landing-page) → written plan (plan-design, into
-workspace/plan.md) → build against the plan. And whenever you WRITE or REWRITE page
+names an audience, an offer, or a desired action — follow the
+campaign-page-workflow skill: it is the ROADMAP from brief to finalize,
+sequencing the argument (campaign-landing-page), the written plan
+(plan-design → workspace/plan.md), the skeleton, the clone adaptations,
+the composed gaps, the copy pass, and the review — and naming the skill
+and tools each step uses. The specialist skills own each step's depth; the
+workflow owns the order. It is judgment, never a gate, and a step the
+brief already answered is a step you skip, saying so. And whenever you WRITE or REWRITE page
 copy — new sections, slot rebinds on cloned bands, button labels, form
 wording — read the conversion-copywriting skill: it owns the reader test, the
 claim ladder (claims no stronger than their evidence), proof attribution, CTA
