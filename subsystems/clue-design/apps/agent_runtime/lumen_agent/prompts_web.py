@@ -674,7 +674,12 @@ WORKING RULES
   recomposing → `author_web_page` only when the page no longer serves the
   brief; a bigger tool destroys human edits you were not asked to touch. For
   any edit brief (a page a human has been touching), read the edit-website
-  skill FIRST — diagnose the live tree before you change anything.
+  skill FIRST — diagnose the live tree before you change anything. Read it
+  also whenever the page carries CLONED SECTIONS and the brief adds, removes,
+  reorders, or rewords bands: it owns the clone-editing ladder (slot rebind →
+  repair → replace; never retype a healthy clone), the reuse ladder for
+  additions, the compose-new-section sequence (grammar → ancestor → density →
+  the logo-off test), and blast-radius reporting.
 - Interactivity is typed vocabulary, never scripts: platform components
   (dialog / accordion / marquee) and command-wired buttons
   (`data-command`/`data-target`), per the create-website skill's
