@@ -147,6 +147,23 @@ follow-up. Landed (commits "render probe + pixel census" + "rendered-truth palet
   test families + test_workspace_seam). Env repair needed: run the design migration chain on
   the local dev DB. Not done this session (shared-DB state change; founder to green-light).
 
+## Acceptance sweep DONE + record CORRECTION (2026-08-30 night, commit b8e6c86a7)
+- **CORRECTION — the "291 pre-existing DB-drift failures" claim was WRONG.** The dev DB
+  (`clue_colombo:55040` from .env) is fully migrated; my pytest invocations simply never
+  sourced `.env`, so `clue_db.database_url()` fell back to DEFAULT_DATABASE_URL — a stale
+  local DB missing the fragment tables. With `set -a; source .env; set +a` the previously
+  "failing" families are green (test_web_fragments + test_ingestion_brief: 49/49). RULE:
+  design-subsystem pytest ALWAYS needs .env sourced (matches the dev-stack runbook memory).
+  Full suite re-running with proper env in background at session end (/tmp/full_api_suite3.txt).
+- Stealth-path acceptance sweep, production code, 7 brands all correct:
+  apollo #ECDC7C yellow | stripe #543CFC + accent #60A8E2 | sarvam #FCCCA4 saffron +
+  #A5BBFC indigo | workspan navy+violet+cream (declared, visibility-verified) |
+  ramp #E4F424 lime (site that served the bot "machine version" before stealth!) |
+  openai dark scheme #040404/#041424/white | freshcontext all-declared cream/orange/brown.
+  Sheet: .context/poc-brand-colors/out/pipeline-runs/compare.html.
+- Stripe live finding fixed (b8e6c86a7): declared-accent-vs-brand dedup is now PERCEPTUAL
+  (OKLab MERGE_DISTANCE), not exact-hex — #533AFD beside #543CFC was the same blurple.
+
 ## Phase 2 (logo corroboration) + follow-ups — NOT started
 Logo dual-pass (SVG markup + raster reconcile) via logo_ladder winners; multi-page capture;
 GPU/scrapling capture for WebGL heroes; approval-UI surfacing of evidence strings; golden
