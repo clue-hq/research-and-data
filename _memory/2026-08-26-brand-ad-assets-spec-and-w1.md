@@ -398,6 +398,24 @@ exists); before the demo, verify EXACTLY ONE design API is running.
 
 ## WAVE C CONSOLIDATED TO-DO LIST (compiled 2026-08-29, post-successful-demo)
 
+**FORENSIC PASS 2026-08-30 (commit-history + code-marker audit of every item):**
+CLOSED: #3 (D3, `30bb45aaf` — landed hours after this list was compiled) and
+#9 (brand-color election, the 2026-08-30 rendered-truth overhaul). ALL other
+items verified genuinely open: zero post-list commits touch distill/
+auto-attach/LUMB0810/harvest-sources/advertiser-resolution/retry/unclaimable/
+IMAGE_MODEL_TIMEOUT keywords (only the ingestion color work landed after the
+list), and code markers confirm — LUMB0810 still lives only in logo_policy kit
+slots (#4), `IMAGE_MODEL_TIMEOUT` appears nowhere in code (#14, env-only),
+`APIConnectionError` is unhandled in agent_runtime (#11), no unclaimable-job
+handling (#12). The look-alike commits that predate the list (R3-A `d0fe94aae`
+08-27, corner-decision `d824b1c28` and briefed-kit-shape `3122400e1` 08-24)
+were already accounted for when it was compiled — #6 and #10 are the residuals
+BEYOND them. One nuance on #10: the "Ramp captured 1 asset while succeeding"
+clause is PLAUSIBLY improved by the 08-30 stealth capture backend (Ramp now
+serves its real page) — verify with a Ramp re-ingest before working it. The
+parallel 08-30 session's root-cause commits (compose_web_section authoring
+lane) are on another branch and touch no Wave-C item.
+
 The runbook (docs/specs/demo-2026-08-29-runbook.md) points here as the Wave C
 decision list. Everything observed across Waves A/B and the demo sessions:
 
