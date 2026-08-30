@@ -293,6 +293,12 @@ def create_web_deepagent(
                 # Both write to the document, so both belong to the author and to no one else.
                 tools.recreate_cloned_page,
                 tools.repair_cloned_section,
+                # Founder ruling 2026-08-30: the raw-CSS authoring lane. A NEW band that must
+                # match the source site's fidelity is composed as real HTML+CSS through the
+                # same sanitize-once pipeline every captured byte passes, minted released, and
+                # pinned like any clone. The author's, because it writes library content the
+                # author then places.
+                tools.compose_web_section,
                 # F4.4 (FOUNDER RULING R-X9): a repair is released ONE AT A TIME, by a human who
                 # was shown it and asked. The brand-kit approval no longer sweeps repairs along
                 # with the harvested sections, so this is the only door — and it is the author's

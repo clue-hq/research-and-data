@@ -5656,6 +5656,85 @@ class LumenWebTools:
 
     # --- the D-F6 repair ladder ---------------------------------------------------------------
 
+    def compose_web_section(
+        self,
+        html: str,
+        css: str,
+        section_role: str = "other",
+        label: Optional[str] = None,
+        note: str = "",
+    ) -> str:
+        """Compose a NEW section from RAW HTML + RAW CSS at full fidelity — then pin it.
+
+        This is the raw-CSS lane: when a band must genuinely look like the client's site and
+        the constrained vocabulary cannot say it (their exact type scale, their blend modes,
+        their layout constants), write it as real HTML and real CSS here. The strongest way to
+        use it is to REMIX: `view` a cloned section first, reuse its actual class names, layout
+        constants, and CSS patterns in your composition — new content, the site's real visual
+        sentence structure. The result is minted as a released library fragment and renders
+        through the same path that gives clones their fidelity.
+
+        FORMAT:
+        - `html`: ONE section — `<section id="...">...</section>`. Real markup, any elements.
+          Scripts/handlers are stripped by the sanitizer (same as every captured byte). Images
+          and fonts may reference ONLY registered assets, by their asset-store spelling
+          (`/asset-store/<digest>` — take digests from `search_assets`/`view`); any other byte
+          reference refuses fail-closed. No `</` breakout sequences in CSS strings.
+        - `css`: the section's stylesheet, raw. It is scoped to this fragment automatically
+          (your selectors cannot leak onto the page) and cascade layers are flattened. Write
+          plain selectors; do not try to scope them yourself.
+        - `section_role`: nav/hero/proof/footer/other… A `campaign_header`/`campaign_footer`
+          role passes the shell contract's no-escape-route gate like every shell producer.
+        - `note`: one line, what this composed section is for — permanent provenance.
+
+        WHAT HAPPENS: sanitize-once → slot auto-annotation (texts/links/images stay rebindable)
+        → CSS scoping → content-addressed mint → **released immediately** (no approval step —
+        founder ruling). The response carries `fragment_id`: place it with
+        `insert_cloned_section(fragment_id, index, slot_values?)`. Identical bytes converge onto
+        an existing fragment rather than duplicating it.
+
+        WHEN NOT TO USE: content that must stay deeply human-editable in the inspector or carry
+        `data-var`/`data-slot` derivation markers — that is the constrained vocabulary's job
+        (`author_web_page`/`author_web_subtree`). A composed raw section is slot-editable like a
+        clone, not node-editable. And never compose an imitation of a band the library already
+        holds — pin the real one.
+        """
+        refusal = self._consume_round_budget("compose_web_section")
+        if refusal is not None:
+            return refusal
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+        try:
+            result = registry.compose_section(
+                html, css, section_role=section_role, label=label, note=note
+            )
+        except FragmentReferenceError as error:
+            return self._tool_error(
+                error.code or "fragment.compose_refused", error.message
+            )
+        except Exception as error:  # noqa: BLE001 - capability boundary, same as repair's
+            code = getattr(error, "code", None) or "cloned_section.registry_failed"
+            message = getattr(error, "message", None) or (
+                f"the cloned-section library could not mint this composition: "
+                f"{type(error).__name__}: {error}"
+            )
+            return self._tool_error(str(code), str(message))
+        self.record(
+            "author",
+            "web_section_composed",
+            input_summary=f"role={result.get('section_role')} note={note[:80]!r}",
+            output_summary=f"{result.get('fragment_id')} -> {result.get('status')}",
+            payload={
+                "fragment_id": result.get("fragment_id"),
+                "section_role": result.get("section_role"),
+            },
+        )
+        result["next_step"] = (
+            "pin it with insert_cloned_section(fragment_id, index, slot_values?)"
+        )
+        return json.dumps(result, indent=2)
+
     def repair_cloned_section(
         self, fragment_id: str, html: str, rung: int, note: str
     ) -> str:

@@ -1034,6 +1034,97 @@ class DurableAgentClonedSectionRegistry:
             "insertable": row.get("status") == "approved",
         }
 
+    # --- composing a NEW raw-CSS section (founder ruling 2026-08-30) ---------------------------
+
+    def compose_section(
+        self,
+        html: str,
+        css: str,
+        *,
+        section_role: str = "other",
+        label: str | None = None,
+        note: str,
+    ) -> JsonObject:
+        """Mint an AGENT-COMPOSED section from raw HTML + raw CSS — full fidelity, same door.
+
+        The raw-CSS authoring lane (founder ruling 2026-08-30): the agent writes real HTML and
+        real CSS — its native language, and the only representation that can match a source
+        site's fidelity — and the result becomes a first-class library fragment through the
+        EXACT pipeline every captured byte already passes: `sanitize_fragment_html` (scripts and
+        handlers stripped, every byte reference fail-closed against registered assets),
+        `annotate/detect` slots (so the band stays rebindable later), `scope_fragment_css`
+        (selectors caged under the wrapper class, cascade layers flattened, markup-breakout
+        gate). No parallel trust surface exists: what ingestion may not store, this may not
+        store either.
+
+        **Born released, deliberately.** The founder's autonomy ruling: an agent-composed
+        section carries no human release door — it is minted and immediately approved, so the
+        composing run can pin it with the ordinary `insert_cloned_section`. R-I5's birth rule is
+        honored, not bypassed: the mint births `draft` and the release is the same explicit
+        `set_web_fragment_status` transition every other release uses, recorded in provenance.
+
+        **Shell roles keep their contract.** A composed `campaign_header`/`campaign_footer`
+        passes the same no-escape-route shape gate and RULED slot set as every other producer of
+        those roles (R23-F1) — this door does not bypass R23-3.
+
+        Provenance carries ``composed: "agent"`` — listed and insertable like any released
+        section, and excluded from whole-page recreates exactly like the campaign shells
+        (a composed band came off no source page).
+        """
+        cleaned_note = " ".join((note or "").split())
+        if not cleaned_note:
+            raise FragmentRefused(
+                "fragment.compose_note_missing",
+                "note is one line saying what this composed section is for; it is recorded "
+                "permanently in provenance, so it cannot be blank.",
+            )
+        clean_role = (section_role or "other").strip().lower() or "other"
+        sanitized = sanitize_fragment_html(html, rehosted={})
+        if clean_role in CAMPAIGN_SHELL_ROLES:
+            assert_campaign_shell_shape(clean_role, sanitized.html)
+            slot_specs = list(campaign_shell_slots(clean_role))
+        else:
+            slot_specs = list(detect_slots(sanitized.html).specs)
+
+        row, artifact = create_web_fragment(
+            self.blobs.storage,
+            workspace_id=self.workspace_id,
+            html=sanitized.html,
+            css=css,
+            rehosted={},
+            slots=slot_specs,
+            source_url="composed:agent",
+            section_role=clean_role,
+            label=label or f"Composed — {cleaned_note[:80]}",
+            preview=None,
+            provenance={
+                "composed": "agent",
+                "note": cleaned_note,
+                "released_by": "agent-compose (founder autonomy ruling 2026-08-30)",
+            },
+            prelude_reference=PRELUDE_REFERENCE_STRIP,
+        )
+        status = str(row.get("status") or "")
+        if status == "draft":
+            released = set_web_fragment_status(
+                workspace_id=self.workspace_id,
+                fragment_id=str(row["fragment_id"]),
+                status="approved",
+            )
+            status = str(released.get("status") or status)
+        return {
+            "fragment_id": str(row["fragment_id"]),
+            "status": status,
+            "section_role": row.get("section_role"),
+            "label": row.get("label"),
+            "slot_keys": [spec.key for spec in slot_specs],
+            "asset_digests": list(artifact.payload.get("asset_digests") or []),
+            "sanitizer_notes": list(sanitized.notes) + list(artifact.notes),
+            # Content addressing: identical bytes converge onto the existing row
+            # (first-writer-wins), whose status/lineage survive.
+            "insertable": status == "approved",
+        }
+
     # --- releasing ONE repair (F4.4, FOUNDER RULING R-X9) --------------------------------------
 
     def render_repair_preview(
