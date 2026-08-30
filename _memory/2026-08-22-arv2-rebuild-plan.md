@@ -192,3 +192,19 @@ ARV2 build corrections learned (paid for, do not relearn):
    departmental_head_count contradicts its own people index; match can return people under a
    different org id. OpenRouter BYOK: real cost is cost_details.upstream_inference_cost
    (usage.cost=0 under-reports 24%).
+
+## Addendum 2026-08-27 — AI Ark evaluated (docs/specs/ARV2-ai-ark-contract-notes.md)
+
+Founder surfaced ai-ark.com as a cheaper Apollo/ZoomInfo alternative. Verified live: AI bees
+spin-out (launched 2025, ~30 ppl, founders Brian/Hamied, no disclosed funding/SOC2). Contract:
+base api.ai-ark.com/api/developer-portal, X-TOKEN header, 5rps. People search 0.5cr/result
+returns FULL profiles (real names, LinkedIn URLs, position history, education, skills,
+open_to_work/hiring badges, embedded company w/ technologies+SIC/NAICS) — vs Apollo's obfuscated
+search; this closes v3's "no identity anchor" gap. Email export 1cr found-only w/ BounceBan
+MX/status detail; phones 5cr SYNC no webhook (vs Apollo 8cr+webhook); personality DISC/OCEAN 4cr
+(advisory-only per charter). $49/5k credits; $2-4/1k at volume. 5-person committee ≈ $0.27→$0.07.
+Red flags: birth_date in payload (never write), no DNC on phones, 1yr-old vendor, asserted-only
+compliance, one review shows unexplained "Trust Score: 2%". Ruling proposed: $0 free-tier A/B
+canary re-running the Probook committee vs v3 ground truth (5 checks incl. the Blumberg email
+Apollo missed) before touching the Apollo integration; either way it's a resolver swap behind the
+same seam. Committed locally, NOT pushed.
