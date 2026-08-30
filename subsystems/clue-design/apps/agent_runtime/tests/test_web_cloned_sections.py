@@ -135,6 +135,27 @@ class FakeRegistry:
             if fragment_id in self.sections
         }
 
+    def mint_repair(self, *, replaces, html, css, rung, note, release=False):
+        """The raw lane's mint: a released row derived from `replaces`, resolvable at once."""
+        new_id = f"frag_{len(self.sections):016x}"
+        original = self.sections[replaces]
+        self.add(
+            new_id,
+            role=original["section_role"],
+            label=f"repair of {original['label']}",
+            html=html,
+            css=css,
+            slots=[],
+            status="approved" if release else "draft",
+        )
+        return {
+            "fragment_id": new_id,
+            "status": self.sections[new_id]["status"],
+            "insertable": release,
+            "derived_from": replaces,
+            "derived_reason": f"repair rung {rung}: {note}",
+        }
+
     def resolve_insertable(self, fragment_id):
         section = self.sections.get(fragment_id)
         if section is None:
@@ -1145,3 +1166,44 @@ def test_the_picker_flags_a_kept_despite_broken_family_repair(tmp_path) -> None:
     assert row["lineage_degraded_fallback"] is True
     assert "keep_flagged" in row["lineage_degraded_note"]
     assert "needs review" in row["lineage_degraded_note"]
+
+
+# --------------------------------------------------------------------------- #
+# The raw repair lane, walked through the TOOL (the path dry run 2 crashed on)
+# --------------------------------------------------------------------------- #
+
+
+def test_a_raw_repair_swaps_the_pinned_band_in_place(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """Red under fe466fe29: the raw branch read `instances[0]` before assignment
+    (UnboundLocalError killed a live turn, dry run 2, 2026-08-31). The registry-level
+    tests minted directly and never walked the tool, so nothing caught it."""
+    tools = _tools(tmp_path, registry)
+    pinned = json.loads(tools.insert_cloned_section(HERO_ID))
+    assert pinned["status"] == "ok"
+    old_section = pinned["section_node_id"]
+
+    result = json.loads(
+        tools.repair_cloned_section(
+            HERO_ID,
+            '<section id="sec_fix"><h2>Same story, working band</h2></section>',
+            rung=2,
+            note="campaign variant: one CTA, carousel dropped",
+            css=".sec_fix { padding: 96px 0 }",
+        )
+    )
+
+    assert result["status"] == "ok"
+    assert result.get("raw") is True
+    page = _page(tools)
+    # The broken band came off the page and the released repair sits in its place.
+    assert old_section not in page["nodes"]["root"]["children"]
+    new_fragment_id = result["repair_fragment_id"]
+    pins = [
+        node["fragment_id"]
+        for node in page["nodes"].values()
+        if node.get("kind") == "fragment"
+    ]
+    assert new_fragment_id in pins
+    assert HERO_ID not in pins

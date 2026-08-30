@@ -6036,6 +6036,7 @@ class LumenWebTools:
                 "nothing to repair in place. Pin it first (or name one that is pinned).",
                 pinned_fragment_ids=sorted(pinned),
             )
+        instances = pinned[clean_id]
 
         if css is not None:
             # --- the RAW lane (founder ruling A, 2026-08-30) -------------------------------
@@ -6077,7 +6078,21 @@ class LumenWebTools:
             root_id = page.get("root")
             root = nodes.get(root_id) if isinstance(root_id, str) else None
             children = list(root.get("children") or []) if isinstance(root, dict) else []
-            old_section = instances[0]
+            # `_pinned_cloned_sections` maps fragment ids to FRAGMENT node ids; the swap acts
+            # on the band, so resolve the enclosing SECTION (the root child that wraps the
+            # fragment node) — removing only the frg_* node would leave an empty section
+            # shell on the page (caught by the dry-run-2 regression test).
+            frag_node_id = instances[0]
+            old_section = next(
+                (
+                    node_id
+                    for node_id, node in nodes.items()
+                    if isinstance(node, dict)
+                    and node.get("kind") == "section"
+                    and frag_node_id in (node.get("children") or [])
+                ),
+                frag_node_id,
+            )
             index = children.index(old_section) if old_section in children else len(children)
             slot_kinds = (resolved.get("render") or {}).get("slot_kinds") or {}
             section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
@@ -6155,7 +6170,6 @@ class LumenWebTools:
         #    clone this deliberately takes off the page is not reported as a lost pin — that
         #    report exists for rewrites that lose a band by accident, and this is the opposite.
         self._repair_replacing = clean_id
-        instances = pinned[clean_id]
         try:
             swapped = json.loads(self.author_web_subtree(instances[0], html))
         finally:
