@@ -346,7 +346,12 @@ def _assign_from_render_truth(
     claimed_hexes.add(brand.hex.upper())
 
     declared_accent = _visible_declaration(stated.get("surface.accent"), "surface.accent")
-    if declared_accent is not None and declared_accent.value.upper() == brand.hex.upper():
+    # PERCEPTUAL duplicate check, not exact hex: stripe declares its accent as
+    # #533AFD while the measured brand is #543CFC — the same blurple to any
+    # human eye, and an accent exists to be the OTHER color (live finding).
+    if declared_accent is not None and oklab_distance(
+        hex_to_oklab(declared_accent.value[:7]), hex_to_oklab(brand.hex)
+    ) <= MERGE_DISTANCE:
         declared_accent = None
     elif declared_accent is not None and _is_near_neutral_hex(declared_accent.value):
         diagnostics.append(

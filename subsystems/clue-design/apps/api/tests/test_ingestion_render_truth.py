@@ -268,6 +268,30 @@ def test_declared_role_invisible_on_the_page_is_refused() -> None:
     assert refusals and "PhoneInputCountryFlag" in refusals[0]["message"]
 
 
+def test_declared_accent_that_is_perceptually_the_brand_is_dropped() -> None:
+    """Live finding (stripe.com): declared accent #533AFD vs measured brand
+    #543CFC — the same blurple. Exact-hex dedup missed it; perceptual wins."""
+    from lumen_ingestion.evidence import DeclaredRoleEvidence, EvidencePointer
+
+    truth = RenderTruth(
+        page_clusters=[CensusCluster(hex="#FCFCFC", share=0.8), CensusCluster(hex="#543CFC", share=0.02)],
+        fold_clusters=[CensusCluster(hex="#543CFC", share=0.02)],
+        button_families=[RegionColorFamily(hex="#543CFC", count=5)],
+        body_bg="#FFFFFF",
+        body_text="#111111",
+    )
+    declared = [
+        DeclaredRoleEvidence(
+            role="surface.accent", property_name="--accent", value="#533AFD",
+            pointer=EvidencePointer(source="website", locator="css :: test"),
+        )
+    ]
+    light = assign_light_roles([], declared, truth)
+    assert light.assignments["surface.brand"].hex == "#543CFC"
+    accent = light.assignments.get("surface.accent")
+    assert accent is None or accent.hex != "#533AFD"
+
+
 def test_declared_role_visible_on_the_page_still_outranks_measured() -> None:
     """The veto targets INVISIBLE declarations only: a brand the site both
     names and shows keeps its declared authority."""
