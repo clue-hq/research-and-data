@@ -123,6 +123,30 @@ follow-up. Landed (commits "render probe + pixel census" + "rendered-truth palet
 - Hazard observed live: headed browsers open on the founder's screen and they may interact
   (mega-menu incident); keep stealth captures headless.
 
+## Stealth backend SHIPPED (2026-08-30 late, commit 614803b24)
+- Correction to the earlier capture-PoC note: scrapling 0.4's StealthyFetcher is a stealth-
+  HARDENED CHROMIUM (fetchers/stealth_chrome.py), NOT camoufox/Firefox. Same engine as ours,
+  async_fetch + async page_action → shared harvest code.
+- `fetch_rendered` = dispatcher: stealth default → plain-Chromium fallback; provenance always
+  stamped (LUMI0535 stealth info / LUMI0536 fallback warning); kill switch LUMEN_RENDER_STEALTH=0.
+  Page driving extracted to one `_harvest_page` used by both backends (no drift possible).
+- CRITICAL FINGERPRINT LESSON (cost ~3 debug rounds): pass NO additional_args/context overrides
+  to the stealth session. Overriding viewport to 1440x2000 broke scrapling's coherent
+  fingerprint and sarvam's aurora refused to paint; scrapling defaults → paints. Probe records
+  live viewport_width so census scale is independent. Also falsified en route: full-page vs
+  viewport screenshot was NOT the variable.
+- Production-path proof: sarvam brand #FCCCA4 (4 rendered buttons, warm saffron) + accent
+  #A5BBFC (indigo, gradient+token) — BOTH families the founder demanded; apollo #ECDC7C yellow
+  family, page/text right. Comparison sheet: .context/poc-brand-colors/out/pipeline-runs/
+  compare.html (render_compare.py; dumps via live_pipeline_proof.py <url> <label>).
+- scrapling>=0.4,<0.5 declared in apps/api requirements.txt + pyproject.toml.
+- FULL apps/api suite classified (was 293 FAILED): 2 were ours (test_ingestion_asset_slurp
+  completion-sentinel used rule-text colors → fixture now declares a :root token; FIXED, 35/35
+  green), remaining ~291 are PRE-EXISTING local-dev-DB migration drift — `design_web_fragment`
+  and `design_site_snapshot` tables missing (web-fragments/campaign-shell/ad-assets/approval
+  test families + test_workspace_seam). Env repair needed: run the design migration chain on
+  the local dev DB. Not done this session (shared-DB state change; founder to green-light).
+
 ## Phase 2 (logo corroboration) + follow-ups — NOT started
 Logo dual-pass (SVG markup + raster reconcile) via logo_ladder winners; multi-page capture;
 GPU/scrapling capture for WebGL heroes; approval-UI surfacing of evidence strings; golden
