@@ -46,7 +46,8 @@ from .company_identity import (
     check_advertiser_names,
     resolve_company_identity_resolver,
 )
-from .distill import AdDnaCard, previews_for, resolve_distiller
+from .distill import AdDnaCard, bounded_card, previews_for, resolve_distiller
+from .store import AdAssetsStore
 from .harvest import (
     DEFAULT_MAX_CREATIVES,
     DEFAULT_MAX_PAGES,
@@ -303,32 +304,59 @@ def _onboard(
 
     # --- step 2: distil the ad-DNA card ------------------------------------------------------
     reporter("Learning your ad style…", 0.55)
-    card = _distil(custody.creatives, distiller=distiller, evidence=evidence)
-    if card is None:
-        return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
+    # W-B1 re-drive guard (Wave-C fix #2), the step-resume half: a re-driven execution of
+    # THIS job (a reaper re-offering work whose holder it presumed dead, a second embedded
+    # worker over the shared queue) finds the card its first execution already published and
+    # resumes from it — no second vision-model spend, and no twin version to orphan the
+    # pre-generated imagery (the substrate's convergent mint is the backstop even if this
+    # probe misses). A DELIBERATE re-run is a new job with a new id and finds nothing here.
+    prior_card = None
+    try:
+        prior_card = AdAssetsStore(workspace_id=repo.workspace_id).card_for_job(
+            harvest_job_id=job_id
+        )
+    except Exception:  # noqa: BLE001 - a probe failure is not a job failure
+        prior_card = None
+    if prior_card is not None:
+        card = bounded_card(prior_card.get("card"), model=prior_card.get("model"))
+        published = {"card_id": prior_card["card_id"], "version": prior_card["version"]}
+        evidence["steps"]["distill"] = {
+            "status": "converged",
+            "card_id": prior_card["card_id"],
+            "version": prior_card["version"],
+            "reason": "this job already published a card; re-driven execution resumed",
+        }
+        if card is None:
+            # The stored payload no longer revives as a card (schema drift): the durable
+            # version stands, and there is nothing more this execution can safely add.
+            return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
+    else:
+        card = _distil(custody.creatives, distiller=distiller, evidence=evidence)
+        if card is None:
+            return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
 
-    card_id = request.get("card_id") or f"adna_{brand_kit_id}"
-    published = tools.invoke(
-        "design_publish_ad_dna_card",
-        {
-            "card_id": card_id,
-            "brand_kit_id": brand_kit_id,
-            "brand_kit_version": brand_kit_version,
-            "card": card.to_json(),
-            "source_creative_ids": [c.creative_id for c in custody.creatives],
-            "harvest_job_id": job_id,
+        card_id = request.get("card_id") or f"adna_{brand_kit_id}"
+        published = tools.invoke(
+            "design_publish_ad_dna_card",
+            {
+                "card_id": card_id,
+                "brand_kit_id": brand_kit_id,
+                "brand_kit_version": brand_kit_version,
+                "card": card.to_json(),
+                "source_creative_ids": [c.creative_id for c in custody.creatives],
+                "harvest_job_id": job_id,
+                "model": card.model,
+            },
+            workspace_id=repo.workspace_id,
+            actor="agent",
+        ).references
+        evidence["steps"]["distill"] = {
+            "status": "ok",
+            "card_id": published["card_id"],
+            "version": published["version"],
+            "style_groups": published["style_group_count"],
             "model": card.model,
-        },
-        workspace_id=repo.workspace_id,
-        actor="agent",
-    ).references
-    evidence["steps"]["distill"] = {
-        "status": "ok",
-        "card_id": published["card_id"],
-        "version": published["version"],
-        "style_groups": published["style_group_count"],
-        "model": card.model,
-    }
+        }
 
     # --- step 3: pre-generate imagery per style group -----------------------------------------
     reporter("Creating brand imagery…", 0.8)
@@ -592,6 +620,24 @@ def _pregenerate(
     evidence: JsonObject,
 ) -> None:
     """Generate and link imagery per style group. Its own outcome; never raises past here."""
+    # W-B1 re-drive guard: a card version that already carries its grounds needs nothing —
+    # the first execution's paid imagery stands, and re-linking the same version is what the
+    # convergent mint upstream exists to make possible. Tolerant: a probe that will not
+    # answer falls through to generation, where the per-image ledger still dedupes the spend.
+    try:
+        already = AdAssetsStore(workspace_id=repo.workspace_id).list_pregenerated(
+            card_id=card_id, card_version=card_version
+        )
+    except Exception:  # noqa: BLE001 - a probe failure is not a job failure
+        already = []
+    if already:
+        evidence["steps"]["pregenerate"] = {
+            "status": "converged",
+            "linked": len(already),
+            "reason": "this card version already carries pre-generated grounds; re-driven execution resumed",
+        }
+        return
+
     if generate is None:
         from lumen_api import image_provider
 

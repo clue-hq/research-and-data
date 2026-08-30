@@ -791,3 +791,80 @@ def test_the_fleet_worker_executes_an_ad_assets_job(
     assert job["status"] == "succeeded", job
     assert job["kind"] == "ad_assets"
     assert _evidence(client, job_id)["steps"]["harvest"]["kept"] == 2
+
+
+def test_a_re_driven_job_converges_instead_of_orphaning_the_paid_imagery(
+    tmp_path: Path, lane_on: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """W-B1 red case (Wave-C fix #2). Ramp's incident: the same onboarding job executed
+    twice (reaper re-offer / second embedded worker over the shared queue), the second
+    distill minted card v2, pre-generation's assets stayed linked to v1, and the lane —
+    which serves the LATEST version — showed zero of the ten paid grounds. Under the guard
+    a re-driven execution converges: one card version, no second vision spend, no second
+    image spend, and the paid imagery still visible on the latest version."""
+    from lumen_ingestion.ad_library.onboarding import run_ad_assets_onboarding
+
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+    distiller = _StubDistiller()
+    generate_calls: list[str] = []
+
+    def counting_generate(**kwargs: Any) -> Any:
+        generate_calls.append(str(kwargs.get("aspect_ratio") or ""))
+        return _stub_generate(**kwargs)
+
+    job = _run_job(
+        client, tmp_path, brand_kit_id=brand_kit_id, distiller=distiller,
+        generate=counting_generate,
+    )
+    assert job["status"] == "succeeded", job
+    first_distills = len(distiller.seen)
+    first_generates = len(generate_calls)
+    assert first_distills == 1 and first_generates > 0
+
+    # The infrastructure re-drive: SAME job id, executed again from the top.
+    run_ad_assets_onboarding(
+        str(tmp_path / "engine-cache" / client.headers["X-Workspace-Id"]),
+        job["job_id"],
+        workspace_id=client.headers["X-Workspace-Id"],
+        provider=_StubProvider(),
+        distiller=distiller,
+        generate=counting_generate,
+        fetch_creative=_fetch_creative,
+        now=lambda: datetime(2026, 8, 26, tzinfo=UTC),
+    )
+    redriven = client.get(f"/brand-kits/ingest/{job['job_id']}").json()["job"]
+    assert redriven["status"] == "succeeded", redriven
+    evidence = _evidence(client, job["job_id"])
+    assert evidence["steps"]["distill"]["status"] == "converged"
+    assert evidence["steps"]["distill"]["version"] == 1
+    assert evidence["steps"]["pregenerate"]["status"] == "converged"
+
+    assert len(distiller.seen) == first_distills  # no second vision-model spend
+    assert len(generate_calls) == first_generates  # no second image-model spend
+
+    lane = client.get(f"/brand-ad-assets/{brand_kit_id}").json()
+    assert lane["card"]["version"] == 1  # ONE version — no twin
+    assert len(lane["pregenerated_assets"]) == 2  # the paid imagery is still visible
+
+
+def test_a_deliberate_second_onboarding_still_mints_a_fresh_version(
+    tmp_path: Path, lane_on: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The guard's other half: a NEW job (the human re-onboarding on purpose) is new work —
+    a fresh card version is minted and the lane serves it, with its own linked grounds."""
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+
+    first = _run_job(client, tmp_path, brand_kit_id=brand_kit_id, distiller=_StubDistiller())
+    assert first["status"] == "succeeded", first
+
+    second = _run_job(client, tmp_path, brand_kit_id=brand_kit_id, distiller=_StubDistiller())
+    assert second["status"] == "succeeded", second
+    assert second["job_id"] != first["job_id"]
+    assert second["evidence"]["steps"]["distill"]["status"] == "ok"
+    assert second["evidence"]["steps"]["distill"]["version"] == 2
+
+    lane = client.get(f"/brand-ad-assets/{brand_kit_id}").json()
+    assert lane["card"]["version"] == 2  # deliberate re-run = genuinely new version
+    assert len(lane["pregenerated_assets"]) == 2  # linked to the NEW version, still visible

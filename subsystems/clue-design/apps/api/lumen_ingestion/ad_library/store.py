@@ -114,6 +114,14 @@ class AdAssetsStore:
             )
         )
 
+    def card_for_job(self, *, harvest_job_id: str) -> Optional[JsonObject]:
+        """The card THIS job already published, if any — the W-B1 re-drive probe."""
+        return self._bridge._run(
+            lambda conn: design_ad_assets.ad_dna_card_for_harvest_job(
+                conn, workspace_id=self.workspace_id, harvest_job_id=harvest_job_id
+            )
+        )
+
     def list_pregenerated(self, *, card_id: str, card_version: int) -> list[JsonObject]:
         return self._bridge._run(
             lambda conn: design_ad_assets.list_pregenerated_assets(

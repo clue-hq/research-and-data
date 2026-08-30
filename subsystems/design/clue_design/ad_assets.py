@@ -228,6 +228,20 @@ async def create_ad_dna_card_version(
         text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
         {"key": f"design_ad_dna_card:{workspace_id}:{card_id}"},
     )
+    # W-B1 re-drive guard (Wave-C fix #2): ONE harvest job publishes ONE card version. A
+    # re-driven onboarding job (a reaper re-offering work whose holder it presumed dead, a
+    # second embedded worker over the shared queue) converges on the version its first
+    # execution already published, instead of minting a twin — the twin is what orphaned all
+    # ten of Ramp's pre-generated grounds (linked to v1, lane serves latest = v2, 0 visible).
+    # First publish wins, checked INSIDE the lock so two concurrent executions serialize.
+    # A deliberate re-run is a NEW onboarding job with a new harvest_job_id and converges on
+    # nothing; a publish with no job identity (harvest_job_id None) keeps append semantics.
+    if harvest_job_id is not None:
+        existing = await ad_dna_card_for_harvest_job(
+            conn, workspace_id=workspace_id, harvest_job_id=harvest_job_id
+        )
+        if existing is not None:
+            return existing
     current = (
         await conn.execute(
             text(
@@ -264,6 +278,27 @@ async def create_ad_dna_card_version(
     return await get_ad_dna_card(
         conn, workspace_id=workspace_id, card_id=card_id, version=version
     )
+
+
+async def ad_dna_card_for_harvest_job(
+    conn: AsyncConnection, *, workspace_id: str, harvest_job_id: str
+) -> JsonObject | None:
+    """The card version one harvest job published, or ``None`` — the W-B1 convergence read.
+
+    Oldest first: should a pre-guard database already hold twins for one job, every consumer
+    converges on the FIRST publish — the one pre-generation linked its assets to.
+    """
+    row = (
+        await conn.execute(
+            text(
+                "SELECT * FROM design_ad_dna_card"
+                " WHERE workspace_id = :w AND harvest_job_id = :j"
+                " ORDER BY created_at, version LIMIT 1"
+            ),
+            {"w": workspace_id, "j": harvest_job_id},
+        )
+    ).first()
+    return _card_from_row(row) if row is not None else None
 
 
 async def get_ad_dna_card(
