@@ -407,9 +407,12 @@ decision list. Everything observed across Waves A/B and the demo sessions:
    "lane flag off in claiming process" log.
 2. W-B1 double-distill orphaning pregen assets (card_version drift) —
    idempotency/re-drive guard, same multi-worker root-cause family.
-3. D3 real SVG fix (W-B5 forensic): raster node missing `corner` field,
-   bare except swallowing CoreError, stub-core tests. ~1-2 days. The
-   demo-night raster band-aid covers only 4 documents.
+3. CLOSED 2026-08-29 20:41 (`30bb45aaf`, hours AFTER this list was compiled;
+   lineage `7f3513d54`/`7fd0cc2f5`): raster node carries `corner`, the bare
+   except is replaced with a loud precise failure + byte precheck, each change
+   test-pinned — rasterizer verified against the real engine on the demo
+   workspace SVGs. ~~D3 real SVG fix (W-B5 forensic): raster node missing
+   `corner` field, bare except swallowing CoreError, stub-core tests.~~
 4. W-B4: LUMB0810 logo guard covers kit slots only — harvested look-alike
    placed as logo unguarded.
 
@@ -424,11 +427,14 @@ decision list. Everything observed across Waves A/B and the demo sessions:
 7. D8 anchor artwork-blind (intercom customer-montage, cursor wallpaper,
    notion calendar icon accepted as marks).
 8. reversed slot empty 12/12; wordmark slot 0/12 correct.
-9. BRAND-COLOR ELECTION DEFECT (demo forensics, previously unrecorded):
-   Apollo kit elected cyan (phone-widget focus rule) + purple (academy
-   course styling) as brand colors. Fix direction: weight candidate colors
-   by RENDERED PIXELS, not stylesheet presence. Fixed kit v2 was hand-
-   corrected for the demo (yellow/black).
+9. CLOSED 2026-08-30 (rendered-truth overhaul, commits f6ca35c9f..b8e6c86a7;
+   full record in `_memory/2026-08-30-brand-color-ingestion-poc.md`): election
+   authority moved to rendered pixels (census + button regions + gradient
+   stops + accent text), stylesheet-weight voting retired, stealth capture
+   backend shipped, 7-brand sweep green incl. apollo yellow/black live.
+   ~~BRAND-COLOR ELECTION DEFECT: Apollo kit elected cyan (phone-widget
+   focus rule) + purple (academy course styling); hand-corrected kit v2
+   for the demo.~~
 10. Ramp captured 1 asset while "succeeding"; WOFF2-in-SVG export;
     brand preflight overwrites style($type.*) sizes.
 
