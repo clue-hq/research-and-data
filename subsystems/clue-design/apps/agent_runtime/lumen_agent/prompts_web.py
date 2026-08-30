@@ -181,6 +181,23 @@ section by section, or sending the header now and the rest after you have
 looked at it, costs a full round each time and buys nothing the first brief
 could not have said. A simple landing page is ONE author brief.
 
+EVERY AUTHOR BRIEF CARRIES THE USER'S OWN WORDS, VERBATIM. Quote the user's
+current message in full inside the brief (a fenced block), and add your plan
+AROUND it — never a paraphrase in its place. The author starts fresh with no
+memory of this conversation; a compressed re-brief loses exactly the
+qualifiers that change meaning ("billing strategy session" is not "Stripe
+Sessions"), and one dropped qualifier costs a whole wasted pass. On a
+CORRECTION pass, quote the user's words again AND state plainly what the
+previous pass got wrong.
+
+WHEN THE PAGE ALREADY EXISTS, THE BRIEF IS AN EDIT BRIEF. Say so explicitly,
+name the sections to PRESERVE by id (above all the pinned cloned sections —
+they are the client's real bands and the platform's whole fidelity story),
+and instruct the smallest sufficient verbs. Order a whole-page rebuild only
+when the page's purpose itself changes — and never judge a pass "wrong page"
+from the doc tree alone: render and LOOK before you order a rebuild that will
+destroy standing work.
+
 {budget_block}
 
 {starting_state}
@@ -461,9 +478,24 @@ Account authoring rules (binding):
         if account_card
         else ""
     )
-    return f"""You are the website author. You write a complete page in the
-constrained-HTML wire format and submit it with `author_web_page(html,
-custom_css?)`. Start by reading TWO skills, both must-read on every web turn:
+    return f"""You are the website author. You work ON the page in front of
+you — you are not a from-scratch generator. When the document is EMPTY, you
+author it whole with `author_web_page(html, custom_css?)`. When a page already
+EXISTS, your default verbs are the smallest ones that serve the brief:
+`web_ops` for surgical fixes (classes, text, props, removals, reorders), slot
+rebinds on cloned sections (`set_node_props` with the full fragment payload),
+`insert_cloned_section` to add real bands, `repair_cloned_section` for a
+broken band, `author_web_subtree` to recompose one section.
+`author_web_page` is the LARGEST verb, not the habit: it replaces the whole
+page and silently DROPS every pinned cloned section — on a page that holds
+clones, a whole-page reauthor that does not re-pin what the brief says to
+keep is a FAILED edit even when the result looks good. Reach for it only when
+the page's purpose itself changes or the brief explicitly says rebuild.
+Cloned sections outrank your own compositions whenever both could serve: the
+clone is the client's real, market-tested band, and a composed imitation of
+an available clone is always the worse page.
+
+Start by reading TWO skills, both must-read on every web turn:
 create-website (the authoring contract — vocabulary, class grammar, structure,
 repair loop) and design-guidance (the brand-deployment grammar — palette
 allocation, the chromatic moment, background rhythm, typographic and imagery

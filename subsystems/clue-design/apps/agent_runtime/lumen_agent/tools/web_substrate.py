@@ -2279,7 +2279,11 @@ class LumenWebTools:
         """Apply a small batch of surgical operations to the page — the repair
         ladder's bottom rung, for one-or-a-few-line fixes.
 
-        `operations_json` is a JSON array of op objects. The op grammar
+        `operations_json` is a JSON array of op objects. EVERY object's
+        discriminator field is named `kind` — e.g.
+        `[{"kind":"remove_node","page_id":"home","id":"sec_news"}]`.
+        Writing the op name under any other field (`op`, `type`, `action`)
+        rejects the whole batch with `missing field 'kind'`. The op grammar
         (page_id is ALWAYS "home" in v0):
           - set_node_classes {page_id:"home", id, classes} — replace a node's
             class string wholesale (it is NOT merged with the old one).
@@ -2305,7 +2309,8 @@ class LumenWebTools:
             `kind` tag plus every field), not a partial patch.
           - replace_asset {page_id:"home", id, asset_id} — repoint an image
             node at another already-registered asset.
-          - move_node {page_id:"home", id, parent, index} — reparent/reorder.
+          - move_node {page_id:"home", id, new_parent, index} — reparent or
+            reorder (the field is `new_parent`, not `parent`).
           - remove_node {page_id:"home", id} — delete a node and its subtree.
           - insert_node {page_id:"home", parent, index, nodes, root} — splice
             a new subtree in.
