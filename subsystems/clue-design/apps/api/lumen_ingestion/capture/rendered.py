@@ -275,7 +275,167 @@ async def collect_stylesheets(
     return stylesheets, diagnostics
 
 
+#: The one viewport both render backends use; the probe also records the live
+#: value so the census scale never depends on this constant being right.
+_VIEWPORT = {"width": 1440, "height": 2000}
+
+
+async def _harvest_page(page, diagnostics: list[dict]) -> dict:
+    """Everything we take from a live, already-navigated page.
+
+    Shared verbatim by the plain-Chromium and stealth backends so the two can
+    never drift: scroll-settle for lazy content, stage hygiene (Escape +
+    full-viewport overlay removal), the animated-hero dwell, then the classic
+    harvest, the render probe, html, the full-page screenshot, and geometry
+    LAST (it focuses elements and must never touch the captured pixels).
+    """
+    await _scroll_until_settled(page)
+
+    # Return to the top and clean the stage before ANY harvest or pixel
+    # capture: probe boxes and screenshot must describe the same page, and a
+    # modal/scrim must poison neither.
+    await page.evaluate("window.scrollTo(0, 0)")
+    await page.keyboard.press("Escape")
+    removed_overlays = 0
+    try:
+        removed_overlays = await page.evaluate(_REMOVE_OVERLAYS_JS)
+    except Exception:  # noqa: BLE001 — hygiene is fail-soft
+        pass
+    if removed_overlays:
+        diagnostics.append(
+            {
+                "code": "LUMI0530",
+                "severity": "info",
+                "message": f"removed {removed_overlays} full-viewport fixed overlay(s) before capture",
+            }
+        )
+    await page.wait_for_timeout(_HERO_SETTLE_MS)
+
+    harvest: dict = {"final_url": page.url}
+    harvest["data"] = await page.evaluate(_EVALUATE_JS)
+    harvest["render_probe"] = None
+    try:
+        harvest["render_probe"] = await page.evaluate(_PROBE_JS)
+    except Exception as error:  # noqa: BLE001 — probe is fail-soft
+        diagnostics.append(
+            {
+                "code": "LUMI0532",
+                "severity": "warning",
+                "message": f"render probe failed; palette election falls back to evidence clusters: {error}",
+            }
+        )
+    harvest["html"] = await page.content()
+    harvest["shot"] = await page.screenshot(full_page=True)
+    # Brand geometry, measured LAST: the probe programmatically focuses a few
+    # elements to read the focus ring, so it runs after the screenshot and can
+    # never change the captured pixels. A probe that throws costs the ingest a
+    # diagnostic and nothing else.
+    harvest["geometry"] = None
+    try:
+        harvest["geometry"] = await page.evaluate(GEOMETRY_JS)
+    except Exception as error:  # noqa: BLE001 — measurement is fail-soft
+        diagnostics.append(
+            {
+                "code": "LUMI0509",
+                "severity": "warning",
+                "message": f"geometry measurement failed; scales fall back to the derived defaults: {error}",
+            }
+        )
+    return harvest
+
+
 async def fetch_rendered(
+    url: str,
+    fetcher: BoundedFetcher,
+    reporter,
+    *,
+    fetched_at: str,
+) -> SiteSnapshot:
+    """Rendered capture behind the backend dispatcher.
+
+    The STEALTH backend (scrapling's hardened Chromium) is the default: the
+    capture PoC (2026-08-30) proved plain automation Chromium is refused the
+    goods — sarvam.ai's WebGL hero stays unpainted, ramp.com serves an unstyled
+    "machine version", openai.com serves a Cloudflare wall — while the stealth
+    profile receives the real page everywhere. Plain Chromium remains as the
+    automatic fallback, and the kit's diagnostics always say which backend
+    captured (LUMI0535 info / LUMI0536 fallback warning), so a degraded capture
+    can never impersonate a full one. `LUMEN_RENDER_STEALTH=0` disables the
+    stealth lane outright (kill switch, e.g. a host where scrapling's browser
+    is not provisioned).
+    """
+    import os
+
+    if os.environ.get("LUMEN_RENDER_STEALTH", "1") != "0":
+        try:
+            snapshot = await _fetch_rendered_stealth(url, fetcher, reporter, fetched_at=fetched_at)
+            snapshot.diagnostics.append(
+                {
+                    "code": "LUMI0535",
+                    "severity": "info",
+                    "message": "rendered via the stealth backend (scrapling hardened Chromium)",
+                }
+            )
+            return snapshot
+        except Exception as error:  # noqa: BLE001 — fallback, loudly
+            fallback_note = {
+                "code": "LUMI0536",
+                "severity": "warning",
+                "message": (
+                    "stealth render backend failed; fell back to plain Chromium — "
+                    f"bot-walled or WebGL-hero sites may capture degraded: {error}"
+                ),
+            }
+    else:
+        fallback_note = None
+
+    snapshot = await _fetch_rendered_chromium(url, fetcher, reporter, fetched_at=fetched_at)
+    if fallback_note is not None:
+        snapshot.diagnostics.append(fallback_note)
+    return snapshot
+
+
+async def _fetch_rendered_stealth(
+    url: str,
+    fetcher: BoundedFetcher,
+    reporter,
+    *,
+    fetched_at: str,
+) -> SiteSnapshot:
+    from scrapling.fetchers import StealthyFetcher  # lazy: never at import time
+
+    await guard_url(url)
+    reporter("Taking a closer look…", 0.55)
+
+    diagnostics: list[dict] = []
+    harvest: dict = {}
+
+    async def _drive(page):
+        harvest.update(await _harvest_page(page, diagnostics))
+        return page
+
+    # network_idle mirrors the chromium path's goto wait; the generous timeout
+    # covers scroll-settle (<=12s) + hero dwell (3s) on slow marketing pages.
+    # NO context overrides: scrapling generates a COHERENT fingerprint
+    # (screen/viewport/UA agree), and overriding the viewport to our chromium
+    # constant broke it — sarvam.ai's WebGL hero refused to paint for a
+    # 1440x2000 "screen" (live finding, 2026-08-30). The probe records the live
+    # viewport width, so the census scale never depended on the constant.
+    await StealthyFetcher.async_fetch(
+        url,
+        headless=True,
+        network_idle=True,
+        timeout=90_000,
+        page_action=_drive,
+    )
+    if not harvest.get("html"):
+        raise RuntimeError("stealth backend returned no page harvest")
+    return await _snapshot_from_harvest(
+        url, harvest, fetcher, diagnostics, fetched_at=fetched_at
+    )
+
+
+async def _fetch_rendered_chromium(
     url: str,
     fetcher: BoundedFetcher,
     reporter,
@@ -288,13 +448,12 @@ async def fetch_rendered(
     reporter("Taking a closer look…", 0.55)
 
     diagnostics: list[dict] = []
-    downloads: list[Download] = []
 
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True)
         try:
             page = await browser.new_page(
-                viewport={"width": 1440, "height": 2000},
+                viewport=dict(_VIEWPORT),
                 # Never let prefers-reduced-motion suppress a brand's animated
                 # hero — we are here to see what real visitors see.
                 reduced_motion="no-preference",
@@ -309,61 +468,30 @@ async def fetch_rendered(
                         "message": "render wait_until=networkidle timed out; proceeding",
                     }
                 )
-
-            await _scroll_until_settled(page)
-
-            # Return to the top and clean the stage before ANY harvest or
-            # pixel capture: probe boxes and screenshot must describe the same
-            # page, and a modal/scrim must poison neither.
-            await page.evaluate("window.scrollTo(0, 0)")
-            await page.keyboard.press("Escape")
-            removed_overlays = 0
-            try:
-                removed_overlays = await page.evaluate(_REMOVE_OVERLAYS_JS)
-            except Exception:  # noqa: BLE001 — hygiene is fail-soft
-                pass
-            if removed_overlays:
-                diagnostics.append(
-                    {
-                        "code": "LUMI0530",
-                        "severity": "info",
-                        "message": f"removed {removed_overlays} full-viewport fixed overlay(s) before capture",
-                    }
-                )
-            await page.wait_for_timeout(_HERO_SETTLE_MS)
-
-            final_url = page.url
-            data = await page.evaluate(_EVALUATE_JS)
-            render_probe = None
-            try:
-                render_probe = await page.evaluate(_PROBE_JS)
-            except Exception as error:  # noqa: BLE001 — probe is fail-soft
-                diagnostics.append(
-                    {
-                        "code": "LUMI0532",
-                        "severity": "warning",
-                        "message": f"render probe failed; palette election falls back to evidence clusters: {error}",
-                    }
-                )
-            html = await page.content()
-            shot = await page.screenshot(full_page=True)
-            # Brand geometry, measured LAST: the probe programmatically focuses a
-            # few elements to read the focus ring, so it runs after the
-            # screenshot and can never change the captured pixels. A probe that
-            # throws costs the ingest a diagnostic and nothing else.
-            geometry = None
-            try:
-                geometry = await page.evaluate(GEOMETRY_JS)
-            except Exception as error:  # noqa: BLE001 — measurement is fail-soft
-                diagnostics.append(
-                    {
-                        "code": "LUMI0509",
-                        "severity": "warning",
-                        "message": f"geometry measurement failed; scales fall back to the derived defaults: {error}",
-                    }
-                )
+            harvest = await _harvest_page(page, diagnostics)
         finally:
             await browser.close()
+
+    return await _snapshot_from_harvest(
+        url, harvest, fetcher, diagnostics, fetched_at=fetched_at
+    )
+
+
+async def _snapshot_from_harvest(
+    url: str,
+    harvest: dict,
+    fetcher: BoundedFetcher,
+    diagnostics: list[dict],
+    *,
+    fetched_at: str,
+) -> SiteSnapshot:
+    downloads: list[Download] = []
+    html = harvest["html"]
+    shot = harvest["shot"]
+    final_url = harvest["final_url"]
+    data = harvest.get("data") or {}
+    render_probe = harvest.get("render_probe")
+    geometry = harvest.get("geometry")
 
     if len(html.encode("utf-8")) > HTML_MAX_BYTES:
         html = html.encode("utf-8")[:HTML_MAX_BYTES].decode("utf-8", errors="ignore")

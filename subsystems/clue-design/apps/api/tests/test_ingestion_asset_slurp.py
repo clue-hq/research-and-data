@@ -86,6 +86,12 @@ PAGE = (
 )
 
 CSS = (
+    # The :root token is what keeps `evidence.colors` non-empty as the tests'
+    # "pipeline still completed" sentinel: since the Phase-1 brand-color
+    # overhaul (2026-08-30), rule-text colors like `color:#123456` are no
+    # longer palette evidence — token declarations are the naming layer that
+    # survives.
+    ":root{--brand:#123456}"
     '@font-face{font-family:"Acme Sans";src:url(/fonts/acme-regular.woff2) '
     'format("woff2");font-weight:400;font-style:normal}'
     '@font-face{font-family:"Acme Sans";src:url(/fonts/acme-bold.woff2) '
