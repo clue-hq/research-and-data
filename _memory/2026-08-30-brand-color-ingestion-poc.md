@@ -179,10 +179,43 @@ Canonical green full-suite run needs a curated test env (disposable DB, scrubbed
 toolchain) — dev-infra follow-up, unowned. Every ingestion/render-truth/stealth-touching test
 family is green under the proper env.
 
-## Phase 2 (logo corroboration) + follow-ups — NOT started
-Logo dual-pass (SVG markup + raster reconcile) via logo_ladder winners; multi-page capture;
-GPU/scrapling capture for WebGL heroes; approval-UI surfacing of evidence strings; golden
-12-brand sweep as acceptance.
+## Phase 2 (logo corroboration) — DEFERRED INDEFINITELY (founder ruling 2026-08-30)
+**Founder decision at close: Phase 1 is the shipped scope; Phase 2 happens only "if ever the
+need comes and the need is felt." Do NOT start it in a future session without a fresh founder
+go.** The full design + sizing is preserved below so a future pickup starts here, not from
+scratch. (The "GPU/scrapling capture" follow-up listed in earlier drafts is DONE — that became
+the shipped stealth backend; multi-page capture and approval-UI evidence surfacing remain
+open, also unscheduled.)
+
+### Preserved Phase-2 design (ratified in discussion, never implemented)
+Value: (a) the logo is the only evidence source with a CHOSEN answer — the election anchor for
+sites whose brand lives in text/washes (sarvam-class) or heavy-photo pages; (b) dark/light
+logo variant selection from measured per-variant palettes (ink colors + luminance) instead of
+filename/color_mode_hint heuristics — feeds `logo_policy.allowed_backgrounds_for` with pixel
+truth; (c) "kit brand color appears in the logo" as a cheap approval-time sanity assertion.
+
+Work breakdown (total 3–4 days; lean slice A ≈ 2 days):
+1. `logo_colors.py` (1–1.5d) — dual-pass extraction on logo_ladder winners:
+   SVG markup pass (fills/strokes/stop-colors/inline styles/style blocks via tinycss2;
+   SKIP masks, clipPaths, hidden/opacity-0 elements, `url()` paint refs, non-colors;
+   all hex forms + rgb/hsl + named colors; `currentColor` screen — ladder already detects it
+   and records the observed ink) + raster pass (existing `rasterize_svg` engine seam for SVGs,
+   PIL for PNGs; alpha-reject ≥128 floor, NO lossy resize, exact-count histogram, guarded
+   achromatic filter, OKLab merge via existing census helpers) + reconcile (markup = exact
+   values + gradient endpoints census can't see; pixels = visibility proof; both-found = most
+   trusted).
+2. Election wiring (~0.5d) — logo colors as corroboration source in the tiered election
+   (logo-match anchors a candidate; brand-vs-logo contradiction → review flag; evidence
+   string "appears in the logo").
+3. Variant color modes (~1d) — measured per-variant luminance/inks verify-or-correct
+   `color_mode_hint`, real contrast vs elected page/dark surfaces → dark-mode/light-mode
+   variant selection. SCOPE BOUNDARY: stays slot-level; the per-variant
+   `allowed_backgrounds` needs a Rust `LogoVariant` field (engine change + wasm handshake
+   ceremony, ~1d separate follow-up, documented limit in logo_policy.py).
+4. Golden logo fixtures + 7-brand sweep re-run (~0.5–1d) — trap cases: gradient stops,
+   `currentColor`, mask/clip decoys, transparent PNGs.
+Risk: low, purely additive — a weird logo degrades to "no logo corroboration, Phase-1
+election stands" (today's behavior).
 
 ## Open items for Phase 1
 - Where election evidence strings surface in the kit approval UI (founder wants auditability).
