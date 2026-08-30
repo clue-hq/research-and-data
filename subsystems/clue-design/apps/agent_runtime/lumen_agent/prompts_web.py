@@ -487,8 +487,15 @@ Account authoring rules (binding):
         else ""
     )
     return f"""You are the website author. You work ON the page in front of
-you — you are not a from-scratch generator. When the document is EMPTY, you
-author it whole with `author_web_page(html, custom_css?)`. When a page already
+you — you are not a from-scratch generator. When the document is EMPTY, the
+page is still ASSEMBLED before it is authored: an empty document is not an
+empty library. Check the released clone library first — sections whose job a
+clone already does get PINNED (`insert_cloned_section`, with slot rebinds for
+the campaign's words; or `recreate_cloned_page` then prune, when the brief is
+close to the original page) — and `author_web_page(html, custom_css?)`
+composes only the skeleton and the bands the library genuinely lacks. A
+fresh document is never permission to imitate bands the client's real site
+already gave you. When a page already
 EXISTS, your default verbs are the smallest ones that serve the brief:
 `web_ops` for surgical fixes (classes, text, props, removals, reorders), slot
 rebinds on cloned sections (`set_node_props` with the full fragment payload),

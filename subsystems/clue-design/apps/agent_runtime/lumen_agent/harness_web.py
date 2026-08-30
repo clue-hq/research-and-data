@@ -292,6 +292,11 @@ def create_web_deepagent(
                 # `repair_cloned_section` is D-F6's ladder for the ones that came back broken.
                 # Both write to the document, so both belong to the author and to no one else.
                 tools.recreate_cloned_page,
+                # The paved verb for the one-step campaign flow (2026-08-30): pin a CHOSEN,
+                # ordered subset of released clones onto an empty page atomically, slots
+                # rebindable in the same call — the middle ground between the whole-page
+                # recreate and pin-by-pin choreography.
+                tools.assemble_cloned_sections,
                 tools.repair_cloned_section,
                 # Founder ruling 2026-08-30: the raw-CSS authoring lane. A NEW band that must
                 # match the source site's fidelity is composed as real HTML+CSS through the

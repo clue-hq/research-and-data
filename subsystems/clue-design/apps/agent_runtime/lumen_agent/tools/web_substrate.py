@@ -5656,6 +5656,206 @@ class LumenWebTools:
 
     # --- the D-F6 repair ladder ---------------------------------------------------------------
 
+    def assemble_cloned_sections(
+        self, fragment_ids_json: str, slot_values_json: Optional[str] = None
+    ) -> str:
+        """Pin a CHOSEN, ORDERED set of released cloned sections onto an EMPTY page — one call.
+
+        The paved verb for the campaign flow: "build the page from THESE clones, in THIS
+        order" — a subset of the library, not the whole source page (`recreate_cloned_page`
+        remains the whole-page walk). Pin the real bands first, rebind their slots for the
+        campaign's words, then compose only what the library lacks.
+
+        `fragment_ids_json` is a JSON array of released fragment ids, in page order.
+        `slot_values_json` is an OPTIONAL JSON object `{fragment_id: {slot key: value}}` —
+        the same values `insert_cloned_section` takes, so the words can be rebound in the
+        same call that places the bands.
+
+        The batch is ATOMIC: every id must resolve (released, readable) or nothing is pinned.
+        A degraded id is pinned KNOWINGLY and reported in `needs_repair` — a hole where the
+        band goes is worse than a flagged band. Refuses on a non-empty page
+        (`assemble.page_not_empty`): a targeted add to standing work is
+        `insert_cloned_section`'s job.
+        """
+        refusal = self._consume_round_budget("assemble_cloned_sections")
+        if refusal is not None:
+            return refusal
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+
+        try:
+            decoded = json.loads(fragment_ids_json)
+        except (TypeError, json.JSONDecodeError) as error:
+            return self._tool_error(
+                "assemble.bad_fragment_ids",
+                f"fragment_ids_json must be a JSON array of fragment ids: {error}",
+            )
+        if not isinstance(decoded, list) or not decoded or any(
+            not isinstance(item, str) or not item.strip() for item in decoded
+        ):
+            return self._tool_error(
+                "assemble.bad_fragment_ids",
+                "fragment_ids_json must be a non-empty JSON array of fragment id strings.",
+            )
+        fragment_ids = [item.strip() for item in decoded]
+        if len(set(fragment_ids)) != len(fragment_ids):
+            return self._tool_error(
+                "assemble.duplicate_fragment_ids",
+                "each fragment id may appear once; pin a band twice only if you truly mean "
+                "two copies, via insert_cloned_section.",
+            )
+
+        raw_slots: JsonObject = {}
+        if slot_values_json is not None:
+            try:
+                decoded_slots = json.loads(slot_values_json)
+            except (TypeError, json.JSONDecodeError) as error:
+                return self._tool_error(
+                    "cloned_section.bad_slot_values",
+                    f"slot_values_json must be a JSON object: {error}",
+                )
+            if not isinstance(decoded_slots, dict) or any(
+                not isinstance(value, dict) for value in decoded_slots.values()
+            ):
+                return self._tool_error(
+                    "cloned_section.bad_slot_values",
+                    "slot_values_json must be a JSON object of "
+                    "{fragment_id: {slot key: value}}.",
+                )
+            raw_slots = decoded_slots
+
+        page = self._home_page()
+        nodes = page.get("nodes") or {}
+        root_id = page.get("root")
+        root = nodes.get(root_id) if isinstance(root_id, str) else None
+        existing = list(root.get("children") or []) if isinstance(root, dict) else []
+        if existing:
+            return self._tool_error(
+                "assemble.page_not_empty",
+                f"page {self.page_id!r} already has {len(existing)} top-level section(s). An "
+                "assembly builds an empty page; add to standing work with "
+                "insert_cloned_section instead.",
+                section_ids=existing,
+            )
+
+        operations: List[JsonObject] = []
+        pinned: List[JsonObject] = []
+        taken = set(nodes)
+        for position, fragment_id in enumerate(fragment_ids):
+            try:
+                resolved = registry.resolve_insertable(fragment_id)
+            except FragmentReferenceError as error:
+                code = error.code or "cloned_section.not_insertable"
+                return self._tool_error(
+                    str(code),
+                    f"the assembly stopped at {fragment_id}: {error.message} Nothing was "
+                    "pinned.",
+                    fragment_id=fragment_id,
+                )
+            except Exception as error:  # noqa: BLE001 - capability boundary
+                return self._tool_error(
+                    "cloned_section.registry_failed",
+                    f"the cloned-section library could not be read: "
+                    f"{type(error).__name__}: {error}. This is not a refusal — try again.",
+                    fragment_id=fragment_id,
+                )
+            slot_kinds = (resolved.get("render") or {}).get("slot_kinds") or {}
+            slots, slot_error = self._tagged_slot_values(
+                raw_slots.get(fragment_id) or {}, slot_kinds, fragment_id
+            )
+            if slot_error is not None:
+                return slot_error
+            section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
+                fragment_id, slots, taken
+            )
+            taken.update({section_id, node_id})
+            operations.append(
+                {
+                    "kind": "insert_node",
+                    "page_id": self.page_id,
+                    "parent": root_id,
+                    "index": position,
+                    "nodes": pin_nodes,
+                    "root": section_id,
+                }
+            )
+            pinned.append(
+                {
+                    "fragment_id": fragment_id,
+                    "index": position,
+                    "section_role": resolved.get("section_role"),
+                    "label": resolved.get("label"),
+                    "section_node_id": section_id,
+                    "node_id": node_id,
+                    "slots_bound": sorted(slots),
+                    "degraded": bool(resolved.get("degraded")),
+                    "resolved": resolved,
+                }
+            )
+
+        try:
+            response = self.core.web_apply_ops(self.web_doc, operations)
+        except CoreError as error:
+            diagnostics = list(error.diagnostics or [])
+            self.record(
+                "author",
+                "cloned_sections_assembly_rejected",
+                input_summary=f"{len(operations)} section(s)",
+                output_summary=error.message[:500],
+                diagnostics=diagnostics,
+            )
+            return self._rejected(diagnostics)
+        if not response.get("ok"):
+            return self._rejected(response.get("diagnostics") or [])
+
+        self.web_doc = response["web_doc"]
+        self._record_operations(operations)
+        self._doc_version += 1
+        degraded_pins: List[JsonObject] = []
+        for entry in pinned:
+            resolved = entry.pop("resolved")
+            fragment_id = entry["fragment_id"]
+            self._admit_fragment_artifact(fragment_id, resolved.get("render") or {})
+            self._cloned_section_previews[fragment_id] = resolved.get("preview_path")
+            self._cloned_section_seen[fragment_id] = {
+                "label": resolved.get("label"),
+                "section_role": resolved.get("section_role"),
+                "composed": resolved.get("composed"),
+            }
+            broken = self._degraded_pin_entry(
+                resolved, index=entry["index"], section_node_id=entry["section_node_id"]
+            )
+            if broken is not None:
+                degraded_pins.append(broken)
+
+        warnings, advice = _split_non_error_diagnostics(response.get("diagnostics"))
+        self.record(
+            "author",
+            "cloned_sections_assembled",
+            input_summary=f"{len(fragment_ids)} chosen section(s)",
+            output_summary=(
+                f"{len(pinned)} pinned in given order; {len(degraded_pins)} degraded"
+            ),
+            diagnostics=response.get("diagnostics") or [],
+            payload={
+                "fragment_ids": [entry["fragment_id"] for entry in pinned],
+                "needs_repair": copy.deepcopy(degraded_pins),
+            },
+            sink_extra={"pinned_count": len(pinned)},
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                "page_id": self.page_id,
+                "pinned": pinned,
+                "needs_repair": degraded_pins,
+                "warnings": warnings,
+                "advice": advice,
+            },
+            indent=2,
+        )
+
     def compose_web_section(
         self,
         html: str,
