@@ -432,8 +432,15 @@ decision list. Everything observed across Waves A/B and the demo sessions:
    ~~W4 auto-attach: compose at OFFER time into the envelope (claiming-process
    env divergence silently strips refs — the W-B2 root cause) + loud
    "lane flag off in claiming process" log.~~
-2. W-B1 double-distill orphaning pregen assets (card_version drift) —
-   idempotency/re-drive guard, same multi-worker root-cause family.
+2. CLOSED 2026-08-31 (`3b51ca05e`): convergent card mint at the substrate
+   (`create_ad_dna_card_version` converges inside its advisory lock via new
+   `ad_dna_card_for_harvest_job`, oldest-first; one harvest job = one card
+   version, first publish wins) + step-resume in onboarding (probe before the
+   vision spend, probe before the image spend, 'converged' evidence). Founder
+   ruling: infra re-drives converge; DELIBERATE re-onboarding (new job id)
+   still mints fresh — both directions red-case pinned end-to-end.
+   ~~W-B1 double-distill orphaning pregen assets (card_version drift) —
+   idempotency/re-drive guard, same multi-worker root-cause family.~~
 3. CLOSED 2026-08-29 20:41 (`30bb45aaf`, hours AFTER this list was compiled;
    lineage `7f3513d54`/`7fd0cc2f5`): raster node carries `corner`, the bare
    except is replaced with a loud precise failure + byte precheck, each change
