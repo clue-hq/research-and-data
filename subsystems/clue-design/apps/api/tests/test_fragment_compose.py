@@ -19,7 +19,12 @@ from clue_storage import FsStorage
 
 from lumen_api.agent_cloned_sections import DurableAgentClonedSectionRegistry
 from lumen_api.design_store import DesignBlobStore
-from lumen_api.fragments import FragmentRefused, read_web_fragment
+from lumen_api.fragments import (
+    FragmentRefused,
+    create_web_fragment,
+    read_web_fragment,
+    set_web_fragment_status,
+)
 
 COMPOSED_HTML = (
     '<section id="sec_consult" class="consult-band">'
@@ -138,6 +143,55 @@ def test_identical_bytes_converge_onto_one_fragment(
 
     assert second["fragment_id"] == first["fragment_id"]
     assert second["insertable"] is True
+
+
+def test_a_raw_repair_is_minted_released_in_one_act_with_lineage(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """Founder ruling A (2026-08-30): the raw lane's repair is released at mint.
+
+    R-I5 is honored, not bypassed — the mint births draft and the release is the ordinary
+    explicit transition — and the lineage pair still names the clone it replaces, so the
+    library-wide substitution story is intact, just no longer gated per repair.
+    """
+    row, _artifact = create_web_fragment(
+        design_storage,
+        workspace_id=workspace_id,
+        html='<section class="band"><h2>Original</h2></section>',
+        css=".band { height: 2400px }",
+        rehosted={},
+        source_url="https://seller.example/",
+        section_role="proof",
+        label="Proof — original",
+        provenance={"page_url": "https://seller.example/"},
+    )
+    original = set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=row["fragment_id"], status="approved"
+    )
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+
+    minted = registry.mint_repair(
+        replaces=original["fragment_id"],
+        html='<section id="sec_fix" class="band"><h2>Original</h2><p>At natural height.</p></section>',
+        css=".band { padding: 96px 0 }",
+        rung=2,
+        note="dead height removed, same story",
+        release=True,
+    )
+
+    assert minted["status"] == "approved"
+    assert minted["insertable"] is True
+    assert minted["derived_from"] == original["fragment_id"]
+    # And the vocabulary lane's contract is untouched: without release, draft as ever.
+    unreleased = registry.mint_repair(
+        replaces=original["fragment_id"],
+        html='<section id="sec_fix2" class="band"><h2>Original</h2></section>',
+        css=".band { padding: 48px 0 }",
+        rung=3,
+        note="a second, different repair without release",
+    )
+    assert unreleased["status"] == "draft"
+    assert unreleased["insertable"] is False
 
 
 def test_slots_are_detected_so_the_band_stays_rebindable(

@@ -890,6 +890,7 @@ class DurableAgentClonedSectionRegistry:
         css: str,
         rung: int,
         note: str,
+        release: bool = False,
     ) -> JsonObject:
         """Mint the replacement for a broken clone as a NEW, lineage-carrying fragment.
 
@@ -989,6 +990,10 @@ class DurableAgentClonedSectionRegistry:
         reason = repair_reason(
             rung=rung, trigger=original.get("degraded_reason"), note=note
         )
+        # `release` (founder ruling A, 2026-08-30): a RAW-CSS repair must be pinned to render,
+        # and the persistence gate forbids draft pins — so the raw path mints and releases in
+        # one act, R-I5 honored (birth is draft; release is the ordinary explicit transition).
+        # The vocabulary path keeps release=False and R-X9's chat door unchanged.
         row, artifact = create_web_fragment(
             self.blobs.storage,
             workspace_id=self.workspace_id,
@@ -1008,6 +1013,16 @@ class DurableAgentClonedSectionRegistry:
             derived_reason=reason,
         )
         converged = already is not None
+        status = str(row.get("status") or "")
+        if release and status == "draft":
+            released = set_web_fragment_status(
+                workspace_id=self.workspace_id,
+                fragment_id=str(row["fragment_id"]),
+                status="approved",
+            )
+            status = str(released.get("status") or status)
+            row = dict(row)
+            row["status"] = status
         return {
             "fragment_id": artifact.fragment_id,
             "replaces": replaces,

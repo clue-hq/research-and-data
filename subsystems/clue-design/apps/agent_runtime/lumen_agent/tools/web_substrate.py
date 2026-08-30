@@ -5936,9 +5936,24 @@ class LumenWebTools:
         return json.dumps(result, indent=2)
 
     def repair_cloned_section(
-        self, fragment_id: str, html: str, rung: int, note: str
+        self, fragment_id: str, html: str, rung: int, note: str,
+        css: Optional[str] = None,
     ) -> str:
         """Replace a BROKEN cloned section with one you compose — original preserved, lineage kept.
+
+        TWO REPAIR LANES (founder ruling A, 2026-08-30). Pass `css` to repair in RAW HTML +
+        RAW CSS — the fidelity lane: `view` the broken original first and remix its actual
+        markup and CSS (its real class names, spacing constants, type scale), changing only
+        what the defect requires. The raw replacement goes through the same sanitize-once
+        pipeline every captured byte passes, is minted with full lineage, RELEASED immediately
+        (no approval step — it becomes what future pins of this lineage resolve to; say so in
+        your report), and pinned in the broken band's exact place. Raw `html` here is real
+        markup like `compose_web_section` takes — NOT the constrained wire format — and images
+        reference registered assets only, as `/asset-store/<digest>`. Omit `css` for the
+        vocabulary lane below: the replacement is authored in the constrained wire format,
+        lives on the page as ordinary authored content, and the minted repair stays a draft
+        released by the user in chat. Prefer the RAW lane when the original's look must
+        survive the repair — which is most repairs of real cloned bands.
 
         A clone is the starting reference, not an untouchable artifact. Never preserve a broken
         result merely because it came from the original site. Use this the moment a cloned
@@ -6005,6 +6020,118 @@ class LumenWebTools:
                 f"cloned section {clean_id!r} is not on page {self.page_id!r}, so there is "
                 "nothing to repair in place. Pin it first (or name one that is pinned).",
                 pinned_fragment_ids=sorted(pinned),
+            )
+
+        if css is not None:
+            # --- the RAW lane (founder ruling A, 2026-08-30) -------------------------------
+            # Mint first, swap second: the persistence gate forbids draft pins, so the repair
+            # is released at mint (R-I5 honored — birth draft, then the ordinary transition),
+            # and only a resolvable released fragment ever touches the page. If the swap then
+            # fails, the library holds a released repair and the page is unchanged — reported
+            # honestly, never half-applied.
+            try:
+                minted = registry.mint_repair(
+                    replaces=clean_id, html=html, css=css,
+                    rung=int(rung), note=cleaned_note, release=True,
+                )
+            except FragmentRefused as refusal:
+                return self._tool_error(
+                    str(refusal.code),
+                    f"{refusal.message} Nothing changed on the page.",
+                    fragment_id=clean_id,
+                )
+            except Exception as error:  # noqa: BLE001 - capability boundary
+                return self._tool_error(
+                    "repair.mint_failed",
+                    f"the raw repair could not be minted: {type(error).__name__}: {error}. "
+                    "Nothing changed on the page.",
+                    fragment_id=clean_id,
+                )
+            new_id = str(minted.get("fragment_id") or "")
+            try:
+                resolved = registry.resolve_insertable(new_id)
+            except Exception as error:  # noqa: BLE001 - capability boundary
+                return self._tool_error(
+                    "repair.released_but_unpinnable",
+                    f"repair {new_id} was minted and released but could not be resolved for "
+                    f"pinning ({type(error).__name__}: {error}); the page is unchanged.",
+                    fragment_id=new_id,
+                )
+            page = self._home_page()
+            nodes = page.get("nodes") or {}
+            root_id = page.get("root")
+            root = nodes.get(root_id) if isinstance(root_id, str) else None
+            children = list(root.get("children") or []) if isinstance(root, dict) else []
+            old_section = instances[0]
+            index = children.index(old_section) if old_section in children else len(children)
+            slot_kinds = (resolved.get("render") or {}).get("slot_kinds") or {}
+            section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
+                new_id, {}, set(nodes)
+            )
+            operations: List[JsonObject] = [
+                {"kind": "remove_node", "page_id": self.page_id, "id": old_section},
+                {
+                    "kind": "insert_node",
+                    "page_id": self.page_id,
+                    "parent": root_id,
+                    "index": index,
+                    "nodes": pin_nodes,
+                    "root": section_id,
+                },
+            ]
+            try:
+                response = self.core.web_apply_ops(self.web_doc, operations)
+            except CoreError as error:
+                return self._tool_error(
+                    "repair.swap_rejected",
+                    f"the repair {new_id} is minted and RELEASED in the library, but the page "
+                    f"swap was rejected: {error.message}. The page is unchanged; pin it with "
+                    "insert_cloned_section (and remove the broken band) to finish.",
+                    fragment_id=new_id,
+                )
+            if not response.get("ok"):
+                return self._rejected(response.get("diagnostics") or [])
+            self.web_doc = response["web_doc"]
+            self._record_operations(operations)
+            self._doc_version += 1
+            self._admit_fragment_artifact(new_id, resolved.get("render") or {})
+            self._cloned_section_previews[new_id] = resolved.get("preview_path")
+            self._cloned_section_seen[new_id] = {
+                "label": resolved.get("label"),
+                "section_role": resolved.get("section_role"),
+                "composed": resolved.get("composed"),
+            }
+            self.record(
+                "author",
+                "cloned_section_repaired",
+                input_summary=f"{clean_id} raw rung={int(rung)}",
+                output_summary=f"{new_id} released and pinned in place (raw lane)",
+                payload={
+                    "fragment_id": clean_id,
+                    "repair_fragment_id": new_id,
+                    "raw": True,
+                },
+            )
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "repaired": clean_id,
+                    "repair_fragment_id": new_id,
+                    "rung": int(rung),
+                    "note": cleaned_note,
+                    "raw": True,
+                    "repair_status": minted.get("status"),
+                    "released": minted.get("status") == "approved",
+                    "pinned": True,
+                    "section_node_id": section_id,
+                    "converged": minted.get("converged"),
+                    "sanitizer_notes": minted.get("sanitizer_notes") or [],
+                    "report": (
+                        "released repair: future pins of this lineage resolve to it — say so "
+                        "in your report"
+                    ),
+                },
+                indent=2,
             )
 
         # 1) The swap, through the SAME scoped-edit path an ordinary section rewrite takes: the
