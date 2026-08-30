@@ -107,6 +107,22 @@ follow-up. Landed (commits "render probe + pixel census" + "rendered-truth palet
   sarvam.ai → brand #A5BBFC (gradient stops + token). Full apps/api suite running in
   background at session end (/tmp/full_api_suite.txt).
 
+## Capture PoC (2026-08-30 evening, founder-requested before committing): Scrapling WINS, GPU-Chrome hypothesis FALSIFIED
+`.context/poc-brand-colors/capture_poc.py` (throwaway). Findings:
+- REAL headed Chrome + GPU + webdriver-flag hidden + pointer-on-hero does NOT paint sarvam's
+  WebGL aurora (97.7% white; webgl2 canvases exist, stay blank). The gap is CHROME-AUTOMATION
+  fingerprinting / site-conditional rendering, NOT headless/GPU. Do not invest in GPU flags.
+- Scrapling StealthyFetcher (camoufox/Firefox, v0.4.11 in root venv) PAINTS the aurora:
+  saffron #FC7414/#F4842C ~12.5% + indigo/periwinkle 5.6% — the founder's screenshot palette.
+- Scrapling also defeats both bot walls: ramp.com serves its REAL styled page (3.9MB html,
+  lime CTAs visible; previously the unstyled "machine version") and openai.com serves its real
+  dark landing (#040404 77%; previously Cloudflare human-check).
+- Integration path: camoufox's page_action hands a playwright-compatible Page, so
+  _EVALUATE_JS/_PROBE_JS/screenshot run as-is — swap the launcher in fetch_rendered (or a
+  sibling fetch_rendered_stealth), keep probe/census/election unchanged.
+- Hazard observed live: headed browsers open on the founder's screen and they may interact
+  (mega-menu incident); keep stealth captures headless.
+
 ## Phase 2 (logo corroboration) + follow-ups — NOT started
 Logo dual-pass (SVG markup + raster reconcile) via logo_ladder winners; multi-page capture;
 GPU/scrapling capture for WebGL heroes; approval-UI surfacing of evidence strings; golden
