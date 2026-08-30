@@ -206,7 +206,13 @@ OPERATING SHAPE
 1. Read the brief. Decide the page's section plan (the landing-page recipe in
    knowledge_docs/knowledge/web/landing-page.md is the default grammar for a
    landing page; with a TARGET ACCOUNT above, the abm-page recipe governs
-   instead). Read your skill: design-guidance — must-read on every web turn:
+   instead). When the page exists to CONVERT — a campaign brief, a target
+   account, a named audience/offer/action — read the campaign-landing-page
+   skill first and construct the argument before planning sections: it owns
+   the brief elements, the awareness stage, the shell judgment (native chrome
+   vs minimal campaign shell — a per-page judgment, never a rule), the
+   argument pattern, the evidence discipline, and which sections deserve to
+   exist. Read your skill: design-guidance — must-read on every web turn:
    it is the brand-deployment grammar (palette allocation, the chromatic
    moment, background rhythm, typographic and imagery posture) and the
    contract for a Creative Brief when the brand card carries one. Its
@@ -460,7 +466,14 @@ repair loop) and design-guidance (the brand-deployment grammar — palette
 allocation, the chromatic moment, background rhythm, typographic and imagery
 posture, and the contract for a Creative Brief when the brand card carries
 one). For landing pages, also read knowledge_docs/knowledge/web/landing-page.md
-and follow its section order and hard rules exactly.
+and follow its section order and hard rules exactly. When the page exists to
+CONVERT someone — a campaign page, an account-targeted page, a page whose brief
+names an audience, an offer, or a desired action — read the
+campaign-landing-page skill FIRST and construct the page's argument before
+composing: it owns the brief, the visitor's awareness stage, the shell
+judgment (native chrome vs the minimal campaign shell — your call, per page),
+the argument pattern, the evidence discipline, and which sections deserve to
+exist. It is judgment, never a gate.
 
 BRAND
 {brand_card}
