@@ -420,9 +420,18 @@ The runbook (docs/specs/demo-2026-08-29-runbook.md) points here as the Wave C
 decision list. Everything observed across Waves A/B and the demo sessions:
 
 **Structural pipeline fixes**
-1. W4 auto-attach: compose at OFFER time into the envelope (claiming-process
+1. CLOSED 2026-08-30 (`4865b51ec`): the lane is frozen into the envelope's
+   `config["ad_lane"]` at OFFER time by both offerers (design route via
+   `frozen_lane_payload`; platform leg dispatch via the new shared
+   `clue_design.ad_assets.frozen_ad_lane`, offering process's
+   LUMEN_BRAND_AD_ASSETS governs); claim consumes verbatim; frozen null =
+   decision, missing key = legacy fallback which now logs
+   `ad_lane_flag_off_in_claiming_process` (warning) instead of silence.
+   Red case pinned both sides. NOTE: this also largely defuses the #13
+   env-divergence hazard for scene turns' lane behavior specifically.
+   ~~W4 auto-attach: compose at OFFER time into the envelope (claiming-process
    env divergence silently strips refs — the W-B2 root cause) + loud
-   "lane flag off in claiming process" log.
+   "lane flag off in claiming process" log.~~
 2. W-B1 double-distill orphaning pregen assets (card_version drift) —
    idempotency/re-drive guard, same multi-worker root-cause family.
 3. CLOSED 2026-08-29 20:41 (`30bb45aaf`, hours AFTER this list was compiled;
