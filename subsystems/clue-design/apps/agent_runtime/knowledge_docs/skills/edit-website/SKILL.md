@@ -90,10 +90,16 @@ had. Its verbs, smallest blast radius first:
    slot set can't express it. The repair is a NEW lineage-tracked variant;
    the original survives untouched as evidence, and the page carries your
    variant. Use this when the argument outgrows the slots — never cram.
-   Before composing a repair, read the repair-cloned-sections skill: it
-   owns the faithful-repair discipline (lineage check, the behavior
-   inventory, ugly-is-not-wrong, the repair-scope contract, verification
-   against the original).
+   A repair has two lanes: the RAW lane (pass `css=`) remixes the
+   original's own markup and stylesheet — the default when the band must
+   keep looking like the seller's site — and is released and swapped into
+   the page in one act; the VOCABULARY lane (no `css`) recomposes in the
+   constrained vocabulary and births a draft the user releases in chat.
+   Before composing a repair in either lane, read the
+   repair-cloned-sections skill: it owns the lane choice and the
+   faithful-repair discipline (lineage check, the behavior inventory,
+   ugly-is-not-wrong, the repair-scope contract, verification against the
+   original).
 3. **Replace it.** A different released clone fits better
    (`insert_cloned_section` + `remove_node`), or the library lacks the job
    and you compose a new band (see "Composing a new section" below).
@@ -115,11 +121,26 @@ Two clone-specific situations you will meet mid-edit:
   the campaign-landing-page skill owns that judgment; you own executing it
   cleanly.
 
+## A fresh page in a clone-bearing workspace
+
+An empty document is not an empty library. When the page you're building is
+NEW but the workspace holds released cloned sections, assembly comes before
+authorship: the campaign-landing-page skill decides WHICH sections the
+argument keeps and in what order; `assemble_cloned_sections` then pins that
+whole ordered subset in one atomic act, with slot rebinds for the new words
+in the same call. Only after the clone skeleton stands do you compose the
+bands the library lacks — using this file's "Composing a new section"
+sequence — and place them into the gaps. Building a fresh page from scratch
+while ten released clones sit unused is the same defect as retyping a
+healthy clone: it discards the seller's real, market-tested work.
+
 ## Adding to an existing page
 
 **The reuse ladder** — before composing anything, walk down:
 
-1. A released cloned section already does the job → pin it as-is.
+1. A released cloned section already does the job → pin it as-is
+   (`insert_cloned_section`; on an empty page, `assemble_cloned_sections`
+   pins the whole keeper set at once — see the fresh-page section above).
 2. A clone has the right bones, wrong words → pin it and rebind slots.
 3. A clone is structurally close → repair-variant it.
 4. The library genuinely lacks the job → compose a new section (next

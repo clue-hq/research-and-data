@@ -40,6 +40,37 @@ Never compose a replacement from memory of the band. First:
 4. **Name the defect precisely.** "Broken at 375 — desktop-only rows run
    off the viewport" is repairable; "looks off" is not yet a diagnosis.
 
+## Two repair lanes — pick by what the band must stay
+
+A replacement is composed in one of two lanes, and the choice mirrors the
+composing lanes in edit-website:
+
+- **The raw lane** — `repair_cloned_section(fragment_id, …, css="…")`: your
+  replacement's raw HTML plus its raw CSS, passed through the same
+  sanitize-once door every captured byte passes. Compose it as a REMIX of
+  the original's own markup and stylesheet — you have already viewed the
+  section; keep its real class names, spacing constants, and type scale,
+  and change only what the defect requires. This is the DEFAULT on a
+  fidelity-critical band: the band must go on looking like the seller's
+  site, and the original's own CSS is the only faithful source for that.
+  The repair is minted, RELEASED, and swapped into the page in one act —
+  there is no chat gate on this lane. The release duty moves into your
+  report instead: state plainly that this repair now owns its lineage
+  (every future pin of this band resolves to it), so the user hears the
+  blast radius even though they were not asked first.
+- **The vocabulary lane** — no `css` argument: the replacement is composed
+  in the platform's constrained vocabulary. Choose it when the band should
+  become deeply editable in the inspector or carry derivation markers —
+  you are deliberately trading byte-fidelity for editability, and that
+  trade is worth naming in the report. The variant is born a DRAFT;
+  releasing it is the user's decision, in chat (the release-honesty
+  section below).
+
+The lane changes WHO releases and WHAT the replacement is written in —
+never what quality means. Everything else in this file binds identically
+in both lanes: the behavior inventory, ugly-is-not-wrong, the repair-scope
+contract, and verification against the original.
+
 ## The behavior inventory — every loss is a decision
 
 Before composing, list what the original band DOES, not just what it shows:
@@ -113,20 +144,23 @@ A repair fixes THE DEFECT. It is not a redesign opportunity:
 ## Lineage, release honesty, and blast radius
 
 - The original is never touched: your replacement takes its place on the
-  page, and the engine's own render of it is minted as a NEW section
-  carrying `derived_from`, your rung, and your note. The note is permanent
-  lineage — one line, what was broken and what the replacement does.
-- **A repair is born UNRELEASED, and kit approval does not release it.**
-  Releasing is the user's individual decision, in chat, after you explain
-  what the repair is and ask. "They didn't object" is not approval; an
-  unreleased draft is not lost, it is waiting.
-- Report the page's true state: the page carries your composed section
-  directly (it renders identically); do not claim it pins a repair it does
-  not.
+  page, and it is minted as a NEW section carrying `derived_from`, your
+  rung, and your note. The note is permanent lineage — one line, what was
+  broken and what the replacement does.
+- **A vocabulary-lane repair is born UNRELEASED, and kit approval does not
+  release it.** Releasing is the user's individual decision, in chat, after
+  you explain what the repair is and ask. "They didn't object" is not
+  approval; an unreleased draft is not lost, it is waiting. (A RAW-lane
+  repair is released at mint — see the two-lanes section; its release is
+  reported, not requested.)
+- Report the page's true state: say which lane the repair took, whether
+  the page pins the repair (raw lane) or carries your composed section
+  directly (vocabulary lane), and never claim a pin that did not happen.
 - **Releasing has blast radius**: a released repair becomes what future
-  pins of this lineage resolve to on every page assembled afterward. Say
-  that when you ask for the release, so the user decides with the full
-  picture.
+  pins of this lineage resolve to on every page assembled afterward. In the
+  vocabulary lane, say that when you ask for the release, so the user
+  decides with the full picture; in the raw lane, say it unprompted in the
+  report — the user must still hear it even though nobody asked them.
 
 ## Verify the repair
 

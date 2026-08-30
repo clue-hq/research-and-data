@@ -187,6 +187,13 @@ from advice into physics:
 - **Personalization markers count at rendered size.** `{{account.name}}`
   occupies the length of a real company name, not the marker's own text —
   write the sentence for the rendered result.
+- **How the words actually land**: a slot rebind is `set_node_props` on the
+  fragment node with the full payload (edit-website's clone-editing ladder,
+  rung 1) — or the `slot_values_json` argument of the same call that pins
+  the band (`assemble_cloned_sections` on an empty page,
+  `insert_cloned_section` after). Write the copy first, then bind it in the
+  pinning act itself when you can — one act, no intermediate render of the
+  band wearing the wrong words.
 
 ## Tone — where the voice comes from
 

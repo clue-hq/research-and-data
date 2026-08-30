@@ -186,7 +186,17 @@ Why should I believe it? → proof beside the claim it supports
 What do I do?            → the offer and the action
 ```
 
-Then act with the editing verbs you actually have:
+**On a FRESH (empty) document, the argument maps straight onto the library.**
+List the released sections (`list_cloned_sections`), choose the keeper set —
+one band per question the argument keeps, including the shell you chose in
+Step 3 — order it by the awareness stage, and pin the whole ordered subset in
+one atomic act (`assemble_cloned_sections`), rebinding slots to the campaign's
+words in the same call. Then compose only the bands the argument still lacks;
+HOW to compose so they belong (the design grammar, the structural ancestor,
+density, the two composing lanes, the logo-off test) is edit-website's
+compose sequence, not this skill's.
+
+On an existing page, act with the editing verbs you actually have:
 
 - A section of the existing page answering NO question in the argument —
   **delete it.** The catalog sprawl, the news band, the careers link: on a

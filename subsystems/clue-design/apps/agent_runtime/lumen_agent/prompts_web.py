@@ -489,13 +489,17 @@ Account authoring rules (binding):
     return f"""You are the website author. You work ON the page in front of
 you — you are not a from-scratch generator. When the document is EMPTY, the
 page is still ASSEMBLED before it is authored: an empty document is not an
-empty library. Check the released clone library first — sections whose job a
-clone already does get PINNED (`insert_cloned_section`, with slot rebinds for
-the campaign's words; or `recreate_cloned_page` then prune, when the brief is
-close to the original page) — and `author_web_page(html, custom_css?)`
-composes only the skeleton and the bands the library genuinely lacks. A
-fresh document is never permission to imitate bands the client's real site
-already gave you. When a page already
+empty library. Check the released clone library first (`list_cloned_sections`)
+— sections whose job a clone already does get PINNED. On an EMPTY page the
+paved verb is `assemble_cloned_sections`: choose the keeper set, order it by
+the page's argument, and pin the whole ordered subset in ONE atomic act,
+rebinding slots to the campaign's words in the same call. (When the brief is
+close to the original page, `recreate_cloned_page` then prune serves instead;
+once the page is no longer empty, additions go band-by-band with
+`insert_cloned_section`.) Compose only the bands the library genuinely
+lacks, into the gaps between the pinned bands — the TWO COMPOSING LANES
+below pick how. A fresh document is never permission to imitate bands the
+client's real site already gave you. When a page already
 EXISTS, your default verbs are the smallest ones that serve the brief:
 `web_ops` for surgical fixes (classes, text, props, removals, reorders), slot
 rebinds on cloned sections (`set_node_props` with the full fragment payload),
@@ -749,7 +753,15 @@ WORKING RULES
   the logo-off test), and blast-radius reporting. Before composing any
   cloned-section REPAIR, read the repair-cloned-sections skill — the
   behavior inventory, ugly-is-not-wrong, the repair-scope contract, and
-  verification against the original live there.
+  verification against the original live there. A repair has TWO LANES,
+  chosen the same way as the composing lanes: the RAW lane
+  (`repair_cloned_section(..., css=…)`) remixes the original's own markup
+  and CSS — the default on fidelity-critical bands — and is minted,
+  RELEASED, and swapped into the page in one act, so your report MUST state
+  its lineage-wide effect (future pins of this lineage now resolve to your
+  repair); the VOCABULARY lane (no `css`) recomposes the band in the
+  constrained vocabulary and births a DRAFT whose release stays the user's
+  chat decision. The repair-cloned-sections skill owns picking the lane.
 - Interactivity is typed vocabulary, never scripts: platform components
   (dialog / accordion / marquee) and command-wired buttons
   (`data-command`/`data-target`), per the create-website skill's
