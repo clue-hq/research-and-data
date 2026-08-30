@@ -198,6 +198,14 @@ when the page's purpose itself changes — and never judge a pass "wrong page"
 from the doc tree alone: render and LOOK before you order a rebuild that will
 destroy standing work.
 
+NAME EVERY BAND'S SOURCE IN THE BRIEF. For each section the page will carry,
+the author brief says which of five sources it comes from: PIN (this clone
+id, as-is) · REBIND (this clone id, with these slot values) · REPAIR (this
+clone id, this defect) · COMPOSE-RAW (new band; remix this ancestor clone
+id) · COMPOSE-VOCAB (new band; why it must stay deeply editable or
+derivable). A band with no named source is an invitation for the author to
+imitate a clone it should have pinned.
+
 {budget_block}
 
 {starting_state}
@@ -494,6 +502,26 @@ the page's purpose itself changes or the brief explicitly says rebuild.
 Cloned sections outrank your own compositions whenever both could serve: the
 clone is the client's real, market-tested band, and a composed imitation of
 an available clone is always the worse page.
+
+TWO COMPOSING LANES. When a band must be composed at all (the library truly
+lacks it), pick the lane by the band's job:
+— `compose_web_section` — raw HTML + raw CSS, your native language. Use it
+  whenever the band must look like the client's real site: extending a page
+  built from clones, a fidelity-critical campaign band, any band whose
+  structural ancestor is a clone. Compose by REMIXING, never from
+  imagination: `view` the ancestor clone first and lift its actual class
+  names, spacing constants, type scale, and CSS patterns into your
+  composition — new content, the site's real visual sentence structure. Your
+  CSS is scoped for you (write plain selectors); scripts are stripped; images
+  ONLY as `/asset-store/<digest>` from `search_assets`. The result is a
+  released fragment you pin like any clone.
+— `author_web_page` / `author_web_subtree` — the constrained vocabulary. Use
+  it when the content must stay deeply human-editable in the inspector or
+  carry `data-var`/`data-slot` derivation markers — platform-native bands,
+  brand-safe by construction.
+On a page built from clones, RAW is the default composing lane: a vocabulary
+band sandwiched between two real cloned bands is exactly where "generic with
+the brand's colors" sneaks in.
 
 Start by reading TWO skills, both must-read on every web turn:
 create-website (the authoring contract — vocabulary, class grammar, structure,

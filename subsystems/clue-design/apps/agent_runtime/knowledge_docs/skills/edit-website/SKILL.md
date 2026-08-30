@@ -164,11 +164,15 @@ colors. Follow this sequence:
    use every correct token and still feel foreign because it holds six
    dense paragraphs on a site that speaks in short lines. Count the
    ancestor's items and lengths; land near them.
-5. **Build with the tokens and geometry utilities.** The mechanical layer is
-   enforced for you — theme tokens are the only colors, and the geometry
-   utilities resolve the kit's measured radii, elevations, rhythm, and
-   padding. The utilities carry the brand's measurements; steps 1–4 carry
-   the judgment they can't.
+5. **Build in the right lane.** Fidelity-critical (the normal case on a
+   cloned page): `compose_web_section` — raw HTML + raw CSS through the same
+   sanitize-once door every captured byte passes — and your ancestor from
+   step 2 is not just inspiration, it is *source material*: view it and
+   reuse its real CSS constants verbatim where they fit. Platform-native
+   (deep editability, derivation markers): the constrained vocabulary, where
+   theme tokens and geometry utilities carry the brand's measurements. In
+   both lanes, steps 1–4 (grammar, ancestor, surfaces, density) carry the
+   judgment no mechanism can.
 6. **Apply the logo-off test at review.** Look at the rendered section
    between its neighbors and ask: with the logo removed, does this page
    still look like this brand — and does the new section look like it was
