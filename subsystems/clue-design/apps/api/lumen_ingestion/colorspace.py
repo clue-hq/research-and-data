@@ -8,6 +8,12 @@ maps back into the sRGB cube.
 
 from __future__ import annotations
 
+#: Minimum OKLCH chroma for a rendered-truth candidate to count as a *color* at
+#: all — pastel brands (periwinkle, blush, sage) are real brands (live finding:
+#: sarvam.ai). Lives here because both `census` (harvest filter) and
+#: `normalizer.roles` (election) need it and neither may import the other.
+PASTEL_C = 0.04
+
 import math
 
 _GAMUT_EPSILON = 1e-4

@@ -97,6 +97,116 @@ _SCROLL_STATE_JS = (
     "y: window.scrollY, viewport: window.innerHeight})"
 )
 
+#: Animated hero washes (auroras, gradient fades) paint in over a few seconds —
+#: screenshot too early and the brand's biggest surface is simply absent (live
+#: finding: sarvam.ai). Note the residual: a WebGL hero may STILL not paint in
+#: headless Chromium's software renderer; the census flags a large near-blank
+#: canvas loudly (LUMI0531) rather than pretending the page is white.
+_HERO_SETTLE_MS = 3000
+
+#: Modals, cookie scrims and their backdrops poison both the census and the
+#: probe's region sampling (live finding: apollo.io's "Let's talk" modal).
+#: Escape is pressed first, then any position:fixed element covering more than
+#: this fraction of the viewport is removed — sticky navs and small banners
+#: survive. Runs BEFORE the probe and the screenshot so the two stay aligned.
+_OVERLAY_VIEWPORT_FRACTION = 0.25
+
+_REMOVE_OVERLAYS_JS = """
+() => {
+  const vw = innerWidth, vh = innerHeight;
+  let removed = 0;
+  for (const el of Array.from(document.querySelectorAll('body *'))) {
+    const cs = getComputedStyle(el);
+    if (cs.position !== 'fixed') continue;
+    const r = el.getBoundingClientRect();
+    if (r.width * r.height > %f * vw * vh) { el.remove(); removed++; }
+  }
+  return removed;
+}
+""" % _OVERLAY_VIEWPORT_FRACTION
+
+# The render probe (Phase-1 brand-color overhaul). Everything the census needs
+# that the classic harvest above does not carry:
+#  - custom properties RESOLVED through a probe element (an unregistered
+#    property's computed value is its unresolved token stream — the probe is
+#    the only correct path past var()/color-mix());
+#  - visibility-filtered element samples WITH absolute page boxes (hidden menu
+#    items otherwise sample as phantom grey buttons — live finding: apollo.io);
+#  - media boxes for photo masking;
+#  - computed gradient stops over large visible surfaces (a pixel census
+#    structurally cannot elect a gradient; the resolved markup names its
+#    endpoints — live finding: sarvam.ai);
+#  - the viewport width (CSS px -> screenshot px scale) and the fraction of the
+#    first viewport covered by <canvas> (WebGL-hero honesty flag).
+_PROBE_JS = r"""
+() => {
+  const abs = (r) => ({l: r.left + scrollX, t: r.top + scrollY, w: r.width, h: r.height});
+  const tokens = {};
+  const probe = document.createElement('div');
+  document.documentElement.append(probe);
+  const rootCS = getComputedStyle(document.documentElement);
+  for (let i = 0; i < rootCS.length; i++) {
+    const name = rootCS[i];
+    if (!name.startsWith('--')) continue;
+    probe.style.color = 'rgb(1, 2, 3)';
+    probe.style.color = `var(${name})`;
+    const resolved = getComputedStyle(probe).color;
+    if (resolved !== 'rgb(1, 2, 3)') tokens[name] = resolved;
+  }
+  probe.remove();
+
+  const visible = (el) => {
+    if (el.checkVisibility && !el.checkVisibility({opacityProperty: true, visibilityProperty: true})) return false;
+    const r = el.getBoundingClientRect();
+    return r.width * r.height >= 80 && r.left + scrollX >= 0 && r.top + scrollY >= 0;
+  };
+  const samples = [];
+  const push = (sel, kind, n) => {
+    let i = 0;
+    for (const el of document.querySelectorAll(sel)) {
+      if (i >= n) break;
+      if (kind !== 'body' && !visible(el)) continue;
+      const cs = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) continue;
+      samples.push({kind, box: abs(r), bg: cs.backgroundColor, color: cs.color});
+      i++;
+    }
+  };
+  push('body', 'body', 1);
+  push('button, [type="submit"], .btn, [class*="btn"], [class*="Btn"], [class*="cta"], [class*="Button"], a[class*="button"]', 'button', 80);
+  push('h1,h2,h3', 'heading', 12);
+  push('a', 'link', 25);
+  push('nav,header,footer', 'chrome', 6);
+
+  const media = [];
+  let canvasArea = 0;
+  for (const el of document.querySelectorAll('img,video,canvas,picture')) {
+    const r = el.getBoundingClientRect();
+    if (r.width > 8 && r.height > 8) media.push(abs(r));
+    if (el.tagName === 'CANVAS' && r.top < innerHeight) canvasArea += r.width * r.height;
+  }
+  const gradients = [];
+  let scanned = 0;
+  for (const el of document.querySelectorAll('*')) {
+    if (scanned++ > 6000) break;
+    const cs = getComputedStyle(el);
+    if (!cs.backgroundImage || cs.backgroundImage === 'none') continue;
+    const r = el.getBoundingClientRect();
+    if (cs.backgroundImage.includes('url(') && r.width > 40 && r.height > 40) media.push(abs(r));
+    if (cs.backgroundImage.includes('gradient(') && r.width * r.height > 20000 && visible(el)) {
+      const stops = cs.backgroundImage.match(/rgba?\([^)]+\)/g) || [];
+      if (stops.length) gradients.push({box: abs(r), stops: stops.slice(0, 12)});
+    }
+  }
+  return {
+    viewport_width: document.documentElement.clientWidth || innerWidth,
+    tokens, samples, media: media.slice(0, 400), gradients: gradients.slice(0, 60),
+    canvas_viewport_fraction: canvasArea / (innerWidth * innerHeight),
+  };
+}
+"""
+
 
 async def _scroll_until_settled(page) -> None:
     """Scroll to the bottom so lazy-loaded imagery enters the DOM before harvesting."""
@@ -183,7 +293,12 @@ async def fetch_rendered(
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True)
         try:
-            page = await browser.new_page(viewport={"width": 1440, "height": 2000})
+            page = await browser.new_page(
+                viewport={"width": 1440, "height": 2000},
+                # Never let prefers-reduced-motion suppress a brand's animated
+                # hero — we are here to see what real visitors see.
+                reduced_motion="no-preference",
+            )
             try:
                 await page.goto(url, wait_until="networkidle", timeout=30_000)
             except Exception:  # noqa: BLE001 — networkidle timeout is non-fatal
@@ -197,8 +312,39 @@ async def fetch_rendered(
 
             await _scroll_until_settled(page)
 
+            # Return to the top and clean the stage before ANY harvest or
+            # pixel capture: probe boxes and screenshot must describe the same
+            # page, and a modal/scrim must poison neither.
+            await page.evaluate("window.scrollTo(0, 0)")
+            await page.keyboard.press("Escape")
+            removed_overlays = 0
+            try:
+                removed_overlays = await page.evaluate(_REMOVE_OVERLAYS_JS)
+            except Exception:  # noqa: BLE001 — hygiene is fail-soft
+                pass
+            if removed_overlays:
+                diagnostics.append(
+                    {
+                        "code": "LUMI0530",
+                        "severity": "info",
+                        "message": f"removed {removed_overlays} full-viewport fixed overlay(s) before capture",
+                    }
+                )
+            await page.wait_for_timeout(_HERO_SETTLE_MS)
+
             final_url = page.url
             data = await page.evaluate(_EVALUATE_JS)
+            render_probe = None
+            try:
+                render_probe = await page.evaluate(_PROBE_JS)
+            except Exception as error:  # noqa: BLE001 — probe is fail-soft
+                diagnostics.append(
+                    {
+                        "code": "LUMI0532",
+                        "severity": "warning",
+                        "message": f"render probe failed; palette election falls back to evidence clusters: {error}",
+                    }
+                )
             html = await page.content()
             shot = await page.screenshot(full_page=True)
             # Brand geometry, measured LAST: the probe programmatically focuses a
@@ -261,6 +407,7 @@ async def fetch_rendered(
         custom_props=data.get("props") or {},
         computed_samples=data.get("samples") or [],
         geometry=geometry if isinstance(geometry, dict) else None,
+        render_probe=render_probe if isinstance(render_probe, dict) else None,
         downloads=downloads,
         meta=meta,
         diagnostics=diagnostics,
