@@ -92,3 +92,36 @@ LinkedIn URLs? (b) does it return the email Apollo missed (Kate Blumberg)? (c) e
 If AI Ark wins ≥3 of 5, it becomes the committee/enrichment provider and Apollo drops to
 fallback (or is not renewed); if it loses, it cost nothing. Either way the ARV2 design is
 unchanged — this is a resolver swap behind the same seam, which is exactly why the seam exists.
+
+## 7. LIVE CANARY RESULT (2026-08-29, founder key, free tier) — 5/5 PASSED
+
+Run artifacts: `.context/ai-ark-canary/` (raw responses). ~30 of 100 free credits used.
+
+| Check | Result |
+|---|---|
+| (a) All 5 Probook committee members, correct titles + LinkedIn URLs | **PASS** — plus the full 59-person roster (Apollo reported 41 employees) incl. a possible third co-founder (Ben Cervantez) the v3 committee never saw, and the GTM hiring wave visible in start dates (3 Strategic AEs Mar–Jun 2026, Enterprise GTM Jun 2026, GTM Ops Jun 2026) |
+| (b) The email Apollo missed (Blumberg, maiden-name slug) | **PASS** — `kate@probook.ai` (founder studio test + API) |
+| (c) Verification metadata + phone | **PASS** — email block exposes `domainType: SMTP` (mailbox-confirmed; George) vs `CATCH_ALL` (`VALID` but domain-accepts-all; Kate) with MX record + provider + check date; phone finder returned Mark Hoffman's mobile (+1 917…) for 5 credits, sync, no webhook |
+| (d) Same-name contamination | **PASS** — 464 "Mark Hoffman"s unscoped → exactly 1 when domain-scoped, correct person/title/slug |
+| (e) Freshness | **PASS** — Blumberg `start: 2026-06-01`; June-2026 hires present |
+
+**Verdict per §6 protocol: AI Ark takes the ARV2 committee/enrichment slot; Apollo drops to
+fallback (do not renew beyond current need).** Provider-neutral seam unchanged.
+
+Live integration notes (learned on the wire, beyond the docs):
+1. **Cloudflare blocks default HTTP clients** (403 error 1010) — the adapter must send a browser
+   User-Agent.
+2. **Rate limiting is stricter than the documented 5 rps** on the free tier — 429s appeared at
+   ~6 calls in quick succession; adapter needs backoff + ~1 call/10–15s pacing until a paid tier
+   is confirmed.
+3. **Phone finder contract differs from its docs**: LinkedIn-URL-alone returns 400
+   ("both domain and name are required") — send `{domain, name}`; it resolves the LinkedIn URL
+   itself and returns bare number strings (no DNC/confidence — calling compliance stays ours).
+4. Credit-balance endpoint path could not be found (401 on documented guesses) — track spend
+   from the dashboard until support clarifies.
+5. **Personality API: skip.** Output is templated (canned example names in the advice), scored
+   from a possibly stale skills list; our zero-cost Luna-from-posts communication-style facet is
+   better grounded. 4 credits saved per contact.
+6. `email.state: "DONE"` + `output[]` shape; record `domainType`+`status` into the email claim's
+   value (`verified` only when SMTP+VALID; `catch_all_valid` otherwise) — never flatten to a bare
+   address.

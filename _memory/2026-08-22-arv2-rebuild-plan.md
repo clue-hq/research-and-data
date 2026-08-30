@@ -218,3 +218,15 @@ teammates. Strongest possible single-record signal (the exact Apollo failure cas
 canary checks before any provider decision: validity metadata (BounceBan status VALID vs
 catch-all on probook.ai), all-5-committee retrieval, same-name contamination test, freshness
 (her Jun 2026 start date), phone hit rate. Protocol in docs/specs/ARV2-ai-ark-contract-notes.md §6.
+
+## Addendum 2026-08-29 — AI Ark live canary 5/5 PASSED → takes the committee/enrichment slot
+
+Founder supplied API key (in .env as CLUE_AI_ARK_API_KEY, gitignored). Full battery vs Probook
+ground truth in .context/ai-ark-canary/: all five checks passed (roster 59 ppl incl. possible 3rd
+co-founder Ben Cervantez + visible GTM hiring wave; kate@probook.ai; SMTP-vs-CATCH_ALL metadata;
+464→1 same-name discrimination; Jun-2026 freshness; Mark Hoffman mobile via sync domain+name call,
+5cr). Ruling recorded in ARV2-ai-ark-contract-notes.md §7: AI Ark = committee/enrichment provider,
+Apollo = fallback. Wire lessons: needs browser UA (Cloudflare 1010), free-tier rate limit ≪ 5rps
+(pace + backoff), phone endpoint needs {domain,name} not URL, credit endpoint 401-unknown,
+personality API canned — skip. Email claims must carry domainType+status (verified only when
+SMTP+VALID). Deep research remains Exa's job — AI Ark returns no quotes/signals/job-req text.
