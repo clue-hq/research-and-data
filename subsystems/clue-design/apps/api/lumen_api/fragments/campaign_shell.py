@@ -339,14 +339,17 @@ def compose_campaign_header(
         'class="w-full border-b border-border bg-light">'
         '<div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 '
         'px-6 py-4">'
-        '<div class="flex items-center gap-3">'
+        # min-w-0 + flex-wrap (F4 wave F-5): a real bound logo made the strip 461px wide at a
+        # 375px viewport — the marks group must be allowed to shrink and wrap, and the target
+        # mark is width-capped so no fetched logo can widen the page sideways.
+        '<div class="flex min-w-0 flex-wrap items-center gap-3">'
         f'<img data-asset="{escape(seller_logo_asset_id, quote=True)}" '
         f'alt="{escape(seller_name, quote=True)}" '
         f'class="{MARK_SELLER_MARK} max-h-8 w-auto">'
         # The co-brand mark. `max-h` caps a real logo and cannot inflate the 1×1 default, so the
         # unbound header is a header with one mark on it and no hole where a second would go.
         f'<img data-asset="{escape(cobrand_asset_id, quote=True)}" alt="" '
-        f'class="{MARK_TARGET_LOGO} max-h-8 w-auto">'
+        f'class="{MARK_TARGET_LOGO} max-h-8 w-auto max-w-40">'
         '<p class="text-sm text-muted">'
         f"{escape(PREPARED_FOR_PREFIX)}"
         f'<span class="{MARK_PREPARED_FOR}">{escape(prepared_for)}</span>'

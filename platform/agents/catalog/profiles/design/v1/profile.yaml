@@ -123,7 +123,7 @@ tools:
     output_schema_sha256: 1c04f0f1726deb37d4d80670ff7d93d84a27eddd1f2e5b048ad4e7d9b71e61ce
   - name: design_publish_web
     version: "1"
-    input_schema_sha256: 5d525f0a5ea8c296891d2bfa3242151daea1e11b797d3b2a092af845970d6b86
+    input_schema_sha256: 26449497cc96f0168aeed9aaf54b8eaa0847a407466110ca28e03f97fce7ac35
     output_schema_sha256: e47bff5ae86fcf0b78eb5734f46aff83507029e3859a1fed13a3fa5d92cc7fc9
   - name: design_record_diagnostics
     version: "1"
@@ -223,7 +223,7 @@ tools:
 # reasoning=medium) ride the design deployment env until the profile schema grows
 # per-role model policy. Output bounded; design turns are long (timeout at the cap).
 model:
-  model_id: openai/gpt-5.6-terra
+  model_id: openai/x-ai/grok-4.6
   timeout_s: 120.0
   max_retries: 2
   max_output_tokens: 32768

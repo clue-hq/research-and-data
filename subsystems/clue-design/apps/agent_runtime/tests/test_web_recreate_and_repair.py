@@ -79,6 +79,12 @@ class FakeRegistry:
         #: What `mint_repair` answers, per repaired id. Absent → a fresh draft repair.
         self.mint_result: dict | None = None
         self._minted = 0
+        #: F4.4 (ruling R-X9): what the release surface was asked to do, so a test can assert
+        #: that a refused round released NOTHING rather than inferring it from a status.
+        self.release_calls: list[str] = []
+        self.render_calls: list[str] = []
+        #: Set to an exception to make the isolation render fail (no browser on this host).
+        self.render_raises: Exception | None = None
 
     def add(
         self,
@@ -221,12 +227,16 @@ class FakeRegistry:
             )
         # The real gate resolves lineage only for a DEGRADED answer (it costs a scan and nothing
         # else reads it); so does this, or the fake would prove the cheaper path works.
-        superseded_by, ambiguous = None, []
+        superseded_by, ambiguous, ranked_over, degraded_fallback = None, [], [], False
         if row["degraded"]:
             verdict = _resolve_lineages(list(self.rows.values()))[fragment_id]
             if verdict.representative and verdict.representative != fragment_id:
                 superseded_by = verdict.representative
             ambiguous = list(verdict.ambiguous)
+            # Ruling R-X4: the pin gate carries the wholly-broken-family verdict too, so every
+            # door that puts a band on a page can say "selected, not fixed".
+            ranked_over = list(verdict.ranked_over)
+            degraded_fallback = verdict.degraded_fallback
         return {
             "fragment_id": fragment_id,
             "section_role": row["section_role"],
@@ -240,6 +250,8 @@ class FakeRegistry:
             "derived_from": row["derived_from"],
             "superseded_by": superseded_by,
             "lineage_ambiguous": ambiguous,
+            "lineage_ranked_over": ranked_over,
+            "lineage_degraded_fallback": degraded_fallback,
             "render": {
                 "html": row["html"],
                 "css": row["css"],
@@ -247,6 +259,58 @@ class FakeRegistry:
                 "asset_digests": [],
                 "derived": bool(row["derived_from"]),
             },
+        }
+
+    # --- F4.4 (ruling R-X9): the per-repair release surface ------------------------------------
+    #
+    # Two methods, and the SPLIT between them is the law, not an implementation detail: rendering
+    # the picture is one act, releasing on the strength of it is another, and the human's answer
+    # goes in between. The fake keeps them apart for the same reason the registry does.
+
+    def render_repair_preview(self, fragment_id, core):
+        row = self.rows.get(fragment_id)
+        if row is None:
+            raise _fragment_refused("fragment.unresolved", f"{fragment_id!r} is unknown")
+        if self.render_raises is not None:
+            raise self.render_raises
+        if row.get("preview_digest"):
+            return None
+        path = self.tmp_path / f"{fragment_id}.png"
+        path.write_bytes(PNG_1PX)
+        row["preview_digest"] = "e" * 64
+        row["preview_path"] = str(path)
+        self.render_calls.append(fragment_id)
+        return row["preview_digest"]
+
+    def release_repair(self, fragment_id):
+        row = self.rows.get(fragment_id)
+        if row is None:
+            raise _fragment_refused("fragment.unresolved", f"{fragment_id!r} is unknown")
+        if not row.get("derived_from"):
+            raise _fragment_refused(
+                "repair.not_a_repair",
+                f"{fragment_id} is not a repair — released by approving the brand kit",
+            )
+        if row["status"] != "draft":
+            raise _fragment_refused(
+                "repair.not_releasable",
+                f"repair {fragment_id} is {row['status']!r}, not 'draft': it is already released",
+            )
+        if not row.get("preview_digest"):
+            raise _fragment_refused(
+                "repair.no_preview",
+                f"repair {fragment_id} has no preview image. Render one first",
+            )
+        row["status"] = "approved"
+        self.release_calls.append(fragment_id)
+        return {
+            "fragment_id": fragment_id,
+            "status": "approved",
+            "derived_from": row["derived_from"],
+            "derived_reason": row["derived_reason"],
+            "label": row["label"],
+            "section_role": row["section_role"],
+            "preview_digest": row["preview_digest"],
         }
 
     def mint_repair(self, *, replaces, html, css, rung, note, label=None):
@@ -277,6 +341,14 @@ class FakeRegistry:
             "lineage_kept": True,
             "insertable": False,
         }
+
+
+def _fragment_refused(code: str, message: str):
+    """The registry's OWN refusal type (``FragmentRefused``), which is what the release surface
+    raises — not the document write's ``FragmentReferenceError`` that the pin gate re-raises."""
+    from lumen_api.fragments import FragmentRefused
+
+    return FragmentRefused(code, message)
 
 
 def _refusal(code: str, message: str, fragment_id: str):
@@ -616,8 +688,15 @@ def test_a_chain_of_broken_middles_is_stepped_over_however_deep(
 def test_when_every_released_version_is_broken_the_ranking_is_stated(
     tmp_path: Path, registry: FakeRegistry
 ) -> None:
-    """Ruling N4. It cannot refuse — a hole where the band goes is worse than a flagged band —
-    so it says which broken candidate it pinned and what that beat."""
+    """Ruling N4, AMENDED BY FOUNDER RULING R-X4 (2026-08-29).
+
+    It cannot refuse — a hole where the band goes is worse than a flagged band — so it says which
+    broken candidate it pinned and what that beat. What R-X4 changed is WHICH one: under the
+    default ``keep_flagged`` the NEWEST repair stays on the page, flagged, because "never
+    silently return to a known-broken original". This test previously asserted the original
+    (``PROOF_ID``) went back on the page; that expectation is superseded, not weakened — the
+    fallback still picks exactly one, still ranks the rest, and still reports the band as work.
+    """
     registry.add("frag_00000000000000b2", role="proof", label="Repair one", index=2,
                  derived_from=PROOF_ID, degraded=True, degraded_reason="dead_height")
     registry.add("frag_00000000000000b3", role="proof", label="Repair two", index=2,
@@ -626,21 +705,26 @@ def test_when_every_released_version_is_broken_the_ranking_is_stated(
 
     result = json.loads(tools.recreate_cloned_page())
 
-    # The original is the oldest approved member, so it is what goes on the page — flagged.
-    assert PROOF_ID in _pinned_in_order(tools)
-    assert [entry["fragment_id"] for entry in result["needs_repair"]] == [PROOF_ID]
+    # R-X4: the NEWEST approved member goes on the page — flagged — and the original it was
+    # composed to replace is one of the things it beat.
+    newest = "frag_00000000000000b3"
+    assert newest in _pinned_in_order(tools)
+    assert PROOF_ID not in _pinned_in_order(tools)
+    assert [entry["fragment_id"] for entry in result["needs_repair"]] == [newest]
     (ranked,) = result["ranked"]
-    assert ranked["fragment_id"] == PROOF_ID
-    assert sorted(ranked["ranked_over"]) == [
-        "frag_00000000000000b2",
-        "frag_00000000000000b3",
-    ]
+    assert ranked["fragment_id"] == newest
+    assert sorted(ranked["ranked_over"]) == [PROOF_ID, "frag_00000000000000b2"]
     # ADVICE, not a warning: the band is already reported as work through `needs_repair`. And its
     # OWN code (ruling X4) — a consumer filtering by code alone must not get two entries under
     # LUMA0811 meaning different things.
     (advice,) = [item for item in result["advice"] if item.get("code") == "LUMA0812"]
     assert advice["severity"] == "advice"
-    assert "oldest was pinned rather than none" in advice["message"]
+    assert "SELECTED rather than fixed" in advice["message"]
+    assert "requires review" in advice["message"]
+    # And the warning half says it too, so a pin made by any other door reads the same law.
+    (warning,) = [item for item in result["warnings"] if item.get("code") == "LUMA0811"]
+    assert "REQUIRES REVIEW" in warning["message"]
+    assert result["needs_repair"][0]["degraded_fallback"] is True
     codes = [item.get("code") for item in result["warnings"] + result["advice"]]
     assert codes.count("LUMA0811") == 1
     assert {item["severity"] for item in result["warnings"] + result["advice"]
@@ -669,18 +753,27 @@ def test_the_picker_says_when_a_family_has_two_released_repairs(
     assert "lineage_ambiguous" not in healthy
 
 
-def test_a_lineage_whose_only_repair_is_itself_broken_falls_back_to_the_original(
+def test_a_lineage_whose_only_repair_is_itself_broken_keeps_the_repair_flagged(
     tmp_path: Path, registry: FakeRegistry
 ) -> None:
-    """"Else the original" — and the original goes on the page flagged, not silently."""
+    """FOUNDER RULING R-X4 (2026-08-29) supersedes this test's old expectation.
+
+    It used to assert "else the original" — the broken original went back on the page, flagged.
+    The founder's ruling is the opposite and says why: "never silently return to a known-broken
+    original". The repair stays selected, in the original's page position, and it is still
+    reported as work through ``needs_repair`` — the reporting half is unchanged, which is what
+    makes this a change of choice rather than a loss of honesty.
+    """
     registry.add("frag_00000000000000b2", role="proof", label="Repair one", index=2,
                  derived_from=PROOF_ID, degraded=True, degraded_reason="dead_height")
     tools = _tools(tmp_path, registry)
 
     result = json.loads(tools.recreate_cloned_page())
 
-    assert _pinned_in_order(tools) == [NAV_ID, HERO_ID, PROOF_ID, FOOTER_ID]
-    assert [entry["fragment_id"] for entry in result["needs_repair"]] == [PROOF_ID]
+    repair = "frag_00000000000000b2"
+    assert _pinned_in_order(tools) == [NAV_ID, HERO_ID, repair, FOOTER_ID]
+    assert [entry["fragment_id"] for entry in result["needs_repair"]] == [repair]
+    assert result["needs_repair"][0]["degraded_fallback"] is True
 
 
 def test_the_recreate_fills_the_slots_it_is_given_and_leaves_the_rest_verbatim(
@@ -827,9 +920,14 @@ def test_the_repair_swaps_the_broken_band_and_mints_the_engines_own_render(
     assert result["rung"] == 3
     assert result["derived_from"] == PROOF_ID
     assert result["original_preserved"] is True
-    # Born unreleased, and the tool says so instead of implying a pin.
+    # Born unreleased, and the tool says so instead of implying a pin. ~~"approving the brand
+    # kit"~~ — superseded by FOUNDER RULING R-X9 (2026-08-29): the kit no longer releases
+    # repairs, so the sentence the agent reads now names the chat approval and the tool that
+    # enacts it. Superseded, not weakened: the tool still refuses to imply a pin.
     assert result["pinned"] is False
-    assert "approving the brand kit" in result["release"]
+    assert "released ONE AT A TIME, by the user" in result["release"]
+    assert "approving the brand kit does NOT release repairs" in result["release"]
+    assert "release_repair(fragment_id)" in result["release"]
 
     # The broken clone is OFF the page and the composed section stands in its exact place.
     assert _pinned_in_order(tools) == [NAV_ID, HERO_ID, FOOTER_ID]
@@ -1546,3 +1644,212 @@ def test_replacement_markup_the_engine_rejects_never_reaches_the_mint(
     assert registry.mint_calls == []
     # The page is untouched: the broken clone is still there, which is the honest state.
     assert PROOF_ID in _pinned_in_order(tools)
+
+
+# --------------------------------------------------------------------------- #
+# Releasing one repair, chat-only (F4.4, FOUNDER RULING R-X9)
+# --------------------------------------------------------------------------- #
+#
+# The founder, 2026-08-29: "require individual approval for each repair. Brand-kit approval
+# should not silently approve later repairs. … do not add approval gates to our UI. Just ask for
+# approval via chat only. First of all you need to explain."
+#
+# So there are two things to pin here and they are different kinds of thing: the TOOL's
+# structural gates (what it refuses, whatever anybody typed) and the PROMPT's law (that the agent
+# explains and asks before it ever calls the tool). The tool cannot enforce the second — no gate
+# can detect a human's consent — which is exactly why the wording is tested as law.
+
+
+def _squashed(text: str) -> str:
+    """The two prompt builders are f-strings and their source is hard-wrapped, so an assertion
+    on a clause has to be made against the RENDERED, whitespace-collapsed prompt or a prose
+    reflow flips it (the T25 I-2 lesson, and the neighbouring D-F6 tests' own rule)."""
+    return " ".join(text.split())
+
+
+@pytest.mark.parametrize("prompt_of", [_director_prompt, _author_prompt])
+def test_a_repair_is_released_only_by_the_user_in_chat_is_prompt_law(prompt_of) -> None:
+    """R-X9's two clauses, in the RENDERED prompt (both builders are f-strings).
+
+    Explain first, ask second, call third — and no UI gate anywhere, because there is none to
+    point at.
+    """
+    prompt = _squashed(prompt_of())
+
+    lowered = prompt.lower()
+    assert "release_repair" in lowered
+    assert "no approval button" in lowered
+    # The kit no longer does it, said where the agent will read it before it tries.
+    assert "does not release repairs" in lowered
+    # And the ask lives in the conversation, because there is nowhere else for it to live.
+    assert "user" in lowered
+
+
+def test_the_author_prompt_says_explain_then_ask_then_call() -> None:
+    """"First of all you need to explain" — the ORDER is the law, not just the ingredients."""
+    prompt = _squashed(_author_prompt())
+
+    explain = prompt.index("FIRST EXPLAIN")
+    ask = prompt.index("THEN ASK")
+    assert explain < ask
+    assert "wait for a yes" in prompt
+    assert "No answer is not a yes" in prompt
+    # What the explanation must contain — the reason, the change, the evidence.
+    assert "why the repair exists" in prompt
+    assert "which rung" in prompt
+    assert 'view("cloned_section:<id>")' in prompt
+
+
+def test_releasing_a_repair_with_a_preview_flips_exactly_that_row(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """The affirmative case: one call, one repair, and it is pinnable afterwards."""
+    registry.add(
+        REPAIR_ID, role="proof", label="Repaired — Proof", index=2,
+        derived_from=PROOF_ID, status="draft",
+    )
+    second = "frag_00000000000000d9"
+    registry.add(
+        second, role="proof", label="Repaired — Proof (two)", index=2,
+        derived_from=PROOF_ID, status="draft",
+    )
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.release_repair(REPAIR_ID))
+
+    assert result["status"] == "ok"
+    assert result["fragment_id"] == REPAIR_ID
+    assert result["repair_status"] == "approved"
+    assert result["replaces"] == PROOF_ID
+    assert registry.release_calls == [REPAIR_ID]
+    # "Individual approval for EACH repair": the sibling draft did not move.
+    assert registry.rows[second]["status"] == "draft"
+    assert "every other draft repair still needs its own approval" in result["note"]
+    # And it is now pinnable, which is the only thing releasing it was for.
+    assert json.loads(tools.insert_cloned_section(REPAIR_ID))["status"] == "ok"
+
+
+def test_a_repair_with_no_preview_is_rendered_and_the_release_still_refuses(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """"First of all you need to explain" made mechanical: the round that MAKES the picture is
+    never the round that releases. It renders, hands the picture back, and says to ask."""
+    registry.add(
+        REPAIR_ID, role="proof", label="Repaired — Proof", index=2,
+        derived_from=PROOF_ID, status="draft",
+    )
+    registry.rows[REPAIR_ID]["preview_digest"] = None
+    tools = _tools(tmp_path, registry)
+
+    refused = json.loads(tools.release_repair(REPAIR_ID))
+
+    assert refused["status"] == "error"
+    assert refused["error_code"] == "release.preview_rendered"
+    assert registry.render_calls == [REPAIR_ID]
+    assert registry.release_calls == []
+    assert registry.rows[REPAIR_ID]["status"] == "draft"
+    assert f'view("cloned_section:{REPAIR_ID}")' in refused["message"]
+    assert "ask" in refused["message"]
+    # The picture is viewable in THIS turn, not merely durable somewhere.
+    blocks = tools._view_content(f"cloned_section:{REPAIR_ID}")
+    assert any(
+        isinstance(block, dict) and block.get("type") == "image" for block in blocks
+    ), blocks
+
+    # ...and the second call, after the user said yes, releases.
+    released = json.loads(tools.release_repair(REPAIR_ID))
+    assert released["status"] == "ok"
+    assert registry.release_calls == [REPAIR_ID]
+
+
+def test_a_repair_that_cannot_be_rendered_at_all_refuses_with_both_reasons(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """No browser on this worker. The gate's sentence alone would tell the agent to render a
+    preview it has just failed to render, so the refusal carries why the remedy did not work."""
+    registry.add(
+        REPAIR_ID, role="proof", label="Repaired — Proof", index=2,
+        derived_from=PROOF_ID, status="draft",
+    )
+    registry.rows[REPAIR_ID]["preview_digest"] = None
+    registry.render_raises = RuntimeError("playwright is not installed on this worker")
+    tools = _tools(tmp_path, registry)
+
+    refused = json.loads(tools.release_repair(REPAIR_ID))
+
+    assert refused["error_code"] == "repair.no_preview"
+    assert "playwright is not installed" in refused["message"]
+    assert "leave it as a draft" in refused["message"]
+    assert registry.release_calls == []
+
+
+def test_releasing_a_harvested_clone_is_refused_and_names_the_surface_that_does_release_it(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    tools = _tools(tmp_path, registry)
+
+    refused = json.loads(tools.release_repair(NAV_ID))
+
+    assert refused["error_code"] == "repair.not_a_repair"
+    assert "brand kit" in refused["message"]
+    assert registry.release_calls == []
+
+
+def test_a_preview_less_section_that_is_not_a_repair_is_refused_without_being_photographed(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """The gates run BEFORE the render, and that ordering is load-bearing: rendering first would
+    take a picture of a harvested clone on the way to refusing it anyway, and would answer
+    "a preview has been rendered" to a caller whose real problem is that this is not a repair."""
+    registry.rows[NAV_ID]["preview_digest"] = None
+    tools = _tools(tmp_path, registry)
+
+    refused = json.loads(tools.release_repair(NAV_ID))
+
+    assert refused["error_code"] == "repair.not_a_repair"
+    assert registry.render_calls == []
+    assert registry.release_calls == []
+
+
+def test_releasing_an_already_released_repair_says_so_rather_than_reporting_success(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    registry.add(
+        REPAIR_ID, role="proof", label="Repaired — Proof", index=2,
+        derived_from=PROOF_ID, status="approved",
+    )
+    tools = _tools(tmp_path, registry)
+
+    refused = json.loads(tools.release_repair(REPAIR_ID))
+
+    assert refused["error_code"] == "repair.not_releasable"
+    assert "already released" in refused["message"]
+
+
+def test_the_repair_to_release_walk_end_to_end(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """The shape R-X9 describes, in order: mint a repair, be told it is unreleased and how it
+    gets released, render+ask, release, pin."""
+    tools = _recreated(tmp_path, registry)
+
+    repaired = json.loads(
+        tools.repair_cloned_section(PROOF_ID, REPLACEMENT_HTML, 3, "flattened the dead height")
+    )
+    assert repaired["status"] == "ok"
+    assert repaired["pinned"] is False
+    assert "release_repair(fragment_id)" in repaired["release"]
+
+    # The mint's fake answer is a fresh draft with no picture — exactly what production mints.
+    registry.add(
+        REPAIR_ID, role="proof", label="Repaired — Proof", index=2,
+        derived_from=PROOF_ID, status="draft",
+    )
+    registry.rows[REPAIR_ID]["preview_digest"] = None
+
+    first = json.loads(tools.release_repair(REPAIR_ID))
+    assert first["error_code"] == "release.preview_rendered"
+
+    released = json.loads(tools.release_repair(REPAIR_ID))
+    assert released["status"] == "ok"
+    assert json.loads(tools.insert_cloned_section(REPAIR_ID))["status"] == "ok"

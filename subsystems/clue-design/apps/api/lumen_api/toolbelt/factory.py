@@ -55,6 +55,7 @@ from .documents import (
     ReplaceSceneTool,
     SetAgentInstructionsTool,
     SetLayoutManagedEditingTool,
+    SetWebNoindexTool,
     UndoDocumentTool,
 )
 from .ingestion import (
@@ -104,6 +105,7 @@ DESIGN_TOOL_TYPES = (
     CreateDocumentTool,
     SetAgentInstructionsTool,
     SetLayoutManagedEditingTool,
+    SetWebNoindexTool,
     ReplaceSceneTool,
     ApplyOperationsTool,
     ApplyStructuredEditTool,

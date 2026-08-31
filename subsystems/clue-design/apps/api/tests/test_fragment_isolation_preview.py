@@ -402,9 +402,12 @@ def test_a_foreign_workspaces_fragment_cannot_be_given_a_preview(
 
 def test_an_invisible_render_refuses_typed_instead_of_timing_out():
     """Phase fix wave, walk F-3's inspector half: a pre-wave dormant artifact still obeys the
-    source's hiding CSS, and screenshotting an invisible element would only wait out the
-    timeout. `_shoot` refuses first, with a code that tells the human the honest remedy
-    (re-ingest; new mints carry the un-hide counter-rules)."""
+    source's hiding CSS. F4 wave item 1 (the CP2 walk's F-2 — missed at TWO checkpoints):
+    the stylesheet countermand is a specificity fight it can lose (`.section:has(...)` outranks
+    it), so `_shoot` now FORCES the root visible inline on the live DOM (an inline !important
+    outranks any stylesheet rule), re-checks, and refuses only if the element STAYS invisible —
+    with a message that is true (the old "re-ingest" remedy was false for artifacts minted with
+    the mechanics active)."""
     import inspect
 
     from lumen_api.fragments.isolation import IsolationRenderFailed, _shoot
@@ -413,11 +416,56 @@ def test_an_invisible_render_refuses_typed_instead_of_timing_out():
     # the established pattern): the visibility check sits between finding the element and
     # photographing it.
     source = inspect.getsource(_shoot)
-    assert "is_visible" in source
-    assert source.index("is_visible") < source.index('element.screenshot(type="png")')
+    assert "_surface_element" in source
+    assert source.index("_surface_element") < source.index('element.screenshot(type="png")')
+    assert "re-ingest the site" not in source  # the false remedy is gone
+    assert "repair it through the ladder" in source
 
     refusal = IsolationRenderFailed(
         "isolation.section_hidden_by_its_own_css", "hidden by its own css"
     )
     assert refusal.code == "isolation.section_hidden_by_its_own_css"
     assert refusal.code != "isolation.section_not_rendered"
+
+
+def test_the_force_reaches_the_artifacts_own_root_not_only_the_wrapper() -> None:
+    """Wave round 2 (the re-walk's N-1, behaviourally): harvested CSS is scoped
+    `.lumen-frag-<id> <sel>` — it hides DESCENDANTS, never the wrapper — so a force aimed at
+    the wrapper alone can never surface any harvested artifact. The re-walk proved forcing
+    the artifact's own root (the wrapper's first element child) yields the honest picture;
+    hiding any deeper stays a refusal."""
+    import asyncio
+
+    from lumen_api.fragments.isolation import _surface_element
+
+    class FakeNode:
+        def __init__(self) -> None:
+            self.forced = False
+
+        async def evaluate(self, _js: str) -> None:
+            self.forced = True
+
+    class FakeWrapper(FakeNode):
+        """Visible exactly when its hidden CHILD has been forced — the scoped-CSS shape."""
+
+        def __init__(self, child, *, visible_when_child_forced: bool = True) -> None:
+            super().__init__()
+            self.child = child
+            self._child_unlocks = visible_when_child_forced
+
+        async def is_visible(self) -> bool:
+            return bool(self.child and self.child.forced and self._child_unlocks)
+
+        async def query_selector(self, selector: str):
+            assert selector == ":scope > *"
+            return self.child
+
+    # The walk's shape: root-level hiding one element down → forced → surfaced.
+    child = FakeNode()
+    wrapper = FakeWrapper(child)
+    assert asyncio.run(_surface_element(wrapper)) is True
+    assert child.forced is True
+
+    # Deeper hiding: even the forced child does not surface the wrapper → honest refusal.
+    stubborn = FakeWrapper(FakeNode(), visible_when_child_forced=False)
+    assert asyncio.run(_surface_element(stubborn)) is False

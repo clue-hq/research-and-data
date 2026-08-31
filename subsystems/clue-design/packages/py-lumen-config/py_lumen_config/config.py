@@ -102,6 +102,21 @@ class Settings(BaseSettings):
     # minting cannot be a SECOND, tighter ceiling on a page the capture layer was willing to
     # measure in full. Tripping it is reported loudly (LUMI0532), never silently truncated.
     lumen_fragment_mint_cap: int = 40
+    # Clone-fidelity F3/F4, FOUNDER RULING R-X4 (2026-08-29): what a repair lineage resolves to
+    # when EVERY released member of it — the harvested original and every repair of it — is
+    # marked broken. Two values, and the founder's own words for the default:
+    #
+    #   "keep_flagged"      (DEFAULT) — the newest released repair stays selected, clearly
+    #                       flagged as degraded and requiring review. NEVER silently return to a
+    #                       known-broken original.
+    #   "fallback_original" — a released repair later marked broken falls back to the original
+    #                       page (the pre-ruling R-X1 behaviour: the OLDEST approved member).
+    #
+    # It changes ONLY the entirely-unhealthy arm. A family with one healthy member still
+    # resolves to that member in both modes, and an ambiguous family still refuses in both.
+    # A typo must fail at startup rather than silently seat the other page, so it is
+    # enum-validated below.
+    lumen_degraded_repair_selection: str = "keep_flagged"
 
     # --- Image generation (image_provider) ---
     # Blank base_url/api_key → /assets/generate returns a clean 503.
@@ -470,6 +485,29 @@ class Settings(BaseSettings):
             return value
         trimmed = value.strip().rstrip("/")
         return trimmed or "http://127.0.0.1:8010"
+
+    @field_validator("lumen_degraded_repair_selection", mode="before")
+    @classmethod
+    def _validate_degraded_repair_selection(cls, value: object) -> object:
+        """A typo'd value must fail at startup, not silently pick the other page.
+
+        The two answers differ in exactly the way the founder ruled about — whether a page can
+        seat a known-broken original — so falling back to a default on an unrecognized string
+        would be the system quietly choosing for a deployment that thought it had chosen.
+        """
+        if not isinstance(value, str):
+            return value
+        selection = value.strip().lower()
+        if not selection:
+            return "keep_flagged"
+        if selection not in {"keep_flagged", "fallback_original"}:
+            raise ValueError(
+                "LUMEN_DEGRADED_REPAIR_SELECTION must be one of "
+                "keep_flagged|fallback_original (keep_flagged = the newest released repair "
+                "stays selected, flagged degraded and requiring review; fallback_original = a "
+                f"degraded released repair falls back to the original); got {value!r}"
+            )
+        return selection
 
     @field_validator("image_model_api_style", mode="before")
     @classmethod

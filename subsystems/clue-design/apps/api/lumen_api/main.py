@@ -44,7 +44,7 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
-from . import ad_runtime, image_cache, image_provider, web_export
+from . import ad_runtime, document_thumbnails, image_cache, image_provider, web_export
 from .asset_custody import (
     ensure_materialized,
     materialize_scene_assets,
@@ -66,6 +66,7 @@ from .export_policy import (
     has_blocking_export_diagnostics,
     partition_export_diagnostics,
 )
+from .agent_account_logos import DurableAgentAccountLogoBinder
 from .agent_cloned_sections import DurableAgentClonedSectionRegistry
 from .agent_custom_components import DurableAgentCustomComponentRegistry
 from .custom_component_runtime import (
@@ -150,6 +151,7 @@ from .models import (
     WebPublishRequest,
     SetAgentInstructionsRequest,
     SetLayoutManagedEditingRequest,
+    SetWebNoindexRequest,
     AttachBrandKitRequest,
     ApplyOperationsRequest,
     ApplyStructuredEditRequest,
@@ -1343,6 +1345,52 @@ def create_app(
         )
         return {"id": derived["document_id"], "title": derived["title"]}
 
+    def _redrive_web_document(
+        repo: HybridRepository,
+        existing: JsonObject,
+        *,
+        web_doc: JsonObject,
+        title: str,
+    ) -> JsonObject:
+        """Re-derive ONTO the document an account already owns (clone-fidelity F4.3, R25-8).
+
+        ``design_derive_web_document`` is create-only — it refuses an id that exists, which is
+        correct for a first derivation and useless for a second one. A re-run has to be a state
+        WRITE, so it takes the same governed web-document advance an editor edit takes: one
+        history envelope, the CAS on the version it read, the fragment-reference gate. The page
+        keeps its id (and therefore its slug, and therefore the URL somebody already sent out)
+        and gains a revision rather than a twin.
+
+        The whole document is replaced, deliberately: a derivation is a projection of the
+        template plus one account's values, so the forward operation is a bare replace. The
+        INVERSE carries the document as it stood (T25 review I-1) — the exact shape the undo
+        path replays for a replace envelope — so a re-run that overwrote a manual edit is one
+        undo away instead of an irrecoverable overwrite that also sealed the page's undo stack
+        (the reviewer reproduced both: the destroyed edit, and the 409 on undo).
+        """
+        run_design_tool(
+            "design_apply_web_operations",
+            {
+                "document_id": existing["id"],
+                "web_doc": web_doc,
+                "operations": [{"kind": "replace_web_doc"}],
+                "inverse_operations": [
+                    {"kind": "replace_web_doc", "web_doc": existing["scene"]}
+                ],
+                "intent": f"re-derive: {title}"[:120],
+                "checkpoint_label": "Account re-derive",
+                # `system`, not `editor`/`agent`: no human wrote this revision and no model did
+                # — the batch re-projected the template. (`design_op_source` has exactly four
+                # values; a fifth would be a migration for a label.)
+                "actor_kind": "system",
+                "source": "system",
+                "expected_base_version": existing["current_version"],
+            },
+            workspace_id=store_workspace_id(repo),
+            refusals=_document_refusals(existing["id"]),
+        )
+        return {"id": existing["id"], "title": title}
+
     # --- D6 Round C: brand kits, ingestion, assets, personalization ------------------------ #
 
     def _brand_kit_refusals(
@@ -2485,6 +2533,33 @@ def create_app(
             "layout_managed_editing": written["value"],
         }
 
+    @app.put("/documents/{document_id}/web-noindex")
+    def set_web_noindex(
+        document_id: str,
+        payload: SetWebNoindexRequest,
+        repo: HybridRepository = Depends(repository),
+    ) -> JsonObject:
+        """THE explicit action ruling R-F1 asks for, in both directions.
+
+        `noindex` is stored on the DOCUMENT, so every publish route emits the robots meta on a
+        stamped page whether or not it knows the flag exists. This is the only surface that can
+        take it off again — and the field is required, so a caller who names no value gets a 422
+        rather than a silent clear. (The ABM batch is the stamp's first writer; a human turning
+        an account page back into an indexable one is what this route serves.)
+        """
+        require_web_document(require_document(repo, document_id))
+        written = run_design_tool(
+            "design_set_web_noindex",
+            {"document_id": document_id, "enabled": payload.noindex},
+            workspace_id=store_workspace_id(repo),
+            refusals=_document_refusals(document_id),
+        )
+        return {
+            "schema_version": 1,
+            "document_id": document_id,
+            "web_noindex": written["value"],
+        }
+
     @app.put("/documents/{document_id}/scene")
     def replace_scene(
         document_id: str,
@@ -3616,6 +3691,148 @@ def create_app(
             "diagnostics": diagnostics,
         }
 
+    @app.get("/documents/{document_id}/thumbnail", response_class=Response)
+    def get_document_thumbnail(
+        document_id: str,
+        request: Request,
+        v: Optional[str] = None,
+        repo: HybridRepository = Depends(repository),
+    ) -> Response:
+        # Gallery-card preview (2026-08-31 ruling): PNG for both kinds, built
+        # LAZILY here on first read — never in the write path — and cached by
+        # (document, version) in the blob store. Sync route => threadpool, so the
+        # Playwright capture blocks a worker thread, not the event loop (NOT the
+        # [slice3xstage0] class of bug).
+        document = require_document(repo, document_id)
+        version = int(document["current_version"])
+        blobs = blob_store(repo)
+
+        cached = repo.get_document_thumbnail(document_id, version)
+        data: Optional[bytes] = None
+        if cached is not None:
+            try:
+                _media, data = blobs.read_blob(cached["sha256"])
+            except NotFoundError:
+                data = None  # dangling index row — regenerate below
+
+        if data is None:
+            # The KIND decides the generator, never the shape of the payload: a
+            # scene's pages are a map and a web doc's are a list, and the scene
+            # page picker answers None on a list QUIETLY, so shape-sniffing would
+            # mis-route without ever erroring. Same default as the two
+            # `require_*_document` gates.
+            kind = document.get("doc_kind", "scene")
+            try:
+                if kind == "web":
+                    # Called in-process so the composed HTML carries THIS request's
+                    # origin for its asset URLs — the capture page fetches them.
+                    rendered = render_web_document(
+                        document_id,
+                        request,
+                        mode="editor",
+                        runtime_src=None,
+                        bridge=0,
+                        nonce=None,
+                        repo=repo,
+                    )
+                    html = rendered.get("html")
+                    if not isinstance(html, str) or not html:
+                        # A render that returned no html would screenshot the
+                        # literal text "None" and CACHE it under this version —
+                        # a poisoned card that never expires. Refuse instead.
+                        raise document_thumbnails.ThumbnailUnavailable(
+                            "thumbnail.render_failed", "web render returned no html"
+                        )
+                    data = document_thumbnails.web_thumbnail_png(html)
+                else:
+                    scene = document["scene"]
+                    cache_dir = request_cache_dir(repo)
+                    materialize_scene_assets(blobs, cache_dir, [scene])
+                    result = app.state.core.export_preview(
+                        scene,
+                        "png",
+                        document_thumbnails.first_page_ids(scene),
+                        default_export_profile("png"),
+                        raise_on_error=False,
+                        asset_store_root=cache_dir,
+                        brand_fonts=scene_brand_fonts(repo, scene, blobs, cache_dir),
+                    )
+                    data = document_thumbnails.downscale_png(
+                        document_thumbnails.png_from_export_result(result)
+                    )
+            except document_thumbnails.ThumbnailUnavailable as error:
+                raise HTTPException(
+                    status_code=502,
+                    detail={"code": error.code, "message": str(error)},
+                ) from error
+            except CoreError as error:
+                # The helper can fail BEFORE `raise_on_error` is consulted (a dead
+                # subprocess, an unparseable response), so `raise_on_error=False`
+                # above does not make this unreachable — `/export-preview` catches
+                # CoreError for the same reason. A thumbnail's contract is 502
+                # `thumbnail.*`, so it is normalized here rather than left to
+                # `core_http_error`'s 422.
+                raise HTTPException(
+                    status_code=502,
+                    detail={
+                        # Kind-aware: only the scene branch exports. A CoreError from
+                        # the web branch escaped a RENDER, so labelling it
+                        # `export_failed` would name a step that never ran.
+                        "code": (
+                            "thumbnail.render_failed"
+                            if kind == "web"
+                            else "thumbnail.export_failed"
+                        ),
+                        "message": str(error),
+                    },
+                ) from error
+            except HTTPException as error:
+                # The in-process `render_web_document` above answers ITS OWN
+                # failures with `core_http_error`'s 422 `web_render.*`, which
+                # would otherwise escape this route as a 422 the frozen contract
+                # never promises. Catching HTTPException broadly is safe HERE and
+                # only here: the 404 (`require_document`) is raised ABOVE this try,
+                # and the render call is the only thing inside it that raises one.
+                # DO NOT widen this try upward — it would swallow the 404.
+                raise HTTPException(
+                    status_code=502,
+                    detail={
+                        "code": "thumbnail.render_failed",
+                        "message": str(error.detail),
+                    },
+                ) from error
+            sha256 = hashlib.sha256(data).hexdigest()
+            # `register` returns the workspace-scoped STORAGE KEY; the index row and
+            # `read_blob` both speak the bare digest, which registration is addressed
+            # by, so the local one is the authoritative spelling.
+            blobs.register(data, media_type="image/png", source_key="document_thumbnail")
+            repo.record_document_thumbnail(
+                document_id, version, sha256=sha256, media_type="image/png"
+            )
+            log_event(
+                api_logger,
+                logging.INFO,
+                "document_thumbnail_generated",
+                document_id=document_id,
+                version=version,
+                kind=kind,
+                byte_count=len(data),
+            )
+
+        # A caller that named the version it wants may cache the answer forever —
+        # the key changes on the next edit. Anyone else gets the current bytes and
+        # no permission to keep them under a key that does not identify them.
+        fresh = v == str(version)
+        return Response(
+            content=data,
+            media_type="image/png",
+            headers={
+                "Cache-Control": (
+                    "private, max-age=31536000, immutable" if fresh else "no-store"
+                )
+            },
+        )
+
     @app.post("/documents/{document_id}/web/operations")
     def apply_web_operations(
         document_id: str,
@@ -4047,11 +4264,16 @@ def create_app(
         slug: str,
         public_base: str,
         idempotency_key: Optional[str] = None,
+        noindex: bool = False,
     ) -> JsonObject:
         """Publish through the governed tool. The ONE call site shape for both callers.
 
         The node static-css compile lives inside the tool; its two honest failures still surface
         as the pre-D6 502s (the tool re-raises them, the journal records the failed attempt).
+
+        ``noindex`` (clone-fidelity F4.3, ruling R25-4) is a PER-PAGE option, defaulting off:
+        the batch's ABM account pages ask for it and nothing else does, so an ordinary homepage
+        publish is byte-identical to what it produced before this task.
         """
         try:
             return run_design_tool(
@@ -4060,11 +4282,24 @@ def create_app(
                     "document_id": document["id"],
                     "public_base": public_base,
                     "slug": slug,
+                    "noindex": noindex,
                 },
                 workspace_id=store_workspace_id(repo),
                 idempotency_key=idempotency_key,
                 refusals=_publish_refusals(slug, document["id"]),
             )
+        except web_export.WebExportUnresolvedMarkers as error:
+            # R25-7: the un-derived TEMPLATE renders its `{{account.…}}` markers to a visitor.
+            # A 422, not a 502: nothing broke — the wrong document was handed to publish, and the
+            # right one is one derive away.
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "web_publish.unresolved_markers",
+                    "message": str(error),
+                    "markers": list(error.markers),
+                },
+            ) from error
         except web_export.WebExportCompileError as error:
             raise HTTPException(
                 status_code=502,
@@ -4869,6 +5104,27 @@ def create_app(
 
     # --- P5 batch generate + publish (D5) --------------------------------- #
 
+    def _account_logo_state(
+        account: JsonObject, asset_records: List[JsonObject]
+    ) -> JsonObject:
+        """What the manifest says about this account's logo (ruling R25-2).
+
+        The batch NEVER fetches: it uses whatever ``design_account.logo_asset_id`` already holds,
+        because populating logos for N accounts is an explicit per-account act somebody performs
+        first (``bind_account_logo``), never a fan-out this route starts. So the honest thing a
+        run owes its reader is a per-account statement of what it FOUND — and *empty is CORRECT*,
+        never a failure row.
+        """
+        logo_asset_id = account.get("logo_asset_id")
+        if not logo_asset_id:
+            return {"bound": False, "reason": "no_logo_on_account"}
+        if not asset_records:
+            # The column names an asset whose registry row is gone (a DELETE detaches it via the
+            # FK, but a row can also be archived out from under an old stamp). The derive leaves
+            # the template's own fallback; say WHY rather than reporting a bound logo that is not.
+            return {"bound": False, "reason": "asset_unresolvable", "asset_id": str(logo_asset_id)}
+        return {"bound": True, "asset_id": str(logo_asset_id)}
+
     def _derive_publish_account(
         repo: HybridRepository,
         template: JsonObject,
@@ -4880,6 +5136,7 @@ def create_app(
         """Derive (and optionally publish) one account against `template`.
         Never raises: any failure is captured on the manifest row (status
         "failed" + error) so a bad account can never kill the batch."""
+        abm = slug_base == ABM_SLUG_BASE
         account = repo.get_web_account(account_id)
         row: JsonObject = {
             "account_id": account_id,
@@ -4889,14 +5146,31 @@ def create_app(
             "url": None,
             "status": "failed",
             "unbound": [],
+            # R25-5: publish state per account, readable off the persisted manifest rather than
+            # only in the POST's response. `logo` is R25-2's half; `noindex` is R25-4's.
+            "logo": {"bound": False, "reason": "account_not_found"},
+            "noindex": False,
             "error": None,
         }
         try:
             if account is None:
                 raise ValueError(f"account {account_id!r} not found")
             values, asset_records = account_values(account, repo)
+            row["logo"] = _account_logo_state(account, asset_records)
             title = f"{template['title']} — {account['name']}"
-            new_document_id = new_id("doc")
+            # R25-8: an ABM run addresses ONE document per (template, account) so a re-run
+            # converges instead of doubling the page count; a generic run keeps its per-run id.
+            new_document_id = (
+                abm_derived_document_id(template["id"], account_id)
+                if abm
+                else new_id("doc")
+            )
+            existing: Optional[JsonObject] = None
+            if abm:
+                try:
+                    existing = repo.require_document(new_document_id)
+                except NotFoundError:
+                    existing = None
             result = app.state.core.web_derive(
                 doc=template["scene"],
                 values=values,
@@ -4913,17 +5187,39 @@ def create_app(
                     "code", "web_derive.rejected"
                 )
                 return row
-            # D6 Round B: the batch derive used to reproduce the persist inline. It now calls the
-            # SAME governed tool the HTTP route does (see `_derive_web_document`).
-            derived = _derive_web_document(
-                repo,
-                new_document_id,
-                web_doc=result["web_doc"],
-                template=template,
-                account_id=account_id,
-            )
+            if existing is not None:
+                # The re-derive: commit the new derivation ONTO the document this account already
+                # owns, through the same governed web write an editor edit takes, so the page
+                # keeps its id, its slug and its history instead of being replaced by a twin.
+                derived = _redrive_web_document(
+                    repo, existing, web_doc=result["web_doc"], title=title
+                )
+            else:
+                # D6 Round B: the batch derive used to reproduce the persist inline. It now calls
+                # the SAME governed tool the HTTP route does (see `_derive_web_document`).
+                derived = _derive_web_document(
+                    repo,
+                    new_document_id,
+                    web_doc=result["web_doc"],
+                    template=template,
+                    account_id=account_id,
+                )
             row["document_id"] = derived["id"]
             row["status"] = "derived"
+            # R-F1, corrected placement (T27 review C-1, reproduced live): the stamp rides the
+            # DERIVE, not the publish. It used to sit inside `if publish:`, so an
+            # `{"abm": true, "publish": false}` run derived real ABM account pages with
+            # `web_noindex = False` — and the next publish was the editor's plain button, which
+            # carries no noindex field, serving the account page INDEXED. An ABM page is born
+            # stamped (create AND redrive — a redrive also heals a pre-stamp document), publish
+            # or not; a stamp with no publish behind it is inert, which is exactly why it is
+            # safe to write here and wrong to defer.
+            if abm:
+                run_design_tool(
+                    "design_set_web_noindex",
+                    {"document_id": derived["id"], "enabled": True},
+                    workspace_id=store_workspace_id(repo),
+                )
             if publish:
                 slug = _unique_batch_slug(
                     repo,
@@ -4933,9 +5229,20 @@ def create_app(
                 # D6: the batch path used to reproduce the whole publish sequence inline. It now
                 # calls the SAME governed tool the HTTP route does, so a batch publish is
                 # journaled exactly like a manual one and the sequence exists once.
-                _publish_web(repo, derived, slug=slug, public_base=public_base)
+                #
+                # R25-4: an ABM account page is reachable by its explicit URL and by nothing else
+                # — absent from every navigation (F4.1's shells have no way out) and out of the
+                # index. `noindex` is asked for HERE, per page, rather than flipped globally.
+                #
+                # R-F1: the durable stamp was written at DERIVE time above (T27 review C-1);
+                # the publish tool resolves the document itself, so it reads the row that
+                # stamp just wrote. The explicit `noindex=abm` below is belt to that braces.
+                _publish_web(
+                    repo, derived, slug=slug, public_base=public_base, noindex=abm
+                )
                 row["slug"] = slug
                 row["url"] = public_publish_path(repo, slug)
+                row["noindex"] = abm
                 row["status"] = "published"
             return row
         except Exception as error:  # noqa: BLE001 — one account never kills a batch
@@ -5030,7 +5337,48 @@ def create_app(
         require_web_document(document)
         # Unknown accounts are NOT pre-validated: a missing account is a
         # per-account failure on its manifest row, never a batch-level error.
-        slug_base = (payload.slug_base or "").strip() or web_slugify(document["title"])
+        requested_base = (payload.slug_base or "").strip()
+        if payload.abm and requested_base and requested_base != ABM_SLUG_BASE:
+            # Two slug bases in one request is two different runs. Overriding one silently would
+            # publish pages at URLs the caller did not ask for — and, because the persisted slug
+            # base IS the ABM mode, would also decide `noindex` and document convergence behind
+            # their back. Refuse and name both.
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "web_batch.slug_base_conflict",
+                    "message": (
+                        f"this batch asks for ABM slugs ({ABM_SLUG_BASE!r}) and for slug_base "
+                        f"{requested_base!r}. An ABM run publishes at "
+                        f"'{ABM_SLUG_BASE}-<account>' and nowhere else — drop slug_base, or drop "
+                        "abm and name the base you want."
+                    ),
+                },
+            )
+        slug_base = (
+            ABM_SLUG_BASE
+            if payload.abm
+            else requested_base or web_slugify(document["title"])
+        )
+        if not payload.abm and slug_base == ABM_SLUG_BASE:
+            # `abm: true` is the ONLY door into ABM semantics (T25 review I-3). The persisted
+            # slug base IS the mode, so a template merely TITLED "ABM" (title-slugged to
+            # "abm") or a hand-passed slug_base="abm" would otherwise switch a plain batch
+            # into noindex + in-place convergence nobody asked for — silently, and durably,
+            # because a resumed batch reads the persisted base.
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "web_batch.slug_base_reserved",
+                    "message": (
+                        f"slug base {ABM_SLUG_BASE!r} is reserved for ABM runs, and this "
+                        "request did not ask for one. If you want ABM account pages "
+                        f"('{ABM_SLUG_BASE}-<account>', noindex, one converging document per "
+                        "account), say `abm: true`; otherwise pass a different slug_base — "
+                        "nothing was derived or published."
+                    ),
+                },
+            )
         public_base = str(request.base_url).rstrip("/")
         batch_ref = run_design_tool(
             "design_create_web_batch",
@@ -7093,6 +7441,57 @@ def web_default_slug(title: str, document_id: str) -> str:
 WEB_BATCH_CHUNK_SIZE = 5
 
 
+# --- CP2: the ABM batch (clone-fidelity F4.3, rulings D-F5 / R25-3) ---------
+#
+# An ABM batch derives ONE page per target account off a campaign TEMPLATE and publishes each at
+# a flat `abm-<account>` slug. Three behaviours ride together and they all key off ONE fact —
+# `slug_base == ABM_SLUG_BASE` — deliberately:
+#
+#   * the slug shape (`abm_account_slug`, D-F5);
+#   * `noindex` on every published account page (R25-4 — these pages are reachable by explicit
+#     URL only and must never be indexed);
+#   * one derived document per (template, account), converged rather than re-minted (R25-8).
+#
+# The persisted `slug_base` IS the mode, rather than a second column that could disagree with it,
+# so a RESUMED batch behaves exactly like the run that started it with no schema change. The
+# consequence is stated rather than hidden: a caller who passes `slug_base="abm"` by hand gets
+# ABM semantics, which is the same thing they asked for — `abm-<account>` pages ARE account
+# pages. `abm: true` on the request is the named way to ask, and it refuses a conflicting
+# `slug_base` instead of quietly overriding it.
+ABM_SLUG_BASE = "abm"
+
+
+def abm_account_slug(account_name: str) -> str:
+    """The CP2 account slug: ``abm-`` + the account's display name, slugified (D-F5).
+
+    Deterministic and stated exactly, because these URLs get sent to real people: lowercase, any
+    non-alphanumeric run collapsed to one dash, leading/trailing dashes trimmed
+    (:func:`web_slugify`), an unslugifiable name falling back to ``site``. Collisions — two
+    accounts with the same display name — are suffixed ``-2``, ``-3``, … by
+    :func:`_unique_batch_slug`, which also REUSES a slug already owned by the same document, so a
+    re-run keeps the URL somebody already sent out.
+
+    ``"Goodman Campbell Brain & Spine"`` → ``"abm-goodman-campbell-brain-spine"``.
+    """
+    return f"{ABM_SLUG_BASE}-{web_slugify(account_name)}"
+
+
+def abm_derived_document_id(template_document_id: str, account_id: str) -> str:
+    """The ONE derived document a (template, account) pair owns — R25-8's convergence.
+
+    The generic batch mints ``new_id("doc")`` per account, so re-running it after a template edit
+    doubles the document count AND takes a fresh ``-2`` slug (the old document still owns the
+    first one) — fifty accounts become a hundred pages at ninety-nine URLs. An ABM run addresses
+    a deterministic id instead, exactly as the INSTANCE batch's ``inst_<rev>_<bind>`` already
+    does (the web batch's own single-flight comment names that asymmetry as the reason it
+    matters more here). Existing ⇒ the derivation is committed onto it; absent ⇒ it is created.
+    """
+    digest = hashlib.sha256(
+        f"{template_document_id}\0{account_id}".encode("utf-8")
+    ).hexdigest()
+    return f"doc_abm_{digest[:24]}"
+
+
 def coverage_unbound_keys(coverage: JsonObject) -> List[str]:
     """A manifest row's `unbound` = the union of the derive coverage's
     unbound_slots + unbound_vars KEYS (deduped, sorted). Each entry is a
@@ -8326,6 +8725,7 @@ def run_web_agent_turn(
     account_card: Optional[JsonObject] = None,
     asset_library: Optional[JsonObject] = None,
     custom_component_registry: Any = None,
+    account_logo_binder: Any = None,
     *,
     workspace_id: str,
     blobs: Optional[DesignBlobStore] = None,
@@ -8358,6 +8758,12 @@ def run_web_agent_turn(
     brand/assets it is not passed by value because source/compile operations
     must be durable between runs; the runtime receives typed methods, never
     database/store paths.
+
+    `account_logo_binder` (F4.3): the G1+G2 bridge, the same kind of capability
+    and passed in for the same reason — its two durable writes are the GOVERNED
+    asset/account tools, and the invoker that runs them lives at the worker
+    seam. None means this turn cannot bind a fetched mark to an account; the
+    tool says so and refuses, and an empty account logo stays correct.
 
     The workspace's CLONED SECTIONS (F2.3) ride the same way, and are built here
     rather than taken as an argument: unlike the component registry they need no
@@ -8453,6 +8859,17 @@ def run_web_agent_turn(
                 blobs=turn_blobs, cache_dir=turn_cache_root
             ),
         )
+        if account_logo_binder is not None:
+            # F4.3 (ruling R25-1): the G1+G2 bridge. Passed IN rather than built here — unlike
+            # the cloned-section registry it needs the governed tool invoker, which lives at the
+            # worker seam (the `custom_component_registry` shape, and for the same reason).
+            #
+            # It is NOT gated on `account_card`: an ABM template is authored for the whole
+            # campaign rather than for one account, so the turn that fetches a target's mark
+            # usually carries no card — and refusing to bind then would leave exactly the gap
+            # this closes. The binder's own doors (the account must exist in THIS workspace, the
+            # bytes must be durably readable) are the permission answer, taken when it is asked.
+            config = replace(config, account_logo_binder=account_logo_binder)
         if custom_component_registry is not None:
             config = replace(
                 config,
@@ -9433,6 +9850,15 @@ def execute_web_turn_job(
                 account_card=account_card,
                 asset_library=asset_library,
                 custom_component_registry=custom_component_registry,
+                # F4.3 (R25-1): composed HERE, beside the component registry, because like it
+                # this capability's durable writes go through the governed design tools and the
+                # invoker is only assemblable at this seam. Unlike it there is no account or
+                # document to gate on — the binder's own workspace-scoped doors decide.
+                account_logo_binder=DurableAgentAccountLogoBinder(
+                    blobs=_turn_blob_store(host, workspace_id),
+                    cache_dir=_host_engine_cache_root(host, workspace_id),
+                    invocations=_turn_design_tools(host, run_subject),
+                ),
                 workspace_id=workspace_id,
                 # D5 Round C: see the scene executor.
                 blobs=_turn_blob_store(host, workspace_id),

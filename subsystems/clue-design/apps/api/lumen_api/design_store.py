@@ -113,6 +113,7 @@ from clue_design import publishes as design_publishes
 from clue_design import runs as design_runs
 from clue_design import snapshots as design_snapshots
 from clue_design import storage as design_storage
+from clue_design import thumbnails as design_thumbnails
 from clue_design import web_fragments as design_web_fragments
 from clue_design.enums import DesignRunKind
 from clue_design.errors import (
@@ -715,6 +716,22 @@ class HybridRepository:
             )
         )
 
+    def set_web_noindex(self, document_id: str, enabled: bool) -> JsonObject:
+        """Clone-fidelity F4.3, ruling R-F1: the durable ``noindex`` stamp on ONE web document.
+
+        Governed (``design_set_web_noindex``) like its ``set_layout_managed_editing`` sibling —
+        it is a caller-initiated document mutation, and the CLEAR direction is the only door in
+        the system that can take the robots meta off a page.
+        """
+        return self._bridge._run(
+            lambda conn: design_documents.set_web_noindex(
+                conn,
+                workspace_id=self.workspace_id,
+                document_id=document_id,
+                enabled=enabled,
+            )
+        )
+
     def create_web_template(
         self,
         web_doc: JsonObject,
@@ -760,6 +777,34 @@ class HybridRepository:
         return self._bridge._run(
             lambda conn: design_documents.count_documents_referencing(
                 conn, workspace_id=self.workspace_id, needle=needle
+            )
+        )
+
+    # --- document thumbnails (gallery cards) --------------------------------------------------
+
+    def get_document_thumbnail(self, document_id: str, version: int) -> Optional[JsonObject]:
+        """The cached thumbnail digest for this document version, or None."""
+        return self._bridge._run(
+            lambda conn: design_thumbnails.get_document_thumbnail(
+                conn,
+                workspace_id=self.workspace_id,
+                document_id=document_id,
+                version=version,
+            )
+        )
+
+    def record_document_thumbnail(
+        self, document_id: str, version: int, *, sha256: str, media_type: str
+    ) -> JsonObject:
+        """Claim the (document, version) thumbnail slot — idempotent upsert."""
+        return self._bridge._run(
+            lambda conn: design_thumbnails.record_document_thumbnail(
+                conn,
+                workspace_id=self.workspace_id,
+                document_id=document_id,
+                version=version,
+                sha256=sha256,
+                media_type=media_type,
             )
         )
 

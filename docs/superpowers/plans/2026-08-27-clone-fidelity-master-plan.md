@@ -1,6 +1,29 @@
 # Clone-Fidelity Master Plan — verbatim fragments, Ploy-grade output (Phases F0–F5)
 
-> **STATUS 2026-08-28 (latest) — PHASE F3 / CHECKPOINT 1 CLOSED by founder acceptance.** Executed
+> **STATUS 2026-08-29 (latest) — PHASE F4 / CHECKPOINT 2 CLOSED (engineering); founder
+> acceptance OPEN.** Executed via SDD (Tasks 22–26 = F4.0–F4.4 + Task 27, the founder-rulings
+> wave; Opus primaries + Opus-only reviewers; ALL fix rounds orchestrator-implemented per the
+> standing split; every round independently reviewed), commits `df09a9d2b..e8355d034`, local
+> only. The founder rulings of 2026-08-29 are LAW in the tree: **R-F1** durable noindex
+> (migration `4c02d8eac29a`; stamp rides the derive; rollback cannot unindex; clearing is a
+> human-only governed tool), **R-X4** keep-flagged degraded-repair default (env toggle;
+> never silently the broken original), **R-X9-now** chat-only per-repair release (cascade
+> excludes repairs; two-round render-then-ask tool), **R-KIT** attested already true. The
+> CP2 walk: 3 real accounts → 3 published co-branded noindex URL-only pages; 16 PASS /
+> 2 FAIL / 1 PARTIAL, with T21's deferred proofs landing live (dead-height v2 convicted the
+> 6,114px middle-hole band; zero console errors; stated coverage). The two FAILs + the final
+> review's cross-task findings were closed by the F4 wave (8 items + round 2) and PROVEN by
+> a targeted re-walk (the walk's own dormant fixture now photographs; its exact 124-byte
+> sprite refuses; the header is 375-clean; the noindex law's fifth surface closed).
+> **Founder acceptance items:** the sealed blind side-by-sides (CP1 + CP2) and the
+> consolidated founder package in `f4-final-review.md` (A1–A3, B1–B14 + wave additions).
+> Evidence: `.superpowers/sdd/2026-08-27-clone-fidelity-master-plan/progress.md`,
+> `task-26-walk-report.md`, `f4-final-review.md`, `f4-wave-review.md`,
+> `_memory/2026-08-29-f4-tasks-22-27-close.md`. F5 (true multi-page) remains gated on
+> Part-IV item 5; the deferred register with owners is in `f4-final-review.md`
+> (`design_create_web_template@1` drift and the multi-file-pytest host wedge are UNOWNED).
+>
+> **STATUS 2026-08-28 — PHASE F3 / CHECKPOINT 1 CLOSED by founder acceptance.** Executed
 > via SDD (Tasks 16–21 = F3.0–F3.4 + the LIVE CP1 walk; Opus primary implementers + Opus-only
 > reviewers; SECONDARY fix rounds orchestrator-implemented per founder directive, confirmed as the
 > standing split), commits `d20e335dc..0c637dcc7`, local only. Live walk on insighthealth.ai:

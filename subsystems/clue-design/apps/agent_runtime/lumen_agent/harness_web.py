@@ -293,6 +293,12 @@ def create_web_deepagent(
                 tools.patch_web_page,
                 tools.fetch_page,
                 tools.fetch_logo,
+                # F4.3 (ruling R25-1): the other half of the ladder. `fetch_logo` puts a target's
+                # real mark on THIS page; this saves it onto the ACCOUNT, so `{{account.logo}}`
+                # resolves for them on every page derived from any campaign template. Without it
+                # a fetched logo dies with the turn and a fifty-account batch publishes fifty
+                # empty logo slots. It is a named, per-account act on purpose — never a sweep.
+                tools.bind_account_logo,
                 tools.search_assets,
                 # F2.3: the reuse ladder's bottom rung. The AUTHOR gets both halves — chrome and
                 # proof bands are reused where a released clone serves the job, and composing one
@@ -304,12 +310,35 @@ def create_web_deepagent(
                 # `repair_cloned_section` is D-F6's ladder for the ones that came back broken.
                 # Both write to the document, so both belong to the author and to no one else.
                 tools.recreate_cloned_page,
+                # The paved verb for the one-step campaign flow (2026-08-30): pin a CHOSEN,
+                # ordered subset of released clones onto an empty page atomically, slots
+                # rebindable in the same call — the middle ground between the whole-page
+                # recreate and pin-by-pin choreography.
+                tools.assemble_cloned_sections,
                 tools.repair_cloned_section,
+                # Founder ruling 2026-08-30: the raw-CSS authoring lane. A NEW band that must
+                # match the source site's fidelity is composed as real HTML+CSS through the
+                # same sanitize-once pipeline every captured byte passes, minted released, and
+                # pinned like any clone. The author's, because it writes library content the
+                # author then places.
+                tools.compose_web_section,
+                # F4.4 (FOUNDER RULING R-X9): a repair is released ONE AT A TIME, by a human who
+                # was shown it and asked. The brand-kit approval no longer sweeps repairs along
+                # with the harvested sections, so this is the only door — and it is the author's
+                # because the author is who composed the repair and who can explain it. It
+                # enacts an answer; it never decides one (see the prompt's release law).
+                tools.release_repair,
                 # F4.1: the ABM page's own chrome. A library operation, not a document write —
                 # it mints the two shells and touches no page — but it belongs to the author for
                 # the same reason the other two do: the author is the role that decides what a
                 # page wears, and the shells exist to be worn INSTEAD of the cloned nav.
                 tools.mint_campaign_shells,
+                # F4.2: the assembly. `mint_campaign_shells` makes the chrome; this is what puts
+                # it on — header first, footer last, hero between, everything bound to the
+                # account MARKERS rather than to one account's values. It writes to the document,
+                # so it is the author's, and it refuses rather than falling back to the cloned
+                # nav, which is the campaign-shell rule made structural instead of prompted.
+                tools.assemble_abm_page,
                 tools.provenance,
                 tools.asset,
                 tools.list_custom_components,
@@ -368,6 +397,13 @@ def create_web_deepagent(
         # is the only role that writes to the document.
         tools.search_cloned_sections,
         tools.provenance,
+        # F4 wave item 4 (the CP2 walk's F-4): the logo ladder lived only on the author role,
+        # so a director's "bind logos, change nothing" delegation to a generic subagent bound
+        # NOTHING and reported success. Neither tool writes the document — fetch_logo ingests
+        # assets and bind_account_logo stamps the ACCOUNT row — so the author-owns-the-document
+        # law survives their presence here.
+        tools.fetch_logo,
+        tools.bind_account_logo,
         tools.list_custom_components,
         tools.inspect_custom_component,
         tools.render_web_preview,

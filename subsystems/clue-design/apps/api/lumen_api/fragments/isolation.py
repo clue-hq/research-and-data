@@ -198,6 +198,38 @@ def held_isolation_asset(
     return assets.get(digest)
 
 
+#: The inline force: `!important` on the element's own style attribute outranks ANY stylesheet
+#: rule regardless of selector specificity — which is the whole point, since the mint-side
+#: countermand is a specificity fight it can lose (the CP2 walk's live case: `.section:has(…)`).
+_FORCE_VISIBLE_JS = (
+    "el => { el.style.setProperty('display', 'revert', 'important');"
+    " el.style.setProperty('visibility', 'visible', 'important');"
+    " el.style.setProperty('opacity', '1', 'important'); }"
+)
+
+
+async def _surface_element(element: Any) -> bool:
+    """Force a hidden fragment visible for its photograph; ``True`` iff it surfaced.
+
+    F4 wave, round 2 (the walk's F-2, then the re-walk's N-1 — this class was missed at TWO
+    checkpoints and the first fix aimed too high): harvested CSS is SCOPED
+    ``.lumen-frag-<id> <sel>``, so it can only ever hide DESCENDANTS of the engine's wrapper —
+    never the wrapper itself. The force therefore lands on the wrapper AND on the artifact's
+    own root (the wrapper's first element child), which is exactly the shape the re-walk
+    proved yields a legible, honest picture of the walk's own fixture. Hiding any deeper
+    stays a refusal — forcing arbitrary descendants would fabricate a layout the source
+    never had. The STORED artifact is untouched throughout: this is a photograph, not an
+    edit.
+    """
+    if await element.is_visible():
+        return True
+    await element.evaluate(_FORCE_VISIBLE_JS)
+    artifact_root = await element.query_selector(":scope > *")
+    if artifact_root is not None:
+        await artifact_root.evaluate(_FORCE_VISIBLE_JS)
+    return bool(await element.is_visible())
+
+
 async def _shoot(page_html: str, selector: str, assets: Mapping[str, tuple[str, bytes]]) -> bytes:
     from playwright.async_api import async_playwright  # lazy: never at import time
 
@@ -242,18 +274,15 @@ async def _shoot(page_html: str, selector: str, assets: Mapping[str, tuple[str, 
                     f"the fragment did not render in isolation ({selector} is absent), so there "
                     "is nothing to photograph",
                 )
-            if not await element.is_visible():
-                # The walk's F-3, said honestly instead of timed out: a dormant section's
-                # harvested CSS carries the source's own hiding rules, and an artifact minted
-                # BEFORE the phase fix wave's un-hide block still obeys them — Playwright would
-                # wait the full timeout for an element that can never become visible. New mints
-                # carry the counter-rules, so reaching this refusal means the artifact predates
-                # them and a re-ingest re-mints it renderable.
+            if not await _surface_element(element):
                 raise IsolationRenderFailed(
                     "isolation.section_hidden_by_its_own_css",
-                    "the fragment rendered but is invisible: its harvested CSS still hides the "
-                    "section's root — this artifact predates the un-hide mint mechanics, so "
-                    "re-ingest the site to re-mint it with the counter-rules appended",
+                    "the fragment rendered but stays invisible even with its root forced "
+                    "visible inline — the hiding lives deeper than the artifact's own root "
+                    "(a collapsed descendant structure), where an automatic un-hide would "
+                    "fabricate a layout the source never had. This section cannot be "
+                    "previewed honestly; repair it through the ladder instead of activating "
+                    "it blind.",
                 )
             return await element.screenshot(type="png")
         finally:

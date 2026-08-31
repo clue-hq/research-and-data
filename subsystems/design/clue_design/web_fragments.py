@@ -455,7 +455,7 @@ async def sync_kit_fragment_approval(
     Called from :func:`clue_design.brand.update_brand_kit_approval` **inside its transaction**,
     so the kit and its fragments cannot end up disagreeing.
 
-    Three deliberate limits:
+    Four deliberate limits:
 
     * only ``draft`` ⇄ ``approved`` move. ``deprecated`` is a decision about ONE section, and a
       kit-wide approval must not quietly undo the narrower, more specific one.
@@ -464,6 +464,19 @@ async def sync_kit_fragment_approval(
       a draft is that this query, the only automatic releaser there is, names the statuses it
       moves and cannot name that one. Waking a dormant section is a human act with its own gate
       (:func:`set_web_fragment_status`, which asks for a usable preview first).
+    * **a REPAIR is untouched, in both directions** (FOUNDER RULING R-X9, 2026-08-29). A row with
+      ``derived_from`` set is somebody's composed replacement for a broken band, and the founder's
+      words are "require individual approval for each repair; brand-kit approval should not
+      silently approve later repairs". So the cascade stops at ``derived_from IS NULL``:
+      harvested originals and composed campaign shells (which have no lineage) keep the release
+      surface they have always had, and a repair is released one at a time, by a human who was
+      asked, through :func:`set_web_fragment_status`.
+
+      BOTH directions, deliberately. Individually governed is individually governed each way: an
+      un-approval of the kit must not retract a repair a human released on its own evidence any
+      more than an approval may release one nobody looked at. The symmetry is the point — a rule
+      that only holds in the direction that happens to be dangerous today is a rule waiting to be
+      surprised by tomorrow.
     * the version matters. Approval is version-specific for kits (a newer draft does not shadow
       an older approved version), and a fragment names the exact version it was minted from, so
       approving v3 says nothing about the sections cloned into v2.
@@ -478,6 +491,7 @@ async def sync_kit_fragment_approval(
               AND source_kit_id = :brand_kit_id
               AND source_kit_version = :brand_kit_version
               AND status = :current
+              AND derived_from IS NULL
             """
         ),
         {

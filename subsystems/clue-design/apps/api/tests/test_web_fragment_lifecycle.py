@@ -135,8 +135,13 @@ def test_a_producer_may_not_mint_straight_into_a_humans_decision(
 def test_a_repair_is_born_draft_like_every_other_clone(
     workspace_id: str, design_storage: FsStorage
 ) -> None:
-    """The consequence for Task 17, stated here so it is a decision rather than a surprise: a
-    repair rides the same human release surface as the section it repairs."""
+    """Born draft, still. What CHANGED is which human surface releases it.
+
+    ~~a repair rides the same human release surface as the section it repairs~~ — superseded by
+    FOUNDER RULING R-X9 (2026-08-29): a repair is approved individually, one at a time, and the
+    kit cascade steps over it (``test_approving_the_kit_no_longer_releases_a_repair``). Birth
+    status is unaffected: a producer still may not mint into a human's decision.
+    """
     _row, original = _create(workspace_id, design_storage, marker="original")
     row, _repair = _create(
         workspace_id,
@@ -182,6 +187,86 @@ def test_approving_the_kit_releases_the_drafts_and_leaves_the_dormant_one_asleep
     rows = {row["fragment_id"]: row["status"] for row in list_web_fragments(workspace_id=workspace_id)}
     assert rows[drafted.fragment_id] == "approved"
     assert rows[sleeping.fragment_id] == "dormant"
+
+
+def test_approving_the_kit_no_longer_releases_a_repair(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """FOUNDER RULING R-X9 (2026-08-29), and the SUPERSESSION it carries.
+
+    Until this ruling a repair rode the kit approval like every other clone (see
+    ``test_a_repair_is_born_draft_like_every_other_clone``, whose docstring said exactly that).
+    The founder's words: "require individual approval for each repair. Brand-kit approval should
+    not silently approve later repairs." So the cascade now steps over any row with
+    ``derived_from`` set — and the harvested original beside it still moves, which is the half
+    that proves the cascade was narrowed rather than broken.
+    """
+    kit = _seed_kit(workspace_id)
+    _row, original = _create(
+        workspace_id,
+        design_storage,
+        marker="original",
+        source_kit_id=kit["brand_kit_id"],
+        source_kit_version=int(kit["version"]),
+    )
+    _row2, repair = _create(
+        workspace_id,
+        design_storage,
+        marker="repair",
+        source_kit_id=kit["brand_kit_id"],
+        source_kit_version=int(kit["version"]),
+        derived_from=original.fragment_id,
+        derived_reason="dead_height repaired to a compact static fallback",
+    )
+
+    HybridRepository(workspace_id=workspace_id).update_brand_kit_approval(
+        kit["brand_kit_id"], "approved"
+    )
+
+    rows = {row["fragment_id"]: row["status"] for row in list_web_fragments(workspace_id=workspace_id)}
+    assert rows[original.fragment_id] == "approved"
+    assert rows[repair.fragment_id] == "draft"
+
+
+def test_un_approving_the_kit_does_not_retract_a_released_repair_either(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """The OTHER direction of R-X9, and it is not decoration.
+
+    Individually governed is individually governed both ways: a repair a human released on its
+    own evidence must not be retracted by an unrelated decision about the kit, exactly as it must
+    not be released by one. A rule that only holds in the direction that happens to be dangerous
+    today is a rule waiting to be surprised.
+    """
+    kit = _seed_kit(workspace_id)
+    _row, original = _create(
+        workspace_id,
+        design_storage,
+        marker="original",
+        source_kit_id=kit["brand_kit_id"],
+        source_kit_version=int(kit["version"]),
+    )
+    _row2, repair = _create(
+        workspace_id,
+        design_storage,
+        marker="repair",
+        source_kit_id=kit["brand_kit_id"],
+        source_kit_version=int(kit["version"]),
+        derived_from=original.fragment_id,
+        derived_reason="repaired",
+    )
+    set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=repair.fragment_id, status="approved"
+    )
+    repo = HybridRepository(workspace_id=workspace_id)
+    repo.update_brand_kit_approval(kit["brand_kit_id"], "approved")
+
+    repo.update_brand_kit_approval(kit["brand_kit_id"], "draft")
+
+    rows = {row["fragment_id"]: row["status"] for row in list_web_fragments(workspace_id=workspace_id)}
+    # The harvested original went back to draft with the kit; the repair did not move.
+    assert rows[original.fragment_id] == "draft"
+    assert rows[repair.fragment_id] == "approved"
 
 
 def test_un_approving_the_kit_does_not_wake_a_dormant_section_either(

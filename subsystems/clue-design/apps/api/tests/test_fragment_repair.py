@@ -660,7 +660,14 @@ def test_a_degraded_newest_repair_does_not_supersede_its_own_healthy_parent(
 def test_a_family_with_no_releasable_version_names_what_the_fallback_passed_over(
     workspace_id: str, design_storage: FsStorage, tmp_path
 ) -> None:
-    """Ruling N4: it cannot refuse when every candidate is broken, so it states the ranking."""
+    """Ruling N4, under FOUNDER RULING R-X4's default: it cannot refuse when every candidate is
+    broken, so it states the ranking — and which one it seats is now the toggle's answer.
+
+    The original's row therefore reports ``superseded_by`` (the newest repair took the page,
+    flagged) where it used to report ``None`` (it was itself the fallback). Superseded, not
+    weakened: the ranking is still stated, and it is still stated on whichever row a caller
+    happens to be looking at.
+    """
     broken = _mint_broken(workspace_id, design_storage)
     registry = _registry(workspace_id, design_storage, tmp_path / "cache")
     for marker in ("One", "Two"):
@@ -677,12 +684,19 @@ def test_a_family_with_no_releasable_version_names_what_the_fallback_passed_over
     rows = {row["fragment_id"]: row for row in registry.list_sections()["sections"]}
 
     original = rows[broken["fragment_id"]]
-    # The original is the oldest approved member, so it is the fallback...
-    assert original["superseded_by"] is None
+    # R-X4: the NEWEST approved member is the fallback, so the original points at it...
+    assert original["superseded_by"] is not None
+    assert original["superseded_by"] != broken["fragment_id"]
     assert original["lineage_ambiguous"] == []
-    # ...and the two broken repairs it beat are named rather than silently dropped.
-    assert len(original["lineage_ranked_over"]) == 2
-    assert broken["fragment_id"] not in original["lineage_ranked_over"]
+    # ...and the two members it beat — the original itself among them — are named rather than
+    # silently dropped, on every row of the family.
+    seated = rows[original["superseded_by"]]
+    assert len(seated["lineage_ranked_over"]) == 2
+    assert broken["fragment_id"] in seated["lineage_ranked_over"]
+    assert original["superseded_by"] not in seated["lineage_ranked_over"]
+    # And every member says the family is a degraded fallback needing review (R-X4).
+    assert seated["lineage_degraded_fallback"] is True
+    assert original["lineage_degraded_fallback"] is True
 
 
 def test_a_healthy_original_is_not_ambiguous_with_its_own_healthy_descendant(
@@ -929,3 +943,216 @@ def test_a_repair_of_a_clone_with_no_label_falls_back_to_its_role() -> None:
     from lumen_api.agent_cloned_sections import _repair_label
 
     assert _repair_label({"section_role": "hero"}) == "Repaired — hero"
+
+
+# --------------------------------------------------------------------------- #
+# Releasing ONE repair (F4.4, FOUNDER RULING R-X9)
+# --------------------------------------------------------------------------- #
+#
+# The founder's words, 2026-08-29: "require individual approval for each repair. Brand-kit
+# approval should not silently approve later repairs. … do not add approval gates to our UI.
+# Just ask for approval via chat only. First of all you need to explain."
+#
+# The kit cascade no longer moves a repair (that half is pinned in
+# ``test_web_fragment_lifecycle.py``), which leaves the release surface below. It is a gate, not
+# a decision: it enacts an answer a human gave in a conversation.
+
+
+def _released(workspace_id: str, storage: FsStorage, registry, minted: dict) -> dict:
+    from lumen_api.fragments import ISOLATION_RENDER_BASIS, attach_web_fragment_preview
+
+    attach_web_fragment_preview(
+        storage,
+        workspace_id=workspace_id,
+        fragment_id=minted["fragment_id"],
+        preview=PNG,
+        preview_basis=ISOLATION_RENDER_BASIS,
+    )
+    return registry.release_repair(minted["fragment_id"])
+
+
+def test_releasing_one_repair_moves_exactly_that_row(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """R-X9's whole affirmative case: ONE draft repair, with a picture, becomes approved."""
+    broken = _mint_broken(workspace_id, design_storage)
+    other = _mint_other_band(workspace_id, design_storage)
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    minted = registry.mint_repair(
+        replaces=broken["fragment_id"], html=REPAIR_HTML, css=REPAIR_CSS, rung=3, note="fallback"
+    )
+
+    released = _released(workspace_id, design_storage, registry, minted)
+
+    assert released["status"] == "approved"
+    assert released["derived_from"] == broken["fragment_id"]
+    assert _fragment(workspace_id, minted["fragment_id"])["status"] == "approved"
+    # Exactly that row: the original it replaces and an unrelated band are untouched.
+    assert _fragment(workspace_id, broken["fragment_id"])["status"] == "approved"
+    assert _fragment(workspace_id, broken["fragment_id"])["degraded"] is True
+    assert _fragment(workspace_id, other["fragment_id"])["status"] == "approved"
+    # And it is now pinnable, which is the only thing releasing it was for.
+    assert registry.resolve_insertable(minted["fragment_id"])["fragment_id"] == (
+        minted["fragment_id"]
+    )
+
+
+def test_a_second_draft_repair_is_not_carried_along_by_the_first_release(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """"Individual approval for EACH repair" — one release is one repair, never a sweep."""
+    broken = _mint_broken(workspace_id, design_storage)
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    first = registry.mint_repair(
+        replaces=broken["fragment_id"], html=REPAIR_HTML, css=REPAIR_CSS, rung=3, note="one"
+    )
+    second = registry.mint_repair(
+        replaces=broken["fragment_id"],
+        html=REPAIR_HTML.replace("Trusted by 400 clinics", "Trusted by 400 practices"),
+        css=REPAIR_CSS,
+        rung=2,
+        note="two",
+    )
+
+    _released(workspace_id, design_storage, registry, first)
+
+    assert _fragment(workspace_id, first["fragment_id"])["status"] == "approved"
+    assert _fragment(workspace_id, second["fragment_id"])["status"] == "draft"
+
+
+def test_releasing_a_harvested_original_is_refused_by_name(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """A section with no lineage keeps the release law it already has (the kit approval). A
+    second, quieter door onto it would make the narrower rule optional."""
+    broken = _mint_broken(workspace_id, design_storage, approved=False)
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+
+    with pytest.raises(FragmentRefused) as excinfo:
+        registry.release_repair(broken["fragment_id"])
+
+    assert excinfo.value.code == "repair.not_a_repair"
+    assert "brand kit" in str(excinfo.value)
+    assert _fragment(workspace_id, broken["fragment_id"])["status"] == "draft"
+
+
+def test_releasing_an_already_released_repair_is_refused_rather_than_a_silent_no_op(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    broken = _mint_broken(workspace_id, design_storage)
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    minted = registry.mint_repair(
+        replaces=broken["fragment_id"], html=REPAIR_HTML, css=REPAIR_CSS, rung=3, note="fallback"
+    )
+    _released(workspace_id, design_storage, registry, minted)
+
+    with pytest.raises(FragmentRefused) as excinfo:
+        registry.release_repair(minted["fragment_id"])
+
+    assert excinfo.value.code == "repair.not_releasable"
+    assert "already released" in str(excinfo.value)
+
+
+def test_releasing_a_retired_repair_is_refused_rather_than_overruling_the_retirement(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    broken = _mint_broken(workspace_id, design_storage)
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    minted = registry.mint_repair(
+        replaces=broken["fragment_id"], html=REPAIR_HTML, css=REPAIR_CSS, rung=3, note="fallback"
+    )
+    set_web_fragment_status(
+        workspace_id=workspace_id, fragment_id=minted["fragment_id"], status="deprecated"
+    )
+
+    with pytest.raises(FragmentRefused) as excinfo:
+        registry.release_repair(minted["fragment_id"])
+
+    assert excinfo.value.code == "repair.not_releasable"
+    assert _fragment(workspace_id, minted["fragment_id"])["status"] == "deprecated"
+
+
+def test_a_repair_nobody_can_look_at_is_refused(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """R-X9's "first of all you need to explain", made structural: a fresh repair is minted with
+    no preview (nothing ever photographed it), so approving it would be approving a section
+    nobody can see. The refusal names the remedy rather than merely reporting the gap."""
+    broken = _mint_broken(workspace_id, design_storage)
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    minted = registry.mint_repair(
+        replaces=broken["fragment_id"], html=REPAIR_HTML, css=REPAIR_CSS, rung=3, note="fallback"
+    )
+    assert _fragment(workspace_id, minted["fragment_id"])["preview_digest"] is None
+
+    with pytest.raises(FragmentRefused) as excinfo:
+        registry.release_repair(minted["fragment_id"])
+
+    assert excinfo.value.code == "repair.no_preview"
+    assert "render one first" in str(excinfo.value).lower()
+    assert _fragment(workspace_id, minted["fragment_id"])["status"] == "draft"
+
+
+def test_releasing_a_fragment_this_workspace_does_not_hold_is_refused(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+
+    with pytest.raises(FragmentRefused) as excinfo:
+        registry.release_repair("frag_" + "0" * 16)
+
+    assert excinfo.value.code == "fragment.unresolved"
+
+
+def test_rendering_a_repairs_preview_makes_the_evidence_the_release_gate_asks_for(
+    workspace_id: str, design_storage: FsStorage, tmp_path
+) -> None:
+    """The other half of R-X9's "first of all you need to explain": the picture has to be
+    MAKEABLE from where the asking happens, or the gate above is a dead end.
+
+    The browser half is injected (F3.4's rule — a test that rebinds a module attribute to avoid
+    launching Chromium stops exercising the seam it was written for), so what this pins is the
+    F3.2 machinery being reached, the P-7 basis landing on the row, and the refusal turning into
+    a release.
+    """
+    from lumen_api.fragments import ISOLATION_RENDER_BASIS
+
+    class _FakeCore:
+        """The engine half. What it renders is `test_web_fragment_render.py`'s business; what
+        matters here is that the isolation page is built from the repair's OWN artifact."""
+
+        def web_render(self, doc, page_id, **kwargs):
+            from lumen_api.fragments import fragment_wrapper_class
+
+            fragment_id = next(iter(kwargs.get("fragments") or {}), "frag_unknown")
+            body = (
+                f'<div class="{fragment_wrapper_class(fragment_id)}">'
+                f"{kwargs['fragments'][fragment_id]['html']}</div>"
+            )
+            return {"html": f"<!doctype html><html><body>{body}</body></html>", "diagnostics": []}
+
+    broken = _mint_broken(workspace_id, design_storage)
+    registry = _registry(workspace_id, design_storage, tmp_path / "cache")
+    minted = registry.mint_repair(
+        replaces=broken["fragment_id"], html=REPAIR_HTML, css=REPAIR_CSS, rung=3, note="fallback"
+    )
+    with pytest.raises(FragmentRefused) as before:
+        registry.release_repair(minted["fragment_id"])
+    assert before.value.code == "repair.no_preview"
+
+    digest = registry.render_repair_preview(
+        minted["fragment_id"], _FakeCore(), shoot=lambda page, assets: PNG
+    )
+
+    row = _fragment(workspace_id, minted["fragment_id"])
+    assert row["preview_digest"] == digest
+    # P-7's labelling clause: our own render never passes for a crop of the client's site.
+    assert row["preview_basis"] == ISOLATION_RENDER_BASIS
+    # Attached ONCE, never replaced — a decision is made against the picture that is there.
+    assert registry.render_repair_preview(
+        minted["fragment_id"], _FakeCore(), shoot=lambda page, assets: b"different"
+    ) is None
+    assert _fragment(workspace_id, minted["fragment_id"])["preview_digest"] == digest
+
+    released = registry.release_repair(minted["fragment_id"])
+    assert released["status"] == "approved"

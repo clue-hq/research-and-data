@@ -36,6 +36,7 @@ from selectolax.parser import HTMLParser
 
 from py_lumen_obs import bind_run_id, get_logger
 
+from lumen_api.agent_account_logos import AccountLogoRefused, is_ladder_fetched
 from lumen_api.core import CoreClient, CoreError
 from lumen_api.database import FragmentReferenceError
 from lumen_api.clone_review import (
@@ -48,6 +49,17 @@ from lumen_api.clone_review import (
 )
 from lumen_api.clone_review.blind import PANEL_LABELS as _BLIND_PANEL_LABELS
 from lumen_api.clone_review.walk import TAILWIND_RUNTIME_MARKER, capture_behavioural_walk
+from lumen_api.fragments.abm_page import (
+    ABM_SECTION_ID_PREFIX,
+    ACCOUNT_LOGO_MARKER,
+    ACCOUNT_MARKERS,
+    AbmAssemblyRefused,
+    account_slot_binding,
+    is_abm_section_id,
+    is_escape_route_role,
+    newest_released_shell,
+    shell_slot_bindings,
+)
 from lumen_api.fragments.campaign_shell import (
     CAMPAIGN_SHELL_FOOTER,
     CAMPAIGN_SHELL_HEADER,
@@ -362,6 +374,11 @@ _CLONED_SECTION_DEGRADED_CODE = "LUMA0811"
 #: filtering by code alone must not get two entries that mean different things, and "this band is
 #: broken" (work) and "here is which broken version was chosen" (a note) are different things.
 _CLONED_SECTION_RANKED_CODE = "LUMA0812"
+#: "a section on this ABM page is not named `abm_…`" (F4.2, ruling R24-3). Its own code for the
+#: same reason as its neighbours: a consumer filtering by code must not confuse "this band is
+#: broken" with "this band cannot be told apart from cloned chrome". It renames nothing — a
+#: section id is an anchor somebody may have linked — so the finding is work, not an edit.
+_ABM_SECTION_NAMING_CODE = "LUMA0813"
 #: The behavioural review gate's four codes (F3.3), the first tenants of this block.
 #:
 #: `_REVIEW_BROKEN_CODE` is WORK; `_REVIEW_INCOMPLETE_CODE` is a gap in the review itself;
@@ -977,8 +994,12 @@ class LumenWebTools:
         # trip — the same "search hands the view its target" contract `search_assets` has.
         # Written by discovery AND by a successful insert (the agent may want to look at what it
         # just pinned), never invented: an id absent here has genuinely not been resolved.
-        # `_cloned_section_seen` carries `{label, section_role}` for the same ids, which is what
-        # lets a drop report say WHICH band went rather than only which id.
+        # `_cloned_section_seen` carries `{label, section_role, composed}` for the same ids, which
+        # is what lets a drop report say WHICH band went rather than only which id — and what
+        # lets the view tell a COMPOSED shell (never photographed off a site) from a harvested
+        # band the browser could not crop. Every writer records all three (T23 finding N6): the
+        # three pin doors used to rebuild the row from `resolve_insertable` and ERASE `composed`,
+        # so a shell viewed right after pinning claimed a browser had measured it.
         self._cloned_section_previews: Dict[str, Optional[str]] = {}
         self._cloned_section_seen: Dict[str, JsonObject] = {}
         # F3.1: the clone a repair is DELIBERATELY taking off the page, for the length of that
@@ -2258,7 +2279,11 @@ class LumenWebTools:
         """Apply a small batch of surgical operations to the page — the repair
         ladder's bottom rung, for one-or-a-few-line fixes.
 
-        `operations_json` is a JSON array of op objects. The op grammar
+        `operations_json` is a JSON array of op objects. EVERY object's
+        discriminator field is named `kind` — e.g.
+        `[{"kind":"remove_node","page_id":"home","id":"sec_news"}]`.
+        Writing the op name under any other field (`op`, `type`, `action`)
+        rejects the whole batch with `missing field 'kind'`. The op grammar
         (page_id is ALWAYS "home" in v0):
           - set_node_classes {page_id:"home", id, classes} — replace a node's
             class string wholesale (it is NOT merged with the old one).
@@ -2284,7 +2309,8 @@ class LumenWebTools:
             `kind` tag plus every field), not a partial patch.
           - replace_asset {page_id:"home", id, asset_id} — repoint an image
             node at another already-registered asset.
-          - move_node {page_id:"home", id, parent, index} — reparent/reorder.
+          - move_node {page_id:"home", id, new_parent, index} — reparent or
+            reorder (the field is `new_parent`, not `parent`).
           - remove_node {page_id:"home", id} — delete a node and its subtree.
           - insert_node {page_id:"home", parent, index, nodes, root} — splice
             a new subtree in.
@@ -3404,6 +3430,108 @@ class LumenWebTools:
             payload={"site": outcome.site, "slots": [p["slot"] for p in placed]},
         )
         return json.dumps(payload, indent=2)
+
+    def bind_account_logo(self, account_id: str, asset_id: str) -> str:
+        """Save a fetched logo ONTO a target account, so every page for them uses it.
+
+        Call this after `fetch_logo` when the mark belongs to a target account you
+        hold in the workspace. `asset_id` is one of the ids `fetch_logo` just
+        returned — usually `light`.
+
+        Placing a logo on this page dresses THIS page. Binding it to the account
+        makes it the account's own: the `{{account.logo}}` marker then resolves
+        for them on every page derived from any campaign template, including the
+        batch that publishes one page per account. Without the bind, a batch of
+        fifty accounts personalizes fifty names and no logos.
+
+        It binds only a mark the ladder fetched from that company's own website.
+        A generated image is not a company's logo, and neither is a placeholder.
+        If `fetch_logo` came back `needs_review` there is nothing to bind: say so
+        and ask for the file. AN EMPTY ACCOUNT LOGO IS CORRECT — a page that
+        renders one is a clean page with the seller's mark on it, never a broken
+        one. Never draw, recolour, letter or approximate a company's mark.
+
+        One account per call, deliberately: binding a logo is a decision about a
+        named company, not a sweep.
+        """
+        binder = getattr(self.config, "account_logo_binder", None)
+        if binder is None:
+            return self._tool_error(
+                "account_logo.binder_unavailable",
+                "This turn was passed no account-logo binder, so a fetched mark cannot be "
+                "saved onto an account here. Place it on the page if it belongs on the page, "
+                "and tell the user the account itself was not updated.",
+            )
+        account = (account_id or "").strip()
+        asset = (asset_id or "").strip()
+        if not account or not asset:
+            return self._tool_error(
+                "account_logo.bad_request",
+                "bind_account_logo needs both an `account_id` and the `asset_id` fetch_logo "
+                "returned.",
+            )
+
+        record = (self.web_doc.get("assets") or {}).get(asset)
+        if not isinstance(record, dict) or record.get("id") != asset:
+            return self._tool_error(
+                "account_logo.unknown_asset",
+                f"'{asset}' is not an asset on this document, so there is nothing to bind. "
+                "Call fetch_logo first and pass an id it returned. If fetch_logo came back "
+                "needs_review it registered NOTHING — no asset could be attributed to that "
+                "company with confidence — so there is genuinely nothing to bind: say so and "
+                "ask for the file. An empty account logo is CORRECT; never draw, recolour or "
+                "approximate one.",
+            )
+        if not is_ladder_fetched(record):
+            return self._tool_error(
+                "account_logo.not_a_fetched_logo",
+                f"'{asset}' was not fetched from that company's own website, so it cannot "
+                "become their logo. Only a mark the logo ladder retrieved and attributed binds "
+                "here — a generated image, a placeholder or a section's own artwork is not a "
+                "company's logo. Call fetch_logo with their domain; if it finds nothing, an "
+                "empty account logo is CORRECT.",
+            )
+
+        try:
+            result = binder.bind(account_id=account, record=copy.deepcopy(record))
+        except AccountLogoRefused as error:
+            self.record(
+                "agent",
+                "web_account_logo_refused",
+                input_summary=f"{account}:{asset}"[:500],
+                output_summary=f"{error.code}: {error.message}"[:500],
+            )
+            return self._tool_error(error.code, error.message)
+        except Exception as error:  # noqa: BLE001 - tool failures are envelopes
+            return self._tool_error(
+                "account_logo.failed",
+                f"binding the account logo failed: {type(error).__name__}: {error}",
+            )
+
+        self.record(
+            "agent",
+            "web_account_logo_bound",
+            input_summary=f"{account}:{asset}"[:500],
+            output_summary=f"{result.get('account_name') or account} -> {asset}"[:500],
+            payload={"account_id": account, "asset_id": asset},
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                "account_id": result.get("account_id"),
+                "account_name": result.get("account_name"),
+                "asset_id": result.get("asset_id"),
+                "changed": result.get("changed"),
+                "previous_asset_id": result.get("previous_asset_id"),
+                "note": (
+                    f"{result.get('account_name') or account} now has this mark as their own, "
+                    f"so {ACCOUNT_LOGO_MARKER} resolves to it on every page derived for them — "
+                    "this one and every future campaign. It changes no page by itself: a page "
+                    "shows it once it is derived for this account."
+                ),
+            },
+            indent=2,
+        )
 
     def _register_fetched_logo_custody(self, outcome) -> None:
         """Give the fetched bytes durable custody now, not at accept.
@@ -4607,6 +4735,17 @@ class LumenWebTools:
                 row["degraded_note"] = section.get("degraded_note")
             if section.get("superseded_by"):
                 row["superseded_by"] = section.get("superseded_by")
+            if section.get("lineage_degraded_fallback"):
+                # R-X4's flag, at the surface the author actually browses (T27 review I-2: the
+                # key existed on the projection and this whitelist dropped it — no production
+                # reader). A seated repair whose whole family is broken must SAY so here, not
+                # only at the pin.
+                row["lineage_degraded_fallback"] = True
+                row["lineage_degraded_note"] = (
+                    "this band's whole repair family is broken; the newest repair is kept per "
+                    "policy (keep_flagged) and needs review — repair it through the ladder or "
+                    "compose a replacement rather than treating it as healthy."
+                )
             if section.get("lineage_ambiguous"):
                 # Where the human is actually looking (ruling N5). Without it, the first contact
                 # with a family that has two released repairs is the recreate's total refusal,
@@ -4894,6 +5033,11 @@ class LumenWebTools:
         self._cloned_section_seen[clean_id] = {
             "label": resolved.get("label"),
             "section_role": resolved.get("section_role"),
+            # T23 finding N6: the pin doors used to rebuild this row without `composed` and
+            # therefore ERASE it, so a shell viewed right after being pinned answered the
+            # harvested-clone sentence ("no crop could be derived … from what the browser
+            # measured") about something no browser ever saw.
+            "composed": resolved.get("composed"),
         }
         warnings, advice = _split_non_error_diagnostics(response.get("diagnostics"))
         self.record(
@@ -5290,6 +5434,8 @@ class LumenWebTools:
             self._cloned_section_seen[fragment_id] = {
                 "label": resolved.get("label"),
                 "section_role": resolved.get("section_role"),
+                # T23 finding N6, same fix as the other two pin doors.
+                "composed": resolved.get("composed"),
             }
             broken = self._degraded_pin_entry(
                 resolved, index=entry["index"], section_node_id=entry["section_node_id"]
@@ -5343,7 +5489,9 @@ class LumenWebTools:
                             f"{entry['fragment_id']} (over {', '.join(entry['ranked_over'])})"
                             for entry in ranked
                         )
-                        + " is marked broken, so the oldest was pinned rather than none. If the "
+                        + " is marked broken, so the one now on the page was SELECTED rather "
+                        "than fixed: it is degraded and requires review. It is there because a "
+                        "hole where the band goes is worse. Say so in your report, and if the "
                         "one you want is not the one on the page, pin it explicitly."
                     ),
                     "hint": "",
@@ -5384,6 +5532,12 @@ class LumenWebTools:
             # replaces the other" — and reading the second as the first is how the warning ended
             # up advising a THIRD repair of the one band that could least afford another.
             "lineage_ambiguous": list(resolved.get("lineage_ambiguous") or []),
+            # ...and the THIRD world ruling R-X4 named: every released member of this band's
+            # family is broken, so the section on the page was selected, not fixed. Without it
+            # a pin made through `insert_cloned_section` (which never sees the recreate walk's
+            # `ranked` list) reported the newest repair as though releasing it had helped.
+            "degraded_fallback": bool(resolved.get("lineage_degraded_fallback")),
+            "ranked_over": list(resolved.get("lineage_ranked_over") or []),
         }
 
     def _note_degraded_pins(
@@ -5447,6 +5601,18 @@ class LumenWebTools:
         message = f"{len(needs_repair)} cloned section(s) on this page are marked BROKEN: {named}"
         if unrepaired == len(needs_repair):
             message += " — and none of them has a released repair"
+        # Ruling R-X4: a band whose WHOLE family is broken was selected, never fixed, and that is
+        # a different sentence from "this clone is broken" — the section on the page may well be
+        # somebody's released repair, and reporting it as an unrepaired clone would tell an
+        # author to go and compose the repair that is already under their nose.
+        selected = [entry for entry in needs_repair if entry.get("degraded_fallback")]
+        if selected:
+            message += (
+                f" — {len(selected)} of them ("
+                + ", ".join(str(entry["fragment_id"]) for entry in selected)
+                + ") had NO healthy version at all, so what is on the page was selected as the "
+                "least-bad of a broken family and REQUIRES REVIEW"
+            )
         hint_parts = []
         if replaceable:
             swaps = "; ".join(
@@ -5490,17 +5656,323 @@ class LumenWebTools:
 
     # --- the D-F6 repair ladder ---------------------------------------------------------------
 
-    def repair_cloned_section(
-        self, fragment_id: str, html: str, rung: int, note: str
+    def assemble_cloned_sections(
+        self, fragment_ids_json: str, slot_values_json: Optional[str] = None
     ) -> str:
-        """Replace a BROKEN cloned section with one you compose — original preserved, lineage kept.
+        """Pin a CHOSEN, ORDERED set of released cloned sections onto an EMPTY page — one call.
+
+        The paved verb for the campaign flow: "build the page from THESE clones, in THIS
+        order" — a subset of the library, not the whole source page (`recreate_cloned_page`
+        remains the whole-page walk). Pin the real bands first, rebind their slots for the
+        campaign's words, then compose only what the library lacks.
+
+        `fragment_ids_json` is a JSON array of released fragment ids, in page order.
+        `slot_values_json` is an OPTIONAL JSON object `{fragment_id: {slot key: value}}` —
+        the same values `insert_cloned_section` takes, so the words can be rebound in the
+        same call that places the bands.
+
+        The batch is ATOMIC: every id must resolve (released, readable) or nothing is pinned.
+        A degraded id is pinned KNOWINGLY and reported in `needs_repair` — a hole where the
+        band goes is worse than a flagged band. Refuses on a non-empty page
+        (`assemble.page_not_empty`): a targeted add to standing work is
+        `insert_cloned_section`'s job.
+        """
+        refusal = self._consume_round_budget("assemble_cloned_sections")
+        if refusal is not None:
+            return refusal
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+
+        try:
+            decoded = json.loads(fragment_ids_json)
+        except (TypeError, json.JSONDecodeError) as error:
+            return self._tool_error(
+                "assemble.bad_fragment_ids",
+                f"fragment_ids_json must be a JSON array of fragment ids: {error}",
+            )
+        if not isinstance(decoded, list) or not decoded or any(
+            not isinstance(item, str) or not item.strip() for item in decoded
+        ):
+            return self._tool_error(
+                "assemble.bad_fragment_ids",
+                "fragment_ids_json must be a non-empty JSON array of fragment id strings.",
+            )
+        fragment_ids = [item.strip() for item in decoded]
+        if len(set(fragment_ids)) != len(fragment_ids):
+            return self._tool_error(
+                "assemble.duplicate_fragment_ids",
+                "each fragment id may appear once; pin a band twice only if you truly mean "
+                "two copies, via insert_cloned_section.",
+            )
+
+        raw_slots: JsonObject = {}
+        if slot_values_json is not None:
+            try:
+                decoded_slots = json.loads(slot_values_json)
+            except (TypeError, json.JSONDecodeError) as error:
+                return self._tool_error(
+                    "cloned_section.bad_slot_values",
+                    f"slot_values_json must be a JSON object: {error}",
+                )
+            if not isinstance(decoded_slots, dict) or any(
+                not isinstance(value, dict) for value in decoded_slots.values()
+            ):
+                return self._tool_error(
+                    "cloned_section.bad_slot_values",
+                    "slot_values_json must be a JSON object of "
+                    "{fragment_id: {slot key: value}}.",
+                )
+            raw_slots = decoded_slots
+
+        page = self._home_page()
+        nodes = page.get("nodes") or {}
+        root_id = page.get("root")
+        root = nodes.get(root_id) if isinstance(root_id, str) else None
+        existing = list(root.get("children") or []) if isinstance(root, dict) else []
+        if existing:
+            return self._tool_error(
+                "assemble.page_not_empty",
+                f"page {self.page_id!r} already has {len(existing)} top-level section(s). An "
+                "assembly builds an empty page; add to standing work with "
+                "insert_cloned_section instead.",
+                section_ids=existing,
+            )
+
+        operations: List[JsonObject] = []
+        pinned: List[JsonObject] = []
+        taken = set(nodes)
+        for position, fragment_id in enumerate(fragment_ids):
+            try:
+                resolved = registry.resolve_insertable(fragment_id)
+            except FragmentReferenceError as error:
+                code = error.code or "cloned_section.not_insertable"
+                return self._tool_error(
+                    str(code),
+                    f"the assembly stopped at {fragment_id}: {error.message} Nothing was "
+                    "pinned.",
+                    fragment_id=fragment_id,
+                )
+            except Exception as error:  # noqa: BLE001 - capability boundary
+                return self._tool_error(
+                    "cloned_section.registry_failed",
+                    f"the cloned-section library could not be read: "
+                    f"{type(error).__name__}: {error}. This is not a refusal — try again.",
+                    fragment_id=fragment_id,
+                )
+            slot_kinds = (resolved.get("render") or {}).get("slot_kinds") or {}
+            slots, slot_error = self._tagged_slot_values(
+                raw_slots.get(fragment_id) or {}, slot_kinds, fragment_id
+            )
+            if slot_error is not None:
+                return slot_error
+            section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
+                fragment_id, slots, taken
+            )
+            taken.update({section_id, node_id})
+            operations.append(
+                {
+                    "kind": "insert_node",
+                    "page_id": self.page_id,
+                    "parent": root_id,
+                    "index": position,
+                    "nodes": pin_nodes,
+                    "root": section_id,
+                }
+            )
+            pinned.append(
+                {
+                    "fragment_id": fragment_id,
+                    "index": position,
+                    "section_role": resolved.get("section_role"),
+                    "label": resolved.get("label"),
+                    "section_node_id": section_id,
+                    "node_id": node_id,
+                    "slots_bound": sorted(slots),
+                    "degraded": bool(resolved.get("degraded")),
+                    "resolved": resolved,
+                }
+            )
+
+        try:
+            response = self.core.web_apply_ops(self.web_doc, operations)
+        except CoreError as error:
+            diagnostics = list(error.diagnostics or [])
+            self.record(
+                "author",
+                "cloned_sections_assembly_rejected",
+                input_summary=f"{len(operations)} section(s)",
+                output_summary=error.message[:500],
+                diagnostics=diagnostics,
+            )
+            return self._rejected(diagnostics)
+        if not response.get("ok"):
+            return self._rejected(response.get("diagnostics") or [])
+
+        self.web_doc = response["web_doc"]
+        self._record_operations(operations)
+        self._doc_version += 1
+        degraded_pins: List[JsonObject] = []
+        for entry in pinned:
+            resolved = entry.pop("resolved")
+            fragment_id = entry["fragment_id"]
+            self._admit_fragment_artifact(fragment_id, resolved.get("render") or {})
+            self._cloned_section_previews[fragment_id] = resolved.get("preview_path")
+            self._cloned_section_seen[fragment_id] = {
+                "label": resolved.get("label"),
+                "section_role": resolved.get("section_role"),
+                "composed": resolved.get("composed"),
+            }
+            broken = self._degraded_pin_entry(
+                resolved, index=entry["index"], section_node_id=entry["section_node_id"]
+            )
+            if broken is not None:
+                degraded_pins.append(broken)
+
+        warnings, advice = _split_non_error_diagnostics(response.get("diagnostics"))
+        self.record(
+            "author",
+            "cloned_sections_assembled",
+            input_summary=f"{len(fragment_ids)} chosen section(s)",
+            output_summary=(
+                f"{len(pinned)} pinned in given order; {len(degraded_pins)} degraded"
+            ),
+            diagnostics=response.get("diagnostics") or [],
+            payload={
+                "fragment_ids": [entry["fragment_id"] for entry in pinned],
+                "needs_repair": copy.deepcopy(degraded_pins),
+            },
+            sink_extra={"pinned_count": len(pinned)},
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                "page_id": self.page_id,
+                "pinned": pinned,
+                "needs_repair": degraded_pins,
+                "warnings": warnings,
+                "advice": advice,
+            },
+            indent=2,
+        )
+
+    def compose_web_section(
+        self,
+        html: str,
+        css: str,
+        section_role: str = "other",
+        label: Optional[str] = None,
+        note: str = "",
+    ) -> str:
+        """Compose a NEW section from RAW HTML + RAW CSS at full fidelity — then pin it.
+
+        This is the raw-CSS lane: when a band must genuinely look like the client's site and
+        the constrained vocabulary cannot say it (their exact type scale, their blend modes,
+        their layout constants), write it as real HTML and real CSS here. The strongest way to
+        use it is to REMIX: `view` a cloned section first, reuse its actual class names, layout
+        constants, and CSS patterns in your composition — new content, the site's real visual
+        sentence structure. The result is minted as a released library fragment and renders
+        through the same path that gives clones their fidelity.
+
+        FORMAT:
+        - `html`: ONE section — `<section id="...">...</section>`. Real markup, any elements.
+          Scripts/handlers are stripped by the sanitizer (same as every captured byte). Images
+          and fonts may reference ONLY registered assets, by their asset-store spelling
+          (`/asset-store/<digest>` — take digests from `search_assets`/`view`); any other byte
+          reference refuses fail-closed. No `</` breakout sequences in CSS strings.
+        - `css`: the section's stylesheet, raw. It is scoped to this fragment automatically
+          (your selectors cannot leak onto the page) and cascade layers are flattened. Write
+          plain selectors; do not try to scope them yourself.
+        - `section_role`: nav/hero/proof/footer/other… A `campaign_header`/`campaign_footer`
+          role passes the shell contract's no-escape-route gate like every shell producer.
+        - `note`: one line, what this composed section is for — permanent provenance.
+
+        WHAT HAPPENS: sanitize-once → slot auto-annotation (texts/links/images stay rebindable)
+        → CSS scoping → content-addressed mint → **released immediately** (no approval step —
+        founder ruling). The response carries `fragment_id`: place it with
+        `insert_cloned_section(fragment_id, index, slot_values?)`. Identical bytes converge onto
+        an existing fragment rather than duplicating it.
+
+        WHEN NOT TO USE: content that must stay deeply human-editable in the inspector or carry
+        `data-var`/`data-slot` derivation markers — that is the constrained vocabulary's job
+        (`author_web_page`/`author_web_subtree`). A composed raw section is slot-editable like a
+        clone, not node-editable. And never compose an imitation of a band the library already
+        holds — pin the real one.
+        """
+        refusal = self._consume_round_budget("compose_web_section")
+        if refusal is not None:
+            return refusal
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+        try:
+            result = registry.compose_section(
+                html, css, section_role=section_role, label=label, note=note
+            )
+        except FragmentReferenceError as error:
+            return self._tool_error(
+                error.code or "fragment.compose_refused", error.message
+            )
+        except Exception as error:  # noqa: BLE001 - capability boundary, same as repair's
+            code = getattr(error, "code", None) or "cloned_section.registry_failed"
+            message = getattr(error, "message", None) or (
+                f"the cloned-section library could not mint this composition: "
+                f"{type(error).__name__}: {error}"
+            )
+            return self._tool_error(str(code), str(message))
+        self.record(
+            "author",
+            "web_section_composed",
+            input_summary=f"role={result.get('section_role')} note={note[:80]!r}",
+            output_summary=f"{result.get('fragment_id')} -> {result.get('status')}",
+            payload={
+                "fragment_id": result.get("fragment_id"),
+                "section_role": result.get("section_role"),
+            },
+        )
+        result["next_step"] = (
+            "pin it with insert_cloned_section(fragment_id, index, slot_values?)"
+        )
+        return json.dumps(result, indent=2)
+
+    def repair_cloned_section(
+        self, fragment_id: str, html: str, rung: int, note: str,
+        css: Optional[str] = None,
+    ) -> str:
+        """Replace a pinned cloned section with one you compose — original preserved, lineage kept.
+
+        TWO INTENTS, one door. (1) REPAIR a BROKEN band — a defect you diagnosed. (2) DERIVE A
+        CAMPAIGN VARIANT of a HEALTHY band whose slots can't carry the campaign — a CTA to
+        remove, a sub-element to hide, a new eyebrow, restructured emphasis. For a variant, use
+        the RAW lane and remix the original's FULL markup and CSS, changing exactly what the
+        campaign needs while keeping its geometry, type scale, surfaces, and responsive
+        behavior — you inherit everything you don't touch because you started from the
+        original's real bytes, and the variant's own texts/links come back as rebindable slots
+        (derive once, rebind per page). A variant's note reads "campaign variant: …", its copy
+        and cardinality MAY change, its visual system may NOT. The repair-cloned-sections
+        skill's adaptation contract governs; read it first for either intent.
+
+        TWO REPAIR LANES (founder ruling A, 2026-08-30). Pass `css` to repair in RAW HTML +
+        RAW CSS — the fidelity lane: `view` the broken original first and remix its actual
+        markup and CSS (its real class names, spacing constants, type scale), changing only
+        what the defect requires. The raw replacement goes through the same sanitize-once
+        pipeline every captured byte passes, is minted with full lineage, RELEASED immediately
+        (no approval step — it becomes what future pins of this lineage resolve to; say so in
+        your report), and pinned in the broken band's exact place. Raw `html` here is real
+        markup like `compose_web_section` takes — NOT the constrained wire format — and images
+        reference registered assets only, as `/asset-store/<digest>`. Omit `css` for the
+        vocabulary lane below: the replacement is authored in the constrained wire format,
+        lives on the page as ordinary authored content, and the minted repair stays a draft
+        released by the user in chat. Prefer the RAW lane when the original's look must
+        survive the repair — which is most repairs of real cloned bands.
 
         A clone is the starting reference, not an untouchable artifact. Never preserve a broken
-        result merely because it came from the original site. Use this the moment a cloned
-        section is visibly or functionally broken on the page you are building — a band that is
-        mostly dead scroll height, a control that does nothing, content that does not appear.
+        result merely because it came from the original site. For the REPAIR intent, use this
+        the moment a cloned section is visibly or functionally broken on the page you are
+        building — a band that is mostly dead scroll height, a control that does nothing,
+        content that does not appear.
 
-        WALK THE LADDER IN ORDER and say which rung you reached:
+        WALK THE LADDER IN ORDER (repair intent) and say which rung you reached:
           1. reproduce the original experience with supported primitives;
           2. build an equivalent interaction serving the same storytelling purpose;
           3. a deliberate, compact static fallback — the artificial height removed ENTIRELY.
@@ -5513,23 +5985,27 @@ class LumenWebTools:
         (in your brand card) governs the adaptation — it is the measured law of this brand's own
         site, and a repair that ignores it stops looking like the client.
 
-        `fragment_id` is the broken clone, which must be PINNED on the page right now.
+        `fragment_id` is the clone being repaired or adapted, which must be PINNED on the page
+        right now.
         `html` is the COMPLETE replacement markup for that band, in the same constrained-HTML wire
         format `author_web_subtree` takes: one `<section id="...">...</section>` using theme
         tokens, brand geometry utilities and the icon vocabulary. It is engine-validated exactly
         like any authored section.
-        `rung` is 1, 2 or 3. `note` is one line: what was broken, and what your replacement does
-        about it. Both are recorded permanently on the repair's lineage.
+        `rung` is 1, 2 or 3. `note` is one line — for a repair: what was broken and what your
+        replacement does about it; for a variant: "campaign variant: " + what changed and for
+        which purpose. Both are recorded permanently on the lineage.
 
         WHAT HAPPENS: the broken clone comes off the page and your section takes its exact place;
         the ENGINE's own render of that section is then minted as a NEW cloned section carrying
         `derived_from` (the original) and your rung + note. The original artifact is untouched —
         it stays in the library as the evidence of what the source site actually did.
 
-        The repair is born UNRELEASED, like every cloned section: a human releases it by approving
-        the brand kit. So `pinned` is normally false and the page carries your composed section
-        directly, which renders identically. Say so in your report; do not claim the page pins a
-        repair it does not.
+        In the VOCABULARY lane only: the repair is born UNRELEASED, and approving the brand kit
+        does NOT release it — it is approved individually, by the user, after you explain it and
+        ask (`release_repair`); `pinned` is then false and the page carries your composed section
+        directly, which renders identically. In the RAW lane the mint is released and pinned in
+        the same act, and your report states the lineage-wide effect instead of asking. Either
+        way, report the page's true state; never claim a pin that did not happen.
         """
         registry = self._cloned_section_registry()
         if registry is None:
@@ -5560,6 +6036,133 @@ class LumenWebTools:
                 "nothing to repair in place. Pin it first (or name one that is pinned).",
                 pinned_fragment_ids=sorted(pinned),
             )
+        instances = pinned[clean_id]
+
+        if css is not None:
+            # --- the RAW lane (founder ruling A, 2026-08-30) -------------------------------
+            # Mint first, swap second: the persistence gate forbids draft pins, so the repair
+            # is released at mint (R-I5 honored — birth draft, then the ordinary transition),
+            # and only a resolvable released fragment ever touches the page. If the swap then
+            # fails, the library holds a released repair and the page is unchanged — reported
+            # honestly, never half-applied.
+            try:
+                minted = registry.mint_repair(
+                    replaces=clean_id, html=html, css=css,
+                    rung=int(rung), note=cleaned_note, release=True,
+                )
+            except FragmentRefused as refusal:
+                return self._tool_error(
+                    str(refusal.code),
+                    f"{refusal.message} Nothing changed on the page.",
+                    fragment_id=clean_id,
+                )
+            except Exception as error:  # noqa: BLE001 - capability boundary
+                return self._tool_error(
+                    "repair.mint_failed",
+                    f"the raw repair could not be minted: {type(error).__name__}: {error}. "
+                    "Nothing changed on the page.",
+                    fragment_id=clean_id,
+                )
+            new_id = str(minted.get("fragment_id") or "")
+            try:
+                resolved = registry.resolve_insertable(new_id)
+            except Exception as error:  # noqa: BLE001 - capability boundary
+                return self._tool_error(
+                    "repair.released_but_unpinnable",
+                    f"repair {new_id} was minted and released but could not be resolved for "
+                    f"pinning ({type(error).__name__}: {error}); the page is unchanged.",
+                    fragment_id=new_id,
+                )
+            page = self._home_page()
+            nodes = page.get("nodes") or {}
+            root_id = page.get("root")
+            root = nodes.get(root_id) if isinstance(root_id, str) else None
+            children = list(root.get("children") or []) if isinstance(root, dict) else []
+            # `_pinned_cloned_sections` maps fragment ids to FRAGMENT node ids; the swap acts
+            # on the band, so resolve the enclosing SECTION (the root child that wraps the
+            # fragment node) — removing only the frg_* node would leave an empty section
+            # shell on the page (caught by the dry-run-2 regression test).
+            frag_node_id = instances[0]
+            old_section = next(
+                (
+                    node_id
+                    for node_id, node in nodes.items()
+                    if isinstance(node, dict)
+                    and node.get("kind") == "section"
+                    and frag_node_id in (node.get("children") or [])
+                ),
+                frag_node_id,
+            )
+            index = children.index(old_section) if old_section in children else len(children)
+            slot_kinds = (resolved.get("render") or {}).get("slot_kinds") or {}
+            section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
+                new_id, {}, set(nodes)
+            )
+            operations: List[JsonObject] = [
+                {"kind": "remove_node", "page_id": self.page_id, "id": old_section},
+                {
+                    "kind": "insert_node",
+                    "page_id": self.page_id,
+                    "parent": root_id,
+                    "index": index,
+                    "nodes": pin_nodes,
+                    "root": section_id,
+                },
+            ]
+            try:
+                response = self.core.web_apply_ops(self.web_doc, operations)
+            except CoreError as error:
+                return self._tool_error(
+                    "repair.swap_rejected",
+                    f"the repair {new_id} is minted and RELEASED in the library, but the page "
+                    f"swap was rejected: {error.message}. The page is unchanged; pin it with "
+                    "insert_cloned_section (and remove the broken band) to finish.",
+                    fragment_id=new_id,
+                )
+            if not response.get("ok"):
+                return self._rejected(response.get("diagnostics") or [])
+            self.web_doc = response["web_doc"]
+            self._record_operations(operations)
+            self._doc_version += 1
+            self._admit_fragment_artifact(new_id, resolved.get("render") or {})
+            self._cloned_section_previews[new_id] = resolved.get("preview_path")
+            self._cloned_section_seen[new_id] = {
+                "label": resolved.get("label"),
+                "section_role": resolved.get("section_role"),
+                "composed": resolved.get("composed"),
+            }
+            self.record(
+                "author",
+                "cloned_section_repaired",
+                input_summary=f"{clean_id} raw rung={int(rung)}",
+                output_summary=f"{new_id} released and pinned in place (raw lane)",
+                payload={
+                    "fragment_id": clean_id,
+                    "repair_fragment_id": new_id,
+                    "raw": True,
+                },
+            )
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "repaired": clean_id,
+                    "repair_fragment_id": new_id,
+                    "rung": int(rung),
+                    "note": cleaned_note,
+                    "raw": True,
+                    "repair_status": minted.get("status"),
+                    "released": minted.get("status") == "approved",
+                    "pinned": True,
+                    "section_node_id": section_id,
+                    "converged": minted.get("converged"),
+                    "sanitizer_notes": minted.get("sanitizer_notes") or [],
+                    "report": (
+                        "released repair: future pins of this lineage resolve to it — say so "
+                        "in your report"
+                    ),
+                },
+                indent=2,
+            )
 
         # 1) The swap, through the SAME scoped-edit path an ordinary section rewrite takes: the
         #    engine parses, validates and canonicalizes the replacement markup, and a rejection
@@ -5567,7 +6170,6 @@ class LumenWebTools:
         #    clone this deliberately takes off the page is not reported as a lost pin — that
         #    report exists for rewrites that lose a band by accident, and this is the opposite.
         self._repair_replacing = clean_id
-        instances = pinned[clean_id]
         try:
             swapped = json.loads(self.author_web_subtree(instances[0], html))
         finally:
@@ -5740,10 +6342,13 @@ class LumenWebTools:
         else:
             result["pinned"] = False
             result["release"] = (
-                f"the repair {minted.get('fragment_id')} is {minted.get('status')}: a human "
-                "releases it by approving the brand kit it belongs to, exactly as for every "
-                "other cloned section. Until then the page carries your composed section, which "
-                "renders identically. Say this in your report rather than claiming a pin."
+                f"the repair {minted.get('fragment_id')} is {minted.get('status')}: it is "
+                "released ONE AT A TIME, by the user, after you explain it and ask — approving "
+                "the brand kit does NOT release repairs. Explain what was broken, what your "
+                "replacement does and at which rung, show them the picture, and if they say yes "
+                "call release_repair(fragment_id). Until then the page carries your composed "
+                "section, which renders identically. Say this in your report rather than "
+                "claiming a pin."
             )
         self.record(
             "author",
@@ -5760,6 +6365,153 @@ class LumenWebTools:
             sink_extra={"fragment_id": minted.get("fragment_id")},
         )
         return json.dumps(result, indent=2)
+
+    def release_repair(self, fragment_id: str) -> str:
+        """Release ONE repair into the library — only after the user has said yes, in this chat.
+
+        A repair you compose is born unreleased and NOTHING releases it automatically: approving
+        the brand kit no longer sweeps repairs along with the harvested sections, because
+        approving a kit is not the same decision as approving your replacement for one band.
+
+        NEVER CALL THIS WITHOUT THE USER'S EXPLICIT APPROVAL IN THIS CONVERSATION. Before you
+        ask, EXPLAIN the repair — why it exists (what the original band was measured to be doing
+        wrong), what your replacement does instead and at which rung, and what they can look at.
+        Show them the picture: this tool renders the repair on its own the first time you call
+        it, and `view("cloned_section:<fragment_id>")` puts it in front of you. Then ask, in
+        plain words, and wait. "They did not object" is not approval. If they say no, say so and
+        leave it as a draft — a draft repair is not lost, it is unreleased.
+
+        One repair per call, deliberately: approval is per repair, so a call is per repair too.
+
+        It refuses, by name, a section that is not a repair (a harvested clone or a campaign
+        shell — those are released by approving the brand kit), a repair that is already
+        released, and a repair no picture exists of yet.
+        """
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+        clean_id = (fragment_id or "").strip()
+        if not clean_id:
+            return self._tool_error(
+                "release.bad_request",
+                "release_repair needs the `fragment_id` of the repair the user approved.",
+            )
+
+        # THE GATES FIRST, the render second, and never the release on the round that renders.
+        #
+        # Order matters twice over. Asking the gate first means a harvested clone or an already
+        # released row is refused as what it is, rather than having a picture taken of it on the
+        # way to being refused anyway. And `repair.no_preview` is the ONE refusal this tool can
+        # do something about — ruling R-X9 says a human may never be asked to approve something
+        # nobody can see, so the answer is not "release once we have rendered one": it is render,
+        # refuse, and hand the picture back so the question can actually be asked.
+        try:
+            released = registry.release_repair(clean_id)
+        except FragmentRefused as refusal:
+            if refusal.code == "repair.no_preview":
+                return self._render_repair_preview_and_ask(registry, clean_id, refusal)
+            self.record(
+                "author",
+                "cloned_section_release_refused",
+                input_summary=clean_id,
+                output_summary=f"{refusal.code}: {refusal.message}"[:500],
+                payload={"fragment_id": clean_id, "error_code": refusal.code},
+            )
+            return self._tool_error(
+                str(refusal.code), str(refusal.message), fragment_id=clean_id
+            )
+        except Exception as error:  # noqa: BLE001 - capability boundary
+            return self._tool_error(
+                "release.failed",
+                f"the repair could not be released: {type(error).__name__}: {error}",
+                fragment_id=clean_id,
+            )
+
+        self.record(
+            "author",
+            "cloned_section_released",
+            input_summary=clean_id,
+            output_summary=f"{released.get('label') or clean_id} -> approved"[:500],
+            payload={
+                "fragment_id": clean_id,
+                "derived_from": released.get("derived_from"),
+            },
+            sink_extra={"fragment_id": clean_id},
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                "fragment_id": clean_id,
+                "repair_status": released.get("status"),
+                "replaces": released.get("derived_from"),
+                "derived_reason": released.get("derived_reason"),
+                "label": released.get("label"),
+                "note": (
+                    f"{clean_id} is released, so it can now be pinned on this page and on any "
+                    "other. It changes no page by itself — a page shows it once somebody pins "
+                    f"it with insert_cloned_section. The section it replaces "
+                    f"({released.get('derived_from')}) is untouched and stays in the library as "
+                    "the evidence of what the source site actually did. Only this one repair "
+                    "was released; every other draft repair still needs its own approval."
+                ),
+            },
+            indent=2,
+        )
+
+    def _render_repair_preview_and_ask(
+        self, registry: Any, fragment_id: str, refusal: Any
+    ) -> str:
+        """Make the evidence, then refuse anyway — the second half of "explain first" (R-X9).
+
+        Reached only from the ONE refusal a render can answer, and only for a row the gates have
+        already agreed is a draft repair.
+        """
+        try:
+            rendered = registry.render_repair_preview(fragment_id, self.core)
+        except Exception as error:  # noqa: BLE001 - capability + browser boundary
+            # The gate's sentence PLUS why the remedy it names did not work. Without the second
+            # half the agent is told to render a preview it has just failed to render, and
+            # spends a round discovering that.
+            code = getattr(error, "code", None) or type(error).__name__
+            return self._tool_error(
+                str(refusal.code),
+                f"{refusal.message} The render was attempted here and could not be made: "
+                f"{code}: {error}. Tell the user the repair cannot be shown, and leave it as a "
+                "draft.",
+                fragment_id=fragment_id,
+            )
+        if not rendered:
+            # The gate said "no preview" and the render says one is already attached: a race,
+            # not a state. Report the gate's own words rather than inventing a third story.
+            return self._tool_error(
+                str(refusal.code), str(refusal.message), fragment_id=fragment_id
+            )
+        self._refresh_cloned_section_preview(registry, fragment_id)
+        return self._tool_error(
+            "release.preview_rendered",
+            f"nothing was released. Repair {fragment_id} had no preview, so one has just been "
+            f'rendered from its own bytes. Look at it with view("cloned_section:{fragment_id}"), '
+            "explain the repair to the user — what was broken, what your replacement does, "
+            "which rung — and ask whether to release it. Call release_repair again only after "
+            "they say yes.",
+            fragment_id=fragment_id,
+        )
+
+    def _refresh_cloned_section_preview(self, registry: Any, fragment_id: str) -> None:
+        """Make a just-rendered preview viewable in THIS turn.
+
+        `view("cloned_section:<id>")` reads the turn-local map, so a picture that exists durably
+        but was never resolved here would still answer "it has no preview image to look at" —
+        which, one line after saying a render was made, is the kind of contradiction that costs
+        a whole round to recover from.
+        """
+        try:
+            detail = (registry.describe([fragment_id]) or {}).get(fragment_id) or {}
+        except Exception:  # noqa: BLE001 - a viewable picture is not worth failing the turn
+            return
+        self._cloned_section_previews[fragment_id] = detail.get("preview_path")
+        seen = dict(self._cloned_section_seen.get(fragment_id) or {})
+        self._cloned_section_seen[fragment_id] = seen
 
     # --- the campaign shells (F4.1, rulings R23-1/2/3) -----------------------------------------
 
@@ -6154,6 +6906,633 @@ class LumenWebTools:
             )
         return subtree, css
 
+    # --- the ABM assembly walk (clone-fidelity F4.2) -------------------------------------------
+    #
+    # "Build the page for this account" is an ASSEMBLY with a shape, exactly as the recreate is:
+    # the seller's campaign chrome around a personalized hero, with the new sections composed by
+    # the ordinary authoring vocabulary in between. Two of that shape's properties are the whole
+    # reason this is a tool rather than a paragraph of prompt:
+    #
+    #   * an ABM page NEVER wears the cloned nav, and a rule that lives only in a prompt is a
+    #     rule the model obeys most of the time;
+    #   * the page is a TEMPLATE — its slots hold `{{account.*}}` markers rather than one
+    #     account's values — so Task 25's batch derive personalizes one document per account
+    #     instead of the agent building fifty pages.
+    #
+    # It mints nothing (F4.1's tool does that) and composes nothing (the author does that). It
+    # pins what exists, in the order the recipe requires, and says what it found.
+
+    def assemble_abm_page(
+        self,
+        hero_fragment_id: Optional[str] = None,
+        hero_slots_json: Optional[str] = None,
+        cta_href: Optional[str] = None,
+        cta_label: Optional[str] = None,
+    ) -> str:
+        """Put the ABM page's chrome on: campaign header FIRST, campaign footer LAST.
+
+        Call this on an account page AFTER `author_web_page` has composed the page's own
+        sections — a whole-page rewrite cannot carry a pinned cloned section, so chrome pinned
+        before it would simply be dropped.
+
+        WHAT IT PINS. The workspace's released CAMPAIGN SHELLS (`mint_campaign_shells` makes
+        them) as the first and last sections of the page, and — when you name one — a released
+        cloned HERO between them. Everything else on the page stays where it is.
+
+        IT NEVER PINS THE CLIENT'S NAV OR SITE FOOTER. Every link in a nav is a way off the one
+        page written for this account. A workspace with no released shells is REFUSED
+        (`abm.no_campaign_shells`) and told to mint them; naming a `nav`- or `footer`-role clone
+        as the hero is REFUSED (`abm.escape_route_chrome`); and a page that already carries one
+        stops the assembly before anything lands. There is no fallback to the cloned nav.
+
+        THE PAGE IS A TEMPLATE, NOT ONE ACCOUNT'S PAGE. The header's `prepared_for` and
+        `target_logo` are bound to `{{account.name}}` and `{{account.logo}}`, which the account
+        derive substitutes per account. `hero_slots_json` is a JSON object of
+        `{slot key: value}` using the hero's OWN slot keys, and a value may carry the same
+        markers — `"Clinical notes, written for {{account.name}}"`. Only `{{account.…}}` markers
+        work: they are the values the derive builds. AN EMPTY TARGET LOGO IS CORRECT — we never
+        invent a company's mark, and an account we hold none for renders a clean header.
+
+        `cta_href` / `cta_label` bind the header's one call to action for this campaign. Omit
+        them and the shell keeps its own default, which is page-local and can never be an escape
+        route.
+
+        NEW SECTIONS ARE NAMED. Every section you compose for this page takes a section id
+        beginning `abm_` (`<section id="abm_peer_proof">`), so a reviewer can tell a new band
+        from cloned chrome without guessing. This walk reports which of the page's sections broke
+        the convention; it renames nothing, because a section id is an anchor somebody may link.
+
+        RUN IT TWICE AND IT CONVERGES: a shell already on the page is reported under `converged`
+        rather than pinned a second time.
+        """
+        # CHARGED FIRST, like the recreate and for the same reason (ledger T17-M7): a tool that
+        # refuses for free is one a model can call forever inside a round it should have ended.
+        refusal = self._consume_round_budget("assemble_abm_page")
+        if refusal is not None:
+            return refusal
+        registry = self._cloned_section_registry()
+        if registry is None:
+            return self._cloned_section_registry_missing()
+
+        raw_hero_slots: JsonObject = {}
+        if hero_slots_json is not None:
+            try:
+                decoded = json.loads(hero_slots_json)
+            except (TypeError, json.JSONDecodeError) as error:
+                return self._tool_error(
+                    "cloned_section.bad_slot_values",
+                    f"hero_slots_json must be a JSON object: {error}",
+                )
+            if not isinstance(decoded, dict):
+                return self._tool_error(
+                    "cloned_section.bad_slot_values",
+                    "hero_slots_json must be a JSON object of {slot key: value}.",
+                )
+            raw_hero_slots = decoded
+
+        try:
+            listing = registry.list_sections()
+        except Exception as error:  # noqa: BLE001 - capability boundary, same as search's
+            self.record(
+                "author",
+                "abm_assembly_failed",
+                input_summary=f"hero={hero_fragment_id or '-'}",
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+            )
+            return self._tool_error(
+                "cloned_section.registry_failed",
+                f"the cloned-section library could not be read: "
+                f"{type(error).__name__}: {error}",
+            )
+        sections = [
+            section
+            for section in (listing or {}).get("sections") or []
+            if isinstance(section, dict) and section.get("fragment_id")
+        ]
+        by_id = {str(section["fragment_id"]): section for section in sections}
+
+        # --- the chrome. No shells, no ABM page: the refusal is the honest answer -------------
+        #
+        # SCOPED TO THIS TURN'S BRAND (the shape T23's fix round gave the legal-evidence read).
+        # Brand B's shell is brand B's chrome, and wearing it on brand A's account page dresses
+        # the page as the wrong company. A turn with no identified kit cannot scope, so it picks
+        # workspace-wide and SAYS so rather than pretending the choice was informed.
+        brand_kit = self.config.brand_kit if isinstance(self.config.brand_kit, dict) else {}
+        kit_id = str(brand_kit.get("id") or "").strip() or None
+        chosen: Dict[str, JsonObject] = {}
+        siblings: Dict[str, List[str]] = {}
+        missing: List[str] = []
+        for role in CAMPAIGN_SHELL_ROLES:
+            shell, stepped_over = newest_released_shell(sections, role, kit_id=kit_id)
+            if shell is None:
+                missing.append(role)
+                continue
+            chosen[role] = shell
+            if stepped_over:
+                siblings[role] = stepped_over
+        if missing:
+            return self._tool_error(
+                "abm.no_campaign_shells",
+                "this workspace has no released "
+                + " or ".join(missing)
+                + " shell"
+                + (f" for brand kit {kit_id}" if kit_id else "")
+                + ", and an ABM page wears its own chrome — never the client's cloned "
+                "navigation, because every link in a nav is a way off the one page written for "
+                "this account. Call mint_campaign_shells to compose them from the brand kit, "
+                "then a human releases them by re-approving the brand kit. Nothing was pinned.",
+                missing_shell_roles=missing,
+                brand_kit=kit_id,
+            )
+
+        # --- the escape-route rule, over the PAGE and over this call's arguments ---------------
+        page = self._home_page()
+        nodes = page.get("nodes") or {}
+        root_id = page.get("root")
+        root = nodes.get(root_id) if isinstance(root_id, str) else None
+        children = list(root.get("children") or []) if isinstance(root, dict) else []
+        pinned_now = self._pinned_cloned_sections(self.web_doc)
+        for fragment_id in sorted(pinned_now):
+            row = by_id.get(fragment_id)
+            if row is None:
+                # Fail CLOSED (fix-round M1): a pinned fragment absent from the bounded,
+                # approved-only listing — retired since it was pinned, or beyond the listing
+                # cap — is one this walk cannot classify, and "I don't know what this is" must
+                # never read as "it's fine": the review pinned a nav, dropped its row, and the
+                # walk assembled campaign chrome around it.
+                return self._tool_error(
+                    "abm.unresolved_pinned_fragment",
+                    f"this page pins {fragment_id}, which is not in the released cloned-"
+                    "section listing this walk reads (it may have been retired since it was "
+                    "pinned, or the workspace's listing is larger than the walk's bound) — so "
+                    "the walk cannot tell whether it is an escape route. Remove it from the "
+                    "page, or release it so it lists, then run this again. Nothing was pinned.",
+                    fragment_id=fragment_id,
+                    section_node_ids=list(pinned_now[fragment_id]),
+                )
+            if is_escape_route_role(row.get("section_role")):
+                return self._tool_error(
+                    "abm.escape_route_chrome",
+                    f"this page already carries {fragment_id} — the client's own "
+                    f"{row.get('section_role')} — and every link in it is a way off the one page "
+                    "written for this account. Remove it before assembling the ABM chrome; the "
+                    "campaign shells replace it. Nothing was pinned.",
+                    fragment_id=fragment_id,
+                    section_role=row.get("section_role"),
+                    section_node_ids=list(pinned_now[fragment_id]),
+                )
+
+        hero: Optional[JsonObject] = None
+        hero_slots: JsonObject = {}
+        clean_hero = (hero_fragment_id or "").strip()
+        if clean_hero:
+            hero = by_id.get(clean_hero)
+            if hero is None:
+                return self._tool_error(
+                    "abm.hero_unknown",
+                    f"{clean_hero!r} is not a released cloned section this workspace holds. "
+                    "Search for one with search_cloned_sections, or leave the hero out and "
+                    "compose it. Nothing was pinned.",
+                    fragment_id=clean_hero,
+                )
+            if hero.get("composed") or str(hero.get("section_role") or "") in (
+                CAMPAIGN_SHELL_ROLES
+            ):
+                # Fix-round I1, live-reproduced by the review three ways: the workspace's own
+                # header shell named as hero pinned TWO campaign headers; the footer shell put
+                # a footer where the hero goes; and a FOREIGN brand's shell rode in as the
+                # hero, bypassing the brand scoping the chrome pick applies. A composed shell
+                # is this walk's CHROME — it is never the hero, whichever brand minted it.
+                return self._tool_error(
+                    "abm.shell_is_chrome",
+                    f"{clean_hero} is a composed campaign shell, and the shells are this "
+                    "walk's CHROME — it pins the newest released header and footer itself. "
+                    "Naming one as the hero would put the same chrome on the page twice, or "
+                    "another brand's chrome where the hero goes. The hero is a harvested "
+                    "cloned section (search_cloned_sections, role 'hero') or a section you "
+                    "compose. Nothing was pinned.",
+                    fragment_id=clean_hero,
+                    section_role=hero.get("section_role"),
+                )
+            if is_escape_route_role(hero.get("section_role")):
+                return self._tool_error(
+                    "abm.escape_route_chrome",
+                    f"{clean_hero} is the client's own {hero.get('section_role')}, and an ABM "
+                    "page never wears one: every link in it is a way off the one page written "
+                    "for this account. The campaign shells are this page's chrome. Nothing was "
+                    "pinned.",
+                    fragment_id=clean_hero,
+                    section_role=hero.get("section_role"),
+                )
+            if raw_hero_slots:
+                # The AUTHORITATIVE kinds, out of the artifact. Fail LOUD rather than soft here,
+                # unlike the picker's `describe`: an empty kinds map would refuse every named
+                # slot with "its slots are: none", which is a confident lie about a hero that has
+                # four — and the agent would go and compose a band it did not need to.
+                described: JsonObject = {}
+                try:
+                    described = registry.describe([clean_hero]).get(clean_hero) or {}
+                except Exception as error:  # noqa: BLE001 - capability boundary
+                    return self._tool_error(
+                        "cloned_section.registry_failed",
+                        f"the hero's slots could not be read: {type(error).__name__}: {error}. "
+                        "This is not a refusal — try again before composing the band instead. "
+                        "Nothing was pinned.",
+                        fragment_id=clean_hero,
+                    )
+                slot_kinds = {
+                    str(entry.get("key")): entry.get("kind")
+                    for entry in described.get("slots") or []
+                    if isinstance(entry, dict) and entry.get("key")
+                }
+                hero_slots, slot_error = self._abm_slot_values(
+                    raw_hero_slots, slot_kinds, clean_hero
+                )
+                if slot_error is not None:
+                    return slot_error
+
+        # The shells' own bindings come from the ONE contract module, so the walk and the derive
+        # cannot disagree about what "personalized" means.
+        try:
+            header_slots = shell_slot_bindings(
+                CAMPAIGN_SHELL_HEADER, cta_href=cta_href, cta_label=cta_label
+            )
+            footer_slots = shell_slot_bindings(CAMPAIGN_SHELL_FOOTER)
+        except AbmAssemblyRefused as refused:
+            return self._tool_error(str(refused.code), str(refused.message))
+
+        # --- the plan: header first, hero next, footer last; already-pinned bands converge -----
+        plan: List[JsonObject] = [
+            {
+                "fragment_id": str(chosen[CAMPAIGN_SHELL_HEADER]["fragment_id"]),
+                "role": CAMPAIGN_SHELL_HEADER,
+                "slots": header_slots,
+                "place": "first",
+            }
+        ]
+        if hero is not None:
+            plan.append(
+                {
+                    "fragment_id": clean_hero,
+                    "role": str(hero.get("section_role") or "hero"),
+                    "slots": hero_slots,
+                    "place": "after_header",
+                }
+            )
+        plan.append(
+            {
+                "fragment_id": str(chosen[CAMPAIGN_SHELL_FOOTER]["fragment_id"]),
+                "role": CAMPAIGN_SHELL_FOOTER,
+                "slots": footer_slots,
+                "place": "last",
+            }
+        )
+
+        operations: List[JsonObject] = []
+        pinned: List[JsonObject] = []
+        converged: List[JsonObject] = []
+        taken = set(nodes)
+        # The running length of the page's top-level sections: each `insert_node` in this batch
+        # is applied in order, so "last" has to know what the earlier ones added.
+        length = len(children)
+        for entry in plan:
+            fragment_id = entry["fragment_id"]
+            if fragment_id in pinned_now:
+                # RE-RUN CONVERGENCE (red case 9). Already on the page: pinning it again would
+                # give the page two headers, and moving it would fight an author who reordered
+                # deliberately. Reported, not repeated.
+                converged.append(
+                    {
+                        "fragment_id": fragment_id,
+                        "role": entry["role"],
+                        "section_node_ids": list(pinned_now[fragment_id]),
+                    }
+                )
+                continue
+            try:
+                resolved = registry.resolve_insertable(fragment_id)
+            except FragmentReferenceError as error:
+                code = error.code or "cloned_section.not_insertable"
+                self.record(
+                    "author",
+                    "abm_assembly_refused",
+                    input_summary=fragment_id,
+                    output_summary=f"{code}: {error.message}"[:500],
+                    payload={"fragment_id": fragment_id, "error_code": code},
+                )
+                return self._tool_error(
+                    str(code),
+                    f"the assembly stopped at {fragment_id}: {error.message} Nothing was pinned.",
+                    fragment_id=fragment_id,
+                )
+            except Exception as error:  # noqa: BLE001 - capability boundary
+                return self._tool_error(
+                    "cloned_section.registry_failed",
+                    f"the cloned-section library could not be read: "
+                    f"{type(error).__name__}: {error}. This is not a refusal — try again.",
+                    fragment_id=fragment_id,
+                )
+            section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
+                fragment_id, entry["slots"], taken
+            )
+            taken.update({section_id, node_id})
+            index = {"first": 0, "after_header": 1}.get(entry["place"], length)
+            index = min(index, length)
+            operations.append(
+                {
+                    "kind": "insert_node",
+                    "page_id": self.page_id,
+                    "parent": root_id,
+                    "index": index,
+                    "nodes": pin_nodes,
+                    "root": section_id,
+                }
+            )
+            length += 1
+            pinned.append(
+                {
+                    "fragment_id": fragment_id,
+                    "role": entry["role"],
+                    "index": index,
+                    "section_role": resolved.get("section_role"),
+                    "label": resolved.get("label"),
+                    "section_node_id": section_id,
+                    "node_id": node_id,
+                    "slots_bound": sorted(entry["slots"]),
+                    "resolved": resolved,
+                }
+            )
+
+        if operations:
+            try:
+                response = self.core.web_apply_ops(self.web_doc, operations)
+            except CoreError as error:
+                diagnostics = list(error.diagnostics or [])
+                self.record(
+                    "author",
+                    "abm_assembly_rejected",
+                    input_summary=f"{len(operations)} section(s)",
+                    output_summary=error.message[:500],
+                    diagnostics=diagnostics,
+                )
+                return self._rejected(diagnostics)
+            if not response.get("ok"):
+                return self._rejected(response.get("diagnostics") or [])
+            self.web_doc = response["web_doc"]
+            self._record_operations(operations)
+            self._doc_version += 1
+            warnings, advice = _split_non_error_diagnostics(response.get("diagnostics"))
+        else:
+            warnings, advice = [], []
+
+        degraded_pins: List[JsonObject] = []
+        for entry in pinned:
+            resolved = entry.pop("resolved")
+            self._admit_fragment_artifact(entry["fragment_id"], resolved.get("render") or {})
+            self._cloned_section_previews[entry["fragment_id"]] = resolved.get("preview_path")
+            self._cloned_section_seen[entry["fragment_id"]] = {
+                "label": resolved.get("label"),
+                "section_role": resolved.get("section_role"),
+                # R24-7 / T23 finding N6: without this a shell VIEWED AFTER PINNING claims a
+                # browser measured it, which is false of anything composed from the brand kit.
+                "composed": resolved.get("composed"),
+            }
+            broken = self._degraded_pin_entry(
+                resolved, index=entry["index"], section_node_id=entry["section_node_id"]
+            )
+            if broken is not None:
+                degraded_pins.append(broken)
+
+        result = self._abm_assembly_report(
+            pinned=pinned,
+            converged=converged,
+            hero=hero,
+            sections=sections,
+            siblings=siblings,
+            kit_id=kit_id,
+            warnings=warnings,
+            advice=advice,
+        )
+        self._note_degraded_pins(result, degraded_pins)
+        self.record(
+            "author",
+            "abm_page_assembled",
+            input_summary=f"hero={clean_hero or '-'}",
+            output_summary=(
+                f"{len(pinned)} pinned, {len(converged)} already on the page; "
+                f"{len(result['off_convention'])} section(s) off the abm_ convention"
+            ),
+            diagnostics=warnings + advice,
+            payload={
+                "pinned": [entry["fragment_id"] for entry in pinned],
+                "converged": [entry["fragment_id"] for entry in converged],
+                "operations": copy.deepcopy(operations),
+            },
+            sink_extra={"pinned_count": len(pinned)},
+        )
+        return json.dumps(result, indent=2)
+
+    def _abm_slot_values(
+        self, raw: JsonObject, slot_kinds: Dict[str, Any], fragment_id: str
+    ) -> tuple[JsonObject, Optional[str]]:
+        """Agent-supplied hero slot values → tagged values, MARKER-AWARE (ruling R24-2).
+
+        The ordinary tagging is `_tagged_slot_values`' — the artifact's kind decides, because an
+        href and a paragraph are both strings. A TEMPLATE MARKER is the one exception and it is
+        not a convenience: `derive.rs` substitutes `FragmentSlotValue::Text` and nothing else, so
+        `{{account.logo}}` on an image slot has to ride as text or it never binds at all. That
+        rule lives in `lumen_api.fragments.abm_page`, with the derive's own reasoning beside it,
+        rather than being re-decided here.
+        """
+        tagged: JsonObject = {}
+        for key, value in raw.items():
+            kind = slot_kinds.get(key)
+            if kind is None:
+                available = ", ".join(sorted(slot_kinds)) or "none"
+                return {}, self._tool_error(
+                    "cloned_section.unknown_slot",
+                    f"cloned section {fragment_id} has no slot {key!r}. Its slots are: "
+                    f"{available}.",
+                    fragment_id=fragment_id,
+                    slots=sorted(slot_kinds),
+                )
+            try:
+                tagged[key] = account_slot_binding(key, kind, value)
+            except AbmAssemblyRefused as refused:
+                return {}, self._tool_error(
+                    str(refused.code), str(refused.message), fragment_id=fragment_id
+                )
+        return tagged, None
+
+    def _abm_assembly_report(
+        self,
+        *,
+        pinned: List[JsonObject],
+        converged: List[JsonObject],
+        hero: Optional[JsonObject],
+        sections: List[JsonObject],
+        siblings: Dict[str, List[str]],
+        kit_id: Optional[str],
+        warnings: List[JsonObject],
+        advice: List[JsonObject],
+    ) -> JsonObject:
+        """What the walk did, and the three things it owes the author afterwards."""
+        page = self._home_page()
+        nodes = page.get("nodes") or {}
+        root_id = page.get("root")
+        root = nodes.get(root_id) if isinstance(root_id, str) else None
+        children = list(root.get("children") or []) if isinstance(root, dict) else []
+        # A section is a PINNED CLONE when its only child is a fragment node; anything else on
+        # this page is a section somebody composed. That is the whole classification, and it is
+        # read off the document rather than tracked, so it stays true for sections pinned in an
+        # earlier turn.
+        new_sections: List[str] = []
+        for section_id in children:
+            section = nodes.get(section_id) or {}
+            kids = [nodes.get(child) or {} for child in section.get("children") or []]
+            if any(child.get("kind") == "fragment" for child in kids):
+                continue
+            new_sections.append(str(section_id))
+        off_convention = [
+            section_id for section_id in new_sections if not is_abm_section_id(section_id)
+        ]
+
+        result: JsonObject = {
+            "status": "ok",
+            "page_id": self.page_id,
+            "pinned": pinned,
+            "converged": converged,
+            "hero": (
+                {
+                    "fragment_id": str(hero["fragment_id"]),
+                    "label": hero.get("label"),
+                    "section_role": hero.get("section_role"),
+                }
+                if hero is not None
+                else None
+            ),
+            # R24-3: the convention, in the report, so the review and the T26 walk can tell a new
+            # ABM band from cloned chrome mechanically instead of by reading the markup.
+            "new_section_convention": {
+                "prefix": ABM_SECTION_ID_PREFIX,
+                "note": (
+                    f"every section this page composes carries a section id beginning "
+                    f"{ABM_SECTION_ID_PREFIX!r} (<section id=\"{ABM_SECTION_ID_PREFIX}"
+                    "peer_proof\">), so a new ABM band is tellable from cloned chrome without "
+                    "guessing. Cloned sections keep their own ids."
+                ),
+            },
+            "new_sections": new_sections,
+            "off_convention": off_convention,
+            # R24-2, said where the author is looking rather than only in the prompt.
+            "personalization": (
+                "this page is a TEMPLATE, not one account's page. Its slots hold "
+                + ", ".join(ACCOUNT_MARKERS)
+                + " markers, which the account derive substitutes per account — so one document "
+                "serves every account and stays re-derivable. A value an account does not carry "
+                "(no domain recorded, no logo bound) leaves the artifact's own fallback, "
+                "reported in the derive's coverage. Never bake one account's name or logo into "
+                "the markup."
+            ),
+            "target_logo": (
+                f"the target's logo reaches the page ONLY through the ladder: the "
+                f"{ACCOUNT_LOGO_MARKER} marker at derive time, or fetch_logo binding a real "
+                "asset while you author. AN EMPTY LOGO SLOT IS CORRECT — an account we hold no "
+                "logo for renders a clean header with the seller's mark alone. Never draw, "
+                "letter, recolour or approximate a company's mark."
+            ),
+            "warnings": warnings,
+            "advice": advice,
+        }
+        if kit_id is None:
+            # The pick could not be scoped to a brand. Harmless in the single-brand workspace
+            # every walk so far has run in, and wrong in a multi-brand one — so it is SAID rather
+            # than assumed away (the shape T23's fix round gave the legal-evidence read).
+            result["chrome_scope_note"] = (
+                "this turn carries no identified brand kit, so the campaign shells were chosen "
+                "from every released shell in the workspace rather than from this brand's. In a "
+                "workspace with one brand that is the same answer; in a multi-brand one it may "
+                "be another brand's chrome. Check the header before this page ships."
+            )
+        if hero is None:
+            # Fix-round M4: a SUPERSEDED hero's repair is the real candidate (and it is in this
+            # same listing), so listing both offers the same band twice; a degraded one may be
+            # offered — it might be the only hero there is — but never silently, because
+            # everywhere else in this family a broken band is announced loudly.
+            candidates: List[str] = []
+            degraded_candidates: List[str] = []
+            for section in sections:
+                if (
+                    str(section.get("section_role") or "") != "hero"
+                    or section.get("composed")
+                    or section.get("superseded_by")
+                ):
+                    continue
+                candidate_id = str(section["fragment_id"])
+                candidates.append(candidate_id)
+                if section.get("degraded"):
+                    degraded_candidates.append(candidate_id)
+            result["hero_candidates"] = candidates
+            note = (
+                "no hero was named, so none was pinned — the page's hero is a released cloned "
+                "hero (pass hero_fragment_id) or a section you compose. An ABM hero names the "
+                "ACCOUNT, so bind its slots to the account markers either way."
+            )
+            if candidates:
+                note += f" Released heroes: {', '.join(candidates)}."
+            if degraded_candidates:
+                note += (
+                    f" {', '.join(degraded_candidates)} is marked degraded — repair it through "
+                    "the ladder or compose the band rather than pinning it broken."
+                )
+            result["hero_note"] = note
+        if converged:
+            result["converged_note"] = (
+                ", ".join(entry["fragment_id"] for entry in converged)
+                + " is already on this page, so it was not pinned again — the chrome is where it "
+                "was. Nothing about the page moved."
+            )
+        if siblings:
+            result["chrome_siblings"] = siblings
+            # The I6 interim law, said out loud. Shells carry no supersession marker, so this is
+            # a deterministic CHOICE we are making, not a fact we read.
+            result["chrome_siblings_note"] = (
+                "this workspace holds more than one released shell for "
+                + ", ".join(sorted(siblings))
+                + "; the NEWEST was pinned and the older one(s) — "
+                + ", ".join(
+                    fragment_id for role in sorted(siblings) for fragment_id in siblings[role]
+                )
+                + " — were stepped over. A shell records no supersession, so this is a "
+                "deterministic choice rather than a fact: if an older one is the one you want, "
+                "pin it explicitly, and ask a human to retire the rest."
+            )
+        if off_convention:
+            # WORK, in the bucket the prompt calls mandatory — not a note nobody reads. It
+            # renames nothing: a section id is an anchor somebody may already have linked.
+            warnings.insert(
+                0,
+                {
+                    "severity": "warning",
+                    "phase": "agent",
+                    "code": _ABM_SECTION_NAMING_CODE,
+                    "message": (
+                        f"{len(off_convention)} section(s) on this ABM page do not carry the "
+                        f"{ABM_SECTION_ID_PREFIX!r} id convention: "
+                        + ", ".join(off_convention)
+                        + ". A reviewer cannot then tell a new ABM band from cloned chrome."
+                    ),
+                    "hint": (
+                        "Re-author each one with a section id beginning "
+                        f"{ABM_SECTION_ID_PREFIX!r} (author_web_subtree keeps the rest of the "
+                        "page byte-identical). Nothing was renamed for you — a section id is an "
+                        "anchor somebody may have linked."
+                    ),
+                    "sections": list(off_convention),
+                },
+            )
+        return result
+
     def _anchor_id(self, node_id: str) -> str:
         """The `id` attribute the engine renders for a section node.
 
@@ -6228,6 +7607,9 @@ class LumenWebTools:
         self._cloned_section_seen[repair_id] = {
             "label": resolved.get("label"),
             "section_role": resolved.get("section_role"),
+            # T23 finding N6. A shell repair inherits `composed` (ruling R23-F1), so a repaired
+            # shell viewed after the swap must read as composed too.
+            "composed": resolved.get("composed"),
         }
         result["pinned"] = True
         result["section_node_id"] = wrapper_id

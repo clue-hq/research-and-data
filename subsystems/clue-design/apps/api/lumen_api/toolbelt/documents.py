@@ -77,6 +77,8 @@ __all__ = [
     "SetAgentInstructionsTool",
     "SetLayoutManagedEditingInput",
     "SetLayoutManagedEditingTool",
+    "SetWebNoindexInput",
+    "SetWebNoindexTool",
     "SnapshotRef",
     "TemplateRevisionRef",
     "ToggleRef",
@@ -511,6 +513,56 @@ class SetLayoutManagedEditingTool(DesignTool):
             document_id=inputs.document_id,
             field="layout_managed_editing",
             value=document["layout_managed_editing"],
+        )
+
+
+class SetWebNoindexInput(ToolInput):
+    document_id: str
+    #: REQUIRED, with no default, and that is the whole of ruling R-F1's "removing it requires an
+    #: explicit action": a caller who does not name a value cannot reach this tool at all.
+    enabled: bool
+
+
+class SetWebNoindexTool(DesignTool):
+    """Stamp or explicitly clear one web document's durable ``noindex`` (ruling R-F1)."""
+
+    name = "design_set_web_noindex"
+    version = "1"
+    model_description = (
+        "Stamp or clear the durable noindex flag on a website-mode design document. A stamped "
+        "page emits <meta name=\"robots\" content=\"noindex\"> on EVERY publish, whichever route "
+        "publishes it; clearing it is this call and nothing else."
+    )
+    input_model: ClassVar[type[ToolInput]] = SetWebNoindexInput
+    output_model: ClassVar[type[ToolOutput]] = ToggleRef
+    replay: ClassVar[ReplaySafety] = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="workspace + document_id (design_document.web_noindex)",
+        external_boundary=ExternalReplayBoundary.NONE,
+        notes="effect-free by value: assigning the same flag twice converges",
+    )
+    effect_class: ClassVar[ToolEffectClass] = ToolEffectClass.WRITE
+    parameter_policy: ClassVar[JournalParameterPolicy] = JournalParameterPolicy(
+        safe_display_fields=("document_id", "enabled")
+    )
+
+    def check(self, inputs: ToolInput, ctx: ToolContext) -> tuple[PreconditionFailure, ...]:
+        assert isinstance(inputs, SetWebNoindexInput)
+        # `kind="web"`, unlike its two scene-side neighbours: a scene document has no publish
+        # surface, so the flag stored on one would be a fact about nothing.
+        return document_failures(
+            self.host.repository(ctx.workspace_id), inputs.document_id, kind="web"
+        )
+
+    def run(self, inputs: ToolInput, ctx: ToolContext) -> ToolOutput:
+        assert isinstance(inputs, SetWebNoindexInput)
+        document = self.host.repository(ctx.workspace_id).set_web_noindex(
+            inputs.document_id, inputs.enabled
+        )
+        return ToggleRef(
+            document_id=inputs.document_id,
+            field="web_noindex",
+            value=document["web_noindex"],
         )
 
 

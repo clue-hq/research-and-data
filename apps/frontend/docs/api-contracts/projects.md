@@ -1622,9 +1622,13 @@ created_at, updated_at, origin_thread_id}]}` — the W1.3 item shape plus three 
 
 This supersedes the R3/R7-era `artifacts: []` posture for the project gallery: the artifact
 route now feeds the gallery real cards through `DesignArtifactRepository.list(projectId)`
-(fixture + HTTP adapters) and the pure `toProjectArtifact` mapper. Cards carry no thumbnail
-(`imagePath` optional — ruling 2: the frame renders without artwork; no placeholder imagery)
-and no fabricated account attribution (unattributed artifacts show no account badge).
+(fixture + HTTP adapters) and the pure `toProjectArtifact` mapper. ~~Cards carry no thumbnail
+(`imagePath` optional — ruling 2: the frame renders without artwork; no placeholder imagery)~~
+**[SUPERSEDED 2026-08-31 — cards carry REAL artwork: `toProjectArtifact` now composes
+`imagePath` from the versioned thumbnail route, for both kinds. The empty frame survives as
+the FALLBACK (a failed load), not the universal state. See "Design-document thumbnails
+(2026-08-31)" below.]** Cards still carry no fabricated account attribution (unattributed
+artifacts show no account badge).
 
 **Two durable contract rules (recorded by founder order):**
 1. **Every future artifact-creation surface MUST write project linkage at creation time** —
@@ -1672,8 +1676,8 @@ frontend renders the pageless state rather than fabricating a size). Plan:
 
 | wire `kind` | `type` | `collateralType` | `imagePath` |
 | --- | --- | --- | --- |
-| `"web"` | `"website"` | `"microsite"` | absent |
-| `"ad"` | `"canvas"` | **absent** | absent |
+| `"web"` | `"website"` | `"microsite"` | absent — **superseded 2026-08-31, see below** |
+| `"ad"` | `"canvas"` | **absent** | absent — **superseded 2026-08-31, see below** |
 
 - `type: "canvas"` is what carries the ad into the editor with **zero mount changes** — both
   mounts reconstruct the artifact kind as `source.type === "website" ? "web" : "ad"`.
@@ -1684,6 +1688,43 @@ frontend renders the pageless state rather than fabricating a size). Plan:
   dummy-era fallback), so an ad card currently *labels* as "LinkedIn ad" and groups under
   "Ads". Honest channel labelling for real ad documents needs a founder ruling on the
   vocabulary and is deliberately out of AD2.1's scope.
-- **No thumbnail** — ruling 2 holds for ads exactly as for websites: the card frame renders
-  empty rather than showing placeholder artwork (the ratified honest empty card). `size`
-  falls to the gallery's `square` 1080×1080 default for canvas artifacts.
+- ~~**No thumbnail** — ruling 2 holds for ads exactly as for websites: the card frame renders
+  empty rather than showing placeholder artwork (the ratified honest empty card).~~
+  **[SUPERSEDED 2026-08-31 — design documents have real thumbnails now; see the next
+  section. The empty frame survives as the FALLBACK, not the universal state.]** `size`
+  falls to the gallery's `square` 1080×1080 default for canvas artifacts that have no page.
+
+### Design-document thumbnails (2026-08-31)
+
+`GET /api/clue/design/documents/{documentId}/thumbnail?v={currentVersionId}` →
+`200 image/png`. Lazily generated server-side on first read (web: Chromium
+screenshot of the render HTML at 1448×1086 → 724×543; ad/scene: engine Skia
+PNG of page 1, max edge 724) and cached by `(document, version)` in the design
+blob store. `v` equal to the document's current version ⇒
+`Cache-Control: private, max-age=31536000, immutable`; any other `v` serves the
+current bytes with `no-store`. Generation failure is a typed 502
+(`thumbnail.*`); the gallery card's empty preview frame is the fallback.
+The four codes are `thumbnail.tailwind_runtime_missing` (no Tailwind browser
+runtime for the web capture), `thumbnail.capture_failed` (Playwright/Chromium
+missing or the screenshot itself failed), and a **kind-aware split of the engine
+`CoreError`** — `thumbnail.render_failed` on a web document (the failing step is
+the render; the web branch never exports) and `thumbnail.export_failed` on a
+scene (the engine PNG export).
+The frontend composes this URL in `toProjectArtifact` from the list read's
+`documentId` + `currentVersionId` — no wire-shape change.
+
+**Notes from the 2026-08-31 live browser walk** (evidence in
+`_memory/2026-08-31-gallery-card-thumbnails.md`):
+
+- Both card `Image`s are `unoptimized`, so the browser fetches the URL directly and the
+  BFF's session cookie rides along; Next's optimizer would strip it and 401.
+- A failed load falls back through `onError`, so a 502 shows the ruled empty frame — not
+  a broken-image glyph — and the rest of the gallery is unaffected. A 200 carrying a
+  *wrong* body cannot trip that fallback; correctness of the artwork is a server concern.
+- Generation happens on the READ path only. An inspector write bumps `currentVersionId`,
+  which changes the URL; the new version's PNG is produced by the next gallery read, so
+  the editor's edit round-trip is untouched.
+- Superseded-version rows and blobs are kept (no pruning) — a deliberate follow-up, not a
+  leak: the index is `(workspace, document, version)`.
+- `etag` is not in the BFF's forwarded response headers, so revalidation does not survive
+  the proxy. Harmless under the immutable `?v=` scheme — do not design against it.

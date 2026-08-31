@@ -928,6 +928,30 @@ def _unpack_fetched(entry):
     return (bytes(body) if body else None), getattr(entry, "content_type", None)
 
 
+#: A drawable SVG element — something that can PAINT. `<use>` is deliberately absent: an
+#: internal `<use href="#x">` always sits beside the `<defs>` element it references (which this
+#: pattern matches), while an EXTERNAL sprite reference has nothing local to draw.
+_SVG_DRAWABLE = re.compile(
+    r"<\s*(path|rect|circle|ellipse|line|polyline|polygon|text|image)\b", re.I
+)
+_SVG_INTRINSIC = re.compile(r"<svg[^>]*\s(viewBox|width|height)\s*=", re.I)
+
+
+def svg_is_renderable(blob: bytes) -> bool:
+    """Can this SVG paint anything standalone? Intrinsic geometry AND a drawable element.
+
+    The CP2 walk's live counterexample (F4 wave item 2): a 124-byte sprite-REFERENCE svg —
+    `<use>` against an external sheet, no viewBox, no width/height, no artwork — was accepted
+    by the ladder, reported ``bound: true``, and rendered 0×0 on every derived page. Shared
+    here (beside :func:`_measure`, the ladder's own geometry reader) so the ladder and the
+    account-bind door cannot disagree about what "a renderable mark" means.
+    """
+    text = blob.decode("utf-8", "replace")
+    if "<svg" not in text.lower():
+        return False
+    return bool(_SVG_INTRINSIC.search(text)) and bool(_SVG_DRAWABLE.search(text))
+
+
 def _measure(candidate: LadderCandidate, blob: bytes) -> None:
     if candidate.fmt in ("png", "jpeg", "webp", "gif", "ico"):
         try:

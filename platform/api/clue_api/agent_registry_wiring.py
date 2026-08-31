@@ -117,6 +117,15 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "design_rollback_web_publish": (AgentRole.DESIGN,),
     "design_set_agent_instructions": (AgentRole.DESIGN,),
     "design_set_layout_managed_editing": (AgentRole.DESIGN,),
+    # Clone-fidelity F4.3, FOUNDER RULING R-F1 (2026-08-29): the durable `noindex` stamp on a
+    # published web document. UNGRANTED, and deliberately so, unlike its two neighbours above.
+    # The ruling's whole point is that TAKING the robots meta off an ABM account page is an
+    # explicit human act; a model that held this tool could clear it. The design API's own
+    # route invokes it as `actor="human"`, and the ABM batch stamps it ON through the same
+    # tool — neither is a model surface. Registered regardless, so the audit question "which
+    # durable writes can the platform name?" stays a complete statement (the ad-assets
+    # precedent below). Granting it later is a reviewed profile version bump.
+    "design_set_web_noindex": (),
     "design_start_agent_turn": (AgentRole.DESIGN,),
     "design_start_web_turn": (AgentRole.DESIGN,),
     "design_undo_document": (AgentRole.DESIGN,),
@@ -375,6 +384,10 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
 _HUMAN_ONLY_TOOLS = frozenset(
     {
         "adjust_budget",
+        # R-F1 (clone-fidelity T27): clearing a published account page's robots meta is a
+        # human act by founder ruling — the tool is registered ungranted, and this membership
+        # makes the human-only claim structural rather than a fact about today's grant table.
+        "design_set_web_noindex",
         "confirm_icp",
         "confirm_project_product",
         "confirm_account_research_directive",

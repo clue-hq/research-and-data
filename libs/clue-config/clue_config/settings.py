@@ -640,6 +640,22 @@ class Settings(BaseSettings):
     # and ignored, never honoured. Env: ``CLUE_DESIGN_RUN_EVENT_RETENTION_S``.
     design_run_event_retention_s: float = 2_592_000.0  # 30d
 
+    @field_validator("stage0_crawl_max_depth", mode="before")
+    @classmethod
+    def _coerce_stage0_crawl_max_depth(cls, value: Any) -> Any:
+        """Coerce the env string form so the documented ``CLUE_STAGE0_CRAWL_MAX_DEPTH=2`` loads.
+
+        The field is ``Literal[2]`` on purpose (the depth is pinned policy, not a knob), but
+        pydantic will not coerce ``"2"`` from the environment into a literal int — so a
+        deployment that copies ``.env.example`` verbatim (the 2026-08-31 env-parity rule makes
+        that the norm) would crash at startup on the only value the field accepts. Any other
+        value still fails validation loudly, exactly as before.
+        """
+
+        if isinstance(value, str) and value.strip().isdigit():
+            return int(value.strip())
+        return value
+
     @field_validator("agent_workspace_allowlist", mode="before")
     @classmethod
     def _parse_agent_workspace_allowlist(cls, value: Any) -> Any:

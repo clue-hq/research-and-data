@@ -526,8 +526,11 @@
 }
 
 .artifactPreview img {
-  object-fit: contain;
-  object-position: center;
+  /* Founder ruling 2026-08-31: the artwork COVERS the card frame — fills it
+     completely, cropping overflow — never letterboxed to fit. Top-anchored so
+     a cropped page/ad keeps its heading, matching .listThumbnail img. */
+  object-fit: cover;
+  object-position: top;
   transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 

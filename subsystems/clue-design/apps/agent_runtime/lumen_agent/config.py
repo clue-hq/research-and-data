@@ -177,6 +177,14 @@ class AgentRuntimeConfig:
     # time. None means this turn cannot see the library at all; the tools say so and refuse,
     # never invent.
     cloned_section_registry: Any | None = None
+    # F4.3 (ruling R25-1): the G1+G2 bridge, as a capability for the same reason the two above
+    # are — the runtime holds no database handle and must never be given one.
+    # `lumen_api.agent_account_logos.DurableAgentAccountLogoBinder`, supplied by the API worker.
+    # It is what carries a `fetch_logo` result out of the working DOCUMENT and onto the ACCOUNT
+    # (the `design_asset` registry row + `design_account.logo_asset_id`), so the batch derive can
+    # personalize every page with the target's real mark. None means this turn cannot bind; the
+    # tool says so and refuses, and an empty account logo stays CORRECT.
+    account_logo_binder: Any | None = None
     # Brief-clarification headless/eval mode (LUMEN_AGENT_AUTO_DEFAULTS=1). When
     # true, the harness does NOT register `request_clarification` on the
     # orchestrator: it applies the skill's defaults and ledgers each assumption

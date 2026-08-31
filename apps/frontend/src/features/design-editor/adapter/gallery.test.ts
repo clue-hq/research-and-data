@@ -53,14 +53,16 @@ test("an ad artifact maps onto a canvas artifact with no collateral type", () =>
   // `kind: "ad"` from (`source.type === "website" ? "web" : "ad"`), so the ad
   // reaches the editor with zero mount changes. `collateralType` is left ABSENT
   // rather than guessed: the document says it is an ad, never which channel.
-  const artifact = toProjectArtifact(listItem({ id: "doc-ad-1", kind: "ad" }), {
-    now: NOW,
-  });
+  const artifact = toProjectArtifact(
+    listItem({ id: "doc-ad-1", documentId: "doc-ad-1", kind: "ad" }),
+    { now: NOW },
+  );
 
   assert.equal(artifact.type, "canvas");
   assert.equal("collateralType" in artifact, false);
-  // The honest-empty card holds: no invented thumbnail for an ad either.
-  assert.equal(artifact.imagePath, undefined);
+  // An ad's thumbnail is its own rendered document, addressed the same way a
+  // web document's is — nothing about the artwork is kind-specific.
+  assert.equal(artifact.imagePath, "/api/clue/design/documents/doc-ad-1/thumbnail?v=4");
   assert.doesNotThrow(() => ProjectArtifactSchema.parse(artifact));
 });
 
@@ -94,12 +96,13 @@ test("real timestamps survive as the schema's UTC instants", () => {
   assert.doesNotThrow(() => ProjectArtifactSchema.parse(artifact));
 });
 
-test("a real document carries no thumbnail and no run", () => {
+test("a real document carries its own thumbnail and no run", () => {
   const artifact = toProjectArtifact(listItem(), { now: NOW });
 
-  // Ruling 2: real documents have no thumbnails — the mapper invents none.
-  assert.equal(artifact.imagePath, undefined);
-  // No generation run exists behind a leg-derived document either.
+  // 2026-08-31 ruling: the thumbnail is the document's own rendered PNG, keyed
+  // by its current version — nothing invented, nothing stock.
+  assert.equal(artifact.imagePath, "/api/clue/design/documents/doc-web-1/thumbnail?v=4");
+  // No generation run exists behind a leg-derived document.
   assert.equal(artifact.originRunId, undefined);
 });
 
@@ -169,8 +172,9 @@ test("the mapped artifact survives the gallery's normalizer", () => {
   assert.equal(normalized.updatedAt, "2026-08-18T09:15:00.000Z");
   assert.equal(normalized.createdAt, "2026-08-14T09:15:00.000Z");
   assert.equal(normalized.lastViewedAt, "2026-08-18T09:15:00.000Z");
-  // The optionals stay absent through normalization — nothing is invented.
-  assert.equal(normalized.imagePath, undefined);
+  // The thumbnail URL survives normalization intact, and the optional the
+  // document genuinely cannot answer stays absent — nothing is invented.
+  assert.equal(normalized.imagePath, "/api/clue/design/documents/doc-web-1/thumbnail?v=4");
   assert.equal(normalized.originRunId, undefined);
 });
 
@@ -245,8 +249,10 @@ test("genad2 Task 5 (c): a ZERO-PAGE newborn ad card is honest-empty, not hidden
   // honest (it reports no page rather than a default), and this pins the
   // frontend half of that: the card still appears, with its real id and title,
   // and claims NOTHING it cannot measure. A fabricated 1080x1080 (the pre-G-H
-  // default) or a stock thumbnail here would be the gallery inventing a design
-  // that does not exist yet.
+  // default) would be the gallery inventing a design that does not exist yet.
+  // Its thumbnail URL is still its own document's — the route answers for a
+  // zero-page document however it answers, and the card's empty frame is the
+  // fallback when that artwork does not arrive.
   const artifact = toProjectArtifact(
     listItem({
       id: "doc-ad-newborn",
@@ -262,7 +268,10 @@ test("genad2 Task 5 (c): a ZERO-PAGE newborn ad card is honest-empty, not hidden
   assert.equal(normalized.title, "LinkedIn ad");
   assert.equal(normalized.source.type, "canvas");
   assert.equal(normalized.size, undefined);
-  assert.equal(normalized.imagePath, undefined);
+  assert.equal(
+    normalized.imagePath,
+    "/api/clue/design/documents/doc-ad-newborn/thumbnail?v=4",
+  );
 });
 
 test("G-H: an unrecognised artifact type is not forced into the vocabulary", () => {
@@ -279,4 +288,28 @@ test("G-H: an unrecognised artifact type is not forced into the vocabulary", () 
   );
 
   assert.equal(artifact.collateralType, undefined);
+});
+
+// ── Thumbnails (2026-08-31 ruling) ─────────────────────────────────────────
+// Ruling 2's "real documents have no thumbnails" is superseded: the design API
+// renders a lazy, version-cached PNG per document, addressed through the BFF.
+// The version in the URL is the cache key, so an edit that bumps
+// `currentVersionId` changes the URL and the card picks up the fresh artwork.
+
+test("composes the versioned BFF thumbnail URL for a web document", () => {
+  const artifact = toProjectArtifact(
+    listItem({ documentId: "doc_w1", currentVersionId: "7" }),
+    { now: NOW },
+  );
+
+  assert.equal(artifact.imagePath, "/api/clue/design/documents/doc_w1/thumbnail?v=7");
+});
+
+test("composes the versioned BFF thumbnail URL for an ad document", () => {
+  const artifact = toProjectArtifact(
+    listItem({ documentId: "doc_a1", kind: "ad", currentVersionId: "3" }),
+    { now: NOW },
+  );
+
+  assert.equal(artifact.imagePath, "/api/clue/design/documents/doc_a1/thumbnail?v=3");
 });

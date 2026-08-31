@@ -9,12 +9,14 @@ import type { DesignArtifactListItem } from "../model/artifact";
  * leg-derived design-artifact feed) to the gallery's `ProjectArtifact`.
  *
  * Everything it writes is real: the artifact id, the document's title, its
- * backend timestamps, and the origin thread the design leg came from. The
- * fields a real document cannot answer are left ABSENT rather than invented —
- * `imagePath` (ratified ruling 2: real documents have no thumbnails; the
- * gallery card renders its frame without artwork) and `originRunId` (a
- * leg-derived document has no generation run). Both are optional in the model
- * for exactly this reason.
+ * backend timestamps, the origin thread the design leg came from, and (since
+ * the 2026-08-31 ruling) the document's own rendered thumbnail. The fields a
+ * real document cannot answer are left ABSENT rather than invented —
+ * `originRunId` (a leg-derived document has no generation run) is optional in
+ * the model for exactly that reason. Ruling 2's "real documents have no
+ * thumbnails" no longer holds: they have real ones now, and the card's empty
+ * frame is the FALLBACK for a thumbnail that is missing or fails to load,
+ * not the universal state.
  *
  * Size, account and last-viewed are likewise unanswerable here; the gallery's
  * own `normalizeGalleryArtifact` supplies its defaults for them.
@@ -54,6 +56,17 @@ function sizeFor(widthPx: number | undefined, heightPx: number | undefined) {
   return { category, height: heightPx, label: `${widthPx} × ${heightPx}`, width: widthPx };
 }
 
+/**
+ * The card's preview artwork (2026-08-31 ruling): the design API's lazy,
+ * version-cached PNG, addressed through the BFF. The version in the URL is
+ * the cache key — an edit bumps `currentVersionId`, the URL changes, and the
+ * card picks up the fresh thumbnail on its next mount. The empty-frame
+ * fallback (ruling 2) remains for a thumbnail that fails to load.
+ */
+function designThumbnailPath(item: DesignArtifactListItem): string {
+  return `/api/clue/design/documents/${encodeURIComponent(item.documentId)}/thumbnail?v=${encodeURIComponent(item.currentVersionId)}`;
+}
+
 export function toProjectArtifact(
   item: DesignArtifactListItem,
   { now = new Date() }: { now?: Date } = {},
@@ -67,6 +80,7 @@ export function toProjectArtifact(
     createdAt: utcInstant(item.createdAt),
     editedLabel: editedLabelFor(item.updatedAt, now),
     id: item.id,
+    imagePath: designThumbnailPath(item),
     originThreadId: item.originThreadId,
     title: item.title,
     type: ad ? "canvas" : "website",

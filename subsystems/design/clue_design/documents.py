@@ -149,6 +149,11 @@ def _document_from_row(row: Any) -> JsonObject:
         "redo_stack": load_json_opt(row.redo_stack_json),
         "agent_instructions": row.agent_instructions,
         "layout_managed_editing": bool(row.layout_managed_editing),
+        # Clone-fidelity F4.3, FOUNDER RULING R-F1: `noindex` is a DURABLE property of a web
+        # page, not an argument one caller happens to pass. Every publish path ORs it with
+        # whatever the request asked for, so a plain republish of an ABM account page cannot
+        # quietly re-index it. Meaningless on a scene document, and false there.
+        "web_noindex": bool(row.web_noindex),
         "is_template": bool(row.is_template),
         "template_document_id": row.template_document_id,
         "template_doc_version": row.template_doc_version,
@@ -322,6 +327,28 @@ async def set_layout_managed_editing(
     await conn.execute(
         text(
             "UPDATE design_document SET layout_managed_editing = :e, updated_at = now()"
+            " WHERE id = :d AND workspace_id = :w"
+        ),
+        {"e": enabled, "d": document_id, "w": workspace_id},
+    )
+    return await get_document(conn, workspace_id=workspace_id, document_id=document_id)
+
+
+async def set_web_noindex(
+    conn: AsyncConnection, *, workspace_id: str, document_id: str, enabled: bool
+) -> JsonObject:
+    """Stamp (or explicitly clear) a web document's durable ``noindex`` (ruling R-F1).
+
+    The sibling of :func:`set_layout_managed_editing`, and deliberately shaped like it: an
+    assignment of a named value to one document, converging on re-run. What makes it different
+    is the direction that is NOT reachable any other way — CLEARING. Every publish path ORs this
+    flag with its own request, so a publish can only ever add the robots meta; the only thing in
+    the system that can take it off a page is a caller that names ``enabled=False`` here.
+    """
+    await get_document(conn, workspace_id=workspace_id, document_id=document_id, for_update=True)
+    await conn.execute(
+        text(
+            "UPDATE design_document SET web_noindex = :e, updated_at = now()"
             " WHERE id = :d AND workspace_id = :w"
         ),
         {"e": enabled, "d": document_id, "w": workspace_id},

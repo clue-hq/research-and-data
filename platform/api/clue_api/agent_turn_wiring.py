@@ -274,17 +274,25 @@ class DurableAgentArtifactStore(AgentArtifactSink, AgentArtifactReader):
                     },
                 )
                 if inserted.first() is None:
+                    # The PK is (workspace, project, artifact_key) — binding_kind is metadata,
+                    # not identity. The existence check therefore must NOT filter by kind: a
+                    # content-addressed payload legitimately recurs across turn kinds (found
+                    # live 2026-08-29 — a design-leg card byte-identical to an earlier
+                    # conversation card conflicted on insert, and the kind-filtered check then
+                    # misread a valid same-project binding as "absent or cross-workspace",
+                    # failing the founder's leg turn). The binding's guarantee — this artifact
+                    # belongs to this project in this workspace — is proven by the PK row,
+                    # whichever kind first wrote it.
                     existing = await conn.execute(
                         text(
                             "SELECT 1 FROM agent_artifact_project "
                             "WHERE workspace_id=:workspace_id AND project_id=:project_id "
-                            "AND artifact_key=:key AND binding_kind=:kind"
+                            "AND artifact_key=:key"
                         ),
                         {
                             "workspace_id": workspace_id,
                             "project_id": project_id,
                             "key": key,
-                            "kind": binding_kind,
                         },
                     )
                     if existing.first() is None:

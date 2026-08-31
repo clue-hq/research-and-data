@@ -90,10 +90,12 @@ export const ProjectArtifactSchema = z.object({
   createdAt: z.string().datetime().optional(),
   editedLabel: z.string().min(1),
   id: z.string().min(1),
-  // Optional since the gallery feed serves real design documents (ratified
-  // ruling 2): they have no thumbnail, and a leg-derived document has no
-  // generation run. Absent means absent — consumers render without artwork
-  // rather than substituting placeholder imagery.
+  // Design artifacts now carry a versioned BFF thumbnail URL, so this is
+  // populated on the common path. It stays optional because other artifact
+  // sources still omit it, and because a thumbnail that is missing or fails to
+  // load falls back to the empty preview frame (ratified ruling 2). Absent
+  // means absent — consumers render without artwork rather than substituting
+  // placeholder imagery.
   imagePath: z.string().startsWith("/").optional(),
   lastViewedAt: z.string().datetime().optional(),
   originRunId: z.string().min(1).optional(),

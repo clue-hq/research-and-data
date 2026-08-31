@@ -302,6 +302,10 @@ class DeepAgentTurnRuntime:
             max_retries=profile.model.max_retries,
             max_output_tokens=profile.model.max_output_tokens,
             temperature=profile.model.temperature,
+            # Names the role on the governed call so the per-role
+            # ``<ROLE>_AGENT_MODEL_EFFORT`` environment override (and span/usage
+            # attribution) applies to this turn's model.
+            role=profile.role.value,
         )
         async with self._execution.checkpointer(
             execution_id=constitution.execution_id

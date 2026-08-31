@@ -71,15 +71,12 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # lineage at the part-iii integration merge. Same rule as v6: the C5 slot is a second,
     # independent ceiling, so a profile grant alone would show the model a tool that plan
     # validation then refuses.
-    "recipe0-stage0-v16.json",
     # genweb slice 2: the delegation entry becomes ``open_design_leg@2`` (document birth at
     # leg-open). The C5 slot pins an exact tool ADDRESS, so promoting the tool without a new
     # revision would make plan validation refuse the very tool the profile now grants.
-    "recipe0-stage0-v17.json",
     # genad: the delegation entry becomes ``open_design_leg@3`` (a ``doc_kind='scene'`` open now
     # births the ad document too). Same exact-address rule as v17 — the slot would refuse the tool
     # the profile grants without its own revision.
-    "recipe0-stage0-v18.json",
     # genad2: the delegation entry becomes ``open_design_leg@4`` (the ``doc_kind='scene'`` open
     # births a ZERO-PAGE document; the design agent authors the page). Same exact-address rule as
     # v17/v18 — the slot would refuse the tool the profile grants without its own revision.
@@ -90,7 +87,19 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
 
 # Kept on disk solely so already-pinned executions can resolve their exact historical definition.
 # R1 never seeds or promotes these recipes for new executions.
-HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES: tuple[str, ...] = ("account-research-unit-v1.json",)
+HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES: tuple[str, ...] = (
+    "account-research-unit-v1.json",
+    # recipe0 v16-v18 pin open_design_leg@1/@2/@3, all retired by later slices (@4 is the
+    # live version, pinned by v19). On the long-lived shared dev DB they were promoted when
+    # their pins were live, so the idempotent seed skips them; on a FRESH database the
+    # seeder re-validates every active revision against TODAY's registry and v16 failed
+    # promotion, wedging every fresh-checkout worker boot (found live 2026-08-29 setting up
+    # the founder's browser walk). Replay-only is this file's own mechanism for exactly
+    # this shape: already-pinned executions still resolve them; new seeds skip them.
+    "recipe0-stage0-v16.json",
+    "recipe0-stage0-v17.json",
+    "recipe0-stage0-v18.json",
+)
 
 
 @dataclass(frozen=True, slots=True)
