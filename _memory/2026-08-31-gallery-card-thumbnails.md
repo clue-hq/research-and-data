@@ -110,17 +110,33 @@ exist here). Rows created:
   (Frame / AutoLayout / Text / Image / Rect / Ellipse / Group / Line), engine-validated
   through `POST /documents`, brand-stamped `brand_kit_ing_f0a50e0f78ac464eb49399676b769730` v1,
   hero image `asset_ing_53f9b6455350e5b5` (a real 2048×1024 workspace asset).
-- `agent_thread` `thr_thumbwalk_linkedin_square`, one `execution`, and one `design_leg`
-  (`84031554-10f5-5cab-8ae9-9a4cdc6890de`) binding the thread to the document — the leg is
+- `agent_thread` `thr_thumbwalk_linkedin_square`, one `execution`
+  (`5356a581-1483-5692-9ae3-6f7d203e1b89` — `uuid5(NAMESPACE_URL,
+  'thumbwalk-linkedin-square-execution')`), and one `design_leg`
+  (`84031554-10f5-5cab-8ae9-9a4cdc6890de` — `uuid5(NAMESPACE_URL,
+  'thumbwalk-linkedin-square-leg')`) binding the thread to the document — the leg is
   what puts a document into the project's gallery feed.
 
-Delete with:
-`DELETE FROM design_leg WHERE id='84031554-10f5-5cab-8ae9-9a4cdc6890de';`
-`DELETE FROM design_document WHERE id='doc_thumbwalk_linkedin_square_0001';`
+**These rows are deliberately LEFT IN PLACE** (the seeded ad is the founder's demo artifact).
+The complete teardown, in dependency-safe order, for whenever it is wanted — all four created
+row kinds plus the thumbnail cache rows, which are FK-free and would otherwise dangle:
+
+```sql
+DELETE FROM design_leg   WHERE id = '84031554-10f5-5cab-8ae9-9a4cdc6890de';
+DELETE FROM design_document_thumbnail
+       WHERE document_id = 'doc_thumbwalk_linkedin_square_0001';   -- FK-free both ways
+DELETE FROM design_document WHERE id = 'doc_thumbwalk_linkedin_square_0001';
+DELETE FROM execution    WHERE id = '5356a581-1483-5692-9ae3-6f7d203e1b89';
+DELETE FROM agent_thread WHERE id = 'thr_thumbwalk_linkedin_square';
+```
+
+(The blob bytes under `{workspace_id}/design/{sha256}` are content-addressed and are not
+deleted by the above — same posture as the no-pruning ruling.)
+
 Also still in the dev DB: the walk's inspector edit left the CFO landing page at
 **version 5** with a red (`#D8351E`) header section — a real edit, not a fixture.
 
-## Background full suite — CHECK THIS NEXT SESSION
+## Background full suite — FINISHED; 19 failures, triage with the controller
 
 Kicked at close, never inline (the design suite is far too slow for a foreground gate):
 
@@ -132,9 +148,22 @@ LUMEN_CORE_HELPER=$PWD/target/release/lumen-api-helper \
 ../../.venv/bin/python -m pytest apps/api/tests -q
 ```
 
-- PID **36766**, log **`/tmp/design_api_fullsuite_20260831.log`**. Still running at session
-  end, ~14% in, with **2 failures already recorded** — **read the log tail and attribute
-  them before trusting this branch.**
+- PID **36766**, log **`/tmp/design_api_fullsuite_20260831.log`**. **The run has since
+  finished** (process gone; the log is complete). Final tally: **19 failures**, not the
+  "2 at ~14%" this note first recorded mid-run. By file:
+
+  | Failures | File |
+  |---|---|
+  | 7 | `apps/api/tests/test_custom_component_runtime.py` |
+  | 5 | `apps/api/tests/test_custom_component_compiler.py` |
+  | 4 | `apps/api/tests/test_custom_component_publish.py` |
+  | 1 | `apps/api/tests/test_ad_assets_onboarding.py` |
+  | 1 | `apps/api/tests/test_agent_custom_components.py` |
+  | 1 | `apps/api/tests/test_asset_custody.py` |
+
+  **None is thumbnail-related** — no failure touches `test_document_thumbnails.py`, the
+  thumbnail route, or the generator. Their causes are deliberately not characterized here:
+  **triage sits with the controller**, from the log (`grep '^FAILED'` for the list).
 - **They are not this plan's tests.** Both plan-owned suites were re-run focused, on an
   isolated DB (`clue_thumb_t6`, migrated to head) so the background run was undisturbed:
   `apps/api/tests/test_document_thumbnails.py` **27 passed**, and

@@ -1622,9 +1622,13 @@ created_at, updated_at, origin_thread_id}]}` — the W1.3 item shape plus three 
 
 This supersedes the R3/R7-era `artifacts: []` posture for the project gallery: the artifact
 route now feeds the gallery real cards through `DesignArtifactRepository.list(projectId)`
-(fixture + HTTP adapters) and the pure `toProjectArtifact` mapper. Cards carry no thumbnail
-(`imagePath` optional — ruling 2: the frame renders without artwork; no placeholder imagery)
-and no fabricated account attribution (unattributed artifacts show no account badge).
+(fixture + HTTP adapters) and the pure `toProjectArtifact` mapper. ~~Cards carry no thumbnail
+(`imagePath` optional — ruling 2: the frame renders without artwork; no placeholder imagery)~~
+**[SUPERSEDED 2026-08-31 — cards carry REAL artwork: `toProjectArtifact` now composes
+`imagePath` from the versioned thumbnail route, for both kinds. The empty frame survives as
+the FALLBACK (a failed load), not the universal state. See "Design-document thumbnails
+(2026-08-31)" below.]** Cards still carry no fabricated account attribution (unattributed
+artifacts show no account badge).
 
 **Two durable contract rules (recorded by founder order):**
 1. **Every future artifact-creation surface MUST write project linkage at creation time** —
@@ -1700,6 +1704,12 @@ blob store. `v` equal to the document's current version ⇒
 `Cache-Control: private, max-age=31536000, immutable`; any other `v` serves the
 current bytes with `no-store`. Generation failure is a typed 502
 (`thumbnail.*`); the gallery card's empty preview frame is the fallback.
+The four codes are `thumbnail.tailwind_runtime_missing` (no Tailwind browser
+runtime for the web capture), `thumbnail.capture_failed` (Playwright/Chromium
+missing or the screenshot itself failed), and a **kind-aware split of the engine
+`CoreError`** — `thumbnail.render_failed` on a web document (the failing step is
+the render; the web branch never exports) and `thumbnail.export_failed` on a
+scene (the engine PNG export).
 The frontend composes this URL in `toProjectArtifact` from the list read's
 `documentId` + `currentVersionId` — no wire-shape change.
 

@@ -47,20 +47,25 @@ Then open **http://localhost:3020** and sign in:
 - Repo venv at `.venv` (used by every python process — never bare `python`).
 - `apps/frontend`: `npm install && npm run design-system:build` (canvaskit-wasm comes with install).
 - Design engine helper built: `subsystems/clue-design/target/release/lumen-api-helper`.
-- Playwright chromium available to the venv (design preview renders need it).
-- **Chromium for gallery thumbnails (once per machine):** `python -m playwright install chromium`
-  (from the repo `.venv`, the same venv the design API runs in). Without it,
-  `GET /documents/{id}/thumbnail` for **web** documents answers a typed 502
-  (`thumbnail.capture_failed`) and every web gallery card falls back to the empty
-  preview frame. Scene/ad thumbnails do not need it — they come from the engine's
-  own Skia PNG export.
+- **Playwright chromium available to the venv (once per machine):**
+  `python -m playwright install chromium`, from the repo `.venv` — the same venv the design
+  API runs in. It backs the design preview renders **and** every **web** gallery thumbnail;
+  without it `GET /documents/{id}/thumbnail` for a web document answers a typed 502
+  (`thumbnail.capture_failed`) and every web gallery card falls back to the empty preview
+  frame. Scene/ad thumbnails do not need it — they come from the engine's own Skia PNG export.
 - Vendored Tailwind runtime present: `apps/editor/public/vendor/tailwind-browser.js` (untracked in git — previews render unstyled without it).
   It is also what the **web thumbnail** capture inlines: with no runtime the thumbnail
   route refuses loudly with `thumbnail.tailwind_runtime_missing` (a 502) rather than
-  screenshotting an unstyled page, and the card shows the empty frame.
+  screenshotting an unstyled page, and the card shows the empty frame. The route's resolver
+  searches both homes — `apps/editor/public/vendor/tailwind-browser.js` **and**
+  `apps/frontend/public/vendor/tailwind-browser.js`, plus either app's
+  `node_modules/@tailwindcss/browser/dist/index.global.js` — so either copy satisfies it.
   `LUMEN_TAILWIND_RUNTIME=/abs/path/to/tailwind-browser.js` overrides the search path
   (same env the agent runtime's preview capture uses); a set-but-missing path is a
   refusal, not a fall-through to the default candidates.
+  The route's full typed-502 vocabulary is four codes: `thumbnail.tailwind_runtime_missing`,
+  `thumbnail.capture_failed`, and the kind-aware engine-error split
+  `thumbnail.render_failed` (web) / `thumbnail.export_failed` (scene/ad).
 - `/private/tmp/clue-agent-workspaces` exists with mode 700 (the script creates it).
 
 ## Verifying the stack is actually healthy (30 seconds)
