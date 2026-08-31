@@ -134,6 +134,38 @@ test("a mutation body rides through and the design API's 4xx passes back", async
   assert.equal(body.detail, "stale base_version");
 });
 
+test("thumbnail PNG bytes, content-type, cache-control, and the version query pass through", async () => {
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+  const captured: { url?: string } = {};
+  const response = await handleDesignProxyRequest(
+    new Request("http://localhost/api/clue/design/documents/doc_1/thumbnail?v=7"),
+    ["documents", "doc_1", "thumbnail"],
+    dependencies({
+      fetchImpl: async (input) => {
+        captured.url = String(input);
+        return new Response(png, {
+          status: 200,
+          headers: {
+            "content-type": "image/png",
+            "cache-control": "private, max-age=31536000, immutable",
+          },
+        });
+      },
+    }),
+  );
+  assert.equal(response.status, 200);
+  assert.equal(
+    captured.url,
+    "http://design.internal:8000/documents/doc_1/thumbnail?v=7",
+  );
+  assert.equal(response.headers.get("content-type"), "image/png");
+  assert.equal(
+    response.headers.get("cache-control"),
+    "private, max-age=31536000, immutable",
+  );
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), png);
+});
+
 test("dot segments in the path are refused, not forwarded", async () => {
   await assert.rejects(
     handleDesignProxyRequest(
