@@ -1,0 +1,1350 @@
+[
+  {
+    "provider": "ashby_public",
+    "label": "b0_ashby_zafran",
+    "op": "GET posting-api/job-board/zafran-security",
+    "http": 200,
+    "elapsed_s": 0.3,
+    "cost_usd": 0.0,
+    "agent": "B",
+    "ts": "2026-08-31T07:34:14Z"
+  },
+  {
+    "provider": "ashby_public",
+    "label": "b0_ashby_cogent",
+    "op": "GET posting-api/job-board/cogent-security",
+    "http": 200,
+    "elapsed_s": 0.2,
+    "cost_usd": 0.0,
+    "agent": "B",
+    "ts": "2026-08-31T07:34:15Z"
+  },
+  {
+    "provider": "ashby_public",
+    "label": "b0_ashby_harmonic",
+    "op": "GET posting-api/job-board/harmonic-security-inc",
+    "http": 200,
+    "elapsed_s": 0.21,
+    "cost_usd": 0.0,
+    "agent": "B",
+    "ts": "2026-08-31T07:34:15Z"
+  },
+  {
+    "provider": "ashby_public",
+    "label": "b0_ashby_vendelux",
+    "op": "GET posting-api/job-board/vendelux",
+    "http": 200,
+    "elapsed_s": 0.25,
+    "cost_usd": 0.0,
+    "agent": "B",
+    "ts": "2026-08-31T07:34:16Z"
+  },
+  {
+    "provider": "ashby_public",
+    "label": "b0_ashby_uptiq",
+    "op": "GET posting-api/job-board/uptiq",
+    "http": 404,
+    "elapsed_s": 0.14,
+    "cost_usd": 0.0,
+    "agent": "B",
+    "ts": "2026-08-31T07:34:16Z"
+  },
+  {
+    "provider": "ashby_public",
+    "label": "b0_ashby_arintra",
+    "op": "GET posting-api/job-board/arintra",
+    "http": 404,
+    "elapsed_s": 0.21,
+    "cost_usd": 0.0,
+    "agent": "B",
+    "ts": "2026-08-31T07:34:17Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "site_zafran",
+    "op": "GET https://www.zafran.io",
+    "http": 200,
+    "elapsed_s": 0.23,
+    "cost_usd": 0.0,
+    "bytes": 215086,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:34:17Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "site_cogent",
+    "op": "GET https://www.cogent.com",
+    "http": 200,
+    "elapsed_s": 0.29,
+    "cost_usd": 0.0,
+    "bytes": 937078,
+    "server": "Framer/6443c08",
+    "agent": "B",
+    "ts": "2026-08-31T07:34:18Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "site_harmonic",
+    "op": "GET https://www.harmonic.security",
+    "http": 200,
+    "elapsed_s": 0.13,
+    "cost_usd": 0.0,
+    "bytes": 146137,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:34:18Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "site_vendelux",
+    "op": "GET https://www.vendelux.com",
+    "http": 200,
+    "elapsed_s": 0.73,
+    "cost_usd": 0.0,
+    "bytes": 406085,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:34:19Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "site_uptiq",
+    "op": "GET https://www.uptiq.ai",
+    "http": 200,
+    "elapsed_s": 0.11,
+    "cost_usd": 0.0,
+    "bytes": 85678,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:34:19Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "harmonic_req_page",
+    "op": "GET https://jobs.ashbyhq.com/harmonic-security-inc/f568f331-f4ea-4328-a690-03772941f561",
+    "http": 200,
+    "elapsed_s": 0.26,
+    "cost_usd": 0.0,
+    "bytes": 34842,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:35:08Z"
+  },
+  {
+    "provider": "ats_public",
+    "label": "greenhouse_uptiq",
+    "op": "GET https://boards-api.greenhouse.io/v1/boards/uptiq/jobs?content=true",
+    "http": 404,
+    "elapsed_s": 0.12,
+    "cost_usd": 0.0,
+    "agent": "B",
+    "ts": "2026-08-31T07:35:08Z"
+  },
+  {
+    "provider": "ats_public",
+    "label": "lever_uptiq",
+    "op": "GET https://api.lever.co/v0/postings/uptiq?mode=json",
+    "http": 404,
+    "elapsed_s": 0.16,
+    "cost_usd": 0.0,
+    "agent": "B",
+    "ts": "2026-08-31T07:35:09Z"
+  },
+  {
+    "provider": "ats_public",
+    "label": "greenhouse_uptiqai",
+    "op": "GET https://boards-api.greenhouse.io/v1/boards/uptiqai/jobs?content=true",
+    "http": 404,
+    "elapsed_s": 0.18,
+    "cost_usd": 0.0,
+    "agent": "B",
+    "ts": "2026-08-31T07:35:09Z"
+  },
+  {
+    "provider": "ats_public",
+    "label": "lever_uptiqai",
+    "op": "GET https://api.lever.co/v0/postings/uptiqai?mode=json",
+    "http": 404,
+    "elapsed_s": 0.25,
+    "cost_usd": 0.0,
+    "agent": "B",
+    "ts": "2026-08-31T07:35:09Z"
+  },
+  {
+    "provider": "ats_public",
+    "label": "greenhouse_uptiq-ai",
+    "op": "GET https://boards-api.greenhouse.io/v1/boards/uptiq-ai/jobs?content=true",
+    "http": 404,
+    "elapsed_s": 0.09,
+    "cost_usd": 0.0,
+    "agent": "B",
+    "ts": "2026-08-31T07:35:10Z"
+  },
+  {
+    "provider": "ats_public",
+    "label": "lever_uptiq-ai",
+    "op": "GET https://api.lever.co/v0/postings/uptiq-ai?mode=json",
+    "http": 404,
+    "elapsed_s": 0.16,
+    "cost_usd": 0.0,
+    "agent": "B",
+    "ts": "2026-08-31T07:35:10Z"
+  },
+  {
+    "provider": "ats_public",
+    "label": "greenhouse_arintra",
+    "op": "GET https://boards-api.greenhouse.io/v1/boards/arintra/jobs?content=true",
+    "http": 404,
+    "elapsed_s": 0.18,
+    "cost_usd": 0.0,
+    "agent": "B",
+    "ts": "2026-08-31T07:35:10Z"
+  },
+  {
+    "provider": "ats_public",
+    "label": "lever_arintra",
+    "op": "GET https://api.lever.co/v0/postings/arintra?mode=json",
+    "http": 404,
+    "elapsed_s": 0.14,
+    "cost_usd": 0.0,
+    "agent": "B",
+    "ts": "2026-08-31T07:35:11Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "uptiq_careers",
+    "op": "GET https://www.uptiq.ai/careers",
+    "http": 200,
+    "elapsed_s": 0.15,
+    "cost_usd": 0.0,
+    "bytes": 65137,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:35:11Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "uptiq_about",
+    "op": "GET https://www.uptiq.ai/about-us",
+    "http": 200,
+    "elapsed_s": 0.08,
+    "cost_usd": 0.0,
+    "bytes": 57885,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:35:11Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "arintra_careers",
+    "op": "GET https://www.arintra.com/careers",
+    "http": 200,
+    "elapsed_s": 0.16,
+    "cost_usd": 0.0,
+    "bytes": 71553,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:35:11Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b1a_contents_zafran",
+    "op": "contents",
+    "http": 200,
+    "elapsed_s": 0.65,
+    "cost_usd": 0.003,
+    "cost_breakdown": {
+      "total": 0.003,
+      "contents": {
+        "text": 0.003
+      }
+    },
+    "n_requested": 4,
+    "n_results": 3,
+    "statuses": [
+      {
+        "id": "https://www.zafran.io",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.zafran.io/resources/zafran-announces-strategic-investment-from-cisco-investments",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.zafran.io/about-us",
+        "status": "error",
+        "error": {
+          "httpStatusCode": 404,
+          "tag": "CRAWL_NOT_FOUND"
+        }
+      }
+    ],
+    "agent": "B",
+    "ts": "2026-08-31T07:36:18Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "lf_zafran_9018",
+    "op": "GET https://www.zafran.io",
+    "http": 200,
+    "elapsed_s": 0.1,
+    "cost_usd": 0.0,
+    "bytes": 215086,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:36:18Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "lf_zafran_7305",
+    "op": "GET https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+    "http": 200,
+    "elapsed_s": 0.21,
+    "cost_usd": 0.0,
+    "bytes": 136418,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:36:19Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "lf_zafran_8191",
+    "op": "GET https://www.zafran.io/resources/zafran-announces-strategic-investment-from-cisco-investments",
+    "http": 200,
+    "elapsed_s": 0.11,
+    "cost_usd": 0.0,
+    "bytes": 134357,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:36:19Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "lf_zafran_6187",
+    "op": "GET https://www.zafran.io/about-us",
+    "http": 404,
+    "elapsed_s": 0.17,
+    "cost_usd": 0.0,
+    "bytes": 87853,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:36:19Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b1a_contents_cogent",
+    "op": "contents",
+    "http": 200,
+    "elapsed_s": 0.11,
+    "cost_usd": 0.003,
+    "cost_breakdown": {
+      "total": 0.003,
+      "contents": {
+        "text": 0.003
+      }
+    },
+    "n_requested": 3,
+    "n_results": 3,
+    "statuses": [
+      {
+        "id": "https://www.cogent.com",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.cogent.com/blog/cogent-security-raises-42m-series-a",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.prnewswire.com/news-releases/cogent-security-raises-42m-series-a-to-arm-security-teams-with-autonomous-ai-agents-302691566.html",
+        "status": "success",
+        "source": "cached"
+      }
+    ],
+    "agent": "B",
+    "ts": "2026-08-31T07:36:19Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "lf_cogent_38",
+    "op": "GET https://www.cogent.com",
+    "http": 200,
+    "elapsed_s": 0.36,
+    "cost_usd": 0.0,
+    "bytes": 937078,
+    "server": "Framer/6443c08",
+    "agent": "B",
+    "ts": "2026-08-31T07:36:19Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "lf_cogent_5035",
+    "op": "GET https://www.cogent.com/blog/cogent-security-raises-42m-series-a",
+    "http": 200,
+    "elapsed_s": 0.3,
+    "cost_usd": 0.0,
+    "bytes": 604024,
+    "server": "Framer/6443c08",
+    "agent": "B",
+    "ts": "2026-08-31T07:36:20Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "lf_cogent_7945",
+    "op": "GET https://www.prnewswire.com/news-releases/cogent-security-raises-42m-series-a-to-arm-security-teams-with-autonomous-ai-agents-302691566.html",
+    "http": 200,
+    "elapsed_s": 0.12,
+    "cost_usd": 0.0,
+    "bytes": 212263,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:36:20Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b1a_contents_harmonic",
+    "op": "contents",
+    "http": 200,
+    "elapsed_s": 0.1,
+    "cost_usd": 0.003,
+    "cost_breakdown": {
+      "total": 0.003,
+      "contents": {
+        "text": 0.003
+      }
+    },
+    "n_requested": 3,
+    "n_results": 3,
+    "statuses": [
+      {
+        "id": "https://www.harmonic.security",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.harmonic.security/about",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.harmonic.security/resources/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market",
+        "status": "success",
+        "source": "cached"
+      }
+    ],
+    "agent": "B",
+    "ts": "2026-08-31T07:36:20Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "lf_harmonic_3058",
+    "op": "GET https://www.harmonic.security",
+    "http": 200,
+    "elapsed_s": 0.1,
+    "cost_usd": 0.0,
+    "bytes": 146137,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:36:20Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "lf_harmonic_3671",
+    "op": "GET https://www.harmonic.security/about",
+    "http": 200,
+    "elapsed_s": 0.16,
+    "cost_usd": 0.0,
+    "bytes": 82574,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:36:20Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "lf_harmonic_5176",
+    "op": "GET https://www.harmonic.security/resources/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market",
+    "http": 200,
+    "elapsed_s": 0.08,
+    "cost_usd": 0.0,
+    "bytes": 55596,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:36:20Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b1a_contents_vendelux",
+    "op": "contents",
+    "http": 200,
+    "elapsed_s": 0.11,
+    "cost_usd": 0.003,
+    "cost_breakdown": {
+      "total": 0.003,
+      "contents": {
+        "text": 0.003
+      }
+    },
+    "n_requested": 3,
+    "n_results": 3,
+    "statuses": [
+      {
+        "id": "https://www.vendelux.com",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://firstmark.com/story/vendelux-raises-50m-series-b-to-bring-ai-led-intelligence-to-b2b-events/",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.businessinsider.com/vendelux-just-raised-50-million-to-capitalize-live-b2b-events-2026-7",
+        "status": "success",
+        "source": "cached"
+      }
+    ],
+    "agent": "B",
+    "ts": "2026-08-31T07:36:20Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "lf_vendelux_9784",
+    "op": "GET https://www.vendelux.com",
+    "http": 200,
+    "elapsed_s": 0.54,
+    "cost_usd": 0.0,
+    "bytes": 406085,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:36:21Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "lf_vendelux_5852",
+    "op": "GET https://firstmark.com/story/vendelux-raises-50m-series-b-to-bring-ai-led-intelligence-to-b2b-events/",
+    "http": 200,
+    "elapsed_s": 0.3,
+    "cost_usd": 0.0,
+    "bytes": 44830,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:36:21Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "lf_vendelux_654",
+    "op": "GET https://www.businessinsider.com/vendelux-just-raised-50-million-to-capitalize-live-b2b-events-2026-7",
+    "http": 200,
+    "elapsed_s": 0.3,
+    "cost_usd": 0.0,
+    "bytes": 444647,
+    "server": null,
+    "agent": "B",
+    "ts": "2026-08-31T07:36:22Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b1a_contents_uptiq",
+    "op": "contents",
+    "http": 200,
+    "elapsed_s": 0.19,
+    "cost_usd": 0.004,
+    "cost_breakdown": {
+      "total": 0.004,
+      "contents": {
+        "text": 0.004
+      }
+    },
+    "n_requested": 4,
+    "n_results": 4,
+    "statuses": [
+      {
+        "id": "https://www.uptiq.ai",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.uptiq.ai/about-us",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.growthspreeofficial.com/case-studies/case-study-uptiq-ai-building-an-abm-engine-for-modern-financial-leaders",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows",
+        "status": "success",
+        "source": "cached"
+      }
+    ],
+    "agent": "B",
+    "ts": "2026-08-31T07:36:22Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "lf_uptiq_4067",
+    "op": "GET https://www.uptiq.ai",
+    "http": 200,
+    "elapsed_s": 0.09,
+    "cost_usd": 0.0,
+    "bytes": 85678,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:36:22Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "lf_uptiq_9852",
+    "op": "GET https://www.uptiq.ai/about-us",
+    "http": 200,
+    "elapsed_s": 0.08,
+    "cost_usd": 0.0,
+    "bytes": 57885,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:36:22Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "lf_uptiq_4187",
+    "op": "GET https://www.growthspreeofficial.com/case-studies/case-study-uptiq-ai-building-an-abm-engine-for-modern-financial-leaders",
+    "http": 200,
+    "elapsed_s": 0.53,
+    "cost_usd": 0.0,
+    "bytes": 456853,
+    "server": "Vercel",
+    "agent": "B",
+    "ts": "2026-08-31T07:36:22Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "lf_uptiq_5911",
+    "op": "GET https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows",
+    "http": 200,
+    "elapsed_s": 0.08,
+    "cost_usd": 0.0,
+    "bytes": 46287,
+    "server": "cloudflare",
+    "agent": "B",
+    "ts": "2026-08-31T07:36:23Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b1b_deep_zafran",
+    "op": "deep-reasoning",
+    "query": "Produce an exhaustive, cited markdown dossier on Zafran Security (zafran.io) covering:\n\n1. IDENTITY & DISAMBIGUATION \u2014 legal/operating name, HQ address (and where the GO-TO-MARKET team\n   actually sits, if different), founding year, domain(s), company LinkedIn URL, employee count\n   with its source,",
+    "http": 200,
+    "elapsed_s": 46.76,
+    "cost_usd": 0.026,
+    "cost_breakdown": {
+      "total": 0.026
+    },
+    "n_results": 21,
+    "agent": "B",
+    "ts": "2026-08-31T07:38:35Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b1b_deep_cogent",
+    "op": "deep-reasoning",
+    "query": "Produce an exhaustive, cited markdown dossier on Cogent Security, Inc. (cogent.com) covering:\n\n1. IDENTITY & DISAMBIGUATION \u2014 legal/operating name, HQ address (and where the GO-TO-MARKET team\n   actually sits, if different), founding year, domain(s), company LinkedIn URL, employee count\n   with its ",
+    "http": 200,
+    "elapsed_s": 55.64,
+    "cost_usd": 0.027,
+    "cost_breakdown": {
+      "total": 0.027
+    },
+    "n_results": 22,
+    "agent": "B",
+    "ts": "2026-08-31T07:39:32Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b1b_deep_harmonic",
+    "op": "deep-reasoning",
+    "query": "Produce an exhaustive, cited markdown dossier on Harmonic Security, Inc. (harmonic.security) covering:\n\n1. IDENTITY & DISAMBIGUATION \u2014 legal/operating name, HQ address (and where the GO-TO-MARKET team\n   actually sits, if different), founding year, domain(s), company LinkedIn URL, employee count\n   ",
+    "http": 200,
+    "elapsed_s": 42.94,
+    "cost_usd": 0.027,
+    "cost_breakdown": {
+      "total": 0.027
+    },
+    "n_results": 22,
+    "agent": "B",
+    "ts": "2026-08-31T07:40:19Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b1b_deep_vendelux",
+    "op": "deep-reasoning",
+    "query": "Produce an exhaustive, cited markdown dossier on Vendelux (vendelux.com) covering:\n\n1. IDENTITY & DISAMBIGUATION \u2014 legal/operating name, HQ address (and where the GO-TO-MARKET team\n   actually sits, if different), founding year, domain(s), company LinkedIn URL, employee count\n   with its source, and",
+    "http": 200,
+    "elapsed_s": 40.9,
+    "cost_usd": 0.027,
+    "cost_breakdown": {
+      "total": 0.027
+    },
+    "n_results": 22,
+    "agent": "B",
+    "ts": "2026-08-31T07:41:02Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b1b_deep_uptiq",
+    "op": "deep-reasoning",
+    "query": "Produce an exhaustive, cited markdown dossier on UPTIQ, Inc. (uptiq.ai) covering:\n\n1. IDENTITY & DISAMBIGUATION \u2014 legal/operating name, HQ address (and where the GO-TO-MARKET team\n   actually sits, if different), founding year, domain(s), company LinkedIn URL, employee count\n   with its source, and ",
+    "http": 200,
+    "elapsed_s": 40.94,
+    "cost_usd": 0.027,
+    "cost_breakdown": {
+      "total": 0.027
+    },
+    "n_results": 22,
+    "agent": "B",
+    "ts": "2026-08-31T07:41:44Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "b1c_probe_zafran_title",
+    "op": "POST /v1/people (title filter probe)",
+    "http": 200,
+    "elapsed_s": 1.69,
+    "cost_usd": 0.0,
+    "credits": 1.0,
+    "note": "totalElements=163",
+    "agent": "B",
+    "ts": "2026-08-31T07:44:11Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "b1c_ark_zafran",
+    "op": "POST /v1/people domain=zafran.io size=12",
+    "http": 200,
+    "elapsed_s": 0.78,
+    "cost_usd": 0.0,
+    "credits": 6.0,
+    "note": "totalElements=163 | top-3 intent",
+    "agent": "B",
+    "ts": "2026-08-31T07:45:07Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "b1c_ark_cogent",
+    "op": "POST /v1/people domain=cogent.com size=12",
+    "http": 200,
+    "elapsed_s": 0.77,
+    "cost_usd": 0.0,
+    "credits": 6.0,
+    "note": "totalElements=62 | top-3 intent",
+    "agent": "B",
+    "ts": "2026-08-31T07:45:18Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "b1c_ark_vendelux",
+    "op": "POST /v1/people domain=vendelux.com size=12",
+    "http": 200,
+    "elapsed_s": 0.54,
+    "cost_usd": 0.0,
+    "credits": 6.0,
+    "note": "totalElements=100 | top-3 intent",
+    "agent": "B",
+    "ts": "2026-08-31T07:45:29Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "b1c_ark_harmonic",
+    "op": "POST /v1/people domain=harmonic.security size=8",
+    "http": 200,
+    "elapsed_s": 0.68,
+    "cost_usd": 0.0,
+    "credits": 4.0,
+    "note": "totalElements=69 | DEGRADED: rank 4, ~56 employees",
+    "agent": "B",
+    "ts": "2026-08-31T07:45:40Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "b1c_ark_uptiq",
+    "op": "POST /v1/people domain=uptiq.ai size=6",
+    "http": 200,
+    "elapsed_s": 0.94,
+    "cost_usd": 0.0,
+    "credits": 3.0,
+    "note": "totalElements=151 | DEGRADED: rank 5, thinnest intent",
+    "agent": "B",
+    "ts": "2026-08-31T07:45:52Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b1d_g_zafran_mktg",
+    "op": "auto",
+    "query": "Zafran Security marketing team Head of Growth Marketing Nick Fisher VP Marketing LinkedIn who leads demand generation zafran.io",
+    "http": 200,
+    "elapsed_s": 2.11,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "agent": "B",
+    "ts": "2026-08-31T07:46:52Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b1d_g_cogent_mktg",
+    "op": "auto",
+    "query": "Cogent Security Cameron Coles VP of Marketing Alexander Semien Head of Growth cogent.com marketing team who owns marketing budget",
+    "http": 200,
+    "elapsed_s": 1.76,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "agent": "B",
+    "ts": "2026-08-31T07:46:55Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b1d_g_harmonic_abm",
+    "op": "auto",
+    "query": "Harmonic Security Ana Corio Director of Demand Generation account based marketing manager hired harmonic.security marketing team 2026",
+    "http": 200,
+    "elapsed_s": 1.35,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "agent": "B",
+    "ts": "2026-08-31T07:46:58Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b1d_g_uptiq_agency",
+    "op": "auto",
+    "query": "Uptiq GrowthSpree ABM agency engagement 2026 still working together account based marketing program financial institutions",
+    "http": 200,
+    "elapsed_s": 1.52,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "agent": "B",
+    "ts": "2026-08-31T07:47:00Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "b1d_ark_nick_fisher",
+    "op": "POST /v1/people name-scoped zafran.io",
+    "http": 200,
+    "elapsed_s": 0.65,
+    "cost_usd": 0.0,
+    "credits": 0.5,
+    "note": "totalElements=1",
+    "agent": "B",
+    "ts": "2026-08-31T07:47:02Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b2_contact_zafran",
+    "op": "deep-reasoning",
+    "query": "Produce a cited markdown profile of Vari Kaur (Varinder Kaur) \u2014 Head of Growth Marketing, Zafran Security.\n\n1. IDENTITY \u2014 full name, exact current title, employer, start date, location, LinkedIn URL, and any\n   same-name person you excluded.\n2. CAREER HISTORY \u2014 every prior employer with role and dat",
+    "http": 200,
+    "elapsed_s": 31.82,
+    "cost_usd": 0.022,
+    "cost_breakdown": {
+      "total": 0.022
+    },
+    "n_results": 17,
+    "agent": "B",
+    "ts": "2026-08-31T07:49:20Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b2_contact_cogent",
+    "op": "deep-reasoning",
+    "query": "Produce a cited markdown profile of Alexander Semien \u2014 Head of Growth, Cogent Security.\n\n1. IDENTITY \u2014 full name, exact current title, employer, start date, location, LinkedIn URL, and any\n   same-name person you excluded.\n2. CAREER HISTORY \u2014 every prior employer with role and dates, and the source ",
+    "http": 200,
+    "elapsed_s": 40.51,
+    "cost_usd": 0.018,
+    "cost_breakdown": {
+      "total": 0.018
+    },
+    "n_results": 13,
+    "agent": "B",
+    "ts": "2026-08-31T07:50:02Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b2_contact_harmonic",
+    "op": "deep-reasoning",
+    "query": "Produce a cited markdown profile of Ana Corio (Anastasia Corio) \u2014 Director of Demand Generation, Harmonic Security.\n\n1. IDENTITY \u2014 full name, exact current title, employer, start date, location, LinkedIn URL, and any\n   same-name person you excluded.\n2. CAREER HISTORY \u2014 every prior employer with rol",
+    "http": 200,
+    "elapsed_s": 70.63,
+    "cost_usd": 0.025,
+    "cost_breakdown": {
+      "total": 0.025
+    },
+    "n_results": 20,
+    "agent": "B",
+    "ts": "2026-08-31T07:51:14Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "b2b_email_zafran_varinderkaur",
+    "op": "POST /v1/people/export/single",
+    "http": 200,
+    "elapsed_s": 3.28,
+    "cost_usd": 0.0,
+    "credits": 1.0,
+    "note": "found=False status=VALID domainType=SMTP [corrected in B2c: address key is email.output[].address]",
+    "agent": "B",
+    "ts": "2026-08-31T07:51:52Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "b2b_email_zafran_nicholastfisher",
+    "op": "POST /v1/people/export/single",
+    "http": 200,
+    "elapsed_s": 2.72,
+    "cost_usd": 0.0,
+    "credits": 1.0,
+    "note": "found=False status=VALID domainType=SMTP [corrected in B2c: address key is email.output[].address]",
+    "agent": "B",
+    "ts": "2026-08-31T07:52:05Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "b2b_email_cogent_alexander-semien",
+    "op": "POST /v1/people/export/single",
+    "http": 404,
+    "elapsed_s": 0.83,
+    "cost_usd": 0.0,
+    "credits": 0.0,
+    "note": "found=False status=None domainType=None [corrected in B2c: address key is email.output[].address]",
+    "agent": "B",
+    "ts": "2026-08-31T07:52:17Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "b2b_email_cogent_cameroncoles",
+    "op": "POST /v1/people/export/single",
+    "http": 200,
+    "elapsed_s": 1.73,
+    "cost_usd": 0.0,
+    "credits": 1.0,
+    "note": "found=False status=VALID domainType=SMTP [corrected in B2c: address key is email.output[].address]",
+    "agent": "B",
+    "ts": "2026-08-31T07:52:29Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "b2b_email_harmonic_anastasiacorio",
+    "op": "POST /v1/people/export/single",
+    "http": 200,
+    "elapsed_s": 0.84,
+    "cost_usd": 0.0,
+    "credits": 1.0,
+    "note": "found=False status=VALID domainType=SMTP [corrected in B2c: address key is email.output[].address]",
+    "agent": "B",
+    "ts": "2026-08-31T07:52:40Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "b2b_email_harmonic_tyler-chonoles-106405a0",
+    "op": "POST /v1/people/export/single",
+    "http": 200,
+    "elapsed_s": 2.13,
+    "cost_usd": 0.0,
+    "credits": 1.0,
+    "note": "found=False status=VALID domainType=SMTP [corrected in B2c: address key is email.output[].address]",
+    "agent": "B",
+    "ts": "2026-08-31T07:52:53Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "b2d_ark_semien_search",
+    "op": "POST /v1/people name-scoped cogent.com",
+    "http": 200,
+    "elapsed_s": 0.67,
+    "cost_usd": 0.0,
+    "credits": 0.5,
+    "note": "totalElements=1",
+    "agent": "B",
+    "ts": "2026-08-31T07:53:46Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "b2d_email_semien",
+    "op": "POST /v1/people/export/single (retry via ark identity)",
+    "http": 404,
+    "elapsed_s": 1.75,
+    "cost_usd": 0.0,
+    "credits": 0.5,
+    "note": "found=False",
+    "agent": "B",
+    "ts": "2026-08-31T07:53:58Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b3_n_zafran",
+    "op": "auto",
+    "query": "Zafran Security criticism complaints layoffs employee reviews Glassdoor acquisition rumors churn negative customer feedback exposure management competitors",
+    "http": 200,
+    "elapsed_s": 1.68,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "agent": "B",
+    "ts": "2026-08-31T07:54:20Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b3_n_cogent",
+    "op": "auto",
+    "query": "Cogent Security cogent.com criticism complaints negative reviews AI vulnerability management skepticism agentic AI security concerns customer churn",
+    "http": 200,
+    "elapsed_s": 1.2,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "agent": "B",
+    "ts": "2026-08-31T07:54:22Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b3_n_harmonic",
+    "op": "auto",
+    "query": "Harmonic Security criticism complaints layoffs employee reviews negative feedback AI data security DLP competitors skepticism",
+    "http": 200,
+    "elapsed_s": 1.12,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "agent": "B",
+    "ts": "2026-08-31T07:54:24Z"
+  },
+  {
+    "provider": "exa",
+    "label": "b3_t_arintra",
+    "op": "auto",
+    "query": "Arintra hiring marketing GTM jobs 2026 Series B Define Ventures marketing team leadership autonomous medical coding go-to-market",
+    "http": 200,
+    "elapsed_s": 1.8,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "agent": "B",
+    "ts": "2026-08-31T07:54:27Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "b4_structure_zafran",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 24.85,
+    "usage": {
+      "prompt_tokens": 18210,
+      "completion_tokens": 2236,
+      "total_tokens": 20446,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0090245,
+        "upstream_inference_prompt_cost": 0.0045525,
+        "upstream_inference_completions_cost": 0.004472
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.0090245,
+    "agent": "B",
+    "ts": "2026-08-31T07:56:41Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "b4_structure_cogent",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 26.08,
+    "usage": {
+      "prompt_tokens": 21679,
+      "completion_tokens": 2967,
+      "total_tokens": 24646,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 2816,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.01072015,
+        "upstream_inference_prompt_cost": 0.00478615,
+        "upstream_inference_completions_cost": 0.005934
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.01072015,
+    "agent": "B",
+    "ts": "2026-08-31T07:57:07Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "b4_structure_harmonic",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 19.74,
+    "usage": {
+      "prompt_tokens": 16296,
+      "completion_tokens": 2158,
+      "total_tokens": 18454,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 2816,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0077564,
+        "upstream_inference_prompt_cost": 0.0034404,
+        "upstream_inference_completions_cost": 0.004316
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.0077564,
+    "agent": "B",
+    "ts": "2026-08-31T07:57:27Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "b4_structure_vendelux",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 19.06,
+    "usage": {
+      "prompt_tokens": 14783,
+      "completion_tokens": 2159,
+      "total_tokens": 16942,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 2816,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00738015,
+        "upstream_inference_prompt_cost": 0.00306215,
+        "upstream_inference_completions_cost": 0.004318
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.00738015,
+    "agent": "B",
+    "ts": "2026-08-31T07:57:46Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "b4_structure_uptiq",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 24.71,
+    "usage": {
+      "prompt_tokens": 14798,
+      "completion_tokens": 2592,
+      "total_tokens": 17390,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 2816,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0082499,
+        "upstream_inference_prompt_cost": 0.0030659,
+        "upstream_inference_completions_cost": 0.005184
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.0082499,
+    "agent": "B",
+    "ts": "2026-08-31T07:58:11Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "b4b_structure_contact_zafran",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 21.71,
+    "usage": {
+      "prompt_tokens": 6301,
+      "completion_tokens": 2304,
+      "total_tokens": 8605,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 2816,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00554965,
+        "upstream_inference_prompt_cost": 0.00094165,
+        "upstream_inference_completions_cost": 0.004608
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.00554965,
+    "agent": "B",
+    "ts": "2026-08-31T07:59:44Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "b4b_structure_contact_cogent",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 17.02,
+    "usage": {
+      "prompt_tokens": 6841,
+      "completion_tokens": 1972,
+      "total_tokens": 8813,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 2816,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00502065,
+        "upstream_inference_prompt_cost": 0.00107665,
+        "upstream_inference_completions_cost": 0.003944
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.00502065,
+    "agent": "B",
+    "ts": "2026-08-31T08:00:01Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "b4b_structure_contact_harmonic",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 19.52,
+    "usage": {
+      "prompt_tokens": 8058,
+      "completion_tokens": 2101,
+      "total_tokens": 10159,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 2816,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0055829,
+        "upstream_inference_prompt_cost": 0.0013809,
+        "upstream_inference_completions_cost": 0.004202
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.0055829,
+    "agent": "B",
+    "ts": "2026-08-31T08:00:21Z"
+  }
+]

@@ -1,0 +1,1285 @@
+{
+  "account": "Zafran Security",
+  "domain": "zafran.io",
+  "entity": "account:zafran-security",
+  "workspace_id": "workspace:clue-smoke-2026-08-31",
+  "run": "arv2-smoke-cluehq",
+  "research_date": "2026-08-31",
+  "claim_counts": {
+    "total": 47,
+    "by_tier": {
+      "1": 26,
+      "2": 1,
+      "4": 20
+    },
+    "by_priority": {
+      "1": 6,
+      "2": 26,
+      "3": 15
+    },
+    "account_entity": 13,
+    "contact_entity": 34,
+    "distinct_contacts": 14
+  },
+  "committee_same_name_audit": {
+    "admitted": [
+      {
+        "name": "Brian Sams",
+        "title": "RSM SLED",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/brian-sams",
+        "start": "2026-08-01"
+      },
+      {
+        "name": "Tom Anthony",
+        "title": "SVP, Global Sales",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/tomanthonyjr",
+        "start": "2024-11-01"
+      },
+      {
+        "name": "Corey Wahler",
+        "title": "Technical Account Manager",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/coreywahler",
+        "start": "2025-12-01"
+      },
+      {
+        "name": "Jordan Beam",
+        "title": "Major Account Manager",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/jordanbeam",
+        "start": "2025-11-01"
+      },
+      {
+        "name": "Travis J. Bennett",
+        "title": "Regional Sales Manager - Majors",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/travis-j-bennett-113a1414",
+        "start": "2026-02-01"
+      },
+      {
+        "name": "Sanaz Yashar",
+        "title": "Co-Founder & CEO",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/sanaz-yashar",
+        "start": "2022-11-01"
+      },
+      {
+        "name": "Brett Robinson",
+        "title": "Regional Sales Manager - Majors",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/bwrobinson1",
+        "start": "2025-02-01"
+      },
+      {
+        "name": "Aidan Maloney",
+        "title": "Business Development",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/aidan-maloney-614856181",
+        "start": "2025-12-01"
+      },
+      {
+        "name": "Rotem Peled-Dvir",
+        "title": "SVP, Finance",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/rotem-peled-dvir",
+        "start": "2025-01-01"
+      },
+      {
+        "name": "Andrew Marasa",
+        "title": "Regional Sales Manager",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/andrewmarasa",
+        "start": "2025-11-01"
+      },
+      {
+        "name": "Kris Nordberg",
+        "title": "Regional Sales Manager",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/kris-nordberg-bb465090",
+        "start": "2025-10-01"
+      },
+      {
+        "name": "Quentin O'Dell",
+        "title": "Director, Technical Account Manager",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/quentin-odell",
+        "start": "2026-06-01"
+      }
+    ],
+    "rejected_same_name": [],
+    "roster_returned": 12,
+    "roster_total_available": 163
+  },
+  "claims": [
+    {
+      "entity": "contact:brian-sams",
+      "field_key": "contact.current_title",
+      "value_json": "RSM SLED",
+      "evidence_span": "profile.title = \"RSM SLED\" with position_groups[0].company.name = \"Zafran Security\"",
+      "source_url": "https://www.linkedin.com/in/brian-sams",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:brian-sams",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Zafran Security",
+          "role": "RSM SLED",
+          "start": "2026-08-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Zafran Security\", title: \"RSM SLED\", date.start: \"2026-08-01\"}",
+      "source_url": "https://www.linkedin.com/in/brian-sams",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:tom-anthony",
+      "field_key": "contact.current_title",
+      "value_json": "SVP, Global Sales",
+      "evidence_span": "profile.title = \"SVP, Global Sales\" with position_groups[0].company.name = \"Zafran Security\"",
+      "source_url": "https://www.linkedin.com/in/tomanthonyjr",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:tom-anthony",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Zafran Security",
+          "role": "SVP, Global Sales",
+          "start": "2024-11-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Zafran Security\", title: \"SVP, Global Sales\", date.start: \"2024-11-01\"}",
+      "source_url": "https://www.linkedin.com/in/tomanthonyjr",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:corey-wahler",
+      "field_key": "contact.current_title",
+      "value_json": "Technical Account Manager",
+      "evidence_span": "profile.title = \"Technical Account Manager\" with position_groups[0].company.name = \"Zafran Security\"",
+      "source_url": "https://www.linkedin.com/in/coreywahler",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:corey-wahler",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Zafran Security",
+          "role": "Technical Account Manager",
+          "start": "2025-12-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Zafran Security\", title: \"Technical Account Manager\", date.start: \"2025-12-01\"}",
+      "source_url": "https://www.linkedin.com/in/coreywahler",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:jordan-beam",
+      "field_key": "contact.current_title",
+      "value_json": "Major Account Manager",
+      "evidence_span": "profile.title = \"Major Account Manager\" with position_groups[0].company.name = \"Zafran Security\"",
+      "source_url": "https://www.linkedin.com/in/jordanbeam",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:jordan-beam",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Zafran Security",
+          "role": "Major Account Manager",
+          "start": "2025-11-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Zafran Security\", title: \"Major Account Manager\", date.start: \"2025-11-01\"}",
+      "source_url": "https://www.linkedin.com/in/jordanbeam",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:travis-j-bennett",
+      "field_key": "contact.current_title",
+      "value_json": "Regional Sales Manager - Majors",
+      "evidence_span": "profile.title = \"Regional Sales Manager - Majors\" with position_groups[0].company.name = \"Zafran Security\"",
+      "source_url": "https://www.linkedin.com/in/travis-j-bennett-113a1414",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:travis-j-bennett",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Zafran Security",
+          "role": "Regional Sales Manager - Majors",
+          "start": "2026-02-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Zafran Security\", title: \"Regional Sales Manager - Majors\", date.start: \"2026-02-01\"}",
+      "source_url": "https://www.linkedin.com/in/travis-j-bennett-113a1414",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:sanaz-yashar",
+      "field_key": "contact.current_title",
+      "value_json": "Co-Founder & CEO",
+      "evidence_span": "profile.title = \"Co-Founder & CEO\" with position_groups[0].company.name = \"Zafran Security\"",
+      "source_url": "https://www.linkedin.com/in/sanaz-yashar",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:sanaz-yashar",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Zafran Security",
+          "role": "Co-Founder & CEO",
+          "start": "2022-11-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Zafran Security\", title: \"Co-Founder & CEO\", date.start: \"2022-11-01\"}",
+      "source_url": "https://www.linkedin.com/in/sanaz-yashar",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:brett-robinson",
+      "field_key": "contact.current_title",
+      "value_json": "Regional Sales Manager - Majors",
+      "evidence_span": "profile.title = \"Regional Sales Manager - Majors\" with position_groups[0].company.name = \"Zafran Security\"",
+      "source_url": "https://www.linkedin.com/in/bwrobinson1",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:brett-robinson",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Zafran Security",
+          "role": "Regional Sales Manager - Majors",
+          "start": "2025-02-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Zafran Security\", title: \"Regional Sales Manager - Majors\", date.start: \"2025-02-01\"}",
+      "source_url": "https://www.linkedin.com/in/bwrobinson1",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:aidan-maloney",
+      "field_key": "contact.current_title",
+      "value_json": "Business Development",
+      "evidence_span": "profile.title = \"Business Development\" with position_groups[0].company.name = \"Zafran Security\"",
+      "source_url": "https://www.linkedin.com/in/aidan-maloney-614856181",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:aidan-maloney",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Zafran Security",
+          "role": "Business Development",
+          "start": "2025-12-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Zafran Security\", title: \"Business Development\", date.start: \"2025-12-01\"}",
+      "source_url": "https://www.linkedin.com/in/aidan-maloney-614856181",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:rotem-peled-dvir",
+      "field_key": "contact.current_title",
+      "value_json": "SVP, Finance",
+      "evidence_span": "profile.title = \"SVP, Finance\" with position_groups[0].company.name = \"Zafran Security\"",
+      "source_url": "https://www.linkedin.com/in/rotem-peled-dvir",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:rotem-peled-dvir",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Zafran Security",
+          "role": "SVP, Finance",
+          "start": "2025-01-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Zafran Security\", title: \"SVP, Finance\", date.start: \"2025-01-01\"}",
+      "source_url": "https://www.linkedin.com/in/rotem-peled-dvir",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:andrew-marasa",
+      "field_key": "contact.current_title",
+      "value_json": "Regional Sales Manager",
+      "evidence_span": "profile.title = \"Regional Sales Manager\" with position_groups[0].company.name = \"Zafran Security\"",
+      "source_url": "https://www.linkedin.com/in/andrewmarasa",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:andrew-marasa",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Zafran Security",
+          "role": "Regional Sales Manager",
+          "start": "2025-11-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Zafran Security\", title: \"Regional Sales Manager\", date.start: \"2025-11-01\"}",
+      "source_url": "https://www.linkedin.com/in/andrewmarasa",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:kris-nordberg",
+      "field_key": "contact.current_title",
+      "value_json": "Regional Sales Manager",
+      "evidence_span": "profile.title = \"Regional Sales Manager\" with position_groups[0].company.name = \"Zafran Security\"",
+      "source_url": "https://www.linkedin.com/in/kris-nordberg-bb465090",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:kris-nordberg",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Zafran Security",
+          "role": "Regional Sales Manager",
+          "start": "2025-10-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Zafran Security\", title: \"Regional Sales Manager\", date.start: \"2025-10-01\"}",
+      "source_url": "https://www.linkedin.com/in/kris-nordberg-bb465090",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:quentin-o-dell",
+      "field_key": "contact.current_title",
+      "value_json": "Director, Technical Account Manager",
+      "evidence_span": "profile.title = \"Director, Technical Account Manager\" with position_groups[0].company.name = \"Zafran Security\"",
+      "source_url": "https://www.linkedin.com/in/quentin-odell",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:quentin-o-dell",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Zafran Security",
+          "role": "Director, Technical Account Manager",
+          "start": "2026-06-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Zafran Security\", title: \"Director, Technical Account Manager\", date.start: \"2026-06-01\"}",
+      "source_url": "https://www.linkedin.com/in/quentin-odell",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:vari-kaur",
+      "field_key": "core.work_email",
+      "value_json": {
+        "address": "vari@zafran.io",
+        "status": "VALID",
+        "domain_type": "SMTP",
+        "verdict": "verified",
+        "checked_at": "2026-08-31T07:51:52.000461"
+      },
+      "evidence_span": "email.output[0] = {address: \"vari@zafran.io\", status: \"VALID\", domainType: \"SMTP\", mx.provider: \"g-suite\", found: true}",
+      "source_url": null,
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "contact:nick-fisher",
+      "field_key": "core.work_email",
+      "value_json": {
+        "address": "nick@zafran.io",
+        "status": "VALID",
+        "domain_type": "SMTP",
+        "verdict": "verified",
+        "checked_at": "2026-08-31T07:52:05.000725"
+      },
+      "evidence_span": "email.output[0] = {address: \"nick@zafran.io\", status: \"VALID\", domainType: \"SMTP\", mx.provider: \"g-suite\", found: true}",
+      "source_url": null,
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:zafran-security",
+      "field_key": "account.hiring_velocity_eng",
+      "value_json": 9.0,
+      "evidence_span": "Ashby public posting API job_board/zafran-security: 9 live engineering/R&D reqs of 25 total (isListed=true)",
+      "source_url": "https://api.ashbyhq.com/posting-api/job-board/zafran-security",
+      "source_key": "ashby_public",
+      "source_tier": 2,
+      "extraction_method": "official_scrape",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 3
+    },
+    {
+      "entity": "account:zafran-security",
+      "field_key": "core.primary_domain",
+      "value_json": "zafran.io",
+      "evidence_span": "zafran.io is the evidenced company domain.",
+      "source_url": "https://www.zafran.io",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:zafran-security",
+      "field_key": "core.account_name",
+      "value_json": "Zafran Security",
+      "evidence_span": "The company describes itself as \u201cZafran Security\u201d and \u201cthe pioneer in AI-native Threat Exposure Management.\u201d",
+      "source_url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:zafran-security",
+      "field_key": "core.company_linkedin_url",
+      "value_json": "https://www.linkedin.com/company/zafran-security",
+      "evidence_span": "LinkedIn: https://www.linkedin.com/company/zafran-security",
+      "source_url": "https://www.linkedin.com/company/zafran-security",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 2
+    },
+    {
+      "entity": "account:zafran-security",
+      "field_key": "core.hq_location",
+      "value_json": {
+        "raw": "New York City, NY",
+        "city": "New York",
+        "region": "New York",
+        "country": "United States",
+        "country_code": "US"
+      },
+      "evidence_span": "New York, New York \u2013 December 2, 2025 \u2013 Zafran Security, the pioneer in AI-native Threat Exposure Management, today announced a $60 million Series C funding round ...",
+      "source_url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 2
+    },
+    {
+      "entity": "account:zafran-security",
+      "field_key": "account.total_funding",
+      "value_json": {
+        "amount_usd": 130000000,
+        "estimate_kind": "reported"
+      },
+      "evidence_span": "This round brings the company\u2019s total funding to $130 million.",
+      "source_url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:zafran-security",
+      "field_key": "account.recent_funding",
+      "value_json": {
+        "amount_usd": 60000000,
+        "round": "Series C"
+      },
+      "evidence_span": "Zafran Triples ARR in $60M Round to Reinvent Exposure Management with Agentic AI ... today announced a $60 million Series C funding round led by Menlo Ventures",
+      "source_url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 1
+    },
+    {
+      "entity": "account:zafran-security",
+      "field_key": "account.strategic_moves",
+      "value_json": "Strategic investment from Cisco Investments announced July 22, 2026; strategic investment from Amex Ventures announced February 24, 2026; launched Agentic Exposure Management product.",
+      "evidence_span": "Zafran Announces Strategic Investment from Cisco Investments ... Published on July 22, 2026",
+      "source_url": "https://www.zafran.io/resources/zafran-announces-strategic-investment-from-cisco-investments",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 1
+    },
+    {
+      "entity": "account:zafran-security",
+      "field_key": "core.company_about",
+      "value_json": "Zafran's agentic platform proves what attackers can exploit in your environment, then mobilizes your existing defenses to stop them.",
+      "evidence_span": "Zafran's agentic platform proves what attackers can exploit in your environment, then mobilizes your existing defenses to stop them.",
+      "source_url": "https://www.zafran.io",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:zafran-security",
+      "field_key": "core.employee_range",
+      "value_json": {
+        "label": "51-200",
+        "min": 51,
+        "max": 200
+      },
+      "evidence_span": "Employees: 141 (51-200 employees).",
+      "source_url": "https://www.linkedin.com/company/zafran-security",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.7,
+      "priority": 2
+    },
+    {
+      "entity": "account:zafran-security",
+      "field_key": "account.operational_pain",
+      "value_json": "Customers face shrinking time-to-exploit windows and difficulty prioritizing/remediating vulnerabilities before exploitation; Zafran positions its product to reduce remediation times from weeks to hours and prove exploitability.",
+      "evidence_span": "Patches take weeks.\n\n# Exploits take hours.\n\n# Zafran takes minutes.",
+      "source_url": "https://www.zafran.io",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 2
+    },
+    {
+      "entity": "account:zafran-security",
+      "field_key": "core.primary_tech_stack",
+      "value_json": [
+        "HubSpot",
+        "Salesforce"
+      ],
+      "evidence_span": "Build and launch campaigns yourself in HubSpot: workflows, nurture journeys, landing pages, email sequences.\n\nProficiency in Salesforce, HubSpot and major ABM platforms.",
+      "source_url": "https://jobs.ashbyhq.com/zafran-security/c879de63-c999-47cc-99a3-e35cf9ba7cdf",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.75,
+      "priority": 2
+    },
+    {
+      "entity": "account:zafran-security",
+      "field_key": "account.hiring_velocity_eng",
+      "value_json": 0,
+      "evidence_span": "The available evidence supports a distributed US/Israel workforce, but does not establish that the marketing organization is entirely in either location.",
+      "source_url": "https://www.zafran.io/open-positions/d5a0a102a1d5435694429de4861d25be",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.4,
+      "priority": 3
+    },
+    {
+      "entity": "contact:vari-kaur",
+      "field_key": "contact.current_title",
+      "value_json": "Head of Growth Marketing",
+      "evidence_span": "### Head of Growth Marketing - Zafran Security (Current).",
+      "source_url": "https://www.linkedin.com/in/varinderkaur",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.95,
+      "priority": 1,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:vari-kaur",
+      "field_key": "contact.current_location",
+      "value_json": {
+        "raw": "location: Easton, Pennsylvania, United States",
+        "country": "United States"
+      },
+      "evidence_span": "location: Easton, Pennsylvania, United States",
+      "source_url": "https://www.linkedin.com/in/varinderkaur",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:vari-kaur",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "Our marketing team at Zafran Security is expanding! \ud83d\ude80 I'm hiring a Senior Manager, ABM & Integrated Campaigns. Looking for someone who loves building ABM end-to-end, lead our integrated campaign strategy, and work shoulder-to-shoulder with Sales to go after the accounts that matter most.\nIf that's you, let's talk. Excellent opportunity to join one of the fastest-growing companies in cybersecurity, backed by Sequoia Capital and Cyberstarts, on a mission to stop the exploitation of vulnerabilities everywhere.\nhttps://lnkd.in/eWYbq_Mw",
+      "evidence_span": "Our marketing team at Zafran Security is expanding! \ud83d\ude80 I'm hiring a Senior Manager, ABM & Integrated Campaigns. Looking for someone who loves building ABM end-to-end, lead our integrated campaign strategy, and work shoulder-to-shoulder with Sales to go after the accounts that matter most.\nIf that's you, let's talk. Excellent opportunity to join one of the fastest-growing companies in cybersecurity, backed by Sequoia Capital and Cyberstarts, on a mission to stop the exploitation of vulnerabilities everywhere.\nhttps://lnkd.in/eWYbq_Mw",
+      "source_url": "https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.98,
+      "priority": 1,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:vari-kaur",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "Thrilled to share that Zafran Security has raised a $60M to bring agentic AI to exposure management and help defenders stay ahead of AI powered attacks. Proud to be part of this journey!!!\n#AgenticAI #ExposureManagement #VulnerabilityManagement #CTEM",
+      "evidence_span": "Thrilled to share that Zafran Security has raised a $60M to bring agentic AI to exposure management and help defenders stay ahead of AI powered attacks. Proud to be part of this journey!!!\n#AgenticAI #ExposureManagement #VulnerabilityManagement #CTEM",
+      "source_url": "https://www.linkedin.com/posts/varinderkaur_agenticai-exposuremanagement-vulnerabilitymanagement-activity-7401630503994441728-1g1G",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.98,
+      "priority": 1,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:vari-kaur",
+      "field_key": "contact.facet.communication_style",
+      "value_json": {
+        "style_label": "enthusiastic and recruiting-oriented",
+        "summary": "Tone evidenced by phrases and emoji such as \"Thrilled to share,\" \"Proud to be part of this journey!!!,\" \"\ud83d\ude80,\" and multi-paragraph recruiting copy like \"If that's you, let's talk.\""
+      },
+      "evidence_span": "Thrilled to share that Zafran Security has raised a $60M to bring agentic AI to exposure management and help defenders stay ahead of AI powered attacks. Proud to be part of this journey!!!",
+      "source_url": "https://www.linkedin.com/in/varinderkaur",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:vari-kaur",
+      "field_key": "contact.facet.stated_interests",
+      "value_json": [
+        "building and scaling demand generation",
+        "account-based marketing (ABM)",
+        "digital marketing programs",
+        "AI and automation to optimize performance"
+      ],
+      "evidence_span": "Results-driven marketing leader with expertise in building and scaling demand generation, account-based marketing (ABM), and digital marketing programs",
+      "source_url": "https://www.linkedin.com/in/varinderkaur",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.95,
+      "priority": 2,
+      "identity_binding": "strong",
+      "use_class": "personal-public-non-sensitive"
+    },
+    {
+      "entity": "contact:vari-kaur",
+      "field_key": "contact.persona",
+      "value_json": "champion",
+      "evidence_span": "I'm hiring a Senior Manager, ABM & Integrated Campaigns. Looking for someone who loves building ABM end-to-end, lead our integrated campaign strategy, and work shoulder-to-shoulder with Sales to go after the accounts that matter most.",
+      "source_url": "https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.88,
+      "priority": 1,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:vari-kaur",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Zafran Security",
+          "role": "Head of Growth Marketing",
+          "start": "May 2025",
+          "end": "Present"
+        },
+        {
+          "org": "Secureworks",
+          "role": "Director, Demand Generation & Technology",
+          "start": "Jun 2022",
+          "end": "May 2025"
+        },
+        {
+          "org": "ReSource Pro",
+          "role": "Director Demand Generation",
+          "start": "Apr 2021",
+          "end": "Jun 2022"
+        },
+        {
+          "org": "Axiom",
+          "role": "Director Demand Generation and Technology",
+          "start": "2019-01-01",
+          "end": "2021-01-01"
+        },
+        {
+          "org": "Tangoe",
+          "role": "Director Digital Marketing",
+          "start": "2018-03-01",
+          "end": "2019-05-01"
+        },
+        {
+          "org": "Ivanti",
+          "role": "Various marketing manager roles",
+          "start": "2011",
+          "end": "2018"
+        },
+        {
+          "org": "Grazitti",
+          "role": "Online Marketing Manager",
+          "start": "2008",
+          "end": "2011"
+        },
+        {
+          "org": "Milestone Global Solutions",
+          "role": "SEO Analyst and Content Writer",
+          "start": "2006-01-01",
+          "end": "2008-01-01"
+        }
+      ],
+      "evidence_span": "### Director, Demand Generation & Technology - Secureworks\nJun 2022 - May 2025 (2 years and 11 months).",
+      "source_url": "https://www.linkedin.com/in/varinderkaur",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    }
+  ],
+  "proposed_fields": [
+    {
+      "field_key": "account.hiring.gtm_open_roles",
+      "entity_type": "account",
+      "value_type": "list[object]",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "title",
+            "published_at",
+            "still_listed"
+          ],
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "department": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "published_at": {
+              "type": "string"
+            },
+            "days_open": {
+              "type": "integer"
+            },
+            "comp_band": {
+              "type": "string"
+            },
+            "still_listed": {
+              "type": "boolean"
+            },
+            "url": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "description": "Live go-to-market/marketing requisitions with published date and a still-listed flag verified against the ATS on the research date.",
+      "reuse_scope": "public_footprint",
+      "hypothesis": "This is the single highest-signal ABM buying indicator and the catalog has no home for it: account.hiring_velocity_eng covers ENGINEERING only. An open GTM req names the seat the client's product substitutes for, carries a salary band that is the price anchor, and its AGE is the intent signal (a 105-day-open ABM req means they cannot hire it). Without this field every Clue P1 signal has to be smuggled into account.operational_pain as prose.",
+      "example_value": [
+        {
+          "title": "Sr Technical Marketing Manager",
+          "department": "Marketing",
+          "location": "USA",
+          "published_at": "2026-06-17T14:11:11.933+00:00",
+          "comp_band": null,
+          "still_listed": true,
+          "url": "https://jobs.ashbyhq.com/zafran-security/2441fd5c-2d63-4f17-a6ee-a7aad50bd2e7"
+        }
+      ],
+      "example_evidence_span": "Ashby posting API: title=\"Sr Technical Marketing Manager\" department=\"Marketing\" publishedAt=\"2026-06-17T14:11:11.933+00:00\" isListed=true",
+      "example_source_url": "https://jobs.ashbyhq.com/zafran-security/2441fd5c-2d63-4f17-a6ee-a7aad50bd2e7",
+      "priority": 1
+    },
+    {
+      "field_key": "core.legal_name",
+      "entity_type": "account",
+      "value_type": "str",
+      "value_schema": {
+        "type": "string"
+      },
+      "description": "Legal registered entity name (not present in catalog; proposed for captures when available).",
+      "reuse_scope": "account:zafran-security",
+      "hypothesis": "An ABM platform benefits from the legal entity name to ensure contracts, procurement, and POs route to the correct legal organization and to match third-party data sources reliably.",
+      "example_value": "Zafran Security, Inc.",
+      "example_evidence_span": "Legal name: Zafran Security, Inc. (registered in Delaware)",
+      "example_source_url": "https://example.com/filing",
+      "priority": 2
+    },
+    {
+      "field_key": "core.arr_exact",
+      "entity_type": "account",
+      "value_type": "number",
+      "value_schema": {
+        "type": "number"
+      },
+      "description": "Exact Annual Recurring Revenue (company-reported) when available; many sources only report growth claims or third-party estimates.",
+      "reuse_scope": "account:zafran-security",
+      "hypothesis": "Exact ARR is critical to prioritize ABM investment tiers and tailor value propositions; knowing true recurring revenue allows sales to size deals and select appropriate offers.",
+      "example_value": 20000000,
+      "example_evidence_span": "Zafran reports $20,000,000 ARR as of Q2 2026.",
+      "example_source_url": "https://example.com/press",
+      "priority": 1
+    },
+    {
+      "field_key": "account.named_customers",
+      "entity_type": "account",
+      "value_type": "list",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "description": "List of named customer logos cited by the company or press (useful for social proof).",
+      "reuse_scope": "account:zafran-security",
+      "hypothesis": "Named customer references help ABM messaging and proof points for target sectors; they enable tailored case studies, references, and peer benchmarking in outreach.",
+      "example_value": [
+        "Kraft Heinz",
+        "Chipotle",
+        "Netskope"
+      ],
+      "example_evidence_span": "Ricardo Lafosse\n\nCISO, Kraft Heinz",
+      "example_source_url": "https://www.zafran.io",
+      "priority": 2
+    },
+    {
+      "field_key": "account.abm_vacancy_signal",
+      "entity_type": "account",
+      "value_type": "str",
+      "value_schema": {
+        "type": "string"
+      },
+      "description": "Signal describing open/hiring ABM and marketing roles and their hiring age (vacancy signal for buying intent).",
+      "reuse_scope": "account:zafran-security",
+      "hypothesis": "Open senior ABM/marketing roles (especially long-open) indicate active investment in demand motion and can signal near-term buying intent for ABM tooling and services.",
+      "example_value": "Senior Manager, ABM & Integrated Campaigns listed 2026-06-17 and still open 75 days as of 2026-08-31",
+      "example_evidence_span": "Senior Manager, ABM & Integrated Campaigns \u2014 USA/remote; user-supplied publication date 2026-06-17; still listed 2026-08-31; 75 days open.",
+      "example_source_url": "https://jobs.ashbyhq.com/zafran-security/c879de63-c999-47cc-99a3-e35cf9ba7cdf",
+      "priority": 1
+    },
+    {
+      "field_key": "account.recent_funding",
+      "entity_type": "account",
+      "value_type": "object",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "amount_usd"
+        ],
+        "properties": {
+          "amount_usd": {
+            "type": "number"
+          },
+          "round": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Most recent funding round for the account (amount and round).",
+      "reuse_scope": "single_account",
+      "hypothesis": "Knowing Zafran's recent $60M raise (amount and round) is critical for Clue's ABM play because it signals buying capacity and a near-term propensity to invest in GTM tooling like an AI-native ABM orchestration platform.",
+      "example_value": {
+        "amount_usd": 60000000,
+        "round": "Series B"
+      },
+      "example_evidence_span": "Thrilled to share that Zafran Security has raised a $60M to bring agentic AI to exposure management",
+      "example_source_url": "https://www.linkedin.com/posts/varinderkaur_agenticai-exposuremanagement-vulnerabilitymanagement-activity-7401630503994441728-1g1G",
+      "priority": 1
+    },
+    {
+      "field_key": "contact.role_on_committee",
+      "entity_type": "contact",
+      "value_type": "object",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "champion",
+              "economic_buyer",
+              "technical_evaluator",
+              "blocker"
+            ]
+          },
+          "rationale": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Inferred buying-committee role with plausibility rationale.",
+      "reuse_scope": "single_contact",
+      "hypothesis": "Capturing Vari Kaur's likely role on the buying committee (champion) with rationale helps Clue prioritize outreach and tailor messaging to her remit of building ABM end-to-end and hiring an ABM manager.",
+      "example_value": {
+        "role": "champion",
+        "rationale": "Public hiring post and remit indicate she owns ABM strategy and hiring for ABM, implying she would champion purchasing decisions for ABM tooling."
+      },
+      "example_evidence_span": "I'm hiring a Senior Manager, ABM & Integrated Campaigns. Looking for someone who loves building ABM end-to-end, lead our integrated campaign strategy, and work shoulder-to-shoulder with Sales to go after the accounts that matter most.",
+      "example_source_url": "https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X",
+      "priority": 1
+    }
+  ]
+}

@@ -1,0 +1,1515 @@
+You convert free-form research reports into typed claim rows for a claim store.
+
+ABSOLUTE RULES
+1. You may ONLY use a field_key from the catalog given to you. If a fact does not fit any catalog
+   key, DO NOT force it — put it in proposed_fields instead.
+2. value_json MUST validate against that field's value_schema exactly (right JSON type, required
+   properties present, enum values exact).
+3. evidence_span MUST be a VERBATIM substring of the material given to you — copy the quoted text
+   exactly as it appears. Never paraphrase into evidence_span. If there is no quote for a fact,
+   omit the fact entirely.
+4. source_url MUST be the URL the material attributes that fact to. Every row needs one. Never
+   invent a URL and never reuse an unrelated one.
+5. NEVER emit a row for anything marked "NOT FOUND". Never emit an automated/LinkedIn REVENUE
+   ESTIMATE as core.annual_revenue — an estimate is not a reported number; skip it or use
+   core.revenue_band only if the material states a band.
+6. NEVER emit special-category personal data (health, religion, politics, sexual orientation,
+   ethnicity, union membership, criminal matters, family/bereavement, home address, personal
+   phone/email).
+7. Do NOT emit provenance fields (source_key, tier, extraction_method, verification_status): the
+   caller stamps those. Emit only field_key, value_json, evidence_span, source_url, confidence,
+   priority, and for contact.facet.* also use_class.
+8. Prefer fewer, well-evidenced rows over many thin ones. One row per field per distinct fact.
+
+SIGNAL PRIORITY — every claim MUST carry `priority`: 1, 2 or 3.
+  priority 1 (top; shown first): ACTIVE BUYING INTENT. Go-to-market/marketing hiring (quote the
+    req), fresh funding (amount/date/investors), a vacant or newly-filled marketing/growth seat, a
+    tooling gap (no ABM/intent platform), an executive publicly naming a GTM bottleneck or growth
+    commitment, and any timing event less than 6 months old.
+  priority 2 (supporting): firmographics that QUALIFY the account (headcount, vertical, customers,
+    outcome metrics), committee composition, titles and personas, tech stack.
+  priority 3 (context): history, culture and resonance, background facts, personal hooks.
+
+Return ONLY a JSON object with the keys the user message asks for.
+Each proposed field: {"field_key","entity_type","value_type","value_schema","description",
+"reuse_scope","hypothesis","example_value","example_evidence_span","example_source_url",
+"priority"} where description is agent-facing and hypothesis is one paragraph on why an ABM
+platform needs this field.
+
+=====
+
+# FIELD CATALOG (the ONLY keys you may use)
+ACCOUNT FIELDS (entity = the account):
+  core.account_name | value_type=str | Canonical account name observation. | value_schema={'type': 'string'}
+  core.primary_domain | value_type=str | Primary web domain. | value_schema={'type': 'string'}
+  core.company_linkedin_url | value_type=str | Public LinkedIn company page URL. | value_schema={'type': 'string'}
+  core.industry | value_type=str | Primary industry classification. | value_schema={'type': 'string'}
+  core.company_about | value_type=str | Public company description/about text. | value_schema={'type': 'string'}
+  core.employee_count | value_type=int | Total headcount. | value_schema={'type': 'integer'}
+  core.employee_range | value_type=object | Employee range, used only when exact headcount is unavailable. | value_schema={'type': 'object', 'required': ['label'], 'properties': {'label': {'type': 'string'}, 'min': {'type': 'integer'}, 'max': {'type': 'integer'}}}
+  core.hq_location | value_type=object | Normalized HQ/primary location plus the source's raw value. | value_schema={'type': 'object', 'required': ['raw'], 'properties': {'raw': {'type': 'string'}, 'city': {'type': 'string'}, 'region': {'type': 'string'}, 'country': {'type': 'string'}, 'country_code': {'type': 'string'}}}
+  core.annual_revenue | value_type=object | Annual revenue with currency, as-of date and reported/estimate semantics. | value_schema={'type': 'object', 'required': ['amount', 'currency', 'as_of', 'estimate_kind'], 'properties': {'amount': {'type': 'number'}, 'currency': {'type': 'string'}, 'as_of': {'type': 'string'}, 'estimate_kind': {'type': 'string', 'enum': ['reported', 'provider_estimate', 'third_party_estimate']}}}
+  core.revenue_band | value_type=enum | Bounded revenue band when exact sourced revenue is absent. | value_schema={'type': 'string', 'enum': ['under_1m', '1m_10m', '10m_50m', '50m_100m', '100m_500m', '500m_1b', '1b_plus']}
+  core.company_email | value_type=str | Public general company contact email. | value_schema={'type': 'string'}
+  core.company_phone | value_type=str | Public general company contact phone. | value_schema={'type': 'string'}
+  core.primary_tech_stack | value_type=list[str] | Detected primary technologies. | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  account.recent_funding | value_type=object | Most recent funding round. | value_schema={'type': 'object', 'required': ['amount_usd'], 'properties': {'amount_usd': {'type': 'number'}, 'round': {'type': 'string'}}}
+  account.total_funding | value_type=object | Total funding in USD with explicit estimate semantics. | value_schema={'type': 'object', 'required': ['amount_usd', 'estimate_kind'], 'properties': {'amount_usd': {'type': 'number'}, 'estimate_kind': {'type': 'string', 'enum': ['reported', 'provider_estimate', 'third_party_estimate']}}}
+  account.hiring_velocity_eng | value_type=number | Engineering hiring velocity (count of open engineering roles). | value_schema={'type': 'number'}
+  account.operational_pain | value_type=str | Synthesized operational pain. | value_schema={'type': 'string'}
+  account.strategic_moves | value_type=str | Strategic moves / initiatives. | value_schema={'type': 'string'}
+  account.resonance.culture | value_type=str | Cultural resonance signal. | value_schema={'type': 'string'}
+  account.resonance.employee_sentiment | value_type=object | Aggregate employee sentiment. | value_schema={'type': 'object', 'required': ['label'], 'properties': {'label': {'type': 'string', 'enum': ['positive', 'neutral', 'negative', 'mixed']}, 'polarity': {'type': 'number'}, 'summary': {'type': 'string'}}}
+  account.resonance.attrition_signal | value_type=object | Morale / attrition / layoff signal. | value_schema={'type': 'object', 'required': ['signal_type'], 'properties': {'signal_type': {'type': 'string', 'enum': ['morale', 'attrition', 'layoff']}, 'direction': {'type': 'string', 'enum': ['improving', 'stable', 'worsening']}, 'summary': {'type': 'string'}}}
+  account.resonance.eng_blog_tone | value_type=object | Tone/voice of the company's engineering or company blog. | value_schema={'type': 'object', 'required': ['tone_label'], 'properties': {'tone_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+  account.resonance.public_frustrations | value_type=list[object] | Publicly aired frustrations about the account. | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['frustration'], 'properties': {'frustration': {'type': 'string'}, 'summary': {'type': 'string'}}}}
+  account.resonance.buying_culture | value_type=object | 'What it's like to buy here' - procurement culture. | value_schema={'type': 'object', 'required': ['culture_label'], 'properties': {'culture_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+
+CONTACT FIELDS (entity = the contact; plain contact.*):
+  core.work_email | value_type=str | Selected contact's observed work email. | value_schema={'type': 'string'}
+  core.direct_phone | value_type=str | Selected contact's observed direct phone. | value_schema={'type': 'string'}
+  contact.current_title | value_type=str | Current professional title. | value_schema={'type': 'string'}
+  contact.job_function | value_type=str | Current job function. | value_schema={'type': 'string'}
+  contact.job_level | value_type=str | Current job level. | value_schema={'type': 'string'}
+  contact.current_location | value_type=object | Current professional location/country. | value_schema={'type': 'object', 'properties': {'raw': {'type': 'string'}, 'country': {'type': 'string'}}}
+  contact.persona | value_type=str | Buying-committee persona key (CLOSED enum - only these four values exist). | value_schema={'type': 'string', 'enum': ['champion', 'economic_buyer', 'technical_evaluator', 'blocker']}
+  contact.role_on_committee | value_type=object | Inferred buying-committee role + plausibility rationale. | value_schema={'type': 'object', 'required': ['role'], 'properties': {'role': {'type': 'string', 'enum': ['champion', 'economic_buyer', 'technical_evaluator', 'blocker']}, 'rationale': {'type': 'string'}}}
+
+CONTACT FACET FIELDS (entity = the contact; GOVERNED - every claim MUST carry identity_binding and use_class):
+  contact.facet.career_history | value_type=list[object] | Professional history beyond the current title. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['org'], 'properties': {'org': {'type': 'string'}, 'role': {'type': 'string'}, 'start': {'type': 'string'}, 'end': {'type': 'string'}}}}
+  contact.facet.alma_mater | value_type=list[str] | School(s) / university the person attended. | default use_class=personal-public-non-sensitive | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  contact.facet.stated_interests | value_type=list[str] | Publicly stated interests / topics. | default use_class=personal-public-non-sensitive | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  contact.facet.communication_style | value_type=object | Inferred communication style / tone from public activity. | default use_class=professional-public | value_schema={'type': 'object', 'required': ['style_label'], 'properties': {'style_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+  contact.facet.public_appearances | value_type=list[object] | Podcasts / talks / panels the person appeared in. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['title'], 'properties': {'title': {'type': 'string'}, 'venue': {'type': 'string'}, 'url': {'type': 'string'}, 'date': {'type': 'string'}}}}
+  contact.facet.publications | value_type=list[object] | Articles / papers / books the person authored. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['title'], 'properties': {'title': {'type': 'string'}, 'venue': {'type': 'string'}, 'url': {'type': 'string'}, 'date': {'type': 'string'}}}}
+  contact.facet.recent_post | value_type=str | Recent public post (personal hook). | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.nickname | value_type=str | Preferred / known-by name beyond the legal first name. | default use_class=personal-public-non-sensitive | value_schema={'type': 'string'}
+  contact.facet.hobby | value_type=str | Publicly stated hobby. | default use_class=personal-public-non-sensitive | value_schema={'type': 'string'}
+  contact.facet.recent_award | value_type=str | Recent award or recognition. | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.conference_talk | value_type=str | Conference talk given by the person. | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.causes | value_type=list[object] | Publicly supported causes (sensitive by default). | default use_class=sensitive | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['cause'], 'properties': {'cause': {'type': 'string'}, 'context': {'type': 'string'}}}}
+
+# ACCOUNT: Zafran Security (zafran.io). Entity id: account:zafran-security
+# The client selling INTO this account is Clue (cluehq.ai), an AI-native ABM orchestration platform: deep account research, buying-committee mapping, per-account microsites, LinkedIn/Meta paid media, and direct mail. Judge priority against THAT sale.
+
+# DEEP RESEARCH REPORT (Exa deep-reasoning, one call)
+# Zafran Security — evidence dossier Research cut-off: 2026-08-31. The evidence below distinguishes company claims, third-party reporting, and automated estimates. Where the searched sources did not establish a fact, it is explicitly marked NOT FOUND. ## 1. Identity & disambiguation - Subject: Zafran Security, operating at zafran.io. The company describes itself as “Zafran Security” and “the pioneer in AI-native Threat Exposure Management.” URL: https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai
+- Legal name: NOT FOUND in the reviewed sources.
+- Founded: 2022. A third-party category table lists “Zafran Security | $130M | $60M Series C | Menlo Ventures | New York | 2022.” URL: https://softwarestrategiesblog.com/2026/04/08/top-10-security-categories-where-venture-capital-funding-trails-gartners-2026-growth-forecast-crunchbase-data/
+- HQ: New York City/New York. The company’s Cisco announcement dateline says “NEW YORK CITY, NY,” while the third-party table says HQ “New York.” URLs: https://finance.yahoo.com/technology/ai/articles/zafran-announces-strategic-investment-cisco-130000622.html and https://softwarestrategiesblog.com/2026/04/08/top-10-security-categories-where-venture-capital-funding-trails-gartners-2026-growth-forecast-crunchbase-data/
+- Street HQ address: NOT FOUND.
+- Offices / GTM location: The available evidence supports a distributed US/Israel workforce, but does not establish that the marketing organization is entirely in either location. LinkedIn-derived data says “By Country: United States: 74 (42%), Israel: 66 (38%), Germany: 1 (1%),” and the ABM role is listed “New York” and “US, Remote.” URLs: https://www.linkedin.com/company/zafran-security and https://www.zafran.io/open-positions/d5a0a102a1d5435694429de4861d25be
+- Domains: zafran.io is the evidenced company domain. Other corporate domains: NOT FOUND.
+- LinkedIn: https://www.linkedin.com/company/zafran-security
+- Employee count: LinkedIn-derived company data reports “Employees: 141 (51-200 employees).” This is an automated/third-party estimate, not a company-certified headcount. URL: https://www.linkedin.com/company/zafran-security
+- Excluded same-name entities: (i) Zafran saffron/spice brands, (ii) Zafran restaurants/food companies, and (iii) Zafran Global. They were excluded because the user’s target lock defines the subject as the AI-native cybersecurity company at zafran.io; the reviewed corporate sources instead describe a “Threat Exposure Management” platform and cybersecurity buyers. URLs: https://www.zafran.io/ and https://www.zafran.io/platform ## 2. Product and who they sell to - Product in the company’s words: “Zafran's agentic platform proves what attackers can exploit in your environment, then mobilizes your existing defenses to stop them.” URL: https://www.zafran.io/
+- Platform function: “Turn fragmented scanner output into one actionable view”; it “brings vulnerability findings together across your existing tools, creating a unified view of exposure across the hybrid enterprise.” URL: https://www.zafran.io/platform
+- Remediation: “RemOps uses generative AI to consolidate overlapping remediation tasks, create a clear get-well plan, and route work to the right owners through your existing ticketing platforms.” URL: https://www.zafran.io/platform
+- Exact buyer title: The job specification names the relevant persona set as “CISO, VP Security, Security Architect, IT Director, and Procurement personas.” URL: https://www.zafran.io/open-positions/d5a0a102a1d5435694429de4861d25be
+- Primary executive buyer emphasis: The same role requires “executive engagement programs targeting CISOs.”
+- Target universe size/enumerability: NOT FOUND. The company identifies sectors and Fortune 500/critical-infrastructure environments, but no total addressable account count was found. It says it protects “many of the largest critical infrastructure organizations,” including “Fortune 50 financial and healthcare institutions, along with utilities.” URL: https://www.zafran.io/resources/openai-selects-zafran-for-trusted-access-for-cyber
+- Pricing model: NOT FOUND. No public Zafran price card or published pricing formula was found. ## 3. Traction - Named customers: NOT FOUND by customer name in the reviewed sources. The company says it serves “multiple Fortune 500 enterprises.”
+- Logo count: NOT FOUND.
+- ARR: The company says ARR “more than tripled” since its last funding round, but does not disclose the underlying dollar amount. URL: https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai
+- Actual ARR behind “Zafran Triples ARR”: NOT FOUND in the company announcement. A July 2026 secondary article says “slowing growth around $20M ARR,” but attributes that figure to reporting around a possible Cisco acquisition and it is not a company-confirmed ARR disclosure. URL: https://sherm4n.com/lazy-digest-israeli-tech-july-19-25-2026/
+- Logo/customer outcomes: The company claims customers use Zafran “to automate the manual work of assessing what is truly exploitable and reducing remediation times from weeks to hours.” It also claims Zafran can prove “99% of critical vulnerabilities are not exploitable” and remediate/mitigate the “1%” most likely to cause an incident. These are company claims; no named customer-level validation was found.
+- Automated revenue estimate: CB Insights displays “$70M FY 2024” in a financial table, but its page explicitly labels the data as financial/third-party database information; it is not an ARR figure and should not be treated as company-reported ARR. URL: https://www.cbinsights.com/company/zafran/financials ## 4. Funding - March 28, 2024: company emergence/initial round: “Emerges from Stealth with Over $30M.” Exact round composition, date of close, lead, and participants: NOT FOUND in the reviewed source set. The company’s launch resource is dated 2024-03-28. URL: https://www.zafran.io/resources/introducing-zafran-the-risk-and-mitigation-platform
+- Series A: NOT FOUND with a company-primary exact amount, date, lead, and participant list.
+- Series B: NOT FOUND with a company-primary exact amount, date, lead, and participant list.
+- December 2, 2025 — Series C: $60M, led by Menlo Ventures; participants Sequoia Capital, Cyberstarts, PSP Growth, Vintage Investment Partners, and Knollwood Investment. The company says, “This round brings the company’s total funding to $130 million.”
+- February 24, 2026 — Amex Ventures strategic investment: announced by Zafran; exact amount, instrument, and total incremental proceeds: NOT FOUND. URL: https://www.zafran.io/resources/zafran-announces-strategic-investment-from-amex-ventures
+- July 22, 2026 — Cisco Investments strategic investment: exact amount NOT FOUND. The company says this “extends its previously announced $130 million total funding” and names existing investors Sequoia, Cyberstarts, Menlo, PSP Growth, Vintage, and Amex. FinSMEs likewise says the amount “was not disclosed.” URL: https://www.finsmes.com/2026/07/zafran-receives-strategic-investment-from-cisco-investments.html
+- Total raised: The last company-explicit total before Cisco is $130M. After Cisco, the exact total is NOT FOUND; press reporting says “more than $140 million,” but that is secondary reporting, not a disclosed Cisco amount. URL: https://www.calcalistech.com/ctechnews/article/a6lm0ykz3
+- Use of proceeds: Series C proceeds will “accelerate product innovation and global expansion.” No more specific publicly committed growth plan was found. ## 5. Go-to-market hiring The following roles were found on Zafran’s own careers pages. The pages expose no reliable publication date in the reviewed search output; therefore publication date is NOT FOUND except where the user supplied the Ashby date. Current-open status is based on the pages remaining listed in the reviewed results, not an independently verified application test. - Senior Manager, ABM & Integrated Campaigns — USA/remote; user-supplied publication date 2026-06-17; still listed 2026-08-31; 75 days open. Reports to “the Head of Growth Marketing.” GTM mechanics: “Own ABM from the ground up: 1:1 programs… 1:few cluster plays… and scaled 1:many motions”; “define which accounts matter most, how they’re tiered, and what a coordinated go-after looks like”; “Map buying groups”; convert “intent signals, firmographic data, behavioral triggers” into campaigns; and run “paid media, retargeting, social, content syndication, webinars, and event programs.” Execution tooling explicitly says “Build and launch campaigns yourself in HubSpot: workflows, nurture journeys, landing pages, email sequences.” Long-open flag: YES, 75 days as of the requested date.
+- Director of Product Marketing — remote; listed on Zafran careers; open status at cut-off: appears listed, but NOT independently verified. The description says the role will “shape the voice and go-to-market strategy,” “drive comprehensive GTM strategies,” and support “customers, prospects, analysts, and at industry events.” Reporting line: NOT FOUND. URL: https://www.zafran.io/open-positions/d67a7de0b50a4b7facfcb168db99148f
+- Senior Technical Marketing Manager — listed; open status and publication date NOT FOUND. The role sits “at the intersection of product, sales, and the security practitioner community” and covers “the conference stage,” battlecards, and customer communications. Reporting line: NOT FOUND. URL: https://www.zafran.io/open-positions/0cb516ba7d304120b055203170ad283b
+- AVP Sales, East — US remote/New York listing; listed; publication date and current open status NOT FOUND. It is responsible for “hyper-growth customer acquisition and bookings” and “consistent pipeline generation.” Reporting line: NOT FOUND. URL: https://www.zafran.io/open-positions/8c2f9f9808bf41349208e2a3d376f40e
+- Other GTM openings: NOT FOUND beyond the roles above in the reviewed evidence. ## 6. Marketing and ABM tooling - HubSpot: FOUND. The ABM job says, “Build and launch campaigns yourself in HubSpot: workflows, nurture journeys, landing pages, email sequences.”
+- Salesforce: The job requires “Proficiency in Salesforce, HubSpot and major ABM platforms.” This establishes a requirement, not necessarily current production use.
+- CRM: Salesforce is named as required proficiency; direct evidence that it is the active CRM is NOT FOUND. HubSpot campaign execution is explicitly stated.
+- Marketing automation: HubSpot workflows/nurture journeys/email sequences are explicitly stated.
+- Sales engagement: “engagement sequences” and “outreach sequences” are mentioned conceptually, but a named sales-engagement platform is NOT FOUND.
+- Named ABM/intent platforms: 6sense — NOT FOUND; Demandbase — NOT FOUND; Terminus — NOT FOUND; RollWorks — NOT FOUND; Mutiny — NOT FOUND; Folloze — NOT FOUND; Influ2 — NOT FOUND; Madison Logic — NOT FOUND; Clay — NOT FOUND; Common Room — NOT FOUND. The job says “major ABM platforms” generically, without naming or proving use of any one of them.
+- Important distinction: the role calls for turning “intent signals, firmographic data, behavioral triggers” into campaigns, but this is a capability requirement and not evidence of a specific vendor deployment. ## 7. Leadership and GTM organization - Sanaz Yashar — Co-founder and CEO. The company’s Amex announcement quotes “Sanaz Yashar, Co-founder and CEO of Zafran Security.”
+- Snir Havdala — co-founder; the user’s target lock identifies him as co-founder, and July 2026 reporting says he departed for Nvidia. Exact current title and join date: NOT FOUND in the reviewed primary sources.
+- Ben Seri — Co-Founder & CTO, according to LinkedIn-derived company data. Join date: NOT FOUND.
+- Tom Anthony — SVP Sales, on the company About page. Join date: NOT FOUND. URL: https://www.zafran.io/about
+- Nick Fisher — VP Marketing, on the company About page. Join date: NOT FOUND.
+- Racheli Barouch-Haik — VP Business Operations, on the company About page. Join date: NOT FOUND.
+- Additional LinkedIn-derived GTM leaders: Gail Unverferth — Director, Revenue Enablement; Jonathan Wood — AVP Sales; Christopher Phillips — Vice President of Customer Success. These are third-party/automated LinkedIn-derived records, not company About-page confirmations. Join dates: NOT FOUND.
+- Head of Growth Marketing: name NOT FOUND. The ABM role reports to this seat, but the posting does not name the person.
+- Vacant GTM seats: Head of Growth Marketing is not explicitly advertised as vacant; however, the reporting manager is unnamed. Director of Product Marketing and Senior Technical Marketing Manager are advertised, indicating recruiting in those GTM functions.
+- Recent GTM leadership hire under 12 months: NOT FOUND. Recent GTM leadership departure: secondary reporting says co-founder/CPO Snir Havdala departed for Nvidia; exact departure date NOT FOUND. ## 8. Operational pain and strategic moves - Pain: “The time between vulnerability disclosure and exploitation continues to shrink,” while organizations need to find and remediate vulnerability risk before attackers.
+- Pain: attackers can chain “multiple low-severity weaknesses into sophisticated attack paths at machine speed.”
+- Pain: “patch-to-deploy gap” in regulated, legacy-heavy environments can be “weeks or months,” while exploit windows can collapse to hours.
+- Company move: launch Agentic Exposure Management to cover “asset inventory, vulnerability detection, risk assessment, and autonomous remediation workflows.”
+- Company move: use agents to discover, enrich, assess exploitability, identify ownership, assess patch impact, and deploy fixes/mitigations with “human-in-the-loop guardrails.”
+- Growth move: use Series C capital for “product innovation and global expansion.”
+- Strategic ecosystem moves: Amex Ventures investment, Cisco Investments investment, and Recorded Future partnership to improve vulnerability context and prioritize actively exploited vulnerabilities. URL: https://www.zafran.io/resources/zafran-and-recorded-future-mitigating-risk-exposure-with-actionable-threat-intelligence ## 9. Culture and resonance - Company self-description: “We’re on a mission to proactively stop the exploitation of vulnerabilities, everywhere,” and the company describes its team as practitioners/builders shaped by “high-stakes security moments.”
+- Cultural operating language in hiring: “Thrives in ambiguity,” “operate independently with urgency and ownership,” and “A/B test constantly. Iterate weekly.”
+- Public frustration: NOT FOUND in the reviewed sources.
+- Employee-sentiment/attrition signal: LinkedIn-derived data reports 141 employees, +6.4% monthly growth and +59.6% yearly growth, but this is an automated estimate rather than verified sentiment or attrition data.
+- Award recognition: NOT FOUND.
+- Resonance proof points: OpenAI selected Zafran for its Trusted Access for Cyber program, according to the company. ## 10. Timing events, newest first — last six months - 2026-07-22: Cisco Investments strategic investment announced; amount undisclosed. Company says it extends the previously announced $130M total funding and adds Cisco to the investor group. Secondary reporting says total funding became “more than $140 million,” but exact amount is NOT FOUND.
+- 2026-06-17: Senior Manager, ABM & Integrated Campaigns req published per the user-provided Ashby observation; still listed on 2026-08-31, making it 75 days open. The role signals investment in 1:1/1:few/1:many ABM, intent-driven personalization, paid/digital programs, events, and HubSpot campaign operations.
+- 2026-06-08: Company announced OpenAI selection for Trusted Access for Cyber. It says it protects “Fortune 50 financial and healthcare institutions,” utilities, and other critical infrastructure.
+- 2026-02-24: Amex Ventures strategic investment announced; exact amount NOT FOUND. ## Special-probe answers (a) Head of Growth Marketing identity: NOT FOUND. The req names only the role—“Reporting to the Head of Growth Marketing”—not the individual. (b) Every marketing person found by name/title: Nick Fisher — VP Marketing, company About page. LinkedIn-derived company data additionally identifies Gail Unverferth — Director, Revenue Enablement, but that is a revenue-enablement role rather than necessarily a marketing role. No other marketing person was established by a reliable named source in the reviewed results. Head of Growth Marketing: NOT FOUND. (c) ABM/intent platform evidence: NOT FOUND for 6sense, Demandbase, Terminus, RollWorks, Mutiny, Folloze, Influ2, Madison Logic, Clay, and Common Room. The only explicit platform evidence is HubSpot, plus a generic requirement for Salesforce and “major ABM platforms.” (d) Marketing organization location: NOT FOUND as a definitive USA-versus-Tel-Aviv answer. The ABM role is New York/US remote, while company workforce data shows substantial US and Israel populations. (e) Actual ARR behind “Zafran Triples ARR”: NOT FOUND in the company announcement. The only dollar figure found is a secondary report’s “around $20M ARR,” which is not company-confirmed and should be treated as an unverified press estimate, not the answer. ## Bottom line The evidence depicts a well-funded, enterprise-focused cybersecurity vendor investing in agentic exposure management and building an explicit account-based demand engine. The strongest buying-posture signals are the July 2026 Cisco strategic investment, OpenAI cyber-program selection, and the still-open ABM leadership/individual-contributor buildout. The highest-value unknowns remain the named Head of Growth Marketing, exact ARR, named customer logos, pricing, street address/legal entity, exact Cisco/Amex proceeds, and the actual ABM/intent vendor stack.
+
+# THE COMPANY'S OWN PAGES + FUNDING ANNOUNCEMENTS (fetched verbatim)
+SOURCE https://www.zafran.io [via Exa /contents]
+Zafran | AI-Native Threat Exposure Management Platform
+
+# Patches take weeks.
+
+# Exploits take hours.
+
+# Zafran takes minutes.
+
+Zafran's agentic platform proves what attackers can exploit in your environment, then mobilizes your existing defenses to stop them.
+
+Get a Demo
+
+Zafran is for security teams buried in vulnerabilities and manual work.
+
+130
+
+new CVEs published every day
+
+99%
+
+of critical vulns aren't exploitable
+
+1 in 3
+
+CVEs are weaponized on day of disclosure
+
+The AI-Native Exposure Management Platform
+
+Unify Findings
+
+Assess Risk
+
+Mitigate
+
+Remediate
+
+Proactive Exposure Hunting
+
+### Unify Findings
+
+Turn fragmented scanner output into one actionable view.
+
+‍Zafran brings vulnerability findings together across your existing tools, creating a unified view of exposure across the hybrid enterprise.
+
+- Unify findings across cloud, on-prem, and AppSec
+- Normalize and de-duplicate findings
+- Establish a single source of truth
+- Replace legacy scanner with Zafran continuous detection, no new agents
+
+Learn More
+
+### Assess Risk
+
+Know what is actually exploitable.
+
+‍Zafran applies your unique risk context to reveal which vulnerabilities are truly exploitable in your environment.
+
+- Runtime presence
+- Internet reachability
+- Exploitation in the wild
+- Asset criticality
+- Existing control mitigations
+
+Learn More
+
+### Mitigate
+
+Reduce risk now, without waiting on patch cycles.
+
+‍Zafran uses your existing security controls to show how to quickly reduce exploitability across your environment.
+
+- Map exposures to compensating controls
+- Deliver step-by-step mitigation guidance
+- Adjust control policies for maximum risk reduction
+- Shrink exposure windows before patching begins
+
+Learn More
+
+### Remediate
+
+Turn vulnerability insights into focused remediation action.
+
+‍RemOps uses generative AI to consolidate overlapping remediation tasks, create a clear get-well plan, and route work to the right owners through your existing ticketing platforms.
+
+- Consolidate overlapping CVEs into a single remediation action
+- Route tasks automatically to the right owner
+- Reduce ticket noise and manual triage
+- Track progress with shared visibility across Security and IT
+
+Learn More
+
+### Proactive Exposure Hunting
+
+Answer “Are we exposed?” with precision.
+
+‍Zafran helps security teams proactively hunt for exposures tied to new CVEs, zero-days, threat actors, and control gaps across the hybrid enterprise.
+
+- Hunt exposures tied to new CVEs and zero-days
+- See which affected assets are internet-exposed
+- Identify control gaps and cracks in existing defenses
+- Turn validated hunts into mitigation and remediation action
+
+Learn More
+
+Explore the platform page
+
+See the Full Platform
+
+## Ranked #1 for Continuous Threat Exposure Management (CTEM)
+
+״Zafran is tackling vulnerabilities from a hacker's perspective. They add a true layer of risk mitigation through compensating controls. Most importantly, they help us understand if our controls are effectively implemented and how we can use them to improve our protection.״
+
+###### Ricardo Lafosse
+
+CISO, Kraft Heinz
+
+“By integrating with the security controls configurations we can identify what is working and what is not. Zafran enables us to evaluate our security tech stack, identify gaps, make informed decisions, and ultimately improve the ROI on our tools”
+
+###### Dave Estlick
+
+CISO, Chipotle
+
+“Zafran enhanced our controls enabling us to position ourselves with exploit and zero-day countermeasures”
+
+###### James Robinson
+
+CISO, Netskope
+
+"With Zafran you can determine what level of risk you are willing to take as a company, what external threats you need to worry about, what portions of your business are susceptible to it, and show you how far your existing toolset can be used to mitigate that threat or make recommendations on what additional tools may be needed.”
+
+###### Robert Schuetter
+
+CISO, Ashland
+
+"In a world where you can not know when and where the next Threat exploitation will catch you, you need a Bubble Wrap. Zafran is our ‘bubble wrap’, it helps us protect our environment from the exploitation of vulns while keeping the business up and running. You can not patch it all at once!"
+
+###### CISO
+
+Fortune 25 Healthcare Enterprise
+
+00:00
+
+/
+
+00:00
+
+## A New Model For Exposure Management Using Agentic AI
+
+Autonomous AI agents for your entire vulnerability management lifecycle
+
+Explore the platform page
+
+Agentic Exposure Management
+
+The Context Layer to Power Autonomous Actions
+
+Exposure Graph Continuously Maps Exposures to Existing Security Controls
+
+Learn more about Zafran
+
+Zafran Platform
+
+00:00
+
+/
+
+00:00
+
+## A New Model For Exposure Management Using Agentic AI
+
+Autonomous AI agents for your entire vulnerability management lifecycle
+
+Explore the platform page
+
+Agentic Exposure Management
+
+Top Stories
+
+Explore Resources
+
+Whitepaper
+
+Zafran Team
+
+### A Practical Guide: Evolving from VM to CTEM
+
+Zafran Team
+
+Read More
+
+2025-08-08
+
+Upcoming Webinar
+
+Author
+
+### AI won't replace your VM team. It'll replace the parts they hate.
+
+September 10, 2026
+
+Watch Now
+
+Register Now
+
+This is some text inside of a div block.
+
+Zafran Announces Strategic Investment from Amex Ventures
+
+News
+
+Zafran Team
+
+### Zafran Announces Strategic Investment from Amex Ventures
+
+Zafran Team
+
+February 24, 2026
+
+Zafran Announces Strategic Investment from Amex Ventures
+
+Read More
+
+This is the default text value
+
+0:00
+
+See Zafran in Action
+
+Prioritize and fix what is truly exploitable using risk context from your existing security tools
+
+Get a Demo
+
+SOURCE https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai [via Exa /contents]
+Zafran Triples ARR in $60M Round to Reinvent Exposure Management
+
+/
+
+/
+
+Zafran Triples ARR in $60M Round to Reinvent Exposure Management with Agentic AI
+
+# Zafran Triples ARR in $60M Round to Reinvent Exposure Management with Agentic AI
+
+Led by Menlo Ventures with participation from Sequoia Capital and Cyberstarts, Zafran is doubling its valuation since the last round to advance the mission of stopping vulnerability exploitation everywhere.
+
+Author:
+
+Zafran Team
+
+,
+
+Published on
+
+December 2, 2025
+
+Blog
+
+‍New York, New York – December 2, 2025 – Zafran Security, the pioneer in AI-native Threat Exposure Management, today announced a $60 million Series C funding round led by Menlo Ventures, with participation from existing investors Sequoia Capital and Cyberstarts, in addition to PSP Growth, Vintage Investment Partners, and Knollwood Investment. By launching Agentic Exposure Management, Zafran is now poised to complete the entire end-to-end lifecycle across asset inventory, vulnerability detection, risk assessment, and autonomous remediation workflows.
+
+This round brings the company’s total funding to $130 million. The new capital will accelerate product innovation and global expansion as Zafran advances its mission to stop the exploitation of vulnerabilities, everywhere.
+
+Since their last funding round, Zafran has doubled its valuation and more than tripled its annual recurring revenue (ARR), driven by rapid adoption across sectors including healthcare, technology, financial services, and manufacturing. The company now serves multiple Fortune 500 enterprises, with customers using Zafran to automate the manual work of assessing what is truly exploitable and reducing remediation times from weeks to hours.
+
+The emergence of AI-powered attacks has accelerated exploitation at an unprecedented scale. In Q1 2025, 30% of known exploited vulnerabilities (KEVs) were weaponised within a single day of public disclosure. As attackers automate exploitation using AI, security teams remain burdened by duplicate findings, manual patch cycles, and siloed tools.
+
+> “We must not allow attackers to claim the AI advantage,” said Sanaz Yashar, CEO and Co-Founder of Zafran Security. “This investment propels our AI innovation forward, building a new model for exposure management through autonomous agents that empowers defenders to fight back.”
+
+With this announcement, Zafran has launched Agentic Exposure Management, an end-to-end solution powered by the company’s AI-native Exposure Graph. Agentic Exposure Management brings scalable, autonomous agents that discover, enrich with risk context, and take action against the exposures most likely to lead to an incident. By connecting vulnerabilities with deep mapping to compensating controls, agents are able to assess the true exploitability of an exposure. Agents then turn these risk insights into evidence-driven action, autonomously discovering asset ownership, assessing patch impact, and deploying automated fixes and mitigations with human-in-the-loop guardrails.
+
+> "Vulnerability management burns massive analyst hours on repetitive triage and manual patching, the kind of service-oriented work that AI agents excel at automating”, said Rama Sekhar, Partner at Menlo Ventures. “Zafran's growth proves that enterprises recognise the difference between legacy tools with AI features bolted on and platforms rebuilt around autonomous AI from the ground up. This is what AI-native security looks like."
+
+> “In seconds, agentic AI can reveal what teams previously only suspected: the biggest risks to the business, why they matter, and which actions will truly move the needle,” said Steve Lodin, Vice President of InfoSec at Sallie Mae. “As AI-powered exploits accelerate, having tools that deliver insights this quickly is essential to staying ahead of emerging threats.”
+
+About Zafran SecurityZafran Security is the first AI-native end-to-end Threat Exposure Management platform to help security teams stop vulnerability exploitation everywhere. Zafran uses your existing security tools to prove that 99% of critical vulnerabilities are not exploitable, then quickly remediates and mitigates the 1% that are most likely to cause an incident. Backed by Menlo Ventures, Sequoia Capital, and Cyberstarts, Zafran is redefining how enterprises stay ahead of AI-driven threats.
+
+‍
+
+### Sources
+
+A Practical Guide: Evolving from VM to CTEM
+
+Traditional vulnerability management must change. So many are drowning in detections, and still lack insights. The time-to-exploit window sits at 5 days. Implementing a Continuous Threat Exposure Management (CTEM) program is the path forward. Moving from vulnerability management to CTEM doesn't have to be complicated. This guide outlines steps you can take to begin, continue, or refine your CTEM journey.
+
+Download Now
+
+Discover how Zafran Security can streamline your vulnerability management processes. Request a demo today and secure your organization’s digital infrastructure.
+
+Request Demo
+
+On This Page
+
+Share this article:
+
+Related Content
+
+Explore Resources
+
+Blog
+
+Tomer Admon
+
+### The Attacker's Escape Room: Why Defenders Have Been Fighting the Wrong Game
+
+Tomer Admon
+
+August 20, 2026
+
+Read More
+
+August 20, 2026
+
+Blog
+
+Zafran Team
+
+### Inside OpenAI's Black Hat Talk: What the Hugging Face Incident Teaches Defenders About Attack Chains
+
+Zafran Team
+
+August 10, 2026
+
+Read More
+
+August 10, 2026
+
+Blog
+
+Steve Cobb
+
+### Understanding CTEM vs EASM vs BAS: A Practical Guide for Your Vulnerability Program
+
+Steve Cobb
+
+August 5, 2026
+
+Read More
+
+August 5, 2026
+
+SOURCE https://www.zafran.io/resources/zafran-announces-strategic-investment-from-cisco-investments [via Exa /contents]
+/
+
+/
+
+Zafran Announces Strategic Investment from Cisco Investments
+
+# Zafran Announces Strategic Investment from Cisco Investments
+
+Author:
+
+Zafran Team
+
+,
+
+Published on
+
+July 22, 2026
+
+Blog
+
+Zafran Security, a pioneer in AI-native Continuous Threat Exposure Management, today announced a strategic investment from Cisco Investments, extending its previously announced $130 million total funding. Cisco Investments joins existing investors including Sequoia Capital, Cyberstarts, Menlo Ventures, PSP Growth, Vintage Investment Partners, and Amex Ventures.
+
+The investment comes as enterprise security reaches an inflection point. AI is fundamentally changing how attacks are executed, enabling attackers to chain together multiple low-severity weaknesses into sophisticated attack paths at machine speed. As the time between vulnerability disclosure and exploitation continues to shrink, organizations have an extremely urgent situation to find vulnerability risk and remediate it before attackers do. They need to understand how attackers are most likely to move through their environment and reduce exploitable risk before those attack paths can be used.
+
+At the same time, enterprises have spent decades building best-in-class security programs. EDR, firewalls, cloud security platforms, identity systems, vulnerability scanners and countless other technologies all play an important role in defending the business. The challenge enterprises face today is the lack of a unified system that understands attack paths and coordinates action before an incident occurs.
+
+"Organizations have made enormous investments in cybersecurity over the past decade. The opportunity now is to make those investments work together," said Sanaz Yashar, CEO and Co-Founder of Zafran Security. "AI has fundamentally changed how attackers operate, increasing the speed, scale, and sophistication of exploitation. We built Zafran to be the nerve center that helps organizations understand exploitability, identify where to act first, and mobilize the security controls they already have to reduce risk before exploitation occurs. We're proud to welcome Cisco Investments as we continue building that vision."
+
+Built on its AI-native Exposure Graph, Zafran's Threat Exposure Management platform provides visibility into the attack paths that matter most and transforms existing security controls into a coordinated system of action. The platform identifies the critical choke points where multiple attack paths converge, enabling organizations to deploy safe, validated mitigations that reduce exploitable risk without disrupting the business. By turning fragmented security data into coordinated action, Zafran helps enterprises reduce exposure faster while maintaining business continuity.
+
+"As the threat landscape grows increasingly complex in the AI era, the challenge for security teams has extended from identifying vulnerabilities to effectively orchestrating their remediation." said Janey, Hoe, Vice President, Cisco Investments. "We are excited to invest in Zafran to create a more unified, intelligence-driven security ecosystem that empowers our customers to better discover vulnerabilities and reduce risks in their infrastructure."‍
+
+About Zafran Security
+
+Zafran Security is the first AI-native end-to-end Threat Exposure Management platform that helps security teams stop vulnerability exploitation everywhere. Using existing security tools, Zafran proves that 99% of critical vulnerabilities are not exploitable, then rapidly mitigates and remediates the 1% most likely to cause an incident. By bringing together discovery, prioritization, mitigation and remediation into a unified platform, Zafran helps enterprises reduce risk faster without adding operational complexity.
+
+### Sources
+
+A Practical Guide: Evolving from VM to CTEM
+
+Traditional vulnerability management must change. So many are drowning in detections, and still lack insights. The time-to-exploit window sits at 5 days. Implementing a Continuous Threat Exposure Management (CTEM) program is the path forward. Moving from vulnerability management to CTEM doesn't have to be complicated. This guide outlines steps you can take to begin, continue, or refine your CTEM journey.
+
+Download Now
+
+Discover how Zafran Security can streamline your vulnerability management processes. Request a demo today and secure your organization’s digital infrastructure.
+
+Request Demo
+
+Share this article:
+
+Related Content
+
+Explore Resources
+
+Blog
+
+Tomer Admon
+
+### The Attacker's Escape Room: Why Defenders Have Been Fighting the Wrong Game
+
+Tomer Admon
+
+August 20, 2026
+
+Read More
+
+August 20, 2026
+
+Blog
+
+Zafran Team
+
+### Inside OpenAI's Black Hat Talk: What the Hugging Face Incident Teaches Defenders About Attack Chains
+
+Zafran Team
+
+August 10, 2026
+
+Read More
+
+August 10, 2026
+
+Blog
+
+Steve Cobb
+
+### Understanding CTEM vs EASM vs BAS: A Practical Guide for Your Vulnerability Program
+
+Steve Cobb
+
+August 5, 2026
+
+Read More
+
+August 5, 2026
+
+# THE COMPANY'S OWN LIVE GO-TO-MARKET JOB REQS (Ashby posting API, verbatim; every one below is STILL LISTED on 2026-08-31)
+JOB Sr Technical Marketing Manager | dept=Marketing/Marketing | loc=USA | published=2026-06-17T14:11:11.933+00:00 | comp=None | STILL LISTED TODAY (2026-08-31)=True
+URL https://jobs.ashbyhq.com/zafran-security/2441fd5c-2d63-4f17-a6ee-a7aad50bd2e7
+Description:
+
+As our Senior Technical Marketing Manager, you'll sit at the intersection of product, sales, and the security practitioner community. You'll own how Zafran's capabilities are positioned, demonstrated, and understood — from the conference stage to the competitive battlecard to the customer's inbox. This isn't a role for someone who just writes about technology; it's for someone who gets it, and can make others get it too.
+
+
+
+If you've spent years in vulnerability management, exposure management, or a neighboring security domain — and you know how to turn technical depth into compelling narratives — we want to talk.
+
+
+
+About Zafran:
+
+
+
+Our Mission: To stop the exploitation of vulnerabilities, everywhere.
+
+
+
+What makes us different: In a world where AI-enabled attackers weaponize vulnerabilities within minutes, the old scan-and-patch-everything model no longer holds. Zafran's Exposure Graph continuously maps every vulnerability across your hybrid environment, chains exploitability through real attack paths and proves 90% of "critical" vulnerabilities can't actually reach you. It then neutralizes the real 10% using your compensating controls and safely remediates only where it matters.
+
+
+
+Who’s behind us: Zafran is backed by Menlo Ventures, Sequoia Capital, Cyberstarts, and a deep belief that cybersecurity should move as fast as attackers do. We’re one of the fastest-growing companies in the industry, scaling to meet demand from the world’s most advanced, security-obsessed organizations.
+
+
+
+What you will do:
+
+ - Own competitive intelligence: track the landscape, synthesize findings, and build battlecards, one-pagers, and positioning guides that help sellers win.
+
+ - Produce technical content that drives pipeline, including blogs, solution briefs, white papers, demo scripts, and video narratives for security practitioners and technical buyers.
+
+ - Act as the voice of the technical buyer with Product Management to ensure messaging, positioning, and roadmap decisions reflect how security practitioners actually evaluate and adopt the product.
+
+ - Partner with product marketing on launch enablement, translating release notes and roadmap updates into compelling field-ready stories.
+
+ - Embed with Solutions Engineers during customer evaluations and deal cycles to capture firsthand field feedback, then loop those insights back into positioning, messaging, and competitive strategy.
+
+ - Work with threat research team to translate original findings, adversary intelligence, and vulnerability disclosures into marketing-ready content such as technical blogs, advisories, and reports.
+
+ - Represent Zafran at industry conferences, trade shows, and customer events, including speaking opportunities and live demos (roughly 20–30% travel).
+
+ - Build and maintain a library of sales enablement assets, ensuring reps have accurate, up-to-date materials at every stage of the funnel.
+
+ - Stay informed about trends in vulnerability management, exposure management, and the broader cybersecurity market.
+
+Requirements
+
+ - 5+ years of experience in technical marketing, product marketing, or a solutions-focused role
+
+ - Proven experience in a fast-paced B2B startup.
+
+ - Strong technical background with the ability to understand and articulate complex security concepts to both practitioner and executive audiences.
+
+ - Excellent written and verbal communication skills, with a portfolio of technical content you're proud of.
+
+ - Strong competitive research skills, with the ability to turn market signals into clear, actionable insights.
+
+ - Experience presenting at industry events, running live product demos, or appearing on customer-facing webinars.
+
+ - Team player mentality with the ability to manage multiple priorities and work cross-functionally.
+
+ - Must have experience with vulnerability management, exposure management, or adjacent security domains.
+
+
+
+At Zafran, people matter! We provide a robust benefits program that includes flexible PTO, health insurance plans (medical, dental, vision), a monthly stipend for phone and internet, 401k, flexible spending account, and a home office stipend when joining!
+
+
+
+We also provide access to frontier AI models, including Claude, so every employee can work smarter, move faster, and build an AI-first career from day one.
+
+
+
+At Zafran, we’re proud to be an equal opportunity employer. We believe the best teams are built by people who think differently, come from all kinds of backgrounds, and aren’t afraid to challenge the status quo. We welcome everyone across race, religion, gender, gender identity or expression, sexual orientation, age, disability, national origin, and veteran status, because what matters most is what you bring to the table.
+
+
+
+If you’re curious, fun, and someone who gets things done, we’d love to meet you
+
+
+
+
+
+JOB Senior Manager, ABM & Integrated Campaigns | dept=Marketing/Marketing | loc=USA | published=2026-06-17T14:26:15.554+00:00 | comp=None | STILL LISTED TODAY (2026-08-31)=True
+URL https://jobs.ashbyhq.com/zafran-security/c879de63-c999-47cc-99a3-e35cf9ba7cdf
+Description:
+
+As our Senior Manager of ABM & Integrated Campaigns, you will the marketing programs that move our highest priority accounts. Reporting to the Head of Growth Marketing, you will design and execute coordinated, multi-channel campaigns that will accelerate pipeline generation, accelerate deals and deepen customer engagement. You'll sit at the intersection of Sales, Product Marketing, RevOps, and Customer Marketing, translating commercial priorities into focused account-based motions with measurable business impact.
+
+
+
+We’re looking for a builder and operator, someone who can think strategically but also execute hands-on, and thrive in a fast-moving environment. If you need a large team and a large budget to do great work, this role is probably not for you. But if you know how to move quickly, and build meaningful programs with focus and creativity, we’d love to talk.
+
+
+
+About Zafran:
+
+
+
+Our Mission: To stop the exploitation of vulnerabilities, everywhere.
+
+
+
+What makes us different: In a world where AI-enabled attackers weaponize vulnerabilities within minutes, the old scan-and-patch-everything model no longer holds. Zafran's Exposure Graph continuously maps every vulnerability across your hybrid environment, chains exploitability through real attack paths and proves 90% of "critical" vulnerabilities can't actually reach you. It then neutralizes the real 10% using your compensating controls and safely remediates only where it matters.
+
+
+
+Who’s behind us: Zafran is backed by Menlo Ventures, Sequoia Capital, Cyberstarts, and a deep belief that cybersecurity should move as fast as attackers do. We’re one of the fastest-growing companies in the industry, scaling to meet demand from the world’s most advanced, security-obsessed organizations.
+
+
+
+We’re serious about our mission- so expect work that matters, teammates who challenge and inspire you, and plenty of fun along the way!
+
+
+
+What you will do:
+
+Account-Based Marketing
+
+ - Own ABM from the ground up: 1:1 programs for your most strategic targets, 1:few cluster plays for high-potential segments, and scaled 1:many motions where volume matters.
+
+ - Work shoulder-to-shoulder with Sales and Sales Ops to define which accounts matter most, how they're tiered, and what a coordinated go-after looks like.
+
+ - Map buying groups, identify the stakeholders who matter, and build engagement sequences that speak to each of them differently.
+
+ - Turn account intelligence (intent signals, firmographic data, behavioral triggers) into personalization campaigns.
+
+ - Build vertical-specific ABM plays for high-priority industries like Financial Services, Healthcare, Manufacturing, etc where buying dynamics, compliance mandates, and threat profiles differ materially.
+
+ - Build reusable ABM playbooks and campaign blueprints to scale the programs.
+
+ - Measure what moves: account penetration, pipeline influence, deal velocity, expansion signals.
+
+Integrated Campaign Leadership
+
+ - Own the full campaign calendar including, planning infrastructure, cross-functional briefs, timelines, and keeping everyone on the same page.
+
+ - Build campaign strategies from the segment up: who we're going after, why now, what message, which channels, what we need to see to call it working.
+
+ - Connect every campaign back to an ABM motion or sales play so the buyer experience feels cohesive, not random.
+
+ - Spot whitespace. If there's a segment or vertical we should be in but aren't, you'll find it and make the case.
+
+Execution & Optimization
+
+ - Build and launch campaigns yourself in HubSpot: workflows, nurture journeys, landing pages, email sequences, the whole thing.
+
+ - Run paid media, retargeting, social, content syndication, webinars, and event programs in a coordinated way, not in silos.
+
+ - A/B test constantly. Iterate weekly. Don't wait for the quarterly review to fix what isn't working.
+
+ - Keep your finger on the analytics, dashboards, intent data, pipeline reports and translate what you see into clear recommendations for leadership.
+
+ - Partner with Sales Enablement on the materials and outreach sequences that sit alongside your campaigns.
+
+ - Own budget allocation, vendor, contractors and channels with a clear ROI lens.
+
+
+
+Requirements:
+
+ - 6–8 years in B2B marketing with a serious track record in ABM and integrated campaign leadership.
+
+ - Prior experience in a cybersecurity company or marketing to security and IT buyers is a plus.
+
+ - Experience running executive engagement programs targeting CISOs: roundtables, private dinners, advisory boards, or EBC programs
+
+ - Deep understanding of enterprise security buying groups, including CISO, VP Security, Security Architect, IT Director, and Procurement personas and the complex, compliance-driven evaluation cycles common in cybersecurity procurement.
+
+ - Proficiency in Salesforce, HubSpot and major ABM platforms. You've built campaigns in them, not just reported from them.
+
+ - Analytically rigorous: You are deeply data-driven, comforta
+
+JOB Business Development Representative | dept=Marketing/Marketing | loc=New York | published=2026-08-19T18:41:27.407+00:00 | comp=None | STILL LISTED TODAY (2026-08-31)=True
+URL https://jobs.ashbyhq.com/zafran-security/9b7a9e8e-56ac-4358-b312-848dbdfe7e13
+Description:
+
+
+
+Zafran is looking for an experienced, motivated and results-driven Business Development Representative to join our expanding team in New York City. As a BDR, you will be a key player in our sales efforts, responsible for generating new business opportunities and contributing to the overall growth of the company. This role is perfect for a sales professional early on in their career, looking to help scale out a game-changing enterprise solution and develop their sales career. If you are a self-starter with excellent communication skills and a drive to overachieve, we want to hear from you.
+
+
+
+About Zafran:
+
+
+
+Our Mission: To stop the exploitations of vulnerabilities, everywhere.
+
+
+
+What makes us different: Zafran de-risks 90% of critical vulnerabilities overnight across your hybrid environment and uses your existing security tools to rapidly mitigate and remediate the 10% most likely to be exploited.
+
+
+
+Who’s behind us: Zafran is backed by Sequoia Capital, Cyberstarts, and a deep belief that cybersecurity should move as fast as attackers do. We’re one of the fastest-growing companies in the industry, scaling to meet demand from the world’s most advanced, security-obsessed organizations.
+
+
+
+We’re serious about our mission- so expect work that matters, teammates who challenge and inspire you, and plenty of fun along the way!
+
+
+
+What you will do:
+
+ - Research and map prospective new accounts through strategic cold outreach
+
+ - Utilize email, phone, and social media to initiate contact with prospective customer to generate qualified meetings
+
+ - Partner with Account Executives on account strategy and pipeline creation
+
+ - Create awareness about our products/services to industry leaders
+
+ - Conduct preliminary assessments to determine the suitability of potential clients.
+
+ - Engage with leads to understand their needs, challenges, and buying criteria
+
+ - Utilize tools such as Salesforce, LinkedIn Sales Navigator, ZoomInfo & Outreach
+
+
+
+Requirements
+
+ - Ability to work a hybrid environment, with regular in-office presence (approximately 3 days a week) at our NYC office.
+
+ - +1-2 years of proven experience in a business development or similar sales role.
+
+ - Experience working in Cybersecurity, SaaS, or similar industries is a plus
+
+ - Strong interpersonal and assertive communication style, with the ability to confidently challenge perspectives when needed.
+
+ - Ability to work independently and as part of a collaborative team.
+
+ - Goal-oriented hunter mindset with a focus on achieving and exceeding targets.
+
+ - Fluency with SaaS tools (e.g., Salesforce, Outreach, Sales Navigator)
+
+ - Positive attitude, resilience, and a willingness to learn.
+
+
+
+At Zafran, people matter! We provide a robust benefits program that includes flexible PTO, health insurance plans (medical, dental, vision), a monthly stipend for phone and internet, 401k, flexible spending account, and a home office stipend when joining!
+
+
+
+We also provide access to frontier AI models, including Claude, so every employee can work smarter, move faster, and build an AI-first career from day one.
+
+
+
+At Zafran, we’re proud to be an equal opportunity employer. We believe the best teams are built by people who think differently, come from all kinds of backgrounds, and aren’t afraid to challenge the status quo. We welcome everyone across race, religion, gender, gender identity or expression, sexual orientation, age, disability, national origin, and veteran status, because what matters most is what you bring to the table.
+
+
+
+If you’re curious, fun, and someone who gets things done, we’d love to meet you
+
+# TARGETED GAP-FILL SEARCH RESULTS
+SOURCE https://www.linkedin.com/in/varinderkaur [published 2026-07-08T00:00:00.000Z]
+# Vari Kaur
+
+Demand Generation & ABM Expert | B2B SaaS Marketing Leader | GTM Strategist | Pipeline Acceleration, and Revenue Growth
+
+Easton, Pennsylvania, United States (US)
+
+500 connections • 2,553 followers
+
+## About
+
+Results-driven marketing leader with expertise in building and scaling demand generation, account-based marketing (ABM), and digital marketing programs for B2B SaaS companies across industries, including cybersecurity, healthcare, enterprise software, and AI. Strong track record in aligning marketing with sales to drive pipeline, revenue growth, and customer acquisition. I specialize in full-funnel strategy development—from top-of-funnel lead acquisition to pipeline acceleration and sales enablement. Skilled in managing paid media (LinkedIn, Google, programmatic), email nurture, lead scoring, lifecycle marketing, and intent-based targeting. Hands-on experience with tools like Marketo, HubSpot, Salesforce, 6sense, Demandbase, ZoomInfo, Google Ads, LinkedIn Campaign Manager, and more. Passionate about using AI and automation to optimize performance, enhance personalization, and improve campaign ROI.
+
+Total Experience: 20 years and 1 month
+
+## Experience
+
+### Head of Growth Marketing - [Zafran Security](https://www.linkedin.com/company/zafran-security) (Current)
+
+May 2025 - Present (1 year and 3 months) in New York, United States
+
+Department: Research
+
+Zafran Secu
+
+SOURCE https://www.linkedin.com/in/nicholastfisher [published 2026-08-22T00:00:00.000Z]
+# Nick Fisher
+
+VP Marketing at Zafran Security
+
+New York, New York, United States (US)
+
+500 connections • 6,997 followers
+
+## About
+
+Full-stack B2B marketing leader / storyteller with experience building teams for early stage growth and post-IPO scale
+
+Total Experience: 17 years and 11 months
+
+## Experience
+
+### VP of Marketing - [Zafran Security](https://www.linkedin.com/company/zafran-security) (Current)
+
+Apr 2024 - Present (2 years and 4 months) in New York, New York, United States
+
+Department: Marketing • Level: President/Vice President
+
+Zafran Security is a Computer and Network Security company. Zafran is an AI-Native Threat Exposure Management Platform that helps security teams buried in vulnerabilities and manual work to unify vulnerability findings and create a unified view of exposure across their existing tools. Zafran Security has 100-150 employees (+50% YoY). Headquartered in New York, New York, United States. Its workforce is distributed across United States, Israel, and Germany. Has $136M in total funding, with 4 prior funding rounds.
+
+### Vice President Product Marketing - [Sysdig](https://www.linkedin.com/company/sysdig)
+
+Sep 2021 - Apr 2024 (2 years and 7 months) in San Francisco Bay Area
+
+Lead product, tech, and alliance marketing across Sysdig’s portfolio of cloud security and DevOps solutions, powered by Sage GenAI
+
+Department: Marketing • Level: President/V
+
+SOURCE https://www.zafran.io/about [published None]
+Zafran Security | About Zafran Security
+
+# Our Story
+
+Zafran was founded by experienced cybersecurity leaders who directly investigated breaches resulting from known vulnerabilities that were not remediated in time
+
+Zafran asked hundreds of security leaders - and they all agreed: Patching everything, all the time is impossible; we need a new approachWe teamed up with leading investors, enlisted the best security experts, put together a dream team of R&D and enterprise security talent, and now, we're excited to deliver our innovative Threat Exposure Management Platform
+
+## Why We Started Zafran
+
+## Leadership
+
+### Sanaz Yashar
+
+Co-Founder & CEO
+
+### Ben Seri
+
+Co-Founder & CTO
+
+### Rotem Peled-Dvir
+
+SVP Finance
+
+### Tom Anthony
+
+SVP Sales
+
+### Nick Fisher
+
+VP Marketing
+
+### Hadas Bergman
+
+VP Business Operations
+
+### Racheli Barouch-Haik
+
+VP HR & Operations
+
+### Itay Nachum
+
+VP Product Management
+
+### Christopher Phillips
+
+VP Customer Success
+
+## Board of Directors
+
+### Doug Leone
+
+Partner at Sequoia Capital
+
+### Lior Simon
+
+General Partner at Cyberstarts
+
+### Rama Sekhar
+
+Partner at Menlo Ventures
+
+## Backed By
+
+Join Us
+
+We’re looking for amazing talent to join our growing global team at Zafran. Help us empower organizations to defuse threats.
+
+Explore Jobs
+
+See Zafran in Action
+
+Prioritize and fix what is truly exploitable using risk context from your existing security tools
+
+Ge
+
+SOURCE https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X [published 2026-05-18T00:00:00.000Z]
+# Our marketing team at Zafran Security is expanding! 🚀 I'm hiring a Senior Manager, ABM & Integrated Campaigns. | Vari Kaur · LinkedIn · 2026-05-18
+
+**Vari Kaur**: Head of Growth Marketing at Zafran Security for 1 year 3 months with 20 years 1 month of total professional experience. Previous roles include Director, Demand Generation & Technology at Secureworks, Director Demand Generation at ReSource Pro, and Director Demand Generation and Technology at Axiom. Based in Easton, Pennsylvania, United States [US].
+
+---
+
+Our marketing team at [Zafran Security](https://linkedin.com/company/zafran-security) is expanding! 🚀 I'm hiring a Senior Manager, ABM & Integrated Campaigns.
+
+Looking for someone who loves building ABM end-to-end, lead our integrated campaign strategy, and work shoulder-to-shoulder with Sales to go after the accounts that matter most.
+If that's you, let's talk.
+
+Excellent opportunity to join one of the fastest-growing companies in cybersecurity, backed by Sequoia Capital and Cyberstarts, on a mission to stop the exploitation of vulnerabilities everywhere.
+https://lnkd.in/eWYbq_Mw
+
+## Comments
+
+**[Jaime Oliver](https://linkedin.com/in/jmwheeler11)** · 2026-05-18
+> Exciting times Vari!!! Sounds like everything is going well!!
+
+**[CyberExecConnect](https://linkedin.com/company/cyberexecconnect)** · 2026-05-27
+> Exciting growth at Zafran Security. The alignment between
+
+SOURCE https://www.linkedin.com/posts/nicholastfisher_head-of-growth-marketing-at-zafran-activity-7300514961829638144-hoPy [published 2025-02-26T00:00:00.000Z]
+# 🔥 HOT JOB ALERT – HEAD OF GROWTH 🔥 | Nick Fisher · LinkedIn · 2025-02-26
+
+**Nick Fisher**: VP of Marketing at Zafran Security for 2 years 4 months with 17 years 10 months of total professional experience. Previous roles include Vice President Product Marketing at Sysdig, Senior Director Product Marketing at Okta, Inc., and Director, Enterprise Product Marketing at Lookout. Based in New York, New York, United States [US].
+
+---
+
+🔥 HOT JOB ALERT – HEAD OF GROWTH 🔥
+
+Zafran is on fire. We're scaling fast, making waves, and now we need to crank things up to 11.
+
+I’m looking for a Head of Growth Marketing to build and own demand generation, scale revenue, and optimize our GTM strategy. This role is for a true player-coach who knows how to experiment, iterate, and drive revenue at an early-stage startup.
+
+🔹 Full-funnel growth: from pipeline to conversion, paid to organic, lifecycle to outbound
+🔹 Demand-gen powerhouse: proven ability to scale revenue through hypergrowth phase
+🔹 Data-driven & AI-enabled: leveraging automation, personalization, and cutting-edge tools to drive scale
+
+If you (or someone brilliant you know) is ready to build something massive, let’s talk. No recruiters please.
+
+https://lnkd.in/gxdz8ynB
+
+## Comments
+
+**[Ashlee Lam](https://linkedin.com/in/ashleejoni)** · 2025-02-26 · 1 reaction
+> Demand gen friends, I know some of you wouldn't want to miss checking this out
+
+SOURCE https://theorg.com/org/zafran-security/org-chart/varinder-kaur [published None]
+Zafran Security | The Org
+
+# Zafran Security
+
+0 followers
+
+‌
+
+Zafran's new approach to Risk Mitigation mobilizes existing security controls to protect organizations during critical exploitation windows. The Risk & Mitigation platform determines vulnerability exploitability, correlating control configuration, runtime, internet exposure, and threat exploit anal... Read more
+
+Industries
+
+Cyber Security, Risk & Compliance
+
+Headquarters
+
+New York, New York, United States
+
+Employees
+
+11-50
+
+Links
+
+View on linkedIn View the website
+
+Org chart
+
+Teams
+
+Offices
+
+Positions (125)
+
+Unverified
+
+---
+
+## Org chart
+
+SY
+
+Sanaz Yashar
+
+Co-founder & CEO
+
+64
+
+SY
+
+Sanaz Yashar
+
+Collapse
+
+Ben Seri
+
+Co-founder & CTO
+
+18
+
+Snir Havdala
+
+Co-founder & CPO
+
+3
+
+NF
+
+Nick Fisher
+
+VP Of Marketing
+
+3
+
+Hadar Amedy
+
+Director Of HR & Operations
+
+5
+
+Rotem Peled-Dvir
+
+Svp, Finance
+
+1
+
+Hadas Bergman
+
+VP Business Operations
+
+7
+
+TA
+
+Tom Anthony
+
+SVP, Global Sales
+
+18
+
+RB
+
+Rachel Barouch-Haik
+
+VP of HR
+
+0
+
+Aviv Cohen
+
+Executive Assistant and Office Admin
+
+0
+
+---
+
+## Teams
+
+### Sales Operations
+
+18 people · 0 jobsAR14
+
+### Software Development
+
+15 people · 0 jobsASDO11
+
+### Solutions Development
+
+6 people · 0 jobs2
+
+### Executive Leadership
+
+5 people · 0 jobsSY1
+
+### Product Management
+
+3 people · 0 jobsCGYZ
+
+### Business Development
+
+4 people · 0 jobsAM
+
+Expand (23)
+
+---
+
+## Offices
+
+- HQ12 people · 0 jobsAM8
+
+## Relate
+
+SOURCE https://www.builtinnyc.com/job/head-growth-marketing/4236001 [published None]
+Head of Growth Marketing - Zafran Security | Built In NYC
+
+## Zafran Security
+
+# Head of Growth Marketing
+
+ Sorry, this job was removed at 08:20 p.m. (EST) on Thursday, May 22, 2025
+
+Remote
+
+Hiring Remotely in US
+
+Remote
+
+New York, NY, USA
+
+United States
+
+Top Skills: Chatgpt Claude Cms Platforms Gemini Geo (Generative Engine Optimization) Google Analytics 4 (Ga4) Google Workspace Hubspot Hubspot Ai Jasper Linkedin Ads Linkedin Insights Make N8N Perplexity Seo Zapier
+
+## Head of Developer Growth Marketing
+
+15 Days Ago
+
+Remote
+
+United States
+
+Senior level
+
+Senior level
+
+Information Technology • Productivity • Software
+
+Lead developer-focused demand generation and PLG growth: own paid and organic acquisition, instrument the signup-to-paid funnel, define PQLs, orchestrate multi-channel developer marketing (content, community, social, SEO, LLM optimization), build the brand, hire and lead a lean team, and establish rigorous planning, measurement, and GTM with product and sales.
+
+Top Skills: Ai Agents Amplitude Automations Llms Posthog Seo
+
+Description 
+
+The Area Vice President (AVP) of Sales, East will be responsible for driving hyper-growth customer acquisition and bookings through effective leadership of the regional sales organization. This leader will play a crucial role in talent acquisition, team development, and strategic partnership management while ensuring consistent pipel
+
+SOURCE https://rocketreach.co/zafran-security-marketing-department_b73dd8fcc7fe923d [published None]
+# Zafran Security Marketing Department 
+
+ Zafran Security's Marketing department is led by Nick Fisher (VP of Marketing) and has 9 employees. 
+
+#### Recent Zafran Security Marketing Hires
+
+- 
+- Kelly Whelan
+- Senior Manager Marketing Operations
+- 1 2 
+- 
+- Molly S
+- Director of Product Marketing
+- 2 1 
+- 
+- Matheus Turle
+- Field Marketing Manager - Central
+- 2 1 
+- 
+- Bridget Armbrust
+- Senior Field Marketing Manager - East
+- 3 4 
+- 
+- Karlyanna Burton
+- Director, Events and Field Marketing
+- 1 6 
+- 
+- Jules Gross
+- Product Marketing Manager - MBA Intern
+- 1 
+- 
+- Vari Kaur
+- Head of Growth Marketing
+- 2 6 
+- 
+- Alexandra Hall
+- Event Marketing Specialist
+- 4 4 
+- 
+- Nick Fisher
+- VP of Marketing
+- 2 6 
+
+## Top Zafran Security Marketing Employees
+
+# REPUTATION / NEGATIVES SEARCH RESULTS
+SOURCE https://www.calcalistech.com/ctechnews/article/by11gqei4zx [published 2026-07-20T00:00:00.000Z]
+Cisco in talks to buy Israeli cyber startup Zafran at steep discount | Ctech
+
+ACCESSIBILITY
+
+by
+
+https://twitter.com/Calcalistech
+
+ACCESSIBILITY
+
+### Headlines
+
+### Ynet Global
+
+Recently Read
+
+If everyone can build everything, what is left to compete on?
+
+I ran Israel's national red team. Now every attacker has one
+
+Drug development has a $2 billion problem. AI is finally solving it
+
+Recommended videos
+
+"If you're building a frontier technology, then you don't have growth"
+
+Can damaged nerves grow back? An Israeli biotech is betting they can
+
+Photo: Eric Sultan
+
+# Cisco in talks to buy Israeli cyber startup Zafran at steep discount
+
+## Exclusive: A deal valued at $150 million-$200 million would fall well below the company's last fundraising valuation despite backing from Sequoia, Menlo Ventures and Cyberstarts.
+
+Sophie Shulman, Meir Orbach
+
+What is happening at Zafran Security, one of Israel's most closely watched cybersecurity startups?
+
+Just four years after its founding, and following a series of high-profile funding rounds, the company is facing growing questions. One of its three founders has left, and according to multiple senior cybersecurity industry sources, Zafran has spent the past several months exploring a sale.
+
+Sources told Calcalist that the company is currently in advanced talks with Cisco, which is willing to pay between $150 million and $200 million. If compl
+
+SOURCE https://www.sdxcentral.com/news/cisco-buying-bargain-israeli-startup-for-150m-report/ [published 2026-07-20T00:00:00.000Z]
+Cisco buying bargain Israeli startup for $150M+: report - SDxCentral
+
+# Cisco buying bargain Israeli startup for $150M+: report
+
+Zafran Security refutes reported deal that would be Cisco's fourth acquisition of 2026
+
+July 20, 2026
+
+By
+: Giacomo "Jack" Lee 
+
+ – Giacomo Lee/SDxCentral 
+
+Cisco is reportedly making another acquisition for a potential $150 million bargain.
+
+According to a Calcalis report, the U.S. networking giant is eyeing exposure management vendor Zafran Security. The Israeli vendor has raised $130 million to date and was valued at more than $200 million per its most recent funding round in December.
+
+The alleged price tag may come as a new blow to Zafran, which recently saw its co-Founder and CPO Snir Havdala join Nvidia as director of engineering for AI infrastructure.
+
+Calcalis claimed that after its initial rapid growth, Zafran has failed to sustain this momentum, accruing below-expectation annual recurring revenue (ARR) of around $20 million in the past year.
+
+Zafran denied the acquisition rumors to Calcalis, however, saying Cisco had instead made a strategic investment in the firm and that Havdala’s gap had been filled by its current product VP.
+
+A representative added to this title: "Cisco has made a strategic investment in Zafran Security, reinforcing its confidence in Zafran’s platform and the company’s strong business momentum in the market. Zafran is s
+
+SOURCE https://pressreleasecloud.io/cybersecurity/cisco-negotiates-discounted-acquisition-of-israeli-cybersecurity-firm-zafran/ [published 2026-07-20T00:00:00.000Z]
+Cisco Negotiates Discounted Acquisition of Israeli Cybersecurity Firm Zafran - PressReleaseCloud.io
+
+Sign in
+
+Sign in
+
+Welcome!Log into your account
+
+your username
+
+your password
+
+Forgot your password?
+
+Password recovery
+
+Recover your password
+
+your email
+
+Search
+
+Home Cybersecurity Cisco Negotiates Discounted Acquisition of Israeli Cybersecurity Firm Zafran
+
+- Cybersecurity
+
+Key Takeaways
+
+- Zafran Security, founded four years ago, is in advanced talks with Cisco for a potential sale valued at $150‑$200 million, despite raising over $130 million and being valued above $200 million in its Series C round in December 2025.
+- Co‑founder and former CPO Snir Havdala recently left to join NVIDIA as Director of Engineering, a move the company says was planned but which has fueled speculation about internal challenges.
+- The startup’s annual recurring revenue has stalled around $20 million, falling short of investors’ expectations for triple‑digit growth in a crowded vulnerability‑management market.
+- Industry observers cite market saturation, the rise of AI‑powered security tools, and a lack of demonstrable competitive advantage as key hurdles preventing Zafran from sustaining rapid expansion.
+- If the Cisco deal closes, Zafran would join a growing list of Israeli cyber‑security ventures that exited below the high valuations achieved during their fundraising peaks, underscoring the di
+
+SOURCE https://www.cbinsights.com/company/zafran/alternatives-competitors [published 2025-12-02T00:00:00.000Z]
+Top Zafran Alternatives, Competitors
+
+## Zafran's alternatives and competitors
+
+See how Zafran compares to similar products. Zafran's top competitors include ArmorCode, Armis, and Outpost24.
+
+Analyst Briefing Submitted
+
+ArmorCode focuses on Application Security Posture Management (ASPM) within the cybersecurity industry. The company provides a platform that connects with various securi…
+
+See More
+
+View Zafran's entire Analyst Briefing
+
+Zafran's Analyst Briefing includes information on:
+
+- Pricing
+- Customer references
+- Products
+
+Compare Zafran and ArmorCode
+
+Unclaimed
+
+Armis operates as a cyber exposure management and security company. It focuses on managing cyber risk exposure for various organizations, as well as national government…
+
+See More
+
+View Zafran's entire Analyst Briefing
+
+Zafran's Analyst Briefing includes information on:
+
+Compare Zafran and Armis
+
+Analyst Briefing Submitted
+
+Outpost24 provides cyber risk management and continuous threat exposure management solutions within the cybersecurity industry. The company offers a cloud platform that…
+
+See More
+
+View Zafran's entire Analyst Briefing
+
+Zafran's Analyst Briefing includes information on:
+
+Compare Zafran and Outpost24
+
+Analyst Briefing Submitted
+
+Tidal Cyber focuses on Threat-Informed Defense within the cybersecurity domain. The company provides a platform that integrates threat intelligence with existing secur
+
+SOURCE https://www.peerspot.com/questions/what-needs-improvement-with-zafran-security [published 2025-03-18T00:00:00.000Z]
+What needs improvement with Zafran Security?
+
+# What needs improvement with Zafran Security?
+
+Please share with the community what you think needs improvement with Zafran Security.
+
+What are its weaknesses? What would you like to see changed in a future version?
+
+Julia Miller Community Director at PeerSpot
+
+Buyer's Guide Zafran Security August 2026
+
+Helped 910,479 peers since 2012
+
+## 5 Answers
+
+Last answered Jul 10, 2025
+
+Brett Wentworth
+
+Vice President & Deputy Chief Security Officer at Lumen Technologies
+
+Jul 10, 2025
+
+In terms of areas for improvement, Zafran Security is doing a really great job as a new and emerging company. Oftentimes, new companies try to be everything to everyone or overload the system with features, drifting from the core mission. Zafran Security has stayed the course, remaining nimble and responsive to feature requests. I'm struggling to think about what could be done better because we're happy with the technology, features, and support. In terms of what can be done better, I suggest increased automation and prioritization of new industry threats, especially those related to zero-day vulnerabilities. These come out daily, and they are one of our biggest use cases. We struggle with combing through open-source intelligence, news articles, government partners, and industry peer groups, relying on Zafran Security to help us quickly identify risks for zero
+
+SOURCE https://www.linkedin.com/posts/bhendrick_cisco-buying-bargain-israeli-startup-for-activity-7485030602321342464-VR3r [published 2026-07-20T00:00:00.000Z]
+# 🚨 Cisco's Latest Cyber Acquisition Play: Zafran Security in the Spotlight? | Ben Hendrick · LinkedIn · 2026-07-20
+
+**Ben Hendrick**: Board of Directors Member at Assurant Design Automation (Logic Design Tool) with 36 years 5 months of total professional experience. Previous roles include Director of Security at Ryder System, Inc., Office of the CTO - Microsof Security Service Line at Microsoft, and Global Executive & IBM Security Partner at IBM. Based in Rome, Georgia, United States [US].
+
+---
+
+🚨 Cisco's Latest Cyber Acquisition Play: Zafran Security in the Spotlight?
+
+As a Research Fellow in Identity & Security Architecture at the Mindful AI Foundation, I’m closely watching how enterprise security leaders like Cisco are consolidating the threat exposure management space.
+
+According to reports, Cisco is in talks to acquire Israeli vendor Zafran Security for approximately $150 million — a notable discount from its prior >$200M valuation despite $130M raised.
+
+Zafran, founded in 2022, delivers a modern threat exposure management platform spanning cloud, on-premises, and applications, with strong integrations across AWS, Snyk, and Wiz.
+
+The timing is interesting: Zafran has been positioning itself as a potential replacement for Cisco’s shuttered Kenna risk-based vulnerability management service (which overlapped with Splunk capabilities).
+
+Meanwhile, Zafran’s co-founder & CPO re
+
+SOURCE https://rivalsense.co/intel/zafran-security/ [published 2025-03-25T00:00:00.000Z]
+Zafran Security | Competitive Intelligence Profile
+
+---
+
+Zafran Security specializes in Threat Exposure Management, providing a platform that integrates with existing security tools to identify, remediate, and mitigate risks across an organization's infrastructure. The platform employs an agentless approach to reveal exploitable vulnerabilities while automating response workflows to reduce manual prioritization and remediation efforts.
+
+Website
+
+zafran.io
+
+Headquarters
+
+New York, New York, US
+
+Size
+
+51-200 employees
+
+Industry
+
+Computer and Network Security
+
+## 🛍️ Zafran Security Product and Pricing News →
+
+## 👔 Zafran Security CEO, Management and Leadership Team →
+
+## ⚔️ Zafran Security Alternative
+
+
+Emit ONLY account-entity claims for account:zafran-security now.
+Return {"account_claims":[...], "proposed_fields":[...]}.

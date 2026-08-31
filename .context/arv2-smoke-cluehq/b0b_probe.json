@@ -1,0 +1,63 @@
+{
+  "harmonic_req_page": {
+    "http": 200,
+    "bytes": 34842,
+    "mentions_abm": false,
+    "mentions_bdr": true,
+    "title_snippet": "<title>Business Development Representative - East @ Harmonic Security, Inc</title>"
+  },
+  "ats_probe": {
+    "greenhouse_uptiq": {
+      "http": 404,
+      "n": 0,
+      "url": "https://boards-api.greenhouse.io/v1/boards/uptiq/jobs?content=true"
+    },
+    "lever_uptiq": {
+      "http": 404,
+      "n": 0,
+      "url": "https://api.lever.co/v0/postings/uptiq?mode=json"
+    },
+    "greenhouse_uptiqai": {
+      "http": 404,
+      "n": 0,
+      "url": "https://boards-api.greenhouse.io/v1/boards/uptiqai/jobs?content=true"
+    },
+    "lever_uptiqai": {
+      "http": 404,
+      "n": 0,
+      "url": "https://api.lever.co/v0/postings/uptiqai?mode=json"
+    },
+    "greenhouse_uptiq-ai": {
+      "http": 404,
+      "n": 0,
+      "url": "https://boards-api.greenhouse.io/v1/boards/uptiq-ai/jobs?content=true"
+    },
+    "lever_uptiq-ai": {
+      "http": 404,
+      "n": 0,
+      "url": "https://api.lever.co/v0/postings/uptiq-ai?mode=json"
+    },
+    "greenhouse_arintra": {
+      "http": 404,
+      "n": 0,
+      "url": "https://boards-api.greenhouse.io/v1/boards/arintra/jobs?content=true"
+    },
+    "lever_arintra": {
+      "http": 404,
+      "n": 0,
+      "url": "https://api.lever.co/v0/postings/arintra?mode=json"
+    }
+  },
+  "uptiq_careers": {
+    "http": 200,
+    "bytes": 65137
+  },
+  "uptiq_about": {
+    "http": 200,
+    "bytes": 57885
+  },
+  "arintra_careers": {
+    "http": 200,
+    "bytes": 71553
+  }
+}

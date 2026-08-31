@@ -1,0 +1,68 @@
+{
+  "id": "gen-1788162976-0l7GRc7ES3oCPKZJCsVK",
+  "object": "chat.completion",
+  "created": 1788162976,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"account_claims\": [\n    {\n      \"field_key\": \"core.primary_domain\",\n      \"value_json\": \"zafran.io\",\n      \"evidence_span\": \"zafran.io is the evidenced company domain.\",\n      \"source_url\": \"https://www.zafran.io\",\n      \"confidence\": 0.9,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.account_name\",\n      \"value_json\": \"Zafran Security\",\n      \"evidence_span\": \"The company describes itself as \u201cZafran Security\u201d and \u201cthe pioneer in AI-native Threat Exposure Management.\u201d\",\n      \"source_url\": \"https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai\",\n      \"confidence\": 0.9,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.company_linkedin_url\",\n      \"value_json\": \"https://www.linkedin.com/company/zafran-security\",\n      \"evidence_span\": \"LinkedIn: https://www.linkedin.com/company/zafran-security\",\n      \"source_url\": \"https://www.linkedin.com/company/zafran-security\",\n      \"confidence\": 0.85,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.hq_location\",\n      \"value_json\": {\n        \"raw\": \"New York City, NY\",\n        \"city\": \"New York\",\n        \"region\": \"New York\",\n        \"country\": \"United States\",\n        \"country_code\": \"US\"\n      },\n      \"evidence_span\": \"New York, New York \u2013 December 2, 2025 \u2013 Zafran Security, the pioneer in AI-native Threat Exposure Management, today announced a $60 million Series C funding round ...\",\n      \"source_url\": \"https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai\",\n      \"confidence\": 0.85,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"account.total_funding\",\n      \"value_json\": {\n        \"amount_usd\": 130000000,\n        \"estimate_kind\": \"reported\"\n      },\n      \"evidence_span\": \"This round brings the company\u2019s total funding to $130 million.\",\n      \"source_url\": \"https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai\",\n      \"confidence\": 0.9,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"account.recent_funding\",\n      \"value_json\": {\n        \"amount_usd\": 60000000,\n        \"round\": \"Series C\"\n      },\n      \"evidence_span\": \"Zafran Triples ARR in $60M Round to Reinvent Exposure Management with Agentic AI ... today announced a $60 million Series C funding round led by Menlo Ventures\",\n      \"source_url\": \"https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai\",\n      \"confidence\": 0.9,\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"account.strategic_moves\",\n      \"value_json\": \"Strategic investment from Cisco Investments announced July 22, 2026; strategic investment from Amex Ventures announced February 24, 2026; launched Agentic Exposure Management product.\",\n      \"evidence_span\": \"Zafran Announces Strategic Investment from Cisco Investments ... Published on July 22, 2026\",\n      \"source_url\": \"https://www.zafran.io/resources/zafran-announces-strategic-investment-from-cisco-investments\",\n      \"confidence\": 0.85,\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"core.company_about\",\n      \"value_json\": \"Zafran's agentic platform proves what attackers can exploit in your environment, then mobilizes your existing defenses to stop them.\",\n      \"evidence_span\": \"Zafran's agentic platform proves what attackers can exploit in your environment, then mobilizes your existing defenses to stop them.\",\n      \"source_url\": \"https://www.zafran.io\",\n      \"confidence\": 0.9,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.employee_range\",\n      \"value_json\": {\n        \"label\": \"51-200\",\n        \"min\": 51,\n        \"max\": 200\n      },\n      \"evidence_span\": \"Employees: 141 (51-200 employees).\",\n      \"source_url\": \"https://www.linkedin.com/company/zafran-security\",\n      \"confidence\": 0.7,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"account.operational_pain\",\n      \"value_json\": \"Customers face shrinking time-to-exploit windows and difficulty prioritizing/remediating vulnerabilities before exploitation; Zafran positions its product to reduce remediation times from weeks to hours and prove exploitability.\",\n      \"evidence_span\": \"Patches take weeks.\\n\\n# Exploits take hours.\\n\\n# Zafran takes minutes.\",\n      \"source_url\": \"https://www.zafran.io\",\n      \"confidence\": 0.85,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.primary_tech_stack\",\n      \"value_json\": [\n        \"HubSpot\",\n        \"Salesforce\"\n      ],\n      \"evidence_span\": \"Build and launch campaigns yourself in HubSpot: workflows, nurture journeys, landing pages, email sequences.\\n\\nProficiency in Salesforce, HubSpot and major ABM platforms.\",\n      \"source_url\": \"https://jobs.ashbyhq.com/zafran-security/c879de63-c999-47cc-99a3-e35cf9ba7cdf\",\n      \"confidence\": 0.75,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"account.hiring_velocity_eng\",\n      \"value_json\": 0,\n      \"evidence_span\": \"The available evidence supports a distributed US/Israel workforce, but does not establish that the marketing organization is entirely in either location.\",\n      \"source_url\": \"https://www.zafran.io/open-positions/d5a0a102a1d5435694429de4861d25be\",\n      \"confidence\": 0.4,\n      \"priority\": 3\n    }\n  ],\n  \"proposed_fields\": [\n    {\n      \"field_key\": \"core.legal_name\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"str\",\n      \"value_schema\": {\n        \"type\": \"string\"\n      },\n      \"description\": \"Legal registered entity name (not present in catalog; proposed for captures when available).\",\n      \"reuse_scope\": \"account:zafran-security\",\n      \"hypothesis\": \"An ABM platform benefits from the legal entity name to ensure contracts, procurement, and POs route to the correct legal organization and to match third-party data sources reliably.\",\n      \"example_value\": \"Zafran Security, Inc.\",\n      \"example_evidence_span\": \"Legal name: Zafran Security, Inc. (registered in Delaware)\",\n      \"example_source_url\": \"https://example.com/filing\",\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.arr_exact\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"number\",\n      \"value_schema\": {\n        \"type\": \"number\"\n      },\n      \"description\": \"Exact Annual Recurring Revenue (company-reported) when available; many sources only report growth claims or third-party estimates.\",\n      \"reuse_scope\": \"account:zafran-security\",\n      \"hypothesis\": \"Exact ARR is critical to prioritize ABM investment tiers and tailor value propositions; knowing true recurring revenue allows sales to size deals and select appropriate offers.\",\n      \"example_value\": 20000000,\n      \"example_evidence_span\": \"Zafran reports $20,000,000 ARR as of Q2 2026.\",\n      \"example_source_url\": \"https://example.com/press\",\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"account.named_customers\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"list\",\n      \"value_schema\": {\n        \"type\": \"array\",\n        \"items\": {\n          \"type\": \"string\"\n        }\n      },\n      \"description\": \"List of named customer logos cited by the company or press (useful for social proof).\",\n      \"reuse_scope\": \"account:zafran-security\",\n      \"hypothesis\": \"Named customer references help ABM messaging and proof points for target sectors; they enable tailored case studies, references, and peer benchmarking in outreach.\",\n      \"example_value\": [\n        \"Kraft Heinz\",\n        \"Chipotle\",\n        \"Netskope\"\n      ],\n      \"example_evidence_span\": \"Ricardo Lafosse\\n\\nCISO, Kraft Heinz\",\n      \"example_source_url\": \"https://www.zafran.io\",\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"account.abm_vacancy_signal\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"str\",\n      \"value_schema\": {\n        \"type\": \"string\"\n      },\n      \"description\": \"Signal describing open/hiring ABM and marketing roles and their hiring age (vacancy signal for buying intent).\",\n      \"reuse_scope\": \"account:zafran-security\",\n      \"hypothesis\": \"Open senior ABM/marketing roles (especially long-open) indicate active investment in demand motion and can signal near-term buying intent for ABM tooling and services.\",\n      \"example_value\": \"Senior Manager, ABM & Integrated Campaigns listed 2026-06-17 and still open 75 days as of 2026-08-31\",\n      \"example_evidence_span\": \"Senior Manager, ABM & Integrated Campaigns \u2014 USA/remote; user-supplied publication date 2026-06-17; still listed 2026-08-31; 75 days open.\",\n      \"example_source_url\": \"https://jobs.ashbyhq.com/zafran-security/c879de63-c999-47cc-99a3-e35cf9ba7cdf\",\n      \"priority\": 1\n    }\n  ]\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABqlTOjHQWQ9BPcvyaR-o-bHUbVSdFOKLy7Lh9TSct6oceRKkw0XW6AW7Q7OFBkkQrctoY0hKTb2Iw3JWgWtI_ss46_byHvb_-QjGz2UFdp49O6hCDZ3Wqzo8tWvThKuaZOF0TLTqpRfVHGOd6tv1T1qIebxN-_f9mpFp2tvisisVwwEeecKj668ztnCeD5elzAA-J_8QS60OsY8QDyZiBPybSSecoPG_dfzqd56tjbiieyeeq9APJsXR8Hc9hyxTGoRlc4vUr7bJUiLw8MUaZrY3MsFut3Phl2U5aooRBI3LcrWDficyI9oqj7bd1o3u3MMZjAVZo1J911VckbmM1rwPUsF2QoaxSCfH2EYyeqHQZ71Pv6UQYueYfRdk2PzbBHGmE3Gupa5TapOV34qC20JgZVdLxtKXgKQpvrgiAMVxGa1IgBCLkf27I1MamTM7JsOe7bT-MGGtl2BphyvtFP9dSAsI-YLC9CTZwkThlefeRFN7AFajHFslzpiM2pvKHmlBXEYJXMlXy8BzZfM3aIlccw2v4WMyrA3Aco5RIrfYBA-owDClR8UxwxCOgHANaxZyf4IwxFa-_gvvgzTLUKLH5i7CYt24K0__jWW_Cy0Kj1YHGszEhm4A937XnjF45szqaSi00wXgMmvy4G-IXePUC37vXpgRUETXWjbxWboLkFR35L7Z7sbla32A63OW9u4K4_NRimEJyRiwHR1kclWknQ7pooKYCMfS2VKLUbRYcPuPJ2SRC6BGgGtC-bEwI25zKu-7XlF3MeEL2Jf7iPiGY3PEx6m0CAYbyDfufavGlllDKioQhMbRd8OBirow6FQsqb8rWScc-5EkIPVy-4Sw_hLy7opozZ0xfkGF2YYRnb87GCuVtMaY-XTVbRFtWz2geo9SIKN4_4ThG_04ZjQnlYIAmLIhoi_RFHIh7_Z-U1pFJwkEksaVbkO6Vy3I_JE9wE5QEfHt1WLAnT9pVsEY1KhBRYncebLF986pvwGlMAYLi5TWKnjQInuCkgmoYtUqV51W24veYZgfh_DsugVzEMWWsa7afgtRZsADfe4fH66r0wXzoHGuWV9gmBheq3jeycGgBpbymioHCJTbKjg5XUe2_nv5I8Z_ISnMr2R2Dc17_burtOwLst7SlhxgatDAb3aFngE_wzG--KtkxbfJ4y4Yb0dp4n7SLkvtkopvLyTH1wHb--4Z5LlLNSkdsq8Vwi0S4uy0orvQyFAV-1url_zfdvloiC1PXZ3vpGSmhipSSrx2aSlOMdSJwO1IfH2P_MUqeWY50Cx9dGQuqmvde5oQ0n38XoAoB15HNcNObxY8DJEI5Y54LCnsHl1_4RvUMHUu7izQ_bB18BOLX0r1s0XqqoYteOUtF0b2VUq3OmOl0R6NapiCEhoiGXvTVQdjs7.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_0705a750447b02c4016a9533a3753887d0abfea683c65e7d80",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 18210,
+    "completion_tokens": 2236,
+    "total_tokens": 20446,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0090245,
+      "upstream_inference_prompt_cost": 0.0045525,
+      "upstream_inference_completions_cost": 0.004472
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 24.85,
+  "_request_shape": {
+    "model": "openai/gpt-5-mini",
+    "n_messages": 2,
+    "prompt_chars": 82298,
+    "response_format": {
+      "type": "json_object"
+    },
+    "reasoning": {
+      "effort": "minimal"
+    }
+  }
+}

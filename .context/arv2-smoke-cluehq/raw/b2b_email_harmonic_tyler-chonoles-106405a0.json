@@ -1,0 +1,646 @@
+{
+  "id": "eaa3957b-8762-20ea-220e-1ef6ef5bbbac",
+  "identifier": "tyler-chonoles-106405a0",
+  "profile": {
+    "first_name": "Tyler",
+    "middle_name": null,
+    "last_name": "Chonoles",
+    "full_name": "Tyler Chonoles",
+    "headline": "Securing AI | Growth Marketing @ Harmonic Security",
+    "title": "Growth and Demand Gen Marketing Manager",
+    "picture": {
+      "source": "https://images.ai-ark.com/2DgR-07wJ4OBrSCSi9ltJNKlEHrknp5a_SaFnCVlfzQ/exp:1788307199/rs:fill:80:80/plain/s3://ark-person/images/eaa3957b-8762-20ea-220e-1ef6ef5bbbac.jpg"
+    },
+    "background": {
+      "source": "https://media.licdn.com/dms/image/v2/D4E16AQGxHpsqlsO-0g/profile-displaybackgroundimage-shrink_350_1400/B4EZ5lOWjHHQAU-/0/1779814722013?e=1786579200&v=beta&t=q82O4uK7OJQY5D7a9emzN-nCxxvqM3vXNWvF7dUVv_0"
+    },
+    "birth_date": null,
+    "summary": null
+  },
+  "link": {
+    "linkedin": "https://www.linkedin.com/in/tyler-chonoles-106405a0",
+    "twitter": null,
+    "github": null,
+    "facebook": null
+  },
+  "location": {
+    "default": "New York City Metropolitan Area, United States, North America",
+    "short": "New York City Metropolitan Area",
+    "country": "United States",
+    "state": null,
+    "city": "New York City Metropolitan Area",
+    "position": null
+  },
+  "languages": {
+    "primary_locale": {
+      "country": "US",
+      "language": "en"
+    },
+    "supported_locales": [
+      {
+        "country": "US",
+        "language": "en"
+      }
+    ],
+    "profile_languages": [
+      {
+        "name": "Arabic",
+        "proficiency": "LIMITED_WORKING"
+      },
+      {
+        "name": "English",
+        "proficiency": "NATIVE_OR_BILINGUAL"
+      }
+    ]
+  },
+  "industry": "Marketing & Advertising",
+  "educations": [
+    {
+      "school": {
+        "id": "0f2bc08c-b5fd-40e5-721f-6931476ea91d",
+        "name": "Bowdoin College",
+        "logo": "https://images.ai-ark.com/goLx56QSO0Q2IfJeIgAHX8XlPLCtjWPceOs9DLI7epo/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/0f2bc08c-b5fd-40e5-721f-6931476ea91d.jpg",
+        "url": "https://www.linkedin.com/school/bowdoin-college"
+      },
+      "degree_name": null,
+      "field_of_study": "Mathematics, Physics",
+      "grade": null,
+      "date": {
+        "start": "2015-01-01",
+        "end": "2019-12-31"
+      }
+    },
+    {
+      "school": {
+        "id": null,
+        "name": "Friends Seminary",
+        "logo": null,
+        "url": null
+      },
+      "degree_name": "High School",
+      "field_of_study": null,
+      "grade": null,
+      "date": {
+        "start": "2011-01-01",
+        "end": "2015-12-31"
+      }
+    }
+  ],
+  "certifications": [
+    {
+      "name": "The Trade Desk Edge Academy: Trading Essentials: Kokai",
+      "authority": "The Trade Desk",
+      "url": "https://www.credly.com/badges/5c333c54-f056-4368-9e8b-9f1fb6bae5a5/linked_in_profile",
+      "license_number": null,
+      "display_source": "credly.com",
+      "company": {
+        "id": "7dcef986-c143-87df-220e-93425ecc5164",
+        "name": "The Trade Desk",
+        "logo": "https://images.ai-ark.com/wROIqulYiOhuFvIzZH6_EVCkmwkx_nAw4PE0nwQ6qXQ/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/7dcef986-c143-87df-220e-93425ecc5164.jpg",
+        "url": "https://www.linkedin.com/company/the-trade-desk"
+      },
+      "date": {
+        "start": "2024-06-01",
+        "end": null
+      }
+    }
+  ],
+  "position_groups": [
+    {
+      "company": {
+        "id": "72f1cccc-34d1-56ba-f10c-6f28212048f9",
+        "name": "Harmonic Security",
+        "logo": "https://images.ai-ark.com/JN8L2s_asPbq0x7EFh7Ysq7VHiQNAEd_3YHV6mStI80/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/72f1cccc-34d1-56ba-f10c-6f28212048f9.jpg",
+        "url": "https://www.linkedin.com/company/harmonic-security",
+        "employees": {
+          "start": 51,
+          "end": 200
+        }
+      },
+      "date": {
+        "start": "2026-05-01",
+        "end": null
+      },
+      "profile_positions": [
+        {
+          "company": "Harmonic Security",
+          "description": null,
+          "title": "Growth and Demand Gen Marketing Manager",
+          "employment_type": "Full-time",
+          "location": "New York, NY",
+          "date": {
+            "start": "2026-05-01",
+            "end": null
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "7dcef986-c143-87df-220e-93425ecc5164",
+        "name": "The Trade Desk",
+        "logo": "https://images.ai-ark.com/wROIqulYiOhuFvIzZH6_EVCkmwkx_nAw4PE0nwQ6qXQ/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/7dcef986-c143-87df-220e-93425ecc5164.jpg",
+        "url": "https://www.linkedin.com/company/the-trade-desk",
+        "employees": {
+          "start": 1001,
+          "end": 5000
+        }
+      },
+      "date": {
+        "start": "2024-04-01",
+        "end": "2026-05-31"
+      },
+      "profile_positions": [
+        {
+          "company": "The Trade Desk",
+          "description": null,
+          "title": "Programmatic Trading Specialist",
+          "employment_type": "Full-time",
+          "location": "New York, New York, United States",
+          "date": {
+            "start": "2024-04-01",
+            "end": "2026-05-31"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "f86d7291-3915-c83c-c5c6-d16f40e6ad3e",
+        "name": "Grain Group",
+        "logo": "https://images.ai-ark.com/8uQCrmYDhvvkSvXtRENoTtMTEMWrdneDBbBH-zvYilo/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/f86d7291-3915-c83c-c5c6-d16f40e6ad3e.jpg",
+        "url": "https://www.linkedin.com/company/grain-group",
+        "employees": {
+          "start": 11,
+          "end": 50
+        }
+      },
+      "date": {
+        "start": "2021-11-01",
+        "end": "2024-03-31"
+      },
+      "profile_positions": [
+        {
+          "company": "GRAIN Group",
+          "description": "GRAIN GROUP is working at the intersection of technology, marketing, and commerce to solve challenges for some of the world\u2019s most ambitious brands.",
+          "title": "Business Intelligence Architect",
+          "employment_type": "Full-time",
+          "location": null,
+          "date": {
+            "start": "2021-11-01",
+            "end": "2024-03-31"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "87adc2ee-71d8-5183-7614-661aff798586",
+        "name": "Horizon Media",
+        "logo": "https://images.ai-ark.com/lBWDCWAfrjGWZQVVA_BuZ_pZT_qW_qe-bMjvl1SWzzU/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/87adc2ee-71d8-5183-7614-661aff798586.jpg",
+        "url": "https://www.linkedin.com/company/horizon-media",
+        "employees": {
+          "start": 1001,
+          "end": 5000
+        }
+      },
+      "date": {
+        "start": "2021-05-01",
+        "end": "2021-11-30"
+      },
+      "profile_positions": [
+        {
+          "company": "Horizon Media",
+          "description": null,
+          "title": "Senior Analyst, Data Analytics",
+          "employment_type": "Full-time",
+          "location": null,
+          "date": {
+            "start": "2021-09-01",
+            "end": "2021-11-30"
+          }
+        },
+        {
+          "company": "Horizon Media",
+          "description": null,
+          "title": "Analyst, Data Analytics",
+          "employment_type": null,
+          "location": null,
+          "date": {
+            "start": "2021-05-01",
+            "end": "2021-09-30"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "e9038af7-2581-35e0-2076-12aefefab053",
+        "name": "Snowbird",
+        "logo": "https://images.ai-ark.com/pYpWuxWfrGOSirOXUT7H-A80ghxjZA-qzpb20KIaLZw/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/e9038af7-2581-35e0-2076-12aefefab053.jpg",
+        "url": "https://www.linkedin.com/company/snowbird",
+        "employees": {
+          "start": 1001,
+          "end": 5000
+        }
+      },
+      "date": {
+        "start": "2020-12-01",
+        "end": "2021-05-31"
+      },
+      "profile_positions": [
+        {
+          "company": "Snowbird",
+          "description": null,
+          "title": "Employee",
+          "employment_type": "Part-time",
+          "location": "Salt Lake City, Utah, United States",
+          "date": {
+            "start": "2020-12-01",
+            "end": "2021-05-31"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "0b88c214-83b4-f784-7ab8-f7ec7ff2ede1",
+        "name": "Mizuho",
+        "logo": "https://images.ai-ark.com/JtQtQTT5btWFbnItr1ff8Sx9kW1CWxvlYvvxCD4abY8/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/0b88c214-83b4-f784-7ab8-f7ec7ff2ede1.jpg",
+        "url": "https://www.linkedin.com/company/mizuho",
+        "employees": {
+          "start": 10001,
+          "end": null
+        }
+      },
+      "date": {
+        "start": "2019-07-01",
+        "end": "2020-09-30"
+      },
+      "profile_positions": [
+        {
+          "company": "Mizuho",
+          "description": "FX and Interest Rate Derivatives",
+          "title": "Analyst",
+          "employment_type": null,
+          "location": "New York, New York",
+          "date": {
+            "start": "2019-07-01",
+            "end": "2020-09-30"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "0b88c214-83b4-f784-7ab8-f7ec7ff2ede1",
+        "name": "Mizuho",
+        "logo": "https://images.ai-ark.com/JtQtQTT5btWFbnItr1ff8Sx9kW1CWxvlYvvxCD4abY8/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/0b88c214-83b4-f784-7ab8-f7ec7ff2ede1.jpg",
+        "url": "https://www.linkedin.com/company/mizuho",
+        "employees": {
+          "start": 10001,
+          "end": null
+        }
+      },
+      "date": {
+        "start": "2018-05-01",
+        "end": "2018-08-31"
+      },
+      "profile_positions": [
+        {
+          "company": "Mizuho",
+          "description": "Fixed Income Derivatives Sales & Trading",
+          "title": "Summer Analyst",
+          "employment_type": null,
+          "location": "New York, New York",
+          "date": {
+            "start": "2018-05-01",
+            "end": "2018-08-31"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "a908e858-458b-8529-1c7d-c5bd1d24a6df",
+        "name": "Hudson Edge Investment Partners, Inc.",
+        "logo": "https://images.ai-ark.com/sb7fkpFOG4ujPm3_tv0KBPUovOIGI9retke-1AG1eq4/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/a908e858-458b-8529-1c7d-c5bd1d24a6df.jpg",
+        "url": "https://www.linkedin.com/company/hudson-edge-investment-partners",
+        "employees": {
+          "start": 11,
+          "end": 50
+        }
+      },
+      "date": {
+        "start": "2017-06-01",
+        "end": "2017-07-31"
+      },
+      "profile_positions": [
+        {
+          "company": "HGK Asset Management, Inc.",
+          "description": null,
+          "title": "Intern",
+          "employment_type": null,
+          "location": null,
+          "date": {
+            "start": "2017-06-01",
+            "end": "2017-07-31"
+          }
+        }
+      ]
+    }
+  ],
+  "skills": [
+    "Social Media",
+    "Event Planning",
+    "Microsoft Excel",
+    "Microsoft Word",
+    "PowerPoint",
+    "Mathematica",
+    "Management"
+  ],
+  "member_badges": {
+    "premium": true,
+    "creator": false,
+    "open_to_work": false,
+    "hiring": false,
+    "verified": true,
+    "influencer": false
+  },
+  "statistics": {
+    "network": {
+      "influencer": false,
+      "followable": null,
+      "followers_count": 869,
+      "connections_count": 866
+    },
+    "experience": {
+      "prev_job_titles": null,
+      "tenure": {
+        "company": "2026-05-01",
+        "start": "2019-02-28",
+        "title": "2026-05-01"
+      }
+    }
+  },
+  "company": {
+    "id": "72f1cccc-34d1-56ba-f10c-6f28212048f9",
+    "summary": {
+      "name": "Harmonic Security",
+      "legal_name": "Harmonic Security Inc.",
+      "description": "Harmonic Security gives you the control to unlock safe, fast AI adoption. We provide granular visibility across browser, MCP, and desktop. You can detect sensitive data, trigger custom guardrails, and automate user-led resolutions. \n\nRequest to join our AI Security Community at https://forms.gle/NuwfEQBqsC9wWqgz5",
+      "overview": "As every employee adopts AI in their work, organizations need control and visibility. Harmonic delivers AI Governance and Control (AIGC), the intelligent control layer that secures and enables the AI-First workforce. By understanding user intent and data context in real time, Harmonic gives security leaders all they need to help their companies innovate at pace.",
+      "seo": "Accelerate secure AI adoption without risking the security and privacy of your data.",
+      "founded_year": 2023,
+      "type": "PRIVATELY_HELD",
+      "industry": "software development",
+      "staff": {
+        "total": 68,
+        "range": {
+          "start": 51,
+          "end": 200
+        }
+      },
+      "logo": {
+        "source": "https://images.ai-ark.com/JN8L2s_asPbq0x7EFh7Ysq7VHiQNAEd_3YHV6mStI80/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/72f1cccc-34d1-56ba-f10c-6f28212048f9.jpg"
+      }
+    },
+    "link": {
+      "website": "https://www.harmonic.security",
+      "domain": "harmonic.security",
+      "domain_ltd": "harmonic.security",
+      "linkedin": "https://www.linkedin.com/company/harmonic-security",
+      "twitter": "https://x.com/harmonicsec",
+      "crunchbase": "https://www.crunchbase.com/organization/harmonic-security"
+    },
+    "financial": {
+      "revenue": {
+        "annual": {
+          "start": 1000000,
+          "end": 5000000,
+          "amount": "1000000-5000000"
+        }
+      },
+      "funding": {
+        "type": "SERIES_A",
+        "total_amount": 24500000,
+        "last_amount": 17500000,
+        "num_investor": 10,
+        "num_funding_rounds": 3,
+        "rounds": [
+          {
+            "announced_at": "2024-10-02",
+            "raised_amount": 17500000,
+            "type": "SERIES_A",
+            "investors": [
+              "Claroty",
+              "Sysdig",
+              "N47",
+              "Ten Eleven Ventures"
+            ]
+          },
+          {
+            "announced_at": "2024-05-01",
+            "type": "SEED_ROUND",
+            "investors": [
+              "IQT"
+            ]
+          },
+          {
+            "announced_at": "2023-10-19",
+            "raised_amount": 7000000,
+            "type": "SEED_ROUND",
+            "investors": [
+              "Daniel Bernard",
+              "Nicholas Warner",
+              "Storm Ventures",
+              "Eileen Burbidge",
+              "Jerry Perullo"
+            ]
+          }
+        ],
+        "date": "2024-10-02"
+      },
+      "aberdeen": {
+        "it_spend": 1556594
+      }
+    },
+    "location": {
+      "headquarter": {
+        "continent": "North America",
+        "country": "United States",
+        "state": "California",
+        "city": "San Francisco",
+        "street": "1390 Market Street, Suite 200",
+        "postal_code": "94102",
+        "raw_address": "1390 Market Street, Suite 200, San Francisco, California, United States, North America",
+        "position": {
+          "lng": -122.042,
+          "lat": 37.39271
+        }
+      },
+      "locations": [
+        {
+          "continent": "North America",
+          "country": "United States",
+          "state": "California",
+          "city": "San Francisco",
+          "street": "1390 Market Street, Suite 200",
+          "postal_code": "94102",
+          "raw_address": "1390 Market Street, Suite 200, San Francisco, California, United States, North America",
+          "position": {
+            "lng": -122.042,
+            "lat": 37.39271
+          }
+        }
+      ]
+    },
+    "technologies": [
+      {
+        "name": "viewport meta",
+        "category": "mobile"
+      },
+      {
+        "name": "iphone / mobile compatible",
+        "category": "mobile"
+      },
+      {
+        "name": "hsts",
+        "category": "ssl"
+      },
+      {
+        "name": "apple mobile web clips icon",
+        "category": "mobile"
+      },
+      {
+        "name": "google tag manager",
+        "category": "widgets"
+      },
+      {
+        "name": "google font api",
+        "category": "widgets"
+      },
+      {
+        "name": "content delivery network",
+        "category": "cdn"
+      },
+      {
+        "name": "cloudflare cdn",
+        "category": "cdn"
+      },
+      {
+        "name": "cloudflare",
+        "category": "cdn"
+      },
+      {
+        "name": "organization schema",
+        "category": "framework"
+      },
+      {
+        "name": "AI",
+        "category": "Other"
+      },
+      {
+        "name": "Amazon AWS",
+        "category": "Hosting"
+      },
+      {
+        "name": "Gmail",
+        "category": "Email Providers"
+      },
+      {
+        "name": "Google Apps",
+        "category": "Other"
+      },
+      {
+        "name": "Google Font API",
+        "category": "Fonts"
+      },
+      {
+        "name": "Hubspot",
+        "category": "Marketing Automation"
+      },
+      {
+        "name": "Microsoft Office 365",
+        "category": "Other"
+      },
+      {
+        "name": "Mobile Friendly",
+        "category": "Other"
+      },
+      {
+        "name": "Route 53",
+        "category": "Domain Name Services"
+      },
+      {
+        "name": "Webflow",
+        "category": "CMS"
+      }
+    ],
+    "industries": [
+      "enterprise software",
+      "security",
+      "software development",
+      "cyber security",
+      "generative ai",
+      "network security",
+      "internet"
+    ],
+    "keywords": [
+      "data protection",
+      "genai dlp",
+      "ai data protection",
+      "ai governance",
+      "ai usage control",
+      "shadow ai"
+    ],
+    "languages": [
+      "english"
+    ],
+    "naics": [
+      "541511",
+      "541519",
+      "449210"
+    ],
+    "last_updated": "2026-08-22"
+  },
+  "department": {
+    "departments": [
+      "marketing"
+    ],
+    "sub_departments": [
+      "growth_marketing"
+    ],
+    "functions": [
+      "marketing"
+    ],
+    "seniority": "manager"
+  },
+  "email": {
+    "state": "DONE",
+    "output": [
+      {
+        "address": "tyler@harmonic.security",
+        "mx": {
+          "record": "aspmx.l.google.com",
+          "google": false,
+          "found": true,
+          "provider": "g-suite"
+        },
+        "domainType": "SMTP",
+        "status": "VALID",
+        "subStatus": "EMPTY",
+        "date": "2026-08-31T07:52:53.000205",
+        "free": false,
+        "generic": false,
+        "found": true
+      }
+    ]
+  },
+  "last_updated": "2026-08-22",
+  "_http_status": 200,
+  "_elapsed_s": 2.13,
+  "_request": {
+    "url": "https://www.linkedin.com/in/tyler-chonoles-106405a0"
+  }
+}
