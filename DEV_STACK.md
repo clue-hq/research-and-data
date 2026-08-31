@@ -48,7 +48,19 @@ Then open **http://localhost:3020** and sign in:
 - `apps/frontend`: `npm install && npm run design-system:build` (canvaskit-wasm comes with install).
 - Design engine helper built: `subsystems/clue-design/target/release/lumen-api-helper`.
 - Playwright chromium available to the venv (design preview renders need it).
+- **Chromium for gallery thumbnails (once per machine):** `python -m playwright install chromium`
+  (from the repo `.venv`, the same venv the design API runs in). Without it,
+  `GET /documents/{id}/thumbnail` for **web** documents answers a typed 502
+  (`thumbnail.capture_failed`) and every web gallery card falls back to the empty
+  preview frame. Scene/ad thumbnails do not need it — they come from the engine's
+  own Skia PNG export.
 - Vendored Tailwind runtime present: `apps/editor/public/vendor/tailwind-browser.js` (untracked in git — previews render unstyled without it).
+  It is also what the **web thumbnail** capture inlines: with no runtime the thumbnail
+  route refuses loudly with `thumbnail.tailwind_runtime_missing` (a 502) rather than
+  screenshotting an unstyled page, and the card shows the empty frame.
+  `LUMEN_TAILWIND_RUNTIME=/abs/path/to/tailwind-browser.js` overrides the search path
+  (same env the agent runtime's preview capture uses); a set-but-missing path is a
+  refusal, not a fall-through to the default candidates.
 - `/private/tmp/clue-agent-workspaces` exists with mode 700 (the script creates it).
 
 ## Verifying the stack is actually healthy (30 seconds)
@@ -99,4 +111,6 @@ psql -d clue_istanbul_dev -c "UPDATE design_agent_run SET status='failed' WHERE 
 | Editor tab opens with an empty grey canvas | Normal — the design session is open; generation starts on your next message. |
 | Design run FINISHED but gallery thumbnails stay grey / editor won't render the page | `LUMEN_API_BASE_URL` missing from `apps/frontend/.env.local` — the design proxy 500s. Check: `grep "LUMEN_API_BASE_URL is required" /tmp/browser_frontend.log`. |
 | Fresh-DB worker won't boot (recipe/schema errors) | Recipe seeding validates all revisions against today's registry — see `_memory/` 2026-08-29 notes (recipe0 v16–18 are replay-only; stale profile digests must be re-pinned). |
+| `up` reports every process UP, but a route/endpoint that exists on this branch 404s from the API (e.g. `/documents/{id}/thumbnail` missing from `/openapi.json`) | **A stale process from an earlier session still owns the port.** `up` does not `down` first, so the new uvicorn dies with `[Errno 48] address already in use` while the OLD one keeps serving — and `status` only checks that *something* listens, so it reports UP. Check: `grep -c "address already in use" /tmp/browser_design_api.log` and `ps -o lstart -p $(pgrep -f "uvicorn lumen_api.main:app")`. Fix: always `down` before `up`, and if a port survives it, `lsof -iTCP:<port> -sTCP:LISTEN -t \| xargs kill -9`. Found live 2026-08-31. |
+| Gallery cards are grey/empty for **web** documents only (ads are fine) | No Playwright Chromium, or no vendored Tailwind runtime, on the design-API process — see the prerequisites above. The API log names which: `thumbnail.capture_failed` vs `thumbnail.tailwind_runtime_missing`. Nothing is poisoned — fix the prerequisite and the next gallery read regenerates. |
 | ONE route 404s while its siblings work (e.g. `/projects/…/chats/…` → Next 404, but `/projects/…` 307s to sign-in; page.tsx exists on disk; DB rows exist) | Corrupted Next dev build cache — repeated `down` cycles pkill the dev server mid-write and its route graph can drop a route. Fix: `down` → `rm -rf apps/frontend/.next` → `up`. Found live 2026-08-30. |
