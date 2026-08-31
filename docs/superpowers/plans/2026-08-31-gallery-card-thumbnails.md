@@ -17,7 +17,7 @@
 3. **Cache key is the document version.** An edit bumps `current_version` → the mapper's URL changes → regenerate on next view. `?v=` matching the current version gets immutable caching; a stale `?v=` gets `no-store` (served current bytes, never cached under a wrong key).
 4. **The empty preview frame (ruling 2) survives as the fallback** — a failed or not-yet-generated thumbnail renders the card frame without artwork, never placeholder art.
 5. **Both document kinds ship together** (web + ad; the ad editor is fully integrated now — the earlier "web-only v1" scoping is superseded by this ruling).
-6. **Web crop:** above-the-fold viewport capture at 1448×1086 (exactly 4:3 — the card's `aspect-ratio: 4 / 3`, and the web stage's historical letterbox ratio), `device_scale_factor 0.5` → 724×543 output. Scene thumbnails keep their page aspect (`object-fit: contain` letterboxes them in the frame); downscale to max edge 724.
+6. **Web crop:** above-the-fold viewport capture at 1448×1086 (exactly 4:3 — the card's `aspect-ratio: 4 / 3`, and the web stage's historical letterbox ratio), `device_scale_factor 0.5` → 724×543 output. ~~Scene thumbnails keep their page aspect (`object-fit: contain` letterboxes them in the frame); downscale to max edge 724.~~ **[SUPERSEDED 2026-08-31 (founder ruling, post-walk): the artwork COVERS the card frame — `object-fit: cover; object-position: top` on `.artifactPreview img` — filling it completely and cropping overflow, never letterboxed. Generation is unchanged (scene PNGs still ship at their page aspect, max edge 724); the fill-vs-fit decision lives entirely in the card CSS, matching the list row's pre-existing `cover`/`top` posture.]**
 
 ## Global Constraints
 
