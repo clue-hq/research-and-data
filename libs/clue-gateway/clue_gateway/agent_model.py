@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from collections.abc import AsyncIterator, Iterator, Sequence
@@ -508,6 +509,7 @@ class OpenRouterAgentModelProvider:
                 max_retries=max_retries,
                 max_output_tokens=max_output_tokens,
                 temperature=temperature,
+                role=role,
             )
             for candidate in candidates
         )
@@ -562,19 +564,18 @@ class OpenRouterAgentModelProvider:
         max_retries: int,
         max_output_tokens: int,
         temperature: float,
+        role: str | None = None,
     ) -> BaseChatModel:
         # OpenRouter's Responses API is stateless. Clue/DeepAgents therefore continues to replay
         # the complete durable message history and never uses ``previous_response_id``.
-        reasoning = _reasoning_request(self._config, model_id=model_id)
+        reasoning = _reasoning_request(self._config, model_id=model_id, role=role)
         # P3.2: the OpenRouter economics knobs ride the request body (config, not code).
         extra_body: dict[str, Any] = {}
         if self._config.openrouter_provider_sort is not None:
             extra_body["provider"] = {"sort": self._config.openrouter_provider_sort}
         if self._config.openrouter_usage_include:
             extra_body["usage"] = {"include": True}
-        if self._config.openrouter_chat_completions_fallback and not model_id.startswith(
-            "openai/"
-        ):
+        if self._config.openrouter_chat_completions_fallback and not model_id.startswith("openai/"):
             # OpenRouter's ``/responses`` translation for non-OpenAI providers rejects the
             # platform conversation's array-shaped message content (grok-4.6 400s
             # ``invalid_union: expected string, received array`` on the tool-result follow-up —
@@ -619,8 +620,16 @@ class OpenRouterAgentModelProvider:
         )
 
 
-def _reasoning_request(config: GatewayConfig, *, model_id: str) -> dict[str, Any] | None:
+def _reasoning_request(
+    config: GatewayConfig, *, model_id: str, role: str | None = None
+) -> dict[str, Any] | None:
     """The provider ``reasoning`` block for one governed agent model — config first, baseline else.
+
+    **The per-role environment override (founder ruling 2026-08-31).** When the call is built
+    for a named role and ``<ROLE>_AGENT_MODEL_EFFORT`` is set non-blank (e.g.
+    ``HEAD_OF_ABM_AGENT_MODEL_EFFORT=high``), that effort replaces whatever effort the config
+    or baseline chose — the deployment names the effort the way ``<ROLE>_AGENT_MODEL`` names
+    the model, with no new profile version. Blank/unset changes nothing below.
 
     **The baseline (no config).** The production Head-of-ABM model
     ``openai/gpt-5.6-terra`` uses reasoning ``high``. Other GPT-5.6 routes retain reasoning
@@ -655,10 +664,17 @@ def _reasoning_request(config: GatewayConfig, *, model_id: str) -> dict[str, Any
     configured = config.agent_reasoning
     if configured is not None:
         payload = configured.as_provider_payload()
-        return dict(payload) if payload else None
-    if model_id == "openai/gpt-5.6-terra":
-        return {"effort": "high"}
-    return {"effort": "none"} if model_id.startswith("openai/gpt-5.6") else None
+        reasoning = dict(payload) if payload else None
+    elif model_id == "openai/gpt-5.6-terra":
+        reasoning = {"effort": "high"}
+    else:
+        reasoning = {"effort": "none"} if model_id.startswith("openai/gpt-5.6") else None
+    if role:
+        effort = os.environ.get(f"{role.upper()}_AGENT_MODEL_EFFORT", "").strip()
+        if effort:
+            reasoning = dict(reasoning or {})
+            reasoning["effort"] = effort
+    return reasoning
 
 
 def _served_model_from_result(result: ChatResult, *, fallback: str) -> str:

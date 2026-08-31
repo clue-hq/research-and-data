@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
@@ -23,6 +24,7 @@ from clue_agents.contracts import (
     AgentResourceManifest,
     AgentResourceRef,
     AgentRole,
+    ModelPolicy,
     SkillBundle,
     ToolPin,
     WorkspacePolicy,
@@ -366,6 +368,31 @@ class ResolvedAgentProfile:
         )
 
 
+def _env_model_policy(role: AgentRole, policy: ModelPolicy) -> ModelPolicy:
+    """Environment-first model selection for a role (founder ruling 2026-08-31).
+
+    ``<ROLE>_AGENT_MODEL`` (e.g. ``HEAD_OF_ABM_AGENT_MODEL``) overrides the catalog
+    profile's pinned ``model_id`` at resolution time, so a model change is a deployment
+    setting rather than a new reviewed profile version. Blank or unset keeps the profile
+    pin — tests and historical replay stay deterministic with no environment. Everything
+    else on the policy (timeout/retries/output budget/temperature) still comes from the
+    reviewed profile; the environment names the model, not the envelope. The per-role
+    reasoning effort (``<ROLE>_AGENT_MODEL_EFFORT``) is read at the gateway, not here,
+    because effort shapes the provider request rather than the profile contract.
+    """
+
+    override = os.environ.get(f"{role.value.upper()}_AGENT_MODEL", "").strip()
+    if not override or override == policy.model_id:
+        return policy
+    return ModelPolicy(
+        model_id=override,
+        timeout_s=policy.timeout_s,
+        max_retries=policy.max_retries,
+        max_output_tokens=policy.max_output_tokens,
+        temperature=policy.temperature,
+    )
+
+
 class AgentProfileRegistry:
     """Eagerly resolve active role profiles against resources, tools, and engine ceilings."""
 
@@ -589,7 +616,7 @@ class AgentProfileRegistry:
             prompt=prompt.ref,
             skills=bundles,
             tools=effective_tools,
-            model=definition.model,
+            model=_env_model_policy(definition.role, definition.model),
             workspace=workspace,
             delegation_roles=effective_delegation_roles,
             # `AgentProfile` requires a non-delegating profile to carry zero delegation budget, and
