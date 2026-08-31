@@ -230,3 +230,41 @@ Apollo = fallback. Wire lessons: needs browser UA (Cloudflare 1010), free-tier r
 (pace + backoff), phone endpoint needs {domain,name} not URL, credit endpoint 401-unknown,
 personality API canned — skip. Email claims must carry domainType+status (verified only when
 SMTP+VALID). Deep research remains Exa's job — AI Ark returns no quotes/signals/job-req text.
+
+## Addendum 2026-08-31 — cluehq.ai smoke test COMPLETE (two Opus agents, $0.51, 10.4 min provider time)
+
+Full report: .context/arv2-smoke-cluehq/SMOKE-TEST-REPORT.md. Agent A (ICP Architect) derived
+Clue's ICP from www.cluehq.ai (Exa index = byte-identical to live; site's /privacy + /terms 404 —
+tell founder); signal-first job-board search won discovery (20/20 real companies; generic semantic
+search returns competitors' blogs; founder-pain angle = pure vendor SEO — demoted). Picked 5:
+Zafran 81 / Cogent 80 / Harmonic 79.5 / Uptiq 67.5 / Vendelux 66.5 (honesty: only 3 cleared its
+own >=75 bar). Agent B researched all 5, tested A's predicted intent ranking:
+- **Zafran 4th->1st** (buying 90): ABM req live on Ashby API, 105 days unfilled, ad describes
+  Clue verbatim ("Own ABM from the ground up: 1:1... 1:few... 1:many"); required-tools list has
+  no ABM platform. A's own falsification probe worked as designed.
+- Cogent held #2/#1 (88/92.5/90): 6 new marketing reqs; Head of Growth public "need more
+  teammates" post 8/14.
+- **Harmonic dropped to #3** (62): the ABM req was CONVERTED to a BDR seat — but the hiring
+  manager's ad listed "account mapping, outreach, direct mail, events" = 4 of Clue's 5 agents.
+  Also corrected A's funding misparse (17.5M Next47 Oct-2024, not Apr-2025).
+- **Vendelux DISQUALIFIED as competitor** (their Meetings product = AI attendee targeting) —
+  caught before any outreach would have gone out.
+Emails 5/6 found, ALL SMTP+VALID (vari@/nick@zafran.io, cameron@cogent.com, ana@/tyler@
+harmonic.security), 5cr; 1 AI Ark provider defect (search finds Semien, export 404s same URL).
+53 people mapped, 32.5cr total (credits were the binding constraint, not cash). One same-name
+contamination caught.
+Costs: $0.507 total; per-account $0.076-0.173; production ~$0.155 full / ~$0.015 cheap pass.
+Latencies: Exa deep 46.3s, gpt-5-mini 21.6s, AI Ark 1.3s, direct fetch 0.22s.
+**Scraping verdict: Scrapling needed ZERO times** (40 free fetches, 0 blocked; Exa 16/17 = urllib
+16/17, the miss a genuine 404). **Free public ATS APIs (Ashby/Greenhouse/Lever) were the star —
+$0, 1.3s, and drove every ranking change** -> first-class pipeline source. Ladder ratified:
+direct GET -> ATS API -> Exa contents -> Exa deep -> stealth (403-triggered only).
+System lessons: (1) schema gap — no home for GTM hiring; proposed account.hiring.gtm_open_roles
+(P1 signals squeezed into prose without it); (2) A's hiring detector blind to non-ATS companies
+(Arintra had 5 GTM roles on its own /careers — A said zero); (3) the research model REFUSED an
+operator-asserted false fact (Vendelux CEO) citing sources — trust point; (4) 6% paraphrased
+quotes flagged not hidden -> verify_links audit earns its place; (5) Series-A rule blind spot
+(Oscilar self-funded $20M, excluded as written — founder ruling wanted); (6) 3/5 picks were
+cybersecurity unprompted; healthcare = build-mode, zero GTM hiring. 203-claim sample DB, 0
+unregistered fields. Sample DB + report ready as ARV2 acceptance evidence for wiring the new
+toolbelt into Head of ABM.
