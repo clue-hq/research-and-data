@@ -3675,7 +3675,15 @@ def create_app(
                         nonce=None,
                         repo=repo,
                     )
-                    data = document_thumbnails.web_thumbnail_png(str(rendered["html"]))
+                    html = rendered.get("html")
+                    if not isinstance(html, str) or not html:
+                        # A render that returned no html would screenshot the
+                        # literal text "None" and CACHE it under this version —
+                        # a poisoned card that never expires. Refuse instead.
+                        raise document_thumbnails.ThumbnailUnavailable(
+                            "thumbnail.render_failed", "web render returned no html"
+                        )
+                    data = document_thumbnails.web_thumbnail_png(html)
                 else:
                     scene = document["scene"]
                     cache_dir = request_cache_dir(repo)
@@ -3696,6 +3704,35 @@ def create_app(
                 raise HTTPException(
                     status_code=502,
                     detail={"code": error.code, "message": str(error)},
+                ) from error
+            except CoreError as error:
+                # The helper can fail BEFORE `raise_on_error` is consulted (a dead
+                # subprocess, an unparseable response), so `raise_on_error=False`
+                # above does not make this unreachable — `/export-preview` catches
+                # CoreError for the same reason. A thumbnail's contract is 502
+                # `thumbnail.*`, so it is normalized here rather than left to
+                # `core_http_error`'s 422.
+                raise HTTPException(
+                    status_code=502,
+                    detail={
+                        "code": "thumbnail.export_failed",
+                        "message": str(error),
+                    },
+                ) from error
+            except HTTPException as error:
+                # The in-process `render_web_document` above answers ITS OWN
+                # failures with `core_http_error`'s 422 `web_render.*`, which
+                # would otherwise escape this route as a 422 the frozen contract
+                # never promises. Catching HTTPException broadly is safe HERE and
+                # only here: the 404 (`require_document`) is raised ABOVE this try,
+                # and the render call is the only thing inside it that raises one.
+                # DO NOT widen this try upward — it would swallow the 404.
+                raise HTTPException(
+                    status_code=502,
+                    detail={
+                        "code": "thumbnail.render_failed",
+                        "message": str(error.detail),
+                    },
                 ) from error
             sha256 = hashlib.sha256(data).hexdigest()
             # `register` returns the workspace-scoped STORAGE KEY; the index row and

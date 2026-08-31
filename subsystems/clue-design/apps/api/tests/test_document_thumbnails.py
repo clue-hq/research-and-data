@@ -25,6 +25,7 @@ from PIL import Image
 from conftest import make_blob_store, make_client
 
 from lumen_api import document_thumbnails as thumbs
+from lumen_api.core import CoreError
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
@@ -310,6 +311,39 @@ def test_generation_failure_is_a_typed_502(
     assert response.status_code == 502, response.text
     assert response.json()["detail"]["code"] == "thumbnail.capture_failed"
     # A refusal must not leave a cache row claiming a thumbnail exists.
+    version = client.get(f"/documents/{seeded_web_document}").json()["current_version"]
+    assert HybridRepository().get_document_thumbnail(seeded_web_document, version) is None
+
+
+def test_engine_helper_failure_is_a_typed_502(
+    client: TestClient, seeded_scene_document: str, monkeypatch
+) -> None:
+    # `raise_on_error=False` does NOT cover a helper that never answered: `_run`
+    # raises CoreError before that flag is read. Un-normalized it would leave the
+    # route as a raw 500.
+    def refuse(*args, **kwargs):
+        raise CoreError("helper.process", "the helper process died")
+
+    monkeypatch.setattr(client.app.state.core, "export_preview", refuse)
+    response = client.get(f"/documents/{seeded_scene_document}/thumbnail")
+    assert response.status_code == 502, response.text
+    assert response.json()["detail"]["code"] == "thumbnail.export_failed"
+
+
+def test_render_failure_is_a_typed_502_not_the_render_route_s_422(
+    client: TestClient, seeded_web_document: str, monkeypatch
+) -> None:
+    # The real escape path: `render_web_document` converts its own CoreError with
+    # `core_http_error` into a 422 `web_render.*`, which would propagate straight
+    # out of this route. Patch the CORE so that whole conversion really runs.
+    def refuse(*args, **kwargs):
+        raise CoreError("web_render.failed", "the web renderer died")
+
+    monkeypatch.setattr(client.app.state.core, "web_render", refuse)
+    response = client.get(f"/documents/{seeded_web_document}/thumbnail")
+    assert response.status_code == 502, response.text
+    assert response.json()["detail"]["code"] == "thumbnail.render_failed"
+    # And nothing was cached behind the refusal.
     version = client.get(f"/documents/{seeded_web_document}").json()["current_version"]
     assert HybridRepository().get_document_thumbnail(seeded_web_document, version) is None
 
