@@ -15,16 +15,21 @@ import pytest
 from sqlalchemy import text
 
 from clue_api.run_events_wiring import DbRunEventEmitter, plan_phase_events
-from clue_core import ProjectPhase, new_project_run_id
-from clue_projections import plan_replay
-from clue_research.durable import (
+from clue_core import (
+    PROJECT_RUN_SUBJECT_KIND,
     RUN_EVENT_TOPICS,
-    ProjectRunStatus,
+    ProjectPhase,
     RunEventTopic,
+    new_project_run_id,
+)
+from clue_execution.run_events import (
+    DbRunEventReader,
     emit_run_event,
     event_created_at,
     list_run_events,
 )
+from clue_projections import plan_replay
+from clue_research.durable import ProjectRunStatus
 from tests.db.conftest import run_async
 from tests.profiling.conftest import conn_session_factory, rollback_conn
 from tests.projections._helpers import seed_run
@@ -125,6 +130,10 @@ def test_run_event_seq_is_monotone_and_tenant_scoped() -> None:
             )
             # Monotone per workspace (a strictly-increasing subsequence of the global seq).
             assert e1.seq < e2.seq < e3.seq
+            # D7: the signature and semantics of emit_run_event did not change — it stamps the
+            # project-run subject itself, so no existing call site had to learn the new columns.
+            assert e1.subject_kind == PROJECT_RUN_SUBJECT_KIND
+            assert e1.subject_id == str(run_a) and e1.run_id == run_a
             ws_events = await list_run_events(conn, workspace_id=_WS)
             assert [e.seq for e in ws_events] == sorted(e.seq for e in ws_events)
             assert {e.seq for e in ws_events} == {e1.seq, e2.seq, e3.seq}
@@ -198,9 +207,7 @@ def test_plan_replay_fresh_midstream_and_horizon_reset() -> None:
 
             # Fresh connect (no cursor): everything, no reset.
             fresh = await plan_replay(
-                conn,
-                workspace_id=_WS,
-                run_id=run_id,
+                DbRunEventReader(conn, workspace_id=_WS, run_id=run_id),
                 last_event_id=None,
                 horizon_s=horizon,
             )
@@ -209,9 +216,7 @@ def test_plan_replay_fresh_midstream_and_horizon_reset() -> None:
 
             # Mid-stream cursor within the horizon: strictly-later events, zero gap, no reset.
             mid = await plan_replay(
-                conn,
-                workspace_id=_WS,
-                run_id=run_id,
+                DbRunEventReader(conn, workspace_id=_WS, run_id=run_id),
                 last_event_id=events[1].seq,
                 horizon_s=horizon,
             )
@@ -224,9 +229,7 @@ def test_plan_replay_fresh_midstream_and_horizon_reset() -> None:
                 {"old": datetime.now(UTC) - timedelta(seconds=horizon + 60), "seq": events[0].seq},
             )
             stale = await plan_replay(
-                conn,
-                workspace_id=_WS,
-                run_id=run_id,
+                DbRunEventReader(conn, workspace_id=_WS, run_id=run_id),
                 last_event_id=events[0].seq,
                 horizon_s=horizon,
             )
@@ -238,9 +241,7 @@ def test_plan_replay_fresh_midstream_and_horizon_reset() -> None:
 
             # An unknown cursor (never existed for this tenant) is conservatively a reset.
             unknown = await plan_replay(
-                conn,
-                workspace_id=_WS,
-                run_id=run_id,
+                DbRunEventReader(conn, workspace_id=_WS, run_id=run_id),
                 last_event_id=10_000_000,
                 horizon_s=horizon,
             )

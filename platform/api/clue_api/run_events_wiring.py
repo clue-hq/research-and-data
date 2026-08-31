@@ -25,15 +25,11 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import JsonValue
 
-from clue_core import ProjectPhase
+from clue_core import ProjectPhase, RunEventTopic
 from clue_db import ConnFactory, transaction
+from clue_execution.run_events import emit_run_event
 from clue_obs import get_logger
-from clue_research.durable import (
-    ProjectRunRow,
-    ProjectRunStatus,
-    RunEventTopic,
-    emit_run_event,
-)
+from clue_research.durable import ProjectRunRow, ProjectRunStatus
 
 log = get_logger("clue_api.run_events_wiring")
 

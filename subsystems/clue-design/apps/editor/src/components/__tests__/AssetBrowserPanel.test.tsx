@@ -86,8 +86,10 @@ describe("AssetBrowserPanel", () => {
     await waitFor(() => {
       expect(screen.getByTestId("asset-asset_logo")).toBeTruthy();
     });
+    // Public content-addressed serving: an <img> cannot send X-Workspace-Id,
+    // so the src must be /asset-store/{digest}, never a registry URL.
     const thumbnail = screen.getByAltText("Acme logo") as HTMLImageElement;
-    expect(thumbnail.src).toBe(`${API_BASE}/assets/asset_logo/thumbnail`);
+    expect(thumbnail.src).toBe(`${API_BASE}/asset-store/${"f".repeat(64)}`);
     expect(screen.getByTestId("asset-asset_qr").textContent).toContain("vector");
   });
 

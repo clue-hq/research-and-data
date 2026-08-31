@@ -119,6 +119,7 @@ from clue_research.profiling.committee.sources import (
 )
 from clue_research.resolvers.sumble.people import PEOPLE_SOURCE_KEY
 from clue_research.sources import seed_source_manifests
+from clue_research.stage0 import load_client_knowledge_pack
 from clue_storage import FsStorage, StorageBackend
 from tests.agents.test_entity_research_runtime_r3 import Checkpointers
 from tests.api.account_deep_test_support import confirmed_account_research_direction
@@ -838,6 +839,7 @@ def test_r5_account_agent_observes_results_decides_and_finalizes_without_contact
         storage = FsStorage(tmp_path / "r5-artifacts")
         async with rollback_conn() as conn:
             await load_committee_pack(conn)
+            await load_client_knowledge_pack(conn)
             await seed_source_manifests(conn)
             fixture = await seed_insight_health_account_deep_fixture(
                 conn,

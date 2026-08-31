@@ -71,6 +71,13 @@ issue spec states the exact interface it exposes/consumes.
 | B3 | Scoped-memory slice 1: five-scope memory substrate · two seams · deterministic assembly · lifecycle/DSAR | **executed + integrated** | [PB-B3](./PB-B3-scoped-memory-slice-1.md) |
 | C | Governed agency: Step 4 fan-out (coverage/proposals/ingestion/Stage 0) → journal/recipes → deepagent → structured research views | **C0–C7 implemented; only the pre-multi-worker legacy-write hard-fence item remains in C8** | [PC](./PC-phase-c-agentic-layer.md) · [C0](./PC-C0-step4-contract-freeze.md) · [C1](./PC-C1-coverage-and-goal-judge.md) · [C2](./PC-C2-field-source-proposals.md) · [C3](./PC-C3-ingestion.md) · [C4](./PC-C4-stage0-recipe0.md) · [C5](./PC-C5-run-graph-recipes-executor.md) · [C6](./PC-C6-platform-deepagent-and-skills.md) · [C7](./PC-C7-research-views-derivations-and-handoff.md) |
 
+## Active frontend-integration child plans
+
+| Capability | Status | Authority |
+|---|---|---|
+| Onboarding auth/profile/setup integration | Implemented slices with retained follow-ups | [FI onboarding contract-gap review](./FI-onboarding-contract-gap-review.md) |
+| Durable Stage-0 official-site crawling | **C0–C10 accepted; default-off and allowlisted** | [Plan](./FI-stage0-durable-official-site-crawl-plan.md) · [C0 contract](./FI-stage0-durable-official-site-crawl-C0-contract.md) · [C6 composition](./FI-stage0-durable-official-site-crawl-C6-composition-contract.md) · [C9 offline acceptance](./FI-stage0-durable-official-site-crawl-C9-offline-acceptance.md) · [C10 live acceptance](./FI-stage0-durable-official-site-crawl-C10-live-acceptance.md) |
+
 ## Full issue list
 
 **M0 — Foundations & Shared Contracts**

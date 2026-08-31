@@ -30,6 +30,7 @@ export function ProjectComposerAttachment({
       >
         <Attachment
           aria-busy={attachment.status === "uploading"}
+          aria-invalid={attachment.status === "failed" || undefined}
           data={attachment}
           onRemove={() => onRemove(attachment.id)}
         >
@@ -42,7 +43,9 @@ export function ProjectComposerAttachment({
               label={`Remove ${attachment.filename}`}
             />
           </div>
-          <AttachmentInfo />
+          <AttachmentInfo
+            className={attachment.status === "failed" ? "text-destructive" : undefined}
+          />
         </Attachment>
       </AttachmentHoverCardTrigger>
       <AttachmentHoverCardContent>
@@ -59,6 +62,16 @@ export function ProjectComposerAttachment({
           <div className="space-y-1 px-0.5">
             <p className="font-medium text-sm leading-none">{label}</p>
             <p className="text-muted-foreground text-xs">{attachment.mediaType}</p>
+            {attachment.status === "uploading" ? (
+              <p className="text-muted-foreground text-xs" role="status">
+                Uploading…
+              </p>
+            ) : null}
+            {attachment.status === "failed" ? (
+              <p className="text-destructive text-xs" role="alert">
+                {attachment.error ?? "Upload failed."}
+              </p>
+            ) : null}
           </div>
         </div>
       </AttachmentHoverCardContent>

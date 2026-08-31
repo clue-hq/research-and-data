@@ -310,6 +310,7 @@ def build_production_sumble_committee_preparer(
         conn_factory=conn_factory,
         poll_after_seconds=settings.sumble_committee_poll_after_s,
         rate_limiter=rate_limiter,
+        enforce_budget=settings.budget_controls_enabled,
     )
     eligibility = CommitteeEligibilityService(
         storage=storage,
@@ -319,6 +320,7 @@ def build_production_sumble_committee_preparer(
             CommitteeEnumerationSource(source_key=PEOPLE_SOURCE_KEY, source_tier=SourceTier(1)),
         ),
         conn_factory=conn_factory,
+        enforce_budget=settings.budget_controls_enabled,
     )
     return SumbleCommitteePreparer(
         inputs=inputs,

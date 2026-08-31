@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createEditor, Node as SlateNode, Transforms } from "slate";
+import { withHistory } from "slate-history";
 import type { ProjectComposerEditor } from "./project-composer";
 import {
+  clearSubmittedComposerDraft,
   createComposerValue,
   getComposerMentionIds,
   getComposerPromptText,
@@ -37,4 +39,31 @@ test("Backspace removal deletes the selected reference without clearing the draf
   assert.equal(removeSelectedComposerMention(editor), true);
   assert.equal(SlateNode.string(editor), " Draft this for the account");
   assert.deepEqual(getComposerMentionIds(editor.children), []);
+});
+
+test("submit clears the accepted Slate draft and the next message starts clean", () => {
+  const editor = withHistory(createEditor()) as ProjectComposerEditor;
+  editor.children = createComposerValue("First message", [openAi]);
+
+  assert.equal(
+    clearSubmittedComposerDraft(editor, {
+      entityIds: ["openai"],
+      prompt: " First message",
+    }),
+    true,
+  );
+  assert.equal(getComposerPromptText(editor.children), "");
+  assert.deepEqual(getComposerMentionIds(editor.children), []);
+  assert.deepEqual(editor.history, { redos: [], undos: [] });
+
+  Transforms.insertText(editor, "Second message");
+  assert.equal(getComposerPromptText(editor.children), "Second message");
+  assert.equal(
+    clearSubmittedComposerDraft(editor, {
+      entityIds: ["openai"],
+      prompt: " First message",
+    }),
+    false,
+  );
+  assert.equal(getComposerPromptText(editor.children), "Second message");
 });

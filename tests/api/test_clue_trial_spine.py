@@ -12,7 +12,7 @@ import pytest
 from pydantic import SecretStr
 from sqlalchemy import text
 
-from clue_api.entity_research_quarantine import EntityResearchAgentNotComposed
+from clue_api.entity_research_deep_phase import REASON_FLEET_NOT_LAUNCHED
 from clue_api.run_composition import ComposingRunDriver
 from clue_api.stage0_trial import create_stage0_trial_session
 from clue_api.storage_wiring import build_storage_backend
@@ -317,15 +317,21 @@ def test_sumble_fixture_reaches_real_tier_checkpoint(
         # returned aggregate member from the immutable provider-response artifact.
         assert jobs_claims[0].evidence_span == '"total":4'
 
-        # The S1 fixture proves discovery/scoring through the human tier checkpoint. R1 then
-        # quarantines its retired pre-agent DEEP path: approval may not silently fall back to the
-        # old account profiler while the replacement R5 agent composition is absent.
-        with pytest.raises(EntityResearchAgentNotComposed):
-            await spine.approve_direct_research(
-                state=state,
-                project_run_id=run.project_run_id,
-                account_entity_id=account_id,
-            )
+        # The S1 fixture proves discovery/scoring through the human tier checkpoint. The retired
+        # pre-agent DEEP path stays quarantined, and M8D R11.1's join-only bridge now occupies the
+        # DEEP slot: with no confirmed account-research fleet launch behind this trial run, approval
+        # parks the run at a durable hold instead of silently falling back to the old profiler.
+        research = await spine.approve_direct_research(
+            state=state,
+            project_run_id=run.project_run_id,
+            account_entity_id=account_id,
+        )
+        assert research.project_run.phase is ProjectPhase.DEEP
+        assert research.project_run.status is ProjectRunStatus.PAUSED
+        held = await driver.composed(research.project_run)
+        checkpoint = await held.run.await_checkpoint(run.project_run_id)
+        assert checkpoint is not None
+        assert checkpoint.payload["reason_code"] == REASON_FLEET_NOT_LAUNCHED
 
     async def wrapped() -> None:
         async with db_lifespan():

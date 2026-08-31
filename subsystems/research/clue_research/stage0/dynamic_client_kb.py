@@ -23,11 +23,13 @@ from clue_core import (
     EntityType,
     ExtractionMethod,
     OnboardingInputId,
+    ProductScopePolicy,
     ResearchMode,
     ReuseScope,
     RunId,
     VolunteeredStatementId,
     canonical_json,
+    resolve_product_scope,
 )
 from clue_core.proposals import FieldProposalId, ProposalStatus
 from clue_research.claimstore import (
@@ -268,6 +270,19 @@ async def prepare_field_materialization(
         value_json=details.candidate_value,
     )
 
+    product_scope = resolve_product_scope(definition.field_def)
+    ambient_product_id = statement.product_id or proposal.scope.product_id
+    if product_scope is ProductScopePolicy.REQUIRED and ambient_product_id is None:
+        raise DynamicClientKbRefused(
+            reason_code="product_scope_missing",
+            message="the promoted product field requires a selected product",
+        )
+    claim_product_id = (
+        ambient_product_id
+        if product_scope in {ProductScopePolicy.REQUIRED, ProductScopePolicy.OPTIONAL}
+        else None
+    )
+
     value_digest = hashlib.sha256(canonical_json(details.candidate_value).encode()).hexdigest()
     materialization_id = uuid5(
         NAMESPACE_URL,
@@ -291,7 +306,7 @@ async def prepare_field_materialization(
         candidate_value=details.candidate_value,
         value_digest=value_digest,
         client_entity_id=statement.client_entity_id,
-        product_id=statement.product_id or proposal.scope.product_id,
+        product_id=claim_product_id,
     )
     return plan, await get_field_materialization(
         conn, workspace_id=workspace_id, materialization_id=materialization_id

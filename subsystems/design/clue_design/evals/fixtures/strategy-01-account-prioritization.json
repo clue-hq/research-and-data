@@ -1,0 +1,16 @@
+{
+  "name": "strategy-01-account-prioritization",
+  "kind": "clearly_strategy",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [],
+  "message": "Which accounts should we prioritize for this campaign next quarter?",
+  "judgment": {
+    "action": "finish",
+    "reason": "out_of_scope"
+  },
+  "expected": {
+    "action": "finish",
+    "reason": "out_of_scope",
+    "fail_safe": false
+  }
+}

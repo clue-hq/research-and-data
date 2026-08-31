@@ -17,6 +17,7 @@ test("session wire schema contains only Clue-owned identity values", () => {
         permissions: ["thread.read"],
       },
     ],
+    has_inactive_memberships: false,
   });
   assert.equal(parsed.user_id, "usr_123");
   assert.equal(parsed.memberships[0]?.workspace_id, "ws_123");
@@ -34,7 +35,7 @@ test("principal wire schema refuses provider fields", () => {
   assert.equal(parsed.success, false);
 });
 
-test("workspace selection falls back when the cookie is absent or revoked", () => {
+test("a missing or stale workspace cookie requires an explicit selection", () => {
   const session = AuthenticatedSessionSchema.parse({
     user_id: "usr_123",
     memberships: [
@@ -45,11 +46,36 @@ test("workspace selection falls back when the cookie is absent or revoked", () =
         permissions: ["project.read"],
       },
     ],
+    has_inactive_memberships: true,
   });
 
-  assert.equal(resolveWorkspaceMembership(session, null)?.workspace_id, "ws_active");
+  assert.equal(resolveWorkspaceMembership(session, null), null);
+  assert.equal(resolveWorkspaceMembership(session, "ws_revoked"), null);
+});
+
+test("multiple memberships require an explicit workspace selection", () => {
+  const session = AuthenticatedSessionSchema.parse({
+    user_id: "usr_123",
+    has_inactive_memberships: false,
+    memberships: [
+      {
+        membership_id: "wsm_one",
+        workspace_id: "ws_one",
+        role_key: "viewer",
+        permissions: ["project.read"],
+      },
+      {
+        membership_id: "wsm_two",
+        workspace_id: "ws_two",
+        role_key: "operator",
+        permissions: ["project.read"],
+      },
+    ],
+  });
+
+  assert.equal(resolveWorkspaceMembership(session, null), null);
   assert.equal(
-    resolveWorkspaceMembership(session, "ws_revoked")?.workspace_id,
-    "ws_active",
+    resolveWorkspaceMembership(session, "ws_two")?.workspace_id,
+    "ws_two",
   );
 });

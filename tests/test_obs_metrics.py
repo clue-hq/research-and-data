@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from decimal import Decimal
+from io import StringIO
 
 import pytest
+from opentelemetry.sdk.metrics.export import ConsoleMetricExporter
 
 from clue_core import (
     Claim,
@@ -24,6 +26,8 @@ from clue_obs.otel import (
     METRIC_TIER4_PASSED,
     METRIC_TIER4_TOTAL,
     InMemorySink,
+    configure_metric_exporter,
+    get_metric_sink,
     record_cost_burndown,
     record_phase_progress,
     record_source_yield,
@@ -43,10 +47,33 @@ def test_source_yield_counts_surviving_by_source(make_account: Callable[..., Cla
         _verified(make_account(source_url="https://b")),
     ]
     record_source_yield(claims, sink=sink)
-    assert sink.counter(METRIC_CLAIMS_TOTAL, source="https://a") == 2
-    assert sink.counter(METRIC_CLAIMS_SURVIVING, source="https://a") == 1
-    assert sink.counter(METRIC_CLAIMS_TOTAL, source="https://b") == 1
-    assert sink.counter(METRIC_CLAIMS_SURVIVING, source="https://b") == 1
+    assert sink.counter(METRIC_CLAIMS_TOTAL, source="unregistered-url") == 3
+    assert sink.counter(METRIC_CLAIMS_SURVIVING, source="unregistered-url") == 2
+    assert all("https://" not in repr(key) for key in sink.counters)
+
+
+def test_real_otel_sink_exports_and_restores_without_secret_attributes() -> None:
+    prior = get_metric_sink()
+    output = StringIO()
+    runtime = configure_metric_exporter(
+        ConsoleMetricExporter(out=output),
+        service_name="clue-metric-test",
+        export_interval_millis=60_000,
+    )
+    try:
+        runtime.sink.add(
+            "agent.context.cards.total",
+            1,
+            {"card_kind": "client_knowledge", "token": "never-export-this-secret"},
+        )
+        assert runtime.provider.force_flush(timeout_millis=5_000)
+    finally:
+        runtime.shutdown()
+    exported = output.getvalue()
+    assert "agent.context.cards.total" in exported
+    assert "client_knowledge" in exported
+    assert "never-export-this-secret" not in exported
+    assert get_metric_sink() is prior
 
 
 def test_verification_health(

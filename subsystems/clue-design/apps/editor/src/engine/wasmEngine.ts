@@ -410,6 +410,10 @@ export async function activateWasmCore(
   options: WasmCoreActivationOptions = {}
 ): Promise<WasmCoreActivation> {
   const loadModule = options.moduleLoader ?? (() => loadWasmModule(options));
+  // Bare `fetch` on purpose (allowlisted in scripts/check_editor_bare_fetch.mjs):
+  // this transport hits ONLY `/build-info`, one of the O4 seam's three
+  // header-exempt routes — the engine-version handshake runs before any
+  // workspace context exists. Anything tenant-scoped goes through lumenFetch.
   const fetchImpl = options.fetchImpl ?? fetch;
   const apiBaseUrl = options.apiBaseUrl ?? editorApiBaseUrl();
 

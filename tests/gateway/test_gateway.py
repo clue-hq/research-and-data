@@ -343,8 +343,12 @@ def test_live_reraises_when_no_fallback() -> None:
 
 def test_live_empty_output_raises_typed_error() -> None:
     gw = _live(GatewayConfig(), empty_models={"only/model"})
-    with pytest.raises(GatewayError, match="no output text"):
+    with pytest.raises(GatewayError, match="no output text") as raised:
         gw.complete(model="only/model", messages=_PROMPT)
+    assert raised.value.failure_code == "gateway_no_output_completed"
+    assert raised.value.completion is not None
+    assert raised.value.completion.model == "only/model"
+    assert raised.value.completion.finish_reason == "completed"
 
 
 def test_live_empty_output_falls_back() -> None:

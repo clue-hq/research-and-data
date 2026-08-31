@@ -318,6 +318,7 @@ def test_account_fixture_covers_the_current_frontend_species() -> None:
         ResearchSectionKind.ABOUT,
         ResearchSectionKind.FIT,
         ResearchSectionKind.INSIGHTS,
+        ResearchSectionKind.VALUE_NARRATIVE,
         ResearchSectionKind.COMMITTEE,
         ResearchSectionKind.ACTIVITY,
         ResearchSectionKind.COVERAGE_GAPS,

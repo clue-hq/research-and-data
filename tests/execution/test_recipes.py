@@ -169,8 +169,8 @@ def test_c67_account_unit_is_preserved_as_replay_only_not_system_seeded() -> Non
     assert account.max_fanout == 1
 
 
-def test_recipe0_v6_is_the_only_promoted_executable_stage0_revision() -> None:
-    """v6 admits the FI Lane D D4 kickoff chain; older revisions remain immutable history."""
+def test_latest_recipe0_is_the_only_promoted_executable_stage0_revision() -> None:
+    """The resolved latest Stage-0 recipe is promoted; every older revision remains history."""
 
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
@@ -186,13 +186,11 @@ def test_recipe0_v6_is_the_only_promoted_executable_stage0_revision() -> None:
                 for definition, revision in zip(definitions, seeded, strict=True)
                 if definition.recipe_key == "recipe0-stage0"
             ]
-            assert [(item.version, item.graph.migration_state) for item, _ in recipe0] == [
-                (1, "placeholder"),
-                (2, "executable"),
-                (3, "executable"),
-                (4, "executable"),
-                (5, "executable"),
-                (6, "executable"),
+            versions = [item.version for item, _ in recipe0]
+            assert versions == list(range(1, max(versions) + 1))
+            assert [item.graph.migration_state for item, _ in recipe0] == [
+                "placeholder",
+                *("executable" for _ in versions[1:]),
             ]
             effective = [
                 (
@@ -206,14 +204,10 @@ def test_recipe0_v6_is_the_only_promoted_executable_stage0_revision() -> None:
                 for definition, revision in recipe0
             ]
             assert effective == [
-                (1, RecipeRevisionEventType.SUPERSEDED),
-                (2, RecipeRevisionEventType.SUPERSEDED),
-                (3, RecipeRevisionEventType.SUPERSEDED),
-                (4, RecipeRevisionEventType.SUPERSEDED),
-                (5, RecipeRevisionEventType.SUPERSEDED),
-                (6, RecipeRevisionEventType.PROMOTED),
+                *((version, RecipeRevisionEventType.SUPERSEDED) for version in versions[:-1]),
+                (versions[-1], RecipeRevisionEventType.PROMOTED),
             ]
-            promoted = recipe0[5][0]
+            promoted = recipe0[-1][0]
             slot = next(
                 node for node in promoted.graph.nodes if node.node_key == "stage0_interactions"
             )

@@ -64,6 +64,7 @@ from clue_research.resolvers.sumble.committee_transport import SumbleRawPayload
 from clue_research.resolvers.sumble.people import SumblePeopleResponse
 from clue_research.resolvers.sumble.teams import SumbleTeamsResponse
 from clue_research.sources import seed_source_manifests
+from clue_research.stage0 import load_client_knowledge_pack
 from clue_spine import confirm_project_product, create_product
 from clue_storage import FsStorage
 from tests.api.test_exa_targeted_enrichment_e1 import _advance_sealed_run_to_deep
@@ -184,6 +185,7 @@ async def _setup(
     # Production composition seeds the shared source registry before any provider path is
     # reachable. S2D's real pre-spend gate now validates the exact Teams/People keys, so this
     # shared fixture must reproduce that bootstrap rather than relying on tier-only admission.
+    await load_client_knowledge_pack(conn)
     await seed_source_manifests(conn)
     strategy = (
         {

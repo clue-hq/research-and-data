@@ -1,4 +1,4 @@
-"""M4.3: the Firecrawl HTML→markdown backend logic (DB-free, fake-client driven).
+"""M4.3/M4.5: single-page Firecrawl backend logic (DB-free, fake-client driven).
 
 The live Firecrawl client is lazy-built (wired in M4.5); here we unit-test the scrape *logic* — call
 the client, map its markdown result to a :class:`RawArtifact` — against a duck-typed fake, mirroring
@@ -19,7 +19,7 @@ class _DictClient:
         self._markdown = markdown
         self.calls: list[str] = []
 
-    def scrape_url(self, ref: str, *, formats: list[str]) -> dict[str, object]:
+    def scrape(self, ref: str, *, formats: list[str]) -> dict[str, object]:
         self.calls.append(ref)
         assert formats == ["markdown"]
         return {"markdown": self._markdown} if self._markdown is not None else {}
@@ -31,8 +31,17 @@ class _AttrResult:
 
 
 class _AttrClient:
-    def scrape_url(self, ref: str, *, formats: list[str]) -> _AttrResult:
+    def scrape(self, ref: str, *, formats: list[str]) -> _AttrResult:
         return _AttrResult("# Heading\n\nbody")
+
+
+def test_declared_firecrawl_sdk_exposes_the_retained_single_page_api() -> None:
+    """Catch SDK-major drift without making a network request."""
+    from firecrawl import Firecrawl
+
+    client = Firecrawl(api_key="fc-c0-contract-check")
+
+    assert callable(client.scrape)
 
 
 def _ctx() -> AdaptContext:

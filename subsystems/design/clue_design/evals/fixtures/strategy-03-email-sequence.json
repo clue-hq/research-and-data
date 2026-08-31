@@ -1,0 +1,17 @@
+{
+  "name": "strategy-03-email-sequence",
+  "kind": "clearly_strategy",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [],
+  "message": "Draft the follow-up email sequence to go out after this lands.",
+  "judgment": {
+    "action": "finish",
+    "reason": "out_of_scope"
+  },
+  "expected": {
+    "action": "finish",
+    "reason": "out_of_scope",
+    "fail_safe": false
+  },
+  "why": "Email copy is the content plane's work, not the design engine's; the session must end so head-of-abm answers without the user repeating the ask."
+}

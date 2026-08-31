@@ -220,6 +220,7 @@ class ExaDeepAcquisitionCoordinator:
         conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]],
         dispatch_lease_seconds: int = 120,
         clock: Callable[[], datetime] | None = None,
+        enforce_budget: bool = True,
     ) -> None:
         if dispatch_lease_seconds < 1:
             raise ValueError("dispatch lease must be positive")
@@ -228,6 +229,10 @@ class ExaDeepAcquisitionCoordinator:
         self._conn_factory = conn_factory
         self._lease = timedelta(seconds=dispatch_lease_seconds)
         self._clock = clock or (lambda: datetime.now(UTC))
+        # FI pilot budget-controls: threaded from ``Settings.budget_controls_enabled`` at
+        # the composition root and passed to the durable reservation, which stops raising
+        # on the project-run cap while writing every ledger row unchanged.
+        self._enforce_budget = enforce_budget
 
     async def acquire(
         self,
@@ -550,6 +555,7 @@ class ExaDeepAcquisitionCoordinator:
                 request=preflight.request,
                 request_artifact_key=request_key,
                 now=now,
+                enforce_budget=self._enforce_budget,
             )
             if isinstance(preflight, ExaDeepContactAcquisitionPreflight):
                 await bind_external_research_contact_authority(

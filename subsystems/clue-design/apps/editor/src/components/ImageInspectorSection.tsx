@@ -12,7 +12,7 @@ import type {
 } from "@/engine/contracts";
 import { nodePatch, set } from "@/engine/operations";
 import {
-  assetThumbnailUrl,
+  publicAssetThumbnailUrl,
   buildNodePlacementOperations,
   editAsset,
   generateAsset
@@ -303,12 +303,15 @@ export function ImageInspectorSection({
               <figcaption className="eyebrow">Before</figcaption>
               <img
                 alt="Current image"
-                src={sourceAssetId ? assetThumbnailUrl(apiBaseUrl, sourceAssetId) : undefined}
+                src={sourceAssetId ? (publicAssetThumbnailUrl(apiBaseUrl, asset) ?? undefined) : undefined}
               />
             </figure>
             <figure className="image-edit-preview" data-testid="image-edit-after">
               <figcaption className="eyebrow">After</figcaption>
-              <img alt="Edited candidate" src={assetThumbnailUrl(apiBaseUrl, candidate.id)} />
+              <img
+                alt="Edited candidate"
+                src={publicAssetThumbnailUrl(apiBaseUrl, candidate) ?? undefined}
+              />
             </figure>
           </div>
           <div className="field-row image-edit-review-actions">

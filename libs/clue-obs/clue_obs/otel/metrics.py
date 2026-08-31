@@ -13,10 +13,17 @@ populate as later milestones actually produce and verify claims.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol
 
+from opentelemetry.metrics import Meter
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import MetricExporter, PeriodicExportingMetricReader
+from opentelemetry.sdk.resources import Resource
+
 from clue_core import Claim, EntityType, IdentityBinding, VerificationStatus
+from clue_obs.otel.attributes import safe_attributes
 from clue_obs.otel.spans import PROJECT_PHASES
 
 # --- metric names -----------------------------------------------------------
@@ -68,6 +75,70 @@ class InMemorySink:
         return self.gauges.get(_key(name, attributes), 0.0)
 
 
+class OpenTelemetryMetricSink:
+    """Real OTel instruments over an injected meter; callers keep the tiny ``MetricSink`` seam."""
+
+    def __init__(self, meter: Meter) -> None:
+        self._meter = meter
+        self._counters: dict[str, object] = {}
+        self._gauges: dict[str, object] = {}
+
+    def add(self, name: str, value: float, attributes: Mapping[str, str]) -> None:
+        counter = self._counters.get(name)
+        if counter is None:
+            counter = self._meter.create_counter(name)
+            self._counters[name] = counter
+        counter.add(value, safe_attributes(attributes))  # type: ignore[attr-defined]
+
+    def gauge(self, name: str, value: float, attributes: Mapping[str, str]) -> None:
+        gauge = self._gauges.get(name)
+        if gauge is None:
+            gauge = self._meter.create_gauge(name)
+            self._gauges[name] = gauge
+        gauge.set(value, safe_attributes(attributes))  # type: ignore[attr-defined]
+
+
+@dataclass(slots=True)
+class MetricRuntime:
+    """One process-local exporter lifecycle and the sink it installed."""
+
+    provider: MeterProvider
+    sink: OpenTelemetryMetricSink
+    previous_sink: MetricSink
+
+    def shutdown(self) -> None:
+        set_metric_sink(self.previous_sink)
+        self.provider.shutdown()
+
+
+def configure_metric_exporter(
+    exporter: MetricExporter,
+    *,
+    service_name: str,
+    export_interval_millis: int = 10_000,
+) -> MetricRuntime:
+    """Install a real periodic OTel exporter without mutating OTel's global provider.
+
+    Keeping the provider process-local avoids the SDK's one-shot global-provider trap in tests and
+    lets the API and fleet processes publish different service names through the same sink seam.
+    """
+
+    if export_interval_millis < 100:
+        raise ValueError("metric export interval must be at least 100ms")
+    reader = PeriodicExportingMetricReader(
+        exporter,
+        export_interval_millis=export_interval_millis,
+    )
+    provider = MeterProvider(
+        metric_readers=(reader,),
+        resource=Resource.create({"service.name": service_name}),
+    )
+    sink = OpenTelemetryMetricSink(provider.get_meter("clue-platform"))
+    previous = get_metric_sink()
+    set_metric_sink(sink)
+    return MetricRuntime(provider=provider, sink=sink, previous_sink=previous)
+
+
 _default_sink: MetricSink = InMemorySink()
 
 
@@ -84,17 +155,19 @@ def set_metric_sink(sink: MetricSink) -> None:
 
 def _source_label(claim: Claim) -> str:
     """A per-source key read from claim provenance: the registry ``source_key`` the M4.1 waterfall
-    stamps (preferred — M4 backlog invariant), falling back to ``source_url`` then tier for a
-    claim written without one (a non-resolver writer / a pre-M4 row)."""
-    return claim.source_key or claim.source_url or f"tier-{claim.source_tier}"
+    stamps (preferred — M4 backlog invariant). A URL is never a metric label: older/non-resolver
+    writes are grouped into a bounded placeholder or their source tier."""
+    if claim.source_key:
+        return claim.source_key
+    return "unregistered-url" if claim.source_url else f"tier-{claim.source_tier}"
 
 
 def record_source_yield(claims: Iterable[Claim], *, sink: MetricSink | None = None) -> None:
     """Per-source yield: how many claims survive verification, bucketed by source (Doc C §6).
 
-    Keyed by :func:`_source_label`, which now prefers the registry ``source_key`` the M4.1 waterfall
-    stamps (falling back to ``source_url`` then tier for claims without one). Dashboards and the
-    learning loop (M13, staged-flow §7e) treat that as a re-keying, not a new source set.
+    Keyed by :func:`_source_label`, which prefers the registry ``source_key`` the M4.1 waterfall
+    stamps and never emits a raw URL. Dashboards and the learning loop (M13, staged-flow §7e) treat
+    that as a re-keying, not a new source set.
     """
     sink = sink or get_metric_sink()
     for claim in claims:

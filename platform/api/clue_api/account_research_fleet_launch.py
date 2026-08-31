@@ -23,6 +23,8 @@ from clue_api.account_research_fleet import (
     AccountResearchFleetService,
 )
 from clue_core import (
+    EffectiveFieldSourcePlan,
+    EffectiveSourceAuthorization,
     EntityId,
     EntityScope,
     ProjectRunId,
@@ -30,6 +32,7 @@ from clue_core import (
     ResearchDirectiveStatus,
     ResearchMode,
     RunId,
+    SourceTier,
 )
 from clue_core.entity_research import (
     EntityResearchJobAuthorization,
@@ -44,6 +47,7 @@ from clue_core.entity_research import (
 )
 from clue_db import ConnFactory, transaction
 from clue_fleet import EntityResearchJobEnvelope, EntityResearchRunEnvelope
+from clue_obs import get_logger
 from clue_research.claimstore import record_run_lineage
 from clue_research.directives import get_research_directive
 from clue_research.durable import (
@@ -63,9 +67,13 @@ from clue_research.resolvers.sumble import (
 from clue_research.resolvers.sumble.people import PEOPLE_SOURCE_KEY
 from clue_research.sources import (
     freeze_effective_source_plan,
+    get_source,
     load_effective_source_plan,
     plan_sources,
+    sources_for,
 )
+
+log = get_logger("clue_api.account_research_fleet_launch")
 
 Money = Annotated[Decimal, Field(ge=0)]
 
@@ -125,16 +133,28 @@ def _sha(value: object) -> str:
 
 
 class AccountResearchFleetLauncher:
-    """Validate, persist, compile, and offer one exact account research run."""
+    """Validate, persist, compile, and offer one exact account research run.
+
+    ``enforce_budget`` is ``Settings.budget_controls_enabled`` (FI pilot budget-controls). With it
+    False the three *economic* admission checks below — the caller's estimate echo, the approved cap
+    vs the estimate, and the remaining project headroom — are skipped, because the pilot's ruling is
+    that nothing stops a pre-approved action on budget grounds and, with the amount withheld from
+    every surface, the caller has no number to echo in the first place. Every *structural* check is
+    untouched in both modes: the directive must still be the current human-confirmed one, its
+    lineage must still match the run, its privacy policy must still authorize the research, and each
+    job is still launched with the directive's own per-account ``budget_cap_cents``, so spend is
+    still fully attributed and recorded."""
 
     def __init__(
         self,
         *,
         fleets: AccountResearchFleetService,
         conn_factory: ConnFactory = transaction,
+        enforce_budget: bool = True,
     ) -> None:
         self._fleets = fleets
         self._conn_factory = conn_factory
+        self._enforce_budget = enforce_budget
 
     async def launch(
         self,
@@ -248,20 +268,38 @@ class AccountResearchFleetLauncher:
             # answerable from data — per-job spend on the job row, and the coverage ledger's
             # per-field ``…:existing_claim_fresh`` skip reasons.  Netting belongs with an estimate
             # *proposal* surface, so both sides of the equality can move together.
-            if estimated_cost != request.expected_estimated_cost_cents:
-                raise AccountResearchFleetLaunchError(
-                    "approved estimate differs from the current effective directives"
-                )
-            if request.approved_budget_cap_cents < estimated_cost:
-                raise AccountResearchFleetLaunchError(
-                    "approved account-fleet budget is below the reviewed estimate"
-                )
-            if project_run.budget_cap_cents is not None:
-                remaining = max(Decimal(0), project_run.budget_cap_cents - project_run.spent_cents)
-                if request.approved_budget_cap_cents > remaining:
+            if self._enforce_budget:
+                if estimated_cost != request.expected_estimated_cost_cents:
                     raise AccountResearchFleetLaunchError(
-                        "approved account-fleet budget exceeds remaining project headroom"
+                        "approved estimate differs from the current effective directives"
                     )
+                if request.approved_budget_cap_cents < estimated_cost:
+                    raise AccountResearchFleetLaunchError(
+                        "approved account-fleet budget is below the reviewed estimate"
+                    )
+                if project_run.budget_cap_cents is not None:
+                    remaining = max(
+                        Decimal(0), project_run.budget_cap_cents - project_run.spent_cents
+                    )
+                    if request.approved_budget_cap_cents > remaining:
+                        raise AccountResearchFleetLaunchError(
+                            "approved account-fleet budget exceeds remaining project headroom"
+                        )
+            else:
+                # FI pilot budget-controls: the estimate is still recomputed above (it is what the
+                # per-account job caps and the durable launch identity are built from) and is logged
+                # here so the record of what this launch was priced at survives, even though no
+                # caller-supplied number gates it.
+                log.info(
+                    "account_research.launch.budget_controls_disabled",
+                    workspace_id=request.workspace_id,
+                    project_run_id=str(request.project_run_id),
+                    directive_ref=directive.directive_ref,
+                    account_count=len(account_ids),
+                    recomputed_estimate_cents=str(estimated_cost),
+                    caller_expected_cents=str(request.expected_estimated_cost_cents),
+                    approved_budget_cap_cents=str(request.approved_budget_cap_cents),
+                )
             first = effective_by_account[account_ids[0]]
             common_authority = (
                 tuple(str(value) for value in first.field_keys),
@@ -329,9 +367,46 @@ class AccountResearchFleetLauncher:
                         raise AccountResearchFleetLaunchError(
                             f"source planning produced no durable authority for {field_key}"
                         )
+                    compiled = planned.effective_source_plan
+                    if not compiled.sources:
+                        # Some Stage-0 ICPs intentionally have no authored source-profile slot.
+                        # The confirmed directive has already validated its exact source keys
+                        # against the active registry and this field. Preserve that bounded
+                        # authority instead of turning the absent override into a research ban.
+                        capable = set(
+                            await sources_for(
+                                conn,
+                                field_key,
+                                entity_scope=EntityScope.ACCOUNT,
+                                active=True,
+                            )
+                        )
+                        explicit_sources: list[EffectiveSourceAuthorization] = []
+                        for source_key in first.source_policy.allowed_source_keys:
+                            if (
+                                source_key not in capable
+                                or source_key not in _SUPPORTED_FIELD_SOURCES
+                            ):
+                                continue
+                            source = await get_source(conn, source_key)
+                            if source is not None:
+                                explicit_sources.append(
+                                    EffectiveSourceAuthorization(
+                                        source_key=source_key,
+                                        source_tier=SourceTier(source.tier),
+                                    )
+                                )
+                        if explicit_sources:
+                            compiled = EffectiveFieldSourcePlan.compile(
+                                workspace_id=request.workspace_id,
+                                icp_key=first.icp_key,
+                                icp_version=first.icp_version,
+                                field_key=field_key,
+                                sources=tuple(explicit_sources),
+                            )
                     plan = await freeze_effective_source_plan(
                         conn,
-                        planned.effective_source_plan,
+                        compiled,
                         source_profile_ref=icp.source_profile_ref,
                     )
                 source_keys = tuple(
@@ -354,20 +429,18 @@ class AccountResearchFleetLauncher:
                         "source_keys": list(source_keys),
                     }
                 )
-            if (
-                PEOPLE_SOURCE_KEY not in allowed_sources
-                or not first.privacy_policy.committee_discovery_allowed
-            ):
-                raise AccountResearchFleetLaunchError(
-                    "account fleet requires authorized no-reveal committee discovery"
-                )
-
             source_keys = tuple(
                 dict.fromkeys(
                     source for authority in authorities for source in authority.source_keys
                 )
             )
-            admitted_sources = (*source_keys, PEOPLE_SOURCE_KEY)
+            committee_source_keys = (
+                (PEOPLE_SOURCE_KEY,)
+                if PEOPLE_SOURCE_KEY in allowed_sources
+                and first.privacy_policy.committee_discovery_allowed
+                else ()
+            )
+            admitted_sources = (*source_keys, *committee_source_keys)
             field_plan_sha = _sha({"field_keys": field_keys})
             source_plan_sha = _sha(source_plan_values)
             request_sha = _sha(
@@ -388,7 +461,7 @@ class AccountResearchFleetLauncher:
                     "field_source_authority": [
                         value.model_dump(mode="json") for value in authorities
                     ],
-                    "committee_source_keys": [PEOPLE_SOURCE_KEY],
+                    "committee_source_keys": list(committee_source_keys),
                     "approved_budget_cap_cents": request.approved_budget_cap_cents,
                     "expected_estimated_cost_cents": request.expected_estimated_cost_cents,
                     "concurrency_limit": request.concurrency_limit,
@@ -420,7 +493,7 @@ class AccountResearchFleetLauncher:
                 admitted_field_keys=field_keys,
                 admitted_source_keys=admitted_sources,
                 field_source_authority=tuple(authorities),
-                committee_source_keys=(PEOPLE_SOURCE_KEY,),
+                committee_source_keys=committee_source_keys,
                 research_questions=questions,
                 policy_refs=(
                     f"account-research-launch:{request_sha}",
@@ -474,10 +547,8 @@ class AccountResearchFleetLauncher:
                 run_kind=ResearchRunKind.ACCOUNT_RESEARCH,
                 selection=selection,
                 user_confirmed_launch=True,
-                operations=(
-                    ResearchOperationKind.ACCOUNT_PROFILE,
-                    ResearchOperationKind.COMMITTEE_DISCOVERY,
-                ),
+                operations=(ResearchOperationKind.ACCOUNT_PROFILE,)
+                + ((ResearchOperationKind.COMMITTEE_DISCOVERY,) if committee_source_keys else ()),
                 automatic_successor_run=False,
             )
             profile_sha = account_research_profile_sha256()
@@ -533,7 +604,15 @@ class AccountResearchFleetLauncher:
             envelope = EntityResearchRunEnvelope(
                 lifecycle=lifecycle,
                 jobs=tuple(jobs),
-                budget_cap_cents=request.approved_budget_cap_cents,
+                # With budget controls off the caller's approved cap is an ignored courier field, so
+                # honouring it here would be incoherent: it can be smaller than the per-account caps
+                # this launch just handed out, and the envelope's own invariant ("a job budget
+                # cannot exceed its run-wide cap") would then reject the launch with a validation
+                # error — enforcement by the back door. The run-level cap becomes the server's
+                # recomputed Σ instead: the honest record of the authority actually issued.
+                budget_cap_cents=(
+                    request.approved_budget_cap_cents if self._enforce_budget else estimated_cost
+                ),
                 concurrency_limit=request.concurrency_limit,
             )
             try:

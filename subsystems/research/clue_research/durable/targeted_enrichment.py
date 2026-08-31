@@ -115,7 +115,15 @@ async def reserve_targeted_enrichment_operation(
     conn: AsyncConnection,
     *,
     operation: TargetedEnrichmentOperation,
+    enforce_budget: bool = True,
 ) -> tuple[TargetedEnrichmentOperation, bool]:
+    """Reserve one bounded targeted-enrichment operation.
+
+    ``enforce_budget`` is the FI pilot budget-controls switch; it gates only the project-run
+    money check. This operation's own reserved-vs-cap invariants are consistency guards on
+    its immutable plan, not spend-vs-budget stops, so they hold in both modes.
+    """
+
     request = operation.request
     if operation.provider_units_reserved > Decimal(request.provider_credit_cap):
         raise TargetedEnrichmentBudgetExceeded("targeted enrichment provider cap exceeded")
@@ -139,6 +147,7 @@ async def reserve_targeted_enrichment_operation(
             project_run_id=request.project_run_id,
             proposed_cents=operation.cost_cents_reserved,
             allowed_phases=frozenset({ProjectPhase.DEEP}),
+            enforce_budget=enforce_budget,
         )
     except ProviderSpendGuardError as exc:
         raise TargetedEnrichmentBudgetExceeded(str(exc)) from exc

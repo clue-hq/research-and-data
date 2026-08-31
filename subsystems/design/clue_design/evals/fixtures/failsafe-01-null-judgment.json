@@ -1,0 +1,14 @@
+{
+  "name": "failsafe-01-null-judgment",
+  "kind": "fail_safe",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [],
+  "message": "Make the logo pop.",
+  "judgment": null,
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": true
+  },
+  "why": "Unparseable model output plays the judgment; the envelope must continue the leg."
+}

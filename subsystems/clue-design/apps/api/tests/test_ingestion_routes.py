@@ -17,12 +17,19 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable, Optional
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import make_client, wait_for_ingestion_job
+
+from clue_design.envelopes import DesignIngestionEnvelope
+
 from lumen_api import main as main_module
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 from lumen_ingestion.evidence import BrandEvidence
 from lumen_ingestion.pipeline import run_website_ingestion
@@ -70,13 +77,22 @@ def _install_stub_pipeline(
         seen.append(("Capturing your colors…", 0.65))
         return _load_evidence()
 
-    def _runner(database_path, asset_store_root, job_id):
+    def _runner(
+        engine_cache_dir, job_id, *, workspace_id, storage=None, expected_generation=None
+    ):
         run_website_ingestion(
-            database_path,
-            asset_store_root,
+            engine_cache_dir,
             job_id,
             capture=capture,
             build_evidence=build_evidence or _build_evidence,
+            # D2.3: the dispatcher hands the worker the job's workspace so the kit it
+            # publishes satisfies the job's composite result FK. D5 Round C: it arrives from
+            # the job's frozen envelope and is required, not defaulted.
+            workspace_id=workspace_id,
+            # D4: and its byte backend, so custody lands where the app can read it.
+            storage=storage,
+            # D5 Round C: the claiming worker's lease generation (fences a taken-over attempt).
+            expected_generation=expected_generation,
         )
 
     monkeypatch.setattr(main_module, "run_website_ingestion", _runner)
@@ -98,25 +114,20 @@ def _read_brand_kit_row(client: TestClient, brand_kit_id: str) -> dict:
     """Read the persisted brand_kits row (incl. raw brand_summary_json) directly
     from the app's sqlite DB — the kit-detail dto does not surface the full
     brand_summary."""
-    from lumen_api.database import Repository, connect
 
-    connection = connect(client.app.state.database_path)
-    try:
-        return Repository(connection).require_brand_kit(brand_kit_id)
-    finally:
-        connection.close()
+    return HybridRepository().require_brand_kit(brand_kit_id)
 
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    app = create_app(tmp_path / "engine-cache")
+    return make_client(app)
 
 
 def test_ingest_website_happy_path_persists_kit_and_report(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def fake_capture(url, *, reporter, force_render=False):
+    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
         reporter("Visiting your website…", 0.05)
         return FakeCaptureOutcome()
 
@@ -132,11 +143,13 @@ def test_ingest_website_happy_path_persists_kit_and_report(
     assert body["schema_version"] == 1
     job = body["job"]
     assert job["kind"] == "website"
-    # POST returns the queued job; the background task runs after the response
-    # is serialized (TestClient runs it synchronously before unblocking).
-    assert job["status"] == "queued", job
+    # `queued` OR `running`: the POST re-reads the job after create-and-offer, and the
+    # embedded fleet worker (0.1s poll) may already have claimed it — a pure scheduling race,
+    # and both are snapshots of a successfully-created job (D5: `queued` is alive, not idle).
+    assert job["status"] in {"queued", "running"}, job
     job_id = job["job_id"]
 
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}")
     assert got.status_code == 200, got.text
     got_job = got.json()["job"]
@@ -167,10 +180,64 @@ def test_ingest_website_happy_path_persists_kit_and_report(
     assert report["dark_colorway"] == "synthesized"
 
 
+def test_reingest_existing_website_kit_publishes_a_new_draft_version(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Slice 4: a client-supplied existing kit id means NEXT version, not a doomed
+    create-at-version-1 collision. The human gate resets on the newly extracted draft."""
+
+    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
+        return FakeCaptureOutcome()
+
+    _bypass_ssrf_guard(monkeypatch)
+    _install_stub_pipeline(monkeypatch, capture=fake_capture)
+
+    first = client.post(
+        "/brand-kits/ingest/website",
+        json={"url": "https://www.insighthealth.example"},
+    )
+    assert first.status_code == 200, first.text
+    first_job_id = first.json()["job"]["job_id"]
+    first_job = wait_for_ingestion_job(client, first_job_id)
+    assert first_job["status"] == "succeeded", first_job
+    brand_kit_id = first_job["brand_kit_id"]
+    assert first_job["brand_kit_version"] == 1
+
+    approved = client.post(
+        f"/brand-kits/{brand_kit_id}/approval",
+        json={"approval_status": "approved"},
+    )
+    assert approved.status_code == 200, approved.text
+
+    second = client.post(
+        "/brand-kits/ingest/website",
+        json={
+            "url": "https://www.insighthealth.example",
+            "brand_kit_id": brand_kit_id,
+        },
+    )
+    assert second.status_code == 200, second.text
+    second_job = wait_for_ingestion_job(client, second.json()["job"]["job_id"])
+    assert second_job["status"] == "succeeded", second_job
+    assert second_job["brand_kit_id"] == brand_kit_id
+    assert second_job["brand_kit_version"] == 2
+
+    latest = client.get(f"/brand-kits/{brand_kit_id}")
+    assert latest.status_code == 200, latest.text
+    assert latest.json()["brand_kit"]["version"] == 2
+    assert latest.json()["brand_kit"]["approval_status"] == "draft"
+    versions = [
+        row["version"]
+        for row in HybridRepository().list_brand_kits(all_versions=True)
+        if row["brand_kit_id"] == brand_kit_id
+    ]
+    assert versions == [2, 1]
+
+
 def test_ingested_kit_attaches_to_document(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def fake_capture(url, *, reporter, force_render=False):
+    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
         return FakeCaptureOutcome()
 
     _bypass_ssrf_guard(monkeypatch)
@@ -182,6 +249,7 @@ def test_ingested_kit_attaches_to_document(
     )
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
     got_job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got_job["status"] == "succeeded", got_job
     brand_kit_id = got_job["brand_kit_id"]
@@ -207,7 +275,7 @@ def test_ingested_kit_attaches_to_document(
 def test_capture_failure_marks_job_failed_no_kit(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def boom_capture(url, *, reporter, force_render=False):
+    async def boom_capture(url, *, reporter, force_render=False, page_urls=None):
         raise RuntimeError("capture exploded")
 
     _bypass_ssrf_guard(monkeypatch)
@@ -219,9 +287,13 @@ def test_capture_failure_marks_job_failed_no_kit(
     )
     assert post.status_code == 200, post.text
     job = post.json()["job"]
-    assert job["status"] == "queued", job
+    # `queued` OR `running`: the POST re-reads the job after create-and-offer, and the
+    # embedded fleet worker (0.1s poll) may already have claimed it — a pure scheduling race,
+    # and both are snapshots of a successfully-created job (D5: `queued` is alive, not idle).
+    assert job["status"] in {"queued", "running"}, job
     job_id = job["job_id"]
 
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got["status"] == "failed", got
     assert got["brand_kit_id"] is None
@@ -236,7 +308,7 @@ def test_capture_failure_marks_job_failed_no_kit(
 def test_stage_progression_reaches_preparing_before_success(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def fake_capture(url, *, reporter, force_render=False):
+    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
         reporter("Visiting your website…", 0.05)
         return FakeCaptureOutcome()
 
@@ -250,12 +322,109 @@ def test_stage_progression_reaches_preparing_before_success(
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
 
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got["status"] == "succeeded"
     # The pipeline's final reporter stage before persist is the "Preparing…"
     # stage at progress 0.85; complete() bumps progress to 1 but leaves stage.
     assert got["stage"] == "Preparing your brand kit…"
     assert got["progress"] == 1
+
+
+# --- the rendered tier is not negotiable (founder ruling 2026-08-20) ------------------------- #
+#
+# Website ingestion ALWAYS captures at the rendered tier: measured geometry and the brief's
+# screenshots exist only there, and the static→rendered quality gate escalates on evidence
+# POVERTY, so a well-server-rendered site never escalated and published kits with no geometry
+# and no brief. The ruling is "geometry needs a live page by definition", so the rule is
+# enforced SERVER-SIDE at the pipeline — a client that sends no flag, or sends the flag set to
+# false, must still get a rendered capture.
+
+
+def _capture_recording_force_render(seen: dict) -> Callable[..., Any]:
+    async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
+        seen["force_render"] = force_render
+        reporter("Visiting your website…", 0.05)
+        return FakeCaptureOutcome(tier="rendered")
+
+    return fake_capture
+
+
+def test_website_ingestion_renders_even_though_the_request_asked_for_nothing(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict = {}
+    _bypass_ssrf_guard(monkeypatch)
+    _install_stub_pipeline(monkeypatch, capture=_capture_recording_force_render(seen))
+
+    post = client.post(
+        "/brand-kits/ingest/website",
+        json={"url": "https://www.insighthealth.example"},
+    )
+    assert post.status_code == 200, post.text
+    job = wait_for_ingestion_job(client, post.json()["job"]["job_id"])
+    assert job["status"] == "succeeded", job
+    assert seen["force_render"] is True
+
+
+def test_website_ingestion_renders_even_when_the_request_says_force_render_false(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The request field is redundant-but-harmless — it cannot turn rendering OFF."""
+    seen: dict = {}
+    _bypass_ssrf_guard(monkeypatch)
+    _install_stub_pipeline(monkeypatch, capture=_capture_recording_force_render(seen))
+
+    post = client.post(
+        "/brand-kits/ingest/website",
+        json={"url": "https://www.insighthealth.example", "force_render": False},
+    )
+    assert post.status_code == 200, post.text
+    job = wait_for_ingestion_job(client, post.json()["job"]["job_id"])
+    assert job["status"] == "succeeded", job
+    assert seen["force_render"] is True
+
+
+def test_the_fleet_worker_entry_renders_too(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The rule holds at the WORKER entry, not just behind the HTTP route.
+
+    ``execute_ingestion_job`` is what the embedded (and detached) fleet worker actually calls,
+    so it is driven here directly from a frozen envelope — the route only offers the job. A
+    rule enforced at the route would be invisible to a replayed or re-offered envelope.
+    """
+    from lumen_api.main import execute_ingestion_job
+
+    seen: dict = {}
+    _bypass_ssrf_guard(monkeypatch)
+    _install_stub_pipeline(monkeypatch, capture=_capture_recording_force_render(seen))
+
+    post = client.post(
+        "/brand-kits/ingest/website",
+        json={"url": "https://www.insighthealth.example"},
+    )
+    assert post.status_code == 200, post.text
+    job_id = post.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
+    seen.clear()
+
+    state = client.app.state
+    envelope = DesignIngestionEnvelope(
+        kind="ingestion",
+        work_id=uuid4(),
+        workspace_id=HybridRepository().workspace_id,
+        job_id=job_id,
+        ingestion_kind="website",
+    )
+    status = execute_ingestion_job(
+        envelope,
+        host=SimpleNamespace(
+            storage=state.storage, engine_cache_root=state.engine_cache_root
+        ),
+    )
+    assert status == "succeeded", status
+    assert seen["force_render"] is True
 
 
 @pytest.mark.parametrize(
@@ -300,6 +469,7 @@ def test_live_e2e_ingests_real_site(client: TestClient) -> None:
     deadline = time.time() + 120
     status = None
     while time.time() < deadline:
+        wait_for_ingestion_job(client, job_id)
         job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
         status = job["status"]
         if status in ("succeeded", "failed"):

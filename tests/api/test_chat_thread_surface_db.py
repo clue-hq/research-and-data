@@ -173,7 +173,7 @@ def test_thread_crud_round_trips_over_http_with_the_injected_principal(
                 assert thread["status"] == "idle"
                 assert thread["pinned"] is False
                 assert thread["id"].startswith("thr_")
-                assert thread["href"] == (f"/projects/{project.project_id}?thread={thread['id']}")
+                assert thread["href"] == (f"/projects/{project.project_id}/chats/{thread['id']}")
                 assert created.headers["X-Request-Id"]
 
                 listed = await client.get(

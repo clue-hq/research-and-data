@@ -6,6 +6,15 @@
 **Doc authority:** implements Doc A Part III — L3 is specified there as a *"Project state card ... [from the] projection API"*; the current implementation violates that contract. This spec is drift correction, not new architecture.
 **Scope:** Slice 1 only. Identity single-injection, required-first budget ordering, and the tokenizer swap are Slice 2; long-lived Recipe #0 is Slice 3 (needs its own design ruling); report-export/KB-refresh conditioning is Slice 4.
 
+> **Production composition delta (2026-08-14):**
+> `docs/specs/FI-production-deepagent-context-composition.md` splits this combined trial-era
+> projection into an account-wide `ClientKnowledgeCard` and an active-project-only
+> `Stage0ProjectStateCard`, composed beside the always-present conversation envelope. The bounds,
+> evidence handling, readiness selection, and inspection principles below remain authoritative;
+> the combined model/media type remains only a compatibility source while that production roadmap
+> lands. PC-C8's “one project-state projection” ruling prohibited duplicated owners of the same
+> state; it did not require customer-account knowledge and project interview state to share bytes.
+
 ---
 
 ## 1. The defect being fixed (evidence)

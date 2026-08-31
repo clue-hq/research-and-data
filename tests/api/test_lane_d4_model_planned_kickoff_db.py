@@ -594,29 +594,16 @@ def test_a_plan_proposing_the_human_only_confirm_tool_is_refused(tmp_path: Path)
     run_async(scenario_body())
 
 
-def test_the_draft_tool_is_admitted_by_the_slot_but_cannot_ride_a_plan_today(
+def test_frozen_v2_remains_replayable_while_the_current_slot_uses_plan_safe_v3(
     tmp_path: Path,
 ) -> None:
-    """A pinned finding, not a defect this slice introduced.
-
-    ``recipe0-stage0@6`` allowlists ``draft_account_research_directive@2`` and the pin provider
-    supplies its registry pins, so the *slot* admits it. What refuses it is older and unrelated to
-    D4: the C5 graph forbids a raw body anywhere in a plan, by **key name** — anything called
-    ``body``, ``content``, ``interview_answer``… — and this tool's input field is literally
-    ``body``. So the agent can reach the tool, but not by inlining a whole directive body into a
-    plan step; the argument would have to travel as an artifact reference, or the frozen field
-    would have to be renamed (rewriting its schema digest and every profile that pins it).
-
-    Both fixes are well outside the catalog/pin seams this round owns, so the constraint is pinned
-    here — with the exact refusal — instead of being rediscovered from a confusing plan rejection.
-    """
+    """The historical schema is unchanged; only its immutable successor is newly promoted."""
 
     async def scenario_body() -> None:
         async with rollback_conn() as conn:
             scenario = await _seed_two_account_conversation(conn, tmp_path, create_turn_row=False)
             plane = await _build_plane(conn, tmp_path, scenario.storage)
 
-            # Admitted by the promoted revision — this is the half D4 changed.
             definition = next(
                 item
                 for item in stage0_trial_recipe_definitions()
@@ -625,30 +612,54 @@ def test_the_draft_tool_is_admitted_by_the_slot_but_cannot_ride_a_plan_today(
             slot = next(
                 node for node in definition.graph.nodes if node.node_key == "stage0_interactions"
             )
-            assert "draft_account_research_directive@2" in slot.dynamic_tool_allowlist
-
-            adapter = await _adapter(
-                plane, scenario, turn_id=scenario.presenting_turn_id, label="draftplan"
+            assert "draft_account_research_directive@2" not in slot.dynamic_tool_allowlist
+            assert "draft_account_research_directive@3" in slot.dynamic_tool_allowlist
+            assert (
+                "body"
+                in plane.tools.descriptor(
+                    "draft_account_research_directive", "2"
+                ).input_model.model_fields
             )
-            with pytest.raises(AgentPlanRejected) as caught:
-                await adapter.validate_plan(
-                    plan=_plan(
-                        adapter,
-                        PlanToolStep(
-                            node_key="draft_direction",
-                            tool=_pin(plane, "draft_account_research_directive", "2"),
-                            arguments={
-                                "product_id": scenario.product_id,
-                                "icp_key": scenario.fixture.deep_icp_key,
-                                "icp_version": scenario.fixture.deep_icp_version,
-                                "body": scenario.directive_body,
-                            },
-                            purpose="Draft the research direction.",
-                        ),
+            assert (
+                "directive"
+                in plane.tools.descriptor(
+                    "draft_account_research_directive", "3"
+                ).input_model.model_fields
+            )
+
+    run_async(scenario_body())
+
+
+def test_plan_safe_directive_v3_can_ride_the_current_conversation_plan(tmp_path: Path) -> None:
+    """The immutable successor renames only the graph-hostile field; its plan now validates."""
+
+    async def scenario_body() -> None:
+        async with rollback_conn() as conn:
+            scenario = await _seed_two_account_conversation(conn, tmp_path, create_turn_row=False)
+            plane = await _build_plane(conn, tmp_path, scenario.storage)
+            adapter = await _adapter(
+                plane, scenario, turn_id=scenario.presenting_turn_id, label="draftplan-v3"
+            )
+
+            validated = await adapter.validate_plan(
+                plan=_plan(
+                    adapter,
+                    PlanToolStep(
+                        node_key="draft_direction_v3",
+                        tool=_pin(plane, "draft_account_research_directive", "3"),
+                        arguments={
+                            "product_id": scenario.product_id,
+                            "icp_key": scenario.fixture.deep_icp_key,
+                            "icp_version": scenario.fixture.deep_icp_version,
+                            "directive": scenario.directive_body,
+                        },
+                        purpose="Draft the selected-account research direction.",
                     ),
-                    constitution=adapter._constitution,
-                )
-            assert {issue.code for issue in caught.value.review.issues} == {"raw_body_key"}
+                ),
+                constitution=adapter._constitution,
+            )
+
+            assert validated.operations[0].address == "draft_account_research_directive@3"
 
     run_async(scenario_body())
 

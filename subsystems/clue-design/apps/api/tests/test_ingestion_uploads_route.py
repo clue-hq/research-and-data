@@ -16,13 +16,18 @@ returns a queued job but GET reflects the terminal state.
 
 from __future__ import annotations
 
+import hashlib
+import os
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import make_blob_store, make_client, wait_for_ingestion_job
+
 from lumen_api import main as main_module
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 from lumen_ingestion.evidence import (
     BrandEvidence,
@@ -155,13 +160,17 @@ def _install_stub_pipeline(
     mirroring how ``pipeline.py`` lazily resolves ``capture.uploads`` /
     ``describe`` so no Agent A file is imported."""
 
-    def _runner(database_path, asset_store_root, job_id):
+    def _runner(
+        engine_cache_dir, job_id, *, workspace_id, storage=None, expected_generation=None
+    ):
         run_asset_ingestion(
-            database_path,
-            asset_store_root,
+            engine_cache_dir,
             job_id,
             analyze=analyze,
             apply_descriptions=apply_descriptions,
+            workspace_id=workspace_id,
+            storage=storage,
+            expected_generation=expected_generation,
         )
 
     monkeypatch.setattr(main_module, "run_asset_ingestion", _runner)
@@ -169,8 +178,18 @@ def _install_stub_pipeline(
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    app = create_app(tmp_path / "engine-cache")
+    return make_client(app)
+
+
+def _staged_leftovers(client: TestClient) -> list[str]:
+    """Digests of the default upload set still holding durable bytes (D4/R-D4-5)."""
+    blobs = make_blob_store(client.app)
+    return [
+        digest
+        for digest in {hashlib.sha256(PNG_BYTES).hexdigest(), hashlib.sha256(JPEG_BYTES).hexdigest()}
+        if blobs.exists(digest)
+    ]
 
 
 def _post_assets(client: TestClient, *, uploads=None, **form):
@@ -185,13 +204,8 @@ def _post_assets(client: TestClient, *, uploads=None, **form):
 
 
 def _read_brand_kit_row(client: TestClient, brand_kit_id: str) -> dict:
-    from lumen_api.database import Repository, connect
 
-    connection = connect(client.app.state.database_path)
-    try:
-        return Repository(connection).require_brand_kit(brand_kit_id)
-    finally:
-        connection.close()
+    return HybridRepository().require_brand_kit(brand_kit_id)
 
 
 def _asset_entries(container: Any) -> list[dict]:
@@ -218,9 +232,13 @@ def test_ingest_assets_happy_path_persists_kit_and_report(
     assert body["schema_version"] == 1
     job = body["job"]
     assert job["kind"] == "asset_upload"
-    assert job["status"] == "queued", job
+    # `queued` OR `running`: the POST re-reads the job after create-and-offer, and the
+    # embedded fleet worker (0.1s poll) may already have claimed it — a pure scheduling race,
+    # and both are snapshots of a successfully-created job (D5: `queued` is alive, not idle).
+    assert job["status"] in {"queued", "running"}, job
     job_id = job["job_id"]
 
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}")
     assert got.status_code == 200, got.text
     got_job = got.json()["job"]
@@ -256,6 +274,7 @@ def test_ingest_assets_name_default_when_absent(
     post = _post_assets(client)  # no name form field
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
     got_job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got_job["status"] == "succeeded", got_job
 
@@ -307,11 +326,12 @@ def test_ingest_assets_mixed_supported_passes_through(
     )
     assert resp.status_code == 200, resp.text
     job_id = resp.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
     got_job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got_job["status"] == "succeeded", got_job
 
 
-def test_ingest_assets_cleans_tmp_files_after_success(
+def test_ingest_assets_cleans_staged_bytes_after_success(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _install_stub_pipeline(monkeypatch, analyze=_good_analyze)
@@ -319,15 +339,17 @@ def test_ingest_assets_cleans_tmp_files_after_success(
     post = _post_assets(client)
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
     got_job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got_job["status"] == "succeeded", got_job
 
-    tmp_dir = Path(client.app.state.asset_store_root) / "ingest_tmp"
-    leftovers = list(tmp_dir.glob(f"{job_id}_*"))
-    assert leftovers == [], f"tmp files must be deleted after success: {leftovers}"
+    # D4/R-D4-5: each upload was staged in platform storage; the stub analyzer promotes none of
+    # them into a live asset, so every staged blob must be gone.
+    leftovers = _staged_leftovers(client)
+    assert leftovers == [], f"staged uploads must be discarded after success: {leftovers}"
 
 
-def test_ingest_assets_failure_marks_job_failed_and_cleans_tmp(
+def test_ingest_assets_failure_marks_job_failed_and_cleans_staged_bytes(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def boom_analyze(files, *, core, store_root, reporter):
@@ -339,40 +361,45 @@ def test_ingest_assets_failure_marks_job_failed_and_cleans_tmp(
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
 
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got["status"] == "failed", got
     assert got["brand_kit_id"] is None
     assert "analysis exploded" in got["error"]["message"]
 
-    # Tmp files are deleted even on the failure path.
-    tmp_dir = Path(client.app.state.asset_store_root) / "ingest_tmp"
-    leftovers = list(tmp_dir.glob(f"{job_id}_*"))
-    assert leftovers == [], f"tmp files must be deleted after failure: {leftovers}"
+    # Staged blobs are discarded even on the failure path.
+    leftovers = _staged_leftovers(client)
+    assert leftovers == [], f"staged uploads must be discarded after failure: {leftovers}"
 
     # No asset_upload kit row was created.
     kits = client.get("/brand-kits").json()
     assert all(k.get("source") != "asset_upload" for k in kits)
 
 
-def test_ingest_assets_missing_tmp_file_fails_cleanly(
+def test_ingest_assets_missing_staged_bytes_fails_cleanly(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # run_asset_ingestion must never raise; a missing tmp file → job failed with
+    # run_asset_ingestion must never raise; staged bytes that are gone → job failed with
     # a clear LUMI0605 message rather than a crash. Re-running the pipeline
-    # against a job whose tmp files were already consumed proves the handling.
+    # against a job whose staged uploads were already discarded proves the handling.
     _install_stub_pipeline(monkeypatch, analyze=_good_analyze)
 
     post = _post_assets(client)
     job_id = post.json()["job"]["job_id"]
-    # After the (synchronous) happy background run the tmp files are already
-    # gone; re-run the pipeline against the same job to prove missing-tmp
-    # handling.
+    # D5 Round C: the happy pass now runs on the embedded FLEET worker, so it has to be waited
+    # for before the second, direct pass — otherwise the two race and the worker's success
+    # overwrites the direct run's failure (which is the thing under test).
+    assert wait_for_ingestion_job(client, job_id)["status"] == "succeeded"
+    # After the happy pass the staged blobs are already discarded; re-run the pipeline against
+    # the same job to prove the missing-input handling.
     run_asset_ingestion(
-        str(client.app.state.database_path),
-        client.app.state.asset_store_root,
+        str(Path(client.app.state.engine_cache_root) / os.environ["LUMEN_DEV_WORKSPACE_ID"]),
         job_id,
         analyze=_good_analyze,
+        workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"],
+        storage=client.app.state.storage,
     )
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got["status"] == "failed", got
     assert "LUMI0605" in got["error"]["message"], got["error"]
@@ -387,7 +414,7 @@ def test_ingest_assets_describer_hook_stamps_descriptions(
     seen: dict[str, Any] = {}
 
     def stub_apply_descriptions(
-        evidence, *, connection, describer, resolve_bytes, reporter, **_kwargs
+        evidence, *, describer, resolve_bytes, reporter, **_kwargs
     ):
         # **_kwargs absorbs the imagery-slice-1 seam extensions
         # (rasterize_svg, diagnostics) — this stub only asserts the hook fires.
@@ -407,6 +434,7 @@ def test_ingest_assets_describer_hook_stamps_descriptions(
     post = _post_assets(client, name="Described Assets")
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
     got_job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got_job["status"] == "succeeded", got_job
     assert seen.get("called") is True
@@ -430,6 +458,7 @@ def test_ingest_assets_null_describer_is_noop(
 
     post = _post_assets(client)
     job_id = post.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
     got_job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got_job["status"] == "succeeded", got_job
 

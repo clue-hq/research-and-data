@@ -15,6 +15,7 @@ ENG-125 (docs/specs/M00-foundations-and-shared-contracts.md §M0.5).
 from __future__ import annotations
 
 from clue_obs.otel.attributes import (
+    ATTR_AGENT_ROLE,
     ATTR_CACHE_HIT,
     ATTR_COMPLETION_TOKENS,
     ATTR_COST_CENTS,
@@ -55,7 +56,10 @@ from clue_obs.otel.metrics import (
     METRIC_TIER4_TOTAL,
     METRIC_USE_CLASS_TOTAL,
     InMemorySink,
+    MetricRuntime,
     MetricSink,
+    OpenTelemetryMetricSink,
+    configure_metric_exporter,
     get_metric_sink,
     record_cost_burndown,
     record_phase_progress,
@@ -134,6 +138,7 @@ __all__ = [
     "ATTR_WORKSPACE_ID",
     "ATTR_ICP_ID",
     "ATTR_PROJECT_RUN_ID",
+    "ATTR_AGENT_ROLE",
     "ATTR_MODEL",
     "ATTR_PROMPT_TOKENS",
     "ATTR_COMPLETION_TOKENS",
@@ -152,6 +157,9 @@ __all__ = [
     # metrics
     "MetricSink",
     "InMemorySink",
+    "OpenTelemetryMetricSink",
+    "MetricRuntime",
+    "configure_metric_exporter",
     "get_metric_sink",
     "set_metric_sink",
     "record_source_yield",

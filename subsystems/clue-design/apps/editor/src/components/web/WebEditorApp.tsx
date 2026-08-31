@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { editorApiBaseUrl } from "@/engine/editorConfig";
@@ -47,6 +47,15 @@ import {
 import { useWebBridgeSelection } from "@/hooks/useWebBridgeSelection";
 import { useWebManualEdits } from "@/hooks/useWebManualEdits";
 import { WebInspectorPanel } from "@/components/web/WebInspectorPanel";
+import type { FragmentAssetOption } from "@/components/web/WebFragmentInspector";
+import {
+  activateFragment,
+  fetchDormantFragments,
+  fetchFragmentCard,
+  generateFragmentPreview,
+  retireFragment,
+  type FragmentCard
+} from "@/engine/webFragmentCards";
 import { WebInsertPalette } from "@/components/web/WebInsertPalette";
 import { WebAssetDrawer } from "@/components/web/WebAssetDrawer";
 import { WebPublishDialog } from "@/components/web/WebPublishDialog";
@@ -122,6 +131,14 @@ type CustomArtifactState =
   | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "ready"; artifact: CustomComponentArtifact }
+  | { kind: "error"; message: string };
+
+/** The selected cloned section's registry card (F3.2), on the same four-state
+ * shape the custom-component artifact uses. */
+type FragmentCardState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "ready"; card: FragmentCard }
   | { kind: "error"; message: string };
 
 /** The transient "Save as template" toast: a link to the new template doc on
@@ -302,6 +319,17 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   >("idle");
   const [customArtifactState, setCustomArtifactState] =
     useState<CustomArtifactState>({ kind: "idle" });
+  // The cloned-section inspector (F3.2): the selected clone's registry card, the
+  // workspace's hidden-on-source sections, and the state of the three durable
+  // actions. `fragmentNonce` is what a completed action refetches through — the
+  // card and the dormant list are both server truth, not document state.
+  const [fragmentCardState, setFragmentCardState] = useState<FragmentCardState>({
+    kind: "idle"
+  });
+  const [dormantSections, setDormantSections] = useState<FragmentCard[]>([]);
+  const [fragmentActionBusy, setFragmentActionBusy] = useState(false);
+  const [fragmentActionError, setFragmentActionError] = useState<string | null>(null);
+  const [fragmentNonce, setFragmentNonce] = useState(0);
   const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
   // The inspector's selected node id — persisted across the manual-edit reload
   // (node ids are stable) and re-validated against the fresh doc below.
@@ -824,6 +852,122 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
     customComponents
   ]);
 
+  // ── the cloned-section (fragment) inspector, F3.2 ──────────────────────────
+  // The selected clone's registry card — its status, condition, repair lineage,
+  // hidden-on-source provenance and slot manifest. None of that is in the
+  // document: the node carries an artifact id and flat slot values, and every
+  // other fact about the section lives in the registry.
+  useEffect(() => {
+    const fragmentId =
+      inspectorNode?.kind === "fragment" ? inspectorNode.fragment_id : null;
+    if (!fragmentId) {
+      setFragmentCardState({ kind: "idle" });
+      return;
+    }
+    let cancelled = false;
+    setFragmentCardState({ kind: "loading" });
+    fetchFragmentCard({ apiBaseUrl: editorApiBaseUrl() }, fragmentId)
+      .then((card) => {
+        if (!cancelled) setFragmentCardState({ kind: "ready", card });
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setFragmentCardState({
+          kind: "error",
+          message:
+            cause instanceof Error
+              ? cause.message
+              : "The cloned section could not be loaded."
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [inspectorNode?.kind, inspectorNode?.fragment_id, fragmentNonce]);
+
+  // Every section the source site HIDES (D-F8). They are on no page, so nothing
+  // can select one — the inspector is the only place a human is shown them, and
+  // the list is what it reaches them through.
+  useEffect(() => {
+    if (!shouldRender) {
+      setDormantSections([]);
+      return;
+    }
+    let cancelled = false;
+    fetchDormantFragments({ apiBaseUrl: editorApiBaseUrl() })
+      .then((sections) => {
+        if (!cancelled) setDormantSections(sections);
+      })
+      .catch(() => {
+        // Non-fatal: a workspace with no hidden sections and a workspace whose
+        // listing failed both leave the human with nothing to activate, and a
+        // banner over the whole inspector would be louder than the fact.
+        if (!cancelled) setDormantSections([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldRender, reloadNonce, fragmentNonce]);
+
+  /** One durable fragment action (P-7's isolation render, D-F8's activation,
+   * R17-2's retire), with the server's own refusal surfaced rather than a
+   * status code — every one of them is a sentence a human has to act on. */
+  const runFragmentAction = useCallback(
+    (action: (fragmentId: string) => Promise<FragmentCard>, fragmentId: string) => {
+      setFragmentActionBusy(true);
+      setFragmentActionError(null);
+      action(fragmentId)
+        .then(() => setFragmentNonce((nonce) => nonce + 1))
+        .catch((cause: unknown) =>
+          setFragmentActionError(
+            cause instanceof Error ? cause.message : "The section could not be updated."
+          )
+        )
+        .finally(() => setFragmentActionBusy(false));
+    },
+    []
+  );
+
+  const handleGenerateFragmentPreview = useCallback(
+    (fragmentId: string) =>
+      runFragmentAction(
+        (id) => generateFragmentPreview({ apiBaseUrl: editorApiBaseUrl() }, id),
+        fragmentId
+      ),
+    [runFragmentAction]
+  );
+  const handleActivateFragment = useCallback(
+    (fragmentId: string) =>
+      runFragmentAction(
+        (id) => activateFragment({ apiBaseUrl: editorApiBaseUrl() }, id),
+        fragmentId
+      ),
+    [runFragmentAction]
+  );
+  const handleRetireFragment = useCallback(
+    (fragmentId: string) =>
+      runFragmentAction(
+        (id) => retireFragment({ apiBaseUrl: editorApiBaseUrl() }, id),
+        fragmentId
+      ),
+    [runFragmentAction]
+  );
+
+  /** The document's own asset records — what an asset slot may resolve to
+   * (F1 ruling #9 / LUMW0035), so the picker offers exactly these. */
+  const documentAssets = useMemo<FragmentAssetOption[]>(() => {
+    const assets = webDoc?.assets;
+    if (!assets || typeof assets !== "object") {
+      return [];
+    }
+    return Object.entries(assets as Record<string, unknown>)
+      .map(([id, record]) => {
+        const label = (record as { label?: unknown } | null)?.label;
+        return { id, label: typeof label === "string" && label ? label : id };
+      })
+      .sort((left, right) => left.label.localeCompare(right.label));
+  }, [webDoc?.assets]);
+
   useEffect(() => {
     if (!shouldRender) {
       setPublishedVersion(null);
@@ -1291,6 +1435,20 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
                   }
                   onEditCustomComponentWithAI={handleEditCustomComponentWithAI}
                   onRepublish={() => setPublishOpen(true)}
+                  fragmentCard={
+                    fragmentCardState.kind === "ready" ? fragmentCardState.card : null
+                  }
+                  fragmentCardStatus={fragmentCardState.kind}
+                  fragmentCardError={
+                    fragmentCardState.kind === "error" ? fragmentCardState.message : null
+                  }
+                  dormantSections={dormantSections}
+                  documentAssets={documentAssets}
+                  onGenerateFragmentPreview={handleGenerateFragmentPreview}
+                  onActivateFragment={handleActivateFragment}
+                  onRetireFragment={handleRetireFragment}
+                  fragmentActionBusy={fragmentActionBusy}
+                  fragmentActionError={fragmentActionError}
                   applyOps={manualEdits.applyOps}
                   busy={manualEdits.busy}
                   note={manualEdits.note}

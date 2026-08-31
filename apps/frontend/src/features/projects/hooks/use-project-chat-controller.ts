@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ClueChatApiError,
   isAccessError,
@@ -9,10 +9,24 @@ import {
 } from "../data/chat-api";
 import type { ChatStreamHandle } from "../data/chat-stream.repository";
 import type { ChatGateRead } from "../data/chat-gates.repository";
-import { useChatRepositories } from "../data/projects-transport";
+import {
+  useChatRepositories,
+  useChatViewerIdentity,
+} from "../data/projects-transport";
 import type { ChatMessage } from "../model/chat-message";
-import type { ChatGatePart, GateDecision } from "../model/chat-parts";
-import { gateCardModel, type ChatGate, type GateCardModel } from "../model/chat-gate";
+import type { ChatGatePart } from "../model/chat-parts";
+import {
+  agentGateIdFromPart,
+  gateAnswerDisplay,
+  gateAnswerResponse,
+  gateAuthorityFailure,
+  gateCardModel,
+  type ChatGate,
+  type GateAnswerDisplay,
+  type GateAuthorityFailure,
+  type GateCardModel,
+  type GateDecisionInput,
+} from "../model/chat-gate";
 import {
   applyChatStreamEvent,
   composeTranscript,
@@ -21,9 +35,11 @@ import {
   type TranscriptMessage,
   type TranscriptState,
 } from "../model/chat-transcript";
+import { designRefreshForEvent } from "../model/design-leg";
 import {
   deriveThreadStatus,
   threadLabel,
+  threadRouteHref,
   resolveProjectThreadRoute,
   type ChatThread,
   type ThreadStatus,
@@ -38,6 +54,7 @@ import {
   selectTurnQueueState,
   turnStateForStreamEvent,
   type ChatTurn,
+  type TurnContextReference,
   type TurnState,
 } from "../model/chat-turn";
 
@@ -83,20 +100,33 @@ export interface ProjectChatController {
   runningTurn: ChatTurn | null;
   /** Durable queued turns, preserving submission order. */
   queuedTurns: readonly ChatTurn[];
+  /**
+   * Two monotone counters the design surfaces watch (genweb slice 3, B5).
+   *
+   * Each bumps when a **durable design-leg frame** for this thread says the
+   * corresponding thing changed — never on a timer, and never optimistically.
+   * The controller only counts; the decision is
+   * `model/design-leg.designRefreshForEvent`, and the transport (a router
+   * refresh, a canvas reload nonce) belongs to whoever renders them.
+   */
+  designRefresh: DesignRefreshCounters;
+  /** True only when the current stream has observed an open design leg. */
+  designLegOpen: boolean;
   submitting: boolean;
   gateFor(part: ChatGatePart): GateCardModel | null;
+  gateAnswerForTurn(turnId: string): GateAnswerDisplay | null;
   submitMessage(
     text: string,
     options?: {
-      contextRefs?: readonly {
-        objectId: string;
-        objectType: "account" | "contact";
-        version: number | null;
-      }[];
+      contextRefs?: readonly TurnContextReference[];
       agentProfileId?: string | null;
     },
+  ): Promise<ChatSubmissionResult>;
+  answerGate(
+    card: GateCardModel,
+    input: GateDecisionInput,
   ): Promise<void>;
-  answerGate(card: GateCardModel, decision: GateDecision): Promise<void>;
+  recoverGate(card: GateCardModel): Promise<void>;
   stopActiveTurn(): Promise<void>;
   retryTurn(turnId: string): Promise<void>;
   selectThread(threadId: string): void;
@@ -108,6 +138,17 @@ export interface ProjectChatController {
   threadLabelFor(thread: ChatThread): string;
 }
 
+export type ChatSubmissionResult =
+  | { status: "accepted"; turnId: string }
+  | { status: "failed" | "not_submitted" };
+
+export interface DesignRefreshCounters {
+  /** Bumps when the project's design-artifact feed should be re-read. */
+  feedRevision: number;
+  /** Bumps when an open web canvas should re-render from the durable document. */
+  canvasRevision: number;
+}
+
 export function useProjectChatController({
   projectId,
   initialThreadId,
@@ -115,16 +156,17 @@ export function useProjectChatController({
   projectId: string;
   initialThreadId?: string;
 }): ProjectChatController {
-  const pathname = usePathname();
   const router = useRouter();
   const routeQuery = useSearchParams().toString();
   const repositories = useChatRepositories();
+  const viewer = useChatViewerIdentity();
   const { invalidate: invalidateProjectCatalog } =
     useProjectCatalogInvalidation();
   const [threads, setThreads] = useState<ChatThread[]>([]);
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(
-    initialThreadId ?? null,
-  );
+  // Seeded once from the route and never mutated: every thread change is a
+  // navigation, and the workspace remount key reseeds a fresh controller
+  // (single-mechanism rule, Phase R).
+  const [activeThreadId] = useState<string | null>(initialThreadId ?? null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [turnStateOverrides, setTurnStateOverrides] = useState<
@@ -135,7 +177,15 @@ export function useProjectChatController({
     gates: [],
     reason: null,
   });
+  const [gateReadLoading, setGateReadLoading] = useState(true);
+  const [gateFailures, setGateFailures] = useState<
+    ReadonlyMap<string, GateAuthorityFailure>
+  >(new Map());
   const [stream, setStream] = useState<TranscriptState>(emptyTranscriptState);
+  const [designRefresh, setDesignRefresh] = useState<DesignRefreshCounters>({
+    feedRevision: 0,
+    canvasRevision: 0,
+  });
   const [optimistic, setOptimistic] = useState<OptimisticTurn[]>([]);
   const [access, setAccess] = useState<ChatAccessState | null>(null);
   const [route, setRoute] = useState<ChatRouteState | null>(null);
@@ -192,11 +242,13 @@ export function useProjectChatController({
 
   const replaceThreadInRoute = useCallback(
     (threadId: string) => {
-      const query = new URLSearchParams(routeQuery);
-      query.set("thread", threadId);
-      router.replace(`${pathname}?${query.toString()}`);
+      // Phase R (R10): canonicalization is a `replace`, never a `push` — a
+      // `push` would trap the back button on the pre-canonical URL. The path
+      // change flips the workspace remount key, which is the one and only
+      // URL→thread mechanism (see workspaceRemountKey).
+      router.replace(threadRouteHref(projectId, threadId, routeQuery));
     },
-    [pathname, routeQuery, router],
+    [projectId, routeQuery, router],
   );
 
   // --- reads ------------------------------------------------------------
@@ -208,12 +260,54 @@ export function useProjectChatController({
     return page.threads;
   }, [projectId, repositories]);
 
+  const loadGates = useCallback(
+    async (threadId: string) => {
+      if (mounted.current) setGateReadLoading(true);
+      try {
+        const read = await repositories.gates.list({ projectId, threadId });
+        if (!mounted.current) return read;
+        setGateRead(read);
+        setGateFailures((current) => {
+          const answered = new Set(
+            read.gates
+              .filter((gate) => gate.answer !== null)
+              .map((gate) => gate.gateId),
+          );
+          if (answered.size === 0) return current;
+          const next = new Map(current);
+          for (const gateId of answered) next.delete(gateId);
+          return next;
+        });
+        return read;
+      } catch (failure) {
+        if (
+          isAccessError(failure) ||
+          (failure instanceof ClueChatApiError &&
+            failure.code === "THREAD_NOT_FOUND")
+        ) {
+          throw failure;
+        }
+        globalThis.console.error("Durable gate read failed", failure);
+        const read: ChatGateRead = {
+          available: false,
+          gates: [],
+          reason: "We couldn't load the approval details. Please try again.",
+        };
+        if (mounted.current) setGateRead(read);
+        return read;
+      } finally {
+        if (mounted.current) setGateReadLoading(false);
+      }
+    },
+    [projectId, repositories],
+  );
+
   const loadConversation = useCallback(
     async (threadId: string) => {
-      const [messagePage, turnPage, gates] = await Promise.all([
+      const [messagePage, turnPage] = await Promise.all([
         repositories.messages.list({ projectId, threadId, includeBodies: true }),
         repositories.turns.list({ projectId, threadId }),
-        repositories.gates.list({ projectId, threadId }),
+        loadGates(threadId),
       ]);
       if (!mounted.current) return;
       setMessages(messagePage.messages);
@@ -222,7 +316,6 @@ export function useProjectChatController({
       setTurnStateOverrides((current) =>
         reconcileTurnStateOverrides(current, turnPage.turns),
       );
-      setGateRead(gates);
       // A durable message for a turn means the optimistic stand-in has done its
       // job; keeping it would double the user's own sentence.
       const durableTurns = new Set([
@@ -236,7 +329,7 @@ export function useProjectChatController({
       );
       return turnPage.turns;
     },
-    [projectId, repositories],
+    [loadGates, projectId, repositories],
   );
 
   useEffect(() => {
@@ -262,8 +355,12 @@ export function useProjectChatController({
         }
         setRoute(null);
         if (resolution.canonicalize) {
-          setActiveThreadId(resolution.thread.id);
+          // Single-mechanism rule (Phase R): the path replace flips the
+          // workspace remount key; the fresh mount reseeds this controller
+          // and loads the conversation. Loading here too would do the work
+          // twice on an instance that is about to be torn down.
           replaceThreadInRoute(resolution.thread.id);
+          return;
         }
         await loadConversation(resolution.thread.id);
       } catch (failure) {
@@ -308,6 +405,21 @@ export function useProjectChatController({
         onEvent(event) {
           if (!mounted.current) return;
           setStream((current) => applyChatStreamEvent(current, event));
+          // Genweb slice 3 (founder requirements 1 + 6): the gallery and any
+          // open canvas refresh exactly when a durable design-leg transition
+          // says the document moved — the frame IS the signal, so there is no
+          // timer and nothing polls. `attach` is only ever called for the
+          // thread this controller is showing, so that thread is the active one.
+          const refresh = designRefreshForEvent(event, {
+            activeThreadId: threadId,
+          });
+          if (refresh.refetchFeed || refresh.reloadCanvas) {
+            setDesignRefresh((current) => ({
+              feedRevision: current.feedRevision + (refresh.refetchFeed ? 1 : 0),
+              canvasRevision:
+                current.canvasRevision + (refresh.reloadCanvas ? 1 : 0),
+            }));
+          }
           const streamedState = turnStateForStreamEvent(event.type);
           if (streamedState !== null) {
             // Turn events are already durable authority. Reflect running and
@@ -431,26 +543,28 @@ export function useProjectChatController({
     async (
       text: string,
       options: {
-        contextRefs?: readonly {
-          objectId: string;
-          objectType: "account" | "contact";
-          version: number | null;
-        }[];
+        contextRefs?: readonly TurnContextReference[];
         agentProfileId?: string | null;
       } = {},
     ) => {
       const trimmed = text.trim();
-      if (!trimmed || !activeThreadId) return;
       const contextRefs = options.contextRefs ?? [];
+      const hasDesignReferences = contextRefs.some(
+        (reference) => reference.objectType === "design_asset",
+      );
+      if ((!trimmed && !hasDesignReferences) || !activeThreadId) {
+        return { status: "not_submitted" } as const;
+      }
       const agentProfileId = options.agentProfileId ?? null;
       const attempt = messageSubmissions.current.begin(
         activeThreadId,
         { message: trimmed, contextRefs, agentProfileId },
         () => newIdempotencyKey("turn"),
       );
-      if (!attempt) return;
+      if (!attempt) return { status: "not_submitted" } as const;
+      let accepted: Awaited<ReturnType<typeof repositories.turns.submit>>;
       try {
-        const accepted = await repositories.turns.submit({
+        accepted = await repositories.turns.submit({
           projectId,
           threadId: activeThreadId,
           submission: {
@@ -461,7 +575,13 @@ export function useProjectChatController({
           },
           idempotencyKey: attempt.idempotencyKey,
         });
-        if (!mounted.current) return;
+      } catch (failure) {
+        report(failure);
+        return { status: "failed" } as const;
+      } finally {
+        messageSubmissions.current.finish(attempt);
+      }
+      if (mounted.current) {
         setOptimistic((current) => [
           ...current.filter((item) => item.turnId !== accepted.turnId),
           {
@@ -471,29 +591,30 @@ export function useProjectChatController({
           },
         ]);
         attach(activeThreadId, accepted.turnId);
-        await loadConversation(activeThreadId);
-      } catch (failure) {
-        report(failure);
-      } finally {
-        messageSubmissions.current.finish(attempt);
+        try {
+          await loadConversation(activeThreadId);
+        } catch (failure) {
+          // The durable accept already succeeded. Rehydration failure must not
+          // make the composer retain and resubmit the accepted message.
+          report(failure);
+        }
       }
+      return { status: "accepted", turnId: accepted.turnId } as const;
     },
     [activeThreadId, attach, loadConversation, projectId, repositories, report],
   );
 
   const answerGate = useCallback(
-    async (card: GateCardModel, decision: GateDecision) => {
+    async (card: GateCardModel, input: GateDecisionInput) => {
       if (!activeThreadId) return;
-      if (card.expectedSubjectSha256 === null || card.amountCents === null) {
-        // Structurally unanswerable: the two `expected*` fields are what make
-        // "approve" mean the card that was on the screen, and the server
-        // refuses anything else. Say so rather than sending a guess.
-        setError(
-          card.unavailableReason ??
-            "this gate cannot be answered without its subject digest and maximum spend",
-        );
+      let response;
+      try {
+        response = gateAnswerResponse(card, input);
+      } catch (failure) {
+        setError(failure instanceof Error ? failure.message : String(failure));
         return;
       }
+      setError(null);
       setSubmitting(true);
       try {
         const accepted = await repositories.turns.submit({
@@ -501,27 +622,75 @@ export function useProjectChatController({
           threadId: activeThreadId,
           submission: {
             kind: "gate_response",
-            response: {
-              gateId: card.gateId,
-              decision,
-              expectedSubjectSha256: card.expectedSubjectSha256,
-              expectedEstimatedCostCents: card.amountCents,
-            },
+            response,
           },
-          idempotencyKey: newIdempotencyKey(`gate:${card.gateId}:${decision}`),
+          idempotencyKey: newIdempotencyKey(
+            `gate:${card.gateId}:${input.decision}`,
+          ),
         });
         if (!mounted.current) return;
+        setGateFailures((current) => {
+          const next = new Map(current);
+          next.delete(card.gateId);
+          return next;
+        });
         // The answer is durable the moment the turn was accepted; the reload
         // below reads it back rather than the client asserting it locally.
         attach(activeThreadId, accepted.turnId);
         await loadConversation(activeThreadId);
       } catch (failure) {
-        report(failure);
+        if (
+          failure instanceof ClueChatApiError &&
+          failure.code.startsWith("GATE_")
+        ) {
+          setGateFailures((current) => {
+            const next = new Map(current);
+            next.set(
+              card.gateId,
+              gateAuthorityFailure(failure.code, failure.message),
+            );
+            return next;
+          });
+        } else {
+          report(failure);
+        }
       } finally {
         if (mounted.current) setSubmitting(false);
       }
     },
     [activeThreadId, attach, loadConversation, projectId, repositories, report],
+  );
+
+  const recoverGate = useCallback(
+    async (card: GateCardModel) => {
+      if (!activeThreadId || card.recovery === null) return;
+      setError(null);
+      if (card.recovery.kind === "retry_gate_read") {
+        setGateFailures((current) => {
+          const next = new Map(current);
+          next.delete(card.gateId);
+          return next;
+        });
+        try {
+          await loadGates(activeThreadId);
+        } catch (failure) {
+          report(failure);
+        }
+        return;
+      }
+
+      setSubmitting(true);
+      try {
+        const prompt =
+          card.kind === "icp_confirmation"
+            ? "Please create a fresh ideal customer profile proposal for me to review. The current proposal is no longer available."
+            : "Please create a fresh proposal for me to review. The current one is no longer available.";
+        await submitMessage(prompt);
+      } finally {
+        if (mounted.current) setSubmitting(false);
+      }
+    },
+    [activeThreadId, loadGates, report, submitMessage],
   );
 
   const queue = useMemo(() => selectTurnQueueState(effectiveTurns), [effectiveTurns]);
@@ -569,17 +738,17 @@ export function useProjectChatController({
     async (title?: string) => {
       try {
         const thread = await repositories.threads.create({ projectId, title });
-        await loadThreads();
-        setRoute(null);
-        setActiveThreadId(thread.id);
-        replaceThreadInRoute(thread.id);
+        // Single-mechanism rule (Phase R): navigating to the new thread's
+        // path flips the remount key; the fresh mount reloads the thread
+        // list and the (empty) conversation.
+        router.push(threadRouteHref(projectId, thread.id, routeQuery));
         return thread;
       } catch (failure) {
         report(failure);
         return null;
       }
     },
-    [loadThreads, projectId, replaceThreadInRoute, repositories, report],
+    [projectId, repositories, report, routeQuery, router],
   );
 
   const renameThread = useCallback(
@@ -633,14 +802,45 @@ export function useProjectChatController({
 
   const gateFor = useCallback(
     (part: ChatGatePart) => {
-      const gateId = part.gateRef.objectId;
+      const gateId = agentGateIdFromPart(part);
       return gateCardModel({
         gate: gateId ? (gatesById.get(gateId) ?? null) : null,
         part,
-        unavailableReason: gateRead.reason,
+        currentUserId: viewer.userId,
+        currentWorkspaceId: viewer.workspaceId,
+        expectedProjectId: projectId,
+        expectedThreadId: activeThreadId ?? "",
+        gateReadAvailable: gateRead.available,
+        gateReadLoading,
+        authorityFailure:
+          gateId === null ? null : (gateFailures.get(gateId) ?? null),
       });
     },
-    [gateRead.reason, gatesById],
+    [
+      activeThreadId,
+      gateFailures,
+      gateRead.available,
+      gateReadLoading,
+      gatesById,
+      projectId,
+      viewer.userId,
+      viewer.workspaceId,
+    ],
+  );
+
+  const gateAnswersByTurn = useMemo(() => {
+    const map = new Map<string, GateAnswerDisplay>();
+    for (const gate of gateRead.gates) {
+      if (gate.answer === null) continue;
+      const display = gateAnswerDisplay(gate);
+      if (display !== null) map.set(gate.answer.turnId, display);
+    }
+    return map;
+  }, [gateRead.gates]);
+
+  const gateAnswerForTurn = useCallback(
+    (turnId: string) => gateAnswersByTurn.get(turnId) ?? null,
+    [gateAnswersByTurn],
   );
 
   const activeThread = useMemo(
@@ -660,10 +860,14 @@ export function useProjectChatController({
     threadBusy: queue.threadBusy,
     runningTurn: queue.runningTurn,
     queuedTurns: queue.queuedTurns,
+    designRefresh,
+    designLegOpen: stream.designLeg.open,
     submitting,
     gateFor,
+    gateAnswerForTurn,
     submitMessage,
     answerGate,
+    recoverGate,
     stopActiveTurn,
     retryTurn,
     selectThread(threadId) {
@@ -675,23 +879,12 @@ export function useProjectChatController({
         });
         return;
       }
-      for (const handle of attachments.current.values()) handle.close();
-      attachments.current.clear();
-      attached.current.clear();
-      resetReattach.current.clear();
-      // Switching threads is a real switch: the previous conversation's
-      // projections do not belong to the next one.
-      setStream(emptyTranscriptState());
-      setMessages([]);
-      turnsRef.current = [];
-      setTurns([]);
-      setTurnStateOverrides(new Map());
-      setOptimistic([]);
-      setError(null);
-      setRoute(null);
-      setLoading(true);
-      setActiveThreadId(threadId);
-      replaceThreadInRoute(threadId);
+      // Single-mechanism rule (Phase R): a user-initiated switch is a
+      // navigation with history. The path push flips the workspace remount
+      // key, which tears this controller down (the unmount cleanup closes
+      // every stream attachment) and reseeds it from the new route. No
+      // internal teardown here — doing both would reload the thread twice.
+      router.push(threadRouteHref(projectId, threadId, routeQuery));
     },
     createThread,
     renameThread,

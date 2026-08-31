@@ -19,6 +19,17 @@ const dateFormatter = new Intl.DateTimeFormat("en-GB", {
   year: "numeric",
 });
 
+const dateTimeFormatter = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  hour: "2-digit",
+  hour12: false,
+  minute: "2-digit",
+  month: "short",
+  timeZone: "UTC",
+  timeZoneName: "short",
+  year: "numeric",
+});
+
 /** `2026-08-01T12:00:00Z` → `1 Aug 2026`. Returns `null` for absent or unparseable input. */
 export function formatIsoDate(iso: string | null | undefined): string | null {
   if (!iso) return null;
@@ -27,11 +38,41 @@ export function formatIsoDate(iso: string | null | undefined): string | null {
   return dateFormatter.format(parsed);
 }
 
+/** `2026-08-12T09:02:00Z` -> `12 Aug 2026, 09:02 UTC`. */
+export function formatIsoDateTime(
+  iso: string | null | undefined,
+): string | null {
+  if (!iso) return null;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return dateTimeFormatter.format(parsed);
+}
+
 /** Sentence-cases a snake_case / kebab-case backend token: `needs_review` → `Needs review`. */
 export function formatToken(token: string): string {
   const words = token.replace(/[_-]+/g, " ").trim();
   if (!words) return token;
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** Stable customer-facing labels for machine values that need more than sentence casing. */
+const semanticTokenLabels: Record<string, string> = {
+  "1b_plus": "$1B+",
+  blocker: "Blocker",
+  c_level: "C-level",
+  champion: "Champion",
+  economic_buyer: "Economic buyer",
+  product_led: "Product-led",
+  technical_evaluator: "Technical evaluator",
+};
+
+export function formatSemanticToken(token: string): string {
+  return semanticTokenLabels[token] ?? formatToken(token);
+}
+
+/** Preserve ordinary prose verbatim; replace only known machine values. */
+export function formatSemanticValue(value: string): string {
+  return semanticTokenLabels[value] ?? value;
 }
 
 /**
@@ -113,7 +154,7 @@ export function formatConfidence(confidence: number | null): string | null {
  */
 export function formatJsonScalar(value: JsonValue): string | null {
   if (value === null) return null;
-  if (typeof value === "string") return value;
+  if (typeof value === "string") return formatSemanticValue(value);
   if (typeof value === "number") return employeeCountFormatter.format(value);
   if (typeof value === "boolean") return value ? "Yes" : "No";
   return null;

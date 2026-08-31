@@ -190,6 +190,19 @@ export interface MessageSubmissionAttempt {
   idempotencyKey: string;
 }
 
+export type TurnContextObjectType =
+  | "account"
+  | "contact"
+  | "design_document"
+  | "design_node"
+  | "design_asset";
+
+export interface TurnContextReference {
+  objectId: string;
+  objectType: TurnContextObjectType;
+  version: number | null;
+}
+
 /** Block only a duplicate of the exact message request currently in flight. */
 export class MessageSubmissionGuard {
   private readonly inFlight = new Map<string, MessageSubmissionAttempt>();
@@ -198,11 +211,7 @@ export class MessageSubmissionGuard {
     threadId: string,
     submission: {
       message: string;
-      contextRefs: readonly {
-        objectId: string;
-        objectType: "account" | "contact";
-        version: number | null;
-      }[];
+      contextRefs: readonly TurnContextReference[];
       agentProfileId: string | null;
     },
     createIdempotencyKey: () => string,
@@ -255,18 +264,33 @@ export function turnStateForStreamEvent(
 /**
  * The structured gate answer the turn endpoint accepts instead of a message.
  *
- * The two `expected*` fields are the client's statement of *what it was looking
- * at*: the server refuses the answer unless both match the immutable gate. That
- * is what makes "Approve" mean the card that was on the screen. Note what can
+ * The expected digest is the client's statement of *what it was looking at*.
+ * Spend-bearing gates also echo the displayed amount; non-spend gates send
+ * null. The server refuses stale authority. That is what makes "Approve" mean
+ * the card that was on the screen. Note what can
  * never appear here on any slice — `actor_id`, `action_ref`, or the amount to
  * *use*: authority is ambient and server-derived.
  */
-export const GateResponseSchema = z.object({
-  gateId: z.string().min(1),
-  decision: GateDecisionSchema,
-  expectedSubjectSha256: z.string().regex(/^[0-9a-f]{64}$/),
-  expectedEstimatedCostCents: z.number(),
-});
+export const GateResponseSchema = z
+  .object({
+    gateId: z.string().min(1),
+    decision: GateDecisionSchema,
+    expectedSubjectSha256: z.string().regex(/^[0-9a-f]{64}$/),
+    expectedEstimatedCostCents: z.number().nullable(),
+    revisionRequest: z.string().min(1).optional(),
+    selectedProductId: z.string().min(1).optional(),
+  })
+  .superRefine((response, ctx) => {
+    if (
+      response.revisionRequest !== undefined &&
+      response.selectedProductId !== undefined
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "revisionRequest and selectedProductId are mutually exclusive",
+      });
+    }
+  });
 
 export type GateResponse = z.infer<typeof GateResponseSchema>;
 
@@ -274,11 +298,7 @@ export type TurnSubmission =
   | {
       kind: "message";
       message: string;
-      contextRefs?: readonly {
-        objectId: string;
-        objectType: "account" | "contact";
-        version: number | null;
-      }[];
+      contextRefs?: readonly TurnContextReference[];
       agentProfileId?: string | null;
     }
   | { kind: "gate_response"; response: GateResponse };
@@ -297,13 +317,20 @@ export function turnRequestBody(submission: TurnSubmission): unknown {
       agent_profile_id: submission.agentProfileId ?? null,
     };
   }
+  const gateResponse: Record<string, unknown> = {
+    gate_id: submission.response.gateId,
+    decision: submission.response.decision,
+    expected_subject_sha256: submission.response.expectedSubjectSha256,
+    expected_estimated_cost_cents:
+      submission.response.expectedEstimatedCostCents,
+  };
+  if (submission.response.revisionRequest !== undefined) {
+    gateResponse.revision_request = submission.response.revisionRequest;
+  }
+  if (submission.response.selectedProductId !== undefined) {
+    gateResponse.selected_product_id = submission.response.selectedProductId;
+  }
   return {
-    gate_response: {
-      gate_id: submission.response.gateId,
-      decision: submission.response.decision,
-      expected_subject_sha256: submission.response.expectedSubjectSha256,
-      expected_estimated_cost_cents:
-        submission.response.expectedEstimatedCostCents,
-    },
+    gate_response: gateResponse,
   };
 }

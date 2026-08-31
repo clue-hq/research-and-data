@@ -120,6 +120,12 @@ export function createFixtureChatTurnsRepository(
         state.gateAnswers.set(submission.response.gateId, {
           turnId,
           decision: submission.response.decision,
+          ...(submission.response.revisionRequest
+            ? { revisionRequest: submission.response.revisionRequest }
+            : {}),
+          ...(submission.response.selectedProductId
+            ? { selectedProductId: submission.response.selectedProductId }
+            : {}),
         });
         state.scripts.set(
           turnId,

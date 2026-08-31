@@ -69,12 +69,18 @@ Auto-layout parts:
 | Part | Values | Meaning |
 |------|--------|---------|
 | direction | `v` (column) · `h` (row) | main axis (unknown → `LUMD0244`) |
-| `x(anchor)` | `s`/`start`, `c`/`center`, `e`/`end`, `sb`/`space_between`, `st`/`stretch` | main-axis distribution / cross-axis |
-| `y(anchor)` | same set | the other axis |
+| `x(anchor)` | `s`/`start`, `c`/`center`, `e`/`end`, `sb`/`space_between`, `st`/`stretch` | the horizontal axis |
+| `y(anchor)` | same set | the vertical axis |
 | `g(n)` | number / `$space.*` | gap between children |
 | `pad(a)` · `pad(v,h)` · `pad(t,r,b,l)` | 1/2/4 values | padding (other arities → `LUMD0222`) |
-| `grow(n)` | number | child grow factor inside a parent layout |
 | `wrap(bool)` | | wrap to multiple lines |
+
+`x` and `y` name the literal screen axes, not the roles "main" and "cross". Which
+one distributes the children depends on the direction: in `al(v, …)` the main axis
+is `y(…)` and `x(…)` aligns the cross axis; in `al(h, …)` it is the other way
+round. Both default to `start`, so children pack toward the top-left and any
+leftover space collects at the far end. For how that leftover space behaves, and
+how to claim it, see `knowledge/design/foundations` ("Spend the slack").
 
 Anchor cheat-sheet:
 - `x(sb)` — nav / proof rows (push items to the ends).

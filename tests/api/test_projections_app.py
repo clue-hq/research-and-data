@@ -32,7 +32,9 @@ from clue_api import (
     build_agent_profile_registry,
     build_tool_invoker,
     build_toolbelt,
+    consume_stream_token,
     create_projections_app,
+    mint_stream_token,
 )
 from clue_auth import (
     DatabaseAuthorizer,
@@ -46,17 +48,14 @@ from clue_auth import (
 from clue_auth.store import create_workspace_membership, revoke_workspace_membership
 from clue_config import load_settings
 from clue_core import (
+    NARRATIVE_EMIT_SKIPPED_KEY,
     ProjectPhase,
     new_execution_id,
     new_operation_id,
     new_project_run_id,
 )
-from clue_execution import DbExecutionRunViewReader
-from clue_research.durable import (
-    NARRATIVE_EMIT_SKIPPED_KEY,
-    PhaseCheckpointStatus,
-    emit_run_event,
-)
+from clue_execution import DbExecutionRunViewReader, emit_run_event
+from clue_research.durable import PhaseCheckpointStatus
 from clue_toolbelt import DbIdempotencyStore, ToolContext, ToolRegistry
 from tests._workspace import seed_workspace
 from tests.db.conftest import run_async
@@ -150,6 +149,8 @@ def test_production_app_construction_requires_authenticated_principal_service() 
                 auth_environment="production",
                 auth_mode="clerk",
                 projections_auth_mode="authenticated_principal",
+                metrics_exporter="otlp",
+                metrics_otlp_endpoint="https://otel.example/v1/metrics",
             )
             with pytest.raises(
                 RuntimeError,
@@ -1029,5 +1030,110 @@ def test_garbage_last_event_id_header_falls_back_to_query_cursor() -> None:
             frames = _frames(r.text)
             assert [f["event"] for f in frames].count("stream.reset") == 0
             assert [f["id"] for f in frames if "id" in f] == seqs[1:]
+
+    run_async(_run())
+
+
+def test_stream_tokens_are_subject_bound_not_run_bound() -> None:
+    """D7: a stream token authorises one **subject**, so the one auth model already covers a
+    design leg's stream (which Round B mounts). Proven at the store, since the HTTP surface stays
+    project-run-scoped this round: a design-subject token opens only its own subject, a
+    project-run token is unchanged, and naming a subject two ways at once is refused rather than
+    silently reconciled (a token bound to a subject the caller did not mean is an auth bug)."""
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            run_id = await seed_run(conn, workspace_id=_WS)
+            design_run = "run_0123456789abcdef0123456789abcdef"
+            ttl = 300.0
+
+            # A project-run token: unchanged behaviour through the pre-D7 keyword.
+            project_token = await mint_stream_token(
+                conn, workspace_id=_WS, run_id=run_id, ttl_s=ttl
+            )
+            assert await consume_stream_token(
+                conn, token=project_token, workspace_id=_WS, run_id=run_id
+            )
+
+            # A design-subject token opens its subject exactly once…
+            design_token = await mint_stream_token(
+                conn,
+                workspace_id=_WS,
+                subject_kind="design_run",
+                subject_id=design_run,
+                ttl_s=ttl,
+            )
+            assert await consume_stream_token(
+                conn,
+                token=design_token,
+                workspace_id=_WS,
+                subject_kind="design_run",
+                subject_id=design_run,
+            )
+            assert not await consume_stream_token(
+                conn,
+                token=design_token,
+                workspace_id=_WS,
+                subject_kind="design_run",
+                subject_id=design_run,
+            )
+
+            # …and never another subject, another tenant, or a project run.
+            wrong = await mint_stream_token(
+                conn,
+                workspace_id=_WS,
+                subject_kind="design_run",
+                subject_id=design_run,
+                ttl_s=ttl,
+            )
+            assert not await consume_stream_token(
+                conn,
+                token=wrong,
+                workspace_id=_WS,
+                subject_kind="design_run",
+                subject_id="run_ffffffffffffffffffffffffffffffff",
+            )
+            assert not await consume_stream_token(
+                conn,
+                token=wrong,
+                workspace_id=_OTHER,
+                subject_kind="design_run",
+                subject_id=design_run,
+            )
+            assert not await consume_stream_token(
+                conn, token=wrong, workspace_id=_WS, run_id=run_id
+            )
+            # None of those refusals consumed it — it still opens its own subject.
+            assert await consume_stream_token(
+                conn,
+                token=wrong,
+                workspace_id=_WS,
+                subject_kind="design_run",
+                subject_id=design_run,
+            )
+
+            # A workspace-wide token (all subject columns NULL) still opens any subject's stream.
+            wide = await mint_stream_token(conn, workspace_id=_WS, ttl_s=ttl)
+            assert await consume_stream_token(
+                conn,
+                token=wide,
+                workspace_id=_WS,
+                subject_kind="design_run",
+                subject_id=design_run,
+            )
+
+            with pytest.raises(ValueError, match="not both"):
+                await mint_stream_token(
+                    conn,
+                    workspace_id=_WS,
+                    run_id=run_id,
+                    subject_kind="design_run",
+                    subject_id=design_run,
+                    ttl_s=ttl,
+                )
+            with pytest.raises(ValueError, match="together"):
+                await mint_stream_token(
+                    conn, workspace_id=_WS, subject_kind="design_run", ttl_s=ttl
+                )
 
     run_async(_run())

@@ -1,0 +1,63 @@
+{
+  "schema_version": "1",
+  "scope": "production-deepagent-context-s3-s6-broad-backend-gate",
+  "recorded_at": "2026-08-15",
+  "groups": [
+    {
+      "id": "shared_database_migration_order",
+      "owner": "backend-test-infrastructure",
+      "reason": "These migration lifecycle tests correctly require a pristine database, but the monolithic suite reaches them after earlier modules have created durable fleet and domain rows.",
+      "removal_condition": "Run migration lifecycle tests against their own disposable database or make the broad harness allocate a pristine database before this group.",
+      "nodeids": [
+        "tests/db/test_db_migrations.py::test_up_down_up_is_clean",
+        "tests/db/test_db_migrations.py::test_no_domain_tables_at_m0_head",
+        "tests/db/test_db_migrations.py::test_downgrade_to_base_drops_the_vector_extension"
+      ]
+    },
+    {
+      "id": "shared_database_registry_order",
+      "owner": "backend-test-infrastructure-and-research-runtime",
+      "reason": "These tests pass in their intended isolated groups but observe global registry or database mutations left by earlier modules in the monolithic process.",
+      "removal_condition": "Give the affected groups isolated registry and database state, or remove their dependence on process-global mutable test state.",
+      "nodeids": [
+        "tests/discovery_scoring/test_coverage_report.py::test_coverage_report_reads_telemetry_and_registry_universe",
+        "tests/discovery_scoring/test_coverage_report.py::test_checkpoint_payload_includes_coverage",
+        "tests/discovery_scoring/test_phase.py::test_discovery_phase_discovers_admits_and_records_yield",
+        "tests/discovery_scoring/test_phase.py::test_discovery_phase_replay_is_idempotent",
+        "tests/discovery_scoring/test_tier_checkpoint_phase.py::test_checkpoint_suspends_with_review_payload",
+        "tests/discovery_scoring/test_tier_checkpoint_phase.py::test_cutoff_adjustment_retiers_and_reestimates_without_respend",
+        "tests/discovery_scoring/test_tier_checkpoint_phase.py::test_resume_approve_completes_and_persists_tiers",
+        "tests/discovery_scoring/test_tier_checkpoint_phase.py::test_resume_pause_stays_suspended",
+        "tests/discovery_scoring/test_tier_checkpoint_phase.py::test_projected_over_cap_halts_then_raise_cap_resumes",
+        "tests/discovery_scoring/test_tier_checkpoint_phase.py::test_reentry_is_idempotent",
+        "tests/discovery_scoring/test_tier_checkpoint_phase.py::test_approve_with_adjusted_cutoffs_supersedes_prior",
+        "tests/discovery_scoring/test_tier_checkpoint_phase.py::test_over_cap_boundary_equal_is_within_cap",
+        "tests/discovery_scoring/test_tier_checkpoint_phase.py::test_non_finite_cap_degrades_and_does_not_crash",
+        "tests/durable/test_account_run_db.py::test_compute_gap_fields_detects_missing_and_filled",
+        "tests/durable/test_account_run_db.py::test_graph_end_to_end_on_db_store_and_postgres_checkpointer",
+        "tests/fleet/test_b4_composed_run_db.py::test_composed_worker_drives_to_human_checkpoint_then_deep_quarantines",
+        "tests/sources/test_waterfall.py::test_provider_swap_is_a_tier_plan_edit_no_code_change",
+        "tests/sources/test_waterfall.py::test_falls_through_to_second_provider_on_miss",
+        "tests/sources/test_waterfall.py::test_same_tier_retry_attributes_per_source",
+        "tests/sources/test_waterfall.py::test_engine_stamps_crm_import_claim_tenant_private",
+        "tests/sources/test_waterfall.py::test_engine_keeps_a_public_claim_public_even_when_a_tenant_is_supplied",
+        "tests/sources/test_waterfall.py::test_engine_fails_loud_on_a_private_claim_with_no_tenant",
+        "tests/sources/test_waterfall.py::test_idempotent_reuse_is_workspace_scoped_no_cross_tenant_private_leak"
+      ]
+    },
+    {
+      "id": "lane_e_acceptance_drift",
+      "owner": "lane-e-on-completion-synthesis",
+      "reason": "These pre-existing acceptance expectations have drifted from current verification, unresolved-client, feature-flag, and replay behavior; they are unrelated to S3-S6 context composition but are genuine failures.",
+      "removal_condition": "The Lane E owner must reconcile implementation and acceptance contracts so every node passes without changing S3-S6 context authority.",
+      "nodeids": [
+        "tests/integration/test_lane_e_e1_acceptance.py::test_a_completed_job_produces_one_verified_evidence_backed_summary",
+        "tests/integration/test_lane_e_e2_acceptance.py::test_a_completed_contact_job_produces_one_verified_served_overview",
+        "tests/integration/test_lane_e_e3_acceptance.py::test_a_completed_job_produces_one_verified_narrative_per_committee_persona",
+        "tests/integration/test_lane_e_e3_acceptance.py::test_an_unresolvable_client_context_refuses_without_a_failure_metric",
+        "tests/integration/test_lane_e_e3_acceptance.py::test_with_the_flag_off_the_step_never_offers_the_job",
+        "tests/integration/test_lane_e_e3_acceptance.py::test_a_second_delivery_replays_instead_of_re_positioning"
+      ]
+    }
+  ]
+}

@@ -27,6 +27,7 @@ from clue_config import MemoryCaps
 from clue_core import (
     AssemblyRequest,
     EntityId,
+    ICPCreatedFrom,
     MemoryDisabled,
     MemoryType,
     PhaseContext,
@@ -61,7 +62,7 @@ from clue_research.durable import (
     insert_account_run,
     pin_account_run_research_directive,
 )
-from clue_research.icp import get_icp_version
+from clue_research.icp import create_icp_spec, get_icp_version
 from clue_research.identity import insert_account_entity
 from clue_research.membership import accounts_for_project, projects_for_accounts
 from clue_storage import FsStorage
@@ -152,6 +153,52 @@ def test_user_instruction_limit_is_utf8_bytes_not_python_characters() -> None:
     }
     with pytest.raises(ValidationError, match="8000-byte"):
         DraftAccountResearchDirectiveInput.model_validate(payload)
+
+
+def test_unprofiled_icp_uses_only_active_registry_capabilities(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await seed_insight_health_account_deep_fixture(
+                conn,
+                pages=_pages(),
+                storage=FsStorage(tmp_path / "unprofiled-source-artifacts"),
+            )
+            spec = await create_icp_spec(
+                conn,
+                workspace_id=WORKSPACE_ID,
+                icp_key="unprofiled-directive",
+                created_from=ICPCreatedFrom.CLIENT_EDIT,
+                field_keys=(DEEP_FIELD_KEYS[2], DEEP_FIELD_KEYS[3]),
+                enabled_packs=(),
+                source_profile_ref={},
+                activate=True,
+                client_entity_id=EntityId(UUID(fixture.discovery_fixture.client_entity_id)),
+                client_kb_version=fixture.discovery_fixture.client_kb_version,
+                product_id=PRODUCT_ID,
+            )
+            body = _body(fixture.selected_account_id).model_copy(
+                update={
+                    "source_policy": ResearchSourcePolicy(
+                        allowed_source_keys=("exa_deep",),
+                        preferred_source_keys=("exa_deep",),
+                    )
+                }
+            )
+
+            resolved = await validate_research_directive_draft(
+                conn,
+                workspace_id=WORKSPACE_ID,
+                project_id=PROJECT_ID,
+                product_id=PRODUCT_ID,
+                icp_key=spec.icp_key,
+                icp_version=spec.version,
+                body=body,
+                overrides={},
+            )
+
+            assert resolved == (fixture.selected_account_id,)
+
+    run_async(scenario())
 
 
 def test_sealed_scope_resolves_exact_membership_and_memory_disabled_is_truthful(

@@ -154,8 +154,9 @@ class EntityResearchRunRow(BaseModel):
 
     @model_validator(mode="after")
     def _terminal_shape(self) -> Self:
-        if self.spent_cents > self.budget_cap_cents:
-            raise ValueError("entity research run spend exceeds its immutable cap")
+        # ``CLUE_BUDGET_CONTROLS_ENABLED=false`` deliberately makes spend record-only. In that
+        # deployment mode the database may honestly contain spend above the immutable reviewed
+        # cap; writers remain responsible for refusing that transition when enforcement is on.
         if (self.state is EntityResearchRunState.TERMINAL) != (self.terminal_at is not None):
             raise ValueError("entity research run terminal state requires terminal_at")
         return self
@@ -195,8 +196,8 @@ class EntityResearchJobRow(BaseModel):
 
     @model_validator(mode="after")
     def _lifecycle_shape(self) -> Self:
-        if self.spent_cents > self.budget_cap_cents:
-            raise ValueError("entity research job spend exceeds its immutable cap")
+        # Overspend is a valid recorded observation when deployment budget enforcement is off.
+        # The persistence boundary, which has the deployment switch, enforces caps in ON mode.
         active = self.state in {ResearchJobState.LEASED, ResearchJobState.RUNNING}
         if active != (self.active_worker_id is not None and self.lease_generation is not None):
             raise ValueError("active entity research job requires a worker and lease generation")

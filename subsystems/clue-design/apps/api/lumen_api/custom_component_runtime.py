@@ -22,7 +22,8 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from .custom_components import resolve_custom_component_artifact_blob
-from .database import NotFoundError, Repository
+from .database import NotFoundError
+from .design_store import DesignBlobStore, HybridRepository
 
 
 JsonObject = Dict[str, Any]
@@ -348,7 +349,7 @@ def _runtime_prelude(config: JsonObject) -> str:
 
 
 def _require_runtime_artifact(
-    repository: Repository,
+    repository: HybridRepository,
     *,
     account_id: str,
     artifact_id: str,
@@ -386,8 +387,8 @@ def _require_runtime_artifact(
 
 
 def _resolve_artifact_graph(
-    repository: Repository,
-    store_root: Path,
+    repository: HybridRepository,
+    blobs: DesignBlobStore,
     *,
     account_id: str,
     root_artifact_id: str,
@@ -456,14 +457,14 @@ def _resolve_artifact_graph(
                 )
         _, bundle = resolve_custom_component_artifact_blob(
             repository,
-            store_root,
+            blobs,
             account_id=account_id,
             artifact_id=artifact_id,
             member="bundle",
         )
         _, css = resolve_custom_component_artifact_blob(
             repository,
-            store_root,
+            blobs,
             account_id=account_id,
             artifact_id=artifact_id,
             member="css",
@@ -850,8 +851,8 @@ def _artifact_publish_record(
 
 
 def _assemble_custom_component_runtime(
-    repository: Repository,
-    store_root: Path,
+    repository: HybridRepository,
+    blobs: DesignBlobStore,
     *,
     account_id: Optional[str],
     web_doc: JsonObject,
@@ -918,7 +919,7 @@ def _assemble_custom_component_runtime(
             try:
                 artifact, bundles, css_parts, artifacts = _resolve_artifact_graph(
                     repository,
-                    store_root,
+                    blobs,
                     account_id=account_id or "",
                     root_artifact_id=artifact_id,
                 )
@@ -929,7 +930,7 @@ def _assemble_custom_component_runtime(
                     )
                 _, first_frame = resolve_custom_component_artifact_blob(
                     repository,
-                    store_root,
+                    blobs,
                     account_id=account_id or "",
                     artifact_id=artifact_id,
                     member="first_frame",
@@ -966,7 +967,7 @@ def _assemble_custom_component_runtime(
                         ):
                             _, member_bytes = resolve_custom_component_artifact_blob(
                                 repository,
-                                store_root,
+                                blobs,
                                 account_id=account_id or "",
                                 artifact_id=graph_artifact_id,
                                 member=member,
@@ -1100,8 +1101,8 @@ def _assemble_custom_component_runtime(
 
 
 def build_custom_component_runtime_frames(
-    repository: Repository,
-    store_root: Path,
+    repository: HybridRepository,
+    blobs: DesignBlobStore,
     *,
     account_id: Optional[str],
     web_doc: JsonObject,
@@ -1114,7 +1115,7 @@ def build_custom_component_runtime_frames(
 
     return _assemble_custom_component_runtime(
         repository,
-        store_root,
+        blobs,
         account_id=account_id,
         web_doc=web_doc,
         page_id=page_id,
@@ -1125,8 +1126,8 @@ def build_custom_component_runtime_frames(
 
 
 def build_custom_component_delivery_package(
-    repository: Repository,
-    store_root: Path,
+    repository: HybridRepository,
+    blobs: DesignBlobStore,
     *,
     account_id: Optional[str],
     web_doc: JsonObject,
@@ -1147,7 +1148,7 @@ def build_custom_component_delivery_package(
 
     return _assemble_custom_component_runtime(
         repository,
-        store_root,
+        blobs,
         account_id=account_id,
         web_doc=web_doc,
         page_id=page_id,

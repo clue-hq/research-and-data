@@ -15,11 +15,18 @@ Public API:
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Any, Callable, Optional
 
+from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.structured_output import ToolStrategy
+from langchain_core.messages import ToolMessage
+from langgraph.prebuilt.tool_node import ToolCallRequest
+from langgraph.types import Command
 from py_lumen_obs import configure, get_logger
 
+from .cancellation import CANCELLED_EVENT, CANCELLED_STOP_REASON, TurnCancelled
+from .checkpoint import invoke_turn_graph
 from .config import AgentRuntimeConfig
 from .harness import _filesystem_permissions, _instrument
 from .materialize import materialize_agent_workspace
@@ -32,20 +39,139 @@ from .prompts_web import (
 from .tools.web_substrate import (
     HOME_PAGE_ID,
     LumenWebTools,
+    has_existing_content,
     make_web_view_tool,
     web_theme_token_names,
 )
 
 logger = get_logger("lumen_agent.harness_web")
 
+#: G4 (founder ruling, 2026-08-19): at most this many `lumen-web-reviewer` delegations
+#: per web turn. A live chat-driven generation spent ~13 minutes on a simple landing page
+#: because the review loop kept going, so the budget is MECHANICAL — the prompt asks for
+#: the fewest rounds, this number is what actually stops the seventh.
+WEB_REVIEW_DELEGATION_CAP = 6
 
-def _has_existing_content(web_doc: dict, page_id: str) -> bool:
-    """True when the home page already carries authored content (any node
-    beyond the empty root)."""
-    for page in web_doc.get("pages") or []:
-        if isinstance(page, dict) and page.get("id") == page_id:
-            return len(page.get("nodes") or {}) > 1
-    return False
+#: G6 lever 1 (founder ruling, 2026-08-19): at most this many `lumen-web-author`
+#: delegations per web turn. The G6 benchmark ran the same ordinary brief twice — 3.25 and
+#: 10.0 minutes — and the spread was agent-CHOSEN SCOPE, not model speed: 2 author
+#: delegations versus 5, with an IDENTICAL 6.2s mean author-call latency. The fast run's
+#: shape is the target (one brief, one pass); four leaves room for two genuine repair
+#: rounds and still stops the churn.
+WEB_AUTHOR_DELEGATION_CAP = 4
+
+_AUTHOR_SUBAGENT = "lumen-web-author"
+_REVIEWER_SUBAGENT = "lumen-web-reviewer"
+
+_REVIEW_BUDGET_EXHAUSTED = (
+    "Review budget exhausted: this turn has already used all {cap} `lumen-web-reviewer` "
+    "delegations, which is the hard per-turn cap. No further review will run. Finish now "
+    "from the critique you already hold: send any outstanding blocking fix to the author "
+    "and judge the re-render with your own `view` calls, then call `finalize_web_run` — "
+    "`accepted` if the page meets the ship bar, `completed_with_warnings` if advisory "
+    "issues remain, naming them in the summary."
+)
+
+_AUTHOR_BUDGET_EXHAUSTED = (
+    "Author budget exhausted: this turn has already used all {cap} `lumen-web-author` "
+    "delegations, which is the hard per-turn cap. No further authoring will run, so the "
+    "page as it stands is the page that ships. Finish now: call `render_web_preview` if "
+    "your last change is not on screen yet, judge the three widths with your own `view` "
+    "calls, then call `finalize_web_run` — `accepted` if it meets the ship bar, "
+    "`completed_with_warnings` naming every fix you could not make, so the user knows "
+    "exactly what to ask for next."
+)
+
+
+@dataclass(frozen=True)
+class DelegationBudget:
+    """One subagent's per-turn delegation budget: how many, and what the refusal says."""
+
+    subagent: str
+    role: str
+    cap: int
+    refusal: str
+
+
+#: The shipped per-turn budgets (G4 reviewer, G6 author). Immutable, so it is safe as the
+#: middleware's default — only the middleware instance's counters move.
+WEB_DELEGATION_BUDGETS: tuple[DelegationBudget, ...] = (
+    DelegationBudget(
+        subagent=_AUTHOR_SUBAGENT,
+        role="author",
+        cap=WEB_AUTHOR_DELEGATION_CAP,
+        refusal=_AUTHOR_BUDGET_EXHAUSTED,
+    ),
+    DelegationBudget(
+        subagent=_REVIEWER_SUBAGENT,
+        role="reviewer",
+        cap=WEB_REVIEW_DELEGATION_CAP,
+        refusal=_REVIEW_BUDGET_EXHAUSTED,
+    ),
+)
+
+
+class WebDelegationCap(AgentMiddleware):
+    """Enforce the per-turn subagent delegation budgets at the `task` tool.
+
+    ONE instance is built per :func:`create_web_deepagent` call and holds every budget, so
+    the counters are turn-scoped by construction rather than by a framework — the whole
+    mechanism is a dict of integers and one branch. Author and reviewer budgets are
+    independent; any other subagent and every ordinary tool pass straight through.
+
+    Exceeding a cap is a tool-level REFUSAL, never an exception: an exhausted budget must
+    leave the orchestrator able to finalize honestly with what it already holds, and killing
+    the turn would throw away a page that is very likely already shippable. Each refusal
+    names only tools the ORCHESTRATOR itself can call — naming an uncallable tool is what
+    sent a role into blind churn on a live run (2026-07-29).
+
+    Sync only, deliberately: the web turn is invoked through `agent.invoke`
+    (`checkpoint.invoke_turn_graph`). An async invocation would raise LangChain's own
+    "synchronous implementation only" error rather than silently skipping the caps.
+    """
+
+    def __init__(
+        self,
+        *,
+        budgets: tuple[DelegationBudget, ...] = WEB_DELEGATION_BUDGETS,
+        record: Optional[Callable[..., None]] = None,
+    ) -> None:
+        super().__init__()
+        self._budgets = {budget.subagent: budget for budget in budgets}
+        self._record = record
+        self.delegations = {subagent: 0 for subagent in self._budgets}
+
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolMessage | Command],
+    ) -> ToolMessage | Command:
+        call = request.tool_call
+        args = call.get("args") or {}
+        if call.get("name") != "task":
+            return handler(request)
+        budget = self._budgets.get(args.get("subagent_type"))
+        if budget is None:
+            return handler(request)
+        if self.delegations[budget.subagent] >= budget.cap:
+            event = f"web_{budget.role}_cap_reached"
+            logger.warning(event, cap=budget.cap)
+            if self._record is not None:
+                self._record(
+                    "coordinator",
+                    event,
+                    output_summary=(
+                        f"{budget.role} delegation refused after {budget.cap} rounds"
+                    ),
+                    payload={"cap": budget.cap, "subagent": budget.subagent},
+                )
+            return ToolMessage(
+                content=budget.refusal.format(cap=budget.cap),
+                tool_call_id=call["id"],
+                name="task",
+            )
+        self.delegations[budget.subagent] += 1
+        return handler(request)
 
 
 def _scaffold_web_workspace(tools: LumenWebTools, prompt: str) -> str:
@@ -68,9 +194,20 @@ def create_web_deepagent(
     config: AgentRuntimeConfig | None,
     initial_web_doc: dict,
     event_sink=None,
+    *,
+    checkpointer: Any = None,
+    cancel_requested=None,
 ) -> tuple[Any, LumenWebTools]:
     """Build the website-mode deepagent + substrate. Mirrors
-    create_design_deepagent's shape."""
+    create_design_deepagent's shape, `checkpointer` included (D5 Round B).
+
+    `cancel_requested` (A3, defect R3-D) is the run's cancellation probe, wired
+    on the same seam and to all three roles for the same reasons the scene
+    harness wires it — see `cancellation.py`. What it CANNOT mirror is the scene
+    path's "keep the accepted rounds": website mode has no mid-run checkpointing
+    (a web turn authors the page and persists once, at the end), so a cancelled
+    web turn has no partial work to keep and honestly ends `failed` with nothing
+    applied. `None` keeps every existing caller byte-identical."""
     try:
         from deepagents import create_deep_agent
 
@@ -105,11 +242,19 @@ def create_web_deepagent(
     assert_all_role_models_support_image_input(runtime_config)
 
     # THREE role instances (never deduped) through the shared constructor.
+    # A3: the probe is passed only when there IS one, so an uncancellable web turn calls
+    # `_instrument` with the exact pre-A3 argument list (that seam is monkeypatched by shipped
+    # suites — see the scene harness's note).
+    cancel_kwargs = {} if cancel_requested is None else {"cancel_probe": cancel_requested}
     orchestrator_model = _instrument(
-        runtime_config, tools, runtime_config.orchestrator_model, "orchestrator"
+        runtime_config, tools, runtime_config.orchestrator_model, "orchestrator", **cancel_kwargs
     )
-    author_model = _instrument(runtime_config, tools, runtime_config.author_model, "author")
-    reviewer_model = _instrument(runtime_config, tools, runtime_config.reviewer_model, "reviewer")
+    author_model = _instrument(
+        runtime_config, tools, runtime_config.author_model, "author", **cancel_kwargs
+    )
+    reviewer_model = _instrument(
+        runtime_config, tools, runtime_config.reviewer_model, "reviewer", **cancel_kwargs
+    )
 
     # Two view variants over the same substrate state: identical except the
     # stale/no-preview refusal text. The subagent variant never instructs a
@@ -147,7 +292,53 @@ def create_web_deepagent(
                 tools.author_web_subtree,
                 tools.patch_web_page,
                 tools.fetch_page,
+                tools.fetch_logo,
+                # F4.3 (ruling R25-1): the other half of the ladder. `fetch_logo` puts a target's
+                # real mark on THIS page; this saves it onto the ACCOUNT, so `{{account.logo}}`
+                # resolves for them on every page derived from any campaign template. Without it
+                # a fetched logo dies with the turn and a fifty-account batch publishes fifty
+                # empty logo slots. It is a named, per-account act on purpose — never a sweep.
+                tools.bind_account_logo,
                 tools.search_assets,
+                # F2.3: the reuse ladder's bottom rung. The AUTHOR gets both halves — chrome and
+                # proof bands are reused where a released clone serves the job, and composing one
+                # from scratch is what happens when none does.
+                tools.search_cloned_sections,
+                tools.insert_cloned_section,
+                # F3.1: the two halves of the recreate walk. `recreate_cloned_page` is the
+                # whole-page assembly (all of them, source order, nothing added);
+                # `repair_cloned_section` is D-F6's ladder for the ones that came back broken.
+                # Both write to the document, so both belong to the author and to no one else.
+                tools.recreate_cloned_page,
+                # The paved verb for the one-step campaign flow (2026-08-30): pin a CHOSEN,
+                # ordered subset of released clones onto an empty page atomically, slots
+                # rebindable in the same call — the middle ground between the whole-page
+                # recreate and pin-by-pin choreography.
+                tools.assemble_cloned_sections,
+                tools.repair_cloned_section,
+                # Founder ruling 2026-08-30: the raw-CSS authoring lane. A NEW band that must
+                # match the source site's fidelity is composed as real HTML+CSS through the
+                # same sanitize-once pipeline every captured byte passes, minted released, and
+                # pinned like any clone. The author's, because it writes library content the
+                # author then places.
+                tools.compose_web_section,
+                # F4.4 (FOUNDER RULING R-X9): a repair is released ONE AT A TIME, by a human who
+                # was shown it and asked. The brand-kit approval no longer sweeps repairs along
+                # with the harvested sections, so this is the only door — and it is the author's
+                # because the author is who composed the repair and who can explain it. It
+                # enacts an answer; it never decides one (see the prompt's release law).
+                tools.release_repair,
+                # F4.1: the ABM page's own chrome. A library operation, not a document write —
+                # it mints the two shells and touches no page — but it belongs to the author for
+                # the same reason the other two do: the author is the role that decides what a
+                # page wears, and the shells exist to be worn INSTEAD of the cloned nav.
+                tools.mint_campaign_shells,
+                # F4.2: the assembly. `mint_campaign_shells` makes the chrome; this is what puts
+                # it on — header first, footer last, hero between, everything bound to the
+                # account MARKERS rather than to one account's values. It writes to the document,
+                # so it is the author's, and it refuses rather than falling back to the cloned
+                # nav, which is the campaign-shell rule made structural instead of prompted.
+                tools.assemble_abm_page,
                 tools.provenance,
                 tools.asset,
                 tools.list_custom_components,
@@ -165,7 +356,8 @@ def create_web_deepagent(
                 "all three widths and returns a structured VisualCritique."
             ),
             "system_prompt": build_web_reviewer_prompt(
-                has_account=bool(tools.account_card)
+                has_account=bool(tools.account_card),
+                brief=tools.reviewer_brief_text,
             ),
             "model": reviewer_model,
             "tools": [subagent_view, tools.provenance],
@@ -178,14 +370,48 @@ def create_web_deepagent(
         },
     ]
 
+    # --- the web lane's fast loop / ruling D-F7: reviewer QUARANTINED, not deleted -------------
+    # The scene lane's R3 quarantine, mirrored for web turns (F3.3). Under the web fast loop the
+    # `lumen-web-reviewer` subagent is not registered, so the orchestrator cannot dispatch it —
+    # tool-absence enforcement, not a prompt asking nicely — and it self-reviews against the SAME
+    # shared rubric artifact instead (the prompt builder interpolates it; see prompts_web).
+    #
+    # Everything about the reviewer stays BUILT above: its prompt (rubric included), its own
+    # model instance, its ToolStrategy(VisualCritique), its whole dict. It is one config flag
+    # from being live again, and `LUMEN_AGENT_WEB_REVIEWER=1` is that flag.
+    if not runtime_config.web_reviewer_enabled:
+        subagents = [sa for sa in subagents if sa["name"] != _REVIEWER_SUBAGENT]
+        logger.info(
+            "web_reviewer_quarantined",
+            run_id=tools.run_id,
+            quarantined=[_REVIEWER_SUBAGENT],
+            reason="web_fast_loop_d_f7",
+        )
+
     orchestrator_tools = [
         view,
         tools.fetch_page,
         tools.search_assets,
+        # Discovery only, deliberately: the director DECIDES the reuse ladder (which bands are
+        # reused and which are composed) and names the sections in the author's brief; the author
+        # is the only role that writes to the document.
+        tools.search_cloned_sections,
         tools.provenance,
+        # F4 wave item 4 (the CP2 walk's F-4): the logo ladder lived only on the author role,
+        # so a director's "bind logos, change nothing" delegation to a generic subagent bound
+        # NOTHING and reported success. Neither tool writes the document — fetch_logo ingests
+        # assets and bind_account_logo stamps the ACCOUNT row — so the author-owns-the-document
+        # law survives their presence here.
+        tools.fetch_logo,
+        tools.bind_account_logo,
         tools.list_custom_components,
         tools.inspect_custom_component,
         tools.render_web_preview,
+        # F3.3: the behavioural review gate. The ORCHESTRATOR's, in both flag states — it is the
+        # role that renders and the role that decides, and its findings are advice a director
+        # weighs rather than markup an author edits. The reviewer subagent, when it exists, reads
+        # the gate's captures through the director's brief exactly as it reads the previews.
+        tools.review_cloned_page,
         tools.finalize_web_run,
     ]
 
@@ -197,12 +423,21 @@ def create_web_deepagent(
         tools=orchestrator_tools,
         system_prompt=build_web_orchestrator_prompt(
             doc_title=doc_title,
-            has_existing_content=_has_existing_content(initial_web_doc, HOME_PAGE_ID),
+            has_existing_content=has_existing_content(initial_web_doc, HOME_PAGE_ID),
             brand_card=tools.brand_card_text,
+            review_cap=WEB_REVIEW_DELEGATION_CAP,
+            author_cap=WEB_AUTHOR_DELEGATION_CAP,
             account_card=tools.account_card_text,
+            # D-F7: the same rubric either way; only who applies it moves.
+            web_reviewer=runtime_config.web_reviewer_enabled,
         ),
         subagents=subagents,
+        # G4/G6: the delegation budgets ride as ordinary tool-call middleware on the
+        # ORCHESTRATOR, which is where `task` executes. Fresh per turn, so the counters
+        # cannot leak.
+        middleware=[WebDelegationCap(record=tools.record)],
         name="lumen-web-deepagent",
+        checkpointer=checkpointer,
     )
     return agent, tools
 
@@ -212,15 +447,34 @@ def run_deepagent_web_turn(
     config: AgentRuntimeConfig | None = None,
     initial_web_doc: dict | None = None,
     event_sink=None,
+    *,
+    checkpointer: Any = None,
+    thread_id: str | None = None,
+    cancel_requested=None,
 ) -> dict:
     """Create + invoke + guarantee an honest finalize.
 
     Returns {status: "applied"|"failed", summary, web_doc (final), operations,
     grounding, preview_paths, outcome}. `applied` iff the orchestrator finalized
     accepted/completed_with_warnings; a crash/recursion-limit/no-finalize turn
-    is finalized "failed" here — never a fabricated success."""
+    is finalized "failed" here — never a fabricated success.
+
+    `checkpointer` / `thread_id` (D5 Round B): the durable-execution seam, supplied together by
+    the fleet handler. `thread_id` is the DESIGN RUN ID (the D5 ruling); absent it, the turn
+    threads on `tools.run_id` exactly as before. See checkpoint.py for the honest resume
+    semantics that shipped (resume-as-restart, and why).
+
+    `cancel_requested` (A3, defect R3-D): the run's cancellation probe. A cancelled web turn ends
+    `failed` with nothing applied and a summary that says a human stopped it — which is the whole
+    truth here, because website mode persists once at the end and so a stopped turn has nothing
+    partial to keep. See `create_web_deepagent`."""
     agent, tools = create_web_deepagent(
-        prompt, config=config, initial_web_doc=initial_web_doc or {}, event_sink=event_sink
+        prompt,
+        config=config,
+        initial_web_doc=initial_web_doc or {},
+        event_sink=event_sink,
+        checkpointer=checkpointer,
+        cancel_requested=cancel_requested,
     )
 
     run_log_path = tools.trace_dir / "logs" / "run.jsonl"
@@ -235,11 +489,39 @@ def run_deepagent_web_turn(
     )
 
     initial_state = {"messages": [{"role": "user", "content": prompt}]}
-    invoke_config = {"recursion_limit": 200, "configurable": {"thread_id": tools.run_id}}
+    invoke_config = {
+        "recursion_limit": 200,
+        "configurable": {"thread_id": thread_id or tools.run_id},
+    }
 
     exception_text: Optional[str] = None
     try:
-        agent.invoke(initial_state, config=invoke_config)
+        # A3: the boundary BEFORE the first model call, so a turn cancelled while it sat queued
+        # pays for nothing. No-op when no probe was supplied.
+        if cancel_requested is not None and cancel_requested():
+            raise TurnCancelled()
+        invoke_turn_graph(
+            agent,
+            initial_state,
+            invoke_config=invoke_config,
+            checkpointer=checkpointer,
+            thread_id=thread_id,
+        )
+    except TurnCancelled as error:
+        # A3 (defect R3-D). Caught above the generic handler purely so the finalize below says
+        # "a human stopped this" instead of the generic "orchestrator ended without finalize" —
+        # the honest-failure PATH is unchanged and deliberately reused, only its reason is
+        # truthful. There is no `completed_with_warnings` branch here and there should not be:
+        # website mode persists once at the end, so a cancelled turn applied nothing, and
+        # claiming partial success would be the fabrication this whole envelope guards against.
+        exception_text = str(error)
+        tools.record(
+            "coordinator",
+            CANCELLED_EVENT,
+            output_summary=exception_text[:500],
+            payload={"stop_reason": CANCELLED_STOP_REASON},
+            sink_extra={"stop_reason": CANCELLED_STOP_REASON},
+        )
     except Exception as error:  # noqa: BLE001 - honest failure, recorded verbatim
         exception_text = f"{type(error).__name__}: {error}"
         tools.record(

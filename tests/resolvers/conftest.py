@@ -28,6 +28,7 @@ from clue_research.adapters import clear_adapters
 from clue_research.claimstore import load_core_pack
 from clue_research.resolvers.base import ResolvedField
 from clue_research.sources import clear_resolver_bindings, seed_source_manifests
+from clue_research.stage0 import load_client_knowledge_pack
 
 # Reuse the M0.3 helpers (DRY). ``run_async`` is re-exported for the resolver test modules.
 from tests.db.conftest import _db_available
@@ -81,6 +82,7 @@ async def rollback_conn() -> AsyncIterator[AsyncConnection]:
         trans = await conn.begin()
         try:
             await load_core_pack(conn)
+            await load_client_knowledge_pack(conn)
             await seed_source_manifests(conn)
             yield conn
         finally:

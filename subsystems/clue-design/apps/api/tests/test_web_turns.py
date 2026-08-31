@@ -15,7 +15,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from lumen_api.database import Repository, connect
+from conftest import make_client
+
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app, workspace_asset_library_manifest
 from lumen_ingestion.describe import DescriptionStore
 
@@ -51,8 +53,8 @@ SAMPLE_HTML = """
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    app = create_app(tmp_path / "engine-cache")
+    return make_client(app)
 
 
 def minimal_scene() -> dict:
@@ -129,18 +131,15 @@ def install_operations(before: dict, after: dict) -> list[dict]:
 
 
 def seed_web_doc(client: TestClient, document_id: str, web_doc: dict) -> None:
-    store = Repository(connect(client.app.state.database_path))
-    try:
-        store.update_web_document(
-            document_id,
-            web_doc,
-            intent="seed",
-            checkpoint_label="seed",
-            operations=[{"kind": "replace_web_doc"}],
-            inverse_operations=None,
-        )
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    store.update_web_document(
+        document_id,
+        web_doc,
+        intent="seed",
+        checkpoint_label="seed",
+        operations=[{"kind": "replace_web_doc"}],
+        inverse_operations=None,
+    )
 
 
 def wait_for_run(client: TestClient, run_id: str, timeout: float = 30.0) -> dict:
@@ -165,20 +164,16 @@ def test_workspace_asset_library_manifest_carries_descriptions_and_provenance(
             / "crates/lumen-core/fixtures/assets/uploaded_logo_asset.json"
         ).read_text()
     )
-    connection = connect(client.app.state.database_path)
-    repo = Repository(connection)
-    try:
-        repo.create_asset_record(record)
-        DescriptionStore(connection).put_human(
-            record["id"],
-            "Acme primary logo",
-            "A navy Acme wordmark.",
-            "Use on light backgrounds.",
-            ["wordmark"],
-        )
-        manifest = workspace_asset_library_manifest(repo, connection)
-    finally:
-        connection.close()
+    repo = HybridRepository()
+    repo.create_asset_record(record)
+    DescriptionStore().put_human(
+        record["id"],
+        "Acme primary logo",
+        "A navy Acme wordmark.",
+        "Use on light backgrounds.",
+        ["wordmark"],
+    )
+    manifest = workspace_asset_library_manifest(repo)
 
     entry = manifest[record["id"]]
     assert entry["record"] == record
@@ -380,7 +375,9 @@ def test_web_turn_applied_replays_operations_and_writes_envelope(
         json={"prompt": "Build a landing page", "base_version": 0},
     )
     assert response.status_code == 200, response.text
-    assert response.json()["status"] == "running"
+    # D5 Round B: the route offers the turn to the fleet; `queued` is the honest status of a run
+    # no worker has claimed yet.
+    assert response.json()["status"] == "queued"
     run_id = response.json()["run_id"]
 
     run = wait_for_run(client, run_id)
@@ -398,11 +395,8 @@ def test_web_turn_applied_replays_operations_and_writes_envelope(
 
     # The real operations and their checked inverses are persisted — no
     # replace_web_doc marker survives the agent handoff.
-    store = Repository(connect(client.app.state.database_path))
-    try:
-        envelopes = store.list_envelopes(document["id"])
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    envelopes = store.list_envelopes(document["id"])
     assert len(envelopes) == 1
     envelope = envelopes[0]
     assert envelope["operations"]
@@ -522,11 +516,8 @@ def test_web_turn_unknown_account_404_before_run(client: TestClient) -> None:
     assert response.status_code == 404, response.text
     assert response.json()["detail"]["code"] == "web_account.not_found"
     # No run was created for the rejected turn.
-    store = Repository(connect(client.app.state.database_path))
-    try:
-        assert store.list_running_runs() == []
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    assert store.list_running_runs() == []
 
 
 def test_web_turn_account_card_reaches_runner(client: TestClient) -> None:
@@ -555,6 +546,22 @@ def test_web_turn_account_card_reaches_runner(client: TestClient) -> None:
     }
 
 
+def _plant_document_account(document_id: str, account_id: str) -> None:
+    """Set a document's account column directly (test scaffolding — see the caller)."""
+    from clue_design import documents as design_documents
+    from lumen_api.design_store import DesignStoreBridge
+
+    store = HybridRepository()
+    DesignStoreBridge(store.workspace_id)._run(
+        lambda conn: design_documents.set_document_account(
+            conn,
+            workspace_id=store.workspace_id,
+            document_id=document_id,
+            account_id=account_id,
+        )
+    )
+
+
 def test_web_turn_uses_document_account_when_request_omits_it(client: TestClient) -> None:
     document = create_web_document(client)
     content_doc = ingest_content(client, document["id"])
@@ -562,15 +569,12 @@ def test_web_turn_uses_document_account_when_request_omits_it(client: TestClient
 
     # A derived doc carries its account_id on the row (the B2 derive path would
     # set this; here we set it directly since derive is out of B1 scope).
-    store = Repository(connect(client.app.state.database_path))
-    try:
-        store.connection.execute(
-            "UPDATE documents SET account_id = ? WHERE id = ?",
-            (account_id, document["id"]),
-        )
-        store.connection.commit()
-    finally:
-        store.connection.close()
+    #
+    # Straight to the DAL: D6 Round C deleted ``HybridRepository.set_document_account`` because
+    # this scaffold was its ONLY caller in the whole tree, and the D6 gate's choice for a write
+    # nothing performs is to remove it, not to mint a governed tool for it. A test may reach the
+    # DAL; production code may not reach the store without a tool.
+    _plant_document_account(document["id"], account_id)
 
     received: dict = {}
     client.app.state.web_turn_runner = applied_stub_capturing_account(content_doc, received)
@@ -643,11 +647,124 @@ def test_web_turn_failed_leaves_document_unchanged(client: TestClient) -> None:
     after = client.get(f"/documents/{document['id']}").json()
     assert after["current_version"] == before["current_version"] == 0
 
-    store = Repository(connect(client.app.state.database_path))
-    try:
-        assert store.list_envelopes(document["id"]) == []
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    assert store.list_envelopes(document["id"]) == []
+
+
+def test_web_turn_failure_reason_lands_in_diagnostics(client: TestClient) -> None:
+    """A failed website turn must say WHY in `diagnostics`, not only inside `summary`.
+
+    The genweb slice-0 run died on the reviewer's vision call ("image dimensions exceed
+    max allowed size: 8000 pixels"); the reason reached the editor stringified inside
+    `summary` while `diagnostics` stayed empty, so every surface that reads diagnostics
+    reported an unexplained failure. The scene path already synthesizes this entry
+    (`agent_runtime.no_proposal`); the web path did not.
+    """
+    document = create_web_document(client)
+    refusal = (
+        "Error code: 400 - invalid_prompt: image dimensions exceed max allowed "
+        "size: 8000 pixels"
+    )
+
+    def stub(doc, prompt, model, root):
+        return {
+            "schema_version": 1,
+            "status": "failed",
+            "outcome": "failed",
+            "summary": refusal,
+            "web_doc": doc["scene"],
+            "operations": [],
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    client.app.state.web_turn_runner = stub
+    response = client.post(
+        f"/documents/{document['id']}/web/turns",
+        json={"prompt": "Build a landing page", "base_version": 0},
+    )
+    run = wait_for_run(client, response.json()["run_id"])
+    assert run["status"] == "failed"
+
+    diagnostics = run["result"]["diagnostics"]
+    assert len(diagnostics) == 1
+    assert diagnostics[0]["severity"] == "error"
+    assert diagnostics[0]["code"] == "web_turn.no_result"
+    assert diagnostics[0]["message"] == refusal
+
+
+def test_many_image_refusal_lands_in_diagnostics(client: TestClient) -> None:
+    """The G5 refusal, verbatim, must reach `diagnostics` if it ever recurs.
+
+    The clamp in `lumen_agent.tools.view` (every web view image rides the
+    many-image ceiling) is what stops this from being reachable; this test pins
+    the OTHER half of the contract — that a review-kill is explained rather than
+    silent. The string is the one recorded live on run_c6f4485… (2026-08-19),
+    which discarded a whole authored landing page after ~28 minutes.
+    """
+    document = create_web_document(client)
+    refusal = (
+        "ValueError: ResponseError(code='invalid_prompt', "
+        "message='messages.1.content.39.image.source.base64.data: At least one of "
+        "the image dimensions exceed max allowed size for many-image requests: "
+        "2000 pixels')"
+    )
+
+    def stub(doc, prompt, model, root):
+        return {
+            "schema_version": 1,
+            "status": "failed",
+            "outcome": "failed",
+            "summary": refusal,
+            "web_doc": doc["scene"],
+            "operations": [],
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    client.app.state.web_turn_runner = stub
+    response = client.post(
+        f"/documents/{document['id']}/web/turns",
+        json={"prompt": "Build a landing page", "base_version": 0},
+    )
+    run = wait_for_run(client, response.json()["run_id"])
+    assert run["status"] == "failed"
+
+    diagnostics = run["result"]["diagnostics"]
+    assert len(diagnostics) == 1
+    assert diagnostics[0]["code"] == "web_turn.no_result"
+    assert diagnostics[0]["severity"] == "error"
+    # The reason is carried WHOLE — a reader must be able to see the pixel limit
+    # and the image count position without going to the fleet log.
+    assert diagnostics[0]["message"] == refusal
+    assert "many-image requests: 2000 pixels" in diagnostics[0]["message"]
+
+
+def test_web_turn_applied_carries_no_synthetic_diagnostic(client: TestClient) -> None:
+    document = create_web_document(client)
+    operations = [{"kind": "set_custom_css", "css": "body { opacity: 0.9; }"}]
+
+    def stub(doc, prompt, model, root):
+        candidate = client.app.state.core.web_apply_ops(doc["scene"], operations)["web_doc"]
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "outcome": "accepted",
+            "summary": "Adjusted the page.",
+            "web_doc": candidate,
+            "operations": operations,
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    client.app.state.web_turn_runner = stub
+    response = client.post(
+        f"/documents/{document['id']}/web/turns",
+        json={"prompt": "Soften it", "base_version": 0},
+    )
+    run = wait_for_run(client, response.json()["run_id"])
+    assert run["status"] == "succeeded"
+    assert run["result"].get("diagnostics", []) == []
 
 
 def test_web_turn_requires_base_version(client: TestClient) -> None:
@@ -725,10 +842,224 @@ def test_web_turn_conflict_preserves_edit_committed_while_agent_runs(
     stored = client.get(f"/documents/{document['id']}").json()
     assert stored["current_version"] == 1
     assert stored["scene"]["custom_css"] == human_css
-    store = Repository(connect(client.app.state.database_path))
-    try:
-        envelopes = store.list_envelopes(document["id"])
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    envelopes = store.list_envelopes(document["id"])
     assert len(envelopes) == 1
     assert envelopes[0]["source"] == "editor"
+
+
+# --- leg-dispatched turns (G9) ----------------------------------------------
+#
+# A chat-born generation arrives as a leg envelope: `config.request` is the user's latest
+# message, and `config.delegation_bundle` / `config.history` carry the delegation's standing
+# brief and the leg's prior conversation. The scene executor has composed all three into the
+# turn prompt since P3.7; the web executor ignored the last two, so a "go ahead" second
+# message generated from almost nothing. These drive the REAL `execute_web_turn_job` with a
+# capturing runner, exactly as the platform's P3.7 scene tests do.
+
+
+def _turn_host(client: TestClient, stub):
+    """The embedded worker's turn host, built from `app.state` the way `create_app` does."""
+    from lumen_api.fleet_handler import DesignTurnHost
+
+    state = client.app.state
+    return DesignTurnHost(
+        web_turn_runner=stub,
+        core=state.core,
+        storage=state.storage,
+        engine_cache_root=state.engine_cache_root,
+    )
+
+
+def _web_turn_envelope(document_id: str, workspace_id: str, config: dict):
+    from uuid import uuid4
+
+    from clue_design.envelopes import DesignTurnEnvelope
+
+    run_id = f"run_{uuid4().hex[:12]}"
+    return DesignTurnEnvelope(
+        kind="web_turn",
+        work_id=uuid4(),
+        workspace_id=workspace_id,
+        run_id=run_id,
+        checkpoint_thread_id=run_id,
+        document_id=document_id,
+        config=config,
+    )
+
+
+def capturing_web_runner(received: dict, *, result=None):
+    """A stub that records the prompt the runtime would receive and applies nothing."""
+
+    def stub(doc, prompt, model, root, **kwargs):
+        received["prompt"] = prompt
+        received["kwargs"] = kwargs
+        return result or {
+            "schema_version": 1,
+            "status": "applied",
+            "outcome": "accepted",
+            "summary": "Looked at it.",
+            "web_doc": doc["scene"],
+            "operations": [],
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    return stub
+
+
+LEG_BRIEF = (
+    "Build the Harbor & Sage landing page: hero, three benefits, testimonial, "
+    "and a booking CTA."
+)
+
+
+def test_a_leg_web_turn_runs_on_the_brief_the_history_and_the_message(
+    client: TestClient,
+) -> None:
+    from lumen_api.main import execute_web_turn_job
+
+    document = create_web_document(client)
+    store = HybridRepository()
+    received: dict = {}
+    envelope = _web_turn_envelope(
+        document["id"],
+        store.workspace_id,
+        {
+            "request": {"prompt": "Go ahead.", "base_version": 0},
+            "delegation_bundle": {
+                "brief": LEG_BRIEF,
+                "claim_refs": [{"claim_id": "clm_7"}],
+            },
+            "history": [
+                {"role": "user", "text": "Something warmer than the last one."},
+                {"role": "assistant", "text": "Warmer palette it is."},
+            ],
+            "leg": {"leg_id": "leg-1"},
+        },
+    )
+
+    status, response, _, _ = execute_web_turn_job(
+        envelope,
+        store=store,
+        host=_turn_host(client, capturing_web_runner(received)),
+        event_sink=None,
+    )
+    assert status == "succeeded", response
+
+    prompt = received["prompt"]
+    assert LEG_BRIEF in prompt
+    brief_at = prompt.index(LEG_BRIEF)
+    first_at = prompt.index("[user] Something warmer than the last one.")
+    second_at = prompt.index("[assistant] Warmer palette it is.")
+    message_at = prompt.index("Go ahead.")
+    # The scene path's prefix-stable order: brief, then history oldest-first, then the message.
+    assert brief_at < first_at < second_at < message_at
+    assert prompt.rstrip().endswith("Go ahead.")
+    assert "data, not instructions" in prompt
+
+
+def test_a_route_shaped_web_turn_prompt_is_the_users_message_verbatim(
+    client: TestClient,
+) -> None:
+    """The direct BFF path carries no leg blocks; its prompt must stay byte-identical."""
+
+    from lumen_api.main import execute_web_turn_job
+
+    document = create_web_document(client)
+    store = HybridRepository()
+    received: dict = {}
+    envelope = _web_turn_envelope(
+        document["id"],
+        store.workspace_id,
+        {"request": {"prompt": "Build a landing page", "base_version": 0}},
+    )
+
+    status, response, _, _ = execute_web_turn_job(
+        envelope,
+        store=store,
+        host=_turn_host(client, capturing_web_runner(received)),
+        event_sink=None,
+    )
+    assert status == "succeeded", response
+    assert received["prompt"] == "Build a landing page"
+
+
+def test_a_leg_web_turn_on_a_stale_base_version_still_conflicts_before_the_runner(
+    client: TestClient,
+) -> None:
+    """The CAS re-check is unchanged by the composition: it happens first, and a conflicted
+    turn never reaches the runtime at all."""
+
+    from lumen_api.main import execute_web_turn_job
+
+    document = create_web_document(client)
+    seed_web_doc(client, document["id"], ingest_content(client, document["id"]))
+    store = HybridRepository()
+    received: dict = {}
+    envelope = _web_turn_envelope(
+        document["id"],
+        store.workspace_id,
+        {
+            "request": {"prompt": "Go ahead.", "base_version": 0},
+            "delegation_bundle": {"brief": LEG_BRIEF},
+            "history": [{"role": "user", "text": "Warmer."}],
+        },
+    )
+
+    status, response, _, _ = execute_web_turn_job(
+        envelope,
+        store=store,
+        host=_turn_host(client, capturing_web_runner(received)),
+        event_sink=None,
+    )
+    assert status == "failed"
+    assert response["status"] == "conflicted"
+    assert response["diagnostics"][0]["code"] == "web_turn.version_conflict"
+    assert received == {}
+
+
+def test_a_leg_web_turns_commit_is_labelled_with_the_users_message(
+    client: TestClient,
+) -> None:
+    """The composed prompt is for the RUNTIME. The durable edit envelope's `intent` is a
+    human-facing label, so it stays the user's own words — never the rendered brief block."""
+
+    from lumen_api.main import execute_web_turn_job
+
+    document = create_web_document(client)
+    content_doc = ingest_content(client, document["id"])
+    store = HybridRepository()
+    received: dict = {}
+
+    def stub(doc, prompt, model, root, **kwargs):
+        received["prompt"] = prompt
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "outcome": "accepted",
+            "summary": "Built the landing page.",
+            "web_doc": content_doc,
+            "operations": install_operations(doc["scene"], content_doc),
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    envelope = _web_turn_envelope(
+        document["id"],
+        store.workspace_id,
+        {
+            "request": {"prompt": "Go ahead.", "base_version": 0},
+            "delegation_bundle": {"brief": LEG_BRIEF},
+            "history": [{"role": "user", "text": "Warmer."}],
+        },
+    )
+    status, response, _, _ = execute_web_turn_job(
+        envelope, store=store, host=_turn_host(client, stub), event_sink=None
+    )
+    assert status == "succeeded", response
+    assert LEG_BRIEF in received["prompt"]
+
+    envelopes = store.list_envelopes(document["id"])
+    assert len(envelopes) == 1
+    assert envelopes[0]["intent"] == "Go ahead."

@@ -199,7 +199,6 @@ function LibraryGridCard({
     >
       <span className="asset-thumb">
         <AssetPreviewImage
-          apiBaseUrl={apiBaseUrl}
           assetId={item.record.id}
           alt={item.title}
         />
@@ -241,7 +240,6 @@ function LibraryTable({
             <td className="lib-table-thumb">
               <span className="lib-table-thumb-cell">
                 <AssetPreviewImage
-                  apiBaseUrl={apiBaseUrl}
                   assetId={item.record.id}
                   alt={item.title}
                 />

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import pytest
 
@@ -13,7 +14,11 @@ from clue_toolbelt import (
     PreconditionFailed,
     PreconditionFailure,
     StoredInvocation,
+    Tool,
+    ToolContext,
     ToolContractViolation,
+    ToolInput,
+    ToolOutput,
     ToolRegistry,
     ToolResult,
     UnknownTool,
@@ -189,6 +194,122 @@ def test_idempotent_replay_does_not_re_execute() -> None:
 
     asyncio.run(scenario())
     assert tool.invocations == [9]  # executed exactly once
+
+
+def test_strict_domain_output_uses_json_semantics_for_initial_result_and_replay() -> None:
+    """The toolbelt owns the durable JSON boundary; individual tools keep precise domain types."""
+
+    class _TupleInput(ToolInput):
+        pass
+
+    class _TupleOutput(ToolOutput):
+        values: tuple[str, ...]
+
+    class _TupleTool(Tool):
+        name = "tuple-output"
+        input_model = _TupleInput
+        output_model = _TupleOutput
+
+        def __init__(self) -> None:
+            self.invocations = 0
+
+        async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+            del inputs, ctx
+            self.invocations += 1
+            return ToolResult(
+                tool=self.name,
+                version=self.version,
+                references={"values": ("one", "two")},
+            )
+
+    tool = _TupleTool()
+    reg = ToolRegistry()
+    reg.register(tool, make_default=True)
+
+    store = InMemoryStore()
+
+    async def scenario() -> None:
+        first = await invoke_tool(
+            reg,
+            tool.name,
+            {},
+            human_ctx(),
+            idempotency_key="json-domain-output",
+            store=store,
+            idempotency_ttl_s=TTL,
+        )
+        assert first.references == {"values": ["one", "two"]}
+
+        second = await invoke_tool(
+            reg,
+            tool.name,
+            {},
+            human_ctx(),
+            idempotency_key="json-domain-output",
+            store=store,
+            idempotency_ttl_s=TTL,
+        )
+        assert second.replayed is True
+        assert second.references == {"values": ["one", "two"]}
+
+    asyncio.run(scenario())
+    assert tool.invocations == 1
+
+
+def test_strict_typed_json_output_validates_and_replays_without_reexecution() -> None:
+    class _StrictOutput(ToolOutput):
+        object_id: UUID
+        related_ids: tuple[UUID, ...]
+
+    class _StrictEcho(EchoTool):
+        name = "strict_echo"
+        output_model = _StrictOutput
+
+        async def invoke(self, inputs, ctx):  # type: ignore[no-untyped-def]
+            del ctx
+            self.invocations.append(inputs.value)
+            output = _StrictOutput(
+                object_id=UUID("11111111-1111-4111-8111-111111111111"),
+                related_ids=(UUID("22222222-2222-4222-8222-222222222222"),),
+            )
+            return ToolResult(
+                tool=self.name,
+                version=self.version,
+                references=output.model_dump(mode="json"),
+            )
+
+    tool = _StrictEcho()
+    reg = _registry(tool)
+    store = InMemoryStore()
+
+    async def scenario() -> None:
+        first = await invoke_tool(
+            reg,
+            tool.name,
+            {"value": 9},
+            human_ctx(),
+            idempotency_key="strict-json",
+            store=store,
+            idempotency_ttl_s=TTL,
+        )
+        second = await invoke_tool(
+            reg,
+            tool.name,
+            {"value": 9},
+            human_ctx(),
+            idempotency_key="strict-json",
+            store=store,
+            idempotency_ttl_s=TTL,
+        )
+        assert first.references == {
+            "object_id": "11111111-1111-4111-8111-111111111111",
+            "related_ids": ["22222222-2222-4222-8222-222222222222"],
+        }
+        assert second.references == first.references
+        assert second.replayed is True
+
+    asyncio.run(scenario())
+    assert tool.invocations == [9]
 
 
 def test_same_key_different_body_conflicts_409() -> None:

@@ -1,5 +1,6 @@
 import { fontFaceDescriptors, registerKitFontFaces } from "./canvaskit/loadCanvasKit";
 import { effectiveFaceMeta } from "./canvaskit/fontFaces";
+import { lumenFetch } from "./editorConfig";
 
 /**
  * Curated FONT LIBRARY (canvas + DOM legs): fetch the shared library manifest
@@ -73,7 +74,7 @@ let libraryPromise: Promise<FontLibrary> | null = null;
 export function fetchFontLibrary({ apiBaseUrl, fetchImpl }: FontLibraryOptions): Promise<FontLibrary> {
   libraryPromise ??= (async () => {
     const doFetch: typeof fetch | undefined =
-      fetchImpl ?? (typeof fetch !== "undefined" ? (input, init) => fetch(input, init) : undefined);
+      fetchImpl ?? (typeof fetch !== "undefined" ? lumenFetch : undefined);
     if (!doFetch) {
       return EMPTY_LIBRARY;
     }
@@ -154,7 +155,7 @@ export async function loadLibraryFontFaces(
     return false;
   }
   const doFetch: typeof fetch | undefined =
-    fetchImpl ?? (typeof fetch !== "undefined" ? (input, init) => fetch(input, init) : undefined);
+    fetchImpl ?? (typeof fetch !== "undefined" ? lumenFetch : undefined);
   if (!doFetch) {
     return false;
   }

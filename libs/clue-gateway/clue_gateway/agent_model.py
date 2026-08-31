@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from collections.abc import AsyncIterator, Iterator, Sequence
@@ -23,7 +24,7 @@ from pydantic import ConfigDict, SecretStr, model_validator
 from clue_config.gateway import GatewayConfig
 from clue_core.gateway import TokenUsage
 from clue_gateway.tracing import record_model_call
-from clue_obs.otel import ATTR_MODEL, SPAN_LLM_GATEWAY_CALL, traced_step
+from clue_obs.otel import ATTR_AGENT_ROLE, ATTR_MODEL, SPAN_LLM_GATEWAY_CALL, traced_step
 
 __all__ = [
     "GovernedAgentChatModel",
@@ -76,6 +77,22 @@ def _without_unsupported_patterns(node: Any) -> Any:
 _REQUESTED_MODEL_KEY = "clue_requested_model"
 _ANSWERING_MODEL_KEY = "clue_answering_model"
 _COST_CENTS_KEY = "clue_cost_cents"
+_ROLE_KEY = "clue_role"
+
+
+def _catalog_input_modalities(model_entry: dict[str, Any]) -> list[str] | None:
+    """A catalog entry's input modalities, handling BOTH observed OpenRouter shapes:
+    ``architecture.input_modalities`` (a list) and ``architecture.modality`` (a
+    string like ``text+image->text``). None = the entry names neither (unknown)."""
+    architecture = model_entry.get("architecture") or {}
+    modalities = architecture.get("input_modalities")
+    if isinstance(modalities, list):
+        return [str(m).lower() for m in modalities]
+    modality = architecture.get("modality")
+    if isinstance(modality, str) and modality:
+        input_side = modality.split("->", 1)[0]
+        return [part.strip().lower() for part in input_side.split("+") if part.strip()]
+    return None
 
 
 class GovernedAgentChatModel(BaseChatModel):
@@ -87,6 +104,10 @@ class GovernedAgentChatModel(BaseChatModel):
     model_ids: tuple[str, ...]
     requested_model: str
     gateway_config: GatewayConfig
+    # P3.2: the agent-role label this instance answers for (one instance per role is the
+    # attribution mechanism — LangChain callbacks and usage records are per-instance).
+    # None = an unlabelled platform model; nothing changes for existing call sites.
+    attribution_role: str | None = None
 
     @model_validator(mode="after")
     def _validate_candidates(self) -> GovernedAgentChatModel:
@@ -136,6 +157,7 @@ class GovernedAgentChatModel(BaseChatModel):
         with traced_step(
             SPAN_LLM_GATEWAY_CALL,
             **{ATTR_MODEL: self.requested_model},
+            **({ATTR_AGENT_ROLE: self.attribution_role} if self.attribution_role else {}),
         ) as span:
             started = time.perf_counter()
             result, served_model = self._generate_with_fallback(
@@ -154,6 +176,7 @@ class GovernedAgentChatModel(BaseChatModel):
                 usage=usage,
                 cost_cents=cost,
                 duration_ms=(time.perf_counter() - started) * 1000.0,
+                role=self.attribution_role,
             )
             return result
 
@@ -167,6 +190,7 @@ class GovernedAgentChatModel(BaseChatModel):
         with traced_step(
             SPAN_LLM_GATEWAY_CALL,
             **{ATTR_MODEL: self.requested_model},
+            **({ATTR_AGENT_ROLE: self.attribution_role} if self.attribution_role else {}),
         ) as span:
             started = time.perf_counter()
             result, served_model = await self._agenerate_with_fallback(
@@ -185,6 +209,7 @@ class GovernedAgentChatModel(BaseChatModel):
                 usage=usage,
                 cost_cents=cost,
                 duration_ms=(time.perf_counter() - started) * 1000.0,
+                role=self.attribution_role,
             )
             return result
 
@@ -198,6 +223,7 @@ class GovernedAgentChatModel(BaseChatModel):
         with traced_step(
             SPAN_LLM_GATEWAY_CALL,
             **{ATTR_MODEL: self.requested_model},
+            **({ATTR_AGENT_ROLE: self.attribution_role} if self.attribution_role else {}),
         ) as span:
             started = time.perf_counter()
             last_message: AIMessageChunk | None = None
@@ -223,6 +249,7 @@ class GovernedAgentChatModel(BaseChatModel):
                 usage=usage,
                 cost_cents=cost,
                 duration_ms=(time.perf_counter() - started) * 1000.0,
+                role=self.attribution_role,
             )
 
     async def _astream(
@@ -235,6 +262,7 @@ class GovernedAgentChatModel(BaseChatModel):
         with traced_step(
             SPAN_LLM_GATEWAY_CALL,
             **{ATTR_MODEL: self.requested_model},
+            **({ATTR_AGENT_ROLE: self.attribution_role} if self.attribution_role else {}),
         ) as span:
             started = time.perf_counter()
             last_message: AIMessageChunk | None = None
@@ -260,6 +288,7 @@ class GovernedAgentChatModel(BaseChatModel):
                 usage=usage,
                 cost_cents=cost,
                 duration_ms=(time.perf_counter() - started) * 1000.0,
+                role=self.attribution_role,
             )
 
     def _generate_with_fallback(
@@ -388,6 +417,7 @@ class GovernedAgentChatModel(BaseChatModel):
             _REQUESTED_MODEL_KEY: self.requested_model,
             _ANSWERING_MODEL_KEY: served,
             _COST_CENTS_KEY: str(cost),
+            **({_ROLE_KEY: self.attribution_role} if self.attribution_role else {}),
         }
         return usage, served, cost
 
@@ -407,14 +437,18 @@ class GovernedAgentChatModel(BaseChatModel):
         )
         input_tokens = 0
         output_tokens = 0
+        cached_tokens = 0
         if isinstance(message, AIMessage | AIMessageChunk):
             raw_usage = message.usage_metadata
             if raw_usage is not None:
                 input_tokens = raw_usage["input_tokens"]
                 output_tokens = raw_usage["output_tokens"]
+                details = raw_usage.get("input_token_details") or {}
+                cached_tokens = int(details.get("cache_read") or 0)
         usage = TokenUsage(
             prompt_tokens=input_tokens,
             completion_tokens=output_tokens,
+            cached_prompt_tokens=cached_tokens,
         )
         return usage, served, self.gateway_config.cost_cents(served, usage)
 
@@ -434,6 +468,7 @@ class OpenRouterAgentModelProvider:
         self._api_key = api_key
         self._http_client = http_client
         self._http_async_client = http_async_client
+        self._model_capabilities: dict[str, bool] | None = None
 
     def build(
         self,
@@ -443,8 +478,13 @@ class OpenRouterAgentModelProvider:
         max_retries: int,
         max_output_tokens: int,
         temperature: float,
+        role: str | None = None,
     ) -> BaseChatModel:
-        """Build a bounded primary/fallback model with truthful answering-model attribution."""
+        """Build a bounded primary/fallback model with truthful answering-model attribution.
+
+        ``role`` (P3.2) labels every usage record/span this instance produces — the design
+        runtime builds one instance per trio role, so per-role attribution is structural.
+        """
 
         if not model_id.strip():
             raise ValueError("model_id must be non-empty")
@@ -469,6 +509,7 @@ class OpenRouterAgentModelProvider:
                 max_retries=max_retries,
                 max_output_tokens=max_output_tokens,
                 temperature=temperature,
+                role=role,
             )
             for candidate in candidates
         )
@@ -477,7 +518,43 @@ class OpenRouterAgentModelProvider:
             model_ids=tuple(candidates),
             requested_model=model_id,
             gateway_config=self._config,
+            attribution_role=role,
         )
+
+    def supports_image_input(self, model_id: str) -> bool | None:
+        """Pre-spend vision capability from the provider's model catalog (P3.2).
+
+        Replaces the design runtime's raw-key ``GET /models`` probe with a provider-owned
+        seam. ``True``/``False`` from the catalog's ``architecture.input_modalities``;
+        ``None`` when the model is not listed or the catalog is unreachable — the CALLER
+        chooses how hard to fail (the design harness fails closed before any spend).
+        The catalog is fetched once per provider instance.
+        """
+        if self._model_capabilities is None:
+            import httpx
+
+            try:
+                client = self._http_client
+                url = f"{self._config.base_url.rstrip('/')}/models"
+                headers = {"Authorization": f"Bearer {self._api_key.get_secret_value()}"}
+                if client is not None:
+                    response = client.get(url, headers=headers)
+                else:
+                    response = httpx.get(url, headers=headers, timeout=30.0)
+                response.raise_for_status()
+                payload = response.json()
+            except Exception:  # noqa: BLE001 - unreachable catalog = honest "unknown"
+                return None
+            capabilities: dict[str, bool] = {}
+            for entry in payload.get("data", []):
+                modalities = _catalog_input_modalities(entry)
+                if modalities is None:
+                    # Entry present but carries no modality metadata: honestly
+                    # unknown — absent from the dict, NOT recorded as text-only.
+                    continue
+                capabilities[str(entry.get("id"))] = "image" in modalities
+            self._model_capabilities = capabilities
+        return self._model_capabilities.get(model_id)
 
     def _build_openrouter_model(
         self,
@@ -487,10 +564,43 @@ class OpenRouterAgentModelProvider:
         max_retries: int,
         max_output_tokens: int,
         temperature: float,
+        role: str | None = None,
     ) -> BaseChatModel:
         # OpenRouter's Responses API is stateless. Clue/DeepAgents therefore continues to replay
         # the complete durable message history and never uses ``previous_response_id``.
-        reasoning = _reasoning_request(self._config, model_id=model_id)
+        reasoning = _reasoning_request(self._config, model_id=model_id, role=role)
+        # P3.2: the OpenRouter economics knobs ride the request body (config, not code).
+        extra_body: dict[str, Any] = {}
+        if self._config.openrouter_provider_sort is not None:
+            extra_body["provider"] = {"sort": self._config.openrouter_provider_sort}
+        if self._config.openrouter_usage_include:
+            extra_body["usage"] = {"include": True}
+        if self._config.openrouter_chat_completions_fallback and not model_id.startswith("openai/"):
+            # OpenRouter's ``/responses`` translation for non-OpenAI providers rejects the
+            # platform conversation's array-shaped message content (grok-4.6 400s
+            # ``invalid_union: expected string, received array`` on the tool-result follow-up —
+            # live, 2026-08-27; the design deepagent's plain-string turns pass, which is why
+            # this is config-scoped, not unconditional). On chat-completions the reasoning
+            # request rides ``extra_body`` — Responses-only keys (``summary``) stripped.
+            if reasoning is not None:
+                chat_reasoning = {
+                    k: v for k, v in reasoning.items() if k in ("effort", "max_tokens")
+                }
+                if chat_reasoning:
+                    extra_body["reasoning"] = chat_reasoning
+            return ChatOpenAI(  # type: ignore[call-arg]
+                model=model_id,
+                api_key=self._api_key,
+                base_url=self._config.base_url,
+                timeout=timeout_s,
+                max_retries=max_retries,
+                max_tokens=max_output_tokens,
+                temperature=temperature,
+                stream_usage=True,
+                http_client=self._http_client,
+                http_async_client=self._http_async_client,
+                extra_body=extra_body or None,
+            )
         # Runtime aliases are intentionally friendlier than ChatOpenAI's generated static type.
         return ChatOpenAI(  # type: ignore[call-arg]
             model=model_id,
@@ -506,15 +616,25 @@ class OpenRouterAgentModelProvider:
             http_client=self._http_client,
             http_async_client=self._http_async_client,
             reasoning=reasoning,
+            extra_body=extra_body or None,
         )
 
 
-def _reasoning_request(config: GatewayConfig, *, model_id: str) -> dict[str, Any] | None:
+def _reasoning_request(
+    config: GatewayConfig, *, model_id: str, role: str | None = None
+) -> dict[str, Any] | None:
     """The provider ``reasoning`` block for one governed agent model — config first, baseline else.
 
-    **The baseline (no config).** GPT-5.6's current governed default is reasoning ``none``,
-    expressed in the native Responses shape so it can be tuned by eval-backed policy without
-    returning to Chat params. Every other model asks for nothing.
+    **The per-role environment override (founder ruling 2026-08-31).** When the call is built
+    for a named role and ``<ROLE>_AGENT_MODEL_EFFORT`` is set non-blank (e.g.
+    ``HEAD_OF_ABM_AGENT_MODEL_EFFORT=high``), that effort replaces whatever effort the config
+    or baseline chose — the deployment names the effort the way ``<ROLE>_AGENT_MODEL`` names
+    the model, with no new profile version. Blank/unset changes nothing below.
+
+    **The baseline (no config).** The production Head-of-ABM model
+    ``openai/gpt-5.6-terra`` uses reasoning ``high``. Other GPT-5.6 routes retain reasoning
+    ``none`` and every non-GPT-5.6 model asks for nothing. The explicit Responses shape keeps the
+    policy inspectable and overrideable without returning to Chat params.
 
     **The override (``GatewayConfig.agent_reasoning``).** Set only by ``default_gateway_config``
     under the dev-only ``CLUE_CHAT_REASONING_TRACE_MODE=raw`` lens, which a production process is
@@ -544,8 +664,17 @@ def _reasoning_request(config: GatewayConfig, *, model_id: str) -> dict[str, Any
     configured = config.agent_reasoning
     if configured is not None:
         payload = configured.as_provider_payload()
-        return dict(payload) if payload else None
-    return {"effort": "none"} if model_id.startswith("openai/gpt-5.6") else None
+        reasoning = dict(payload) if payload else None
+    elif model_id == "openai/gpt-5.6-terra":
+        reasoning = {"effort": "high"}
+    else:
+        reasoning = {"effort": "none"} if model_id.startswith("openai/gpt-5.6") else None
+    if role:
+        effort = os.environ.get(f"{role.upper()}_AGENT_MODEL_EFFORT", "").strip()
+        if effort:
+            reasoning = dict(reasoning or {})
+            reasoning["effort"] = effort
+    return reasoning
 
 
 def _served_model_from_result(result: ChatResult, *, fallback: str) -> str:

@@ -1,0 +1,297 @@
+"use client";
+
+import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  customComponentPropsToOperation,
+  type CustomComponentFormBinding,
+  type CustomComponentPropCommit,
+} from "../adapter/custom-component-form";
+import { buildWebLayerRows } from "../adapter/layers";
+import { richTextCommitToOperation } from "../adapter/rich-text-commit";
+import {
+  richTextLinkCommit,
+  richTextLinkSectionVisible,
+  type RichTextLinkBinding,
+  type RichTextLinkTrigger,
+} from "../adapter/rich-text-link-section";
+import { buildThemeColorOptions } from "../adapter/theme-options";
+import type {
+  WebArtifactCanvasControls,
+  WebRichTextSessionState,
+} from "../components/web-artifact-canvas";
+import type { RichTextDocument } from "../engine/webDocuments";
+import { useCustomComponentArtifact } from "./use-custom-component-artifact";
+import { useInspectorWrites } from "./use-inspector-writes";
+import { useReplaceImage } from "./use-replace-image";
+import { useWebArtifactSelection } from "./use-web-artifact-selection";
+import { useWebTheme } from "./use-web-theme";
+
+// Chat-flow slice 2: the web editing session, extracted VERBATIM from
+// EditorSurface's hooks region so a second mount (the chats route's artifact
+// rail + inspector dock) composes the exact same machinery. The hook TAKES
+// `activeArtifactId` (and the page's `documentIds` map) as input and owns NO
+// shell controller — the artifact route and the chats route each keep their
+// own; this is only the document/selection/write/theme session behind them.
+
+export type WebEditingSession = ReturnType<typeof useWebEditingSession>;
+
+export function useWebEditingSession({
+  activeArtifactId,
+  documentIds,
+  enabled = true,
+}: {
+  /** The caller's OWN shell controller's active artifact tab. */
+  activeArtifactId: string | null;
+  /** W2.1: artifact id → design-document id, from the page's read-seam fetch. */
+  documentIds: Record<string, string> | undefined;
+  /**
+   * AD2.7 (audit finding F3): the caller's kind guard.
+   *
+   * Both mounts call this hook unconditionally — React forbids a conditional
+   * hook — so before AD2.7 an AD document was fed to the WEB legs: every ad
+   * load fetched `/documents/{id}/web/theme` and `/documents/{id}` (web shape)
+   * and swallowed the resulting 409s. The kind therefore rides in as a
+   * PARAMETER: a mount showing an ad passes `false` and every leg below sees a
+   * null document id, which is already the "no document, no fetch" path each
+   * of them has always had.
+   *
+   * Defaults to `true`, so a caller that only mounts web artifacts (and every
+   * existing test) behaves exactly as before.
+   */
+  enabled?: boolean;
+}) {
+  const activeDocumentId =
+    enabled && activeArtifactId
+      ? (documentIds?.[activeArtifactId] ?? null)
+      : null;
+  // W2.2: the canvas bridge's nonce-validated selections joined with the
+  // loaded document → {node, nodeInfo} + schema + hydrated inspector state.
+  // W3.2: after a committed write the reload nonce bumps — the document
+  // refetches (fresh currentVersion → next base_version) and the canvas
+  // remounts its render (rotating the bridge nonce with the rebuilt DOM).
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const webSelection = useWebArtifactSelection(activeDocumentId, reloadNonce);
+  const canvasControls = useRef<WebArtifactCanvasControls | null>(null);
+  const onWriteReload = useCallback(() => {
+    setReloadNonce((nonce) => nonce + 1);
+  }, []);
+  const writes = useInspectorWrites({
+    document: webSelection.document,
+    documentId: activeDocumentId,
+    onReload: onWriteReload,
+    selection: webSelection.selection,
+  });
+
+  // W4.8a: the in-iframe rich-text session, mirrored up by the canvas. Held
+  // here because two surfaces outside the canvas need it — the inline error
+  // slot, and the inspector's conditional Link-to.
+  const [richTextSession, setRichTextSession] = useState<WebRichTextSessionState>({
+    editingNodeId: null,
+    richTextSelection: null,
+    richTextError: null,
+  });
+
+  // W4.8b: the inspector's range-bound Link-to reports an invalid href, and
+  // the one inline error line under the inspector header shows it (no new UI —
+  // the ledgered failure ruling). Stamped with the node whose session raised
+  // it, so a stale error can never reappear over a LATER session's section.
+  const [richTextLinkError, setRichTextLinkError] = useState<{
+    message: string;
+    nodeId: string;
+  } | null>(null);
+
+  // The commit path: ONE `set_rich_text` op through the SAME manual-edits
+  // controller every inspector write uses (one in-flight mutation,
+  // `base_version` per apply, 409 → quiet reload + note, 422 → first
+  // diagnostic inline). Source semantics, WebEditorApp.tsx:331-340.
+  //
+  // Carried-over source caveat: `applyOps` no-ops while another write is in
+  // flight, and by commit time the frame has already destroyed its Lexical
+  // session — so a commit that lands mid-write is lost. The toolbar's
+  // `disabled` (richTextBusy) narrows the window; the frame's own
+  // focusout/⌘-Enter paths can still hit it. Same upstream.
+  const applyOps = writes.applyOps;
+  const loadedDocument = webSelection.document;
+  const onRichTextCommit = useCallback(
+    (nodeId: string, content: RichTextDocument) => {
+      const operation = richTextCommitToOperation(loadedDocument, nodeId, content);
+      if (!operation) return;
+      applyOps([operation], "rich_text_commit");
+    },
+    [applyOps, loadedDocument],
+  );
+
+  // W4.8b (contract item 3): the TEXT schema's "Link to" section binds to the
+  // LIVE rich-text range — so it exists only while there is one, and its
+  // writes are range-link COMMANDS, never the node-prop write path (a text
+  // node has no href to write). Absent ⇒ the inspector renders no Link-to
+  // section for text at all (mapping contract §2: hidden = absent).
+  const richTextEditingNodeId = richTextSession.editingNodeId;
+  const richTextRangeSelection = richTextSession.richTextSelection;
+  const onRichTextLinkInteraction = useCallback(
+    (active: boolean) => {
+      if (!richTextEditingNodeId) return;
+      canvasControls.current?.setRichTextInteractionActive(
+        richTextEditingNodeId,
+        active,
+      );
+    },
+    [richTextEditingNodeId],
+  );
+  const onRichTextSubmitLink = useCallback(
+    (href: string, newTab: boolean, trigger: RichTextLinkTrigger) => {
+      if (!richTextEditingNodeId || !richTextRangeSelection) return;
+      const decision = richTextLinkCommit({
+        href,
+        linkState: richTextRangeSelection.link.state,
+        newTab,
+        trigger,
+      });
+      if (decision.kind === "invalid") {
+        setRichTextLinkError({
+          message: decision.error,
+          nodeId: richTextEditingNodeId,
+        });
+        return;
+      }
+      setRichTextLinkError(null);
+      if (decision.kind === "none") return;
+      canvasControls.current?.commandRichText(
+        richTextEditingNodeId,
+        decision.command,
+      );
+    },
+    [richTextEditingNodeId, richTextRangeSelection],
+  );
+  const richTextLinkVisible = richTextLinkSectionVisible(richTextSession);
+  const richTextRange: RichTextLinkBinding | null =
+    richTextLinkVisible && richTextEditingNodeId && richTextRangeSelection
+      ? {
+          nodeId: richTextEditingNodeId,
+          onInteractionChange: onRichTextLinkInteraction,
+          onSubmitLink: onRichTextSubmitLink,
+          selection: richTextRangeSelection,
+        }
+      : null;
+
+  // W4.7 (contract item 34): a selected CUSTOM COMPONENT gets the
+  // schema-driven props form. Its schema is the pinned artifact's manifest, so
+  // the form waits on a read the canvas does not perform: the account comes
+  // from the loaded document (only a derived, account-bound doc has one) and
+  // the artifact pin from the node itself. Either missing → no fetch, no form.
+  const selectedNode = webSelection.selection?.node ?? null;
+  const customComponentNode =
+    selectedNode?.kind === "custom_component" ? selectedNode : null;
+  const customComponentArtifact = useCustomComponentArtifact(
+    customComponentNode ? (loadedDocument?.accountId ?? null) : null,
+    customComponentNode?.artifact_id ?? null,
+  );
+  // One prop settles → the whole props object goes back as ONE
+  // `set_node_props` op through the SAME manual-edits controller (one
+  // in-flight, `base_version`, 409/422 handling) — no second write path. The
+  // intent string is the source's own.
+  const onCommitCustomComponentProp: CustomComponentPropCommit = useCallback(
+    (name, value) => {
+      if (!customComponentNode) return;
+      const operation = customComponentPropsToOperation(
+        loadedDocument,
+        customComponentNode,
+        name,
+        value,
+      );
+      if (!operation) return;
+      applyOps([operation], "set_custom_component_props");
+    },
+    [applyOps, customComponentNode, loadedDocument],
+  );
+  // Ledgered ruling (2026-08-18): while the artifact loads, or if its fetch
+  // failed, the binding is NULL and the props section is simply absent — the
+  // §5 layout fallback stands alone, no loading shell and no error chrome.
+  // Item 34's scope is the form.
+  const customComponentForm: CustomComponentFormBinding | null =
+    customComponentNode && customComponentArtifact.status === "ready"
+      ? {
+          artifact: customComponentArtifact.artifact,
+          busy: writes.busy,
+          onCommitProp: onCommitCustomComponentProp,
+          props: customComponentNode.props ?? {},
+        }
+      : null;
+
+  // W4.2 (§1 row 12): the Replace-image pick — upload the file to the asset
+  // store, then apply `upsert_asset` (new records only) + `replace_asset` as
+  // one batch through the SAME manual-edits controller, so the edit carries
+  // `base_version`, reloads on success, and reports failure in the one inline
+  // slot the inspector already renders.
+  const onReplaceImage = useReplaceImage({
+    applyOps: writes.applyOps,
+    document: webSelection.document,
+    onError: writes.reportError,
+    selection: webSelection.selection,
+  });
+
+  const page = webSelection.document?.webDoc?.pages?.[0];
+  const layerRows =
+    page?.root && page.nodes
+      ? buildWebLayerRows(
+          { nodes: page.nodes, page_root: page.root },
+          webSelection.selection?.node.id ?? null,
+        )
+      : undefined;
+
+  // W4.0: the document's own theme feeds the inspector's color pickers. A
+  // document without one (or a failed fetch) yields no options and every
+  // picker keeps the dummy's fixture palette.
+  const theme = useWebTheme(activeDocumentId);
+  const themeColors = useMemo(() => buildThemeColorOptions(theme), [theme]);
+
+  // W2.3: layer-row click → postMessage into the iframe → frame echoes
+  // `select` → ordinary selection path.
+  const onSelectLayer = useCallback((nodeId: string) => {
+    canvasControls.current?.selectNode(nodeId);
+  }, []);
+
+  // W3.1: what the mount holds — the write adapter (W3.2) resolves events
+  // against exactly these three values.
+  const addressing = {
+    artifactId: activeArtifactId,
+    documentVersion: webSelection.document?.currentVersion ?? null,
+    selectionId: webSelection.selection?.node.id ?? null,
+  };
+
+  // W4.8a: one inline error slot, rich-text first — a failed runtime load or
+  // session error is what the user just did, so it outranks a stale write
+  // error (source: WebEditorApp.tsx:1297). W4.8b extends the same precedence
+  // by one rung: a rejected link href is the most recent thing of all, and it
+  // shows only while ITS section is on screen for ITS node — no new UI, per
+  // the ledgered failure ruling.
+  const inspectorError =
+    (richTextLinkVisible && richTextLinkError?.nodeId === richTextEditingNodeId
+      ? richTextLinkError.message
+      : null) ??
+    richTextSession.richTextError ??
+    writes.error;
+
+  return {
+    activeDocumentId,
+    addressing,
+    canvasControls,
+    customComponentForm,
+    inspectorError,
+    layerRows,
+    onReplaceImage,
+    onRichTextCommit,
+    onRichTextSessionChange: setRichTextSession,
+    onSelectLayer,
+    onWriteReload,
+    redoDisabled: (webSelection.document?.redoDepth ?? 0) === 0,
+    reloadNonce,
+    richTextRange,
+    richTextSession,
+    theme,
+    themeColors,
+    undoDisabled: (webSelection.document?.undoDepth ?? 0) === 0,
+    webSelection,
+    writes,
+  };
+}

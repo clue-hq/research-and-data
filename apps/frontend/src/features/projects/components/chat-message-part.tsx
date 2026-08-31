@@ -15,8 +15,8 @@ import {
   SourcesTrigger,
 } from "@/components/ai-elements/sources";
 import { MessageResponse } from "@/components/ai-elements/message-response";
-import type { ChatGatePart, ChatPart, GateDecision } from "../model/chat-parts";
-import type { GateCardModel } from "../model/chat-gate";
+import type { ChatGatePart, ChatPart } from "../model/chat-parts";
+import type { GateCardModel, GateDecisionInput } from "../model/chat-gate";
 import type { TranscriptTurnState } from "../model/chat-transcript";
 import { ChatAgentActivity, ChatReasoning } from "./chat-agent-activity";
 import { ChatGateCard } from "./chat-gate-card";
@@ -35,7 +35,11 @@ import styles from "./project-flow.module.css";
 export interface ChatPartActions {
   busy: boolean;
   gateFor(part: ChatGatePart): GateCardModel | null;
-  onGateDecision(card: GateCardModel, decision: GateDecision): void;
+  onGateDecision(
+    card: GateCardModel,
+    input: GateDecisionInput,
+  ): void;
+  onGateRecovery(card: GateCardModel): void;
 }
 
 export function ChatMessagePartView({
@@ -100,6 +104,7 @@ export function ChatMessagePartView({
           busy={actions.busy}
           card={card}
           onDecide={actions.onGateDecision}
+          onRecover={actions.onGateRecovery}
         />
       );
     }
@@ -121,16 +126,19 @@ export function ChatMessagePartView({
             />
           </SourcesTrigger>
           <SourcesContent className={styles.projectSourcesContent}>
-            {part.items.map((item) => (
-              <Source
-                href={item.url ?? undefined}
-                key={item.sourceId}
-                title={item.title ?? item.sourceId}
-              >
-                <span>{item.title ?? item.sourceId}</span>
-                {item.url ? <ProjectIcon name="link" size={10} /> : null}
-              </Source>
-            ))}
+            {part.items.map((item, index) => {
+              const label = item.title?.trim() || `Source ${index + 1}`;
+              return (
+                <Source
+                  href={item.url ?? undefined}
+                  key={item.sourceId}
+                  title={label}
+                >
+                  <span>{label}</span>
+                  {item.url ? <ProjectIcon name="link" size={10} /> : null}
+                </Source>
+              );
+            })}
           </SourcesContent>
         </Sources>
       );

@@ -205,6 +205,28 @@ def test_canonical_r0_contract_fixture_is_fully_valid(
     }
 
 
+def test_account_profile_run_can_exclude_committee_discovery(
+    canonical_fixture: dict[str, Any],
+) -> None:
+    payload = cast(
+        dict[str, Any],
+        _resolve_fixture_refs(
+            copy.deepcopy(canonical_fixture["account_lifecycle"]), canonical_fixture
+        ),
+    )
+    selection = payload["selection"]
+    selection["committee_source_keys"] = []
+    selection["admitted_source_keys"] = [
+        source for source in selection["admitted_source_keys"] if source != "sumble_people"
+    ]
+    payload["operations"] = ["account_profile"]
+
+    lifecycle = ResearchRunLifecycleContract.model_validate(payload)
+
+    assert tuple(item.value for item in lifecycle.operations) == ("account_profile",)
+    assert lifecycle.selection.committee_source_keys == ()
+
+
 def test_account_result_can_losslessly_project_multiple_grounded_committee_contacts(
     canonical_fixture: dict[str, Any],
 ) -> None:

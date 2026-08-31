@@ -17,11 +17,14 @@ existence leak).
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_core import (
@@ -103,7 +106,7 @@ def _matrix_contact_selection() -> ContactResearchSelection:
 # tool -> ("precondition", exact reason tuple) | ("success", a required reference key)
 _MATRIX: dict[str, tuple[str, object]] = {
     "reverse_profile": ("success", "client_entity_id"),
-    "synthesize_icps": ("precondition", ("no_client_kb",)),
+    "synthesize_icps": ("precondition", ("stage0_scope_not_found",)),
     "confirm_icp": ("precondition", ("no_client_kb",)),
     "import_accounts": ("precondition", ("no_active_icp",)),
     "discover_accounts": ("precondition", ("run_not_found",)),
@@ -125,6 +128,10 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # M8D R10: the promoted entity-research launch/read tools refuse fail-closed when the fleet
     # services are not composed (this matrix builds the toolbelt without them).
     "launch_account_research": (
+        "precondition",
+        ("entity_research_agent_not_composed",),
+    ),
+    "launch_selected_account_research": (
         "precondition",
         ("entity_research_agent_not_composed",),
     ),
@@ -161,6 +168,10 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # and refuses on scope, which is the guard that actually matters for it.
     "inspect_statement_history": ("precondition", ("statement_evidence_not_configured",)),
     "inspect_readiness_history": ("precondition", ("stage0_project_not_found",)),
+    "list_client_knowledge": ("precondition", ("client_knowledge_unavailable",)),
+    "inspect_client_claim": ("precondition", ("client_knowledge_unavailable",)),
+    "list_product_knowledge": ("precondition", ("product_knowledge_unavailable",)),
+    "inspect_product_claim": ("precondition", ("product_knowledge_unavailable",)),
     "estimate_project": ("success", "estimated_cost_cents"),
     "start_project_run": ("success", "project_run_id"),
     "pause_run": ("precondition", ("run_not_found",)),
@@ -186,7 +197,24 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # FI Lane D D4 / §3-P5(a). The gate tool's first prerequisite is the *turn* it would address the
     # gate to: a ref naming no turn of this workspace proves no addressee, so it refuses rather than
     # presenting a gate nobody is entitled to answer.
+    # The thread-wedge guard (adversarial-review fix): under the hermetic env the design
+    # runtime is off, and a leg opened on such a deployment is a thread nothing can serve —
+    # so the runtime refusal outranks the storage one.
+    "finish_design_leg": ("precondition", ("design_leg_runtime_not_configured",)),
+    "open_design_leg": ("precondition", ("design_leg_runtime_not_configured",)),
     "open_directive_confirmation_gate": ("precondition", ("gate_turn_not_found",)),
+    # Stage-0 hardening: ICP confirmation resolves the execution-bound project before it accepts a
+    # draft or a presenting turn. This matrix has no governed execution, so trusted scope is the
+    # first fail-closed boundary.
+    "open_icp_confirmation_gate": ("precondition", ("stage0_scope_not_found",)),
+    "open_discovery_configuration_gate": (
+        "precondition",
+        ("stage0_turn_scope_not_found",),
+    ),
+    "open_product_selection_gate": (
+        "precondition",
+        ("product_selection_scope_unavailable",),
+    ),
     "submit_onboarding_input": ("precondition", ("artifact_not_found",)),
     "start_recon": ("precondition", ("onboarding_input_not_found",)),
     "record_interview_answer": ("precondition", ("onboarding_input_not_found",)),
@@ -195,7 +223,7 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "override_stage0_readiness": ("precondition", ("readiness_not_found",)),
     "start_confirmed_project_run": (
         "precondition",
-        ("confirmed_stage0_context_not_found",),
+        ("stage0_turn_scope_not_found",),
     ),
     "draft_account_research_directive": (
         "precondition",
@@ -205,13 +233,91 @@ _MATRIX: dict[str, tuple[str, object]] = {
         "precondition",
         ("research_directive_not_found",),
     ),
+    # Lane E E1: this matrix builds the toolbelt without the prose synthesizers, so the governed
+    # synthesis surface refuses fail-closed on composition before it reads anything.
+    "synthesize_entity_prose": ("precondition", ("prose_synthesis_not_composed",)),
+    # Lane E E3: same posture for the positioning surface — the tool registers everywhere so the
+    # name set (and the C6 authority check over it) is identical in every process, and an
+    # uncomposed one refuses on composition before it reads a job.
+    "synthesize_value_narrative": ("precondition", ("value_narrative_not_composed",)),
+    # Part II D6 — the design subsystem's governed write path. The envelopes are registered in
+    # EVERY process (the C6 authority audit is a strict set equality, so a registry whose shape
+    # follows `design_runtime_enabled` would break composition the moment the switch flipped),
+    # but a platform build without a design runtime composes no design host, so each one refuses
+    # this single reason code before touching a row. Their real preconditions
+    # (`design_document_not_found`, `design_publish_slug_taken`, `design_account_exists`, …) are
+    # exercised against a live design host in the design API's own suite.
+    "design_apply_edits": ("precondition", ("design_runtime_not_configured",)),
+    "design_apply_operations": ("precondition", ("design_runtime_not_configured",)),
+    "design_apply_web_operations": ("precondition", ("design_runtime_not_configured",)),
+    "design_attach_brand_kit": ("precondition", ("design_runtime_not_configured",)),
+    "design_compile_component": ("precondition", ("design_runtime_not_configured",)),
+    "design_create_document": ("precondition", ("design_runtime_not_configured",)),
+    "design_create_snapshot": ("precondition", ("design_runtime_not_configured",)),
+    "design_create_web_account": ("precondition", ("design_runtime_not_configured",)),
+    "design_create_web_template": ("precondition", ("design_runtime_not_configured",)),
+    "design_delete_web_account": ("precondition", ("design_runtime_not_configured",)),
+    "design_derive_web_document": ("precondition", ("design_runtime_not_configured",)),
+    "design_finalize_document": ("precondition", ("design_runtime_not_configured",)),
+    "design_persist_preflight": ("precondition", ("design_runtime_not_configured",)),
+    "design_publish_web": ("precondition", ("design_runtime_not_configured",)),
+    "design_record_diagnostics": ("precondition", ("design_runtime_not_configured",)),
+    "design_redo_document": ("precondition", ("design_runtime_not_configured",)),
+    "design_redo_web_document": ("precondition", ("design_runtime_not_configured",)),
+    "design_replace_scene": ("precondition", ("design_runtime_not_configured",)),
+    "design_rollback_web_publish": ("precondition", ("design_runtime_not_configured",)),
+    "design_set_agent_instructions": ("precondition", ("design_runtime_not_configured",)),
+    "design_set_layout_managed_editing": (
+        "precondition",
+        ("design_runtime_not_configured",),
+    ),
+    "design_start_agent_turn": ("precondition", ("design_runtime_not_configured",)),
+    "design_start_web_turn": ("precondition", ("design_runtime_not_configured",)),
+    "design_undo_document": ("precondition", ("design_runtime_not_configured",)),
+    "design_undo_web_document": ("precondition", ("design_runtime_not_configured",)),
+    "design_unpublish_web": ("precondition", ("design_runtime_not_configured",)),
+    "design_update_web_account": ("precondition", ("design_runtime_not_configured",)),
+    "design_write_component_source": ("precondition", ("design_runtime_not_configured",)),
+    "design_advance_instance_batch": ("precondition", ("design_runtime_not_configured",)),
+    "design_advance_web_batch": ("precondition", ("design_runtime_not_configured",)),
+    "design_create_brand_compatibility_report": (
+        "precondition",
+        ("design_runtime_not_configured",),
+    ),
+    "design_create_brand_kit": ("precondition", ("design_runtime_not_configured",)),
+    "design_create_instance_batch": ("precondition", ("design_runtime_not_configured",)),
+    "design_create_web_batch": ("precondition", ("design_runtime_not_configured",)),
+    "design_delete_asset": ("precondition", ("design_runtime_not_configured",)),
+    "design_delete_binding_set": ("precondition", ("design_runtime_not_configured",)),
+    "design_derive_instance": ("precondition", ("design_runtime_not_configured",)),
+    "design_ingest_ad_assets": ("precondition", ("design_runtime_not_configured",)),
+    "design_ingest_assets": ("precondition", ("design_runtime_not_configured",)),
+    "design_ingest_pdf": ("precondition", ("design_runtime_not_configured",)),
+    "design_ingest_website": ("precondition", ("design_runtime_not_configured",)),
+    "design_link_ad_pregenerated_assets": (
+        "precondition",
+        ("design_runtime_not_configured",),
+    ),
+    "design_publish_ad_dna_card": ("precondition", ("design_runtime_not_configured",)),
+    "design_record_ad_creatives": ("precondition", ("design_runtime_not_configured",)),
+    "design_publish_brand_kit_version": ("precondition", ("design_runtime_not_configured",)),
+    "design_register_asset_record": ("precondition", ("design_runtime_not_configured",)),
+    "design_register_captured_assets": ("precondition", ("design_runtime_not_configured",)),
+    "design_register_generated_asset": ("precondition", ("design_runtime_not_configured",)),
+    "design_register_qr_asset": ("precondition", ("design_runtime_not_configured",)),
+    "design_set_asset_description": ("precondition", ("design_runtime_not_configured",)),
+    "design_set_asset_status": ("precondition", ("design_runtime_not_configured",)),
+    "design_set_brand_kit_approval": ("precondition", ("design_runtime_not_configured",)),
+    "design_upsert_binding_set": ("precondition", ("design_runtime_not_configured",)),
 }
 
 
 def _bodies() -> dict[str, dict[str, object]]:
     return {
         "reverse_profile": {"name": "Acme Robotics", "website": "https://acme.example"},
-        "synthesize_icps": {"client_entity_id": _UUID()},
+        # The current @2 synthesis contract accepts no model-authored scope; the execution binding
+        # supplies it. Keeping this empty is itself an authority-boundary assertion.
+        "synthesize_icps": {},
         "confirm_icp": {
             "client_entity_id": _UUID(),
             "proposal": ICPProposal(icp_key="matrix").model_dump(mode="json"),
@@ -245,6 +351,12 @@ def _bodies() -> dict[str, dict[str, object]]:
             "account_entity_ids": [_UUID()],
             "approved_budget_cap_cents": "1",
             "expected_estimated_cost_cents": "1",
+        },
+        "launch_selected_account_research": {
+            "project_run_id": _UUID(),
+            "research_directive_id": _UUID(),
+            "account_entity_ids": [_UUID()],
+            "source_turn_ref": f"turn-action:{_UUID()}",
         },
         "launch_contact_research": {
             "selection_id": _UUID(),
@@ -315,6 +427,27 @@ def _bodies() -> dict[str, dict[str, object]]:
         },
         "inspect_statement_history": {"project_id": "project_missing"},
         "inspect_readiness_history": {"project_id": "project_missing"},
+        "list_client_knowledge": {
+            "client_entity_id": _UUID(),
+            "client_kb_version": 1,
+        },
+        "inspect_client_claim": {
+            "client_entity_id": _UUID(),
+            "client_kb_version": 1,
+            "claim_id": _UUID(),
+        },
+        "list_product_knowledge": {
+            "client_entity_id": _UUID(),
+            "product_id": "product_missing",
+            "product_kb_version": 1,
+            "limit": 1,
+        },
+        "inspect_product_claim": {
+            "client_entity_id": _UUID(),
+            "product_id": "product_missing",
+            "product_kb_version": 1,
+            "claim_id": _UUID(),
+        },
         "estimate_project": {},
         "start_project_run": {
             "project_id": "prj_replaced_by_test",
@@ -378,10 +511,27 @@ def _bodies() -> dict[str, dict[str, object]]:
         "rename_thread": {"thread_id": "thr_absent", "title": "renamed"},
         "set_thread_pinned": {"thread_id": "thr_absent", "pinned": True},
         "archive_thread": {"thread_id": "thr_absent"},
+        "finish_design_leg": {
+            "source_turn_ref": f"turn-action:{_UUID()}",
+            "reason": "abandoned",
+            "summary": "matrix probe",
+        },
+        "open_design_leg": {
+            "source_turn_ref": f"turn-action:{_UUID()}",
+            "brief": "matrix probe",
+        },
         "open_directive_confirmation_gate": {
             "project_run_id": _UUID(),
             "research_directive_id": _UUID(),
             "account_entity_ids": [_UUID()],
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "open_icp_confirmation_gate": {
+            "icp_key": "matrix",
+            "icp_version": 1,
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "open_product_selection_gate": {
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
         "submit_onboarding_input": {
@@ -408,25 +558,22 @@ def _bodies() -> dict[str, dict[str, object]]:
             "project_id": "project_missing",
             "product_id": "product_missing",
         },
-        "evaluate_stage0_readiness": {
-            "brand_id": "brand_missing",
-            "gate": "icp_synthesis",
-            "metrics": {},
-        },
+        # The current @2 readiness contract accepts only the gate. Scope and metrics are trusted
+        # backend inputs, so stale v1 fields must not be smuggled into this audit fixture.
+        "evaluate_stage0_readiness": {"gate": "icp_synthesis"},
         "override_stage0_readiness": {
             "readiness_decision_id": _UUID(),
             "gate": "icp_synthesis",
             "reason": "matrix",
         },
-        "start_confirmed_project_run": {
-            "project_id": "project_missing",
-            "client_entity_id": _UUID(),
-            "client_kb_version": 1,
-            "product_id": "product_missing",
-            "product_context_version_id": _UUID(),
-            "readiness_decision_id": _UUID(),
-            "icp_key": "matrix",
-            "icp_version": 1,
+        # The current @2 run-entry contract has no model-authored lineage fields.
+        "start_confirmed_project_run": {},
+        "open_discovery_configuration_gate": {
+            "requested_account_count": 10,
+            "search_intent": "Find companies matching the approved ICP",
+            "must_have_criteria": ["Industry: healthcare"],
+            "exclusion_criteria": [],
+            "source_turn_ref": "turn-action:00000000-0000-4000-8000-000000000000",
         },
         "draft_account_research_directive": {
             "project_id": "project_missing",
@@ -455,6 +602,274 @@ def _bodies() -> dict[str, dict[str, object]]:
         "confirm_account_research_directive": {
             "directive_id": _UUID(),
             "expected_sha256": "0" * 64,
+        },
+        "synthesize_entity_prose": {"job_id": _UUID(), "field_key": "account.summary"},
+        "synthesize_value_narrative": {"job_id": _UUID()},
+        "design_publish_web": {
+            "document_id": "doc_matrix",
+            "public_base": "https://design.example",
+            "slug": "matrix-page",
+        },
+        "design_unpublish_web": {"slug": "matrix-page"},
+        "design_rollback_web_publish": {"slug": "matrix-page"},
+        "design_create_web_account": {"account_id": "acc_matrix", "name": "Matrix Co"},
+        "design_update_web_account": {
+            "account_id": "acc_matrix",
+            "patch": {"name": "Matrix Co."},
+        },
+        "design_delete_web_account": {"account_id": "acc_matrix"},
+        "design_write_component_source": {
+            "account_id": "acc_matrix",
+            "slug": "hero",
+            "expected_version": 0,
+            "files": {"hero.tsx": "export default () => null;"},
+            "provenance": {"kind": "custom_component_source_write"},
+        },
+        "design_compile_component": {
+            "account_id": "acc_matrix",
+            "slug": "hero",
+            "source_version": 1,
+        },
+        # Round B — scene documents, history, diagnostics.
+        "design_create_document": {
+            "document_id": "doc_matrix",
+            "scene": {"meta": {"id": "doc_matrix", "title": "Matrix"}},
+        },
+        "design_set_agent_instructions": {
+            "document_id": "doc_matrix",
+            "instructions": "Keep it on brand.",
+        },
+        "design_set_layout_managed_editing": {
+            "document_id": "doc_matrix",
+            "enabled": True,
+        },
+        "design_replace_scene": {
+            "document_id": "doc_matrix",
+            "scene": {"meta": {"id": "doc_matrix", "title": "Matrix"}},
+        },
+        "design_apply_operations": {
+            "document_id": "doc_matrix",
+            "scene": {"meta": {"id": "doc_matrix", "title": "Matrix"}},
+            "operations": [{"kind": "set_text", "id": "n1", "content": "hi"}],
+            "source": "editor",
+            "actor_kind": "human",
+        },
+        "design_apply_edits": {
+            "document_id": "doc_matrix",
+            "scene": {"meta": {"id": "doc_matrix", "title": "Matrix"}},
+            "operations": [{"kind": "set_text", "id": "n1", "content": "hi"}],
+            "source": "editor",
+            "actor_kind": "human",
+        },
+        "design_undo_document": {
+            "document_id": "doc_matrix",
+            "scene": {"meta": {"id": "doc_matrix", "title": "Matrix"}},
+            "operations": [{"kind": "set_text", "id": "n1", "content": "was"}],
+            "envelope": {"intent": "undo:b1", "reverts_batch_id": "b1"},
+        },
+        "design_redo_document": {
+            "document_id": "doc_matrix",
+            "scene": {"meta": {"id": "doc_matrix", "title": "Matrix"}},
+            "operations": [{"kind": "set_text", "id": "n1", "content": "hi"}],
+            "envelope": {"intent": "redo:b1", "reapplies_batch_id": "b1"},
+        },
+        "design_create_snapshot": {
+            "document_id": "doc_matrix",
+            "snapshot_id": "snap_matrix",
+            "reason": "matrix",
+        },
+        "design_persist_preflight": {
+            "document_id": "doc_matrix",
+            "scene": {"meta": {"id": "doc_matrix", "title": "Matrix"}},
+            "actor_id": "preflight",
+        },
+        "design_attach_brand_kit": {
+            "document_id": "doc_matrix",
+            "scene": {"meta": {"id": "doc_matrix", "title": "Matrix"}},
+            "operations": [{"kind": "update_document_brand"}],
+            "actor_kind": "human",
+            "effective_brand": {"source": "brand_kit_library", "brand_kit": {"id": "bk_1"}},
+        },
+        "design_finalize_document": {
+            "document_id": "doc_matrix",
+            "template_revision_id": "tmpl_matrix",
+            "scene": {"meta": {"id": "doc_matrix", "title": "Matrix"}},
+            "actor_kind": "human",
+        },
+        "design_record_diagnostics": {
+            "document_id": "doc_matrix",
+            "kind": "export",
+            "diagnostics": [],
+        },
+        # Round B — website-mode documents.
+        "design_create_web_template": {
+            "document_id": "doc_matrix_tpl",
+            "web_doc": {"id": "doc_matrix_tpl", "title": "Matrix template"},
+        },
+        "design_derive_web_document": {
+            "document_id": "doc_matrix_derived",
+            "web_doc": {"id": "doc_matrix_derived", "title": "Matrix — Acme"},
+            "template_document_id": "doc_matrix_tpl",
+            "template_doc_version": 1,
+        },
+        "design_apply_web_operations": {
+            "document_id": "doc_matrix",
+            "web_doc": {"id": "doc_matrix", "title": "Matrix"},
+            "operations": [{"kind": "set_text", "page_id": "home", "id": "n1"}],
+            "expected_base_version": 1,
+        },
+        "design_undo_web_document": {
+            "document_id": "doc_matrix",
+            "web_doc": {"id": "doc_matrix", "title": "Matrix"},
+            "operations": [{"kind": "set_text", "page_id": "home", "id": "n1"}],
+            "batch_id": "b1",
+            "expected_base_version": 1,
+        },
+        "design_redo_web_document": {
+            "document_id": "doc_matrix",
+            "web_doc": {"id": "doc_matrix", "title": "Matrix"},
+            "operations": [{"kind": "set_text", "page_id": "home", "id": "n1"}],
+            "batch_id": "b1",
+            "expected_base_version": 1,
+        },
+        # Round B — turn enqueues.
+        "design_start_agent_turn": {
+            "run_id": "run_matrix",
+            "work_id": _UUID(),
+            "document_id": "doc_matrix",
+            "envelope": {"kind": "agent_turn", "run_id": "run_matrix"},
+        },
+        "design_start_web_turn": {
+            "run_id": "run_matrix_web",
+            "work_id": _UUID(),
+            "document_id": "doc_matrix",
+            "envelope": {"kind": "web_turn", "run_id": "run_matrix_web"},
+        },
+        # Round C — brand kits.
+        "design_create_brand_kit": {
+            "brand_kit": {"id": "bk_matrix", "version": 1, "name": "Matrix"},
+            "brand_summary": {},
+            "source": "manual",
+        },
+        "design_publish_brand_kit_version": {
+            "brand_kit": {"id": "bk_matrix", "version": 2, "name": "Matrix"},
+            "brand_summary": {},
+            "source": "manual",
+            "expected_base_version": 1,
+        },
+        "design_set_brand_kit_approval": {
+            "brand_kit_id": "bk_matrix",
+            "approval_status": "approved",
+        },
+        "design_create_brand_compatibility_report": {
+            "report_id": "brand_report_matrix",
+            "from_brand_kit": {"id": "bk_matrix", "version": 1},
+            "to_brand_kit": {"id": "bk_matrix", "version": 2},
+            "report": {},
+        },
+        # Round C — ingestion enqueues.
+        "design_ingest_website": {
+            "job_id": "ingest_matrix",
+            "work_id": _UUID(),
+            "request": {"url": "https://matrix.example"},
+            "envelope": {"kind": "ingestion", "job_id": "ingest_matrix"},
+        },
+        "design_ingest_pdf": {
+            "job_id": "ingest_matrix_pdf",
+            "work_id": _UUID(),
+            "request": {"staged_digest": "0" * 64},
+            "envelope": {"kind": "ingestion", "job_id": "ingest_matrix_pdf"},
+        },
+        "design_ingest_assets": {
+            "job_id": "ingest_matrix_assets",
+            "work_id": _UUID(),
+            "request": {"files": []},
+            "envelope": {"kind": "ingestion", "job_id": "ingest_matrix_assets"},
+        },
+        # Brand Ad Assets v1 W2 — the ad-assets lane (design-side flag LUMEN_BRAND_AD_ASSETS
+        # gates its route; the envelopes are registered here like every other design tool).
+        "design_ingest_ad_assets": {
+            "job_id": "ingest_matrix_ad_assets",
+            "work_id": _UUID(),
+            "request": {"company_domain": "matrix.example"},
+            "envelope": {"kind": "ingestion", "job_id": "ingest_matrix_ad_assets"},
+        },
+        "design_record_ad_creatives": {
+            "creatives": [
+                {
+                    "creative_id": "adcre_matrix",
+                    "harvest_job_id": "ingest_matrix_ad_assets",
+                    "provider": "matrix",
+                    "ad_id": "1",
+                    "creative_url": "https://matrix.example/creative.png",
+                    "asset_id": "asset_ad_matrix",
+                    "fetched_at": "2026-08-26T00:00:00+00:00",
+                }
+            ]
+        },
+        "design_publish_ad_dna_card": {
+            "card_id": "adna_matrix",
+            "brand_kit_id": "bk_matrix",
+            "brand_kit_version": 1,
+            "card": {
+                "prose": "Every ad is one flat green field with a heavy headline on it.",
+                "style_groups": [{"name": "Matrix", "creative_ids": ["adcre_matrix"]}],
+            },
+        },
+        "design_link_ad_pregenerated_assets": {
+            "card_id": "adna_matrix",
+            "card_version": 1,
+            "links": [
+                {
+                    "asset_id": "asset_gen_matrix",
+                    "visual_system": "Matrix",
+                    "prompt": "an abstract ground",
+                }
+            ],
+        },
+        # Round C — the asset registry.
+        "design_register_asset_record": {"record": {"id": "asset_matrix"}},
+        "design_register_qr_asset": {"record": {"id": "asset_qr_matrix"}},
+        "design_register_generated_asset": {
+            "record": {"id": "asset_gen_matrix"},
+            "generation_key": "a" * 64,
+        },
+        "design_register_captured_assets": {"records": [{"id": "asset_ing_matrix"}]},
+        "design_set_asset_status": {"asset_id": "asset_matrix", "status": "archived"},
+        "design_delete_asset": {"asset_id": "asset_matrix"},
+        "design_set_asset_description": {"asset_id": "asset_matrix", "title": "Matrix"},
+        # Round C — personalization and both batch families.
+        "design_upsert_binding_set": {
+            "binding": {
+                "binding_set_id": "bind_matrix",
+                "template_revision_id": "rev_matrix",
+            },
+            "status": "valid",
+        },
+        "design_delete_binding_set": {"binding_set_id": "bind_matrix"},
+        "design_derive_instance": {
+            "instance": {
+                "instance_id": "inst_matrix",
+                "template_revision_id": "rev_matrix",
+                "binding_set_id": "bind_matrix",
+            }
+        },
+        "design_create_instance_batch": {"batch": {"batch_id": "batch_matrix"}},
+        "design_advance_instance_batch": {
+            "batch_id": "batch_matrix",
+            "expected_cursor": 0,
+            "cursor": 5,
+            "status": "running",
+            "counts": {},
+            "manifest": [],
+        },
+        "design_create_web_batch": {"batch": {"batch_id": "wbatch_matrix"}},
+        "design_advance_web_batch": {
+            "batch_id": "wbatch_matrix",
+            "expected_cursor": 0,
+            "cursor": 5,
+            "status": "partial",
+            "manifest": [],
         },
     }
 
@@ -855,11 +1270,49 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # account-deep launch boundary; M8D R10 adds the promoted separately confirmed
     # launch_account_research / launch_contact_research and their two run-read tools (44 → 48);
     # FI Lane D D0 adds REQ-21's four thread-shell tools (48 → 52), each with exactly one version,
-    # and D4 adds the one gate-presenting tool (52 → 53).
-    assert len(registry.names()) == 53
+    # and D4 adds the one gate-presenting tool (52 → 53); Lane E E1 adds the governed
+    # on-completion prose synthesis surface, and E3 the governed value-narrative positioning
+    # surface beside it (53 → 55 in the merged tree). The combined tree retains the Stage-0 ICP
+    # gate and selected-Account launch and adds S4's two Client-KB readers plus S5's two Product-KB
+    # readers and human-selection gate (55 → 62). Slice 5 retains synthesis @2 for replay and
+    # promotes presentation-bearing @3, so the address inventory grows by one without adding a
+    # new tool name.
+    # The part-iii merge registers the 49 design_* write envelopes and the two design-leg tools
+    # in every composition (63 + 51 = 114). Brand Ad Assets v1 W2 adds the ad-assets lane's
+    # four design_* envelopes — one ingestion enqueue and three lane writes (114 → 118).
+    assert len(registry.names()) == 118
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
-    assert len(registry) == 60
+    # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
+    # defaults. Corrected @2 contracts retain their immutable @1 versions, so the combined address
+    # inventory is larger than the name inventory without rewriting any historical contract.
+    # The part-iii merge adds the design write envelopes and leg tools to the address
+    # inventory as well (77 + 52 = 129). Brand Ad Assets v1 W2 adds four more, each at @1
+    # only — the lane is new, so it has no historical contract to retain (129 → 133).
+    assert len(registry) == 133
+    assert registry.descriptor("synthesize_icps").version == "3"
+    assert registry.descriptor("synthesize_icps", "2").version == "2"
+    assert registry.descriptor("start_confirmed_project_run").version == "3"
+    assert registry.descriptor("start_confirmed_project_run", "1").version == "1"
+    assert registry.descriptor("start_confirmed_project_run", "2").version == "2"
+    # launch_account_research / launch_contact_research and their two run-read tools (44 → 48).
+    # Part II D6 Round A adds the design subsystem's eight governed write tools (publishes ×3,
+    # personalization accounts ×3, custom components ×2) — registered in every process, live only
+    # where a design runtime is composed (48 -> 56). Round B adds twenty more: the scene
+    # document/history/diagnostics plane ×13, website-mode documents ×5 and the two turn
+    # enqueues (56 -> 76). Round C adds the last twenty-one: brand kits x4, ingestion
+    # enqueues x3, the asset registry x7, personalization + both batch families x7
+    # (76 -> 97). FI Lane D D0 adds REQ-21's four thread-shell tools, each with exactly one
+    # version, and D4 adds the one gate-presenting tool (97 -> 102 at the integration merge).
+    # PD-part3 P3.4 adds `open_design_leg` — the head-of-abm's delegation entry onto the design
+    # leg (102 -> 103) — and P3.5 adds `finish_design_leg`, the DESIGN-granted leg-level exit
+    # (103 -> 104). The part-iii integration merge unions this branch's own additions since the
+    # common base (104 + 10 = 114 names). Brand Ad Assets v1 W2 adds the ad-assets lane's four
+    # envelopes: one ingestion enqueue and three lane writes (114 -> 118).
+    assert len(registry.names()) == 118
+    # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
+    # project-run-scoped profile_contact@2 as the name-only default.
+    assert len(registry) == 133
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {
@@ -868,8 +1321,29 @@ def test_build_toolbelt_registers_the_full_set() -> None:
         "research_account_gaps@1",
         "research_account_gaps@2",
     }
-    assert registry.descriptor("draft_account_research_directive").version == "2"
+    # Slice 5 promoted presentation-bearing draft @3 as the default; confirm stays @2.
+    assert registry.descriptor("draft_account_research_directive").version == "3"
     assert registry.descriptor("confirm_account_research_directive").version == "2"
+
+
+def test_default_composition_gives_start_recon_an_autonomous_progress_factory() -> None:
+    """FI-4 slice 3: the production composition is the ONLY thing that turns on autonomous
+    per-field progress commits, and without them the onboarding screen shows nothing for the
+    whole fast lane (its own transaction stays uncommitted until the lane ends). An injected
+    factory must still fall back to the lane connection — a second checkout would deadlock a
+    single-connection harness — so both directions are pinned here."""
+    default_tool = build_toolbelt(storage=None, gateway=None).get("start_recon")
+    assert default_tool._field_progress_factory is not None  # type: ignore[attr-defined]
+
+    @asynccontextmanager
+    async def injected() -> AsyncIterator[AsyncConnection]:  # pragma: no cover - never entered
+        raise AssertionError("the composition must not open a connection")
+        yield
+
+    injected_tool = build_toolbelt(storage=None, gateway=None, conn_factory=injected).get(
+        "start_recon"
+    )
+    assert injected_tool._field_progress_factory is None  # type: ignore[attr-defined]
 
 
 def test_duplicate_tool_registration_is_impossible_by_construction() -> None:

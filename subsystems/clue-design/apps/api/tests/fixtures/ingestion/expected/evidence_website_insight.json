@@ -25,10 +25,11 @@
           ],
           "family": "Aeonik",
           "license": {
-            "embeddable": false,
+            "basis": "platform-terms",
+            "embeddable": true,
             "name": "self-hosted",
             "restrictions": [
-              "License not verified at ingestion; do not embed in print exports without confirmation."
+              "Embed permission for this workspace's own brand font comes from the platform Terms of Use, not from a license verified at ingestion: off-platform or print reuse still requires license confirmation, and the license name above is what the source declared."
             ],
             "source_url": null,
             "subsettable": false
@@ -1346,8 +1347,8 @@
         "radius.button": {
           "description": null,
           "provenance": {
-            "confidence": 0.6,
-            "source": "derived:radius-scale"
+            "confidence": 0.8,
+            "source": "website:https://www.insighthealth.example :: button radius"
           },
           "role": "radius",
           "value": {
@@ -1362,8 +1363,8 @@
         "radius.card": {
           "description": null,
           "provenance": {
-            "confidence": 0.6,
-            "source": "derived:radius-scale"
+            "confidence": 0.8,
+            "source": "website:https://www.insighthealth.example :: card radius"
           },
           "role": "radius",
           "value": {
@@ -1394,8 +1395,8 @@
         "radius.lg": {
           "description": null,
           "provenance": {
-            "confidence": 0.6,
-            "source": "derived:radius-scale"
+            "confidence": 0.8,
+            "source": "website:https://www.insighthealth.example :: card radius"
           },
           "role": "radius",
           "value": {
@@ -1410,8 +1411,8 @@
         "radius.md": {
           "description": null,
           "provenance": {
-            "confidence": 0.6,
-            "source": "derived:radius-scale"
+            "confidence": 0.8,
+            "source": "website:https://www.insighthealth.example :: button radius"
           },
           "role": "radius",
           "value": {
@@ -1488,7 +1489,25 @@
           }
         }
       },
-      "shadows": {},
+      "shadows": {
+        "shadow.sm": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.8,
+            "source": "website:https://www.insighthealth.example :: card shadow"
+          },
+          "value": {
+            "default": {
+              "blur": 24.0,
+              "color": "#1D1C1D1F",
+              "spread": 0.0,
+              "x": 0.0,
+              "y": 8.0
+            },
+            "modes": {}
+          }
+        }
+      },
       "spacing": {
         "space.0": {
           "description": null,
@@ -1557,8 +1576,8 @@
         "space.16": {
           "description": null,
           "provenance": {
-            "confidence": 0.6,
-            "source": "derived:spacing-scale"
+            "confidence": 0.8,
+            "source": "website:https://www.insighthealth.example :: section gap"
           },
           "role": "spacing",
           "value": {
@@ -1669,8 +1688,8 @@
         "space.card.padding": {
           "description": null,
           "provenance": {
-            "confidence": 0.6,
-            "source": "derived:spacing-scale"
+            "confidence": 0.8,
+            "source": "website:https://www.insighthealth.example :: card padding"
           },
           "role": "spacing",
           "value": {
@@ -1717,8 +1736,8 @@
         "space.page.margin": {
           "description": null,
           "provenance": {
-            "confidence": 0.6,
-            "source": "derived:spacing-scale"
+            "confidence": 0.8,
+            "source": "website:https://www.insighthealth.example :: page margin"
           },
           "role": "spacing",
           "value": {
@@ -1733,8 +1752,8 @@
         "space.section": {
           "description": null,
           "provenance": {
-            "confidence": 0.6,
-            "source": "derived:spacing-scale"
+            "confidence": 0.8,
+            "source": "website:https://www.insighthealth.example :: section gap"
           },
           "role": "spacing",
           "value": {

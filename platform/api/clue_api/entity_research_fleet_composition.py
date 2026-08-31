@@ -30,6 +30,7 @@ from clue_api.contact_research_fleet_composition import (
     ContactResearchFleetComposition,
     build_contact_research_fleet_composition,
 )
+from clue_api.prose_synthesis_step import ProseSynthesisStep
 from clue_core.entity_research import ResearchSubjectType
 from clue_db import ConnFactory, transaction
 from clue_fleet import EntityResearchJobError
@@ -146,8 +147,14 @@ def build_entity_research_fleet_composition(
     contact_channel_actions: ContactResearchChannelActionResolver,
     model_policy: ModelPolicy,
     conn_factory: ConnFactory = transaction,
+    prose_step: ProseSynthesisStep | None = None,
+    enforce_budget: bool = True,
 ) -> EntityResearchFleetComposition:
-    """Promote the R6/R8 units behind the one R2/R9 production work-kind seam."""
+    """Promote the R6/R8 units behind the one R2/R9 production work-kind seam.
+
+    ``enforce_budget`` (FI pilot budget-controls) reaches BOTH fleets from here, because the R9
+    admission coordinator is the one shared seam where the job/run cap can refuse a tool batch.
+    """
 
     accounts = build_account_research_fleet_composition(
         storage=storage,
@@ -155,6 +162,11 @@ def build_entity_research_fleet_composition(
         provider_actions=account_provider_actions,
         model_policy=model_policy,
         conn_factory=conn_factory,
+        # Lane E: ONE step instance serves both lanes. The step authorizes nothing and holds no
+        # per-lane state — its operation id is already field-parameterized (`{job}:{field_key}`),
+        # so a second instance would disambiguate nothing and merely double the binds to remember.
+        prose_step=prose_step,
+        enforce_budget=enforce_budget,
     )
     contacts = build_contact_research_fleet_composition(
         storage=storage,
@@ -163,6 +175,8 @@ def build_entity_research_fleet_composition(
         channel_actions=contact_channel_actions,
         model_policy=model_policy,
         conn_factory=conn_factory,
+        prose_step=prose_step,
+        enforce_budget=enforce_budget,
     )
     return EntityResearchFleetComposition(
         accounts=accounts,

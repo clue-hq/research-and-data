@@ -79,6 +79,20 @@ _ENSURE = text(
     """
 )
 
+_ENSURE_MANY = text(
+    """
+    INSERT INTO project_account
+        (workspace_id, project_id, account_entity_id, added_via, added_at)
+    SELECT :workspace_id, :project_id, a.id, :added_via, :added_at
+    FROM account_entity a
+    WHERE a.workspace_id = :workspace_id
+      AND a.merged_into IS NULL
+      AND a.id IN :account_ids
+    ON CONFLICT (workspace_id, project_id, account_entity_id) DO NOTHING
+    RETURNING account_entity_id
+    """
+).bindparams(bindparam("account_ids", expanding=True, type_=PgUUID(as_uuid=True)))
+
 _BY_ACCOUNTS = text(
     """
     SELECT account_entity_id, project_id, added_via, added_at
@@ -145,6 +159,40 @@ async def ensure_project_account(
             "added_at": added_at or datetime.now(UTC),
         },
     )
+
+
+async def ensure_project_accounts(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+    account_entity_ids: Sequence[uuid.UUID],
+    added_via: str,
+    added_at: datetime | None = None,
+) -> frozenset[uuid.UUID]:
+    """Record many live canonical Accounts in one project and return the newly-added ids.
+
+    Existing memberships are intentionally absent from the returned set: callers can report them
+    as ``unchanged`` without rewriting their first-add provenance. Unknown, foreign-workspace, and
+    merged-away ids are skipped by the workspace/live Account selection and remain distinguishable
+    to a caller that compares this result with its own eligibility read.
+    """
+
+    if added_via not in ADDED_VIA:
+        raise ValueError(f"unknown added_via {added_via!r}; expected one of {ADDED_VIA}")
+    if not account_entity_ids:
+        return frozenset()
+    rows = await conn.execute(
+        _ENSURE_MANY,
+        {
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "account_ids": list(account_entity_ids),
+            "added_via": added_via,
+            "added_at": added_at or datetime.now(UTC),
+        },
+    )
+    return frozenset(uuid.UUID(str(account_id)) for account_id in rows.scalars())
 
 
 async def memberships_for_accounts(

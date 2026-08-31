@@ -71,7 +71,7 @@ export function createFixtureProjectHomeRepository(): ProjectHomeRepository {
         return { ...replay, turn: { ...replay.turn, replayed: true } };
       }
       const now = new Date().toISOString();
-      const href = `/projects/${FIXTURE_PROJECT_ID}?thread=${FIXTURE_THREAD_ID}`;
+      const href = `/projects/${FIXTURE_PROJECT_ID}/chats/${FIXTURE_THREAD_ID}`;
       const created: ProjectBootstrap = {
         href,
         project: {

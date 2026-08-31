@@ -102,6 +102,7 @@ from clue_research.identity import (
 )
 from clue_research.membership import ensure_project_account
 from clue_research.sources import seed_source_manifests
+from clue_research.stage0 import load_client_knowledge_pack
 from clue_storage import StorageBackend, content_address
 
 _ENRICHMENT_COLLECTION = TypeAdapter(tuple[ExaResponseEnrichment, ...])
@@ -810,6 +811,10 @@ class ExaWebsetsD4Materializer:
                     raise DiscoveryNotFound(f"D4 discovery plan {batch.discovery_plan_id}")
                 validate_discovery_plan_policy(plan_row.plan, DISCOVERY_ENVELOPE_POLICY_V1)
                 await load_core_pack(conn)
+                # Boot order: a source manifest's ``yields`` validate against the field
+                # registry, and the tier-3 ``exa_search`` seed yields ``client.*`` keys — so
+                # the client-knowledge pack must be loaded before the manifests are seeded.
+                await load_client_knowledge_pack(conn)
                 await seed_source_manifests(conn)
                 operations = await list_discovery_operations(
                     conn, workspace_id=workspace_id, batch_id=batch_id

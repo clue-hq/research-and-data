@@ -129,12 +129,24 @@ async def require_provider_spend_capacity(
     proposed_cents: CostCents,
     allowed_phases: frozenset[ProjectPhase],
     entity_research_job_id: UUID | None = None,
+    enforce_budget: bool = True,
 ) -> ProviderSpendCapacity:
     """Lock a run and authorize one new reservation against all provider ledgers.
 
     The caller must insert its ledger row before committing this transaction.  Replays must be
     detected before calling this function (and rechecked after the lock) because an existing
     operation consumes no new capacity.
+
+    ``enforce_budget`` is the FI pilot budget-controls switch
+    (``Settings.budget_controls_enabled``), threaded from the api composition roots through each
+    reserving service — never read here, so this function stays a pure durable primitive. With it
+    False the *money* comparison at the end no longer raises
+    :class:`ProviderSpendBudgetExceeded`; **everything else is unchanged**, which is the whole
+    point. The run is still locked, the run must still be ACTIVE, the phase/job authority is still
+    proved, the outstanding total is still computed, and the returned
+    :class:`ProviderSpendCapacity` still reports the true cap, spend and outstanding — so the
+    caller writes exactly the ledger row it always wrote and a pilot deployment's spend is recorded
+    honestly while simply exceeding its cap.
     """
 
     if proposed_cents < 0:
@@ -216,7 +228,7 @@ async def require_provider_spend_capacity(
     outstanding = Decimal(
         (await conn.execute(_OUTSTANDING_SQL, {"project_run_id": project_run_id})).scalar_one()
     )
-    if cap is not None and spent + outstanding + proposed_cents > cap:
+    if enforce_budget and cap is not None and spent + outstanding + proposed_cents > cap:
         raise ProviderSpendBudgetExceeded(
             "provider reservation exceeds project-run cap: "
             f"spent={spent}, outstanding={outstanding}, proposed={proposed_cents}, cap={cap}"

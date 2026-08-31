@@ -55,6 +55,13 @@ from clue_research.adapters.concrete import (
     default_scrape_backend,
 )
 from clue_research.adapters.extractors import CallableClaimExtractor, ExtractFn, span_for
+from clue_research.adapters.firecrawl_page import (
+    FIRECRAWL_PROVIDER_KEY,
+    FirecrawlPageFetcher,
+)
+from clue_research.adapters.page_fetcher_common import (
+    PageFetcherConfigurationError,
+)
 from clue_research.adapters.pipeline import (
     UnknownSourceError,
     cost_estimate,
@@ -69,6 +76,13 @@ from clue_research.adapters.registry import (
     register_adapter,
     registered_adapter_keys,
     unregister_adapter,
+)
+from clue_research.adapters.scrapling_page import (
+    SCRAPLING_PROVIDER_KEY,
+    ScraplingPageFetcher,
+    ScraplingPinnedTransport,
+    ScraplingTransport,
+    ScraplingTransportResponse,
 )
 from clue_research.adapters.seams import (
     AdapterError,
@@ -122,6 +136,15 @@ __all__ = [
     "FirecrawlScrapeBackend",
     "ScraplingScrapeBackend",
     "default_scrape_backend",
+    # durable official-site single-page providers (C3)
+    "FIRECRAWL_PROVIDER_KEY",
+    "SCRAPLING_PROVIDER_KEY",
+    "FirecrawlPageFetcher",
+    "PageFetcherConfigurationError",
+    "ScraplingPageFetcher",
+    "ScraplingPinnedTransport",
+    "ScraplingTransport",
+    "ScraplingTransportResponse",
     # extraction helpers
     "CallableClaimExtractor",
     "ExtractFn",

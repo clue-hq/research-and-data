@@ -20,6 +20,7 @@ from clue_research.resolvers.sumble.people import (
     SumblePeopleResponse,
     assert_no_contact_reveals,
     parse_people_response,
+    people_email_match_request,
     people_poll_request,
 )
 from clue_research.resolvers.sumble.teams import (
@@ -42,6 +43,18 @@ class SumbleCommitteeTransport(Protocol):
     ) -> tuple[SumblePeopleResponse, SumbleRawPayload]: ...
 
     def poll_people(
+        self, request_id: str, *, maximum_credits: int
+    ) -> tuple[SumblePeopleResponse, SumbleRawPayload]: ...
+
+
+class SumbleEmailTransport(Protocol):
+    """The paid, exact-person email subset of v9 People; separate from no-reveal enumeration."""
+
+    def submit_email(
+        self, linkedin_url: str, *, maximum_credits: int
+    ) -> tuple[SumblePeopleResponse, SumbleRawPayload]: ...
+
+    def poll_email(
         self, request_id: str, *, maximum_credits: int
     ) -> tuple[SumblePeopleResponse, SumbleRawPayload]: ...
 
@@ -71,6 +84,27 @@ class SumbleV9CommitteeClient:
         self, request_id: str, *, maximum_credits: int
     ) -> tuple[SumblePeopleResponse, SumbleRawPayload]:
         return self._people(people_poll_request(request_id), maximum_credits=maximum_credits)
+
+    def submit_email(
+        self, linkedin_url: str, *, maximum_credits: int
+    ) -> tuple[SumblePeopleResponse, SumbleRawPayload]:
+        body, documented_maximum = people_email_match_request(linkedin_url)
+        if maximum_credits != documented_maximum:
+            raise ValueError("Sumble email maximum must equal the pinned 10-credit contract")
+        return self._email(body, maximum_credits=maximum_credits)
+
+    def poll_email(
+        self, request_id: str, *, maximum_credits: int
+    ) -> tuple[SumblePeopleResponse, SumbleRawPayload]:
+        return self._email(people_poll_request(request_id), maximum_credits=maximum_credits)
+
+    def _email(
+        self, body: Mapping[str, Any], *, maximum_credits: int
+    ) -> tuple[SumblePeopleResponse, SumbleRawPayload]:
+        payload = self._request(PEOPLE_SOURCE_KEY, "/people", body)
+        response = parse_people_response(payload)
+        self._reconcile(response.credits_used, maximum_credits, source_key=PEOPLE_SOURCE_KEY)
+        return response, payload
 
     def _people(
         self, body: Mapping[str, Any], *, maximum_credits: int
@@ -115,6 +149,7 @@ def require_matching_people_request_id(
 
 __all__ = [
     "SumbleCommitteeTransport",
+    "SumbleEmailTransport",
     "SumbleRawPayload",
     "SumbleV9CommitteeClient",
     "require_matching_people_request_id",

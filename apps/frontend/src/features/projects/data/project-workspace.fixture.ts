@@ -6,7 +6,7 @@ import type {
 export const projectModels = [
   {
     description: "Clue's governed GPT-5.6 Terra conversation profile",
-    id: "head-of-abm@v23",
+    id: "head-of-abm@v32",
     label: "GPT-5.6 Terra",
     shortLabel: "GPT-5.6 Terra",
   },
@@ -19,7 +19,7 @@ export const projectHomeFixture: ProjectHome = {
     attachments: true,
     contextRefs: true,
   },
-  defaultAgentProfileId: "head-of-abm@v23",
+  defaultAgentProfileId: "head-of-abm@v32",
   defaultBrandId: "brand-clue-demo",
   entities: [
     {

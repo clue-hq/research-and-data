@@ -22,6 +22,7 @@ from clue_auth.models import (
     IdentityBundle,
     IdentityErasureResult,
     PlatformUser,
+    SelfServeProvisioningRecord,
     WorkspaceInvitation,
     WorkspaceMembership,
 )
@@ -44,7 +45,10 @@ def new_invitation_id() -> str:
     return "wsi_" + uuid4().hex
 
 
-_USER_COLUMNS = "user_id, display_name, status, created_at, suspended_at, disabled_at"
+_USER_COLUMNS = (
+    "user_id, display_name, first_name, last_name, job_role, "
+    "status, created_at, suspended_at, disabled_at"
+)
 _IDENTITY_COLUMNS = (
     "auth_identity_id, user_id, provider_key, provider_subject, status, linked_at, revoked_at"
 )
@@ -107,6 +111,64 @@ async def update_platform_user_display_name(
         {
             "user_id": user_id,
             "display_name": display_name.strip() if display_name and display_name.strip() else None,
+        },
+    )
+    row = result.mappings().first()
+    if row is None:
+        raise LifecycleTransitionError(f"platform_user {user_id!r} does not exist")
+    return _model(PlatformUser, row)
+
+
+def _optional(value: str | None) -> str | None:
+    """Normalize an optional profile value: whitespace-only and empty become NULL."""
+
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+async def update_platform_user_profile(
+    conn: AsyncConnection,
+    user_id: str,
+    *,
+    first_name: str | None,
+    last_name: str | None,
+    job_role: str | None,
+    display_name: str | None = None,
+) -> PlatformUser:
+    """Update the onboarding profile fields (uniform PATCH semantics).
+
+    ``None`` (or whitespace-only) means "not supplied — preserve the stored value" for every
+    field; there is no clear-a-field path here (review ruling: one semantics, not three).
+    ``display_name`` handling: an explicit value wins; otherwise the column is recomposed from
+    the effective "first last" only when it is empty OR still equals the previous automatic
+    composition — a display name a user chose by hand is never overwritten, while an
+    auto-composed one follows name corrections.
+    """
+
+    result = await conn.execute(
+        text(
+            f"UPDATE platform_user SET "
+            f"first_name = COALESCE(CAST(:first_name AS text), first_name), "
+            f"last_name = COALESCE(CAST(:last_name AS text), last_name), "
+            f"job_role = COALESCE(CAST(:job_role AS text), job_role), "
+            f"display_name = CASE "
+            f"  WHEN CAST(:explicit_display AS text) IS NOT NULL "
+            f"    THEN CAST(:explicit_display AS text) "
+            f"  WHEN display_name IS NULL OR display_name = NULLIF(btrim("
+            f"    COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')), '') "
+            f"  THEN NULLIF(btrim(COALESCE(CAST(:first_name AS text), first_name, '') || ' ' || "
+            f"    COALESCE(CAST(:last_name AS text), last_name, '')), '') "
+            f"  ELSE display_name END "
+            f"WHERE user_id = :user_id RETURNING {_USER_COLUMNS}"
+        ),
+        {
+            "user_id": user_id,
+            "first_name": _optional(first_name),
+            "last_name": _optional(last_name),
+            "job_role": _optional(job_role),
+            "explicit_display": _optional(display_name),
         },
     )
     row = result.mappings().first()
@@ -778,11 +840,24 @@ async def identity_bundle(conn: AsyncConnection, user_id: str) -> IdentityBundle
             {"user_id": user_id},
         )
     ).mappings()
+    provisioning_rows = (
+        await conn.execute(
+            text(
+                "SELECT auth_identity_id, user_id, workspace_id, brand_id, company_website, "
+                "created_at FROM self_serve_provisioning WHERE user_id = :user_id "
+                "ORDER BY created_at, auth_identity_id"
+            ),
+            {"user_id": user_id},
+        )
+    ).mappings()
     return IdentityBundle(
         user=user,
         auth_identities=await list_auth_identities(conn, user_id),
         memberships=await list_user_memberships(conn, user_id),
         accepted_invitations=tuple(_model(WorkspaceInvitation, row) for row in invitation_rows),
+        self_serve_provisionings=tuple(
+            _model(SelfServeProvisioningRecord, row) for row in provisioning_rows
+        ),
     )
 
 
@@ -794,11 +869,23 @@ async def erase_platform_user(
     The Clue ``user_id`` and membership rows survive because domain receipts must remain
     attributable. External subjects and accepted invitation addresses are replaced with stable,
     non-personal tombstones; every authentication mapping and membership is revoked.
+
+    ``workspace.name``/``brand.name`` deliberately survive even though self-serve provisioning
+    copies the submitted company name into both: a workspace is a shared org object other
+    members may still administer, so renaming it is not this function's call (review ruling
+    2026-08-12). ``self_serve_provisioning.company_website`` IS erased — it can identify a
+    solo founder. Known residual (slice-2 review BE-M7): the workspace-setup capture stores
+    the submitted URL as artifact BYTES (content-addressed blob + ``artifact`` row); those are
+    not reachable from here (append-only capture substrate, cross-package seam) and survive
+    erasure. The setup surface deliberately writes no ``onboarding_input.source_ref`` copy so
+    the un-redactable append-only row carries no URL; full artifact tombstoning rides the
+    B2/DSAR artifact machinery — tracked in ``_memory`` until that lands.
     """
     at = now or datetime.now(UTC)
     user_result = await conn.execute(
         text(
-            "UPDATE platform_user SET display_name = NULL, status = 'disabled', "
+            "UPDATE platform_user SET display_name = NULL, first_name = NULL, "
+            "last_name = NULL, job_role = NULL, status = 'disabled', "
             "disabled_at = COALESCE(disabled_at, :now) WHERE user_id = :user_id RETURNING user_id"
         ),
         {"user_id": user_id, "now": at},
@@ -828,9 +915,17 @@ async def erase_platform_user(
         ),
         {"user_id": user_id},
     )
+    provisionings = await conn.execute(
+        text(
+            "UPDATE self_serve_provisioning SET company_website = NULL "
+            "WHERE user_id = :user_id AND company_website IS NOT NULL"
+        ),
+        {"user_id": user_id},
+    )
     return IdentityErasureResult(
         user_id=user_id,
         auth_identities_revoked=identities.rowcount,
         memberships_revoked=memberships.rowcount,
         invitation_addresses_erased=invitations.rowcount,
+        provisioning_websites_erased=provisionings.rowcount,
     )

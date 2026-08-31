@@ -1,0 +1,16 @@
+{
+  "name": "design-04-cta-bigger",
+  "kind": "clearly_design",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [],
+  "message": "The CTA button feels small - bump it up and give it more contrast.",
+  "judgment": {
+    "action": "continue",
+    "reason": null
+  },
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": false
+  }
+}

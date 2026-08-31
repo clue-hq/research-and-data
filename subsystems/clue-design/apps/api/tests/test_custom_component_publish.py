@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import json
 import re
-import sqlite3
 import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
@@ -14,7 +13,11 @@ from urllib.parse import urlsplit
 import pytest
 from fastapi.testclient import TestClient
 
-from lumen_api.database import Repository, connect
+from conftest import make_client
+from sqlalchemy import text as sa_text
+from sqlalchemy.exc import DBAPIError
+
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
 
@@ -113,8 +116,8 @@ class RuntimeFrameParser(HTMLParser):
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> TestClient:
-    return TestClient(create_app(tmp_path / "api.sqlite3"))
+def client(tmp_path: Path, design_storage) -> TestClient:
+    return make_client(create_app(tmp_path / "engine-cache", storage=design_storage))
 
 
 def create_account(client: TestClient, account_id: str = "acc_publish") -> None:
@@ -171,15 +174,12 @@ def create_dialog_document(client: TestClient, document_id: str) -> dict:
         """,
     )
     assert ingested.get("web_doc"), ingested
-    repository = Repository(connect(client.app.state.database_path))
-    try:
-        return repository.create_document(
-            ingested["web_doc"],
-            doc_kind="web",
-            account_id="acc_publish",
-        )
-    finally:
-        repository.connection.close()
+    repository = HybridRepository()
+    return repository.create_document(
+        ingested["web_doc"],
+        doc_kind="web",
+        account_id="acc_publish",
+    )
 
 
 def attach_component(
@@ -273,7 +273,7 @@ def publish(client: TestClient, document_id: str, slug: str) -> dict:
 
 
 def test_publish_is_immutable_repin_scoped_and_rollback_exact(
-    client: TestClient,
+    client: TestClient, workspace_id: str
 ) -> None:
     create_account(client)
     artifact_v1 = compile_source(
@@ -289,9 +289,9 @@ def test_publish_is_immutable_repin_scoped_and_rollback_exact(
 
     first = publish(client, document["id"], "interactive-primary")
     sibling_publish = publish(client, sibling["id"], "interactive-sibling")
-    first_html = client.get("/p/interactive-primary").text
-    sibling_html = client.get("/p/interactive-sibling").text
-    first_manifest = client.get("/p/interactive-primary/manifest.json").json()
+    first_html = client.get(f"/w/{workspace_id}/p/interactive-primary").text
+    sibling_html = client.get(f"/w/{workspace_id}/p/interactive-sibling").text
+    first_manifest = client.get(f"/w/{workspace_id}/p/interactive-primary/manifest.json").json()
 
     assert first["publish_id"].startswith("webpub_")
     assert first["package_digest"]
@@ -323,16 +323,16 @@ def test_publish_is_immutable_repin_scoped_and_rollback_exact(
     )
     # Compiling a newer durable source does not consult or change either live
     # publish. Both still serve the exact first immutable revision.
-    assert client.get("/p/interactive-primary").text == first_html
-    assert client.get("/p/interactive-sibling").text == sibling_html
+    assert client.get(f"/w/{workspace_id}/p/interactive-primary").text == first_html
+    assert client.get(f"/w/{workspace_id}/p/interactive-sibling").text == sibling_html
 
     repin_component(client, document["id"], artifact_v2)
     republished = publish(client, document["id"], "interactive-primary")
-    second_html = client.get("/p/interactive-primary").text
+    second_html = client.get(f"/w/{workspace_id}/p/interactive-primary").text
     assert republished["publish_id"] != first["publish_id"]
     assert republished["package_digest"] != first["package_digest"]
     assert "Artifact version two" in str(runtime_frame(second_html)["srcdoc"])
-    assert client.get("/p/interactive-sibling").text == sibling_html
+    assert client.get(f"/w/{workspace_id}/p/interactive-sibling").text == sibling_html
     assert (
         client.get("/documents/doc_publish_sibling/web/publish").json()[
             "publish_id"
@@ -345,25 +345,25 @@ def test_publish_is_immutable_repin_scoped_and_rollback_exact(
     assert rolled.json()["publish_id"] == first["publish_id"]
     assert rolled.json()["package_digest"] == first["package_digest"]
     assert rolled.json()["html_digest"] == first["html_digest"]
-    assert client.get("/p/interactive-primary").text == first_html
+    assert client.get(f"/w/{workspace_id}/p/interactive-primary").text == first_html
     assert (
-        client.get("/p/interactive-primary/manifest.json").json()
+        client.get(f"/w/{workspace_id}/p/interactive-primary/manifest.json").json()
         == first_manifest
     )
 
     unpublished = client.delete("/web/publishes/interactive-primary")
     assert unpublished.status_code == 200
-    assert client.get("/p/interactive-primary").status_code == 404
+    assert client.get(f"/w/{workspace_id}/p/interactive-primary").status_code == 404
     assert (
-        client.get("/p/interactive-primary/manifest.json").status_code == 404
+        client.get(f"/w/{workspace_id}/p/interactive-primary/manifest.json").status_code == 404
     )
     reactivated = publish(client, document["id"], "interactive-primary")
     assert reactivated["publish_id"] != first["publish_id"]
-    assert client.get("/p/interactive-primary").status_code == 200
+    assert client.get(f"/w/{workspace_id}/p/interactive-primary").status_code == 200
 
 
 def test_publish_manifest_assets_csp_export_and_curated_packages(
-    client: TestClient,
+    client: TestClient, workspace_id: str
 ) -> None:
     create_account(client)
     interactive = compile_source(
@@ -376,8 +376,8 @@ def test_publish_manifest_assets_csp_export_and_curated_packages(
     attach_component(client, document["id"], interactive)
     published = publish(client, document["id"], "delivery-security")
 
-    page = client.get("/p/delivery-security")
-    manifest_response = client.get("/p/delivery-security/manifest.json")
+    page = client.get(f"/w/{workspace_id}/p/delivery-security")
+    manifest_response = client.get(f"/w/{workspace_id}/p/delivery-security/manifest.json")
     manifest = manifest_response.json()
     frame = runtime_frame(page.text)
     srcdoc = str(frame["srcdoc"])
@@ -423,9 +423,9 @@ def test_publish_manifest_assets_csp_export_and_curated_packages(
     first_asset = asset_records[0]
     digest = first_asset["digest"]
     wrong_extension = "css" if first_asset["extension"] != "css" else "js"
-    assert client.get(f"/p-assets/{digest}.{wrong_extension}").status_code == 404
-    assert client.get("/p-assets/../../api.sqlite3").status_code == 404
-    assert client.get("/p-assets/not-a-digest.js").status_code == 404
+    assert client.get(f"/w/{workspace_id}/p-assets/{digest}.{wrong_extension}").status_code == 404
+    assert client.get(f"/w/{workspace_id}/p-assets/../../api.sqlite3").status_code == 404
+    assert client.get(f"/w/{workspace_id}/p-assets/not-a-digest.js").status_code == 404
 
     exported = client.get(f"/documents/{document['id']}/web/export")
     assert exported.status_code == 200, exported.text
@@ -454,7 +454,7 @@ def test_publish_manifest_assets_csp_export_and_curated_packages(
 
 
 def test_publish_rejects_unresolved_tenant_pin_and_malicious_source(
-    client: TestClient,
+    client: TestClient, workspace_id: str
 ) -> None:
     create_account(client)
     create_account(client, "acc_other")
@@ -487,31 +487,44 @@ def test_publish_rejects_unresolved_tenant_pin_and_malicious_source(
         expected_version=0,
     )
     attach_component(client, document["id"], own)
-    repository = Repository(connect(client.app.state.database_path))
-    try:
-        stored = repository.require_document(document["id"])
-        scene = stored["scene"]
-        scene["pages"][0]["nodes"]["cc_counter"]["slug"] = "foreign-card"
-        scene["pages"][0]["nodes"]["cc_counter"]["artifact_id"] = foreign[
-            "artifact_id"
-        ]
-        scene["pages"][0]["nodes"]["cc_counter"]["props"] = {}
-        # Simulate corrupted storage below the checked-operation boundary. The
-        # publish builder must still enforce tenant resolution.
-        repository.connection.execute(
-            "UPDATE documents SET current_scene_json = ? WHERE id = ?",
-            (json.dumps(scene), document["id"]),
+    repository = HybridRepository()
+    stored = repository.require_document(document["id"])
+    scene = stored["scene"]
+    scene["pages"][0]["nodes"]["cc_counter"]["slug"] = "foreign-card"
+    scene["pages"][0]["nodes"]["cc_counter"]["artifact_id"] = foreign[
+        "artifact_id"
+    ]
+    scene["pages"][0]["nodes"]["cc_counter"]["props"] = {}
+    # Simulate corrupted storage below the checked-operation boundary. The
+    # publish builder must still enforce tenant resolution. Reaching into
+    # `_bridge` is deliberate: the write must land BELOW the operation
+    # boundary, and documents now live on Postgres (not SQLite).
+    repository._bridge._run(
+        lambda conn: conn.execute(
+            sa_text(
+                "UPDATE design_document SET current_scene_json = CAST(:s AS jsonb)"
+                " WHERE id = :d AND workspace_id = :w"
+            ),
+            {
+                "s": json.dumps(scene),
+                "d": document["id"],
+                "w": repository.workspace_id,
+            },
         )
-        repository.connection.commit()
-    finally:
-        repository.connection.close()
+    )
+    # The corruption must actually be at rest — a zero-row UPDATE would
+    # silently turn this whole test into a no-op.
+    corrupted = repository.require_document(document["id"])
+    corrupted_node = corrupted["scene"]["pages"][0]["nodes"]["cc_counter"]
+    assert corrupted_node["slug"] == "foreign-card"
+    assert corrupted_node["artifact_id"] == foreign["artifact_id"]
     rejected = client.post(
         f"/documents/{document['id']}/web/publish",
         json={"slug": "tenant-attack"},
     )
     assert rejected.status_code == 502
     assert "artifact_missing" in rejected.text
-    assert client.get("/p/tenant-attack").status_code == 404
+    assert client.get(f"/w/{workspace_id}/p/tenant-attack").status_code == 404
 
     malicious = client.put(
         "/web/accounts/acc_publish/custom-components/unsafe-card/source",
@@ -550,19 +563,25 @@ def test_publish_revision_rows_are_immutable(client: TestClient) -> None:
     attach_component(client, document["id"], artifact)
     published = publish(client, document["id"], "immutable-revision")
 
-    connection = connect(client.app.state.database_path)
-    try:
-        with pytest.raises(sqlite3.IntegrityError):
-            connection.execute(
-                "UPDATE web_publish_revisions SET html = 'tampered' "
-                "WHERE publish_id = ?",
-                (published["publish_id"],),
+    # D2.4B: publish history lives on Postgres and stays append-only — enforced by the
+    # design_web_publish_revision no-UPDATE / no-DELETE TRIGGERS instead of the old SQLite ones.
+    # Reaching into `_bridge` is deliberate: the mutation must be attempted straight at the
+    # table, below the API boundary. Each `_run` is its own transaction, so the refusal rolls
+    # itself back.
+    repository = HybridRepository()
+    for mutation in (
+        "UPDATE design_web_publish_revision SET html = 'tampered'"
+        " WHERE publish_id = :p AND workspace_id = :w",
+        "DELETE FROM design_web_publish_revision"
+        " WHERE publish_id = :p AND workspace_id = :w",
+    ):
+        with pytest.raises(DBAPIError, match="immutable|append-only"):
+            repository._bridge._run(
+                lambda conn, sql=mutation: conn.execute(
+                    sa_text(sql),
+                    {
+                        "p": published["publish_id"],
+                        "w": repository.workspace_id,
+                    },
+                )
             )
-        connection.rollback()
-        with pytest.raises(sqlite3.IntegrityError):
-            connection.execute(
-                "DELETE FROM web_publish_revisions WHERE publish_id = ?",
-                (published["publish_id"],),
-            )
-    finally:
-        connection.close()

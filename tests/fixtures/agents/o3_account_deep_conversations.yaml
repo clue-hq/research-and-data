@@ -13,13 +13,13 @@ scenarios:
   - name: five_accounts_with_fax_referral_direction
     user_turns:
       - "Research these five accounts, especially fax and referral coordination friction."
-    scripted_actions: [render_working_preview, distinguish_fields_from_hypotheses]
-    required_guidance: "Keep qualitative\nExa questions distinct from structured Sumble organization fields."
-    explicit_launch_go_ahead: false
+    scripted_actions: [draft_directive, launch_selected_account_research, report_receipt_as_enqueued_not_complete]
+    required_guidance: "If the user explicitly commands account research in that same message, draft the directive with\nan explicit Account scope equal to those references."
+    explicit_launch_go_ahead: true
   - name: remove_phone_reveals
     user_turns: ["Remove phone reveals from the plan."]
     scripted_actions: [set_contact_reveals_false, render_working_preview]
-    required_guidance: "Before account launch, present the exact accounts, fields, directional questions, admitted source\nplans, committee scope, privacy constraints, estimate, cap, and unresolved gates."
+    required_guidance: "Before account launch, establish the exact accounts, fields, directional questions, admitted\nsource plans, committee scope, privacy constraints, and unresolved prerequisites."
     explicit_launch_go_ahead: false
   - name: edit_before_confirm
     user_turns:
@@ -27,13 +27,13 @@ scenarios:
       - "Before I confirm, add fax and referral evidence and remove the blocker persona."
       - "Prepare that settled plan for confirmation."
     scripted_actions: [render_working_preview, revise_working_preview, draft_directive]
-    required_guidance: "This is a conversational procedure around\nseparately confirmed durable launches."
+    required_guidance: "This is a conversational procedure around\nexplicitly requested durable launches."
     explicit_launch_go_ahead: false
   - name: edit_after_launch
     user_turns:
       - "The current fleet is running. Add DAC coordination to future research."
     scripted_actions: [explain_frozen_launch, draft_successor_for_future_work]
-    required_guidance: "Keep conversing while either detached fleet runs."
+    required_guidance: "Keep conversing while a detached fleet runs."
     explicit_launch_go_ahead: false
   - name: explicit_launch
     user_turns:

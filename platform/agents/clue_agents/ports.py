@@ -172,6 +172,7 @@ class AgentModelProvider(Protocol):
         max_retries: int,
         max_output_tokens: int,
         temperature: float,
+        role: str | None = None,
     ) -> BaseChatModel: ...
 
 

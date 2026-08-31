@@ -186,7 +186,6 @@ async def _seed_scope(
             materials=materials,
         ),
         workspace_id=workspace_id,
-        product_id=product.product_id,
         budget_cap_cents=Decimal(0),
         max_source_tier=0,
     )

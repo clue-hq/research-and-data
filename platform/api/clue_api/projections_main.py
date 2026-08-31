@@ -13,12 +13,19 @@ from clue_api.composition import load_research_packs
 from clue_api.exa_targeted_enrichment import build_production_exa_targeted_starter
 from clue_api.exa_websets_lifecycle import ExaWebhookIngestor, build_exa_webhook_router
 from clue_api.execution_wiring import build_tool_invoker
+from clue_api.frontend_read.contact_email_lookup import build_contact_email_lookup_service
 from clue_api.narrative_wiring import register_narrative_wiring
 from clue_api.observability_wiring import build_observability_surface
+from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
 from clue_api.projections_app import create_projections_app
 from clue_api.research_view_runtime import (
     ProductionResearchViewRuntime,
     build_production_research_view_runtime,
+)
+from clue_api.run_composition import (
+    bind_stage0_search_resolver,
+    build_optional_platform_gateway,
+    build_stage0_claim_extractor,
 )
 from clue_api.storage_wiring import build_storage_backend
 from clue_api.sumble_account_gaps import build_production_sumble_account_gap_starter
@@ -26,7 +33,9 @@ from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Secrets, Settings, load_settings
 from clue_db import transaction
 from clue_obs import get_logger
+from clue_research.adapters import default_scrape_backend
 from clue_research.durable import BudgetEngine, DbBudgetStore
+from clue_research.resolvers import ScrapePolicy
 from clue_toolbelt import DbIdempotencyStore
 
 log = get_logger("clue_api.projections_main")
@@ -59,9 +68,48 @@ def build_application(
     if research_views is not None:
         register_compliance_wiring()
         register_narrative_wiring()
+    # FI-4 slice 2 (charter composition-backlog item 2): the live Stage-0 official-surface
+    # scrape composition — without it every production `start_recon` refuses before spend.
+    # Gated on the SAME flag as the /stage0/setup routes (review BE-M4): an unconfigured
+    # deployment is byte-identical to pre-slice-2 — `start_recon` keeps refusing everywhere,
+    # including via the generic POST /tools route, so the flag bounds the whole new paid
+    # scrape surface, not just the onboarding entry point.
+    # Slice 3: the extractor is the REAL one — `LlmClaimExtractor` — whenever this deployment has a
+    # model credential, so recon now drafts grounded `client.*` values from what it scraped instead
+    # of storing snapshots nobody ever claimed from. Without a credential
+    # `build_optional_platform_gateway` warns and returns None, and the composition degrades to the
+    # slice-2 empty extractor (scrape + snapshot, no values) rather than failing this process's
+    # import. The gateway is built only when the binder will exist, so a flag-off deployment warms
+    # no client and stays byte-identical to before.
+    #
+    # Lane D2 note: this composes a gateway *instance* in the HTTP process for the Stage-0 scrape
+    # resolver, but the D2 boundary is untouched — the toolbelt is still built with no `gateway=`
+    # argument, and no chat/turn-serving module reaches this wiring (both guarded by
+    # tests/api/test_lane_d2_http_gateway_isolation.py).
+    stage0_scrape_binder: Stage0ScrapeBinder | None = None
+    if resolved.self_serve_provisioning_enabled:
+        stage0_extractor = build_stage0_claim_extractor(build_optional_platform_gateway(resolved))
+        stage0_scrape_binder = build_stage0_scrape_binder(
+            extractor=stage0_extractor,
+            # Pass the resolved settings' backend explicitly — a None scraper would construct
+            # a fresh Settings() inside the resolver registration (one settings truth per
+            # process).
+            scraper=default_scrape_backend(resolved),
+            policy=ScrapePolicy(),
+        )
+        # Slice 3 task 7: the tier-3 open-web source behind `client.competitor` /
+        # `client.buyer_profile`. It takes the SAME extractor instance and the SAME account
+        # lookup as the scrape lane (the binder holds the client's record once identity
+        # resolution produces it), and binds only when this deployment has an Exa credential.
+        bind_stage0_search_resolver(
+            extractor=stage0_extractor,
+            accounts=stage0_scrape_binder,
+            secrets=resolved_secrets,
+        )
     registry = build_toolbelt(
         storage=storage,
         settings=resolved,
+        stage0_scrape_binder=stage0_scrape_binder,
         research_view_composer=(research_views.composer if research_views is not None else None),
         research_view_snapshots=(research_views.snapshots if research_views is not None else None),
         research_view_recheck=(research_views.recheck if research_views is not None else None),
@@ -94,6 +142,17 @@ def build_application(
             settings=resolved,
             conn_factory=transaction,
         )
+    contact_email_lookup = (
+        build_contact_email_lookup_service(
+            exa_api_key=resolved_secrets.exa_api_key,
+            sumble_api_key=resolved_secrets.sumble_api_key,
+            sumble_cents_per_credit=resolved.sumble_cents_per_credit,
+            storage=storage,
+            poll_after_s=resolved.frontend_contact_email_poll_after_s,
+        )
+        if resolved.frontend_contact_email_lookup_enabled
+        else None
+    )
 
     # --- the chat surface's identity source: exactly one, decided here -------------------------
     # FI Lane B ⇄ Lane D join. Before the join this process built the development principal
@@ -151,8 +210,14 @@ def build_application(
             )
         async with transaction() as conn:
             await conn.execute(text("SELECT 1"))
-            if research_views is not None:
+            # The Stage-0 waterfall reads source manifests from Postgres. A fresh deployment can
+            # enable self-serve onboarding without enabling any C7 research-view capability, so
+            # tying registry seeding only to ``research_views`` makes every planned source look
+            # unregistered: both recon lanes then finish almost instantly with only empty fields.
+            # Load the same idempotent registry whenever either consumer is live.
+            if resolved.self_serve_provisioning_enabled or research_views is not None:
                 await load_research_packs(conn)
+            if research_views is not None:
                 required = (
                     await conn.execute(
                         text(
@@ -225,6 +290,7 @@ def build_application(
         ),
         auth_service=auth_service,
         auth_closer=auth_closer,
+        contact_email_lookup=contact_email_lookup,
     )
 
 

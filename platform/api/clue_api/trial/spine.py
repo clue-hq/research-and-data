@@ -60,6 +60,7 @@ from clue_research.resolvers.sumble import (
 )
 from clue_research.sources import clear_resolver_bindings
 from clue_research.stage0 import (
+    CLIENT_BASELINE_FIELDS,
     client_kb_readiness_metrics,
     compile_product_context,
     evaluate_readiness,
@@ -249,10 +250,13 @@ class ClueTrialSpine:
                 brand_id=state.brand_id,
                 gate=ReadinessGate.DISCOVERY_SPEND,
                 spec=DEFAULT_STAGE0_POLICY.readiness,
-                # One shared compilation, so this gate and the Stage-0 per-turn recompute can
-                # never disagree about the same trial's coverage or verified-claim count.
+                # One shared compiler with this discovery gate's explicit broader company-
+                # knowledge denominator. ICP synthesis deliberately uses its stable nine fields.
                 metrics={
-                    **client_kb_readiness_metrics(claims),
+                    **client_kb_readiness_metrics(
+                        claims,
+                        baseline_field_keys=CLIENT_BASELINE_FIELDS,
+                    ),
                     "open_policy_blocks": 0,
                 },
                 created_by_actor="agent",

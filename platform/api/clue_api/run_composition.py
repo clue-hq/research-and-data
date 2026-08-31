@@ -13,19 +13,22 @@ per-run :class:`~clue_research.durable.PhaseHandlerRegistry` + a per-run ``Proje
 one :class:`BudgetEngine`). The state-machine object is cheap; the durable state is shared, so two
 ICPs on one worker never collide on a phase slot.
 
-**M8D R1 — the entity-research slot is quarantined.** The valid phase, storage, discovery,
-verification, and handoff substrates remain composed per run. ``DEEP`` is intentionally bound to
-one fail-loud handler, however: it raises ``entity_research_agent_not_composed`` before the former
-account scheduler, provider preparation, committee preparation, or contact progression can run.
-R2–R5 replace that empty slot with the subject-neutral fleet and ``create_agent()`` entity units.
+**M8D R11.1 — the entity-research slot joins the fleet.** The valid phase, storage, discovery,
+verification, and handoff substrates remain composed per run. ``DEEP`` holds the join-only
+:class:`~clue_api.entity_research_deep_phase.EntityResearchDeepPhaseHandler`, which reads the
+project run's latest R6 account-research fleet run and maps its state onto the phase result. It
+launches nothing (launch authority stays with the human-confirmed ``launch_account_research@1``)
+and owns no spend, so the former account scheduler, provider preparation, committee preparation and
+contact progression stay retired behind the untouched R1 quarantine.
 
 **Composed phase set (per registry):**
 
 * REVERSE_PROFILING / ICP_CONFIRMED / DISCOVERY / SCORING / TIER_CHECKPOINT — via
   :mod:`clue_api.phase_wiring`, snapshot-wrapped (D3).
-* DEEP — the M8D R1 active-path quarantine; no legacy entity-research work is scheduled.
-* VERIFICATION — :func:`build_verification_phase_handler` over the shared gateway + the high-tier
-  resolver.
+* DEEP — the M8D R11.1 join-only fleet bridge; no legacy entity-research work is scheduled.
+* VERIFICATION — :func:`build_verification_phase_handler` over the shared gateway + the R11.3
+  researched-account resolver (the M8D fleet read that replaced the ``account_deep_launch``
+  high-tier resolver; it fails loud instead of reporting a silent ``accounts_processed=0``).
 * REVIEW — folded in from :func:`register_boot_handlers` (the process-wide-composable handler set).
 * HANDOFF — the M10.5 retention/objection sweep (the load-bearing tombstone-before-merge
   invariant) over the real M12 phase handler. C7.6 binds a production committee reader to the
@@ -47,19 +50,19 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from clue_api.claim_extraction import LlmClaimExtractor
 from clue_api.contact_eligibility import (
     build_contact_eligibility_resolver,
     build_production_handoff_committee_reader,
 )
-from clue_api.deep.composition import build_high_tier_resolver
 from clue_api.discovery_seal import (
     DbSealedDiscoveryAccountManifestReader,
     DiscoveryBatchStarter,
     DiscoveryRequiredFieldResolver,
 )
-from clue_api.entity_research_quarantine import (
-    EntityResearchQuarantineComposition,
-    EntityResearchQuarantinePhaseHandler,
+from clue_api.entity_research_deep_phase import EntityResearchDeepPhaseHandler
+from clue_api.entity_research_verification_resolver import (
+    build_entity_research_account_resolver,
 )
 from clue_api.fleet_wiring import register_boot_handlers
 from clue_api.handoff_retention import build_retention_sweeping_handoff_handler
@@ -90,6 +93,7 @@ from clue_core import (
 from clue_db import ConnFactory, transaction
 from clue_gateway import build_gateway
 from clue_obs import get_logger
+from clue_research.adapters import CallableClaimExtractor, ClaimExtractor
 from clue_research.discovery_scoring.discovery import ChannelRegistry
 from clue_research.durable import (
     BudgetEngine,
@@ -102,12 +106,22 @@ from clue_research.durable import (
     ProjectRunStore,
 )
 from clue_research.icp.spec import get_icp_version
+from clue_research.resolvers.exa_search import (
+    AUTH_REF as EXA_SEARCH_AUTH_REF,
+)
+from clue_research.resolvers.exa_search import (
+    register_exa_search_resolver,
+)
+from clue_research.resolvers.live import AccountLookup
 from clue_research.stage0 import ClientInput
 from clue_research.verification import FaithfulnessJudgeImpl
 from clue_storage import StorageBackend
 
 __all__ = [
     "build_platform_gateway",
+    "build_optional_platform_gateway",
+    "bind_stage0_search_resolver",
+    "build_stage0_claim_extractor",
     "ComposingRunDriver",
     "ComposedRun",
     "CompositionUnavailable",
@@ -143,16 +157,15 @@ class ClientInputProviderMissing(RuntimeError):
 @dataclass(frozen=True, slots=True)
 class ComposedRun:
     """One composed, cached per-project-run unit: the ``ProjectRun`` the worker advances, its
-    isolated ``PhaseHandlerRegistry``, the ``ICPSpec`` it was composed against, the DEEP-phase
-    composition bundle (so a test can read the DEEP handler's *own* spec + assert the composed
-    scheduler is the fleet queue), and the set of phases it can drive. The
-    ``spec``/``registry``/``deep`` are exposed so a test can assert two concurrent runs never
-    cross-talk (the D1 race gate) without reaching into private attributes."""
+    isolated ``PhaseHandlerRegistry``, the ``ICPSpec`` it was composed against, the R11.1 join-only
+    DEEP handler, and the set of phases it can drive. The ``spec``/``registry``/``deep`` are exposed
+    so a test can assert two concurrent runs never cross-talk (the D1 race gate) without reaching
+    into private attributes."""
 
     run: ProjectRun
     registry: PhaseHandlerRegistry
     spec: ICPSpec
-    deep: EntityResearchQuarantineComposition
+    deep: EntityResearchDeepPhaseHandler
     phases: frozenset[ProjectPhase]
 
 
@@ -233,6 +246,108 @@ def build_platform_gateway(settings: Settings) -> LLMGateway:
 _default_gateway = build_platform_gateway
 
 
+def build_optional_platform_gateway(settings: Settings) -> LLMGateway | None:
+    """The platform gateway when one is *configured*, else ``None`` — never a raise.
+
+    :func:`build_platform_gateway` refuses to build without an ``OPENROUTER_API_KEY`` (or the
+    explicit stub opt-in), which is exactly right for the fleet worker: a worker that cannot call a
+    model cannot do its job, so it must fail at boot rather than drive runs on canned output. It is
+    the wrong contract for a *degradable* consumer. Stage-0 recon is one: without an extractor it
+    still resolves the client, scrapes the official surfaces under target-lock and captures durable
+    snapshot evidence — it simply drafts no ``client.*`` values (the slice-2 posture, and the
+    interview remains the tier-1 fill path). Taking the whole HTTP process down at import because
+    one tool's optional LLM step has no credential would be a strictly worse outcome.
+
+    So this mirrors :func:`build_platform_gateway`'s own key check — same secret, same
+    ``gateway_allow_stub`` opt-in — and turns the refusal into a loud, greppable
+    ``stage0.claim_extraction_disabled_no_gateway`` warning plus ``None``. Deployed without a key
+    the fallback is silent-shaped (no values are drafted), so this warning is the operator's only
+    signal: it names the cause and the fix.
+
+    **"Never a raise" is enforced, not merely intended.** The pre-check is a *copy* of the
+    refusal condition, and a copy can drift: were ``build_platform_gateway`` to start refusing on a
+    condition this one does not test, the delegation would raise and take the HTTP root down at
+    import — precisely the failure this function exists to prevent. So the delegation is wrapped:
+    the pre-check keeps the common path's specific reason, and the wrapper makes the contract true
+    by construction for any refusal the pre-check does not (yet) know about.
+    ``test_the_two_gateway_builders_agree_on_the_no_key_case`` pins the two against each other so
+    drift is *also* caught loudly at test time rather than only degraded silently in production.
+    """
+    if Secrets().openrouter_api_key is None and not settings.gateway_allow_stub:
+        log.warning(
+            "stage0.claim_extraction_disabled_no_gateway",
+            reason=(
+                "no OPENROUTER_API_KEY secret and CLUE_GATEWAY_ALLOW_STUB is not set; Stage-0 "
+                "recon will scrape and snapshot but draft no client.* claims"
+            ),
+        )
+        return None
+    try:
+        return build_platform_gateway(settings)
+    except RuntimeError as exc:
+        # The documented refusal (and any future sibling of it). A degradable consumer degrades.
+        log.warning(
+            "stage0.claim_extraction_disabled_no_gateway",
+            reason=(
+                "the platform gateway refused to build; Stage-0 recon will scrape and snapshot "
+                "but draft no client.* claims"
+            ),
+            detail=str(exc),
+        )
+        return None
+
+
+def build_stage0_claim_extractor(gateway: LLMGateway | None) -> ClaimExtractor:
+    """The Stage-0 recon extractor for a deployment that has (or has not) a model gateway.
+
+    With a gateway this is the production :class:`~clue_api.claim_extraction.LlmClaimExtractor`
+    (grounded, drop-never-raise, honest-empty on an outage). Without one it is the explicitly empty
+    extractor both roots wired in slice 2 — snapshots without values — so a keyless deployment keeps
+    working, just without drafted claims.
+
+    One function, called by both composition roots, so the HTTP and fleet processes cannot drift
+    into extracting differently from the same scraped page.
+    """
+    if gateway is None:
+        return CallableClaimExtractor(lambda normalized, entity, field: [])
+    return LlmClaimExtractor(gateway=gateway)
+
+
+def bind_stage0_search_resolver(
+    *,
+    extractor: ClaimExtractor,
+    accounts: AccountLookup,
+    secrets: Secrets | None = None,
+) -> bool:
+    """Bind the tier-3 ``exa_search`` resolver for Stage-0 recon, if this deployment can pay for it.
+
+    Two Client-KB fields (``client.competitor`` / ``client.buyer_profile``) name ``exa_search`` as
+    their only source. It reads the *same* extractor instance as the scrape lane (one extractor per
+    process — the roots must not drift into extracting differently) and the *same* account lookup
+    (the Stage-0 binder, which holds the client's record once identity resolution has produced it).
+
+    **The credential gate is the point.** ``resolve_credential`` raises at call time when
+    ``CLUE_EXA_API_KEY`` is unset, and a resolver raising inside the waterfall fails the whole recon
+    lane — so a deployment with no Exa key would lose onboarding entirely over an optional
+    open-web enrichment. Leaving the source *unbound* instead is the documented graceful path: the
+    waterfall records ``NO_RESOLVER`` at zero spend and the two fields end honestly empty, exactly
+    as they did before this source existed. Returns whether the resolver was bound.
+    """
+    resolved = secrets if secrets is not None else Secrets()
+    if resolved.for_auth_ref(EXA_SEARCH_AUTH_REF) is None:
+        log.warning(
+            "stage0.exa_search_unbound_no_credential",
+            reason=(
+                "no Exa credential is configured; Stage-0 background research will leave "
+                "client.competitor and client.buyer_profile empty rather than fail the lane"
+            ),
+            auth_ref=EXA_SEARCH_AUTH_REF,
+        )
+        return False
+    register_exa_search_resolver(extractor=extractor, accounts=accounts, secrets=resolved)
+    return True
+
+
 class ComposingRunDriver:
     """The fleet ``RunDriver`` that composes a registry per ``project_run_id`` (D1) and drives a
     per-run ``ProjectRun`` over the shared durable state (D2).
@@ -296,7 +411,16 @@ class ComposingRunDriver:
         )
         # A probe machine over the SHARED store for status reads (its registry is unused for status;
         # advance always runs on the composed per-run machine).
-        self._probe = ProjectRun(store=self._store, budget_engine=self._budget, ledger=self._ledger)
+        # FI pilot budget-controls: the deployment switch reaches every ``ProjectRun`` this driver
+        # builds. The engine stays wired in both modes (burn-down/estimate reads and every
+        # ``record`` charge are unaffected); only the pre-phase graceful-stop gate is disabled.
+        self._enforce_budget = self._settings.budget_controls_enabled
+        self._probe = ProjectRun(
+            store=self._store,
+            budget_engine=self._budget,
+            ledger=self._ledger,
+            enforce_budget=self._enforce_budget,
+        )
         self._cache_size = (
             cache_size if cache_size is not None else self._settings.composer_registry_cache_size
         )
@@ -361,11 +485,17 @@ class ComposingRunDriver:
                 "or handoff against an ambiguous product"
             )
         registry = PhaseHandlerRegistry()
-        # One per-run high-tier resolver instance, SHARED by DEEP, VERIFICATION, and the HANDOFF
-        # retention sweep (each reads the same human-approved high-tier set from the claim store;
-        # the closure is stateless, so sharing is trivially safe and makes the "shared" contract
-        # true rather than three equivalent-but-separate closures).
-        high_tier_resolver = build_high_tier_resolver(spec=spec)
+        # M8D R11.3: one per-run researched-account resolver instance, SHARED by VERIFICATION and
+        # the HANDOFF retention sweep (DEEP no longer consumes it — the R11.1 adapter reads fleet
+        # state directly). Both need the same fact — which accounts this run actually researched —
+        # so they read the run's latest human-confirmed fleet run and its accepted terminal jobs.
+        # The closure is stateless, so sharing is trivially safe and makes the "shared" contract
+        # true rather than two equivalent-but-separate closures. It fails loud
+        # (``EntityResearchRunMissing``) when the run has no fleet run, where the superseded
+        # ``build_high_tier_resolver`` reported an empty set as a clean success.
+        researched_account_resolver = build_entity_research_account_resolver(
+            session_factory=self._session_factory
+        )
 
         # Process-wide-composable handlers (REVIEW today) folded into this per-run registry (D1).
         register_boot_handlers(
@@ -382,7 +512,10 @@ class ComposingRunDriver:
         rp: PhaseHandler
         if self._client_input_provider is not None:
             rp = _ClientInputThreadingHandler(
-                inner=build_reverse_profiling_handler(judge=self._rp_judge),
+                inner=build_reverse_profiling_handler(
+                    judge=self._rp_judge,
+                    enforce_budget=self._enforce_budget,
+                ),
                 provider=self._client_input_provider,
             )
         else:
@@ -416,18 +549,27 @@ class ComposingRunDriver:
             sealed_account_reader=sealed_discovery_reader,
             session_factory=self._session_factory,
             register=registry.register,
+            enforce_budget=self._enforce_budget,
         )
 
-        # M8D R1: DEEP is intentionally uncomposed until the governed ``create_agent()`` entity
-        # runtime lands.  Crucially, this composition contains no scheduler, provider preparer,
-        # mechanical account profiler, committee walker, or contact fan-out to fall back to.
-        deep = EntityResearchQuarantineComposition(handler=EntityResearchQuarantinePhaseHandler())
-        registry.register(deep.handler)
+        # M8D R11.1: DEEP is the join-only bridge onto the R6 account-research fleet. It reads the
+        # project run's latest fleet run and maps its state to a phase result — it launches nothing
+        # (launch authority stays with the human-confirmed ``launch_account_research@1``), owns no
+        # spend, and holds no scheduler, provider preparer, mechanical account profiler, committee
+        # walker or contact fan-out. The R1 quarantine over the retired orchestration is untouched.
+        deep = EntityResearchDeepPhaseHandler(conn_factory=self._session_factory)
+        registry.register(deep)
 
-        # VERIFICATION — the same high-tier resolver instance as DEEP.
+        # VERIFICATION — the same researched-account resolver instance the HANDOFF sweep uses.
+        # ``session_factory`` is threaded like every sibling registration: the corroborator, the
+        # judge, the live-claims loader and the use-gate all read/write through the driver's
+        # durable seam rather than the process default. Production is unchanged (the driver's
+        # default *is* ``transaction``); what it fixes is a composition driven with an injected
+        # factory, where VERIFICATION alone used to reach past it to a different connection.
         verification = build_verification_phase_handler(
             gateway=self._gateway,
-            account_resolver=high_tier_resolver,
+            account_resolver=researched_account_resolver,
+            session_factory=self._session_factory,
             verification_enabled=self._settings.verification_enabled,
         )
         registry.register(verification)
@@ -453,7 +595,7 @@ class ComposingRunDriver:
             )
             handoff = build_retention_sweeping_handoff_handler(
                 inner=real_handoff,
-                account_resolver=high_tier_resolver,
+                account_resolver=researched_account_resolver,
                 session_factory=self._session_factory,
                 storage=self._storage,
             )
@@ -464,6 +606,7 @@ class ComposingRunDriver:
             registry=registry,
             budget_engine=self._budget,
             ledger=self._ledger,
+            enforce_budget=self._enforce_budget,
         )
         phases = registry.phases()
         # One structured log per composition (cache fill), not per advance.
@@ -473,7 +616,7 @@ class ComposingRunDriver:
             icp_key=row.icp_key,
             icp_version=row.icp_version,
             phases=sorted(phase.value for phase in phases),
-            entity_research=deep.reason_code,
+            entity_research="m8d_r11_fleet_bridge",
             handoff_narrative_emit=self._settings.c7_production_handoff_enabled,
         )
         return ComposedRun(run=run, registry=registry, spec=spec, deep=deep, phases=phases)

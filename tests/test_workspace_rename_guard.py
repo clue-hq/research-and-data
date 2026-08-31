@@ -42,6 +42,7 @@ _SKIP_DIR_NAMES = {
     ".pytest_cache",
     ".mypy_cache",
     ".ruff_cache",
+    ".venv",  # nested subsystem toolchains are not repository source
     "node_modules",
     ".context",  # gitignored Conductor session data (attachments may quote e.g. oauth client_id)
 }

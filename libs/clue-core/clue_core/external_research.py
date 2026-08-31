@@ -241,10 +241,43 @@ class DeepExternalWait(BaseModel):
         return self
 
 
+class DeepFleetExternalWait(BaseModel):
+    """Reference-only DEEP phase checkpoint while an M8D account-research fleet run is working.
+
+    The R11.1 join-only DEEP adapter emits this instead of :class:`DeepExternalWait`: the phase no
+    longer owns per-account provider operations, so the checkpoint pins the fleet research run plus
+    a census of its job states rather than account-run/operation references.  ``job_state_counts``
+    is keyed by the fleet's job-state *string* deliberately — ``core`` does not import the fleet's
+    enums (the import-linter contract), and the fleet owns that vocabulary.
+
+    The two shapes are disjoint (both ``extra="forbid"``, neither's required fields satisfy the
+    other), so the DEEP ``waiting_external`` validation arm accepts exactly one of them and
+    historical legacy checkpoints keep validating byte-for-byte.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    research_run_id: UUID
+    job_state_counts: dict[str, int]
+    next_poll_at: UtcDatetime
+    wake_reason: DeepExternalWakeReason = DeepExternalWakeReason.SCHEDULED_POLL
+
+    @model_validator(mode="after")
+    def _census_is_live(self) -> DeepFleetExternalWait:
+        if not self.job_state_counts:
+            raise ValueError("a deep fleet external wait requires a job-state census")
+        if any(count < 0 for count in self.job_state_counts.values()):
+            raise ValueError("deep fleet job-state counts cannot be negative")
+        if not any(count > 0 for count in self.job_state_counts.values()):
+            raise ValueError("a deep fleet external wait requires at least one live job")
+        return self
+
+
 __all__ = [
     "DeepAccountExternalWait",
     "DeepExternalWait",
     "DeepExternalWakeReason",
+    "DeepFleetExternalWait",
     "ExternalResearchPreparation",
     "ExternalResearchPreparationOutcome",
     "ExternalResearchAcquisitionRequest",

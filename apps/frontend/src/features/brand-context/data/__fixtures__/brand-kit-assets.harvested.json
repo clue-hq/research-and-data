@@ -1,0 +1,1022 @@
+{
+  "asset_ing_cb86ad335799c963": {
+    "schema_version": 1,
+    "asset": {
+      "id": "asset_ing_cb86ad335799c963",
+      "font": null,
+      "kind": "raster_image",
+      "logo": null,
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "label": "favicon.png",
+      "media": {
+        "digest": {
+          "value": "cb86ad335799c963a12003be1ef5ca21afe578fb4fa0592dd344294b42a5aba2",
+          "algorithm": "sha256"
+        },
+        "filename": "favicon.png",
+        "location": {
+          "url": null,
+          "provider": "clue-storage",
+          "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/cb86ad335799c963a12003be1ef5ca21afe578fb4fa0592dd344294b42a5aba2"
+        },
+        "mime_type": "image/png",
+        "thumbnail": {
+          "location": {
+            "url": null,
+            "provider": "clue-storage",
+            "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/76b70e75d1469d4cf27765c9f5fe217b1413bf9f5abc432c52a6b1d3fe60aa70"
+          },
+          "mime_type": "image/png",
+          "pixel_width": 512,
+          "pixel_height": 512,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "76b70e75d1469d4cf27765c9f5fe217b1413bf9f5abc432c52a6b1d3fe60aa70"
+          }
+        },
+        "byte_length": 3143
+      },
+      "raster": {
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": true,
+        "pixel_width": 180,
+        "aspect_ratio": 1.0,
+        "pixel_height": 180,
+        "color_profile": null
+      },
+      "source": {
+        "url": "https://images.stripeassets.com/fzn2n1nzq965/4vVgZi0ZMoEzOhkcv7EVwK/8cce6fdcf2733b2ec8e99548908847ed/favicon.png?w=180&h=180",
+        "kind": "website",
+        "captured_at": "2026-08-18T12:43:40.897063+00:00"
+      },
+      "status": "ready",
+      "vector": null,
+      "license": null,
+      "provenance": {
+        "notes": [],
+        "confidence": 0.7,
+        "created_at": "2026-08-18T12:43:40.897063+00:00",
+        "created_by": "lumen_ingestion",
+        "source_label": "website"
+      }
+    },
+    "created_at": "2026-08-18T12:43:49.530496+00:00",
+    "updated_at": "2026-08-18T12:43:49.530496+00:00"
+  },
+  "asset_ing_61a219a05909b652": {
+    "schema_version": 1,
+    "asset": {
+      "id": "asset_ing_61a219a05909b652",
+      "font": null,
+      "kind": "vector",
+      "logo": null,
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "label": "logo.svg",
+      "media": {
+        "digest": {
+          "value": "61a219a05909b6526c3c2a80ff06d77cad154d9753849acb70c3b1aa995df27c",
+          "algorithm": "sha256"
+        },
+        "filename": "logo.svg",
+        "location": {
+          "url": null,
+          "provider": "clue-storage",
+          "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/61a219a05909b6526c3c2a80ff06d77cad154d9753849acb70c3b1aa995df27c"
+        },
+        "mime_type": "image/svg+xml",
+        "thumbnail": {
+          "location": {
+            "url": null,
+            "provider": "clue-storage",
+            "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/61a219a05909b6526c3c2a80ff06d77cad154d9753849acb70c3b1aa995df27c"
+          },
+          "mime_type": "image/svg+xml",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "61a219a05909b6526c3c2a80ff06d77cad154d9753849acb70c3b1aa995df27c"
+          }
+        },
+        "byte_length": 1922
+      },
+      "raster": null,
+      "source": {
+        "kind": "manual",
+        "label": "logo.svg"
+      },
+      "status": "ready",
+      "vector": {
+        "width": 60.0,
+        "height": 25.0,
+        "view_box": [
+          0.0,
+          0.0,
+          60.0,
+          25.0
+        ],
+        "path_data": null,
+        "has_transparency": null
+      },
+      "license": null,
+      "provenance": {
+        "notes": [],
+        "confidence": 0.7,
+        "created_at": "2026-08-18T12:43:40.897063+00:00",
+        "created_by": "lumen_ingestion",
+        "source_label": "website"
+      }
+    },
+    "created_at": "2026-08-18T12:43:49.530496+00:00",
+    "updated_at": "2026-08-18T12:43:49.530496+00:00"
+  },
+  "asset_ing_53f9b6455350e5b5": {
+    "schema_version": 1,
+    "asset": {
+      "id": "asset_ing_53f9b6455350e5b5",
+      "font": null,
+      "kind": "raster_image",
+      "logo": null,
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "label": "Stripe.jpg",
+      "media": {
+        "digest": {
+          "value": "53f9b6455350e5b57d5521d6d7efdb94e2133666930b750d2315424627b7b5eb",
+          "algorithm": "sha256"
+        },
+        "filename": "Stripe.jpg",
+        "location": {
+          "url": null,
+          "provider": "clue-storage",
+          "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/53f9b6455350e5b57d5521d6d7efdb94e2133666930b750d2315424627b7b5eb"
+        },
+        "mime_type": "image/jpeg",
+        "thumbnail": {
+          "location": {
+            "url": null,
+            "provider": "clue-storage",
+            "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/26d0ddfb1dda702778b2cf266f800f11e61408c8b4720dba9a9f211d10ae8097"
+          },
+          "mime_type": "image/png",
+          "pixel_width": 256,
+          "pixel_height": 128,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "26d0ddfb1dda702778b2cf266f800f11e61408c8b4720dba9a9f211d10ae8097"
+          }
+        },
+        "byte_length": 312818
+      },
+      "raster": {
+        "dpi_x": 144.0,
+        "dpi_y": 144.0,
+        "has_alpha": false,
+        "pixel_width": 2048,
+        "aspect_ratio": 2.0,
+        "pixel_height": 1024,
+        "color_profile": null
+      },
+      "source": {
+        "url": "https://images.stripeassets.com/fzn2n1nzq965/XtX984S1GJVsVOXFC7kMu/01988281e867728dfb09aa7793a6e3b9/Stripe.jpg?q=80",
+        "kind": "website",
+        "captured_at": "2026-08-18T12:43:40.897063+00:00"
+      },
+      "status": "ready",
+      "vector": null,
+      "license": null,
+      "provenance": {
+        "notes": [],
+        "confidence": 0.7,
+        "created_at": "2026-08-18T12:43:40.897063+00:00",
+        "created_by": "lumen_ingestion",
+        "source_label": "website"
+      }
+    },
+    "created_at": "2026-08-18T12:43:49.530496+00:00",
+    "updated_at": "2026-08-18T12:43:49.530496+00:00"
+  },
+  "asset_ing_7262ca0dc07c8d9c": {
+    "schema_version": 1,
+    "asset": {
+      "id": "asset_ing_7262ca0dc07c8d9c",
+      "font": null,
+      "kind": "raster_image",
+      "logo": null,
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "label": "platform-graphic-background_2x.png",
+      "media": {
+        "digest": {
+          "value": "7262ca0dc07c8d9cb81369f478cc929abae2c190fbf5db748995815e88408416",
+          "algorithm": "sha256"
+        },
+        "filename": "platform-graphic-background_2x.png",
+        "location": {
+          "url": null,
+          "provider": "clue-storage",
+          "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/7262ca0dc07c8d9cb81369f478cc929abae2c190fbf5db748995815e88408416"
+        },
+        "mime_type": "image/png",
+        "thumbnail": {
+          "location": {
+            "url": null,
+            "provider": "clue-storage",
+            "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/38b1d7f145841394de020b48e239a2f6a6e4e725429f14ff76a4772757c3a547"
+          },
+          "mime_type": "image/png",
+          "pixel_width": 256,
+          "pixel_height": 111,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "38b1d7f145841394de020b48e239a2f6a6e4e725429f14ff76a4772757c3a547"
+          }
+        },
+        "byte_length": 39101
+      },
+      "raster": {
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": false,
+        "pixel_width": 296,
+        "aspect_ratio": 2.3125,
+        "pixel_height": 128,
+        "color_profile": null
+      },
+      "source": {
+        "url": "https://images.stripeassets.com/fzn2n1nzq965/5dQAw5oJf3TOO1Jt6IKDRH/f391594c11f38d821259acdd3412a7a6/platform-graphic-background_2x.png?w=296&q=90",
+        "kind": "website",
+        "captured_at": "2026-08-18T12:43:40.897063+00:00"
+      },
+      "status": "ready",
+      "vector": null,
+      "license": null,
+      "provenance": {
+        "notes": [],
+        "confidence": 0.7,
+        "created_at": "2026-08-18T12:43:40.897063+00:00",
+        "created_by": "lumen_ingestion",
+        "source_label": "website"
+      }
+    },
+    "created_at": "2026-08-18T12:43:49.530496+00:00",
+    "updated_at": "2026-08-18T12:43:49.530496+00:00"
+  },
+  "asset_ing_5ea77b5ffa4992f3": {
+    "schema_version": 1,
+    "asset": {
+      "id": "asset_ing_5ea77b5ffa4992f3",
+      "font": null,
+      "kind": "raster_image",
+      "logo": null,
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "label": "enterprise-accordion-lemonde.png",
+      "media": {
+        "digest": {
+          "value": "5ea77b5ffa4992f3edddee55c818c262d00681c7a9f1817e250215c6c4f648e6",
+          "algorithm": "sha256"
+        },
+        "filename": "enterprise-accordion-lemonde.png",
+        "location": {
+          "url": null,
+          "provider": "clue-storage",
+          "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/5ea77b5ffa4992f3edddee55c818c262d00681c7a9f1817e250215c6c4f648e6"
+        },
+        "mime_type": "image/png",
+        "thumbnail": {
+          "location": {
+            "url": null,
+            "provider": "clue-storage",
+            "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/e192e563dd119df1beb8ad313818bbd151dc4034cd102bcc630d11a1ca6c8451"
+          },
+          "mime_type": "image/png",
+          "pixel_width": 256,
+          "pixel_height": 111,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "e192e563dd119df1beb8ad313818bbd151dc4034cd102bcc630d11a1ca6c8451"
+          }
+        },
+        "byte_length": 66839
+      },
+      "raster": {
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": false,
+        "pixel_width": 296,
+        "aspect_ratio": 2.3125,
+        "pixel_height": 128,
+        "color_profile": null
+      },
+      "source": {
+        "url": "https://images.stripeassets.com/fzn2n1nzq965/5AQ9A87KzwpPy4CD3uPz5C/4afd1a1e9d6e1d698c4c7c74a4868822/enterprise-accordion-lemonde.png?w=296&q=90",
+        "kind": "website",
+        "captured_at": "2026-08-18T12:43:40.897063+00:00"
+      },
+      "status": "ready",
+      "vector": null,
+      "license": null,
+      "provenance": {
+        "notes": [],
+        "confidence": 0.7,
+        "created_at": "2026-08-18T12:43:40.897063+00:00",
+        "created_by": "lumen_ingestion",
+        "source_label": "website"
+      }
+    },
+    "created_at": "2026-08-18T12:43:49.530496+00:00",
+    "updated_at": "2026-08-18T12:43:49.530496+00:00"
+  },
+  "asset_ing_421820f838bdedce": {
+    "schema_version": 1,
+    "asset": {
+      "id": "asset_ing_421820f838bdedce",
+      "font": null,
+      "kind": "raster_image",
+      "logo": null,
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "label": "enterprise-accordion-instacart.png",
+      "media": {
+        "digest": {
+          "value": "421820f838bdedcefd23c1d97b297bd3de7e0ca879c3fb707d99093df23ae874",
+          "algorithm": "sha256"
+        },
+        "filename": "enterprise-accordion-instacart.png",
+        "location": {
+          "url": null,
+          "provider": "clue-storage",
+          "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/421820f838bdedcefd23c1d97b297bd3de7e0ca879c3fb707d99093df23ae874"
+        },
+        "mime_type": "image/png",
+        "thumbnail": {
+          "location": {
+            "url": null,
+            "provider": "clue-storage",
+            "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/e016eae1dc258980bce32ca89d70ee7163c9229ecd34981853e613e77d4cca0a"
+          },
+          "mime_type": "image/png",
+          "pixel_width": 256,
+          "pixel_height": 111,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "e016eae1dc258980bce32ca89d70ee7163c9229ecd34981853e613e77d4cca0a"
+          }
+        },
+        "byte_length": 65299
+      },
+      "raster": {
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": false,
+        "pixel_width": 296,
+        "aspect_ratio": 2.3125,
+        "pixel_height": 128,
+        "color_profile": null
+      },
+      "source": {
+        "url": "https://images.stripeassets.com/fzn2n1nzq965/1v5hJ2NWvKpQfVbMqOzCpE/c900b9ed4c288f7cf0a0dced5f4983f2/enterprise-accordion-instacart.png?w=296&q=90",
+        "kind": "website",
+        "captured_at": "2026-08-18T12:43:40.897063+00:00"
+      },
+      "status": "ready",
+      "vector": null,
+      "license": null,
+      "provenance": {
+        "notes": [],
+        "confidence": 0.7,
+        "created_at": "2026-08-18T12:43:40.897063+00:00",
+        "created_by": "lumen_ingestion",
+        "source_label": "website"
+      }
+    },
+    "created_at": "2026-08-18T12:43:49.530496+00:00",
+    "updated_at": "2026-08-18T12:43:49.530496+00:00"
+  },
+  "asset_ing_e33a3733dcbaa605": {
+    "schema_version": 1,
+    "asset": {
+      "id": "asset_ing_e33a3733dcbaa605",
+      "font": null,
+      "kind": "raster_image",
+      "logo": null,
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "label": "enterprise-accordion-urbn.png",
+      "media": {
+        "digest": {
+          "value": "e33a3733dcbaa605807d68c2af009793c055b30461f692cb3dd00342c91befaa",
+          "algorithm": "sha256"
+        },
+        "filename": "enterprise-accordion-urbn.png",
+        "location": {
+          "url": null,
+          "provider": "clue-storage",
+          "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/e33a3733dcbaa605807d68c2af009793c055b30461f692cb3dd00342c91befaa"
+        },
+        "mime_type": "image/png",
+        "thumbnail": {
+          "location": {
+            "url": null,
+            "provider": "clue-storage",
+            "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/bd14d7ba8d885fb079aff6ae76876f650fce97518b39ad2ea6ec19befe96d28b"
+          },
+          "mime_type": "image/png",
+          "pixel_width": 256,
+          "pixel_height": 111,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "bd14d7ba8d885fb079aff6ae76876f650fce97518b39ad2ea6ec19befe96d28b"
+          }
+        },
+        "byte_length": 63228
+      },
+      "raster": {
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": false,
+        "pixel_width": 296,
+        "aspect_ratio": 2.3125,
+        "pixel_height": 128,
+        "color_profile": null
+      },
+      "source": {
+        "url": "https://images.stripeassets.com/fzn2n1nzq965/37wKFanVluouT2iEZUbD0H/f75e77141e1330ad81ea18c6aea65f0c/enterprise-accordion-urbn.png?w=296&q=90",
+        "kind": "website",
+        "captured_at": "2026-08-18T12:43:40.897063+00:00"
+      },
+      "status": "ready",
+      "vector": null,
+      "license": null,
+      "provenance": {
+        "notes": [],
+        "confidence": 0.7,
+        "created_at": "2026-08-18T12:43:40.897063+00:00",
+        "created_by": "lumen_ingestion",
+        "source_label": "website"
+      }
+    },
+    "created_at": "2026-08-18T12:43:49.530496+00:00",
+    "updated_at": "2026-08-18T12:43:49.530496+00:00"
+  },
+  "asset_ing_2240f4c56a7ba765": {
+    "schema_version": 1,
+    "asset": {
+      "id": "asset_ing_2240f4c56a7ba765",
+      "font": null,
+      "kind": "raster_image",
+      "logo": null,
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "label": "enterprise-accordion-hertz.png",
+      "media": {
+        "digest": {
+          "value": "2240f4c56a7ba7656fd6c0a2c86d0607c7d1816d9f7a15c21f2fc2e932eb0540",
+          "algorithm": "sha256"
+        },
+        "filename": "enterprise-accordion-hertz.png",
+        "location": {
+          "url": null,
+          "provider": "clue-storage",
+          "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/2240f4c56a7ba7656fd6c0a2c86d0607c7d1816d9f7a15c21f2fc2e932eb0540"
+        },
+        "mime_type": "image/png",
+        "thumbnail": {
+          "location": {
+            "url": null,
+            "provider": "clue-storage",
+            "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/451f2a784ec1e01b1056981e190684a32ff6373f67190d6b7a11532f2c820a73"
+          },
+          "mime_type": "image/png",
+          "pixel_width": 256,
+          "pixel_height": 111,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "451f2a784ec1e01b1056981e190684a32ff6373f67190d6b7a11532f2c820a73"
+          }
+        },
+        "byte_length": 62311
+      },
+      "raster": {
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": false,
+        "pixel_width": 296,
+        "aspect_ratio": 2.3125,
+        "pixel_height": 128,
+        "color_profile": null
+      },
+      "source": {
+        "url": "https://images.stripeassets.com/fzn2n1nzq965/24BNV3GGtvCprFLrYovyaa/b2eac20a1d5ec75e4bff3888b998d163/enterprise-accordion-hertz.png?w=296&q=90",
+        "kind": "website",
+        "captured_at": "2026-08-18T12:43:40.897063+00:00"
+      },
+      "status": "ready",
+      "vector": null,
+      "license": null,
+      "provenance": {
+        "notes": [],
+        "confidence": 0.7,
+        "created_at": "2026-08-18T12:43:40.897063+00:00",
+        "created_by": "lumen_ingestion",
+        "source_label": "website"
+      }
+    },
+    "created_at": "2026-08-18T12:43:49.530496+00:00",
+    "updated_at": "2026-08-18T12:43:49.530496+00:00"
+  },
+  "asset_ing_2b0928ca4f3a3c70": {
+    "schema_version": 1,
+    "asset": {
+      "id": "asset_ing_2b0928ca4f3a3c70",
+      "font": null,
+      "kind": "raster_image",
+      "logo": null,
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "label": "payment-bento-background.jpg",
+      "media": {
+        "digest": {
+          "value": "2b0928ca4f3a3c70c5c2fed22996f0428da219c953a14e71567b73c1d8af937a",
+          "algorithm": "sha256"
+        },
+        "filename": "payment-bento-background.jpg",
+        "location": {
+          "url": null,
+          "provider": "clue-storage",
+          "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/2b0928ca4f3a3c70c5c2fed22996f0428da219c953a14e71567b73c1d8af937a"
+        },
+        "mime_type": "image/jpeg",
+        "thumbnail": {
+          "location": {
+            "url": null,
+            "provider": "clue-storage",
+            "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/5d799142fbc142b8f6164dc07d986a4db2690e4b7739a4f01037d9a59621f869"
+          },
+          "mime_type": "image/png",
+          "pixel_width": 256,
+          "pixel_height": 212,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "5d799142fbc142b8f6164dc07d986a4db2690e4b7739a4f01037d9a59621f869"
+          }
+        },
+        "byte_length": 23935
+      },
+      "raster": {
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": false,
+        "pixel_width": 860,
+        "aspect_ratio": 1.2078651685393258,
+        "pixel_height": 712,
+        "color_profile": null
+      },
+      "source": {
+        "url": "https://images.stripeassets.com/fzn2n1nzq965/vYmk6v8n7oDAwbDpwhjV6/846f9b3e214549b8f14e2b8c8cfe9343/payment-bento-background.jpg?w=860&q=80",
+        "kind": "website",
+        "captured_at": "2026-08-18T12:43:40.897063+00:00"
+      },
+      "status": "ready",
+      "vector": null,
+      "license": null,
+      "provenance": {
+        "notes": [],
+        "confidence": 0.7,
+        "created_at": "2026-08-18T12:43:40.897063+00:00",
+        "created_by": "lumen_ingestion",
+        "source_label": "website"
+      }
+    },
+    "created_at": "2026-08-18T12:43:49.530496+00:00",
+    "updated_at": "2026-08-18T12:43:49.530496+00:00"
+  },
+  "asset_ing_1511de1ec38185ac": {
+    "schema_version": 1,
+    "asset": {
+      "id": "asset_ing_1511de1ec38185ac",
+      "font": null,
+      "kind": "raster_image",
+      "logo": null,
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "label": "ConnectBentoBackground.jpg",
+      "media": {
+        "digest": {
+          "value": "1511de1ec38185ac6904eeb655d0f0cf2711fd08a49771c36974c111bbdc35ab",
+          "algorithm": "sha256"
+        },
+        "filename": "ConnectBentoBackground.jpg",
+        "location": {
+          "url": null,
+          "provider": "clue-storage",
+          "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/1511de1ec38185ac6904eeb655d0f0cf2711fd08a49771c36974c111bbdc35ab"
+        },
+        "mime_type": "image/jpeg",
+        "thumbnail": {
+          "location": {
+            "url": null,
+            "provider": "clue-storage",
+            "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/97cdd81b7ce13a8032c1f6fce2410fde9fd07706898cca28474678e8535da63a"
+          },
+          "mime_type": "image/png",
+          "pixel_width": 256,
+          "pixel_height": 94,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "97cdd81b7ce13a8032c1f6fce2410fde9fd07706898cca28474678e8535da63a"
+          }
+        },
+        "byte_length": 144596
+      },
+      "raster": {
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": false,
+        "pixel_width": 1242,
+        "aspect_ratio": 2.73568281938326,
+        "pixel_height": 454,
+        "color_profile": null
+      },
+      "source": {
+        "url": "https://images.stripeassets.com/fzn2n1nzq965/1j4wM9h2bBsyRFvTv6Wsn0/07f4b9b1e1e17fdc509d9087454dd8bc/ConnectBentoBackground.jpg?w=1242&q=90",
+        "kind": "website",
+        "captured_at": "2026-08-18T12:43:40.897063+00:00"
+      },
+      "status": "ready",
+      "vector": null,
+      "license": null,
+      "provenance": {
+        "notes": [],
+        "confidence": 0.7,
+        "created_at": "2026-08-18T12:43:40.897063+00:00",
+        "created_by": "lumen_ingestion",
+        "source_label": "website"
+      }
+    },
+    "created_at": "2026-08-18T12:43:49.530496+00:00",
+    "updated_at": "2026-08-18T12:43:49.530496+00:00"
+  },
+  "asset_ing_0888ff6595f4662d": {
+    "schema_version": 1,
+    "asset": {
+      "id": "asset_ing_0888ff6595f4662d",
+      "font": null,
+      "kind": "raster_image",
+      "logo": null,
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "label": "DatavizStatic3x.png",
+      "media": {
+        "digest": {
+          "value": "0888ff6595f4662de24a732160899da8a1f3b763c8ea6e85c4fa0c8164f0bdcb",
+          "algorithm": "sha256"
+        },
+        "filename": "DatavizStatic3x.png",
+        "location": {
+          "url": null,
+          "provider": "clue-storage",
+          "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/0888ff6595f4662de24a732160899da8a1f3b763c8ea6e85c4fa0c8164f0bdcb"
+        },
+        "mime_type": "image/png",
+        "thumbnail": {
+          "location": {
+            "url": null,
+            "provider": "clue-storage",
+            "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/0693096ccb8e38d326908f4edee036993c56fbf47e280a7d97e1092a4380acc0"
+          },
+          "mime_type": "image/png",
+          "pixel_width": 256,
+          "pixel_height": 100,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "0693096ccb8e38d326908f4edee036993c56fbf47e280a7d97e1092a4380acc0"
+          }
+        },
+        "byte_length": 91357
+      },
+      "raster": {
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": true,
+        "pixel_width": 768,
+        "aspect_ratio": 2.56,
+        "pixel_height": 300,
+        "color_profile": null
+      },
+      "source": {
+        "url": "https://images.stripeassets.com/fzn2n1nzq965/63zO5Z4CABvFl3pLLhnu3l/a9c12c883f820dc29d29fa0b9dcb0814/DatavizStatic3x.png?w=768&q=90",
+        "kind": "website",
+        "captured_at": "2026-08-18T12:43:40.897063+00:00"
+      },
+      "status": "ready",
+      "vector": null,
+      "license": null,
+      "provenance": {
+        "notes": [],
+        "confidence": 0.7,
+        "created_at": "2026-08-18T12:43:40.897063+00:00",
+        "created_by": "lumen_ingestion",
+        "source_label": "website"
+      }
+    },
+    "created_at": "2026-08-18T12:43:49.530496+00:00",
+    "updated_at": "2026-08-18T12:43:49.530496+00:00"
+  },
+  "asset_ing_ecf26311cdeb734d": {
+    "schema_version": 1,
+    "asset": {
+      "id": "asset_ing_ecf26311cdeb734d",
+      "font": null,
+      "kind": "raster_image",
+      "logo": null,
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "label": "sessions-2026-on-demand-bg.png",
+      "media": {
+        "digest": {
+          "value": "ecf26311cdeb734dad4831593bd78e14ad15480c10ab66396433498f4f75576a",
+          "algorithm": "sha256"
+        },
+        "filename": "sessions-2026-on-demand-bg.png",
+        "location": {
+          "url": null,
+          "provider": "clue-storage",
+          "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/ecf26311cdeb734dad4831593bd78e14ad15480c10ab66396433498f4f75576a"
+        },
+        "mime_type": "image/png",
+        "thumbnail": {
+          "location": {
+            "url": null,
+            "provider": "clue-storage",
+            "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/57f914529e662a9d6fbeea07d072f929e33c590ade4f01876e821efe0fda3664"
+          },
+          "mime_type": "image/png",
+          "pixel_width": 256,
+          "pixel_height": 83,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "57f914529e662a9d6fbeea07d072f929e33c590ade4f01876e821efe0fda3664"
+          }
+        },
+        "byte_length": 37390
+      },
+      "raster": {
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": false,
+        "pixel_width": 296,
+        "aspect_ratio": 3.0833333333333335,
+        "pixel_height": 96,
+        "color_profile": null
+      },
+      "source": {
+        "url": "https://images.stripeassets.com/fzn2n1nzq965/2YFdgdFPeIiDpmQbhHPAx8/186752498bf713fea245f31bcec84f8a/sessions-2026-on-demand-bg.png?w=296&q=90",
+        "kind": "website",
+        "captured_at": "2026-08-18T12:43:40.897063+00:00"
+      },
+      "status": "ready",
+      "vector": null,
+      "license": null,
+      "provenance": {
+        "notes": [],
+        "confidence": 0.7,
+        "created_at": "2026-08-18T12:43:40.897063+00:00",
+        "created_by": "lumen_ingestion",
+        "source_label": "website"
+      }
+    },
+    "created_at": "2026-08-18T12:43:49.530496+00:00",
+    "updated_at": "2026-08-18T12:43:49.530496+00:00"
+  },
+  "asset_ing_9ea5ee9c9f82fa56": {
+    "schema_version": 1,
+    "asset": {
+      "id": "asset_ing_9ea5ee9c9f82fa56",
+      "font": null,
+      "kind": "raster_image",
+      "logo": null,
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "label": "ConnectMobileBackground.jpg",
+      "media": {
+        "digest": {
+          "value": "9ea5ee9c9f82fa5689c83bb92bf93c7e9d851650e023121eb8e2c22a891f3a11",
+          "algorithm": "sha256"
+        },
+        "filename": "ConnectMobileBackground.jpg",
+        "location": {
+          "url": null,
+          "provider": "clue-storage",
+          "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/9ea5ee9c9f82fa5689c83bb92bf93c7e9d851650e023121eb8e2c22a891f3a11"
+        },
+        "mime_type": "image/jpeg",
+        "thumbnail": {
+          "location": {
+            "url": null,
+            "provider": "clue-storage",
+            "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/bef68f8f1ece12adafe1608d99f6a775f8d7368131cb69b1703f241e1927a889"
+          },
+          "mime_type": "image/png",
+          "pixel_width": 175,
+          "pixel_height": 256,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "bef68f8f1ece12adafe1608d99f6a775f8d7368131cb69b1703f241e1927a889"
+          }
+        },
+        "byte_length": 29573
+      },
+      "raster": {
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": false,
+        "pixel_width": 296,
+        "aspect_ratio": 0.6820276497695853,
+        "pixel_height": 434,
+        "color_profile": null
+      },
+      "source": {
+        "url": "https://images.stripeassets.com/fzn2n1nzq965/43eqkFV1GG5GqcbNNeEzVp/8f4705b1b80a4c835c2960ed8055d649/ConnectMobileBackground.jpg?w=296&q=90",
+        "kind": "website",
+        "captured_at": "2026-08-18T12:43:40.897063+00:00"
+      },
+      "status": "ready",
+      "vector": null,
+      "license": null,
+      "provenance": {
+        "notes": [],
+        "confidence": 0.7,
+        "created_at": "2026-08-18T12:43:40.897063+00:00",
+        "created_by": "lumen_ingestion",
+        "source_label": "website"
+      }
+    },
+    "created_at": "2026-08-18T12:43:49.530496+00:00",
+    "updated_at": "2026-08-18T12:43:49.530496+00:00"
+  },
+  "asset_ing_fa2ed16107766130": {
+    "schema_version": 1,
+    "asset": {
+      "id": "asset_ing_fa2ed16107766130",
+      "font": null,
+      "kind": "raster_image",
+      "logo": null,
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "label": "wave_crop.jpg",
+      "media": {
+        "digest": {
+          "value": "fa2ed16107766130564c30707dc01f955d37abd857183d41848484aa8fe646a2",
+          "algorithm": "sha256"
+        },
+        "filename": "wave_crop.jpg",
+        "location": {
+          "url": null,
+          "provider": "clue-storage",
+          "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/fa2ed16107766130564c30707dc01f955d37abd857183d41848484aa8fe646a2"
+        },
+        "mime_type": "image/jpeg",
+        "thumbnail": {
+          "location": {
+            "url": null,
+            "provider": "clue-storage",
+            "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/d1a1b2dfbbe179299e166abe43ec1df4a818b4a69321c097c3ff0a45127a63c6"
+          },
+          "mime_type": "image/png",
+          "pixel_width": 188,
+          "pixel_height": 256,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "d1a1b2dfbbe179299e166abe43ec1df4a818b4a69321c097c3ff0a45127a63c6"
+          }
+        },
+        "byte_length": 6864
+      },
+      "raster": {
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": false,
+        "pixel_width": 296,
+        "aspect_ratio": 0.7326732673267327,
+        "pixel_height": 404,
+        "color_profile": null
+      },
+      "source": {
+        "url": "https://images.stripeassets.com/fzn2n1nzq965/m9HBEK464p46FeNIhs2PV/f5054a93c8a0a6aabdd1c47675d610ae/wave_crop.jpg?w=296&q=80",
+        "kind": "website",
+        "captured_at": "2026-08-18T12:43:40.897063+00:00"
+      },
+      "status": "ready",
+      "vector": null,
+      "license": null,
+      "provenance": {
+        "notes": [],
+        "confidence": 0.7,
+        "created_at": "2026-08-18T12:43:40.897063+00:00",
+        "created_by": "lumen_ingestion",
+        "source_label": "website"
+      }
+    },
+    "created_at": "2026-08-18T12:43:49.530496+00:00",
+    "updated_at": "2026-08-18T12:43:49.530496+00:00"
+  },
+  "asset_ing_f436261cad2c2aa9": {
+    "schema_version": 1,
+    "asset": {
+      "id": "asset_ing_f436261cad2c2aa9",
+      "font": null,
+      "kind": "raster_image",
+      "logo": null,
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "label": "sessions-2026-on-demand-bg-mobile.png",
+      "media": {
+        "digest": {
+          "value": "f436261cad2c2aa958e00d34b2b1fb4eec4e793bcc176f1f7e3ea35dd522fa5c",
+          "algorithm": "sha256"
+        },
+        "filename": "sessions-2026-on-demand-bg-mobile.png",
+        "location": {
+          "url": null,
+          "provider": "clue-storage",
+          "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/f436261cad2c2aa958e00d34b2b1fb4eec4e793bcc176f1f7e3ea35dd522fa5c"
+        },
+        "mime_type": "image/png",
+        "thumbnail": {
+          "location": {
+            "url": null,
+            "provider": "clue-storage",
+            "opaque_ref": "ws_8040294627e146ae93f753ec0d3e1726/design/a93107e1cf3d3f5f4fe709928bf85228cd0e70721f0a9aeb7194fb2aaacac8c2"
+          },
+          "mime_type": "image/png",
+          "pixel_width": 159,
+          "pixel_height": 256,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "a93107e1cf3d3f5f4fe709928bf85228cd0e70721f0a9aeb7194fb2aaacac8c2"
+          }
+        },
+        "byte_length": 232144
+      },
+      "raster": {
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": false,
+        "pixel_width": 368,
+        "aspect_ratio": 0.6216216216216216,
+        "pixel_height": 592,
+        "color_profile": null
+      },
+      "source": {
+        "url": "https://images.stripeassets.com/fzn2n1nzq965/52qeQQDMQNJ3CmnFPjHbTi/1a3a3acd4f027175a863fafcc29a4d9a/sessions-2026-on-demand-bg-mobile.png?w=368&q=90",
+        "kind": "website",
+        "captured_at": "2026-08-18T12:43:40.897063+00:00"
+      },
+      "status": "ready",
+      "vector": null,
+      "license": null,
+      "provenance": {
+        "notes": [],
+        "confidence": 0.7,
+        "created_at": "2026-08-18T12:43:40.897063+00:00",
+        "created_by": "lumen_ingestion",
+        "source_label": "website"
+      }
+    },
+    "created_at": "2026-08-18T12:43:49.530496+00:00",
+    "updated_at": "2026-08-18T12:43:49.530496+00:00"
+  }
+}

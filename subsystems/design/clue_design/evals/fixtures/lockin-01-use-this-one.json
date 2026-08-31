@@ -1,0 +1,25 @@
+{
+  "name": "lockin-01-use-this-one",
+  "kind": "lock_in",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [
+    {
+      "role": "user",
+      "text": "Make the headline two lines."
+    },
+    {
+      "role": "assistant",
+      "text": "Design turn accepted: proposal 1 ready for review."
+    }
+  ],
+  "message": "Perfect - lock it in, we'll use this one.",
+  "judgment": {
+    "action": "finish",
+    "reason": "locked"
+  },
+  "expected": {
+    "action": "finish",
+    "reason": "locked",
+    "fail_safe": false
+  }
+}

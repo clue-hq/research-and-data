@@ -534,11 +534,27 @@ class TierCheckpointPhaseHandler:
         coverage_config: CoverageConfig = DEFAULT_COVERAGE_CONFIG,
         session_factory: ConnFactory = transaction,
         sealed_account_reader: SealedDiscoveryAccountReader | None = None,
+        enforce_budget: bool = True,
     ) -> None:
         self._config = config
         self._coverage_config = coverage_config
         self._session_factory = session_factory
         self._sealed_account_reader = sealed_account_reader
+        # FI pilot budget-controls (ratified 2026-08-11), threaded from
+        # ``Settings.budget_controls_enabled`` at the composition root. False means a human
+        # ``approve`` is honoured even when the projected Pass-B cost exceeds the effective cap: the
+        # ruling is that nothing stops a *pre-approved* action on budget grounds, and this gate is
+        # the most literal case of that — the person with the authority has just clicked approve.
+        # The estimate is still computed and still travels in the review payload (recording and
+        # legibility are unaffected); it simply no longer overrides the decision.
+        self._enforce_budget = enforce_budget
+
+    def _over_cap(self, estimated_cost_cents: Decimal, effective_cap: Decimal | None) -> bool:
+        """Whether the projected Pass-B spend exceeds the effective cap *and* may stop the run."""
+
+        if not self._enforce_budget:
+            return False
+        return effective_cap is not None and estimated_cost_cents > effective_cap
 
     async def _run_discovery_criteria_checkpoint(
         self,
@@ -599,7 +615,7 @@ class TierCheckpointPhaseHandler:
             if decision.budget_cap_cents is not None
             else ctx.budget_cap_cents
         )
-        over_cap = effective_cap is not None and estimate.estimated_cost_cents > effective_cap
+        over_cap = self._over_cap(estimate.estimated_cost_cents, effective_cap)
         approved = (
             decision.action is CheckpointAction.APPROVE and approval_error is None and not over_cap
         )
@@ -795,7 +811,7 @@ class TierCheckpointPhaseHandler:
                 if decision.budget_cap_cents is not None
                 else ctx.budget_cap_cents
             )
-            over_cap = effective_cap is not None and estimate.estimated_cost_cents > effective_cap
+            over_cap = self._over_cap(estimate.estimated_cost_cents, effective_cap)
 
             rows = tuple(
                 AccountTierView.from_view(view, assignments[view.account_id]) for view in views
@@ -834,6 +850,9 @@ class TierCheckpointPhaseHandler:
                             # FI-2 §6.4: pin the tier to the approving project so a second
                             # project's checkpoint never supersedes this one's tier.
                             project_id=ctx.project_id,
+                            # The account-research launch boundary consumes the exact run-local
+                            # selection authority, not a mutable project-wide tier.
+                            project_run_id=ctx.project_run_id,
                         )
                     except Exception:  # noqa: BLE001 — isolate one account; continue the approve.
                         # Commit is outside the try so a commit failure is never double-rolled-back.

@@ -147,7 +147,8 @@ class CreateAgentContactFacetDelegate:
             current_state_sha256=str(row["current_state_sha256"]),
             job_budget_cap_cents=Decimal(row["budget_cap_cents"]),
             job_spent_cents=Decimal(row["spent_cents"]),
-            run_budget_remaining_cents=Decimal(row["run_remaining"]),
+            run_budget_remaining_cents=max(Decimal(0), Decimal(row["run_remaining"])),
+            budget_controls_enabled=context.budget_controls_enabled,
         )
         definition = EntityResearchAgentDefinition(
             context=child_context,

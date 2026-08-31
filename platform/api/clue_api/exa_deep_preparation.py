@@ -312,6 +312,7 @@ def build_production_exa_deep_resolver_provider(
         transport=ExaDeepHttpAcquisitionTransport(config=config, secrets=secrets),
         storage=storage,
         conn_factory=conn_factory,
+        enforce_budget=settings.budget_controls_enabled,
     )
     return ExaDeepAccountResolverProvider(
         settings=settings,

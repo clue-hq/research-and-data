@@ -26,9 +26,11 @@ from .roles import (
     assign_light_roles,
     build_dark_colorway,
 )
+from .bands import build_band_surfaces
 from .font_metrics import build_type_size_ramp, glyph_gap_diagnostic
+from .geometry import MEASURED_CONFIDENCE, build_shadows
 from .scales import build_opacity, build_radii, build_spacing, build_strokes
-from .typography import build_type_styles, resolve_anchors
+from .typography import build_type_styles, custodied_weights, resolve_anchors
 
 _CONTRAST_MIN = 4.5
 
@@ -54,7 +56,11 @@ def normalize_evidence(
     diagnostics: list[dict] = []
 
     clusters = cluster_colors(evidence.colors)
-    light = assign_light_roles(clusters)
+    # Declared roles ride alongside the clusters, not through them (clone-fidelity F0.3):
+    # the site's own naming of a color outranks anything we can infer from how often that
+    # color appears. Empty for every non-website capture and every pre-F0.3 bundle, in
+    # which case `assign_light_roles` behaves exactly as it always has.
+    light = assign_light_roles(clusters, evidence.declared_roles, evidence.render_truth)
     diagnostics.extend(light.diagnostics)
 
     page_hex = light.assignments["surface.page"].hex
@@ -117,6 +123,24 @@ def normalize_evidence(
         if cluster.name and _is_path_safe(cluster.name) and cluster.name != slug:
             builder.add_alias(cluster.name, extra_path, "ingestion alias")
 
+    # Measured band surfaces. The page's background rhythm is measured; a color
+    # the page RECURS on (or stands on for a fifth of its scroll) is a surface
+    # the brand owns, so it gets a name instead of reaching the brief agent as
+    # an unnamed hex. Runs after the extras so the dedupe sees every color the
+    # kit already carries. Geometry-gated: evidence without a measured band
+    # sequence mints nothing and its kit stays byte-identical.
+    for band in build_band_surfaces(
+        evidence.geometry.background_sequence,
+        [entry["value"]["default"]["value"] for entry in builder.colors.values()],
+    ):
+        builder.add_color(
+            band.path,
+            RoleAssignment(band.hex, "measured", band.provenance),
+            None,
+            confidence=MEASURED_CONFIDENCE,
+            description=band.description,
+        )
+
     # accent alias (spec §4).
     builder.add_alias("accent.primary", "surface.accent", "ingestion alias")
 
@@ -127,19 +151,31 @@ def normalize_evidence(
     if assist_result and assist_result.body_family and _family_in_evidence(evidence, assist_result.body_family):
         anchors.body_family = assist_result.body_family
     cta_color = _cta_color_token(semantic_light, brand_hex)
-    styles = build_type_styles(anchors, cta_color=cta_color)
+    styles, type_diags = build_type_styles(
+        anchors, cta_color=cta_color, custodied=custodied_weights(evidence)
+    )
+    diagnostics.extend(type_diags)
     type_pointer = _type_pointer(evidence)
     type_basis = "evidence" if evidence.type_samples or evidence.fonts else "default"
     for path, style in styles.items():
         builder.add_typography(path, style, type_basis, type_pointer)
 
-    # Number scales.
-    spacing, spacing_diags = build_spacing(evidence.numbers)
+    # Number scales. Measured geometry (design-brief slice 2) claims the steps
+    # the brand's own site can fill; the rest stay on the derived base scale.
+    spacing, spacing_measured, spacing_diags = build_spacing(evidence.numbers)
     diagnostics.extend(spacing_diags)
-    builder.add_numbers(builder.spacing, spacing, "spacing", "derived:spacing-scale")
-    builder.add_numbers(builder.radii, build_radii(evidence.numbers), "radius", "derived:radius-scale")
-    builder.add_numbers(builder.stroke_widths, build_strokes(), "stroke", "derived:stroke-scale")
+    builder.add_numbers(
+        builder.spacing, spacing, "spacing", "derived:spacing-scale", spacing_measured
+    )
+    radii, radii_measured = build_radii(evidence.numbers)
+    builder.add_numbers(builder.radii, radii, "radius", "derived:radius-scale", radii_measured)
+    strokes, strokes_measured = build_strokes(evidence.numbers)
+    builder.add_numbers(
+        builder.stroke_widths, strokes, "stroke", "derived:stroke-scale", strokes_measured
+    )
     builder.add_numbers(builder.opacity, build_opacity(), "visibility", "derived:opacity-scale")
+    # Elevation: measured or honestly empty — never a fabricated default.
+    builder.add_shadows(build_shadows(evidence.shadows))
 
     # K4 rung 2: the canonical type.size ramp, x-height-normalized against the
     # platform reference font using metrics MEASURED from this kit's own font

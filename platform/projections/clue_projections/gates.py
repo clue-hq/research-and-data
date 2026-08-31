@@ -45,6 +45,9 @@ class GateAnswerView(BaseModel):
     turn_id: str
     action_ref: str
     decision: str
+    expected_subject_sha256: str
+    decision_payload: dict[str, JsonValue]
+    selected_option_ref: str | None
     answered_by_user_id: str
     answered_at: datetime
 
@@ -82,16 +85,19 @@ class GateView(BaseModel):
     subject_revision: int | None
     expected_subject_sha256: str
     subject_snapshot: dict[str, JsonValue]
-    max_spend_cents: Decimal
-    currency: str
+    permitted_decisions: tuple[str, ...]
+    max_spend_cents: Decimal | None
+    currency: str | None
     addressee_user_id: str
     created_at: datetime
+    snapshot_erased_at: datetime | None = None
+    snapshot_erasure_reason: str | None = None
     answer: GateAnswerView | None
     launches: tuple[GateLaunchView, ...]
 
     @property
     def is_open(self) -> bool:
-        return self.answer is None
+        return self.answer is None and self.snapshot_erased_at is None
 
 
 _OPEN_KINDS_SQL = text(
@@ -102,7 +108,7 @@ _OPEN_KINDS_SQL = text(
       ON a.gate_id = g.gate_id AND a.workspace_id = g.workspace_id
     WHERE g.workspace_id = :workspace_id
       AND g.thread_id = ANY(CAST(:thread_ids AS text[]))
-      AND a.gate_id IS NULL
+      AND a.gate_id IS NULL AND g.snapshot_erased_at IS NULL
     ORDER BY g.created_at, g.gate_id
     """
 )
@@ -139,9 +145,11 @@ _THREAD_GATES_SQL = text(
     """
     SELECT g.gate_id, g.workspace_id, g.project_id, g.thread_id, g.turn_id, g.kind,
            g.subject_ref, g.subject_revision, g.expected_subject_sha256, g.subject_snapshot,
-           g.max_spend_cents, g.currency, g.addressee_user_id, g.created_at,
-           a.turn_id AS answer_turn_id, a.action_ref, a.decision, a.answered_by_user_id,
-           a.answered_at
+           g.permitted_decisions, g.max_spend_cents, g.currency, g.addressee_user_id, g.created_at,
+           g.snapshot_erased_at, g.snapshot_erasure_reason,
+           a.turn_id AS answer_turn_id, a.action_ref, a.decision,
+           a.expected_subject_sha256 AS answer_subject_sha256, a.decision_payload,
+           a.selected_option_ref, a.answered_by_user_id, a.answered_at
     FROM agent_gate g
     LEFT JOIN agent_gate_answer a
       ON a.gate_id = g.gate_id AND a.workspace_id = g.workspace_id
@@ -224,6 +232,11 @@ async def thread_gates(
                 turn_id=str(row["answer_turn_id"]),
                 action_ref=str(row["action_ref"]),
                 decision=str(row["decision"]),
+                expected_subject_sha256=str(row["answer_subject_sha256"]),
+                decision_payload=_snapshot(row["decision_payload"]),
+                selected_option_ref=(
+                    None if row["selected_option_ref"] is None else str(row["selected_option_ref"])
+                ),
                 answered_by_user_id=str(row["answered_by_user_id"]),
                 answered_at=row["answered_at"],
             )
@@ -240,10 +253,13 @@ async def thread_gates(
                 subject_revision=row["subject_revision"],
                 expected_subject_sha256=str(row["expected_subject_sha256"]),
                 subject_snapshot=_snapshot(row["subject_snapshot"]),
+                permitted_decisions=tuple(str(item) for item in row["permitted_decisions"]),
                 max_spend_cents=row["max_spend_cents"],
-                currency=str(row["currency"]),
+                currency=None if row["currency"] is None else str(row["currency"]),
                 addressee_user_id=str(row["addressee_user_id"]),
                 created_at=row["created_at"],
+                snapshot_erased_at=row["snapshot_erased_at"],
+                snapshot_erasure_reason=row["snapshot_erasure_reason"],
                 answer=answer,
                 launches=tuple(
                     launches_by_ref.get(answer.action_ref, ()) if answer is not None else ()

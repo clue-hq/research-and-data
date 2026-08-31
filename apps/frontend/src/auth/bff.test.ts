@@ -9,6 +9,10 @@ import {
 
 test("BFF path encoding cannot escape the configured backend origin", () => {
   assert.equal(
+    backendPath(["frontend", "v1", "accounts"]),
+    "/frontend/v1/accounts",
+  );
+  assert.equal(
     backendPath(["v1", "projects", "../other"]),
     "/v1/projects/..%2Fother",
   );
@@ -42,6 +46,29 @@ test("BFF permits only same-origin browser mutations", () => {
   );
 });
 
+test("BFF can pin mutations to the configured canonical origin across proxy rewrites", () => {
+  assert.equal(
+    hasAllowedOrigin(
+      new Request("http://127.0.0.1:3000/api/onboarding/provision", {
+        method: "POST",
+        headers: { Origin: "http://localhost:3000" },
+      }),
+      "http://localhost:3000",
+    ),
+    true,
+  );
+  assert.equal(
+    hasAllowedOrigin(
+      new Request("http://localhost:3000/api/onboarding/provision", {
+        method: "POST",
+        headers: { Origin: "http://127.0.0.1:3000" },
+      }),
+      "http://localhost:3000",
+    ),
+    false,
+  );
+});
+
 test("BFF forwards a narrow header allowlist and never browser cookies", () => {
   const incoming = new Headers({
     Cookie: "__session=secret",
@@ -68,11 +95,20 @@ test("BFF response never forwards backend cookies or authentication headers", ()
       "Content-Type": "application/json",
       "Set-Cookie": "backend=secret",
       Authorization: "Bearer secret",
+      "Content-Disposition": "inline",
+      "Content-Security-Policy": "sandbox; default-src 'none'",
+      "X-Content-Type-Options": "nosniff",
       "X-Request-Id": "request-1",
     }),
   );
   assert.equal(outgoing.get("content-type"), "application/json");
   assert.equal(outgoing.get("x-request-id"), "request-1");
+  assert.equal(outgoing.get("content-disposition"), "inline");
+  assert.equal(
+    outgoing.get("content-security-policy"),
+    "sandbox; default-src 'none'",
+  );
+  assert.equal(outgoing.get("x-content-type-options"), "nosniff");
   assert.equal(outgoing.get("set-cookie"), null);
   assert.equal(outgoing.get("authorization"), null);
 });

@@ -31,9 +31,19 @@ class FleetTaskKind(StrEnum):
       single-flight fence; the turn itself is named by the payload and by the
       ``agent-turn:<turn_id>`` dedup key. The queue never carries a session token — only internal
       ids and durable turn refs (`FI-lane-B-authenticated-principal-contract.md` §7).
+    * ``STAGE0_RECON`` — one detached drive of the existing two-lane onboarding recon. The web
+      process only captures input and enqueues this reference-only task.
+    * ``OFFICIAL_SITE_CRAWL`` — one C6 durable official-site lifecycle, keyed to a recon but using
+      its own work lease so shadow acquisition may continue beside the legacy background lane.
+    * ``DESIGN_JOB`` — one unit of design-subsystem work (PD Part II D5). Agent turns, web turns,
+      and brand-kit ingestion all use this same mechanical kind, exactly as the two research
+      subject types share ``ENTITY_RESEARCH_JOB``; which shape it is lives in the immutable
+      by-value envelope the worker executes from, not in the queue taxonomy.
 
     New members are appended, never inserted: the DB enum is grown with ``ALTER TYPE … ADD VALUE``
-    (which appends), and the parity test compares the two **in order**.
+    (which appends), and the parity test compares the two **in order**. Member order here mirrors
+    migration application order on the merged tree (the frontend lane chain applies before the
+    design Part-II chain, so ``agent_turn`` precedes ``design_job``).
     """
 
     DRIVE_RUN = "drive_run"
@@ -41,6 +51,9 @@ class FleetTaskKind(StrEnum):
     EXECUTE_GRAPH = "execute_graph"
     ENTITY_RESEARCH_JOB = "entity_research_job"
     AGENT_TURN = "agent_turn"
+    STAGE0_RECON = "stage0_recon"
+    OFFICIAL_SITE_CRAWL = "official_site_crawl"
+    DESIGN_JOB = "design_job"
 
 
 class FleetTaskStatus(StrEnum):

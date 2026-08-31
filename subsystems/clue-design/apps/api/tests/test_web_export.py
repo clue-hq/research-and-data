@@ -16,10 +16,15 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
+from clue_design.storage import SOURCE_KEY_ASSET
+
+from conftest import make_blob_store, make_client
 from PIL import Image
 
-from lumen_api.database import Repository, connect
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
+from lumen_api.web_export import _CompiledTheme, _build_input_css
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -50,9 +55,9 @@ SAMPLE_HTML = """
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+def client(tmp_path: Path, design_storage) -> TestClient:
+    app = create_app(tmp_path / "engine-cache", storage=design_storage)
+    return make_client(app)
 
 
 def create_web_document(client: TestClient, **extra) -> dict:
@@ -83,19 +88,16 @@ def ingest_content(client: TestClient, document_id: str) -> dict:
 
 
 def seed_content(client: TestClient, document_id: str, web_doc: dict) -> None:
-    store = Repository(connect(client.app.state.database_path))
-    try:
-        store.update_web_document(
-            document_id,
-            web_doc,
-            intent="seed",
-            checkpoint_label="seed",
-            operations=[{"kind": "replace_web_doc"}],
-            inverse_operations=None,
-            push_undo=False,
-        )
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    store.update_web_document(
+        document_id,
+        web_doc,
+        intent="seed",
+        checkpoint_label="seed",
+        operations=[{"kind": "replace_web_doc"}],
+        inverse_operations=None,
+        push_undo=False,
+    )
 
 
 def get_document(client: TestClient, document_id: str) -> dict:
@@ -126,6 +128,45 @@ def find_node(web_doc: dict, kind: str) -> str:
     return next(nid for nid, node in nodes.items() if node.get("kind") == kind)
 
 
+# --- (a0) the input CSS the static compile is fed ---------------------------
+
+
+def test_build_input_css_carries_colors_geometry_and_utility_rules() -> None:
+    """The published page's `@theme` block must carry the SAME three channels
+    the editor's `theme_block` does, or brand geometry silently no-ops on every
+    published page while it works on the canvas."""
+    theme = _CompiledTheme(
+        tokens={"primary": "#4FD3C8"},
+        geometry={
+            "radius-button": "4px",
+            "shadow-brand": "0 15.93px 31.86px -8px #32325D1F",
+            "border-width-card": "1px",
+            "spacing-section": "96px",
+        },
+        utility_css="@utility border-w-card { border-width: var(--border-width-card); }\n",
+    )
+    css = _build_input_css(theme)
+
+    assert "  --color-primary: #4FD3C8;" in css
+    assert "  --radius-button: 4px;" in css
+    assert "  --shadow-brand: 0 15.93px 31.86px -8px #32325D1F;" in css
+    assert "  --border-width-card: 1px;" in css
+    assert "  --spacing-section: 96px;" in css
+    # Every var lands INSIDE the block; `@utility` is top-level, so after it.
+    block = css.index("@theme {")
+    close = css.index("\n}", block)
+    assert css.index("--radius-button") < close
+    assert css.index("@utility border-w-card") > close
+    assert css.endswith("\n")
+
+
+def test_build_input_css_without_geometry_is_unchanged() -> None:
+    """An engine too old to answer `geometry`/`utility_css` still compiles —
+    the export never hard-fails on a thin theme payload."""
+    css = _build_input_css(_CompiledTheme(tokens={"primary": "#000000"}, geometry={}, utility_css=""))
+    assert css == '@import "tailwindcss";\n@theme {\n  --color-primary: #000000;\n}\n'
+
+
 # --- (a) export zip of a seeded doc -----------------------------------------
 
 
@@ -154,6 +195,88 @@ def test_export_zip_has_core_files(client: TestClient) -> None:
     assert manifest["doc_version"] == get_document(client, document["id"])["current_version"]
     assert "index.html" in manifest["files"]
     assert "manifest.json" in manifest["files"]
+
+
+GEOMETRY_HTML = """
+<section id="hero" class="bg-light py-section">
+  <div class="mx-auto max-w-[1200px] px-6 flex flex-col gap-stack">
+    <div class="bg-card p-card rounded-card shadow-brand border border-border border-w-card">
+      <h1 data-variant="h2">Brand geometry</h1>
+      <p class="text-muted">Corners, elevation, hairlines and rhythm, by name.</p>
+      <a data-button="primary" class="rounded-button shadow-card" href="https://acme.test/demo">Get started</a>
+    </div>
+    <div class="border-t border-border border-w-divider"></div>
+    <div class="rounded-badge bg-primary px-3"><p data-variant="small" class="text-inverse">New</p></div>
+  </div>
+</section>
+"""
+
+
+def test_export_css_carries_brand_geometry(client: TestClient) -> None:
+    """A published page uses the SAME geometry mechanism the canvas does — the
+    static compile rebuilds `@theme` from the engine's geometry map, and the
+    `border-w-*` names ride the engine-built `@utility` rules.
+
+    Tailwind v4 tree-shakes unused theme vars, so this asserts only over
+    geometry the page actually authors (same posture as the `--color-primary`
+    assertion above)."""
+    document = create_web_document(client)
+    web_doc = client.get(f"/documents/{document['id']}").json()["scene"]
+    response = client.app.state.core.web_ingest_html(
+        web_doc, "home", GEOMETRY_HTML, None, None
+    )
+    errors = [d for d in response.get("diagnostics", []) if d.get("severity") == "error"]
+    assert not errors, response.get("diagnostics")
+    seed_content(client, document["id"], response["web_doc"])
+
+    files, _html, _manifest = export_zip(client, document["id"])
+    css = files["site.css"].decode("utf-8")
+
+    # The theme vars reached the compile.
+    assert "--radius-button" in css
+    assert "--radius-card" in css
+    assert "--radius-badge" in css
+    assert "--spacing-section" in css
+    assert "--spacing-stack" in css
+    assert "--spacing-card" in css
+    assert "--border-width-card" in css
+    assert "--border-width-divider" in css
+    # The utilities compiled against them.
+    assert "border-radius: var(--radius-button)" in css
+    assert "padding: var(--spacing-card)" in css
+    assert "padding-block: var(--spacing-section)" in css
+    assert "gap: var(--spacing-stack)" in css
+    # `border-w-*` has no Tailwind namespace — it exists only because the
+    # engine's `@utility` rules travelled with the theme.
+    assert "border-width: var(--border-width-card)" in css
+    assert "border-width: var(--border-width-divider)" in css
+    # Shadows compile through Tailwind's own `--tw-shadow` plumbing.
+    assert ".shadow-brand" in css
+    assert ".shadow-card" in css
+    assert "box-shadow" in css
+
+
+def test_publish_html_carries_brand_geometry(
+    client: TestClient, workspace_id: str
+) -> None:
+    """The publish path shares the pipeline, so it inherits geometry too — but
+    it inlines the CSS rather than linking it, so prove it separately."""
+    document = create_web_document(client)
+    web_doc = client.get(f"/documents/{document['id']}").json()["scene"]
+    response = client.app.state.core.web_ingest_html(
+        web_doc, "home", GEOMETRY_HTML, None, None
+    )
+    seed_content(client, document["id"], response["web_doc"])
+
+    published = client.post(
+        f"/documents/{document['id']}/web/publish", json={"slug": "geometry-page"}
+    )
+    assert published.status_code == 200, published.text
+    served = client.get(f"/w/{workspace_id}/p/geometry-page")
+    assert served.status_code == 200, served.text
+    html = served.text
+    assert "--radius-button" in html
+    assert "border-width: var(--border-width-card)" in html
 
 
 def test_export_preserves_semantic_structured_body_without_editor_state(
@@ -250,11 +373,10 @@ def test_export_copies_and_rewrites_image_assets(client: TestClient) -> None:
 
 
 def seed_font_asset(client: TestClient, asset_id: str, data: bytes) -> str:
-    digest = hashlib.sha256(data).hexdigest()
-    root = Path(client.app.state.asset_store_root)
-    blob = root / "sha256" / digest[:2] / digest
-    blob.parent.mkdir(parents=True, exist_ok=True)
-    blob.write_bytes(data)
+    # D4: the export reads face bytes from DURABLE storage, so seed them through the seam.
+    digest = make_blob_store(client.app).register(
+        data, media_type="font/woff2", source_key=SOURCE_KEY_ASSET
+    ) and hashlib.sha256(data).hexdigest()
     record = {
         "id": asset_id,
         "label": asset_id,
@@ -269,11 +391,8 @@ def seed_font_asset(client: TestClient, asset_id: str, data: bytes) -> str:
             "location": None,
         },
     }
-    store = Repository(connect(client.app.state.database_path))
-    try:
-        store.create_asset_record(record)
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    store.create_asset_record(record)
     return digest
 
 
@@ -308,11 +427,8 @@ def create_font_kit(client: TestClient, ofl_asset: str, locked_asset: str) -> No
         {"weight": 400, "style": "normal", "asset_id": locked_asset, "source_url": None}
     ]
     kit["assets"]["fonts"] = {"brand": included, "locked": excluded}
-    store = Repository(connect(client.app.state.database_path))
-    try:
-        store.create_brand_kit(kit, {}, [], "manual")
-    finally:
-        store.connection.close()
+    store = HybridRepository()
+    store.create_brand_kit(kit, {}, [], "manual")
 
 
 def test_export_font_license_gate(client: TestClient) -> None:
@@ -339,6 +455,94 @@ def test_export_font_license_gate(client: TestClient) -> None:
         "Locked Display" in warning and "license not embeddable" in warning
         for warning in manifest["warnings"]
     )
+
+
+def test_the_publish_manifest_stops_discarding_the_font_exclusions(
+    client: TestClient, workspace_id: str
+) -> None:
+    """D-F2 obligation 3: what the gate excludes must be VISIBLE, never dropped.
+
+    The publish path gathered fonts through the same license gate as export and then threw the
+    exclusion list away (`_excluded`), so a family the gate refused left no trace on the one
+    artifact a publish keeps. A page that silently ships in a fallback font is exactly the
+    failure a manifest exists to explain.
+    """
+    ofl_digest = seed_font_asset(client, "asset_font_pub_ofl", b"wOF2" + b"\x00" * 96)
+    seed_font_asset(client, "asset_font_pub_locked", b"wOF2" + b"\x11" * 96)
+    create_font_kit(client, "asset_font_pub_ofl", "asset_font_pub_locked")
+
+    document = create_web_document(
+        client, brand_kit_ref={"id": "kit_export_fonts", "version": 1}
+    )
+    seed_content(client, document["id"], ingest_content(client, document["id"]))
+    published = client.post(
+        f"/documents/{document['id']}/web/publish", json={"slug": "font-exclusions"}
+    )
+    assert published.status_code == 200, published.text
+
+    manifest = client.get(f"/w/{workspace_id}/p/font-exclusions/manifest.json")
+    assert manifest.status_code == 200, manifest.text
+    body = manifest.json()
+
+    assert {"family": "Locked Display", "reason": "license not embeddable"} in body[
+        "font_families_excluded"
+    ]
+    assert "Export Sans" in body["font_families_included"]
+    # The included family's faces really are on the page (the gate let them through), and its
+    # @font-face points at the digest route.
+    served = client.get(f"/w/{workspace_id}/p/font-exclusions")
+    assert f"/asset-store/{ofl_digest}" in served.text
+
+
+def test_the_publish_manifest_names_the_basis_a_family_embeds_under(
+    client: TestClient, workspace_id: str
+) -> None:
+    """D-F2 obligation 2, made visible: a workspace-brand font ships under `platform-terms`,
+    and the manifest says so — the gate reads the basis, so a legal reviewer can see WHY a font
+    with no verifiable license name was embedded."""
+    digest = seed_font_asset(client, "asset_font_basis", b"wOF2" + b"\x22" * 96)
+    kit = json.loads(ACME_KIT_PATH.read_text())
+    kit["id"] = "kit_basis_fonts"
+    kit["version"] = 1
+    family = json.loads(json.dumps(next(iter(kit["assets"]["fonts"].values()))))
+    family["family"] = "Workspace Brand Sans"
+    family["license"] = {
+        "name": "unknown",
+        "embeddable": True,
+        "subsettable": False,
+        "source_url": None,
+        "basis": "platform-terms",
+        "restrictions": ["Off-platform reuse still requires license confirmation."],
+    }
+    family["faces"] = [
+        {"weight": 400, "style": "normal", "asset_id": "asset_font_basis", "source_url": None}
+    ]
+    kit["assets"]["fonts"] = {"brand": family}
+    HybridRepository().create_brand_kit(kit, {}, [], "manual")
+
+    document = create_web_document(
+        client, brand_kit_ref={"id": "kit_basis_fonts", "version": 1}
+    )
+    seed_content(client, document["id"], ingest_content(client, document["id"]))
+    published = client.post(
+        f"/documents/{document['id']}/web/publish", json={"slug": "font-basis"}
+    )
+    assert published.status_code == 200, published.text
+    body = client.get(f"/w/{workspace_id}/p/font-basis/manifest.json").json()
+
+    assert "Workspace Brand Sans" in body["font_families_included"]
+    assert {
+        "family": "Workspace Brand Sans",
+        "basis": "platform-terms",
+    } in body["font_embed_bases"]
+
+    # The same basis rides the export manifest, so the two artifacts agree.
+    _files, _html, manifest = export_zip(client, document["id"])
+    assert {
+        "family": "Workspace Brand Sans",
+        "basis": "platform-terms",
+    } in manifest["font_embed_bases"]
+    assert f"fonts/{digest[:12]}.woff2" in _files
 
 
 # --- (d) SEO ----------------------------------------------------------------
@@ -371,19 +575,19 @@ def test_export_node_failure_is_502(client: TestClient) -> None:
 # --- (f) publish / serve / rollback -----------------------------------------
 
 
-def test_publish_serve_republish_rollback(client: TestClient) -> None:
+def test_publish_serve_republish_rollback(client: TestClient, workspace_id: str) -> None:
     document = seed_document(client)
 
     published = client.post(f"/documents/{document['id']}/web/publish", json={})
     assert published.status_code == 200, published.text
     body = published.json()
     slug = body["slug"]
-    assert body["url"] == f"/p/{slug}"
+    assert body["url"] == f"/w/{workspace_id}/p/{slug}"
     assert body["doc_version"] == 1
     assert body["previous_available"] is False
 
     # Served page: inlined style + canonical, no external stylesheet link.
-    served = client.get(f"/p/{slug}")
+    served = client.get(f"/w/{workspace_id}/p/{slug}")
     assert served.status_code == 200, served.text
     assert 'id="lumen-static-css"' in served.text
     assert '<link rel="canonical"' in served.text
@@ -411,14 +615,14 @@ def test_publish_serve_republish_rollback(client: TestClient) -> None:
     assert republished.status_code == 200, republished.text
     assert republished.json()["doc_version"] == 2
     assert republished.json()["previous_available"] is True
-    assert "MARKER_TWO" in client.get(f"/p/{slug}").text
+    assert "MARKER_TWO" in client.get(f"/w/{workspace_id}/p/{slug}").text
 
     # Rollback → serves the previous publish, doc_version back to 1.
     rolled = client.post(f"/web/publishes/{slug}/rollback")
     assert rolled.status_code == 200, rolled.text
     assert rolled.json()["doc_version"] == 1
     assert rolled.json()["status"] == "active"
-    assert "MARKER_TWO" not in client.get(f"/p/{slug}").text
+    assert "MARKER_TWO" not in client.get(f"/w/{workspace_id}/p/{slug}").text
 
     # GET publish state reflects the document.
     state = client.get(f"/documents/{document['id']}/web/publish").json()
@@ -429,7 +633,7 @@ def test_publish_serve_republish_rollback(client: TestClient) -> None:
     unpub = client.delete(f"/web/publishes/{slug}")
     assert unpub.status_code == 200, unpub.text
     assert unpub.json()["status"] == "unpublished"
-    assert client.get(f"/p/{slug}").status_code == 404
+    assert client.get(f"/w/{workspace_id}/p/{slug}").status_code == 404
 
 
 def test_publish_slug_validation(client: TestClient) -> None:

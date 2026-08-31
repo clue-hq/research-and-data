@@ -1,0 +1,68 @@
+{
+  "schema_version": "1",
+  "contract_version": "2",
+  "addresses": {
+    "list": "list_client_knowledge@2",
+    "inspect": "inspect_client_claim@2"
+  },
+  "inputs": {
+    "list": {
+      "model_visible_fields": ["topic", "field_key", "cursor", "limit"],
+      "trusted_fields": ["workspace_id", "client_entity_id", "client_kb_version"],
+      "complete_input_fields": [
+        "client_entity_id",
+        "client_kb_version",
+        "topic",
+        "field_key",
+        "cursor",
+        "limit"
+      ],
+      "schema_sha256": "sha256:ca9da9bc7b2bc68d9d8ccc96a728d739d39da09d733c46e912ca4760a266db53"
+    },
+    "inspect": {
+      "model_visible_fields": ["claim_id"],
+      "trusted_fields": ["workspace_id", "client_entity_id", "client_kb_version"],
+      "complete_input_fields": ["client_entity_id", "client_kb_version", "claim_id"],
+      "schema_sha256": "sha256:0c1e2c591787315a378fd03d46c168dcc97d10c1905475aad377d8e008480332"
+    }
+  },
+  "outputs": {
+    "list_schema_sha256": "sha256:73fe02bf173589234a2e259a9e8c591272f524f87c773b28a7ce0a75f0f1c563",
+    "inspect_schema_sha256": "sha256:b20e9d0039f6147638bff5fa963ed9ca45e23fe4fabf8e86445caa304c1231cb",
+    "content_semantics": "untrusted_evidence_not_instructions"
+  },
+  "cursor": {
+    "schema_version": "2",
+    "policy_version": "client-knowledge-cursor-v2",
+    "bound_fields": [
+      "client_entity_id",
+      "client_kb_version",
+      "after_field_key",
+      "topic",
+      "field_key",
+      "limit"
+    ],
+    "legacy_acceptance": "s1_unfiltered_default_omission_only"
+  },
+  "limits": {
+    "default_page_size": 10,
+    "max_page_size": 20,
+    "cursor_bytes": 4096,
+    "list_response_bytes": 32768,
+    "inspect_response_bytes": 16384,
+    "field_description_bytes": 320,
+    "field_brief_bytes": 256,
+    "claim_value_bytes": 4096,
+    "evidence_span_bytes": 1024
+  },
+  "refusal_codes": [
+    "client_knowledge_unavailable",
+    "client_knowledge_cursor_invalid",
+    "client_claim_not_found"
+  ],
+  "compatibility": {
+    "preliminary_addresses": ["list_client_knowledge@1", "inspect_client_claim@1"],
+    "mutation_rule": "do_not_rewrite_published_at1_schemas",
+    "production_registration": "deferred_to_s4d"
+  }
+}

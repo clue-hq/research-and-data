@@ -18,7 +18,12 @@ function ArtifactCard({
   return (
     <button className={styles.artifactCard} onClick={() => onOpen(artifact.id)} type="button">
       <span className={styles.artifactPreview}>
-        <Image alt="" fill loading="eager" sizes="360px" src={artifact.imagePath} />
+        {/* unoptimized for the same reason the gallery card documents in full:
+            the thumbnail route is session-authenticated behind the BFF and the
+            Next image optimizer's server-side refetch would 401. */}
+        {artifact.imagePath ? (
+          <Image alt="" fill loading="eager" sizes="360px" src={artifact.imagePath} unoptimized />
+        ) : null}
       </span>
       <span className={styles.artifactCardMeta}>
         <span className={styles.artifactType} data-type={artifact.type}>

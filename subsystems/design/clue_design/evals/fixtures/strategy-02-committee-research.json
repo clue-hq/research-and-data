@@ -1,0 +1,16 @@
+{
+  "name": "strategy-02-committee-research",
+  "kind": "clearly_strategy",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [],
+  "message": "What did our research say about Acme's buying committee?",
+  "judgment": {
+    "action": "finish",
+    "reason": "out_of_scope"
+  },
+  "expected": {
+    "action": "finish",
+    "reason": "out_of_scope",
+    "fail_safe": false
+  }
+}

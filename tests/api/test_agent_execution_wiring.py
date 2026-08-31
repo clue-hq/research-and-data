@@ -60,6 +60,11 @@ class _Output(ToolOutput):
     object_ref: str
 
 
+class _StrictJsonOutput(ToolOutput):
+    object_id: UUID
+    related_ids: tuple[UUID, ...]
+
+
 class _Tool(Tool):
     name = "read_project"
     version = "1"
@@ -232,6 +237,27 @@ class _RefusingExecutor(_Executor):
         del append, kwargs
         self.effect_count += 1
         raise self.error
+
+
+class _StrictJsonExecutor(_Executor):
+    async def invoke_interaction_tool(
+        self,
+        append: InteractionAppend,
+        **kwargs: Any,
+    ) -> ToolResult:
+        del append
+        self.invoked.append(kwargs)
+        self.effect_count += 1
+        # This is the shape returned by a real durable ToolInvoker boundary: UUIDs are JSON strings
+        # and tuples are JSON arrays. Strict output models must accept that canonical wire form.
+        return ToolResult(
+            tool="read_project",
+            version="1",
+            references={
+                "object_id": "11111111-1111-4111-8111-111111111111",
+                "related_ids": ["22222222-2222-4222-8222-222222222222"],
+            },
+        )
 
 
 class _PinProvider:
@@ -421,6 +447,27 @@ def test_compiler_validates_whole_c5_graph_then_routes_effect_through_dynamic_no
     assert executor.appended[0]["actor"] == "agent"
     assert executor.appended[0]["inputs"] == {"query": "current project"}
     assert len(journal.results) == 1
+
+
+def test_agent_path_revalidates_strict_tool_output_in_json_mode() -> None:
+    class _StrictJsonTool(_Tool):
+        output_model = _StrictJsonOutput
+
+    executor = _StrictJsonExecutor(allowed=("read_project@1",))
+    adapter, trusted, pin, _, journal = _adapter(
+        allowed=("read_project@1",),
+        tool=_StrictJsonTool(),
+        executor=executor,
+    )
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+
+    progress = run_async(_collect(adapter.execute(plan=validated)))
+
+    assert progress[-1].status == "completed"
+    assert journal.results[0]["result"].references == {
+        "object_id": "11111111-1111-4111-8111-111111111111",
+        "related_ids": ["22222222-2222-4222-8222-222222222222"],
+    }
 
 
 def test_recovery_restores_reference_only_tool_projection_from_exact_artifact() -> None:

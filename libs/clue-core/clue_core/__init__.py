@@ -213,6 +213,7 @@ from clue_core.enums import (
     PhaseStatus,
     PreSpendKind,
     PreSpendVerdict,
+    ProductScopePolicy,
     ProjectPhase,
     PromotionMode,
     ResearchAvailability,
@@ -275,6 +276,7 @@ from clue_core.external_research import (
     DeepAccountExternalWait,
     DeepExternalWait,
     DeepExternalWakeReason,
+    DeepFleetExternalWait,
     ExternalResearchAcquisitionRequest,
     ExternalResearchAttemptState,
     ExternalResearchCostDisposition,
@@ -319,6 +321,7 @@ from clue_core.field import (
     FieldKey,
     account_axis_field_keys,
     classify_field_key,
+    default_product_scope,
     default_research_scope,
     default_reuse_scope,
     field_key,
@@ -327,6 +330,7 @@ from clue_core.field import (
     is_pack_registered,
     is_valid_field_key,
     register_pack,
+    resolve_product_scope,
     resolve_research_scope,
     resolve_reuse_scope,
 )
@@ -511,6 +515,21 @@ from clue_core.review import (
     ReviewSessionId,
     ReviewSurface,
     VerificationAnnotationReader,
+)
+from clue_core.run_event import (
+    DESIGN_RUN_EVENT_TOPICS,
+    DESIGN_RUN_SUBJECT_KIND,
+    NARRATIVE_EMIT_SKIPPED_KEY,
+    PROJECT_RUN_SUBJECT_KIND,
+    RECON_FIELD_PROGRESS_KIND,
+    RECON_TRANSITION_KIND,
+    RUN_EVENT_SUBJECT_KINDS,
+    RUN_EVENT_TOPICS,
+    ReplayPlan,
+    RunEventReader,
+    RunEventRow,
+    RunEventTopic,
+    plan_replay,
 )
 from clue_core.source import SourceManifest
 from clue_core.stage0 import (
@@ -826,6 +845,7 @@ __all__ = [
     "AccountStatus",
     "ReuseScope",
     "ResearchScope",
+    "ProductScopePolicy",
     "Persona",
     "ICPStatus",
     "ICPCreatedFrom",
@@ -861,6 +881,7 @@ __all__ = [
     "DeepAccountExternalWait",
     "DeepExternalWakeReason",
     "DeepExternalWait",
+    "DeepFleetExternalWait",
     # enums — M13.1 review surface
     "ReviewAction",
     "ReviewSessionStatus",
@@ -888,6 +909,8 @@ __all__ = [
     "is_pack_registered",
     "default_reuse_scope",
     "resolve_reuse_scope",
+    "default_product_scope",
+    "resolve_product_scope",
     "default_research_scope",
     "resolve_research_scope",
     "NS_CORE",
@@ -1054,6 +1077,22 @@ __all__ = [
     # client-knowledge retrieval seam (M5↔M12 contract; impl stubbed in M12/stage0)
     "ClientKnowledgeChunk",
     "ClientKnowledgeRetriever",
+    # run_event outbox — shared shapes + the one replay planner (Part II D8 contract-delta;
+    # the DAL that writes/reads these rows is owned by clue_execution.run_events, and the
+    # RunEventReader concrete is built at a composition root and injected into plan_replay).
+    "RunEventTopic",
+    "RUN_EVENT_TOPICS",
+    "DESIGN_RUN_EVENT_TOPICS",
+    "PROJECT_RUN_SUBJECT_KIND",
+    "DESIGN_RUN_SUBJECT_KIND",
+    "RUN_EVENT_SUBJECT_KINDS",
+    "NARRATIVE_EMIT_SKIPPED_KEY",
+    "RECON_TRANSITION_KIND",
+    "RECON_FIELD_PROGRESS_KIND",
+    "RunEventRow",
+    "RunEventReader",
+    "ReplayPlan",
+    "plan_replay",
     # review-surface seam (M13.1 Tier-1 review; impl in clue_research.review, wired at api root)
     "ReviewSessionId",
     "ClaimAnnotation",

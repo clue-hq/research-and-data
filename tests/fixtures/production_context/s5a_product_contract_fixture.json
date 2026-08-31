@@ -1,0 +1,31 @@
+{
+  "schema_version": "s5a-v1",
+  "company_catalog_field": "client.product_catalog",
+  "product_fields": [
+    "client.product_overview",
+    "client.product_capability",
+    "client.product_use_case",
+    "client.product_differentiator",
+    "client.product_pricing",
+    "client.product_integration",
+    "client.product_competitor",
+    "client.product_customer_evidence",
+    "client.product_positioning"
+  ],
+  "card_media_types": {
+    "client_knowledge_v2": "application/vnd.clue.client-knowledge-card.v2+json",
+    "product_profile_v1": "application/vnd.clue.product-profile-card+json",
+    "product_knowledge_v1": "application/vnd.clue.product-knowledge-card+json"
+  },
+  "tool_addresses": ["list_product_knowledge@1", "inspect_product_claim@1"],
+  "model_fields": {
+    "list": ["topic", "field_key", "cursor", "limit"],
+    "inspect": ["claim_id"]
+  },
+  "trusted_fields": ["client_entity_id", "product_id", "product_kb_version"],
+  "refusal_codes": [
+    "product_knowledge_unavailable",
+    "product_knowledge_cursor_invalid",
+    "product_claim_not_found"
+  ]
+}

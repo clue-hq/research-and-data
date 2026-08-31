@@ -36,7 +36,8 @@ from tests.lock_factory import ProcessLocalLockFactory as ProcessLocalLockFactor
 
 from clue_core import CostCents, ProjectPhase, ProjectRunId
 from clue_db import db_lifespan
-from clue_fleet import FleetTaskKind, FleetTaskRow, FleetTaskStatus, RunLeaseRow
+from clue_fleet import FleetTaskKind, FleetTaskRow, FleetTaskStatus, RunLeaseRow, TaskCapability
+from clue_fleet.queue import payload_is_claimable
 from clue_research.durable import ProjectRunRow, ProjectRunStatus
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -218,6 +219,7 @@ class FakeTaskQueue:
             result_ref={},
             claimed_by=None,
             claimed_at=None,
+            available_at=now,
             enqueued_at=now,
             enqueue_seq=seq,  # the monotonic total FIFO key — matches the real identity column
             updated_at=now,
@@ -245,6 +247,7 @@ class FakeTaskQueue:
                         "status": FleetTaskStatus.QUEUED,
                         "claimed_by": None,
                         "claimed_at": None,
+                        "available_at": _now(),
                         "result_ref": {},
                         "priority": priority,
                     }
@@ -270,6 +273,7 @@ class FakeTaskQueue:
         worker_id: str,
         project_run_id: ProjectRunId | None = None,
         stale_after: timedelta | None = None,
+        capabilities: tuple[TaskCapability, ...] = (),
     ) -> FleetTaskRow | None:
         candidates = sorted(
             (
@@ -277,7 +281,12 @@ class FakeTaskQueue:
                 for task in self._tasks.values()
                 if task.row.kind is kind
                 and task.row.status is FleetTaskStatus.QUEUED
+                and task.row.available_at <= _now()
                 and (project_run_id is None or task.row.project_run_id == project_run_id)
+                # The fake honours the capability filter through the SAME predicate the claim
+                # statement evaluates in SQL — a fake that skipped it could hand a worker work
+                # the database would have withheld, which is exactly the defect R3-B is about.
+                and payload_is_claimable(capabilities, task.row.payload)
             ),
             key=lambda task: (task.row.priority, task.row.enqueue_seq),
         )
@@ -326,7 +335,9 @@ class FakeTaskQueue:
         self.touches += 1
         return True
 
-    async def requeue(self, *, task_id: UUID, worker_id: str) -> bool:
+    async def requeue(
+        self, *, task_id: UUID, worker_id: str, delay: timedelta | None = None
+    ) -> bool:
         task = self._by_id(task_id)
         if (
             task is None
@@ -335,7 +346,12 @@ class FakeTaskQueue:
         ):
             return False
         task.row = task.row.model_copy(
-            update={"status": FleetTaskStatus.QUEUED, "claimed_by": None, "claimed_at": None}
+            update={
+                "status": FleetTaskStatus.QUEUED,
+                "claimed_by": None,
+                "claimed_at": None,
+                "available_at": _now() + (delay or timedelta()),
+            }
         )
         return True
 

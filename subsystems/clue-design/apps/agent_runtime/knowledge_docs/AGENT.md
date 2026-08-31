@@ -78,11 +78,16 @@ Over-load, never under-load. The reference files are short and precise. Load
 | Task | Load |
 |------|------|
 | **Any new design** | `skills/create-design` + `knowledge/lumen-dsl/grammar` + `knowledge/lumen-dsl/text` + `knowledge/design/foundations` (taste rubric — one dominant element, hero-size-per-surface, whitespace-as-margin, anti-cliché) + `knowledge/design/artboard-frame-authoring` + the **vetted block catalog** `knowledge/design/blocks/*` (README + patterns + layout + actions + data-display — pinned automatically; ASSEMBLE from these, don't invent proportions) |
+| **A named artifact FORMAT the brief matches** | The matching format skill **first** (routing table below), then the craft skills it names. A format skill sits ABOVE `create-design`: it pre-makes the format's decisions (surface, skeletons, type floors, brevity budgets, self-audit tests). No format match → `create-design` unchanged |
+| **Any website turn** (a WebDoc page — create, edit, or review) | `skills/design-guidance` — **must-read on every web turn**: the brand-deployment grammar (palette allocation, the chromatic moment, background rhythm, typographic/imagery posture) and the contract for a Creative Brief when the brand card carries one — plus `skills/create-website` (authoring contract) / `skills/edit-website` (live-page edits) / `skills/review-website` (ship bar) and the recipe `knowledge/web/landing-page` (or `knowledge/web/abm-page` for a 1:1 account page) |
 | **Any repair** (compile, preflight, or visual diagnostic) | `skills/repair-design` + `knowledge/lumen-dsl/directives` + `knowledge/lumen-dsl/diagnostics` |
 | **Page/artboard bounds or parent overflow repair** | `skills/repair-design` + `knowledge/lumen-dsl/layout` + `knowledge/loop/layout-cluster-repair` |
 | **Branded design** (a Brand Kit is in play) | `skills/brand-and-tokens` + `knowledge/design-systems/token-taxonomy` + `knowledge/design-systems/brand-kits` |
+| **Filling a surface and putting text on it** (every design does) | `skills/color-and-contrast` — the on-color pairing law, choosing a shade instead of defaulting to full strength, and checking the pairs by looking at the render |
 | **Brand governance / off-brand diagnostics** | + `knowledge/design-systems/brand-validation` + `knowledge/design-systems/modes` |
 | **Logos / brand imagery** | + `knowledge/design-systems/logo-and-assets` + `knowledge/assets/asset-placement` |
+| **Generating an image** (the kit can't supply it, so the model makes it) | `skills/generative-imagery` — prompt craft, brand-coherent prompting off the kit's real hexes, the asset types, how the turn's references condition the call, and the fallback — plus `knowledge/images/prompts` + `knowledge/images/placement` |
+| **An ad turn that carries reference ads** (design FROM the brand's own creative) | `skills/reference-conditioned-ads` — reconstruct the system, never copy the ad: the four-layer read, selective imitation, kit token over eyedropped hex, the visual-system plan before any DSL, and the `reference_fidelity` bar — plus the format skill in force and `skills/generative-imagery` for the layers the engine cannot draw |
 | **Shadows, special strokes, gradients** | `skills/effects` + `knowledge/lumen-dsl/colors` |
 | **Print document** (physical page preset, brochure/flyer/poster, print export) | + `knowledge/export/print-geometry` (bleed/trim/safe authoring via `#page:` lines; the print-ready rules a bulk run gates on) |
 | **Baked bleed & crop marks** (user says "add bleed marks" / wants marks visible ON the design / print-ready via a NORMAL export) | `skills/print-bleed-marks` + `knowledge/export/print-geometry` (route choice — metadata vs baked are mutually exclusive per page) |
@@ -93,6 +98,21 @@ Over-load, never under-load. The reference files are short and precise. Load
 | **Colors / paint / gradients detail** | `knowledge/lumen-dsl/colors` |
 | **Auto-layout / sizing / alignment detail** | `knowledge/lumen-dsl/layout` |
 | **Answering "can Lumen do X?"** | the matching `knowledge/...` file — never answer capability questions from memory |
+
+### Format skills — which one the brief matches
+
+Read the matching skill BEFORE `create-design`. It declares the format's
+`required_decisions`, its layout skeletons, and its named self-audit tests.
+Exactly one format skill applies to a turn. No match is normal — then
+`create-design` runs unchanged.
+
+| The brief asks for | Read |
+|---|---|
+| a linkedin ad / feed ad / square social ad / 1:1 paid social creative | `skills/linkedin-square-ad` |
+| a story ad / reel ad / 9:16 creative / vertical social ad / full-screen mobile ad | `skills/story-ad-9x16` |
+| a display banner / web banner / display ad / banner ad / leaderboard / skyscraper | `skills/web-display-banners` |
+| an a4 poster / a4 flyer / printed poster / print flyer / leaflet | `skills/a4-poster` |
+| a linkedin banner / linkedin cover / profile banner / company page cover / linkedin header | `skills/linkedin-banner` |
 
 ```
 WRONG:  load only knowledge/lumen-dsl/grammar  ← "I'll load more if I need it" — you won't know what you're missing
@@ -110,8 +130,17 @@ Each skill is a procedure for one job. Read the skill before doing that job.
 | Skill | Use when | Path |
 |-------|----------|------|
 | **Create a design** | Composing a brand-new artifact from a prompt | `skills/create-design/SKILL.md` |
+| **LinkedIn square ad** (format skill) | The brief asks for a linkedin ad, feed ad, square social ad, or 1:1 paid social creative — a 1080×1080 feed unit. Read it BEFORE `create-design`; it declares the format's `required_decisions`, its layout skeletons, and the named self-audit tests | `skills/linkedin-square-ad/SKILL.md` |
+| **Story ad 9:16** (format skill) | The brief asks for a story ad, reel ad, 9:16 creative, vertical social ad, or full-screen mobile ad — a 1080×1920 vertical unit with platform chrome over its top and bottom | `skills/story-ad-9x16/SKILL.md` |
+| **Web display banners** (format skill) | The brief asks for a display banner, web banner, display ad, banner ad, leaderboard, or skyscraper — the IAB family (728×90, 970×250, 300×250, 300×600, 160×600, 320×50) in one skill | `skills/web-display-banners/SKILL.md` |
+| **A4 poster** (format skill) | The brief asks for an a4 poster, a4 flyer, printed poster, print flyer, or leaflet — a 595×842pt print page with press-safe color and a bleed route | `skills/a4-poster/SKILL.md` |
+| **LinkedIn banner** (format skill) | The brief asks for a linkedin banner, linkedin cover, profile banner, company page cover, or linkedin header — ambient brand canvas, not an ad | `skills/linkedin-banner/SKILL.md` |
 | **Repair a design** | Fixing a compile / preflight / visual diagnostic on an existing scene — surgically, without re-authoring | `skills/repair-design/SKILL.md` |
 | **Brand & tokens** | Interpreting a Brand Kit and choosing `$tokens` instead of raw values | `skills/brand-and-tokens/SKILL.md` |
+| **Color & contrast** | Judging a color COMBINATION after you pick the tokens — light text on a saturated brand ground, the shade decision, separating two saturated hues, and the structure/atmosphere/accent split. Every format skill composes with it | `skills/color-and-contrast/SKILL.md` |
+| **Design guidance** | Deploying a brand rather than just its palette — where each color may live, how backgrounds sequence, what the buttons mean, and how to read a Creative Brief. **Must-read on every website turn** (it sits between brand-and-tokens and create-website) | `skills/design-guidance/SKILL.md` |
+| **Generative imagery** | Prompting the image model for an asset the kit cannot supply — the five-question prompt, brand-coherent prompting off the kit's real hexes, the asset types (abstract ground, transparent spot illustration, brand-themed scene, texture, design element), reference conditioning, placement, and the fallback. Composes with `skills/brand-imagery`, which decides whether the surface earns an image at all | `skills/generative-imagery/SKILL.md` |
+| **Reference-conditioned ads** | The turn carries reference ads and the artifact is an ad — designing FROM them: read each reference as a layer stack, imitate selectively (the system not the content, the kit token not an eyedropped hex, refuse what cannot be rebuilt), plan the visual system before any DSL, and score `reference_fidelity` honestly. Composes with the format skill in force and with `skills/generative-imagery` | `skills/reference-conditioned-ads/SKILL.md` |
 | **Effects** | Shadows, special strokes (dash/cap/join/align), gradients | `skills/effects/SKILL.md` |
 | **Tools & functions** | Choosing the right tool/function for the step you're on | `skills/tools/SKILL.md` |
 | **Visual review** | Judging a rendered preview as a user-facing artifact | `skills/visual-review/SKILL.md` |

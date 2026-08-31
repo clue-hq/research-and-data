@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import copy
-import sqlite3
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import make_blob_store, make_client
+from sqlalchemy import text as sa_text
+from sqlalchemy.exc import DBAPIError
+
 from lumen_api.custom_components import (
     persist_compiled_custom_component_artifact,
     resolve_custom_component_artifact_blob,
 )
-from lumen_api.database import NotFoundError, Repository, connect, run_migrations
+from lumen_api.design_store import HybridRepository
+from lumen_api.database import NotFoundError
 from lumen_api.main import create_app
 
 
@@ -26,8 +30,8 @@ COMPONENT_HTML = """
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> TestClient:
-    return TestClient(create_app(tmp_path / "api.sqlite3"))
+def client(tmp_path: Path, design_storage) -> TestClient:
+    return make_client(create_app(tmp_path / "engine-cache", storage=design_storage))
 
 
 def create_account(client: TestClient, account_id: str) -> dict:
@@ -47,24 +51,21 @@ def persist_artifact(
     slug: str = "book-a-call",
     suffix: bytes = b"v1",
 ) -> dict:
-    repository = Repository(connect(client.app.state.database_path))
-    try:
-        return persist_compiled_custom_component_artifact(
-            repository,
-            tmp_path / "custom-component-store",
-            account_id=account_id,
-            slug=slug,
-            source=b"export default function Component() {} //" + suffix,
-            bundle=b"export default function Component() {} //" + suffix,
-            manifest={"schema_version": 1, "entry": "index.tsx"},
-            provenance={
-                "kind": "test_fixture_compiler",
-                "compiler_version": "fixture-v1",
-                "input": suffix.decode(),
-            },
-        )
-    finally:
-        repository.connection.close()
+    repository = HybridRepository()
+    return persist_compiled_custom_component_artifact(
+        repository,
+        make_blob_store(client.app),
+        account_id=account_id,
+        slug=slug,
+        source=b"export default function Component() {} //" + suffix,
+        bundle=b"export default function Component() {} //" + suffix,
+        manifest={"schema_version": 1, "entry": "index.tsx"},
+        provenance={
+            "kind": "test_fixture_compiler",
+            "compiler_version": "fixture-v1",
+            "input": suffix.decode(),
+        },
+    )
 
 
 def create_account_document(client: TestClient, account_id: str) -> dict:
@@ -76,15 +77,12 @@ def create_account_document(client: TestClient, account_id: str) -> dict:
         empty, "home", COMPONENT_HTML, None, None
     )
     assert ingested.get("web_doc"), ingested
-    repository = Repository(connect(client.app.state.database_path))
-    try:
-        return repository.create_document(
-            ingested["web_doc"],
-            doc_kind="web",
-            account_id=account_id,
-        )
-    finally:
-        repository.connection.close()
+    repository = HybridRepository()
+    return repository.create_document(
+        ingested["web_doc"],
+        doc_kind="web",
+        account_id=account_id,
+    )
 
 
 def page_containers(web_doc: dict) -> list[str]:
@@ -142,43 +140,50 @@ def test_registry_is_content_addressed_immutable_and_account_scoped(
     assert second["artifact_id"] != first["artifact_id"]
     assert first["artifact_id"].startswith("ccart_")
     assert len(first["artifact_id"]) == len("ccart_") + 64
+    # D4: the blob descriptor's opaque_ref is now the PLATFORM STORAGE KEY, and the bytes live
+    # in clue_storage under `{workspace}/design/{sha256}` with an artifact row recorded first.
+    blobs = make_blob_store(client.app)
     for name in ("source", "bundle"):
         blob = first[name]
-        stored = tmp_path / "custom-component-store" / blob["opaque_ref"]
-        assert stored.is_file()
-        assert stored.stat().st_size == blob["byte_length"]
+        assert blob["opaque_ref"] == (
+            f"{blobs.workspace_id}/design/{blob['value']}"
+        )
+        assert blobs.exists(blob["value"])
+        assert len(blobs.read(blob["value"])) == blob["byte_length"]
 
-    repository = Repository(connect(client.app.state.database_path))
-    try:
-        resolved, bundle = resolve_custom_component_artifact_blob(
+    repository = HybridRepository()
+    resolved, bundle = resolve_custom_component_artifact_blob(
+        repository,
+        blobs,
+        account_id="acc_alpha",
+        artifact_id=first["artifact_id"],
+        member="bundle",
+    )
+    assert resolved == first
+    assert bundle.endswith(b"v1")
+    with pytest.raises(NotFoundError):
+        resolve_custom_component_artifact_blob(
             repository,
-            tmp_path / "custom-component-store",
-            account_id="acc_alpha",
+            blobs,
+            account_id="acc_beta",
             artifact_id=first["artifact_id"],
             member="bundle",
         )
-        assert resolved == first
-        assert bundle.endswith(b"v1")
-        with pytest.raises(NotFoundError):
-            resolve_custom_component_artifact_blob(
-                repository,
-                tmp_path / "custom-component-store",
-                account_id="acc_beta",
-                artifact_id=first["artifact_id"],
-                member="bundle",
+    # D2.4B: the registry lives on Postgres and stays immutable — enforced by the
+    # design_custom_component_artifact no-UPDATE TRIGGER instead of the old SQLite one.
+    # Reaching into `_bridge` is deliberate: the mutation must be attempted straight at the
+    # table, below the API boundary. `_run` is its own transaction, so the refusal rolls
+    # itself back.
+    with pytest.raises(DBAPIError, match="immutable"):
+        repository._bridge._run(
+            lambda conn: conn.execute(
+                sa_text(
+                    "UPDATE design_custom_component_artifact SET slug = 'mutated'"
+                    " WHERE artifact_id = :i AND workspace_id = :w"
+                ),
+                {"i": first["artifact_id"], "w": repository.workspace_id},
             )
-        with pytest.raises(sqlite3.IntegrityError):
-            repository.connection.execute(
-                """
-                UPDATE custom_component_artifacts
-                SET slug = 'mutated'
-                WHERE artifact_id = ?
-                """,
-                (first["artifact_id"],),
-            )
-        repository.connection.rollback()
-    finally:
-        repository.connection.close()
+        )
 
     listing = client.get("/web/accounts/acc_alpha/custom-components")
     assert listing.status_code == 200
@@ -219,7 +224,11 @@ def test_custom_component_round_trips_and_participates_in_edit_history(
     document = create_account_document(client, "acc_alpha")
     page = document["scene"]["pages"][0]
     containers = page_containers(document["scene"])
-    assert len(containers) >= 2
+    # jsonb does not preserve object key order (the repo-wide hazard; select nodes
+    # by id, never by dict position).
+    assert {"left", "right"} <= set(containers), containers
+    source_container = "left"
+    target_container = "right"
 
     inserted = apply(
         client,
@@ -228,8 +237,8 @@ def test_custom_component_round_trips_and_participates_in_edit_history(
         {
             "kind": "insert_node",
             "page_id": page["id"],
-            "parent": containers[0],
-            "index": len(page["nodes"][containers[0]].get("children") or []),
+            "parent": source_container,
+            "index": len(page["nodes"][source_container].get("children") or []),
             "nodes": [custom_node(artifact)],
             "root": "cc_booking",
         },
@@ -304,14 +313,14 @@ def test_custom_component_round_trips_and_participates_in_edit_history(
             "kind": "move_node",
             "page_id": page["id"],
             "id": "cc_booking",
-            "new_parent": containers[1],
+            "new_parent": target_container,
             "index": 0,
         },
     )
     assert moved.status_code == 200, moved.text
     current = get_document(client, document["id"])
     assert (
-        current["scene"]["pages"][0]["nodes"][containers[1]]["children"][0]
+        current["scene"]["pages"][0]["nodes"][target_container]["children"][0]
         == "cc_booking"
     )
 
@@ -326,7 +335,7 @@ def test_custom_component_round_trips_and_participates_in_edit_history(
         {
             "kind": "insert_node",
             "page_id": page["id"],
-            "parent": containers[1],
+            "parent": target_container,
             "index": 1,
             "nodes": [duplicate],
             "root": "cc_booking_copy",
@@ -447,11 +456,8 @@ def test_invalid_unknown_and_cross_account_references_never_commit(
     ingested = client.app.state.core.web_ingest_html(
         empty, "home", COMPONENT_HTML, None, None
     )["web_doc"]
-    repository = Repository(connect(client.app.state.database_path))
-    try:
-        accountless = repository.create_document(ingested, doc_kind="web")
-    finally:
-        repository.connection.close()
+    repository = HybridRepository()
+    accountless = repository.create_document(ingested, doc_kind="web")
     accountless_page = accountless["scene"]["pages"][0]
     accountless_parent = page_containers(accountless["scene"])[0]
     no_account = apply(
@@ -556,15 +562,25 @@ def test_leaf_reparent_rejected_and_missing_artifact_stays_editable_placeholder(
     assert rejected.status_code == 422
     assert rejected.json()["detail"]["code"] == "web_operations.invalid"
 
-    repository = Repository(connect(client.app.state.database_path))
-    try:
-        repository.connection.execute(
-            "DELETE FROM custom_component_artifacts WHERE artifact_id = ?",
-            (artifact["artifact_id"],),
+    repository = HybridRepository()
+    # D2.4B: the registry lives on Postgres; purge the row there to simulate the
+    # missing-artifact case the renderer must contain. The citing compilation rows go
+    # first: their artifact FK is ON DELETE SET NULL, and that SET NULL is itself an
+    # UPDATE, which the compilation table's immutability trigger rejects. (No production
+    # path deletes an artifact — the registry is INSERT-only — and the account CASCADE
+    # removes compilations outright, so this ordering is a test-only concern.)
+    for statement in (
+        "DELETE FROM design_custom_component_compilation"
+        " WHERE artifact_id = :i AND workspace_id = :w",
+        "DELETE FROM design_custom_component_artifact"
+        " WHERE artifact_id = :i AND workspace_id = :w",
+    ):
+        repository._bridge._run(
+            lambda conn, sql=statement: conn.execute(
+                sa_text(sql),
+                {"i": artifact["artifact_id"], "w": repository.workspace_id},
+            )
         )
-        repository.connection.commit()
-    finally:
-        repository.connection.close()
 
     rendered = client.get(f"/documents/{document['id']}/web/render")
     assert rendered.status_code == 200, rendered.text
@@ -608,40 +624,6 @@ def test_leaf_reparent_rejected_and_missing_artifact_stays_editable_placeholder(
     )
 
 
-def test_migration_is_deterministic_and_does_not_invent_registry_rows(
-    tmp_path: Path,
-) -> None:
-    database_path = tmp_path / "development.sqlite3"
-    run_migrations(database_path)
-    repository = Repository(connect(database_path))
-    try:
-        repository.create_document(
-            {
-                "schema_version": 1,
-                "id": "doc_existing_web",
-                "title": "Existing development document",
-                "theme": {},
-                "pages": [],
-                "assets": {},
-                "custom_css": "",
-            },
-            doc_kind="web",
-        )
-        before = repository.require_document("doc_existing_web")["scene"]
-    finally:
-        repository.connection.close()
-    run_migrations(database_path)
-    connection = connect(database_path)
-    try:
-        assert connection.execute(
-            "SELECT COUNT(*) FROM custom_components"
-        ).fetchone()[0] == 0
-        assert connection.execute(
-            "SELECT COUNT(*) FROM custom_component_artifacts"
-        ).fetchone()[0] == 0
-        assert (
-            Repository(connection).require_document("doc_existing_web")["scene"]
-            == before
-        )
-    finally:
-        connection.close()
+# D2.5B DELETED `test_migration_is_deterministic_and_does_not_invent_registry_rows`: it applied
+# the SQLite migrations twice and counted rows in the `custom_components` /
+# `custom_component_artifacts` SQLite tables. Both the migrations and those tables are deleted.

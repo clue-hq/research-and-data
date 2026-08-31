@@ -272,6 +272,7 @@ def build_fleet_run_driver(
     store: ProjectRunStore | None = None,
     ledger: IdempotencyStore | None = None,
     budget_engine: BudgetEngine | None = None,
+    enforce_budget: bool = True,
 ) -> RunDriver:
     """The durable-backed ``RunDriver`` the worker drives: a
     :class:`~clue_research.durable.ProjectRun` over the real M7 persistence
@@ -282,12 +283,17 @@ def build_fleet_run_driver(
     populate. The DEEP handler is **campaign-scoped** (one ICPSpec) and is registered per
     ``(client, icp)`` at run start — over the fleet :func:`build_fleet_deep_scheduler` for the
     worker deployment (``build_deep_phase_handler(scheduler=…)``) — exactly as the in-process path
-    already registers it at run start; the worker never composes handlers (spec §2.4, worker.py)."""
+    already registers it at run start; the worker never composes handlers (spec §2.4, worker.py).
+
+    ``enforce_budget`` is the FI pilot budget-controls switch — pass
+    ``Settings.budget_controls_enabled``. False disables only the M7.5 pre-phase graceful-stop gate;
+    the engine stays wired so burn-down/estimate reads and every recorded charge are unchanged."""
     return ProjectRun(
         store=store if store is not None else DbProjectRunStore(),
         registry=registry if registry is not None else default_phase_handler_registry(),
         budget_engine=budget_engine if budget_engine is not None else BudgetEngine(),
         ledger=ledger if ledger is not None else DbIdempotencyStore(),
+        enforce_budget=enforce_budget,
     )
 
 
@@ -322,11 +328,15 @@ def build_multi_work_worker(
     graph_handler: WorkHandler,
     entity_research_handler: WorkHandler | None = None,
     agent_turn_handler: WorkHandler | None = None,
+    stage0_recon_handler: WorkHandler | None = None,
+    official_site_crawl_handler: WorkHandler | None = None,
+    design_handler: WorkHandler | None = None,
     queue: WorkQueue | None = None,
     leases: WorkLeaseStore | None = None,
     worker_id: str | None = None,
 ) -> LeasedWorkWorker:
-    """One leased drain for project runs, recipe graphs, and optional entity-research jobs.
+    """One leased drain for project runs, recipe graphs, design jobs, and optional governed
+    work kinds.
 
     R2 adds only the composition seam.  Production deliberately omits the optional handler until
     R3 supplies the governed ``create_agent()`` driver, preserving R1's fail-loud quarantine.
@@ -335,6 +345,12 @@ def build_multi_work_worker(
     disabled composes no conversation engine and nothing enqueues ``agent_turn`` tasks, so the
     worker simply never offers that kind. Each kind gets its own keyword and its own guard rather
     than a registry, so a handler wired to the wrong queue is a composition-time error.
+
+    ``design_handler`` (Part II D5 Round B) joins on exactly the same terms: optional, kind-checked
+    here so a wiring mistake fails at construction rather than at claim time, and off unless
+    ``design_runtime_enabled`` is set.  ONE fleet worker drains every kind — design work does not
+    get a private drain (the round-robin in :class:`~clue_fleet.LeasedWorkWorker` already keeps
+    one kind from starving another).
     """
     if (
         entity_research_handler is not None
@@ -343,6 +359,18 @@ def build_multi_work_worker(
         raise ValueError("entity_research_handler must own entity_research_job tasks")
     if agent_turn_handler is not None and agent_turn_handler.kind is not FleetTaskKind.AGENT_TURN:
         raise ValueError("agent_turn_handler must own agent_turn tasks")
+    if (
+        stage0_recon_handler is not None
+        and stage0_recon_handler.kind is not FleetTaskKind.STAGE0_RECON
+    ):
+        raise ValueError("stage0_recon_handler must own stage0_recon tasks")
+    if (
+        official_site_crawl_handler is not None
+        and official_site_crawl_handler.kind is not FleetTaskKind.OFFICIAL_SITE_CRAWL
+    ):
+        raise ValueError("official_site_crawl_handler must own official_site_crawl tasks")
+    if design_handler is not None and design_handler.kind is not FleetTaskKind.DESIGN_JOB:
+        raise ValueError("design_handler must own design_job tasks")
     handlers = [
         _OwnedRunGuardHandler(ProjectRunWorkHandler(driver)),
         graph_handler,
@@ -351,6 +379,12 @@ def build_multi_work_worker(
         handlers.append(entity_research_handler)
     if agent_turn_handler is not None:
         handlers.append(agent_turn_handler)
+    if stage0_recon_handler is not None:
+        handlers.append(stage0_recon_handler)
+    if official_site_crawl_handler is not None:
+        handlers.append(official_site_crawl_handler)
+    if design_handler is not None:
+        handlers.append(design_handler)
     return LeasedWorkWorker(
         handlers=tuple(handlers),
         queue=queue if queue is not None else DbWorkQueue(),

@@ -135,18 +135,28 @@ def _batch_payload(
 
 
 class DbEntityResearchToolBatchCoordinator(EntityResearchToolBatchCoordinator):
-    """Serialize admission at job/run/provider scope before any concurrent handler dispatch."""
+    """Serialize admission at job/run/provider scope before any concurrent handler dispatch.
+
+    ``enforce_budget`` is the FI pilot budget-controls switch, threaded from ``Settings`` at the
+    fleet composition roots (never read globally here — the coordinator stays injectable). With it
+    False the job/run cap comparison in :meth:`_check_budget` no longer *refuses* a batch, and
+    nothing else changes: the reservation, permit, and settlement rows are written exactly as they
+    are with it True, so a pilot deployment's spend is recorded honestly and simply exceeds the cap
+    instead of being stopped. Provider concurrency/rate limits are not money and stay enforced.
+    """
 
     def __init__(
         self,
         *,
         conn_factory: ConnFactory = transaction,
         sibling_poll_seconds: float = 0.01,
+        enforce_budget: bool = True,
     ) -> None:
         if sibling_poll_seconds <= 0:
             raise ValueError("parallel sibling poll interval must be positive")
         self._conn_factory = conn_factory
         self._sibling_poll_seconds = sibling_poll_seconds
+        self._enforce_budget = enforce_budget
 
     async def admit(
         self,
@@ -613,6 +623,14 @@ class DbEntityResearchToolBatchCoordinator(EntityResearchToolBatchCoordinator):
         # one operation and strand its exact recovery at a tight cap. Mixed waves still take
         # the conservative path below because they contain genuinely new reservations.
         if not new_reservations:
+            return
+        # FI pilot budget-controls (ratified 2026-08-11): enforcement off means *record-only*.
+        # Skipping only the comparison below lets ``admit`` fall through to the batch, reservation,
+        # permit, and member writes it always makes, so the wave executes and its worst-case cost
+        # is still reserved and later settled — the spend record is complete and simply exceeds the
+        # cap honestly. Deliberately placed after the no-new-reservations short-circuit so both
+        # modes agree about which waves are new.
+        if not self._enforce_budget:
             return
         active_job = Decimal(
             str(

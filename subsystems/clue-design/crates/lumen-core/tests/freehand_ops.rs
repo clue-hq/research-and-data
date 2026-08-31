@@ -623,3 +623,296 @@ fn freeze_layout_wire_kind_is_pinned() {
     .expect("freeze routes through the wire surface");
     assert!(!batch.operations.is_empty());
 }
+
+/// The Story-ad live-proof (2026-08-22): a padded Stack container whose own
+/// height is Hug sits under the page — no frozen parent bakes it — and the
+/// freeze left the Hug alone. Free-mode hug natural-sizes from child extents
+/// WITHOUT padding, so the container's box contracted by exactly its bottom
+/// padding the moment a human first grabbed a child. Zero-motion is the
+/// freeze's contract: the container's OWN Hug dims bake to Fixed at the
+/// solved extent, the same trade a child's Hug already makes.
+#[test]
+fn freeze_layout_bakes_a_padded_hug_containers_own_dims_zero_motion() {
+    use lumen_core::build_freeze_layout;
+
+    let mut scene = scene_with_page(1080.0, 1920.0);
+    let mut card = auto_layout("card", 0.0, 0.0, 32.0);
+    card.size = SizeSpec {
+        width: Dimension::Fixed(936.0),
+        height: Dimension::Hug,
+    };
+    card.layout = Some(AutoLayoutProps {
+        gap: 32.0,
+        padding: [40.0, 44.0, 40.0, 44.0],
+        ..AutoLayoutProps::default()
+    });
+    card.transform.x = 72.0;
+    card.transform.y = 72.0;
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), card);
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("card")),
+        rect("chip", 260.0, 104.0),
+    );
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("card")),
+        rect("bar", 320.0, 10.0),
+    );
+    // The double-write case: a hug-height stack INSIDE the padded card is
+    // baked twice — once by the parent's child-bake, once by its own
+    // container pass — and both the size and the inverse must survive it.
+    let mut nested = auto_layout("nested", 0.0, 0.0, 0.0);
+    nested.size = SizeSpec {
+        width: Dimension::Fixed(200.0),
+        height: Dimension::Hug,
+    };
+    nested.layout = Some(AutoLayoutProps {
+        padding: [10.0, 10.0, 10.0, 10.0],
+        ..AutoLayoutProps::default()
+    });
+    insert(&mut scene, ParentRef::Node(NodeId::from("card")), nested);
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("nested")),
+        rect("leaf", 60.0, 40.0),
+    );
+    apply_layout(&mut scene);
+
+    let before = scene_json(&scene);
+    let card_before = solved(&scene, "card");
+    let nested_before = solved(&scene, "nested");
+    // The stack solve hugs content PLUS padding:
+    // 40 + 104 + 32 + 10 + 32 + (10 + 40 + 10) + 40.
+    assert_eq!(card_before.height, 318.0, "fixture sanity: the padded solve");
+    assert_eq!(
+        nested_before.height, 60.0,
+        "fixture sanity: the nested padded hug"
+    );
+    let solved_before: Vec<(&str, Rect)> = ["card", "chip", "bar", "nested", "leaf"]
+        .iter()
+        .map(|id| (*id, solved(&scene, id)))
+        .collect();
+
+    let batch = build_freeze_layout(&scene).expect("freeze builds");
+    batch.apply_checked(&mut scene).expect("freeze applies");
+
+    let card_node = &scene.nodes[&NodeId::from("card")];
+    assert_eq!(
+        card_node.size.height,
+        Dimension::Fixed(card_before.height),
+        "the container's own Hug height bakes to its solved extent"
+    );
+    assert_eq!(
+        card_node.size.width,
+        Dimension::Fixed(936.0),
+        "an authored Fixed width keeps its value"
+    );
+    assert_eq!(
+        scene.nodes[&NodeId::from("nested")].size.height,
+        Dimension::Fixed(nested_before.height),
+        "the double-written nested hug lands on the same solved extent"
+    );
+    for (id, before_box) in &solved_before {
+        assert_eq!(&solved(&scene, id), before_box, "{id} moved during freeze");
+    }
+
+    let mut restored = scene.clone();
+    restored
+        .apply_operations(batch.inverse_operations.clone().unwrap())
+        .unwrap();
+    assert_eq!(
+        scene_json(&restored),
+        before,
+        "the inverse restores Hug (and the exact pre-freeze scene, nested double-write included)"
+    );
+}
+
+/// THE RECORDED TRADE (pending founder ratification, HUG-FREEZE review
+/// 2026-08-23): a container whose dimension is an UNRESOLVED `Token` keeps
+/// its binding through the freeze — `bake_dimension`'s own rule, "baking a
+/// token to a number would silently sever brand governance" — and therefore
+/// STILL CONTRACTS, because Free-mode layout treats Token like Hug. The
+/// brand pass rewrites every resolvable dimension token to Fixed before
+/// layout runs, so this shape only exists in documents that are already in
+/// the LUMV-warned unresolved-token state. This test pins BOTH halves of
+/// the trade so neither can change silently: the binding survives, and the
+/// motion is exactly the dropped padding. If the founder rules the other
+/// way, flip these assertions deliberately.
+#[test]
+fn freeze_layout_keeps_a_token_dim_and_accepts_its_contraction() {
+    use lumen_core::build_freeze_layout;
+
+    let mut scene = scene_with_page(1080.0, 1920.0);
+    let mut card = auto_layout("card", 0.0, 0.0, 32.0);
+    card.size = SizeSpec {
+        width: Dimension::Fixed(936.0),
+        height: Dimension::Token {
+            token: "size.card".to_owned(),
+        },
+    };
+    card.layout = Some(AutoLayoutProps {
+        gap: 32.0,
+        padding: [40.0, 44.0, 40.0, 44.0],
+        ..AutoLayoutProps::default()
+    });
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), card);
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("card")),
+        rect("chip", 260.0, 104.0),
+    );
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("card")),
+        rect("bar", 320.0, 10.0),
+    );
+    apply_layout(&mut scene);
+    // An unresolved token solves like Hug on the Stack side too: content
+    // plus padding, 40 + 104 + 32 + 10 + 40.
+    assert_eq!(solved(&scene, "card").height, 226.0, "fixture sanity");
+
+    let batch = build_freeze_layout(&scene).expect("freeze builds");
+    batch.apply_checked(&mut scene).expect("freeze applies");
+
+    // Half one: brand governance survives — the token is NOT baked.
+    assert_eq!(
+        scene.nodes[&NodeId::from("card")].size.height,
+        Dimension::Token {
+            token: "size.card".to_owned(),
+        },
+        "the token binding survives the freeze"
+    );
+    // Half two: the accepted cost — Free-mode token-as-hug drops the
+    // padding, so the box contracts by exactly the bottom inset.
+    assert_eq!(
+        solved(&scene, "card").height,
+        186.0,
+        "the recorded trade: an unresolved token dim contracts by its padding"
+    );
+}
+
+/// Axis symmetry and the degenerate case: a hug WIDTH loses the right
+/// padding the same way, and an EMPTY padded hug container is the worst of
+/// it — Free-mode natural size is 0×0 where the stack solve gave it its
+/// padding box. Baking the solved extent fixes both.
+#[test]
+fn freeze_layout_bakes_hug_width_and_the_empty_padded_container() {
+    use lumen_core::build_freeze_layout;
+
+    let mut scene = scene_with_page(1080.0, 1920.0);
+    let mut both = auto_layout("both", 0.0, 0.0, 0.0);
+    both.size = SizeSpec {
+        width: Dimension::Hug,
+        height: Dimension::Hug,
+    };
+    both.layout = Some(AutoLayoutProps {
+        padding: [40.0, 44.0, 40.0, 44.0],
+        ..AutoLayoutProps::default()
+    });
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), both);
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("both")),
+        rect("only", 260.0, 104.0),
+    );
+    let mut empty = auto_layout("empty", 0.0, 0.0, 0.0);
+    empty.size = SizeSpec {
+        width: Dimension::Hug,
+        height: Dimension::Hug,
+    };
+    empty.layout = Some(AutoLayoutProps {
+        padding: [40.0, 44.0, 40.0, 44.0],
+        ..AutoLayoutProps::default()
+    });
+    empty.transform.y = 400.0;
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), empty);
+    apply_layout(&mut scene);
+
+    let both_before = solved(&scene, "both");
+    let only_before = solved(&scene, "only");
+    let empty_before = solved(&scene, "empty");
+    assert_eq!(
+        (both_before.width, both_before.height),
+        (44.0 + 260.0 + 44.0, 40.0 + 104.0 + 40.0),
+        "fixture sanity: hug-both solve"
+    );
+    assert_eq!(
+        (empty_before.width, empty_before.height),
+        (88.0, 80.0),
+        "fixture sanity: an empty padded hug container solves to its padding box"
+    );
+
+    let batch = build_freeze_layout(&scene).expect("freeze builds");
+    batch.apply_checked(&mut scene).expect("freeze applies");
+
+    let both_node = &scene.nodes[&NodeId::from("both")];
+    assert_eq!(both_node.size.width, Dimension::Fixed(both_before.width));
+    assert_eq!(both_node.size.height, Dimension::Fixed(both_before.height));
+    assert_eq!(&solved(&scene, "both"), &both_before, "hug-both moved");
+    assert_eq!(&solved(&scene, "only"), &only_before, "the child moved");
+    let empty_node = &scene.nodes[&NodeId::from("empty")];
+    assert_eq!(
+        (empty_node.size.width.clone(), empty_node.size.height.clone()),
+        (Dimension::Fixed(88.0), Dimension::Fixed(80.0)),
+        "the empty container bakes its padding box instead of collapsing to 0×0"
+    );
+    assert_eq!(&solved(&scene, "empty"), &empty_before, "empty moved");
+}
+
+/// The single-container convert is the second call site of the same helper
+/// and carries the same contract: converting a padded hug container to Free
+/// bakes the container's own dims too.
+#[test]
+fn convert_to_free_bakes_the_containers_own_hug_dimension() {
+    let mut scene = scene_with_page(1080.0, 1920.0);
+    let mut card = auto_layout("card", 0.0, 0.0, 32.0);
+    card.size = SizeSpec {
+        width: Dimension::Fixed(936.0),
+        height: Dimension::Hug,
+    };
+    card.layout = Some(AutoLayoutProps {
+        gap: 32.0,
+        padding: [40.0, 44.0, 40.0, 44.0],
+        ..AutoLayoutProps::default()
+    });
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), card);
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("card")),
+        rect("chip", 260.0, 104.0),
+    );
+    apply_layout(&mut scene);
+
+    let before = scene_json(&scene);
+    let card_before = solved(&scene, "card");
+
+    let batch = build_structured_edit_batch(
+        &scene,
+        &instruction(serde_json::json!({
+            "kind": "convert_container_layout",
+            "node_id": "card",
+            "layout_mode": "free"
+        })),
+    )
+    .expect("convert builds");
+    batch.apply_checked(&mut scene).expect("convert applies");
+
+    let card_node = &scene.nodes[&NodeId::from("card")];
+    assert_eq!(
+        card_node.size.height,
+        Dimension::Fixed(card_before.height),
+        "convert-to-free bakes the container's own Hug height"
+    );
+    assert_eq!(&solved(&scene, "card"), &card_before, "card moved");
+
+    let mut restored = scene.clone();
+    restored
+        .apply_operations(batch.inverse_operations.clone().unwrap())
+        .unwrap();
+    assert_eq!(
+        scene_json(&restored),
+        before,
+        "the convert inverse restores Hug exactly"
+    );
+}

@@ -367,6 +367,7 @@ async def reserve_external_research_operation(
     request: ExternalResearchAcquisitionRequest,
     request_artifact_key: str,
     now: datetime,
+    enforce_budget: bool = True,
 ) -> tuple[ExternalResearchOperationRow, bool]:
     """Atomically reuse or reserve one semantic request without duplicate capacity.
 
@@ -404,6 +405,7 @@ async def reserve_external_research_operation(
         proposed_cents=request.cost_cents_reserved,
         allowed_phases=frozenset({ProjectPhase.DEEP}),
         entity_research_job_id=request.entity_research_job_id,
+        enforce_budget=enforce_budget,
     )
     existing = await find_external_research_operation(
         conn,

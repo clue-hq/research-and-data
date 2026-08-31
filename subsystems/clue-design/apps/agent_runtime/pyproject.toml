@@ -1,0 +1,78 @@
+# Minimal packaging for the design agent runtime (design-integration Part II, slice D5 — the
+# "one version story" treaty the Part-I Step-2 note deferred to this slice).
+#
+# Why this file exists NOW: D5 puts design agent turns on the platform fleet, and a fleet worker
+# imports `lumen_agent` from an installed environment — not from a PYTHONPATH the API process
+# happens to have arranged. Before this package was real, `lumen_agent` was reachable only through
+# `lumen_api.main.ensure_agent_runtime_path`'s sys.path insertion, which no out-of-process worker
+# could rely on. Round A made the package real; Round B DELETED that function (and packaged the
+# two `py_lumen_*` shims the same way), so nothing inserts a design path into `sys.path` any more.
+#
+# Scope, deliberately narrow (mirrors apps/api's D2.1 packaging):
+# - This re-enters the uv workspace as an EXPLICIT member by exact path (the root pyproject's
+#   `exclude = ["subsystems/clue-design"]` guard stays; only these two apps re-enter).
+# - The dependency set is what `lumen_agent` actually imports (grepped, not guessed): deepagents,
+#   langchain + langchain-core, the two provider packages `init_chat_model` resolves at runtime,
+#   httpx, pydantic, selectolax, and rich (lazy, in the trace renderer) — plus `lumen-api`, which
+#   is a real import edge (`lumen_agent` imports `lumen_api.core` / `lumen_ingestion`), not a
+#   convenience. langgraph + langgraph-checkpoint-postgres are declared here because D5's
+#   checkpointer is keyed on the design run id. Round B wired it — as the SYNC `PostgresSaver`,
+#   not the async one: the turn body it wraps is synchronous and runs inside `asyncio.to_thread`,
+#   where there is no event loop to await on.
+# - THE VERSION TREATY: `deepagents` is pinned to the platform's exact pin (`==0.6.12`, from
+#   platform/agents/pyproject.toml) rather than the design tree's legacy `>=0.5.3,<1` floor. Two
+#   deepagents versions in one lockfile is precisely the "two version stories" this slice exists
+#   to end. Every other bound is the loosest range that admits the root uv.lock's already-resolved
+#   version, so entering the workspace re-resolves nothing: langchain 1.3.14, langchain-core 1.5.1,
+#   langchain-openai 1.4.1 (pinned exactly by clue-gateway — this range must stay compatible with
+#   that pin), langchain-anthropic 1.5.2, langgraph 1.2.6, langgraph-checkpoint-postgres 3.1.0,
+#   httpx 0.28.1, rich 15.0.0, selectolax 0.4.11.
+# - `py_lumen_config` / `py_lumen_obs` are DECLARED dependencies since D5 Round B (R-D5-B1):
+#   `lumen_agent.harness` imports `py_lumen_obs` at module scope, so an out-of-process fleet
+#   worker importing this package needs them installed, not on a PYTHONPATH the API arranged.
+#   Part-I Step-2 still owns folding them into clue-config / clue-obs.
+# - `evaluation/`, `lumen_pipeline_archive/`, `knowledge_docs/`, and `tests/` are NOT packaged:
+#   the archive is frozen, and the knowledge tree is loaded from the source checkout by path.
+
+[project]
+name = "lumen-agent-runtime"
+version = "0.0.0"
+description = "Design subsystem agent runtime (merged havana tree) — minimal D5 packaging so the fleet worker can import it."
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+dependencies = [
+    # The version treaty: the platform's exact deepagents pin, not the design tree's old floor.
+    "deepagents==0.6.12",
+    "langchain>=1.3,<2",
+    "langchain-core>=1.5,<2",
+    # Provider packages `langchain.chat_models.init_chat_model` resolves at runtime.
+    "langchain-anthropic>=1.5,<2",
+    "langchain-openai>=1.4,<2",
+    # D5's durable checkpointer, keyed on the design run id. Round B wires the SYNC
+    # `PostgresSaver` (the turn body it wraps is synchronous, under asyncio.to_thread).
+    "langgraph>=1.2,<2",
+    "langgraph-checkpoint-postgres>=3,<4",
+    "httpx>=0.27,<1",
+    "pydantic>=2.7",
+    "selectolax>=0.3.21,<1",
+    # Lazy import in lumen_agent/trace.py's console renderer.
+    "rich>=15,<16",
+    # A real import edge: lumen_agent imports lumen_api.core and lumen_ingestion.
+    "lumen-api",
+    # Real import edges too (module scope): lumen_agent.harness -> py_lumen_obs,
+    # lumen_agent.config -> py_lumen_config.
+    "py-lumen-obs",
+    "py-lumen-config",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lumen_agent"]
+
+[tool.uv.sources]
+lumen-api = { workspace = true }
+py-lumen-obs = { workspace = true }
+py-lumen-config = { workspace = true }

@@ -37,6 +37,7 @@ from clue_api.auth_wiring import (
     install_auth_wiring,
     principal_from_request,
 )
+from clue_api.brand_kit_ingestion import build_brand_kit_ingestion_trigger
 from clue_api.chat import PrincipalResolver, chat_workspace_resolver, install_chat_surface
 from clue_api.chat.stream import install_chat_stream_surface
 from clue_api.frontend_read import (
@@ -52,12 +53,15 @@ from clue_api.ingestion_tools import (
 from clue_api.ingestion_tools import (
     header_workspace_resolver as ingestion_header_workspace_resolver,
 )
+from clue_api.production_metrics import production_metrics_lifespan
 from clue_api.research_view_api import (
     build_research_view_router,
     research_actor_resolver,
     research_workspace_resolver,
 )
 from clue_api.research_view_owner_refs import ProductionOwnerReferenceResolver
+from clue_api.stage0_setup import create_stage0_setup_router, setup_workspace_resolver
+from clue_api.stage0_setup_fleet import DbStage0ReconEnqueuer, Stage0ReconEnqueuer
 from clue_api.stream_tokens import consume_stream_token, mint_stream_token
 from clue_auth import MembershipStateChanged, PrincipalService
 from clue_config import Settings, load_settings
@@ -75,7 +79,8 @@ from clue_core import (
 from clue_core.ingestion import IngestionJobId
 from clue_core.proposals import ProposalStatus
 from clue_db import ConnFactory, db_lifespan, transaction
-from clue_execution import OperationConflict, ToolAuthorityStateChanged
+from clue_execution import DbRunEventReader, OperationConflict, ToolAuthorityStateChanged
+from clue_execution.run_events import list_run_events
 from clue_projections import (
     DEFAULT_TURN_PAGE_SIZE,
     MANIFEST_OP_TOOLS,
@@ -102,7 +107,6 @@ from clue_projections import (
     stage0_readiness,
     validate_manifest_op,
 )
-from clue_research.durable import list_run_events
 from clue_research.durable.project_run import get_project_run
 from clue_research.narrative import ResearchViewSnapshotService
 from clue_research.review import ObservabilitySurface
@@ -705,9 +709,9 @@ def create_projections_router(
             yield _sse_frame(event="stream.hello", data={"run_id": str(run_id)})
             async with conn_factory() as conn:
                 plan = await plan_replay(
-                    conn,
-                    workspace_id=workspace_id,
-                    run_id=run_id,
+                    # The concrete reader is built HERE and injected (D8): the planner lives in
+                    # clue_core and clue_projections may not import the clue_execution DAL.
+                    DbRunEventReader(conn, workspace_id=workspace_id, run_id=run_id),
                     last_event_id=cursor,
                     horizon_s=settings.sse_replay_horizon_s,
                     limit=settings.sse_replay_page_limit,
@@ -743,7 +747,13 @@ def create_projections_router(
 async def _projections_lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Production lifespan: configure logging once, open the DB engine for the app's lifetime."""
     clue_obs.setup()
-    async with db_lifespan():
+    async with (
+        production_metrics_lifespan(
+            _app.state.settings,
+            service_name="clue-projections-api",
+        ),
+        db_lifespan(),
+    ):
         startup_check = getattr(_app.state, "startup_check", None)
         if startup_check is not None:
             await startup_check()
@@ -778,6 +788,8 @@ def create_projections_app(
     chat_stream_live_tail: bool = True,
     auth_service: PrincipalService | None = None,
     auth_closer: Callable[[], Awaitable[None]] | None = None,
+    contact_email_lookup: Any | None = None,
+    stage0_recon_enqueuer: Stage0ReconEnqueuer | None = None,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -803,6 +815,7 @@ def create_projections_app(
     )
     app.state.startup_check = startup_check
     app.state.auth_closer = auth_closer
+    app.state.settings = resolved
 
     # Review F3: actually serve the declared schema header on EVERY response (JSON routes and the
     # SSE stream alike — response headers precede the streamed body), so a consumer can confirm the
@@ -816,9 +829,21 @@ def create_projections_app(
     # FI-2 slice 1: the `/frontend/v1` read surface — its own router, error envelope, request id,
     # and the process's CORS policy. Both halves are default-off (flag / empty origins), so an
     # unconfigured deployment is byte-identical to the pre-FI-2 app.
-    install_frontend_read_surface(app, settings=resolved, conn_factory=conn_factory)
+    install_frontend_read_surface(
+        app,
+        settings=resolved,
+        conn_factory=conn_factory,
+        evidence_storage=ingestion_storage,
+        contact_email_lookup=contact_email_lookup,
+    )
     if auth_service is not None:
-        install_auth_wiring(app, service=auth_service)
+        # The provision route (workspace-creating write) mounts only behind its default-off
+        # flag, matching the rollout discipline of every neighbouring surface.
+        install_auth_wiring(
+            app,
+            service=auth_service,
+            conn_factory=(conn_factory if resolved.self_serve_provisioning_enabled else None),
+        )
         if workspace_resolver is None and actor_resolver is None:
             workspace_resolver, actor_resolver = authenticated_route_resolvers(auth_service)
 
@@ -854,6 +879,7 @@ def create_projections_app(
         app.dependency_overrides[research_workspace_resolver] = workspace_resolver
         app.dependency_overrides[frontend_read_workspace_resolver] = workspace_resolver
         app.dependency_overrides[chat_workspace_resolver] = workspace_resolver
+        app.dependency_overrides[setup_workspace_resolver] = workspace_resolver
     if actor_resolver is not None:
         app.dependency_overrides[header_actor_resolver] = actor_resolver
         app.dependency_overrides[ingestion_header_actor_resolver] = actor_resolver
@@ -875,6 +901,28 @@ def create_projections_app(
                 tool_invoker=tool_invoker,
                 storage=ingestion_storage,
                 conn_factory=conn_factory,
+            )
+        )
+    # FI-4 slice 2: the onboarding workspace-setup composition (capture → onboarding_input →
+    # recon driver + the lane-truth read). Rides the same default-off flag as the provisioning
+    # route it continues; needs the storage backend for capture-before-use.
+    if resolved.self_serve_provisioning_enabled and ingestion_storage is not None:
+        app.include_router(
+            create_stage0_setup_router(
+                tool_invoker=tool_invoker,
+                conn_factory=conn_factory,
+                storage=ingestion_storage,
+                recon_enqueuer=(
+                    stage0_recon_enqueuer
+                    if stage0_recon_enqueuer is not None
+                    else DbStage0ReconEnqueuer()
+                ),
+                # Brand-kit slice 2: None unless CLUE_DESIGN_API_BASE_URL names the design API,
+                # in which case first-time onboarding also enqueues one draft brand-kit
+                # ingestion of the captured website.
+                brand_kit_ingestion=build_brand_kit_ingestion_trigger(
+                    settings=resolved, conn_factory=conn_factory
+                ),
             )
         )
     if discovery_webhook_router is not None:

@@ -59,7 +59,7 @@ from clue_research.narrative import (
 _ACTION_NAMESPACE = uuid5(NAMESPACE_URL, "clue-hq:c7:evidence-action:1.0")
 
 
-def _safe_public_url(value: str | None) -> bool:
+def safe_public_url(value: str | None) -> bool:
     if value is None:
         return False
     parsed = urlsplit(value)
@@ -96,7 +96,7 @@ def _evidence_actions(
     claim: Claim,
 ) -> tuple[EvidenceActionDescriptor, ...]:
     actions: list[EvidenceActionDescriptor] = []
-    if _safe_public_url(claim.source_url):
+    if safe_public_url(claim.source_url):
         actions.append(
             EvidenceActionDescriptor(
                 kind=EvidenceActionKind.OPEN_PUBLIC_SOURCE,

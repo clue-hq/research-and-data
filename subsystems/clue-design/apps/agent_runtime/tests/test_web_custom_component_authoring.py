@@ -8,6 +8,7 @@ from pathlib import Path
 
 from lumen_agent.config import AgentRuntimeConfig
 from lumen_agent import harness_web
+from lumen_agent.tools import web_substrate as ws
 from lumen_agent.tools.web_substrate import LumenWebTools
 from lumen_api.core import CoreClient
 
@@ -541,3 +542,38 @@ def test_web_harness_exposes_read_tools_to_orchestrator_and_full_flow_to_author(
     projection = backend.read("/custom_components/.registry.json")
     assert projection.error is None
     assert tools.custom_component_projection_root.exists()
+
+
+def test_place_custom_component_result_carries_an_advice_bucket(tmp_path: Path):
+    """The apply path used to keep `severity == "warning"` and nothing else, so
+    an Advice diagnostic fell on the floor exactly here."""
+    registry = FakeRegistry()
+    tools = tools_for(tmp_path, registry, targets=["alpha_title"])
+    assert json.loads(tools.author_web_page(TWO_SECTIONS))["status"] == "ok"
+
+    attached = json.loads(
+        tools.place_custom_component(
+            "attach",
+            "metric-card",
+            ARTIFACT_A,
+            parent_node_id="alpha_box",
+            index=1,
+        )
+    )
+    assert attached["status"] == "ok", attached
+    assert "advice" in attached, attached
+    assert attached["advice"] == []
+    assert attached["warnings"] == []
+
+    # And the split itself keeps every non-error diagnostic: nothing is dropped
+    # on the way out of this path any more.
+    warnings, advice = ws._split_non_error_diagnostics(
+        [
+            {"severity": "error", "code": "E"},
+            {"severity": "warning", "code": "W"},
+            {"severity": "advice", "code": "LUMW0306"},
+            {"severity": "novel", "code": "N"},
+        ]
+    )
+    assert [d["code"] for d in advice] == ["LUMW0306"]
+    assert [d["code"] for d in warnings] == ["W", "N"]

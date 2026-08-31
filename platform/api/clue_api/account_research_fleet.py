@@ -22,7 +22,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated, Literal, Self, cast
+from typing import TYPE_CHECKING, Annotated, Literal, Self, cast
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
@@ -30,6 +30,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.account_research_coverage import latest_account_research_run_id
 from clue_core import ProjectRunId, UtcDatetime, serialize_value_json
 from clue_core.entity_research import (
     FinalizationVerification,
@@ -54,6 +55,11 @@ from clue_fleet.enums import FleetTaskKind
 from clue_fleet.lease import WorkId
 from clue_fleet.queue import cancel_work_tasks, enqueue_task
 from clue_fleet.work_worker import WorkContext, WorkResult
+
+if TYPE_CHECKING:  # pragma: no cover - typing-only; the runtime edge would be circular
+    # Lane E E1: ``prose_synthesis_step`` imports this module's projection, so the step type is
+    # available for annotation only. Nothing here calls into it except through the injected object.
+    from clue_api.prose_synthesis_step import ProseSynthesisStep
 
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
@@ -274,6 +280,28 @@ async def _read_fleet(
         .one_or_none()
     )
     return None if row is None else _fleet_row(row)
+
+
+async def read_latest_account_fleet_for_project_run(
+    conn: AsyncConnection,
+    project_run_id: UUID,
+    *,
+    workspace_id: str,
+) -> AccountResearchFleetRow | None:
+    """The **current** account-research fleet run bound to ``project_run_id``, or ``None``.
+
+    The §6c latest-wins rule itself lives in :func:`~clue_api.account_research_coverage.
+    latest_account_research_run_id` (one definition, shared with the read-side consumers that want
+    the run without the controller); this adds the full supervised fleet row on top of it.
+    Read-only and workspace-scoped: a fleet run belonging to another workspace reads as absent.
+    """
+
+    research_run_id = await latest_account_research_run_id(
+        conn, project_run_id, workspace_id=workspace_id
+    )
+    if research_run_id is None:
+        return None
+    return await _read_fleet(conn, research_run_id)
 
 
 async def _event(
@@ -1368,9 +1396,15 @@ class AccountResearchFleetWorkHandler:
         *,
         inner: EntityResearchJobWorkHandler,
         fleets: AccountResearchFleetService,
+        prose_step: ProseSynthesisStep | None = None,
     ) -> None:
         self._inner = inner
         self._fleets = fleets
+        # Lane E E1. Optional by construction: with no step composed this handler behaves exactly
+        # as it did before Lane E existed (the call below is the only added statement, and it is
+        # skipped entirely). The step is typed as a protocol so this module keeps no import edge
+        # into the prose tool.
+        self._prose_step = prose_step
 
     async def handle(self, context: WorkContext) -> WorkResult:
         raw_job_id = context.payload.get("job_id")
@@ -1404,6 +1438,12 @@ class AccountResearchFleetWorkHandler:
                 task_finalized=True,
             )
         projection = await self._fleets.reconcile(research_run_id)
+        # Lane E E1 — deliberately OUTSIDE the suspend-on-error try above: a prose failure must
+        # never become a fleet suspension. The step owns its own catch-all and never raises.
+        if self._prose_step is not None:
+            await self._prose_step.after_account_job(
+                job_id=job_id, result=result, projection=projection
+            )
         return WorkResult(
             outcome=result.outcome,
             references={
@@ -1427,4 +1467,5 @@ __all__ = [
     "AccountResearchFleetState",
     "AccountResearchFleetWorkHandler",
     "AccountResearchJobSummary",
+    "read_latest_account_fleet_for_project_run",
 ]

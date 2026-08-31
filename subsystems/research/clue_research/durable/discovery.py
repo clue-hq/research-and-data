@@ -962,12 +962,18 @@ async def reserve_discovery_operation(
     *,
     workspace_id: str,
     operation: DiscoveryOperation,
+    enforce_budget: bool = True,
 ) -> tuple[DiscoveryOperation, bool]:
     """Atomically reserve one potentially-paid operation under the persisted plan cap.
 
     The batch row serializes competing reservations.  The cap is read from the immutable plan,
     never accepted from a caller.  An exact concurrent/restarted request returns the existing row
     with ``created=False``; it does not mint a second operation or increment the batch reservation.
+
+    ``enforce_budget`` is the FI pilot budget-controls switch and gates only the *project-run*
+    money check below. The immutable plan's own provider-unit and money caps above are a
+    consistency invariant of this operation's durable plan, not a spend-vs-budget stop, so they
+    hold in both modes.
     """
 
     if operation.workspace_id != workspace_id:
@@ -1073,6 +1079,7 @@ async def reserve_discovery_operation(
             project_run_id=plan.project_run_id,
             proposed_cents=operation.cost_cents_reserved,
             allowed_phases=frozenset({ProjectPhase.DISCOVERY}),
+            enforce_budget=enforce_budget,
         )
     except ProviderSpendGuardError as exc:
         raise DiscoveryBudgetExceeded(str(exc)) from exc

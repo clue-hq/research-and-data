@@ -48,13 +48,58 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # A promoted recipe revision is immutable, so widening the interaction slot's ceiling is a new
     # revision rather than an edit, exactly like the profile mint the same slice needed.
     "recipe0-stage0-v6.json",
+    # The pilot bytes remain authoritative for colliding v7/v8: trusted @2 readiness/synthesis and
+    # the durable exact-subject ICP confirmation gate. (PD-part3 P3.4's colliding v7 — v6 plus
+    # ``open_design_leg@1`` — was re-versioned to v16 at the integration merge.)
+    "recipe0-stage0-v7.json",
+    "recipe0-stage0-v8.json",
+    # Onboarding's non-conflicting v9 retains the selected-product read lineage.
+    "recipe0-stage0-v9.json",
+    # Integration v10 composes both lineages without rewriting any historical revision.
+    "recipe0-stage0-v10.json",
+    # Confirmed-run v2 derives/reuses the existing Stage-0 receipt and starts discovery internally.
+    "recipe0-stage0-v11.json",
+    # Provider-neutral discovery scope is derived/confirmed and pinned by start @3.
+    "recipe0-stage0-v12.json",
+    # Bounded ICP presentation accompanies the normal assistant message; Exa preflights pre-run.
+    "recipe0-stage0-v13.json",
+    # Exact current-message Account refs can inspect the governed view and detached fleet state.
+    "recipe0-stage0-v14.json",
+    # Plan-safe research directives retain the frozen v2 contract while new turns use @3.
+    "recipe0-stage0-v15.json",
+    # PD-part3 P3.4's design delegation entry (``open_design_leg@1``), re-versioned onto the v15
+    # lineage at the part-iii integration merge. Same rule as v6: the C5 slot is a second,
+    # independent ceiling, so a profile grant alone would show the model a tool that plan
+    # validation then refuses.
+    # genweb slice 2: the delegation entry becomes ``open_design_leg@2`` (document birth at
+    # leg-open). The C5 slot pins an exact tool ADDRESS, so promoting the tool without a new
+    # revision would make plan validation refuse the very tool the profile now grants.
+    # genad: the delegation entry becomes ``open_design_leg@3`` (a ``doc_kind='scene'`` open now
+    # births the ad document too). Same exact-address rule as v17 — the slot would refuse the tool
+    # the profile grants without its own revision.
+    # genad2: the delegation entry becomes ``open_design_leg@4`` (the ``doc_kind='scene'`` open
+    # births a ZERO-PAGE document; the design agent authors the page). Same exact-address rule as
+    # v17/v18 — the slot would refuse the tool the profile grants without its own revision.
+    "recipe0-stage0-v19.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
 )
 
 # Kept on disk solely so already-pinned executions can resolve their exact historical definition.
 # R1 never seeds or promotes these recipes for new executions.
-HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES: tuple[str, ...] = ("account-research-unit-v1.json",)
+HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES: tuple[str, ...] = (
+    "account-research-unit-v1.json",
+    # recipe0 v16-v18 pin open_design_leg@1/@2/@3, all retired by later slices (@4 is the
+    # live version, pinned by v19). On the long-lived shared dev DB they were promoted when
+    # their pins were live, so the idempotent seed skips them; on a FRESH database the
+    # seeder re-validates every active revision against TODAY's registry and v16 failed
+    # promotion, wedging every fresh-checkout worker boot (found live 2026-08-29 setting up
+    # the founder's browser walk). Replay-only is this file's own mechanism for exactly
+    # this shape: already-pinned executions still resolve them; new seeds skip them.
+    "recipe0-stage0-v16.json",
+    "recipe0-stage0-v17.json",
+    "recipe0-stage0-v18.json",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -307,12 +352,18 @@ def build_recipe_pin_registry(
                     await conn.execute(
                         text(
                             """
-                            SELECT id, workspace_id, project_id, icp_key, icp_version,
-                                   client_entity_id, client_kb_version, product_id,
-                                   product_context_version_id, readiness_decision_id,
-                                   tier_cutoffs_json
-                            FROM project_run
-                            WHERE id = CAST(:key AS uuid) AND workspace_id = :workspace_id
+                            SELECT run.id, run.workspace_id, run.project_id,
+                                   run.icp_key, run.icp_version,
+                                   run.client_entity_id, run.client_kb_version, run.product_id,
+                                   run.product_context_version_id, run.readiness_decision_id,
+                                   run.tier_cutoffs_json,
+                                   config.configuration_sha256
+                            FROM project_run run
+                            LEFT JOIN project_run_discovery_configuration config
+                              ON config.project_run_id = run.id
+                             AND config.workspace_id = run.workspace_id
+                            WHERE run.id = CAST(:key AS uuid)
+                              AND run.workspace_id = :workspace_id
                             """
                         ),
                         {"key": request.key, "workspace_id": context.workspace_id},
@@ -530,6 +581,10 @@ def build_recipe_pin_registry(
         return _observation(version=str(version), payload=pinned)
 
     registry.register(CallablePinResolver(kind="client_kb", loader=client_kb))
+    # Product-KB uses the same claim/version substrate but a distinct pin kind. Keeping the kinds
+    # separate prevents a company-scoped tool requirement from satisfying product authority (or
+    # vice versa) while reusing the one exact-version resolver implementation.
+    registry.register(CallablePinResolver(kind="product_kb", loader=client_kb))
 
     async def readiness_decision(
         request: PinRequest,

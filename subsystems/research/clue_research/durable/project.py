@@ -29,7 +29,7 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
-from pydantic import JsonValue
+from pydantic import JsonValue, ValidationError
 
 from clue_core import (
     BudgetEngine,
@@ -38,6 +38,7 @@ from clue_core import (
     BurnDown,
     CostCents,
     DeepExternalWait,
+    DeepFleetExternalWait,
     DiscoveryExternalWait,
     Estimate,
     IdempotencyScope,
@@ -141,6 +142,58 @@ class CheckpointNotAwaiting(ProjectRunError):
 class BudgetEngineNotConfigured(ProjectRunError):
     """:meth:`ProjectRun.pre_run_estimate` needs a :class:`~clue_core.BudgetEngine` (M7.5
     supplies the cost math); none was injected."""
+
+
+class ReentrantHoldNotSubmittable(ProjectRunError):
+    """:meth:`ProjectRun.submit_checkpoint` was aimed at a **re-entrant hold**, not a decision gate.
+
+    A hold has nothing to submit: the phase suspended on durable state it re-reads (M8D R11.1's DEEP
+    bridge holds until a confirmed account-research launch exists, or until a suspended fleet is
+    resumed), so committing its checkpoint would finalize — and advance past — a phase that did no
+    work. Clear the hold's cause and :meth:`ProjectRun.resume` the run instead; the handler re-runs
+    and re-evaluates. Distinct from :class:`CheckpointNotAwaiting` so a caller (or a UI that
+    mistakes the hold for an approvable gate card) can tell "nothing is awaiting input" apart from
+    "this is awaiting the world, not you"."""
+
+
+# --- re-entrant holds (R11 §6b) ---------------------------------------------------------------
+
+#: Reserved :class:`~clue_core.PhaseResult` payload key marking a ``PAUSED`` result as a *plain*
+#: hold rather than a decision gate. The machine's default ``PAUSED`` handling lands an
+#: ``AWAITING_INPUT`` checkpoint that only :meth:`ProjectRun.submit_checkpoint` can clear — right
+#: for the ``TIER_CHECKPOINT``/``REVIEW`` gates, where a human decision is the missing input, but
+#: wrong for a phase that is merely waiting on durable state it re-reads (M8D R11.1's DEEP bridge
+#: pauses because no account-research fleet run is bound to the project run yet; approving that
+#: "gate" would finalize DEEP having researched nothing). A handler sets this key to ``True`` in
+#: its ``PAUSED`` payload to say: hold the run, and on an explicit ``resume`` re-run me against
+#: current state. Gates that do not set it keep their exact submit-only behaviour.
+REENTRANT_HOLD_KEY = "reentrant_hold"
+
+
+# --- DEEP external-wait payload validation (R11.4) --------------------------------------------
+
+# The two admissible reference-only DEEP wait shapes, newest first. Both are ``extra="forbid"`` and
+# neither's required fields satisfy the other, so a payload validates as *exactly one* of them: the
+# M8D fleet bridge's census (R11.1) or the legacy per-account provider wait, which keeps validating
+# historical checkpoints byte-for-byte.
+_DEEP_EXTERNAL_WAIT_SHAPES = (DeepFleetExternalWait, DeepExternalWait)
+
+
+def _validate_deep_external_wait(payload: dict[str, JsonValue]) -> None:
+    """Fail closed on a DEEP ``waiting_external`` payload matching neither admissible shape."""
+    failures: list[str] = []
+    for shape in _DEEP_EXTERNAL_WAIT_SHAPES:
+        try:
+            shape.model_validate(payload)
+        except ValidationError as error:
+            failures.append(f"{shape.__name__}: {error}")
+        else:
+            return
+    raise ProjectRunError(
+        "a deep waiting_external payload must validate as exactly one of "
+        "DeepFleetExternalWait (the M8D fleet bridge) or DeepExternalWait (the legacy "
+        "per-account provider wait); it matched neither — " + " | ".join(failures)
+    )
 
 
 # --- the persistence seam --------------------------------------------------------------------
@@ -363,10 +416,19 @@ class ProjectRun:
         budget_engine: BudgetEngine | None = None,
         ledger: IdempotencyStore | None = None,
         phase_stale_after: timedelta = DEFAULT_PHASE_STALE_AFTER,
+        enforce_budget: bool = True,
     ) -> None:
         self._store: ProjectRunStore = store if store is not None else DbProjectRunStore()
         self._registry = registry if registry is not None else default_phase_handler_registry()
         self._budget = budget_engine
+        # FI pilot budget-controls (ratified 2026-08-11), threaded from
+        # ``Settings.budget_controls_enabled`` at the composition roots. False disables *only* the
+        # pre-phase graceful-stop gate in :meth:`_budget_graceful_stop`; the engine itself stays
+        # wired, so :meth:`pre_run_estimate` / :meth:`burn_down` (reads, and the M13.4 cost
+        # observability behind them) keep working and every ``BudgetEngine.record`` charge is still
+        # written. Passing no engine at all would silently break those reads with
+        # :class:`BudgetEngineNotConfigured`, which is why this is a separate knob.
+        self._enforce_budget = enforce_budget
         # The M7.4 phase-idempotency ledger. An *injected collaborator* (like ``budget_engine``):
         # the api composition root wires a ``DbIdempotencyStore`` so a phase finalize commits its
         # checkpoint + records its charge exactly once on the ``(project_run, phase)`` key. When
@@ -434,8 +496,16 @@ class ProjectRun:
             # The phase already committed (e.g. a crash between commit and transition) — replay the
             # transition without re-running the handler (idempotent re-entry).
             return await self._transition_after(run)
-        if checkpoint is not None and checkpoint.status == PhaseCheckpointStatus.AWAITING_INPUT:
-            # Suspended at a durable gate; the handler does not re-run until a decision arrives.
+        if (
+            checkpoint is not None
+            and checkpoint.status == PhaseCheckpointStatus.AWAITING_INPUT
+            and not checkpoint.payload.get(REENTRANT_HOLD_KEY)
+        ):
+            # Suspended at a durable *decision* gate; the handler does not re-run until a decision
+            # arrives through submit_checkpoint. A re-entrant hold (R11 §6b's "plain PAUSED" — the
+            # phase suspended on external state it re-reads, not on a decision to submit) instead
+            # falls through: a still-PAUSED run returned above, so reaching here means the run was
+            # explicitly resumed and the handler should re-evaluate current state.
             return run
         # WAITING_EXTERNAL deliberately falls through: a scheduled/webhook wake re-enters the same
         # handler with the persisted batch/operation refs.  It is not a human gate and the run is
@@ -500,7 +570,7 @@ class ProjectRun:
                 # Account-deep uses the same active, non-human wait semantics. Its typed payload
                 # pins account-run and provider-operation references so a wake resumes the exact
                 # acquisition before short committee materialization.
-                DeepExternalWait.model_validate(result.payload)
+                _validate_deep_external_wait(result.payload)
             else:
                 raise ProjectRunError(
                     "waiting_external is valid only for discovery and deep phases"
@@ -640,7 +710,9 @@ class ProjectRun:
         are additionally diff-guarded — applied only when they actually change the run — so a
         re-submit of the same decision does not append a duplicate audit-journal row. Together they
         close the crash window between the adjust and the commit that the diff guard alone could
-        only partially cover. Raises :class:`CheckpointNotAwaiting` if nothing is awaiting input."""
+        only partially cover. Raises :class:`CheckpointNotAwaiting` if nothing is awaiting input,
+        and :class:`ReentrantHoldNotSubmittable` if the suspension is a re-entrant hold rather than
+        a decision gate (nothing to decide — clear its cause and :meth:`resume`)."""
         run = await self.status(project_run_id)
         phase = run.phase
         checkpoint = await self._store.get_checkpoint(project_run_id, phase)
@@ -662,6 +734,16 @@ class ProjectRun:
             )
         if checkpoint is None or checkpoint.status != PhaseCheckpointStatus.AWAITING_INPUT:
             raise CheckpointNotAwaiting(f"{project_run_id}:{phase.value}")
+        # Fail closed BEFORE any adjustment or commit: a re-entrant hold is not an approvable gate,
+        # so an approve aimed at one must leave the run PAUSED and the checkpoint untouched rather
+        # than finalize a phase that did no work (R11 §6b).
+        if checkpoint.payload.get(REENTRANT_HOLD_KEY):
+            reason = checkpoint.payload.get("reason_code")
+            raise ReentrantHoldNotSubmittable(
+                f"{project_run_id}:{phase.value} is held on external state"
+                f"{'' if reason is None else f' ({reason})'}, not on a decision to submit; "
+                "clear the hold's cause and resume the run so the phase re-runs"
+            )
 
         # Apply only the edits that actually change the run, so re-submitting the same decision (a
         # UI retry, or a crash between this adjust and the commit below) does not append a duplicate
@@ -834,8 +916,15 @@ class ProjectRun:
         the run cooperatively — status ``PAUSED``, **no** ``AWAITING_INPUT`` checkpoint — so a later
         :meth:`resume` re-enters the *same* phase once the cap is raised, distinct from the human
         ``tier_checkpoint`` gate (which commits-and-advances on approve). The engine records the
-        ``graceful_stop`` ``budget_event`` as part of the check."""
-        if self._budget is None or run.phase not in _BUDGET_GATED_PHASES:
+        ``graceful_stop`` ``budget_event`` as part of the check.
+
+        With the FI pilot budget-controls switch off (``enforce_budget=False``) this gate is not
+        consulted at all: no budget verdict may pause a phase, so a run whose recorded spend has
+        passed its cap advances through every budget-gated phase. The cap itself is still stored
+        and every charge is still recorded — the run simply over-spends visibly."""
+        if self._budget is None or not self._enforce_budget:
+            return False
+        if run.phase not in _BUDGET_GATED_PHASES:
             return False
         decision = await self._budget.check(
             scope=BudgetScope.RUN, projected_cents=Decimal(0), project_run_id=run.id

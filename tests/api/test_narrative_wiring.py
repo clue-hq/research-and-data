@@ -10,7 +10,7 @@ from clue_api.narrative_wiring import (
     register_narrative_wiring,
 )
 from clue_core.retrieval import ClientKnowledgeRetriever
-from clue_research.narrative import load_narrative_pack
+from clue_research.narrative import load_narrative_pack, load_prose_pack
 
 
 def test_register_narrative_wiring_appends_pack_idempotently() -> None:
@@ -24,6 +24,22 @@ def test_register_narrative_wiring_appends_pack_idempotently() -> None:
         assert composition.RESEARCH_PACK_LOADERS.count(load_narrative_pack) == 1
     finally:
         composition.RESEARCH_PACK_LOADERS[:] = saved  # never leak global state to sibling tests
+
+
+def test_register_narrative_wiring_appends_the_prose_pack_idempotently() -> None:
+    """Lane E E0: both production processes call ``register_narrative_wiring`` (fleet_main,
+    projections_main), so appending ``load_prose_pack`` here is what puts the ``account.summary``
+    / ``contact.overview`` route rows in both — no composition-root edit needed."""
+    saved = list(composition.RESEARCH_PACK_LOADERS)
+    try:
+        composition.RESEARCH_PACK_LOADERS[:] = [
+            loader for loader in saved if loader is not load_prose_pack
+        ]
+        register_narrative_wiring()
+        register_narrative_wiring()
+        assert composition.RESEARCH_PACK_LOADERS.count(load_prose_pack) == 1
+    finally:
+        composition.RESEARCH_PACK_LOADERS[:] = saved
 
 
 def test_client_knowledge_retriever_stub_conforms_to_seam() -> None:

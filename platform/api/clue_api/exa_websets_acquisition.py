@@ -6,9 +6,9 @@ missing API-root boundary: compile the exact pinned ICP into an immutable provid
 durable paid-call guard.  Stable ids and the request fingerprint make a process restart a pure
 database replay; provider transport is never used by an already-terminal/in-flight operation.
 
-The default policy is intentionally the D6 canary contract: at most two company rows, LinkedIn
-and revenue-band enrichments, and contact enrichments disabled unless the deployment explicitly
-opts in.  Generalising those limits is a later policy change, not an unbounded runtime argument.
+The default policy admits the Stage-0 safe default of ten companies and the confirmed upper bound
+of fifty, while keeping LinkedIn/revenue enrichments and contact-enrichment opt-in.  The requested
+count always comes from the immutable run receipt, never from a provider-specific ICP slot.
 """
 
 from __future__ import annotations
@@ -20,12 +20,17 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from clue_api.discovery_configuration import (
+    ConfirmedDiscoveryPreflightError,
+    get_discovery_configuration_receipt,
+)
 from clue_api.exa_websets_submit import (
     DEFAULT_EXA_WEBSETS_PRICING,
     DurableExaWebsetSubmitter,
     ExaSubmitResult,
     ExaWebsetsPricingPolicy,
 )
+from clue_api.stage0_project_contracts import DiscoveryConfigurationContract
 from clue_core import (
     DiscoveryBatchId,
     DiscoveryCriterionPlan,
@@ -65,7 +70,7 @@ from clue_storage import StorageBackend
 TransportFactory = Callable[[], AbstractAsyncContextManager[ExaWebsetsTransport]]
 
 
-class ExaDiscoveryAcquisitionError(RuntimeError):
+class ExaDiscoveryAcquisitionError(ConfirmedDiscoveryPreflightError):
     """The pinned run/ICP cannot safely produce the bounded D6 paid workload."""
 
 
@@ -86,11 +91,11 @@ class ExaDiscoveryAcquisitionPolicy(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    version: str = "exa-websets-d6-acquisition-policy-v1"
-    compiler_version: str = "confirmed-icp-to-exa-websets-plan-v1"
-    maximum_results: int = Field(default=2, ge=1, le=100)
-    maximum_provider_credits: int = Field(default=48, ge=0)
-    maximum_cost_cents: Decimal = Field(default=Decimal("100"), ge=0)
+    version: str = "exa-websets-d6-acquisition-policy-v2"
+    compiler_version: str = "provider-neutral-discovery-configuration-to-exa-v2"
+    maximum_results: int = Field(default=50, ge=1, le=100)
+    maximum_provider_credits: int = Field(default=700, ge=0)
+    maximum_cost_cents: Decimal = Field(default=Decimal("315"), ge=0)
     include_contact_enrichments: bool = False
     search_key: str = "account-discovery"
 
@@ -171,10 +176,33 @@ def _enrichments(*, include_contacts: bool) -> tuple[DiscoveryEnrichmentPlan, ..
     return tuple(enrichments)
 
 
+def _exa_criteria(configuration: DiscoveryConfigurationContract) -> tuple[str, ...]:
+    """Pack every must/exclusion rule into Exa's five 1,000-character criterion slots."""
+
+    statements = tuple(
+        [f"Must match: {item}" for item in configuration.must_have_criteria]
+        + [f"Must not match: {item}" for item in configuration.exclusion_criteria]
+    )
+    packed: list[str] = []
+    for statement in statements:
+        if len(statement) > 1_000:
+            raise ExaDiscoveryAcquisitionError("one discovery criterion exceeds Exa's limit")
+        if packed and len(packed[-1]) + 2 + len(statement) <= 1_000:
+            packed[-1] = packed[-1] + "; " + statement
+        else:
+            packed.append(statement)
+    if len(packed) > 5:
+        raise ExaDiscoveryAcquisitionError(
+            "the confirmed discovery criteria cannot fit Exa's five bounded criterion slots"
+        )
+    return tuple(packed)
+
+
 def compile_exa_discovery_preflight(
     *,
     ctx: PhaseContext,
     spec: ICPSpec,
+    configuration: DiscoveryConfigurationContract | None = None,
     policy: ExaDiscoveryAcquisitionPolicy = DEFAULT_EXA_DISCOVERY_ACQUISITION_POLICY,
     pricing: ExaWebsetsPricingPolicy = DEFAULT_EXA_WEBSETS_PRICING,
 ) -> ExaDiscoveryPreflight:
@@ -188,26 +216,41 @@ def compile_exa_discovery_preflight(
         or spec.version != ctx.icp_version
     ):
         raise ExaDiscoveryAcquisitionError("ICP spec does not match the project-run lineage")
-    strategy = _ExaStrategySlot.model_validate(spec.discovery_strategy)
-    if EXA_WEBSETS_SOURCE_KEY not in strategy.channels:
-        raise ExaDiscoveryAcquisitionError("confirmed ICP does not enable Exa Websets")
-    if strategy.entity_type is not DiscoveryEntityKind.COMPANY:
+    if configuration is None:
+        # Historical project runs have no run-level configuration receipt.  Preserve only their
+        # explicit Exa-shaped contract; current Stage-0 firmographics must never be reinterpreted
+        # here because that was the production failure this boundary replaces.
+        strategy = _ExaStrategySlot.model_validate(spec.discovery_strategy)
+        if EXA_WEBSETS_SOURCE_KEY not in strategy.channels:
+            raise ExaDiscoveryAcquisitionError("confirmed ICP does not enable Exa Websets")
+        entity_type = strategy.entity_type
+        requested_count = strategy.requested_count
+        query = strategy.query
+        criteria = strategy.must_have_criteria
+    else:
+        if configuration.approved_icp_ref != (
+            f"icp-spec:{ctx.workspace_id}:{ctx.icp_key}:v{ctx.icp_version}"
+        ):
+            raise ExaDiscoveryAcquisitionError(
+                "discovery configuration does not match the project-run ICP"
+            )
+        entity_type = DiscoveryEntityKind(configuration.entity_type)
+        requested_count = configuration.requested_account_count
+        query = configuration.search_intent
+        criteria = _exa_criteria(configuration)
+    if entity_type is not DiscoveryEntityKind.COMPANY:
         raise ExaDiscoveryAcquisitionError("D6 production acquisition supports company rows only")
-    if strategy.requested_count > policy.maximum_results:
+    if requested_count > policy.maximum_results:
         raise ExaDiscoveryAcquisitionError(
-            f"requested {strategy.requested_count} rows exceeds policy maximum "
-            f"{policy.maximum_results}"
+            f"requested {requested_count} rows exceeds policy maximum {policy.maximum_results}"
         )
     search = DiscoverySearchPlan(
         search_key=policy.search_key,
         channel_key=EXA_WEBSETS_SOURCE_KEY,
-        normalized_query=strategy.query,
-        entity_type=strategy.entity_type,
-        requested_count=strategy.requested_count,
-        criteria=tuple(
-            DiscoveryCriterionPlan(description=description)
-            for description in strategy.must_have_criteria
-        ),
+        normalized_query=query,
+        entity_type=entity_type,
+        requested_count=requested_count,
+        criteria=tuple(DiscoveryCriterionPlan(description=description) for description in criteria),
         enrichments=_enrichments(include_contacts=policy.include_contact_enrichments),
     )
     maximum_units = pricing.maximum_units(search)
@@ -243,7 +286,7 @@ def compile_exa_discovery_preflight(
         money_budget_cap_cents=maximum_cost,
         stopping_policy={
             "closed_batch": True,
-            "requested_count": strategy.requested_count,
+            "requested_count": requested_count,
             "advance_only_after": "immutable_discovery_batch_seal",
             "policy_version": policy.version,
         },
@@ -270,17 +313,44 @@ class ExaWebsetsDiscoveryStarter:
         policy: ExaDiscoveryAcquisitionPolicy = DEFAULT_EXA_DISCOVERY_ACQUISITION_POLICY,
         pricing: ExaWebsetsPricingPolicy = DEFAULT_EXA_WEBSETS_PRICING,
         conn_factory: ConnFactory = transaction,
+        enforce_budget: bool = True,
     ) -> None:
         self._transport_factory = transport_factory
         self._storage = storage
         self._policy = policy
         self._pricing = pricing
         self._conn_factory = conn_factory
+        # FI pilot budget-controls, threaded from ``Settings.budget_controls_enabled`` at the
+        # composition root. False means this path never refuses on budget grounds; every
+        # durable row it writes is unchanged.
+        self._enforce_budget = enforce_budget
+
+    async def validate_confirmed_discovery(
+        self,
+        *,
+        ctx: PhaseContext,
+        spec: ICPSpec,
+        configuration: DiscoveryConfigurationContract,
+    ) -> None:
+        """Compile the exact proposed run without a database write or provider call."""
+
+        compile_exa_discovery_preflight(
+            ctx=ctx,
+            spec=spec,
+            configuration=configuration,
+            policy=self._policy,
+            pricing=self._pricing,
+        )
 
     async def preflight(self, ctx: PhaseContext) -> ExaDiscoveryPreflight:
         async with self._conn_factory() as conn:
             spec = await get_icp_version(conn, ctx.workspace_id, ctx.icp_key, ctx.icp_version)
             run = await get_project_run(conn, ctx.project_run_id)
+            configuration_receipt = await get_discovery_configuration_receipt(
+                conn,
+                project_run_id=ctx.project_run_id,
+                workspace_id=ctx.workspace_id,
+            )
         if spec is None:
             raise ExaDiscoveryAcquisitionError("pinned ICP spec is missing")
         if run is None or run.workspace_id != ctx.workspace_id or run.project_id != ctx.project_id:
@@ -294,10 +364,17 @@ class ExaWebsetsDiscoveryStarter:
         result = compile_exa_discovery_preflight(
             ctx=ctx,
             spec=spec,
+            configuration=(
+                configuration_receipt.configuration if configuration_receipt is not None else None
+            ),
             policy=self._policy,
             pricing=self._pricing,
         )
-        if run.budget_cap_cents is not None:
+        # FI pilot budget-controls: the discovery preflight's remaining-headroom refusal is a
+        # pre-action stop on budget grounds, so it goes inert with the switch off. The bound on
+        # *how much* this discovery may buy is unchanged — it is the plan's own
+        # ``maximum_cost_cents``, a structural fan-out cap, and it still rides the plan row.
+        if self._enforce_budget and run.budget_cap_cents is not None:
             remaining = run.budget_cap_cents - run.spent_cents
             if result.maximum_cost_cents > remaining:
                 raise DiscoveryBudgetExceeded(
@@ -335,6 +412,7 @@ class ExaWebsetsDiscoveryStarter:
                     storage=self._storage,
                     pricing=self._pricing,
                     conn_factory=self._conn_factory,
+                    enforce_budget=self._enforce_budget,
                 )
                 submissions.append(
                     await submitter.submit(

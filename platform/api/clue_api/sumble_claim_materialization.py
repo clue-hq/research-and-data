@@ -40,6 +40,7 @@ from clue_research.resolvers.sumble import (
     build_sumble_resolvers,
 )
 from clue_research.sources import seed_source_manifests
+from clue_research.stage0 import load_client_knowledge_pack
 from clue_research.verification import Corroborator
 
 
@@ -73,6 +74,10 @@ class SumbleClaimMaterializer:
     async def seed(self) -> None:
         async with self._conn_factory() as conn:
             await load_core_pack(conn)
+            # Boot order: a source manifest's ``yields`` validate against the field
+            # registry, and the tier-3 ``exa_search`` seed yields ``client.*`` keys — so
+            # the client-knowledge pack must be loaded before the manifests are seeded.
+            await load_client_knowledge_pack(conn)
             await seed_source_manifests(conn)
 
     async def materialize(

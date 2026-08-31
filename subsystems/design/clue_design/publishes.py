@@ -1,0 +1,352 @@
+"""Web-publish DAL (Part II slice D2.4B) — the port of the design API's ``web_publishes`` /
+``web_publish_revisions`` domain.
+
+Faithful port of ``lumen_api.database.Repository``'s publish methods onto
+``design_web_publish`` + ``design_web_publish_revision`` (PD contract §5 rows 19–20), with the
+D1/D2 upgrades the contract mandates:
+
+* **Fail-closed tenancy, and slugs are workspace-LOCAL (O6, ratified).** ``design_web_publish``
+  is keyed ``(workspace_id, slug)``: two tenants may both publish ``pricing`` and neither can
+  see, overwrite, or 409 the other. Global URL uniqueness became a *serving-layer* concern —
+  which is why the public route is workspace-scoped at D2 (O6b, ratified option (a):
+  ``/w/{workspace_id}/p/{slug}``; Part IV owns the real routing and deletes the interim route).
+* **Real FKs where SQLite validated by convention.** ``document_id`` references
+  ``design_document (id, workspace_id)`` (NO ACTION — publish history pins a document's
+  provenance), and both ``publish_id`` / ``previous_publish_id`` reference
+  ``design_web_publish_revision (publish_id, workspace_id)``, so the live serving row can no
+  longer point at a revision that does not exist.
+* **Content-addressing is structural.** ``design_web_publish_revision_content_address`` CHECKs
+  ``publish_id = 'webpub_' || package_digest`` — the SQLite era enforced that only by the
+  caller's naming convention. :func:`register_web_publish_revision` therefore *derives* the id
+  from the package digest rather than trusting the caller's, and still runs the ported
+  equal-content comparison so a digest collision with different content is a loud ``ValueError``
+  instead of a silent no-op.
+* **Append-only history.** UPDATE *and* DELETE on ``design_web_publish_revision`` are rejected by
+  trigger, so this module is INSERT-only on revisions (the SQLite code already was: unpublish
+  flips ``design_web_publish.status``, it never touches history).
+
+The two atomic swaps keep their single-statement semantics exactly:
+:func:`upsert_web_publish` is ONE ``INSERT … ON CONFLICT DO UPDATE`` whose ``SET`` list reads the
+*existing* row into ``previous_*`` while writing the new payload, and
+:func:`rollback_web_publish` is ONE ``UPDATE`` whose ``SET`` expressions all evaluate against the
+original row, so current/previous swap atomically. Neither can observe a half-swapped row.
+
+Callers own the transaction (one logical operation = one transaction — the O5 rule); nothing
+here commits. Mappers reproduce ``web_publish_from_row`` / ``web_publish_revision_from_row``
+exactly, with ISO-string timestamps.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from clue_design._codec import JsonObject, dump_json, iso, load_json
+from clue_design.errors import DesignArtifactConflictError, DesignNotFoundError
+
+# The columns the ported equal-content check compares when a publish id is re-registered.
+_REVISION_COMPARABLE = (
+    "publish_id",
+    "slug",
+    "document_id",
+    "doc_version",
+    "html",
+    "html_digest",
+    "manifest",
+    "manifest_digest",
+    "package_digest",
+    "runtime_version",
+)
+
+
+def _web_publish_from_row(row: Any) -> JsonObject:
+    return {
+        "slug": row.slug,
+        "document_id": row.document_id,
+        "doc_version": row.doc_version,
+        "html": row.html,
+        "previous_html": row.previous_html,
+        "previous_doc_version": row.previous_doc_version,
+        "runtime_version": row.runtime_version,
+        "status": row.status,
+        "created_at": iso(row.created_at),
+        "updated_at": iso(row.updated_at),
+        "publish_id": row.publish_id,
+        "previous_publish_id": row.previous_publish_id,
+    }
+
+
+def _web_publish_revision_from_row(row: Any) -> JsonObject:
+    return {
+        "publish_id": row.publish_id,
+        "slug": row.slug,
+        "document_id": row.document_id,
+        "doc_version": row.doc_version,
+        "html": row.html,
+        "html_digest": row.html_digest,
+        "manifest": load_json(row.manifest_json),
+        "manifest_digest": row.manifest_digest,
+        "package_digest": row.package_digest,
+        "runtime_version": row.runtime_version,
+        "created_at": iso(row.created_at),
+    }
+
+
+# --- publish revisions (immutable, content-addressed) ----------------------------------------
+
+
+async def require_web_publish_revision(
+    conn: AsyncConnection, *, workspace_id: str, publish_id: str
+) -> JsonObject:
+    """Fetch one immutable publish package or raise."""
+    row = (
+        await conn.execute(
+            text(
+                "SELECT * FROM design_web_publish_revision"
+                " WHERE publish_id = :p AND workspace_id = :w"
+            ),
+            {"p": publish_id, "w": workspace_id},
+        )
+    ).first()
+    if row is None:
+        raise DesignNotFoundError("web_publish_revision", publish_id)
+    return _web_publish_revision_from_row(row)
+
+
+async def register_web_publish_revision(
+    conn: AsyncConnection, *, workspace_id: str, revision: JsonObject
+) -> JsonObject:
+    """Append one immutable, content-identified publish package (INSERT-only; ported).
+
+    ``publish_id`` is *derived* from ``package_digest`` rather than taken on trust, because
+    ``design_web_publish_revision_content_address`` makes the address structural — a caller that
+    mints ``webpub_<digest>`` (both call sites do) sees no change, and one that does not is
+    corrected here instead of failing on a CHECK it cannot read. The ported equal-content
+    comparison survives verbatim: re-registering an existing id with different content is a
+    ``ValueError``, never a silent overwrite (the row is immutable by trigger anyway).
+
+    ``created_at`` comes from the column default rather than the caller's ``utc_now()`` string:
+    the timestamp is server-authoritative here, it is not part of the content address, and both
+    call sites passed exactly the value the default produces.
+    """
+    publish_id = f"webpub_{revision['package_digest']}"
+    await conn.execute(
+        text(
+            """
+            INSERT INTO design_web_publish_revision (
+              publish_id, workspace_id, slug, document_id, doc_version, html, html_digest,
+              manifest_json, manifest_digest, package_digest, runtime_version
+            )
+            VALUES (:p, :w, :slug, :doc, :doc_version, :html, :html_digest,
+                    CAST(:manifest AS jsonb), :manifest_digest, :package_digest, :runtime)
+            ON CONFLICT DO NOTHING
+            """
+        ),
+        {
+            "p": publish_id,
+            "w": workspace_id,
+            "slug": revision["slug"],
+            "doc": revision["document_id"],
+            "doc_version": revision["doc_version"],
+            "html": revision["html"],
+            "html_digest": revision["html_digest"],
+            "manifest": dump_json(revision["manifest"]),
+            "manifest_digest": revision["manifest_digest"],
+            "package_digest": revision["package_digest"],
+            "runtime": revision.get("runtime_version"),
+        },
+    )
+    stored = await require_web_publish_revision(
+        conn, workspace_id=workspace_id, publish_id=publish_id
+    )
+    expected = {key: revision.get(key) for key in _REVISION_COMPARABLE}
+    expected["publish_id"] = publish_id
+    if {key: stored.get(key) for key in _REVISION_COMPARABLE} != expected:
+        # D6 Round C: this was a bare ``ValueError`` nothing caught — a 500 for what is a
+        # perfectly describable domain refusal. It is the same species the component registry
+        # already names (a content-addressed id re-used with different content), so it raises the
+        # same taxonomy error and the API turns it into a 409 rather than a database.error.
+        raise DesignArtifactConflictError("web_publish_revision", publish_id)
+    return stored
+
+
+# --- the live serving row --------------------------------------------------------------------
+
+
+async def get_web_publish(
+    conn: AsyncConnection, *, workspace_id: str, slug: str
+) -> JsonObject | None:
+    """The optional read (the endpoints' publish probe): ``None``, never a raise.
+
+    Ported hydration: when the row pins a revision, the revision's payload (html, versions,
+    manifest, digests) overlays the serving row — so a reader always sees the content-addressed
+    package, not a drifted denormalized copy.
+    """
+    row = (
+        await conn.execute(
+            text("SELECT * FROM design_web_publish WHERE workspace_id = :w AND slug = :s"),
+            {"w": workspace_id, "s": slug},
+        )
+    ).first()
+    if row is None:
+        return None
+    publish = _web_publish_from_row(row)
+    publish_id = publish.get("publish_id")
+    if isinstance(publish_id, str):
+        revision = await require_web_publish_revision(
+            conn, workspace_id=workspace_id, publish_id=publish_id
+        )
+        publish.update(
+            {
+                "html": revision["html"],
+                "doc_version": revision["doc_version"],
+                "runtime_version": revision["runtime_version"],
+                "manifest": revision["manifest"],
+                "manifest_digest": revision["manifest_digest"],
+                "package_digest": revision["package_digest"],
+                "html_digest": revision["html_digest"],
+            }
+        )
+    return publish
+
+
+async def require_web_publish(conn: AsyncConnection, *, workspace_id: str, slug: str) -> JsonObject:
+    """Fetch or raise — the fail-closed read the write paths read back through."""
+    publish = await get_web_publish(conn, workspace_id=workspace_id, slug=slug)
+    if publish is None:
+        raise DesignNotFoundError("web_publish", slug)
+    return publish
+
+
+async def get_web_publish_for_document(
+    conn: AsyncConnection, *, workspace_id: str, document_id: str
+) -> JsonObject | None:
+    """The most recently updated publish of one document (ported ordering)."""
+    row = (
+        await conn.execute(
+            text(
+                "SELECT slug FROM design_web_publish"
+                " WHERE workspace_id = :w AND document_id = :d"
+                " ORDER BY updated_at DESC LIMIT 1"
+            ),
+            {"w": workspace_id, "d": document_id},
+        )
+    ).first()
+    if row is None:
+        return None
+    return await get_web_publish(conn, workspace_id=workspace_id, slug=row.slug)
+
+
+async def upsert_web_publish(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    slug: str,
+    document_id: str,
+    doc_version: int,
+    html: str,
+    runtime_version: int | None,
+    publish_id: str | None = None,
+) -> JsonObject:
+    """Publish (or republish) ``slug``.
+
+    On an existing row the current html/doc_version/publish_id move into ``previous_*`` (the
+    single-step rollback buffer) and the new payload becomes current, status ``active`` — all in
+    ONE ``INSERT … ON CONFLICT DO UPDATE``, whose ``SET`` list reads ``design_web_publish.*``
+    (the *existing* row) while writing ``excluded.*`` (the new one). A republish can therefore
+    never observe a half-swapped row.
+    """
+    await conn.execute(
+        text(
+            """
+            INSERT INTO design_web_publish (
+              workspace_id, slug, document_id, doc_version, html, previous_html,
+              previous_doc_version, runtime_version, status, publish_id, previous_publish_id
+            )
+            VALUES (:w, :s, :doc, :doc_version, :html, NULL, NULL, :runtime, 'active', :p, NULL)
+            ON CONFLICT (workspace_id, slug) DO UPDATE SET
+              document_id = excluded.document_id,
+              doc_version = excluded.doc_version,
+              html = excluded.html,
+              previous_html = design_web_publish.html,
+              previous_doc_version = design_web_publish.doc_version,
+              previous_publish_id = design_web_publish.publish_id,
+              publish_id = excluded.publish_id,
+              runtime_version = excluded.runtime_version,
+              status = 'active',
+              updated_at = now()
+            """
+        ),
+        {
+            "w": workspace_id,
+            "s": slug,
+            "doc": document_id,
+            "doc_version": doc_version,
+            "html": html,
+            "runtime": runtime_version,
+            "p": publish_id,
+        },
+    )
+    return await require_web_publish(conn, workspace_id=workspace_id, slug=slug)
+
+
+async def set_web_publish_status(
+    conn: AsyncConnection, *, workspace_id: str, slug: str, status: str
+) -> JsonObject | None:
+    """Flip the serving state (unpublish/republish). ``None`` when no such slug — the ported
+    ``rowcount == 0`` shape the endpoint turns into its own 404. History is untouched."""
+    result = await conn.execute(
+        text(
+            "UPDATE design_web_publish SET status = CAST(:status AS design_publish_status),"
+            " updated_at = now() WHERE workspace_id = :w AND slug = :s"
+        ),
+        {"status": status, "w": workspace_id, "s": slug},
+    )
+    if result.rowcount == 0:
+        return None
+    return await get_web_publish(conn, workspace_id=workspace_id, slug=slug)
+
+
+async def rollback_web_publish(
+    conn: AsyncConnection, *, workspace_id: str, slug: str
+) -> JsonObject | str:
+    """Swap current and previous html/doc_version/publish_id (a one-step undo) and re-activate.
+
+    Returns the updated publish dict, or the ported string marker ``'not_found'`` (unknown slug)
+    / ``'no_previous'`` (nothing to roll back to). A single UPDATE evaluates every SET expression
+    against the ORIGINAL row, so reading and writing html/previous_html in one statement swaps
+    them atomically — the ported guarantee, preserved verbatim.
+    """
+    row = (
+        await conn.execute(
+            text(
+                "SELECT previous_html FROM design_web_publish"
+                " WHERE workspace_id = :w AND slug = :s FOR UPDATE"
+            ),
+            {"w": workspace_id, "s": slug},
+        )
+    ).first()
+    if row is None:
+        return "not_found"
+    if row.previous_html is None:
+        return "no_previous"
+    await conn.execute(
+        text(
+            """
+            UPDATE design_web_publish SET
+              html = previous_html,
+              doc_version = previous_doc_version,
+              previous_html = html,
+              previous_doc_version = doc_version,
+              publish_id = previous_publish_id,
+              previous_publish_id = publish_id,
+              status = 'active',
+              updated_at = now()
+            WHERE workspace_id = :w AND slug = :s
+            """
+        ),
+        {"w": workspace_id, "s": slug},
+    )
+    return await require_web_publish(conn, workspace_id=workspace_id, slug=slug)

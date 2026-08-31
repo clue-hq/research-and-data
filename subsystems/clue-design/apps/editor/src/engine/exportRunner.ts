@@ -1,4 +1,5 @@
 import type { Diagnostic, DiagnosticSubject, ExportProfile, Page, PageId, RasterScale, Scene } from "./contracts";
+import { lumenFetch } from "./editorConfig";
 
 export interface EditorExportRequest {
   scene: Scene;
@@ -73,7 +74,7 @@ export interface ApiExportRunnerOptions {
 export function createApiExportRunner({ apiBaseUrl, documentId: configuredDocumentId }: ApiExportRunnerOptions): EditorExportRunner {
   return async ({ scene, profile, pageIds, documentId }) => {
     const effectiveDocumentId = documentId ?? configuredDocumentId;
-    const response = await fetch(exportUrl(apiBaseUrl, effectiveDocumentId), {
+    const response = await lumenFetch(exportUrl(apiBaseUrl, effectiveDocumentId), {
       method: "POST",
       headers: {
         "content-type": "application/json"

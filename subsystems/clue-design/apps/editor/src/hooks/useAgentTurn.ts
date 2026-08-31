@@ -74,12 +74,13 @@ export const agentTurnRunningDiagnostic = (): Diagnostic => ({
 /** Phase 0c ephemeral preview: the proposed turn applied to the live scene,
  * with the base kept for Reject and the Before/After toggle. */
 /** RC: one user-attached reference for the next turn — the uploaded library
- * asset id, a human label, and a thumbnail URL (GET /assets/{id}/thumbnail).
+ * asset id, a human label, and a public thumbnail URL
+ * (`/asset-store/{digest}`; null when the record carries no digest).
  * Per-turn context: cleared after each successful send. */
 export interface PendingReference {
   assetId: string;
   label: string;
-  thumbnailUrl: string;
+  thumbnailUrl: string | null;
 }
 
 /** RC: the maximum references a single turn carries — mirrors the runtime's

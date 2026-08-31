@@ -16,25 +16,83 @@ import type { CanvasKit, Image } from "canvaskit-wasm";
  * whenever resolution produces a DIFFERENT url — new information (a scene
  * update carrying the record's digest, a base-url change), not a hot loop.
  * Status-driven re-fetch on regenerate/replace is Step 5.
+ *
+ * SVG assets: CanvasKit's `MakeImageFromEncoded` decodes raster formats only,
+ * so vector bytes are routed to the BROWSER's own SVG renderer instead — the
+ * asset stays an SVG everywhere (scene, store, exports); only the on-screen
+ * pixels are produced here, at draw resolution. The cache keeps the SVG text
+ * and re-rasterizes at a sharper power-of-two bucket when the stage reports a
+ * view scale (zoom × devicePixelRatio) the current raster can no longer serve
+ * crisply, swapping the sharper image in on the next frame. Zooming out never
+ * re-decodes (GPU minification is fine), and a raster's longest side is capped
+ * so deep zooms cannot allocate unbounded pixels.
  */
 
 /** What the descriptor interpreter needs: a synchronous decoded-image lookup. */
 export interface CanvasKitImageSource {
   get(assetId: string): Image | null;
+  /** Optional draw-size hint (scene pt): an SVG placed LARGER than its
+   * intrinsic size needs proportionally more raster pixels than the view
+   * scale alone implies — the draw path reports the box it paints into. */
+  noteDrawSize?(assetId: string, width: number, height: number): void;
+}
+
+/** Longest raster side ever requested for an SVG (memory bound at deep zoom). */
+const MAX_SVG_RASTER_SIDE = 4096;
+/** Intrinsic fallback for an SVG that declares neither a size nor a viewBox. */
+const DEFAULT_SVG_SIDE = 512;
+/** Ladder ceiling: no point rasterizing past this multiple of intrinsic size. */
+const MAX_SVG_BUCKET = 64;
+
+/** A completed SVG rasterization: pixels plus the vector's intrinsic geometry. */
+export interface SvgRaster {
+  source: CanvasImageSource;
+  /** CSS-pixel intrinsic size of the vector artwork (naturalSize/viewBox). */
+  intrinsicWidth: number;
+  intrinsicHeight: number;
+  /** The scale actually rasterized at (after the memory cap; may be fractional). */
+  scale: number;
+}
+
+/** Rasterize SVG text at `scale` × intrinsic, capped to `maxSide` pixels. */
+export type SvgRasterizer = (
+  svgText: string,
+  scale: number,
+  maxSide: number
+) => Promise<SvgRaster>;
+
+interface SvgState {
+  /** The SVG source text, kept so a sharper re-raster never refetches. */
+  text: string;
+  /** Intrinsic CSS-pixel size (drives the raster-side memory cap). */
+  intrinsicWidth: number;
+  intrinsicHeight: number;
+  /** The scale the CURRENT image was rasterized at. */
+  scale: number;
+  /** A sharper re-raster is in flight (never two at once per asset). */
+  redecoding: boolean;
+  /** Scale a re-raster last FAILED at; retried only when the demanded scale
+   * changes (new information) — a hot redraw loop never becomes a retry storm. */
+  failedScale: number | null;
 }
 
 type Entry =
   | { state: "loading" }
-  | { state: "ready"; image: Image }
+  | { state: "ready"; image: Image; svg?: SvgState }
   | { state: "failed"; url: string | null };
 
 export interface CanvasKitImageCacheOptions {
-  /** Build the bytes URL for an asset id (`/assets/{id}/bytes`); null = unfetchable. */
+  /** Build the bytes URL for an asset id (`/asset-store/{digest}` via
+   * sceneAssetBytesUrl); null = unfetchable (no digest — the bare fetcher
+   * below cannot send the workspace header a registry URL would need). */
   resolveUrl: (assetId: string) => string | null;
   /** Called once a decode succeeds so the stage can re-render. */
   onLoad?: () => void;
   /** Override the network fetch (tests inject bytes without a server). */
   fetcher?: (url: string) => Promise<ArrayBuffer>;
+  /** Override the SVG rasterizer (tests: jsdom cannot rasterize SVG, so unit
+   * tests inject pixels here; the browser proof is the Playwright tier). */
+  rasterizeSvg?: SvgRasterizer;
 }
 
 async function defaultFetcher(url: string): Promise<ArrayBuffer> {
@@ -45,12 +103,108 @@ async function defaultFetcher(url: string): Promise<ArrayBuffer> {
   return response.arrayBuffer();
 }
 
+/**
+ * The fetched bytes as SVG text, or null when they are not an SVG document.
+ * Byte-sniffed rather than mime-driven: the cache fetches bare content-addressed
+ * bytes (no record in hand), and a sniff also survives a mislabelled upload.
+ */
+export function sniffSvgText(buffer: ArrayBuffer): string | null {
+  const head = new TextDecoder().decode(buffer.slice(0, 4096));
+  const trimmed = head.replace(/^\uFEFF/, "").trimStart();
+  if (!trimmed.startsWith("<") || !/<svg[\s>]/i.test(head)) {
+    return null;
+  }
+  return new TextDecoder().decode(buffer);
+}
+
+function svgIntrinsicSize(
+  img: HTMLImageElement,
+  svgText: string
+): { width: number; height: number } {
+  if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+    return { width: img.naturalWidth, height: img.naturalHeight };
+  }
+  // Firefox reports 0×0 for a viewBox-only SVG; recover the geometry directly.
+  const viewBox =
+    /viewBox\s*=\s*["']\s*[\d.eE+-]+[\s,]+[\d.eE+-]+[\s,]+([\d.eE+-]+)[\s,]+([\d.eE+-]+)/i.exec(
+      svgText
+    );
+  if (viewBox) {
+    const width = Number(viewBox[1]);
+    const height = Number(viewBox[2]);
+    if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
+      return { width, height };
+    }
+  }
+  return { width: DEFAULT_SVG_SIDE, height: DEFAULT_SVG_SIDE };
+}
+
+function capScale(
+  scale: number,
+  intrinsic: { width: number; height: number },
+  maxSide: number
+): number {
+  const longest = Math.max(intrinsic.width, intrinsic.height);
+  let applied = scale;
+  while (applied > 1 && longest * applied > maxSide) {
+    applied /= 2;
+  }
+  if (longest * applied > maxSide) {
+    applied = maxSide / longest;
+  }
+  return applied;
+}
+
+/**
+ * The browser IS the SVG renderer: object URL → `<img>` → 2D canvas at target
+ * resolution. Deliberately an Image element, not `createImageBitmap(svgBlob)` —
+ * bitmap-from-SVG-blob is unsupported/flaky across engines, while the element
+ * route is exactly how `<img src="logo.svg">` works everywhere. drawImage from
+ * an SVG image rasterizes from the vector at destination size, so scaling up
+ * here yields genuinely sharp pixels, not upsampled ones.
+ */
+async function rasterizeSvgInBrowser(
+  svgText: string,
+  scale: number,
+  maxSide: number
+): Promise<SvgRaster> {
+  const url = URL.createObjectURL(new Blob([svgText], { type: "image/svg+xml" }));
+  try {
+    const img = document.createElement("img");
+    img.src = url;
+    await img.decode();
+    const intrinsic = svgIntrinsicSize(img, svgText);
+    const applied = capScale(scale, intrinsic, maxSide);
+    const width = Math.max(1, Math.round(intrinsic.width * applied));
+    const height = Math.max(1, Math.round(intrinsic.height * applied));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("2d context unavailable for svg rasterization");
+    }
+    context.drawImage(img, 0, 0, width, height);
+    return {
+      source: canvas,
+      intrinsicWidth: intrinsic.width,
+      intrinsicHeight: intrinsic.height,
+      scale: applied
+    };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export class CanvasKitImageCache implements CanvasKitImageSource {
   private readonly ck: CanvasKit;
   private readonly entries = new Map<string, Entry>();
   private readonly resolveUrl: (assetId: string) => string | null;
   private readonly onLoad?: () => void;
   private readonly fetcher: (url: string) => Promise<ArrayBuffer>;
+  private readonly rasterizeSvg: SvgRasterizer;
+  private readonly drawSizes = new Map<string, { width: number; height: number }>();
+  private viewScale = 1;
   private disposed = false;
 
   constructor(ck: CanvasKit, options: CanvasKitImageCacheOptions) {
@@ -58,12 +212,67 @@ export class CanvasKitImageCache implements CanvasKitImageSource {
     this.resolveUrl = options.resolveUrl;
     this.onLoad = options.onLoad;
     this.fetcher = options.fetcher ?? defaultFetcher;
+    this.rasterizeSvg = options.rasterizeSvg ?? rasterizeSvgInBrowser;
+  }
+
+  /** The stage's current zoom × devicePixelRatio; drives SVG re-raster buckets.
+   * Called every frame from the draw loop — a plain store, no work here. */
+  setViewScale(scale: number): void {
+    if (Number.isFinite(scale) && scale > 0) {
+      this.viewScale = scale;
+    }
+  }
+
+  /** The draw path's report of the box (scene pt) this asset paints into;
+   * kept as the max seen, so several nodes sharing one asset demand the
+   * sharpest of their sizes. A plain store — no work here. */
+  noteDrawSize(assetId: string, width: number, height: number): void {
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      return;
+    }
+    const seen = this.drawSizes.get(assetId);
+    if (!seen || width > seen.width || height > seen.height) {
+      this.drawSizes.set(assetId, {
+        width: Math.max(width, seen?.width ?? 0),
+        height: Math.max(height, seen?.height ?? 0)
+      });
+    }
+  }
+
+  /** Smallest power-of-two scale that serves this asset crisply: the view
+   * scale (zoom × dpr) TIMES how far the placement stretches the artwork
+   * past its intrinsic size (an SVG placed at 280pt from 152px intrinsic
+   * needs ~2× more raster than the zoom alone implies). */
+  private neededScale(
+    assetId?: string,
+    intrinsic?: { width: number; height: number }
+  ): number {
+    let demand = this.viewScale;
+    if (assetId && intrinsic && intrinsic.width > 0 && intrinsic.height > 0) {
+      const drawn = this.drawSizes.get(assetId);
+      if (drawn) {
+        const stretch = Math.max(
+          drawn.width / intrinsic.width,
+          drawn.height / intrinsic.height,
+          1
+        );
+        demand *= stretch;
+      }
+    }
+    let bucket = 1;
+    while (bucket < demand && bucket < MAX_SVG_BUCKET) {
+      bucket *= 2;
+    }
+    return bucket;
   }
 
   get(assetId: string): Image | null {
     const entry = this.entries.get(assetId);
     if (entry) {
       if (entry.state === "ready") {
+        if (entry.svg) {
+          this.maybeSharpen(assetId, entry.svg);
+        }
         return entry.image;
       }
       if (entry.state === "failed") {
@@ -95,6 +304,11 @@ export class CanvasKitImageCache implements CanvasKitImageSource {
       if (this.disposed) {
         return;
       }
+      const svgText = sniffSvgText(buffer);
+      if (svgText !== null) {
+        await this.loadSvg(assetId, url, svgText);
+        return;
+      }
       const image = this.ck.MakeImageFromEncoded(new Uint8Array(buffer));
       if (!image) {
         this.entries.set(assetId, { state: "failed", url });
@@ -106,6 +320,88 @@ export class CanvasKitImageCache implements CanvasKitImageSource {
       if (!this.disposed) {
         this.entries.set(assetId, { state: "failed", url });
       }
+    }
+  }
+
+  private async loadSvg(assetId: string, url: string, svgText: string): Promise<void> {
+    const raster = await this.rasterizeSvg(svgText, this.neededScale(), MAX_SVG_RASTER_SIDE);
+    if (this.disposed) {
+      return;
+    }
+    const image = this.ck.MakeImageFromCanvasImageSource(raster.source);
+    if (!image) {
+      this.entries.set(assetId, { state: "failed", url });
+      return;
+    }
+    this.entries.set(assetId, {
+      state: "ready",
+      image,
+      svg: {
+        text: svgText,
+        intrinsicWidth: raster.intrinsicWidth,
+        intrinsicHeight: raster.intrinsicHeight,
+        scale: raster.scale,
+        redecoding: false,
+        failedScale: null
+      }
+    });
+    this.onLoad?.();
+  }
+
+  /** Kick a background re-raster when the view outgrew the current pixels. */
+  private maybeSharpen(assetId: string, svg: SvgState): void {
+    if (svg.redecoding) {
+      return;
+    }
+    const needed = this.neededScale(assetId, {
+      width: svg.intrinsicWidth,
+      height: svg.intrinsicHeight
+    });
+    if (needed <= svg.scale || needed === svg.failedScale) {
+      return;
+    }
+    // Already at the memory cap: sharper is not available, stop asking.
+    const longest = Math.max(svg.intrinsicWidth, svg.intrinsicHeight);
+    if (longest * svg.scale >= MAX_SVG_RASTER_SIDE - 1) {
+      return;
+    }
+    svg.redecoding = true;
+    void this.sharpen(assetId, needed);
+  }
+
+  private async sharpen(assetId: string, scale: number): Promise<void> {
+    const entry = this.entries.get(assetId);
+    if (!entry || entry.state !== "ready" || !entry.svg) {
+      return;
+    }
+    const svg = entry.svg;
+    try {
+      const raster = await this.rasterizeSvg(svg.text, scale, MAX_SVG_RASTER_SIDE);
+      if (this.disposed) {
+        return;
+      }
+      // The entry may have been invalidated/replaced while rasterizing; a swap
+      // then would resurrect a dropped asset (and double-free its image).
+      if (this.entries.get(assetId) !== entry) {
+        return;
+      }
+      const image = this.ck.MakeImageFromCanvasImageSource(raster.source);
+      if (!image) {
+        svg.redecoding = false;
+        svg.failedScale = scale;
+        return;
+      }
+      entry.image.delete();
+      this.entries.set(assetId, {
+        state: "ready",
+        image,
+        svg: { ...svg, scale: raster.scale, redecoding: false, failedScale: null }
+      });
+      this.onLoad?.();
+    } catch {
+      // Keep serving the current (softer) raster; never fail a working image.
+      svg.redecoding = false;
+      svg.failedScale = scale;
     }
   }
 
@@ -127,5 +423,6 @@ export class CanvasKitImageCache implements CanvasKitImageSource {
       }
     }
     this.entries.clear();
+    this.drawSizes.clear();
   }
 }

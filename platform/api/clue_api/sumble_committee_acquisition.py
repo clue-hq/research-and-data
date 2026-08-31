@@ -177,6 +177,7 @@ class SumbleCommitteeAcquisitionCoordinator:
         conn_factory: ConnFactory = transaction,
         poll_after_seconds: int = 15,
         rate_limiter: CommitteeRateLimiter | None = None,
+        enforce_budget: bool = True,
     ) -> None:
         if cents_per_credit < 0 or poll_after_seconds < 1:
             raise ValueError("Sumble committee pricing and polling values must be valid")
@@ -186,6 +187,10 @@ class SumbleCommitteeAcquisitionCoordinator:
         self._conn_factory = conn_factory
         self._poll_after = timedelta(seconds=poll_after_seconds)
         self._rate_limiter = rate_limiter
+        # FI pilot budget-controls: threaded from ``Settings.budget_controls_enabled`` at
+        # the composition root and passed to the durable reservation, which stops raising
+        # on the project-run cap while writing every ledger row unchanged.
+        self._enforce_budget = enforce_budget
 
     async def start(
         self,
@@ -542,7 +547,10 @@ class SumbleCommitteeAcquisitionCoordinator:
                 ),
             )
             stored, created = await reserve_committee_acquisition(
-                conn, operation=operation, snapshots=snapshots
+                conn,
+                operation=operation,
+                snapshots=snapshots,
+                enforce_budget=self._enforce_budget,
             )
             if created:
                 for key, kind in (

@@ -12,9 +12,16 @@ const BOTTOM_THRESHOLD_PX = 40;
  * reasoning or tool disclosure opening below the fold no longer yanks the view,
  * because the pin state is read from the user's own scroll position first.
  */
-export function useTranscriptAutoScroll({ revision }: { revision: number }) {
+export function useTranscriptAutoScroll({
+  activeMessageRevision,
+  revision,
+}: {
+  activeMessageRevision: string | null;
+  revision: number;
+}) {
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottomRef = useRef(true);
+  const previousActiveMessageRef = useRef(activeMessageRevision);
 
   useEffect(() => {
     const transcript = transcriptScrollRef.current;
@@ -59,6 +66,35 @@ export function useTranscriptAutoScroll({ revision }: { revision: number }) {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [revision]);
+
+  useEffect(() => {
+    if (
+      activeMessageRevision === null ||
+      activeMessageRevision === previousActiveMessageRef.current
+    ) {
+      return;
+    }
+    previousActiveMessageRef.current = activeMessageRevision;
+    const transcript = transcriptScrollRef.current;
+    if (!transcript) return;
+
+    // A newly submitted user message is the reading anchor for its response.
+    // Stop bottom-pinning until the person scrolls back down; otherwise each
+    // streamed delta moves the message upward and eventually under the sticky
+    // project/thread headers.
+    pinnedToBottomRef.current = false;
+    const frame = window.requestAnimationFrame(() => {
+      transcript
+        .querySelector<HTMLElement>('[data-active-message="true"]')
+        ?.scrollIntoView({
+          behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+            ? "auto"
+            : "smooth",
+          block: "start",
+        });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeMessageRevision]);
 
   return { transcriptScrollRef };
 }

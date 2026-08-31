@@ -12,10 +12,12 @@ to a sentinel for the same reason.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import sys
 import threading
 import types
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -274,6 +276,152 @@ def test_view_bogus_asset_lists_available_ids(tmp_path, monkeypatch):
     assert "available asset ids" in content[0]["text"].lower()
 
 
+def _clue_storage_kit_asset(
+    workspace_id: str, thumb_bytes: bytes, source_bytes: bytes
+) -> dict:
+    """A brand-kit asset record shaped exactly as D4 leaves one: both byte objects
+    live in platform storage and their `media.location.opaque_ref` is a REAL
+    `clue-storage` key, minted by the production helpers rather than typed out here."""
+    from clue_design.storage import design_location, design_storage_key
+
+    source_digest = hashlib.sha256(source_bytes).hexdigest()
+    thumb_digest = hashlib.sha256(thumb_bytes).hexdigest()
+    return {
+        "id": "asset_kit_logo",
+        "label": "Scribe wordmark",
+        "kind": "logo",
+        "status": "ready",
+        "media": {
+            "mime_type": "image/png",
+            "digest": {"algorithm": "sha256", "value": source_digest},
+            "location": design_location(design_storage_key(workspace_id, source_digest)),
+            "thumbnail": {
+                "location": design_location(
+                    design_storage_key(workspace_id, thumb_digest)
+                ),
+                "mime_type": "image/png",
+                "pixel_width": 640,
+                "pixel_height": 640,
+            },
+        },
+    }
+
+
+def test_view_asset_delivers_pixels_for_a_clue_storage_backed_record(
+    tmp_path, monkeypatch
+):
+    """P0.1 regression (fast-loop v1 spec §4): `view("asset:<id>")` must return real
+    pixels for a DURABLY-stored brand-kit asset.
+
+    The bug this pins: `_asset_preview_path` appended the record's `opaque_ref`
+    verbatim onto `effective_asset_store_root`, which the API points at the
+    per-WORKSPACE engine cache. A D4 ref (`ws_X/design/<digest>`) therefore resolved
+    to `<cache>/ws_X/ws_X/design/<digest>` — a doubled workspace segment that never
+    exists — so every kit asset answered `asset_missing_file` and the author designed
+    blind (2026-08-24 Stuttgart forensics). Resolution is by DIGEST now, so the
+    genuine ref shape lands on the bytes the API's read-through materialized.
+    """
+    from lumen_api.asset_custody import write_cache_blob
+
+    workspace_id = "ws_p01regression"
+    # The runtime's asset-store root IS the per-workspace engine cache — exactly what
+    # `api_engine_cache_root(workspace_id)` builds and `run_agent_turn_preview` injects.
+    cache_dir = tmp_path / "engine-cache" / workspace_id
+    thumb_bytes = _solid_png()
+    source_bytes = _solid_png(size=1024)
+    record = _clue_storage_kit_asset(workspace_id, thumb_bytes, source_bytes)
+    # The API's read-through (`ensure_materialized`) lands durable bytes here by
+    # digest; `write_cache_blob` is the very function it uses, so the on-disk state
+    # this test starts from is production's, not an invention.
+    write_cache_blob(cache_dir, hashlib.sha256(thumb_bytes).hexdigest(), thumb_bytes)
+    write_cache_blob(cache_dir, hashlib.sha256(source_bytes).hexdigest(), source_bytes)
+
+    config = replace(
+        runtime_config(tmp_path),
+        asset_store_root=cache_dir,
+        brand_kit_assets={record["id"]: {"record": record, "title": "Scribe wordmark"}},
+    )
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    tools = _tools_only(config)
+
+    # RED CASE, spelled out: the path the old resolver built for this very record.
+    doubled = cache_dir / record["media"]["thumbnail"]["location"]["opaque_ref"]
+    assert not doubled.exists(), "the pre-fix concatenation must still be a dead path"
+
+    view = harness_mod.make_view_tool(tools)
+    msg = view.invoke(
+        {
+            "name": "view",
+            "args": {"target": f"asset:{record['id']}"},
+            "id": "c4",
+            "type": "tool_call",
+        }
+    )
+    content = msg.content
+    assert isinstance(content, list), content
+    image_blocks = [b for b in content if b["type"] == "image"]
+    assert len(image_blocks) == 1, content
+    assert base64.b64decode(image_blocks[0]["data"]) == thumb_bytes
+
+    # And the placement/contact-sheet surfaces that share the resolver see it too.
+    sheet, omitted = tools._brand_asset_contact_sheet()
+    assert omitted == 0
+    assert [entry["asset_id"] for entry in sheet] == [record["id"]]
+
+
+def test_view_asset_still_resolves_a_legacy_engine_cache_record(tmp_path, monkeypatch):
+    """The pre-D4 `sha256/<ab>/<digest>` ref shape must keep working — asset records
+    are durable JSON on scenes and registry rows that nothing rewrites in place, so
+    both shapes are live at once and the fix may not trade one for the other."""
+    from lumen_api.asset_custody import write_cache_blob
+
+    cache_dir = tmp_path / "engine-cache" / "ws_legacy"
+    thumb_bytes = _solid_png(size=576)
+    digest = hashlib.sha256(thumb_bytes).hexdigest()
+    write_cache_blob(cache_dir, digest, thumb_bytes)
+    record = {
+        "id": "asset_legacy_logo",
+        "label": "Legacy mark",
+        "kind": "logo",
+        "status": "ready",
+        "media": {
+            "mime_type": "image/png",
+            "digest": {"algorithm": "sha256", "value": digest},
+            "thumbnail": {
+                "location": {
+                    "provider": "local-store",
+                    "opaque_ref": f"sha256/{digest[:2]}/{digest}",
+                    "url": None,
+                },
+                "mime_type": "image/png",
+                "pixel_width": 576,
+                "pixel_height": 576,
+            },
+        },
+    }
+
+    config = replace(
+        runtime_config(tmp_path),
+        asset_store_root=cache_dir,
+        brand_kit_assets={record["id"]: {"record": record}},
+    )
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    tools = _tools_only(config)
+
+    view = harness_mod.make_view_tool(tools)
+    msg = view.invoke(
+        {
+            "name": "view",
+            "args": {"target": f"asset:{record['id']}"},
+            "id": "c5",
+            "type": "tool_call",
+        }
+    )
+    image_blocks = [b for b in msg.content if b["type"] == "image"]
+    assert len(image_blocks) == 1, msg.content
+    assert base64.b64decode(image_blocks[0]["data"]) == thumb_bytes
+
+
 # --- 3. tool surfaces pinned (D5) -------------------------------------------
 
 
@@ -305,6 +453,9 @@ def test_tool_surfaces_are_exactly_the_ledger(tmp_path, monkeypatch):
         "inspect",
         "compile_dsl_block",
         "asset",
+        # Another company's real logo, fetched from their own website. The
+        # author places it; it never draws one.
+        "fetch_logo",
         "validate_binding_set",
         "preflight_design",
     }
@@ -366,6 +517,35 @@ def test_author_prompt_teaches_detach_to_freehand_for_layering_above_pins():
     author = build_author_prompt("/tmp/ws")
     assert "detach_to_freehand(<its_id>)" in author
     assert "paint ABOVE a pinned human node" in author
+
+
+def test_author_prompt_teaches_physical_page_units_first_class():
+    # genad2 (agent-authored pages): the scene is born with ZERO pages, so the
+    # author owns page setup — the always-on prompt must teach the physical/print
+    # idiom (mm / in, print presets) as first-class alongside the digital px one,
+    # and must warn that an explicit size(...)/preset(...) is ALWAYS required
+    # because a bare `page <id>` silently defaults to A4 portrait (dsl.rs
+    # lower_page's fallback_preset).
+    author = build_author_prompt("/tmp/ws-pages")
+    # The OWNERSHIP clause — the one sentence that tells the author the platform
+    # mints nothing (genad2 ruling 1). It carries its own bullet rather than
+    # riding the units bullet, so it cannot be lost to an edit about units.
+    assert "- YOU author every page." in author
+    assert "A scene can arrive with no pages at all" in author
+    # Digital idiom (unchanged) beside the physical/print one.
+    assert "size(width,height,px)" in author
+    assert "size(210,297,mm)" in author
+    assert "size(8.5,11,in)" in author
+    # The print-preset list must read OPEN — three of the engine's five presets
+    # are named, so a closed-sounding list would teach the agent that the other
+    # two do not exist.
+    assert "for example, `preset(a4,portrait)`" in author
+    assert "preset(us_letter,portrait)" in author
+    # A bare page line is never acceptable.
+    assert "ALWAYS give an explicit `size(...)` or `preset(...)`" in author
+    assert "defaults to A4 portrait" in author
+    # No dimensions named in the ask → choose canonical ones and say so.
+    assert "STATE them in your report" in author
 
 
 def test_all_prompts_have_resource_map_and_workspace_path():
@@ -727,6 +907,69 @@ def test_finalize_without_references_never_requires_fidelity(tmp_path, monkeypat
     assert (tools.trace_dir / "final.json").exists()
 
 
+# 7f-bis. W1.5 — the gate reads a judgment the author wrote as prose ----------
+#
+# RED (Cursor pilot): the author judged fidelity 2/3 into `acceptance_notes`
+# prose while the typed field stayed null, so this gate refused a finalize the
+# author had actually earned. The gate now normalizes before it reads.
+
+_PROSE_ONLY_CRITIQUE = json.dumps(
+    {
+        "accepted": True,
+        "summary": "Dark flat field, centered lockup, one large light headline.",
+        "acceptance_notes": [
+            "safe-margins: 2 — pad(96) all sides",
+            "reference_fidelity: 2 — dark flat field, centered lockup, generous air; "
+            "held back by the plate and the Inter fallback",
+        ],
+    }
+)
+
+
+def test_finalize_accepts_when_the_fidelity_judgment_was_written_as_prose(tmp_path, monkeypatch):
+    """W1.5 GREEN: the prose score is promoted, so the gate can read it."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    tools = _tools_only(
+        _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
+    )
+    result = _finalize(tools, critique=_PROSE_ONLY_CRITIQUE)
+    assert not result.startswith("REFUSED")
+
+    final = json.loads((tools.trace_dir / "final.json").read_text())
+    fidelity = final["critique"]["reference_fidelity"]
+    assert fidelity["score"] == 2
+    assert "dark flat field" in fidelity["reasons"]
+
+
+def test_finalize_still_refuses_when_the_prose_score_is_low(tmp_path, monkeypatch):
+    """Promotion is not laundering: a prose 1 is still a refusal."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    tools = _tools_only(
+        _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
+    )
+    result = _finalize(
+        tools,
+        critique=json.dumps(
+            {"accepted": True, "acceptance_notes": ["reference_fidelity: 1 — palette only"]}
+        ),
+    )
+    assert result.startswith("REFUSED")
+    assert not (tools.trace_dir / "final.json").exists()
+
+
+def test_a_non_accepted_reference_finalize_still_records_the_typed_field(tmp_path, monkeypatch):
+    """Metrics need the field on EVERY reference turn, not only accepted ones."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    tools = _tools_only(
+        _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
+    )
+    result = _finalize(tools, status="blocked", critique='{"accepted": false, "summary": "s"}')
+    assert not result.startswith("REFUSED")
+
+    final = json.loads((tools.trace_dir / "final.json").read_text())
+    assert final["critique"]["reference_fidelity"]["score"] == 0
+
+
 def test_finalize_non_accepted_reference_turn_needs_no_fidelity(tmp_path, monkeypatch):
     """Honest non-acceptance stays available without a fidelity judgment."""
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
@@ -974,6 +1217,146 @@ def test_generate_image_missing_reference_blob_skipped_not_fatal(tmp_path, monke
     trace = (tools.trace_dir / "trace.jsonl").read_text(encoding="utf-8")
     assert "reference_preview_missing" in trace
     assert "ref_gone" in trace
+
+
+# 7h. W1.7 generation robustness (brand-ad-assets v1) -------------------------
+
+
+def _install_failing_image_model(monkeypatch, error):
+    """A configured T2I model whose generate() always raises — the shape of a
+    real provider failure (no_image after its retry, a 404, a read timeout)."""
+    def fake_generate(**kwargs):
+        raise error
+
+    monkeypatch.setattr(
+        "lumen_agent.tools.substrate.image_provider",
+        types.SimpleNamespace(
+            is_configured=lambda: True,
+            configured_model_id=lambda: "test/image-model",
+            generate=fake_generate,
+        ),
+    )
+
+
+def test_w17c_generation_failure_does_not_fail_the_turn(tmp_path, monkeypatch):
+    """W1.7(c) + founder ruling D5 (no new blocking gates): a failed generation
+    must NEVER block the design turn. It degrades to the deterministic
+    placeholder so the design still composes, and hands the agent a TYPED,
+    non-blocking outcome it can react to — the documented reaction being to drop
+    the image ground and proceed with a flat brand-token ground.
+
+    This pins the behavior the Apollo pilot observed for `image_edit_failed` on
+    the GENERATE path too, so it cannot silently regress into a hard failure."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+
+    class _ProviderError(Exception):
+        code = "image_model.no_image"
+
+    _install_failing_image_model(
+        monkeypatch, _ProviderError("OpenRouter response contained no image")
+    )
+
+    tools = _tools_only(runtime_config(tmp_path), prompt="hero")
+    result = json.loads(tools.generate_image("an abstract holographic yellow wash"))
+
+    # NOT blocked: the tool returns a usable asset, not an error status.
+    image = result["image"]
+    assert image["status"] == "ok"
+    assert image["asset_id"]
+    # ...but it is honest that the imagery is a placeholder, not the real thing.
+    assert image["mode"] == "placeholder"
+
+    # The typed, machine-readable outcome the agent reacts to.
+    fallback = image["fallback"]
+    assert fallback["reason"] == "model_failed"
+    assert fallback["error_code"] == "image_model.no_image"
+    assert fallback["conditioning_lost"] is False
+    # ...and the reaction is spelled out, including the flat-token-ground option.
+    assert "flat brand-token ground" in image["hint"]
+
+    # A warning diagnostic still rides along (unchanged behavior).
+    assert any(diag.get("code") == "LUMA0710" for diag in result["diagnostics"])
+
+
+def test_w17c_unconfigured_model_is_a_distinct_typed_fallback(tmp_path, monkeypatch):
+    """W1.7(c): 'the model broke' and 'no model is configured' are different
+    problems with different fixes, so they are different typed reasons — an agent
+    should not retry a prompt against a model that does not exist."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    monkeypatch.setattr(
+        "lumen_agent.tools.substrate.image_provider",
+        types.SimpleNamespace(is_configured=lambda: False, configured_model_id=lambda: ""),
+    )
+
+    tools = _tools_only(runtime_config(tmp_path), prompt="hero")
+    image = json.loads(tools.generate_image("an abstract wash"))["image"]
+
+    assert image["status"] == "ok"  # still never blocks
+    assert image["mode"] == "placeholder"
+    assert image["fallback"]["reason"] == "not_configured"
+    assert image["fallback"]["error_code"] == "image_model.not_configured"
+
+
+def test_w17c_reference_conditioned_failure_reports_conditioning_lost(
+    tmp_path, monkeypatch
+):
+    """W1.7(c): a placeholder is inherently UNCONDITIONED. When the failed
+    generation was reference-conditioned, the typed outcome says the brand
+    conditioning was lost — otherwise the agent would place a generic placeholder
+    believing it still carries the reference's palette and mood."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    config = _reference_config(
+        tmp_path, [{"asset_id": "ref_a", "png": _solid_png(544), "order": 0}]
+    )
+    _install_failing_image_model(monkeypatch, RuntimeError("upstream exploded"))
+
+    tools = _tools_only(config, prompt="hero")
+    image = json.loads(tools.generate_image("a calm clinic reception"))["image"]
+
+    assert image["status"] == "ok"
+    assert image["fallback"]["conditioning_lost"] is True
+
+
+def test_w17b_turn_sees_real_output_dimensions_not_its_own_request(
+    tmp_path, monkeypatch
+):
+    """W1.7(b): the Apollo POC asked 16:9 and got 1024x1024, while the reference
+    manifest kept reporting the REQUEST back. The tool payload must carry the
+    model's real geometry and flag the mismatch, so an agent choosing a ground
+    treatment is never misled about what it just placed."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+
+    def fake_generate(**kwargs):
+        return types.SimpleNamespace(
+            image_bytes=b"\x89PNG-generated-bytes",
+            mime_type="image/png",
+            model="test/image-model",
+            provenance={"created_by": "agent", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+            width=1024,          # what the model actually returned...
+            height=1024,
+            aspect_ratio_honored=False,  # ...which is not the 16:9 that was asked
+        )
+
+    monkeypatch.setattr(
+        "lumen_agent.tools.substrate.image_provider",
+        types.SimpleNamespace(
+            is_configured=lambda: True,
+            configured_model_id=lambda: "test/image-model",
+            generate=fake_generate,
+        ),
+    )
+
+    tools = _tools_only(runtime_config(tmp_path), prompt="hero")
+    image = json.loads(
+        tools.generate_image("a holographic wash", aspect_ratio="16:9")
+    )["image"]
+
+    assert image["status"] == "ok"
+    assert image["aspect_ratio"] == "16:9"  # the request is still reported...
+    assert (image["actual_width"], image["actual_height"]) == (1024, 1024)  # ...and the truth
+    assert image["aspect_ratio_honored"] is False
+    assert "1024x1024" in image["note"] and "16:9" in image["note"]
 
 
 # 7b. scaffold ----------------------------------------------------------------

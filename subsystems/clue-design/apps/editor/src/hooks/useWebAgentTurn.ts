@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { editorApiBaseUrl } from "@/engine/editorConfig";
+import { openRunEventStream, type RunStreamTarget } from "@/engine/runEventStream";
 import { fetchWebRunSnapshot, startWebTurn } from "@/engine/webDocuments";
 
 /**
@@ -15,8 +16,8 @@ import { fetchWebRunSnapshot, startWebTurn } from "@/engine/webDocuments";
  * to distinguish an applied turn from a failed one, and to trigger the render
  * refetch). Browser APIs are wrapped, never stored bare
  * (docs/frontend-practices.md rule 8): `startWebTurn` wraps `fetch`, and the
- * EventSource is built through an injectable factory (default = native, tests
- * pass a fake since jsdom has no EventSource).
+ * event stream is built through an injectable factory (default =
+ * `openRunEventStream`, tests pass a fake).
  */
 
 const MAX_EVENTS = 200;
@@ -39,22 +40,20 @@ export interface WebTurnDoneEnvelope {
 
 export type WebTurnPhase = "idle" | "running" | "done" | "error";
 
-/** The minimal EventSource surface this hook depends on — injectable so jsdom
- * tests (no global EventSource) drive the stream with a fake, and so the
- * browser API is never stored bare. */
+/** The minimal event-stream surface this hook depends on — injectable so jsdom
+ * tests drive the stream with a fake, and so the browser API is never stored
+ * bare. D7: the default is `openRunEventStream` (token handshake + reconnect),
+ * not the native `EventSource`, so the factory takes the run's address. */
 export interface WebEventSourceLike {
   addEventListener(type: string, listener: (event: { data: string }) => void): void;
   close(): void;
   onerror: ((event: unknown) => void) | null;
 }
 
-export type WebEventSourceFactory = (url: string) => WebEventSourceLike;
+export type WebEventSourceFactory = (target: RunStreamTarget) => WebEventSourceLike;
 
-function defaultEventSourceFactory(url: string): WebEventSourceLike {
-  if (typeof EventSource === "undefined") {
-    throw new Error("EventSource is unavailable in this environment.");
-  }
-  return new EventSource(url) as unknown as WebEventSourceLike;
+function defaultEventSourceFactory(target: RunStreamTarget): WebEventSourceLike {
+  return openRunEventStream(target);
 }
 
 export interface UseWebAgentTurnOptions {
@@ -66,7 +65,7 @@ export interface UseWebAgentTurnOptions {
   apiBaseUrl?: string;
   /** Injectable for tests; defaults to the real POST wrapper. */
   startTurn?: typeof startWebTurn;
-  /** Injectable for tests; defaults to native EventSource. */
+  /** Injectable for tests; defaults to `openRunEventStream`. */
   eventSourceFactory?: WebEventSourceFactory;
   /** Injectable for tests; defaults to the real GET /agent/runs/{id} wrapper. */
   fetchRunSnapshot?: typeof fetchWebRunSnapshot;
@@ -135,7 +134,7 @@ export function useWebAgentTurn(options: UseWebAgentTurnOptions): WebAgentTurn {
     }
   }, []);
 
-  // Never leak an EventSource across unmount.
+  // Never leak a stream across unmount.
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -206,9 +205,9 @@ export function useWebAgentTurn(options: UseWebAgentTurnOptions): WebAgentTurn {
           }
           let source: WebEventSourceLike;
           try {
-            source = eventSourceFactory(
-              new URL(`/agent/runs/${encodeURIComponent(runId)}/events`, base).toString()
-            );
+            // No workspace in the url: the stream client mints a token over a header-authed POST
+            // and the server reads the tenant off the token row (D7).
+            source = eventSourceFactory({ apiBaseUrl: base, runId });
           } catch (cause) {
             settleError(
               cause instanceof Error ? cause.message : "Could not open the event stream."
@@ -252,7 +251,7 @@ export function useWebAgentTurn(options: UseWebAgentTurnOptions): WebAgentTurn {
           });
 
           // A stream error is ambiguous: a benign post-`done` close, a
-          // transient blip EventSource will recover from on its own, an API
+          // transient blip the client will recover from on its own, an API
           // restart that orphaned the run (the startup sweep marks it failed),
           // or the API being gone. The durable run row disambiguates — only a
           // failed probe settles as a lost connection.
@@ -267,9 +266,10 @@ export function useWebAgentTurn(options: UseWebAgentTurnOptions): WebAgentTurn {
                 if (settledRef.current) {
                   return;
                 }
-                if (snapshot.status === "running") {
-                  // Run is alive server-side — let EventSource reconnect and
-                  // replay from Last-Event-ID.
+                if (snapshot.status === "queued" || snapshot.status === "running") {
+                  // Run is alive server-side — `queued` just means no fleet
+                  // worker has claimed it yet (D5). Let the stream client
+                  // reconnect and replay from Last-Event-ID.
                   return;
                 }
                 settleDone(

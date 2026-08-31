@@ -89,7 +89,7 @@ test("a project route never selects a thread outside its scoped thread page", ()
       {
         id: "thr_allowed",
         title: "Allowed thread",
-        href: "/projects/prj_a?thread=thr_allowed",
+        href: "/projects/prj_a/chats/thr_allowed",
         status: "idle",
         pinned: false,
         project_id: "prj_a",
@@ -125,6 +125,43 @@ test("message reads are body-free by default and carry the typed refs", () => {
   assert.deepEqual(openGateIds(page.messages[1]), [fixtureGates[0].gate_id]);
 });
 
+test("design asset context refs retain read-time filename and thumbnail metadata", () => {
+  const page = ChatMessageListResponseSchema.parse({
+    data: [
+      {
+        ...fixtureMessages[0],
+        body: "Use this composition as inspiration.",
+        refs: [
+          {
+            flavor: "context",
+            workspace_id: "ws-demo",
+            object_type: "design_asset",
+            object_id: "asset_reference",
+            version: null,
+            ordinal: 0,
+            label: "inspiration.webp",
+            media_type: "image/webp",
+            thumbnail_digest: "b".repeat(64),
+          },
+        ],
+      },
+    ],
+    meta: { next_cursor: null },
+  });
+
+  assert.deepEqual(page.messages[0].refs[0], {
+    flavor: "context",
+    workspaceId: "ws-demo",
+    objectType: "design_asset",
+    objectId: "asset_reference",
+    version: null,
+    ordinal: 0,
+    label: "inspiration.webp",
+    mediaType: "image/webp",
+    thumbnailDigest: "b".repeat(64),
+  });
+});
+
 test("an unservable body is reported with its reason, never as empty text", () => {
   const page = ChatMessageListResponseSchema.parse({
     data: [{ ...fixtureMessages[0], body: null, body_unavailable_reason: "erased" }],
@@ -154,6 +191,27 @@ test("a physically missing historical artifact gives actionable recovery copy", 
   assert.equal(
     unavailableMessageBody("budget"),
     "This message's text is unavailable (budget).",
+  );
+  assert.deepEqual(
+    turnRequestBody({
+      kind: "gate_response",
+      response: {
+        gateId: "g-product",
+        decision: "approved",
+        expectedSubjectSha256: "b".repeat(64),
+        expectedEstimatedCostCents: null,
+        selectedProductId: "prd_phone",
+      },
+    }),
+    {
+      gate_response: {
+        gate_id: "g-product",
+        decision: "approved",
+        expected_subject_sha256: "b".repeat(64),
+        expected_estimated_cost_cents: null,
+        selected_product_id: "prd_phone",
+      },
+    },
   );
 });
 
@@ -229,17 +287,21 @@ test("a turn body is exactly one of a message or a gate response", () => {
       contextRefs: [
         { objectId: "contact-2", objectType: "contact", version: 4 },
         { objectId: "account-1", objectType: "account", version: 2 },
+        { objectId: "doc-ad", objectType: "design_document", version: 9 },
+        { objectId: "headline", objectType: "design_node", version: 9 },
       ],
-      agentProfileId: "head-of-abm@v23",
+      agentProfileId: "head-of-abm@v30",
     }),
     {
       message: "research these",
       context_refs: [
         { object_id: "contact-2", object_type: "contact", version: 4 },
         { object_id: "account-1", object_type: "account", version: 2 },
+        { object_id: "doc-ad", object_type: "design_document", version: 9 },
+        { object_id: "headline", object_type: "design_node", version: 9 },
       ],
       attachment_refs: [],
-      agent_profile_id: "head-of-abm@v23",
+      agent_profile_id: "head-of-abm@v30",
     },
   );
   assert.deepEqual(
@@ -261,6 +323,27 @@ test("a turn body is exactly one of a message or a gate response", () => {
       },
     },
   );
+  assert.deepEqual(
+    turnRequestBody({
+      kind: "gate_response",
+      response: {
+        gateId: "icp-gate-1",
+        decision: "revised",
+        expectedSubjectSha256: "b".repeat(64),
+        expectedEstimatedCostCents: null,
+        revisionRequest: "Narrow the ICP to multi-site practices.",
+      },
+    }),
+    {
+      gate_response: {
+        gate_id: "icp-gate-1",
+        decision: "revised",
+        expected_subject_sha256: "b".repeat(64),
+        expected_estimated_cost_cents: null,
+        revision_request: "Narrow the ICP to multi-site practices.",
+      },
+    },
+  );
 });
 
 test("a gate parses its decimal spend and derives open from the missing answer", () => {
@@ -269,6 +352,16 @@ test("a gate parses its decimal spend and derives open from the missing answer",
   assert.equal(gates[0].currency, "USD");
   assert.equal(isGateOpen(gates[0]), true);
   assert.equal(formatCents(24000, "USD"), "$240.00");
+});
+
+test("a gate whose amount was withheld parses, and formats no cost at all", () => {
+  const [gate] = ChatGateListResponseSchema.parse({
+    data: [{ ...fixtureGates[0], max_spend_cents: null }],
+  });
+  assert.equal(gate.maxSpendCents, null);
+  assert.equal(isGateOpen(gate), true);
+  // Never "$0.00": a withheld amount must not be readable as a real one.
+  assert.equal(formatCents(gate.maxSpendCents, gate.currency), null);
 });
 
 test("every part kind round-trips from its wire snapshot", () => {

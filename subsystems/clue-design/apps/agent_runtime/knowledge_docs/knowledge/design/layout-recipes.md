@@ -11,12 +11,15 @@ All positions and sizes in child `p()`/`s()` are canonical layout points (`pt`),
 local to the containing artboard or parent. Physical print units and raster pixel
 targets belong to the page/export declaration, not to child geometry.
 
-Every skeleton below was **mechanically validated** (compiles with zero blocking
-diagnostics, preflights clean on platform-default tokens, exports a non-black
-PNG with no tofu). They are written in the **no-kit concrete-hex form** with
-faces from the curated library (`knowledge/design/font-library`). With a Brand
-Kit, swap the hex for `$surface.*`/`$text.*` tokens and `font("Family",…)` for
-`style($type.*)` — the *structure* is what carries over.
+Each of the **six archetype skeletons** below was **mechanically validated**
+(compiles with zero blocking diagnostics, preflights clean on platform-default
+tokens, exports a non-black PNG with no tofu). They are written in the **no-kit
+concrete-hex form** with faces from the curated library
+(`knowledge/design/font-library`). With a Brand Kit, swap the hex for
+`$surface.*`/`$text.*` tokens and `font("Family",…)` for `style($type.*)` — the
+*structure* is what carries over. (The two composed ad skeletons named in
+"Composing two archetypes" are the exception: they are token-form from birth and
+their validated bodies live in `knowledge/design/blocks/patterns`.)
 
 ## Choose the archetype first
 
@@ -35,6 +38,11 @@ write any DSL. Do **not** default to the vertical poster; it is ONE of six.
 Two designs of the **same** archetype for **different** briefs should still look
 different (different surface treatment, type voice, crop). Two designs of
 different archetypes should never be confusable.
+
+Some briefs — reference-conditioned ads especially — want **two** of these moves
+stacked rather than one. Those compositions are named and validated below in
+"Composing two archetypes"; read that section before deciding a single archetype
+cannot carry the brief.
 
 ## Surface-treatment vocabulary (orthogonal to archetype)
 
@@ -103,7 +111,7 @@ page linkedin_square size(1080,1080,px)
       url text "northwind.grid" p(0,0) s(300,hug) font("Space Mono",15,400,right) fill(#6b7280) align(right) max_lines(1)
 ```
 
-**Two-color headline (the moda span move).** Accent ONE phrase of the headline
+**Two-color headline (the accent-span move).** Accent ONE phrase of the headline
 with a `[[…]]` run + `span(...)` — one accent per headline, never a rainbow. Raw
 hex when unbranded, a kit token when branded:
 
@@ -157,7 +165,7 @@ is deliberately quiet.
 
 - **Suits:** dark solid paper (numeral pops) or a soft wash. A **gradient text
   fill** on the numeral (`fill(linear(...))`) + optional shadow is the signature.
-  On a **dark** field, a **glow** on the numeral is the moda "Living Type" move —
+  On a **dark** field, a **glow** on the numeral is the "living type" move —
   the number reads as lit, not printed. Add `glow(id, #warm, o(0.5), blur(56),
   spread(2))` to the `numeral` line, pulling the halo color from the numeral's own
   gradient (a warm halo under warm digits). Glow is focal — the ONE hero element,
@@ -277,6 +285,37 @@ page linkedin_square size(1080,1080,px)
       cta al(h,x(c),y(c),pad(16,32)) p(0,0) s(220,60) fill(#0b3d2e) rd(999)
         cta_text text "Meet Northwind" p(0,0) s(fill,hug) align(center) font("Inter",17,600,center) fill(#f4f1ea) max_lines(1)
 ```
+
+## Composing two archetypes — the ad skeletons
+
+The six moves above each divide the canvas ONE way. A reference-conditioned ad
+often needs two of them stacked — a ground doing one job and a plate doing
+another — and that stacking is the move the design agent gets wrong most often
+(equal panels, a card with no elevation, copy laid straight on a busy wash). Two
+compositions are therefore named, validated, and kept as copyable skeletons in
+`knowledge/design/blocks/patterns`; they are written in **token form** (with
+`#slot:` fixtures) because they belong to the branded ad path, not the no-kit
+form the six skeletons above use.
+
+| Composition | The stack | Reach for it when |
+|---|---|---|
+| **Unequal-weight comparison panel** | **banded**, with the bands deliberately unequal — a compressed fixed band over a `fill` field that always dominates | the ad argues before/after or old-way/new-way and one side must clearly win |
+| **Card on a washed ground** | **image-hero**'s full-bleed ground carrying a **plate** (the emblem move) that holds the copy | a generated wash or photo supplies the atmosphere and the message needs a legible home on top of it |
+
+Two rules these compositions exist to enforce, worth knowing even if you author
+the DSL by hand:
+
+- **Unequal means structurally unequal.** Two panels that merely *happen* to be
+  300 and 780 today can be edited to 540 and 540 tomorrow. In the validated
+  skeleton the compressed band is a FIXED height and the dominant field is
+  `fill`, so the field absorbs all remaining canvas and the split can only be
+  broken by changing a sizing mode. Equal panels are the named failure — an ad
+  that gives both sides the same weight has stopped arguing.
+- **The card is the legibility container, and the scrim covers only what is
+  outside it.** Copy inside the card sits on `$surface.card` and needs nothing
+  else. Copy outside the card sits on the raw ground and needs a scrim band
+  behind it. Scrimming the whole frame dulls the wash you generated, which is
+  the opposite of why you generated it.
 
 ## Fitting variable copy — truncation & stanza spacing
 

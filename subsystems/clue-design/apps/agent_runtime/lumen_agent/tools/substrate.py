@@ -13,6 +13,7 @@ from typing import Any, Callable, Dict, List, Optional
 from py_lumen_obs import bind_run_id, get_logger, log_span
 
 from lumen_api.core import CoreClient, CoreError
+from lumen_api.export_policy import partition_export_diagnostics
 
 try:  # the real Python text-to-image seam, shared with the /assets/generate route
     from lumen_api import image_provider
@@ -24,7 +25,9 @@ try:  # generation cache (request -> asset), so the loop doesn't re-pay per iter
 except Exception:  # pragma: no cover
     image_cache = None  # type: ignore[assignment]
 
+from ..autofix import AutofixResult, run_autofix
 from ..config import AgentRuntimeConfig
+from ..critique_fidelity import stamp_reference_fidelity
 from ..retokenize import (
     build_logo_placement_operations,
     build_retokenize_operations,
@@ -33,6 +36,10 @@ from ..retokenize import (
 from ..brand_card import build_brand_card
 from ..knowledge import BRAND_APPLICATION_PATH, DIRECTIVES_PATH, read_task_knowledge
 from ..paths import normalize_agent_key
+from . import logo_fetch
+from .asset_preview import asset_preview_path, blob_path_for_digest
+from ..run_metrics import RunMetrics
+from ..text_clearance import collision_advisory
 from pydantic import ValidationError
 
 from ..models.schemas import (
@@ -67,6 +74,14 @@ JsonObject = Dict[str, Any]
 # Kept dependency-free so agent_runtime never imports the API/DB layer.
 EventSink = Callable[[str, JsonObject], None]
 
+# P0.4 checkpoint-commit hook: hand the run's operation ledger, in order, to a
+# caller that can persist it mid-run (the API's leg-turn committer). Called with
+# the FULL ordered operation list every time — the caller knows which prefix it
+# already made durable and commits only the delta, so a dropped or refused
+# checkpoint self-heals on the next one. Kept dependency-free for the same
+# reason EventSink is: agent_runtime never imports the API/DB layer.
+SceneCheckpoint = Callable[[List[JsonObject], JsonObject], None]
+
 
 # Hard caps for the curated, windowed per-iteration context (P1). They keep the
 # director/author/reviewer prompt bounded no matter how many repair iterations
@@ -92,17 +107,15 @@ CONTEXT_MAX_TEXT_LEN = 120
 # the model boundary (see providers), never accumulated in a persisted dict.
 CONTACT_SHEET_MAX = 6
 PLACED_PREVIEWS_MAX = 4
-# Raster mime types the vision APIs accept as a direct preview when no derived
-# thumbnail exists (an SVG has no raster preview → it is skipped, never a broken path).
-_PREVIEWABLE_MIME_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+# The raster mime types the vision APIs accept as a direct preview — and the
+# resolver that reads them — now live in `.asset_preview`, shared with the web
+# lane's view("asset:<id>") so the two lanes cannot disagree about which pixels
+# represent an asset.
 
 
-def blob_path_for_digest(store_root: Any, digest: str) -> Path:
-    """The content-addressed store path for a sha256 digest:
-    `<store_root>/sha256/<first2>/<digest>`. The ONE place this layout is spelled
-    out for digest→path resolution (view's reference preview + the runtime's
-    reference-conditioning both call it)."""
-    return Path(store_root) / "sha256" / digest[:2] / digest
+# `blob_path_for_digest` — the one spelling of the digest→path layout — now
+# lives in `.asset_preview` beside the shared resolver (both lanes need it);
+# imported above and re-exported from this module for its existing callers.
 
 # Diagnostic codes that indicate content does not fit its frame (text overflow)
 # or a layout cluster is mis-sized — surfaced as `overflow` in the preview
@@ -247,6 +260,7 @@ class LumenDesignTools:
         prompt: str,
         initial_scene: Optional[JsonObject] = None,
         event_sink: Optional["EventSink"] = None,
+        scene_checkpoint: Optional["SceneCheckpoint"] = None,
     ) -> None:
         self.config = config
         # Obs logger for tool spans + the core-helper proxy. Context (run_id) is
@@ -262,6 +276,13 @@ class LumenDesignTools:
         # this sink so a caller (the API's async turn) can persist it to a
         # durable store and stream it. None keeps the run purely file-traced.
         self.event_sink = event_sink
+        # P0.4: optional checkpoint-commit hook (see SceneCheckpoint). None keeps
+        # the run save-on-finalize-only, exactly as before.
+        self.scene_checkpoint = scene_checkpoint
+        # How many ledger entries have already been handed to `scene_checkpoint`.
+        # The sink is only called when the ledger has grown past this, so a round
+        # that changed nothing never mints a document version.
+        self._checkpointed_operations = 0
         # Batched read-only tool calls (deepagent-latency L2) now run on
         # langgraph's ToolNode thread pool, so `record` can be invoked from
         # concurrent threads. This lock serializes the whole record body (jsonl
@@ -270,6 +291,19 @@ class LumenDesignTools:
         self._record_lock = threading.Lock()
         self.run_id = new_run_id()
         self.iteration = 0
+        # Fast-loop v1 §7: per-run summary counters, started at the earliest
+        # moment of the run so `wall_time_ms` measures the whole turn. The three
+        # role tracers fold their calls in (harness._instrument), this class
+        # marks compiles and the first validated preview, and the harness runner
+        # emits ONE `run_metrics` event + `metrics.json` at any terminal outcome.
+        # Pure in-process integer arithmetic — no extra LLM call, tool call, or
+        # hot-loop I/O. See lumen_agent/run_metrics.py.
+        self.metrics = RunMetrics(self.run_id)
+        # Fast loop §5.2: the per-round inner-iteration counter and the round it
+        # belongs to. Only read when `config.fast_loop` is on; born here so the
+        # attribute always exists (a config swapped mid-run must not AttributeError).
+        self._fast_loop_round = 0
+        self._fast_loop_round_compiles = 0
         self.trace_dir = config.trace_dir / self.run_id
         self.iterations_dir = self.trace_dir / "iterations"
         self.trace_dir.mkdir(parents=True, exist_ok=True)
@@ -313,11 +347,19 @@ class LumenDesignTools:
         # config (None without a kit). Injected via load_knowledge and
         # curated_context — the full kit JSON never enters model history.
         self.brand_card: Optional[JsonObject] = build_brand_card(
-            config.brand_kit, source=config.brand_kit_source
+            config.brand_kit,
+            source=config.brand_kit_source,
+            # W1.3: pixel dimensions for the image/logo rows — they live on the
+            # by-value asset records, never on the kit's own asset entries.
+            asset_manifest=config.brand_kit_assets,
         )
         self.dsl_session: Optional[JsonObject] = None
         self.latest_export_summary: Optional[JsonObject] = None
         self.latest_preview_bundle: Optional[JsonObject] = None
+        # P0.4: the last `preflight_design` verdict. None = preflight has not run
+        # yet. Recorded on every checkpoint so a reader can tell a clean round's
+        # commit from one taken with diagnostics still standing.
+        self.latest_preflight_has_errors: Optional[bool] = None
         # Staleness contract (sweep A3): the scene-mutation count captured the
         # last time a valid preview was rendered. `view("preview")` compares it
         # against the current count so it never silently serves a render that
@@ -336,6 +378,11 @@ class LumenDesignTools:
         # baseline, populated on first access by `baseline_preflight_diagnostics`.
         # None means "not computed yet" (distinct from `[]`, "computed, clean").
         self._baseline_diagnostics: Optional[list[JsonObject]] = None
+        # P0.3 finalize guard: the raw diagnostics of the most recent
+        # `preflight_design`, kept so `finalize_run` can refuse to record an
+        # accepted run that still carries a BLOCKING export error. None means
+        # preflight has not run this turn (distinct from `[]`, "ran, clean").
+        self._latest_preflight_diagnostics: Optional[list[JsonObject]] = None
         self._write_json(
             self.trace_dir / "input.json",
             {
@@ -425,10 +472,98 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    # --- fast loop §5.2: the per-round inner-iteration cap -------------------
+    def _fast_loop_round_number(self) -> int:
+        """The newest `rounds/round_N` directory number, or 0.
+
+        Mirrors `tools.render.tools_current_round` deliberately rather than
+        importing it: `render` imports THIS module, so the import would be a
+        cycle. `workspace.workspace_root(tools)` is the canonical spelling of
+        the path below (`trace_dir / "workspace"`) and is likewise unimportable
+        here for the same reason.
+        """
+        rounds = self.trace_dir / "workspace" / "rounds"
+        highest = 0
+        try:
+            for child in rounds.iterdir():
+                if child.is_dir() and child.name.startswith("round_"):
+                    suffix = child.name[len("round_") :]
+                    if suffix.isdigit():
+                        highest = max(highest, int(suffix))
+        except OSError:
+            return 0
+        return highest
+
+    def _inner_iteration_refusal(self) -> Optional[str]:
+        """Refuse a compile past the round's inner-iteration cap, or None.
+
+        WHY A CAP AT ALL. §5.2's loop is compile → preflight → render → look →
+        self-audit → ONE batched fix, and its whole economy assumes the fix is
+        batched. The baseline's iterations 21-34 were fourteen compiles carrying
+        one property change each — the drip §5.5 forbids in words. This is the
+        same rule in Python: when the drip happens anyway, the round ends instead
+        of grinding.
+
+        WHY A REFUSAL AND NOT AN EXCEPTION. House style, and it is also the more
+        useful behaviour: a refusal string is something the author reads and acts
+        on (render, self-audit honestly, report what is unfinished), where an
+        exception would take the turn down and lose the perfectly good scene the
+        author already compiled. The cap does not roll back anything.
+
+        The count is per ROUND — a new `rounds/round_N` directory resets it — so
+        the orchestrator's one permitted repair round gets a full budget of its
+        own.
+        """
+        cap = int(getattr(self.config, "fast_loop_inner_iterations", 0) or 0)
+        if cap <= 0:
+            return None
+        round_number = self._fast_loop_round_number()
+        if round_number != self._fast_loop_round:
+            self._fast_loop_round = round_number
+            self._fast_loop_round_compiles = 0
+        if self._fast_loop_round_compiles < cap:
+            self._fast_loop_round_compiles += 1
+            return None
+        self.metrics.mark_inner_iteration_refused()
+        self.record(
+            "dsl-author",
+            "inner_iteration_cap_reached",
+            output_summary=f"round {round_number}: {cap} compiles used",
+            payload={"round": round_number, "cap": cap},
+        )
+        return self._tool_error(
+            "compile.inner_iteration_cap",
+            f"REFUSED: this round has used its {cap} inner iterations (fast loop "
+            "§5.2). Nothing was rolled back — the scene from your last successful "
+            "compile stands. Stop compiling now: render_preview(), view(\"preview\"), "
+            "write an HONEST critique.json naming every issue still standing "
+            "(accepted:false if any blocker remains), save dsl.lumen / "
+            "diagnostics.json / author_report.md, and return. The orchestrator "
+            "decides whether to open a repair round — that round gets its own "
+            "fresh budget of iterations. If you were making one property edit per "
+            "compile, that is the pattern this cap exists to stop: batch every "
+            "planned fix into ONE whole-scene reconcile next time.",
+            round=round_number,
+            inner_iterations_used=self._fast_loop_round_compiles,
+            inner_iteration_cap=cap,
+        )
+
     @_tool_span
     def compile_dsl_block(self, source: str) -> str:
         """Compile a Lumen DSL block and update the scene only from core output."""
+        # Fast loop §5.2. Checked BEFORE the iteration bump so a refused compile
+        # costs nothing: no iteration number, no metrics compile, no scene touch.
+        # `fast_loop_inner_iterations` is only non-zero under the flag, so this is
+        # a single attribute read on the flag-off path.
+        if getattr(self.config, "fast_loop", False):
+            refusal = self._inner_iteration_refusal()
+            if refusal is not None:
+                return refusal
         self.iteration += 1
+        # §7 metrics: every compile counts, including the ones that fail below —
+        # the baseline's micro-edit drip (14 compiles for one property each) is
+        # exactly what this counter has to make visible.
+        self.metrics.mark_compile_iteration()
         iteration_dir = self._iteration_dir()
         (iteration_dir / "dsl.lumen").write_text(source, encoding="utf-8")
 
@@ -839,7 +974,15 @@ class LumenDesignTools:
         that deliberately diverges from the references. The scene must already
         contain a page/artboard (author the layout first) or registration fails with
         a retryable error. Returns the asset_id; place it with place_asset_in_node /
-        place_asset_in_slot (a generated image is not auto-placed)."""
+        place_asset_in_slot (a generated image is not auto-placed).
+
+        Generation NEVER blocks the turn. If the model fails, you still get an
+        asset_id, but `image.mode` is "placeholder" and `image.fallback` says why —
+        that is a deterministic stand-in, NOT real imagery, so do not ship it as
+        though it were: either retry once with a shorter prompt, or drop the image
+        ground and use a flat brand-token ground instead. `image.actual_width` /
+        `actual_height` report what the model really returned, which can differ from
+        the aspect ratio you asked for."""
         asset_id = f"asset_img_{self.run_id[:8]}_{len(self.scene.get('assets', {}))}"
         width, height, aspect_ratio = self._image_constraints(
             target_node_id, target_slot_id, width, height, aspect_ratio
@@ -913,20 +1056,48 @@ class LumenDesignTools:
             apply_response, "generate_image", [{"kind": "upsert_asset", "asset": record}]
         )
 
+        image: JsonObject = {
+            "status": "ok",
+            "asset_id": record.get("id"),
+            "mode": meta.get("mode"),
+            "model": meta.get("model"),
+            "mime_type": (record.get("media") or {}).get("mime_type"),
+            "aspect_ratio": aspect_ratio,
+            "width": width,
+            "height": height,
+            "provenance": record.get("provenance"),
+            "source": record.get("source"),
+            "license": (record.get("license") or {}).get("name"),
+        }
+        # W1.7(b): `width`/`height`/`aspect_ratio` above are the REQUEST. When the
+        # model returned something else, say so rather than let the ask stand in
+        # for the answer — cover-fit placement still works, but an agent choosing
+        # a ground treatment deserves the real geometry.
+        if meta.get("actual_width") and meta.get("actual_height"):
+            image["actual_width"] = meta["actual_width"]
+            image["actual_height"] = meta["actual_height"]
+            if meta.get("aspect_ratio_honored") is False:
+                image["aspect_ratio_honored"] = False
+                image["note"] = (
+                    f"the model returned {meta['actual_width']}x{meta['actual_height']}, "
+                    f"which is not the requested {aspect_ratio}; it is placed cover-fit "
+                    "and will be cropped to the frame"
+                )
+        # W1.7(c): a failed generation is a NON-BLOCKING, typed outcome (D5 — no
+        # new blocking gates). The placeholder keeps the design composing; this
+        # block is how the agent learns the imagery is not real and can choose to
+        # proceed with a flat token ground instead.
+        if meta.get("fallback"):
+            image["fallback"] = meta["fallback"]
+            image["hint"] = (
+                "Image generation failed and a deterministic PLACEHOLDER was used — "
+                "this is not real imagery and must not ship as if it were. The turn is "
+                "not blocked: either retry once with a shorter, simpler prompt, or drop "
+                "the image ground and proceed with a flat brand-token ground (a clean "
+                "token fill beats a placeholder)."
+            )
         payload = {
-            "image": {
-                "status": "ok",
-                "asset_id": record.get("id"),
-                "mode": meta.get("mode"),
-                "model": meta.get("model"),
-                "mime_type": (record.get("media") or {}).get("mime_type"),
-                "aspect_ratio": aspect_ratio,
-                "width": width,
-                "height": height,
-                "provenance": record.get("provenance"),
-                "source": record.get("source"),
-                "license": (record.get("license") or {}).get("name"),
-            },
+            "image": image,
             "diagnostics": [diag.model_dump(mode="json") for diag in diagnostics],
         }
         self.record(
@@ -942,6 +1113,41 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    def _library_asset_entry(self, asset_id: str) -> Optional[JsonObject]:
+        """W1.1: the by-value WORKSPACE ASSET LIBRARY entry for `asset_id`, or None.
+
+        Mirrors website mode's `LumenWebTools._asset_library_entry` exactly (same
+        seam, same checks): the entry must carry a record whose own id matches, and
+        the record must be `ready`. Anything else is not a usable library asset and
+        this returns None so the caller stays honest.
+
+        Deliberately does NOT fall back to the kit manifest — kit membership is
+        checked first by every caller, because a kit asset's scene copy is rewritten
+        to `brand_guide` provenance (which is what keeps LUMB0809/LUMB0810 logo
+        governance matching on kit variant ids), while a library asset's own
+        licence and provenance are the truth we must preserve."""
+        entry = (self.config.asset_library or {}).get(asset_id)
+        if not isinstance(entry, dict):
+            return None
+        record = entry.get("record")
+        if not isinstance(record, dict) or record.get("id") != asset_id:
+            return None
+        if record.get("status") != "ready":
+            return None
+        return entry
+
+    def _library_asset_scene_record(self, asset_id: str) -> Optional[JsonObject]:
+        """A deep copy of the library record ready to upsert into the scene.
+
+        Unlike a kit asset the `source` block is NOT rewritten: the record's
+        recorded licence and provenance are exactly what a grounded library
+        placement promises to keep (the ratified website-mode rule in
+        `_use_library_asset`)."""
+        entry = self._library_asset_entry(asset_id)
+        if entry is None:
+            return None
+        return copy.deepcopy(entry["record"])
+
     def _register_referenced_brand_assets(self, origin: str) -> None:
         """K2 root fix: a DSL author naturally writes `image asset(<id>)` with
         an asset_id straight from the brand card — a form the compiler accepts
@@ -952,9 +1158,17 @@ class LumenDesignTools:
         carry yet gets its record auto-registered with brand_guide provenance
         — the same registration use_brand_asset performs. The explicit action
         remains for fit/slot control. Failures never break the calling tool:
-        registration is a repair, not a gate."""
-        manifest = self.config.brand_kit_assets or {}
-        if not manifest:
+        registration is a repair, not a gate.
+
+        W1.1 widens the same repair to the WORKSPACE ASSET LIBRARY. The Apollo POC
+        scene cited a pre-generated ground the identical way (`image
+        asset(asset_gen_…)`) and preflight answered `LUME0211 op.asset_missing`,
+        because a library asset had no channel into a scene turn at all. A library
+        record is registered VERBATIM (its own source/licence/provenance survive);
+        the kit is still checked first, so an id in both stays a kit asset."""
+        kit = self.config.brand_kit_assets or {}
+        library = self.config.asset_library or {}
+        if not kit and not library:
             return
         scene_assets = self.scene.get("assets") or {}
         referenced: list[str] = []
@@ -963,19 +1177,31 @@ class LumenDesignTools:
             if kind.get("kind") != "image":
                 continue
             asset_id = kind.get("asset_id")
-            if asset_id in manifest and asset_id not in scene_assets:
+            if not asset_id or asset_id in scene_assets:
+                continue
+            if asset_id in kit or asset_id in library:
                 referenced.append(asset_id)
         for asset_id in dict.fromkeys(referenced):
-            entry = manifest.get(asset_id) or {}
-            record = copy.deepcopy(entry.get("record") or {})
+            from_kit = asset_id in kit
+            entry = (kit.get(asset_id) if from_kit else library.get(asset_id)) or {}
+            record = (
+                copy.deepcopy(entry.get("record") or {})
+                if from_kit
+                else (self._library_asset_scene_record(asset_id) or {})
+            )
             if not record.get("id"):
                 continue
             label = entry.get("title") or record.get("label") or asset_id
-            record["source"] = {
-                "kind": "brand_guide",
-                "source_asset_id": asset_id,
-                "label": label,
-            }
+            if from_kit:
+                # A kit asset's scene copy is re-stamped brand_guide so the logo
+                # governance that matches on kit variant ids keeps firing. A LIBRARY
+                # record keeps its own source/licence/provenance — that is the
+                # grounded promise, and rewriting it would launder its origin.
+                record["source"] = {
+                    "kind": "brand_guide",
+                    "source_asset_id": asset_id,
+                    "label": label,
+                }
             try:
                 response = self.core.apply_operations(
                     self.scene, [{"kind": "upsert_asset", "asset": record}]
@@ -990,11 +1216,16 @@ class LumenDesignTools:
                 "brand_asset_registered",
                 input_summary=asset_id,
                 output_summary=(
-                    f"auto-registered kit asset {asset_id} referenced by the "
-                    f"scene ({origin})"
+                    f"auto-registered {'kit' if asset_id in kit else 'library'} "
+                    f"asset {asset_id} referenced by the scene ({origin})"
                 ),
                 payload={
-                    "brand_asset": {"asset_id": asset_id, "label": label, "via": origin}
+                    "brand_asset": {
+                        "asset_id": asset_id,
+                        "label": label,
+                        "via": origin,
+                        "manifest": "brand_kit" if asset_id in kit else "asset_library",
+                    }
                 },
             )
 
@@ -1099,6 +1330,128 @@ class LumenDesignTools:
             "action='use_brand_asset' requires `node_id` or `slot_id`.",
         )
 
+    def fetch_logo(self, domain: str, company_name: Optional[str] = None) -> str:
+        """Fetch a company's REAL logo from its website and register it here.
+
+        Use this whenever the design shows a company that is not us — the target
+        account, a named customer, a partner. Pass their domain
+        (`goodmancampbell.com`) or any URL on their site; pass `company_name`
+        too when you know it, because it sharpens the identity check.
+
+        Returns the asset ids it registered, one per slot it could fill:
+        `light` (for light backgrounds), `dark` (a reversed/white asset for dark
+        backgrounds), `mark` (the symbol alone) and `wordmark`. Place them with
+        `asset(action="place", ...)` like any other registered asset. A slot is
+        missing when the brand publishes nothing for it — that is a real answer,
+        and it is never filled by recoloring another slot.
+
+        In an account-personalized or co-branded design, the OTHER company's
+        logo must be its COMPLETE lockup — symbol + wordmark together (the
+        `light`/`dark` slot for the surface you are placing on). The bare
+        `mark` is a fallback for when the brand publishes no lockup, or the
+        placement is genuinely too small to hold one — never the first choice:
+        a naked symbol does not identify an account the way its full logo does.
+
+        If it comes back `needs_review`, nothing was registered because no asset
+        could be attributed to that company with confidence. Say so and ask for
+        the file. Never draw, recolor or approximate a logo.
+
+        Static fetch only: a site that builds its header in JavaScript has no
+        logo to read here, and reports that plainly.
+        """
+        requested = (domain or "").strip()
+        if not requested:
+            return self._tool_error(
+                "logo_fetch.bad_request", "fetch_logo requires a non-empty `domain`."
+            )
+        try:
+            outcome = logo_fetch.fetch_logo_family(
+                requested, company_name=(company_name or "").strip() or None
+            )
+        except ValueError as error:
+            return self._tool_error("logo_fetch.bad_request", str(error))
+        except Exception as error:  # noqa: BLE001 - tool failures are envelopes
+            code = getattr(error, "code", "")
+            self.record(
+                "coordinator",
+                "logo_fetch_failed",
+                input_summary=requested[:500],
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+            )
+            return self._tool_error(
+                "logo_fetch.blocked" if code == "LUMI0501" else "logo_fetch.failed",
+                f"{getattr(error, 'message', None) or error}",
+                capture_code=code or None,
+            )
+
+        if outcome.needs_review:
+            self.record(
+                "coordinator",
+                "logo_fetch_needs_review",
+                input_summary=requested[:500],
+                output_summary=(outcome.notes[0] if outcome.notes else "no slot filled")[:500],
+            )
+            return json.dumps(logo_fetch.review_payload(outcome), indent=2)
+
+        store_root = str(self.config.effective_asset_store_root)
+        placed: list[JsonObject] = []
+        failures: list[JsonObject] = []
+        for prepared in outcome.prepared:
+            ingest = self.core.ingest_asset(**prepared.ingest_kwargs(store_root))
+            if not ingest.get("ok"):
+                detail = (ingest.get("error") or {}).get("message", "unknown error")
+                failures.append({"slot": prepared.slot, "error": detail})
+                continue
+            record = (ingest.get("asset") or {}).get("record") or {}
+            # SCENE op key is "asset"; the web lane's is "record". Same engine
+            # asset table, two operation schemas.
+            operations = [{"kind": "upsert_asset", "asset": record}]
+            try:
+                apply_response = self.core.apply_operations(self.scene, operations)
+            except CoreError as error:
+                failures.append({"slot": prepared.slot, "error": error.message})
+                continue
+            self._replace_scene_from_core_response(
+                apply_response, "fetch_logo", operations
+            )
+            placed.append({
+                "slot": prepared.slot,
+                "asset_id": record.get("id") or prepared.asset_id,
+                **prepared.evidence,
+            })
+
+        if not placed:
+            return self._tool_error(
+                "logo_fetch.ingest_failed",
+                "the logo was resolved but could not be registered in the scene",
+                failures=failures,
+            )
+
+        payload: JsonObject = {
+            "status": outcome.status,
+            "site": outcome.site,
+            "identity": outcome.identity,
+            "lockup_completeness": outcome.lockup_completeness,
+            "logos": placed,
+            "notes": outcome.notes[:4],
+            "next": (
+                "Place one with asset(action='place', asset_id=..., node_id=... or "
+                "slot_id=...). Use `dark` on dark surfaces and `light` on light ones."
+            ),
+        }
+        if failures:
+            payload["failed_slots"] = failures
+        self.record(
+            "coordinator",
+            "logo_fetched",
+            input_summary=requested[:500],
+            output_summary=(
+                f"{outcome.site}: " + ", ".join(p["slot"] for p in placed)
+            )[:500],
+            payload={"site": outcome.site, "slots": [p["slot"] for p in placed]},
+        )
+        return json.dumps(payload, indent=2)
+
     def _collect_reference_previews(
         self, condition_on_references: bool, diagnostics: List[JsonObject]
     ) -> tuple[Optional[List[tuple]], Optional[List[str]]]:
@@ -1157,8 +1510,17 @@ class LumenDesignTools:
         dead-ends on imagery. When this turn carries reference attachments and
         `condition_on_references` is set, the reference previews ride the model
         call as STYLE anchors (and key the cache on their pixel digests). Returns
-        (record, meta, raw_diagnostics, error)."""
+        (record, meta, raw_diagnostics, error).
+
+        W1.7(c) — FAILED GENERATION NEVER BLOCKS THE TURN (founder ruling D5: no
+        new blocking gates). Every degrade path below is non-fatal by
+        construction, and each one now also records a TYPED `fallback` descriptor
+        on the returned meta — `{reason, error_code, detail, conditioning_lost}` —
+        so the agent can react in kind (most often: proceed with a flat token
+        ground instead of an image ground) rather than having to parse a warning
+        string. `meta["fallback"]` is absent on the success path."""
         diagnostics: List[JsonObject] = []
+        fallback: Optional[JsonObject] = None
 
         # 1) Real text-to-image model, when configured.
         if image_provider is not None and image_provider.is_configured():
@@ -1230,8 +1592,31 @@ class LumenDesignTools:
                     diagnostics.extend(_as_diag_list(ingest.get("diagnostics")))
                     if cache_key is not None and image_cache is not None:
                         image_cache.store(store_root, cache_key, record)
-                    return record, {"mode": "model", "model": result.model}, diagnostics, None
+                    # W1.7(b): the model's REAL output geometry, measured from the
+                    # returned bytes. `width`/`height` above are what we ASKED for,
+                    # and the Apollo POC proved the two can differ (16:9 asked,
+                    # 1024x1024 delivered) — so both travel, never just the ask.
+                    return (
+                        record,
+                        {
+                            "mode": "model",
+                            "model": result.model,
+                            "actual_width": getattr(result, "width", None),
+                            "actual_height": getattr(result, "height", None),
+                            "aspect_ratio_honored": getattr(
+                                result, "aspect_ratio_honored", None
+                            ),
+                        },
+                        diagnostics,
+                        None,
+                    )
                 detail = (ingest.get("error") or {}).get("message", "unknown error")
+                fallback = {
+                    "reason": "ingest_failed",
+                    "error_code": "image.ingest_failed",
+                    "detail": str(detail)[:200],
+                    "conditioning_lost": bool(reference_digests),
+                }
                 diagnostics.append(
                     _image_warning(
                         "LUMA0710",
@@ -1246,6 +1631,12 @@ class LumenDesignTools:
                 conditioning_note = (
                     " (reference conditioning lost)" if reference_digests else ""
                 )
+                fallback = {
+                    "reason": "model_failed",
+                    "error_code": str(code),
+                    "detail": str(error)[:200],
+                    "conditioning_lost": bool(reference_digests),
+                }
                 diagnostics.append(
                     _image_warning(
                         "LUMA0710",
@@ -1254,6 +1645,12 @@ class LumenDesignTools:
                     )
                 )
         elif image_provider is not None:
+            fallback = {
+                "reason": "not_configured",
+                "error_code": "image_model.not_configured",
+                "detail": "text-to-image model is not configured (set IMAGE_MODEL_*)",
+                "conditioning_lost": False,
+            }
             diagnostics.append(
                 _image_warning(
                     "LUMA0711",
@@ -1288,7 +1685,10 @@ class LumenDesignTools:
             return None, {}, diagnostics, (error.code, error.message)
         record = (response.get("asset") or {}).get("record") or {}
         diagnostics.extend(_as_diag_list(response.get("diagnostics")))
-        return record, {"mode": "placeholder", "model": "stub-image-v0"}, diagnostics, None
+        meta: JsonObject = {"mode": "placeholder", "model": "stub-image-v0"}
+        if fallback is not None:
+            meta["fallback"] = fallback
+        return record, meta, diagnostics, None
 
     def _image_constraints(
         self,
@@ -1379,6 +1779,15 @@ class LumenDesignTools:
         alt: Optional[str],
         preserve_transparency: Optional[bool],
     ) -> str:
+        # W1.1: a WORKSPACE ASSET LIBRARY id the scene does not carry yet is
+        # registered first, or the engine refuses the placement with
+        # `LUME0211 op.asset_missing` — precisely what killed the Apollo POC's
+        # pre-generated ground (`.context/ref-ads-pilot-apollo-report.md` §6.1).
+        # This tool has always DOCUMENTED "generated or library"; the library half
+        # simply had no channel into a scene turn. Same repair-not-gate discipline
+        # as `_register_referenced_brand_assets`: an id the library does not hold
+        # reaches the engine bare, so an honest miss stays an honest miss.
+        self._register_library_asset_for_placement(asset_id, kind)
         placement: JsonObject = {
             "fit": fit,
             "focal_point": {"x": float(focal_x), "y": float(focal_y)},
@@ -1439,41 +1848,57 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    def _register_library_asset_for_placement(self, asset_id: str, kind: str) -> None:
+        """Upsert a workspace-library record into the scene so a placement can bind.
+
+        No-ops for anything already in the scene, anything the kit owns (the kit
+        has its own brand_guide registration path), and anything the library does
+        not hold as a `ready` record. A failed upsert is swallowed on purpose: the
+        placement then reaches the engine exactly as it did before, and the engine's
+        own diagnostic — not a second, invented one — is what the agent sees."""
+        if not asset_id or asset_id in (self.scene.get("assets") or {}):
+            return
+        if asset_id in (self.config.brand_kit_assets or {}):
+            return
+        record = self._library_asset_scene_record(asset_id)
+        if record is None:
+            return
+        operation = {"kind": "upsert_asset", "asset": record}
+        try:
+            response = self.core.apply_operations(self.scene, [operation])
+        except CoreError:
+            return
+        self._replace_scene_from_core_response(response, kind, [operation])
+        entry = self._library_asset_entry(asset_id) or {}
+        self.record(
+            "coordinator",
+            "library_asset_registered",
+            input_summary=asset_id,
+            output_summary=(
+                f"registered workspace library asset {asset_id} "
+                f"(licence and provenance preserved) before {kind}"
+            ),
+            payload={
+                "library_asset": {
+                    "asset_id": asset_id,
+                    "label": entry.get("title") or record.get("label") or asset_id,
+                    "via": kind,
+                }
+            },
+        )
+
     def _asset_preview_path(
         self, record: JsonObject
     ) -> Optional[tuple[str, Optional[int], Optional[int]]]:
         """Slice 2: resolve a kit-asset record to an ON-DISK preview the vision APIs
         can read, returning (absolute_path, pixel_width, pixel_height) or None.
 
-        Prefer the derived 256px thumbnail (any source type gets one at ingest); else,
-        if the primary media is itself a raster the vision APIs accept, use that. An
-        SVG with no thumbnail has no usable raster preview → return None (the caller
-        skips it and counts it in `_omitted`). Refs are `sha256/<first2>/<digest>`
-        under the SAME asset-store root the tools already use for export/ingest —
-        resolved the one way (Path(effective_asset_store_root) / opaque_ref). Only the
-        path is returned; no bytes are read here (existence is checked at block-build
-        time in providers), so this stays cheap to call every curated context."""
-        media = record.get("media") or {}
-        store_root = Path(self.config.effective_asset_store_root)
-        thumbnail = media.get("thumbnail") or {}
-        thumb_ref = (thumbnail.get("location") or {}).get("opaque_ref")
-        if thumb_ref:
-            return (
-                str(store_root / thumb_ref),
-                thumbnail.get("pixel_width"),
-                thumbnail.get("pixel_height"),
-            )
-        mime = media.get("mime_type")
-        primary_ref = (media.get("location") or {}).get("opaque_ref")
-        if mime in _PREVIEWABLE_MIME_TYPES and primary_ref:
-            # Pixel dims for a raster/logo asset live in its own metadata block.
-            dims = record.get("raster") or record.get("logo") or {}
-            return (
-                str(store_root / primary_ref),
-                dims.get("pixel_width"),
-                dims.get("pixel_height"),
-            )
-        return None
+        The resolution itself is `asset_preview.asset_preview_path` — shared with
+        the web lane's view("asset:<id>") so the two lanes cannot disagree about
+        which pixels represent an asset. This binds it to THIS run's asset-store
+        root; a None result is a record with no usable raster preview (an SVG with
+        no derived thumbnail), which the caller skips and counts in `_omitted`."""
+        return asset_preview_path(record, self.config.effective_asset_store_root)
 
     def _resolve_node_image_source(
         self, node_id: str
@@ -1893,7 +2318,9 @@ class LumenDesignTools:
         - `action="generate_qr"` — generate a deterministic QR asset from `data`
           (URL/text). For physical artifacts set `print_media=True` and `target_width_mm`
           so print-scannability diagnostics can fire. Optional `ec_level`, `label`.
-        - `action="place"` — place an existing asset (`asset_id`, generated or library)
+        - `action="place"` — place an existing asset (`asset_id`: one you generated
+          this run, or one from this workspace's asset library — a library asset is
+          registered into the scene for you)
           into either an image node (`node_id`) or a bound image slot (`slot_id`) with a
           `fit` (default cover), normalized focal point (`focal_x`/`focal_y`, 0..1,
           default centered), `alt` text, and optional `preserve_transparency`. Reversible.
@@ -2289,6 +2716,7 @@ class LumenDesignTools:
                 diagnostics=diagnostics_from(error.diagnostics),
             )
             payload = {"preflight": _dump(summary)}
+            self.latest_preflight_has_errors = True
             self._write_json(iteration_dir / "preflight.json", payload)
             self.record(
                 "coordinator",
@@ -2300,10 +2728,39 @@ class LumenDesignTools:
             return json.dumps(payload, indent=2)
 
         self._replace_scene_from_core_response(response, "preflight_design")
-        diagnostics = diagnostics_from(response.get("diagnostics", []))
-        if governance_diagnostics:
-            diagnostics = diagnostics + governance_diagnostics
+        raw_diagnostics = list(response.get("diagnostics", []) or [])
         preflight = response.get("preflight", {})
+
+        # §5.4: the deterministic autofix loop runs HERE — after the engine has
+        # spoken and before the author is told anything. Everything below this
+        # block therefore reports the POST-autofix world, which is the whole
+        # point: the author never spends a model call on a repair whose value
+        # the engine already implied.
+        autofix_result = self._run_autofix(raw_diagnostics, brand_kit, iteration_dir)
+        if autofix_result is not None and autofix_result.changed:
+            raw_diagnostics = list(autofix_result.diagnostics)
+            # `has_errors` must never be inferred from a MISSING summary — an
+            # empty block would read as "clean" and could let a blocking export
+            # error through the P0.3 finalize guard. Fall back to the same rule
+            # the engine uses (preflight.rs:219, `any severity == error`).
+            preflight = autofix_result.raw_preflight or {
+                "has_errors": any(d.get("severity") == "error" for d in raw_diagnostics)
+            }
+
+        diagnostics = diagnostics_from(raw_diagnostics)
+        if governance_diagnostics:
+            # Deliberately NOT recomputed after autofix: governance judges the
+            # AUTHORED (pre-resolution) scene, the only state where bindings are
+            # observable, while autofix operates on the resolved one. Re-running
+            # it here would report LUMB0805/0804/0806 on a fully-literal scene no
+            # matter how well the draft was authored — the exact artifact the K4
+            # comment above exists to avoid. It is advisory either way.
+            diagnostics = diagnostics + governance_diagnostics
+        # P0.3: keep the RAW engine diagnostics (code + severity as the engine
+        # spelled them) for the finalize guard — `diagnostics_from` normalizes
+        # into the runtime's own wider enum, and the export classification is
+        # defined against the engine's vocabulary.
+        self._latest_preflight_diagnostics = raw_diagnostics
         brand_context = self._brand_context_from_scene_ref(brand_context)
         self.effective_brand_context = brand_context
         summary = PreflightSummary(
@@ -2320,18 +2777,133 @@ class LumenDesignTools:
             "raw_preflight": preflight,
             "effective_brand": brand_context,
         }
+        output_summary = f"has_errors={summary.has_errors}; {len(diagnostics)} diagnostics"
+        if autofix_result is not None and autofix_result.attempted:
+            # The autofix block rides the SAME payload the author reads, next to
+            # the diagnostics it changed — spec §5.4's "recorded in the round's
+            # diagnostics so the agent (and the trace) knows what moved". The
+            # rolled-back entries matter as much as the applied ones: they tell
+            # the author the mechanical repair was already tried and refused.
+            payload["autofix"] = autofix_result.as_payload()
+            output_summary = f"{output_summary}; {autofix_result.summary_line()}"
+        # Text-collision advisory (fast-loop tuning 2026-08-24). Flag-gated, so a
+        # flag-off preflight payload stays byte-identical. It rides preflight
+        # rather than render because the author reads preflight at work-loop
+        # step 3, one step BEFORE its first render — which is the earliest moment
+        # the finding can change what it does. Advisory only: it never sets
+        # has_errors and never edits the scene. See lumen_agent/text_clearance.py
+        # for why the engine itself cannot report this class.
+        if self.config.fast_loop:
+            try:
+                advisory = collision_advisory(self.scene)
+            except Exception:  # noqa: BLE001 - an advisory never fails a preflight
+                _SUBSTRATE_LOG.warning("text_collision_advisory_failed")
+                advisory = None
+            if advisory:
+                payload["text_collisions"] = advisory
+                output_summary = f"{output_summary}; text collisions advised"
+        self.latest_preflight_has_errors = bool(summary.has_errors)
         self._write_json(iteration_dir / "preflight.json", payload)
         self.record(
             "coordinator",
             "preflight_completed",
-            output_summary=(
-                f"has_errors={summary.has_errors}; "
-                f"{len(diagnostics)} diagnostics"
-            ),
+            output_summary=output_summary,
             diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
             payload=payload,
         )
         return json.dumps(payload, indent=2)
+
+    def _run_autofix(
+        self,
+        raw_diagnostics: list[JsonObject],
+        brand_kit: Optional[JsonObject],
+        iteration_dir: Path,
+    ) -> Optional[AutofixResult]:
+        """Drive the §5.4 code loop against the engine. Never raises.
+
+        Flag-gated to the point of invisibility: with `LUMEN_AGENT_FAST_LOOP`
+        down, `config.autofix_passes` is 0 and this returns `None` before making
+        a single call or touching a single field, so `preflight_design` is
+        byte-identical to the pre-fast-loop version.
+
+        The two engine callables are injected rather than reached for, so
+        `autofix.run_autofix` stays a pure, helper-free unit. `apply_operations`
+        deliberately does NOT go through `self.apply_operations` (the agent tool)
+        — a speculative patch must not mutate the working scene, log to the
+        ledger, or emit a trace event before the engine has verified it. Only an
+        ACCEPTED patch is committed, below.
+        """
+        if self.config.autofix_passes <= 0:
+            return None
+
+        preflight_blocks: list[tuple[JsonObject, JsonObject]] = []
+
+        def _apply(scene: JsonObject, operations: list[JsonObject]) -> JsonObject:
+            applied = self.core.apply_operations(scene, operations)
+            return applied.get("scene")
+
+        def _preflight(scene: JsonObject) -> tuple[JsonObject, list[JsonObject]]:
+            checked = self.core.preflight_scene(
+                scene, brand_kit, brand_fonts=self.config.brand_fonts
+            )
+            verified_scene = checked.get("scene")
+            preflight_blocks.append((verified_scene, checked.get("preflight") or {}))
+            return verified_scene, list(checked.get("diagnostics", []) or [])
+
+        try:
+            result = run_autofix(
+                self.scene,
+                raw_diagnostics,
+                apply_operations=_apply,
+                preflight=_preflight,
+                max_passes=self.config.autofix_passes,
+                on_attempt=lambda record: self.metrics.record_autofix(
+                    record.klass, accepted=record.accepted
+                ),
+            )
+        except Exception as error:  # noqa: BLE001 - autofix must never fail a turn
+            self.record(
+                "coordinator",
+                "autofix_failed",
+                output_summary=f"{type(error).__name__}: {error}",
+            )
+            return None
+
+        if not result.attempted:
+            return None
+
+        if result.changed:
+            # Commit: the working scene becomes the verified one, and the
+            # accepted operations join the ledger. The ledger is not optional —
+            # the editor's Accept replays THAT list onto the document and never
+            # sees this scene, so an unlogged autofix would silently vanish at
+            # accept (the K2 defect `_log_scene_operations` exists to prevent).
+            self.scene = result.scene
+            self.scene_update_sources.append("autofix")
+            self._log_scene_operations(
+                "autofix",
+                [
+                    dict(operation)
+                    for record in result.applied
+                    for operation in record.operations_json
+                ],
+            )
+            # Identity match, not "the last one": a rejected attempt after the
+            # accepted one would otherwise hand back the losing scene's summary.
+            result.raw_preflight = next(
+                (block for scene, block in preflight_blocks if scene is result.scene),
+                {},
+            )
+
+        payload = result.as_payload()
+        self._write_json(iteration_dir / "autofix.json", payload)
+        self.record(
+            "coordinator",
+            "autofix_completed",
+            output_summary=result.summary_line(),
+            payload=payload,
+        )
+        return result
 
     def baseline_preflight_diagnostics(self) -> list[JsonObject]:
         """Preflight diagnostics on the scene AS SEEDED, before this turn's own
@@ -3733,6 +4305,15 @@ class LumenDesignTools:
         # attached?" — so the omission itself refuses the finalize. The
         # orchestrator gets an actionable refusal string and must re-run the
         # reviewer (or finalize honestly as not-accepted).
+        #
+        # W1.5: before the gate reads the typed field, promote a judgment the
+        # author wrote as prose into it. The backend already stamped the durable
+        # `critique.json`; this covers the orchestrator handing us a critique it
+        # re-serialized on the way here. `stamp_reference_fidelity` only ever
+        # promotes a score the author WROTE — an unjudged self-audit stamps
+        # `score: 0`, which this gate refuses exactly as an omission did.
+        if self.config.reference_assets or {}:
+            critique = stamp_reference_fidelity(critique)
         if status == "accepted" and (self.config.reference_assets or {}):
             fidelity = (critique or {}).get("reference_fidelity") or {}
             score = fidelity.get("score")
@@ -3755,6 +4336,46 @@ class LumenDesignTools:
                     "at score >= 2, or finalize honestly with a non-accepted "
                     "status."
                 )
+        # P0.3 finalize guard — closes the "accepted but unexportable" loophole.
+        # The 2026-08-24 baseline run finalized as a success while EVERY export
+        # of its scene was refused by preflight; the run result said "done" and
+        # the artifact could not leave the building. A run may no longer record
+        # acceptance while a BLOCKING export error stands.
+        #
+        # Scoped to blocking errors on purpose: advisory policy lints (the
+        # LUMV0820 class) export fine, so they must not refuse a finalize —
+        # that would just re-create the original dead end one layer up. They
+        # are reported in the summary instead, never silently dropped.
+        if status == "accepted" and self._latest_preflight_diagnostics is not None:
+            blocking, advisory = partition_export_diagnostics(
+                self._latest_preflight_diagnostics
+            )
+            if blocking:
+                named = ", ".join(
+                    sorted({str(item.get("code")) for item in blocking})
+                )
+                self.record(
+                    "coordinator",
+                    "finalize_refused_blocking_export_error",
+                    output_summary=named,
+                )
+                return (
+                    "REFUSED: this scene cannot be exported — "
+                    f"{len(blocking)} blocking preflight error(s) remain ({named}). "
+                    "Accepting now would record a success for a design that no "
+                    "PNG, SVG or PDF export can produce. Repair the errors and "
+                    "re-run preflight_design, or finalize honestly with a "
+                    "non-accepted status."
+                )
+            if advisory:
+                lints = ", ".join(
+                    sorted({str(item.get("code")) for item in advisory})
+                )
+                note = (
+                    f"Exports carry {len(advisory)} advisory policy lint(s) "
+                    f"({lints}); the design exports cleanly regardless."
+                )
+                summary = f"{summary}\n{note}" if summary else note
         baseline_advisory = (
             json.loads(baseline_advisory_json) if baseline_advisory_json.strip() else None
         )
@@ -3954,6 +4575,69 @@ class LumenDesignTools:
             {"entries": self.operations_ledger},
         )
 
+    def checkpoint_scene(self, reason: str) -> None:
+        """P0.4 — hand this round's work to the checkpoint sink so it becomes
+        durable NOW instead of only at finalize.
+
+        Called at the orchestrator's round-verification seam (a `render_preview`
+        that produced a validated raster — see `tools/render.py`), which is the
+        one place in this runtime where Python can observe "an authoring round
+        finished and the scene it produced is real". Before this existed a run
+        that died at finalize — the 2026-08-24 quota 403 at 20m42s — discarded a
+        fully valid scene and left the document at version 0.
+
+        Three properties this must keep, because it runs mid-run against a live
+        document:
+
+        * **Best-effort.** A checkpoint that cannot be committed is a lost
+          version, never a lost run. Every failure is recorded and swallowed;
+          the finalize commit remains the run's authority.
+        * **Monotone.** The FULL ordered ledger goes to the sink every time and
+          the sink commits only the delta it has not made durable, so a refused
+          checkpoint is simply re-offered inside the next one.
+        * **Silent when nothing moved.** No new operations means no call, so an
+          unchanged re-render cannot mint an empty document version.
+        """
+        if self.scene_checkpoint is None:
+            return
+        pending = len(self.operations_ledger) - self._checkpointed_operations
+        if pending <= 0:
+            return
+        operations = [
+            entry["operation"]
+            for entry in self.operations_ledger
+            if isinstance(entry, dict) and "operation" in entry
+        ]
+        meta = {
+            "reason": reason,
+            "run_id": self.run_id,
+            "iteration": self.iteration,
+            # Recorded, deliberately NOT gated on: a scene that rendered a
+            # validated raster is work worth keeping even while preflight still
+            # reports diagnostics (LUMV0820 blocks export on runs the fast-loop
+            # spec's P0.2/P0.3 own). The reader decides what a dirty checkpoint
+            # is worth; this seam only refuses to throw the scene away.
+            "preflight_clean": self.latest_preflight_has_errors is False,
+            "operations_total": len(operations),
+        }
+        try:
+            self.scene_checkpoint(operations, meta)
+        except Exception as error:  # noqa: BLE001 - a checkpoint never fails a run
+            self.record(
+                "coordinator",
+                "scene_checkpoint_failed",
+                output_summary=f"{type(error).__name__}: {error}",
+                payload=meta,
+            )
+            return
+        self._checkpointed_operations = len(operations)
+        self.record(
+            "coordinator",
+            "scene_checkpointed",
+            output_summary=f"{reason}: {pending} new operation(s), {len(operations)} total",
+            payload=meta,
+        )
+
     def _write_and_validate_preview_artifacts(
         self,
         raw_artifacts: list[JsonObject],
@@ -3997,6 +4681,13 @@ class LumenDesignTools:
                     validation_errors = [*validation_errors, sentinel_error]
                 if uniform_warning:
                     warnings.append(uniform_warning)
+            if not validation_errors:
+                # §7 metrics: time-to-first-preview is the run's single most
+                # diagnostic number (baseline: 15.4 min, gate: <= 4 min), and it
+                # must mean "the agent could actually SEE something" — so a
+                # VALIDATED artifact starts the clock, never a written-but-broken
+                # one. Idempotent: only the first call is kept.
+                self.metrics.mark_first_preview()
             artifacts.append(
                 PreviewArtifact(
                     format=artifact_format,

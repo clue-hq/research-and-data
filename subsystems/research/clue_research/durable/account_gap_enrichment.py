@@ -198,7 +198,15 @@ async def reserve_account_gap_operation(
     *,
     operation: AccountGapOperation,
     snapshots: tuple[AccountGapSnapshot, ...],
+    enforce_budget: bool = True,
 ) -> tuple[AccountGapOperation, bool]:
+    """Reserve one bounded account-gap enrichment operation.
+
+    ``enforce_budget`` is the FI pilot budget-controls switch; it gates only the project-run
+    money check. This operation's own reserved-vs-cap invariants are consistency guards on
+    its immutable plan, not spend-vs-budget stops, so they hold in both modes.
+    """
+
     request = operation.request
     if operation.provider_units_reserved > Decimal(request.provider_credit_cap):
         raise AccountGapBudgetExceeded("account-gap provider cap exceeded")
@@ -225,6 +233,7 @@ async def reserve_account_gap_operation(
             proposed_cents=operation.cost_cents_reserved,
             allowed_phases=frozenset({ProjectPhase.DEEP}),
             entity_research_job_id=request.entity_research_job_id,
+            enforce_budget=enforce_budget,
         )
     except ProviderSpendGuardError as exc:
         raise AccountGapBudgetExceeded(str(exc)) from exc

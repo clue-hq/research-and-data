@@ -190,6 +190,161 @@ def test_normalize_leaves_large_images_untouched(tmp_path, monkeypatch):
     assert mime == "image/png"
 
 
+# --- Task 1b: the vision size CEILING (genweb slice 1) ----------------------
+#
+# The website reviewer captures whole pages: a realistic 3-4 section landing page
+# renders 1440x14325 / 768x8095, and OpenRouter refuses those outright
+# ("invalid_prompt ... image dimensions exceed max allowed size: 8000 pixels").
+# The turn is transactional, so the refusal discarded every authored node.
+
+
+def test_normalize_clamps_a_tall_page_capture_to_the_vision_ceiling():
+    # The exact capture that killed the slice-0 generation run.
+    raw = _png_bytes((1440, 14325))
+    out, mime = view_mod._normalize_image_bytes(raw)
+    assert mime == "image/png"
+    clamped = Image.open(io.BytesIO(out))
+    w, h = clamped.size
+    assert max(w, h) <= view_mod._VISION_MAX_PX
+    assert min(w, h) >= view_mod._VISION_MIN_PX
+    # Aspect preserved: the reviewer must judge the page it rendered, not a squashed one.
+    assert abs((w / h) - (1440 / 14325)) < 0.005
+
+
+def test_normalize_clamps_the_narrow_tall_capture_too():
+    raw = _png_bytes((768, 8095))
+    out, _mime = view_mod._normalize_image_bytes(raw)
+    w, h = Image.open(io.BytesIO(out)).size
+    assert max(w, h) <= view_mod._VISION_MAX_PX
+    assert abs((w / h) - (768 / 8095)) < 0.005
+
+
+def test_normalize_ceiling_is_below_the_provider_limit():
+    # The provider refuses AT 8000px; the ceiling leaves headroom for rounding.
+    assert view_mod._VISION_MAX_PX < 8000
+
+
+def test_normalize_ceiling_wins_when_both_bounds_are_violated():
+    # A sliver: too narrow for the floor AND too tall for the ceiling. The two bounds
+    # cannot both hold at a fixed aspect; the hard refusal we actually hit is the ceiling.
+    raw = _png_bytes((120, 20000))
+    out, _mime = view_mod._normalize_image_bytes(raw)
+    w, h = Image.open(io.BytesIO(out)).size
+    assert max(w, h) <= view_mod._VISION_MAX_PX
+
+
+def test_normalize_leaves_an_in_range_image_byte_identical():
+    raw = _png_bytes((1440, 3200))
+    out, _mime = view_mod._normalize_image_bytes(raw)
+    assert out == raw
+
+
+def test_view_clamps_a_tall_preview_before_attaching_it(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, monkeypatch)
+    png_path = tools.trace_dir / "preview.png"
+    png_path.write_bytes(_png_bytes((1440, 14325)))
+    tools.latest_export_summary = {
+        "status": "ok",
+        "artifacts": [
+            {"format": "png", "path": str(png_path), "width": 1440, "height": 14325}
+        ],
+    }
+    view = view_mod.make_view_tool(tools)
+    msg = view.invoke(
+        {"name": "view", "args": {"target": "preview"}, "id": "c1", "type": "tool_call"}
+    )
+    image_blocks = [b for b in msg.content if b["type"] == "image"]
+    assert len(image_blocks) == 1
+    emitted = Image.open(io.BytesIO(base64.b64decode(image_blocks[0]["data"])))
+    assert max(emitted.size) <= view_mod._VISION_MAX_PX
+
+
+# --- G5: the MANY-IMAGE ceiling (genweb slice 2 blocker) --------------------
+#
+# The slice-1 ceiling above is the SINGLE-image limit. A request carrying many
+# images has a lower per-image limit, and the web review conversation reaches it
+# routinely: one render is three widths, plus state captures, and the
+# orchestrator's history keeps every image it ever viewed. The first realistic
+# chat-driven landing page died on the ORCHESTRATOR's own call after ~28 minutes:
+#
+#   invalid_prompt ... messages.1.content.39.image.source.base64.data: At least
+#   one of the image dimensions exceed max allowed size for many-image requests:
+#   2000 pixels
+#
+# Probed against the provider that refused it (anthropic/claude-opus-4.8 through
+# OpenRouter's /responses endpoint — the one the runtime calls), 2026-08-19:
+#
+#   20 x 200x7500  ACCEPTED     |  21 x 200x7500  REFUSED   -> threshold is >20 images
+#   40 x 200x3000  REFUSED      |  40 x 200x2000  ACCEPTED  -> 2000 is safe at any count
+#
+# and the vendor doc states the same rule: "If a single API request contains more
+# than 20 images, a stricter per-image dimension limit applies ... resize each
+# image so that neither dimension exceeds 2000 px, or keep the request to 20 or
+# fewer image and document blocks."
+
+
+def test_many_image_ceiling_is_the_limit_the_provider_states():
+    # Not folklore: this is the number in the live refusal AND in the vendor doc.
+    assert view_mod._VISION_MANY_IMAGE_MAX_PX == 2000
+    assert view_mod._VISION_MANY_IMAGE_MAX_PX < view_mod._VISION_MAX_PX
+
+
+def test_normalize_clamps_a_tall_page_capture_to_the_many_image_ceiling():
+    # The exact capture the web reviewer attaches, three times per render.
+    raw = _png_bytes((1440, 14325))
+    out, mime = view_mod._normalize_image_bytes(
+        raw, max_px=view_mod._VISION_MANY_IMAGE_MAX_PX
+    )
+    assert mime == "image/png"
+    w, h = Image.open(io.BytesIO(out)).size
+    assert max(w, h) <= view_mod._VISION_MANY_IMAGE_MAX_PX
+    # Aspect preserved: the reviewer judges the page it rendered, not a squashed one.
+    assert abs((w / h) - (1440 / 14325)) < 0.005
+
+
+def test_normalize_clamps_the_narrow_capture_to_the_many_image_ceiling_too():
+    raw = _png_bytes((768, 8095))
+    out, _mime = view_mod._normalize_image_bytes(
+        raw, max_px=view_mod._VISION_MANY_IMAGE_MAX_PX
+    )
+    w, h = Image.open(io.BytesIO(out)).size
+    assert max(w, h) <= view_mod._VISION_MANY_IMAGE_MAX_PX
+    assert abs((w / h) - (768 / 8095)) < 0.005
+
+
+def test_normalize_defaults_to_the_single_image_ceiling():
+    # The default is unchanged, so the scene path keeps its shipped behaviour.
+    raw = _png_bytes((1440, 14325))
+    assert view_mod._normalize_image_bytes(raw) == view_mod._normalize_image_bytes(
+        raw, max_px=view_mod._VISION_MAX_PX
+    )
+    w, h = Image.open(io.BytesIO(view_mod._normalize_image_bytes(raw)[0])).size
+    assert max(w, h) == view_mod._VISION_MAX_PX
+
+
+def test_scene_view_keeps_the_single_image_ceiling(tmp_path, monkeypatch):
+    """The scene harness attaches ONE artboard preview per view call and has never
+    hit the many-image refusal; G5 deliberately leaves it on the single-image
+    ceiling. If that ever changes, change this assertion with it."""
+    tools = _tools(tmp_path, monkeypatch)
+    png_path = tools.trace_dir / "preview.png"
+    png_path.write_bytes(_png_bytes((1440, 14325)))
+    tools.latest_export_summary = {
+        "status": "ok",
+        "artifacts": [
+            {"format": "png", "path": str(png_path), "width": 1440, "height": 14325}
+        ],
+    }
+    view = view_mod.make_view_tool(tools)
+    msg = view.invoke(
+        {"name": "view", "args": {"target": "preview"}, "id": "c1", "type": "tool_call"}
+    )
+    emitted = Image.open(
+        io.BytesIO(base64.b64decode([b for b in msg.content if b["type"] == "image"][0]["data"]))
+    )
+    assert max(emitted.size) == view_mod._VISION_MAX_PX
+
+
 # --- Task 2: preview staleness contract ------------------------------------
 
 
@@ -279,6 +434,72 @@ def test_finalize_keeps_a_single_empty_page(tmp_path, monkeypatch):
     # Never strip to zero pages: a lone empty page is kept, no prune note.
     assert "only" in tools.scene["pages"]
     assert "Pruned" not in result["summary"]
+
+
+# --- P0.3: the accepted-but-unexportable finalize guard ---------------------
+#
+# The 2026-08-24 baseline run finalized "succeeded" while EVERY export of its
+# scene was refused by preflight. A run may no longer record acceptance while a
+# blocking export error stands — but an advisory policy lint, which exports
+# fine, must not refuse the finalize either.
+
+
+def _diagnostic(code: str, severity: str = "error") -> dict:
+    return {
+        "code": code,
+        "severity": severity,
+        "message": f"{code} happened",
+        "phase": "layout",
+        "subject": None,
+        "hint": None,
+    }
+
+
+def test_finalize_refuses_acceptance_while_a_blocking_export_error_stands(
+    tmp_path, monkeypatch
+):
+    tools = _tools(tmp_path, monkeypatch)
+    tools._latest_preflight_diagnostics = [_diagnostic("LUMV0821")]
+
+    result = tools.finalize_run("accepted", "done", "Delivered the ad.")
+
+    assert result.startswith("REFUSED:")
+    assert "LUMV0821" in result
+    # The refusal is a tool-level string, not a written final.json — nothing
+    # recorded a success.
+    assert not (tools.trace_dir / "final.json").exists()
+
+
+def test_finalize_allows_acceptance_with_only_advisory_lints(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, monkeypatch)
+    tools._latest_preflight_diagnostics = [_diagnostic("LUMV0820")]
+
+    result = json.loads(tools.finalize_run("accepted", "done", "Delivered the ad."))
+
+    assert result["status"] == "accepted"
+    # Announced, never silently dropped.
+    assert "LUMV0820" in result["summary"]
+    assert "advisory policy lint" in result["summary"]
+
+
+def test_finalize_guard_only_binds_accepted_runs(tmp_path, monkeypatch):
+    """An honest non-accepted finalize must still be able to record itself —
+    the guard exists to stop false success, not to trap a failing run."""
+    tools = _tools(tmp_path, monkeypatch)
+    tools._latest_preflight_diagnostics = [_diagnostic("LUMV0821")]
+
+    result = json.loads(tools.finalize_run("failed", "blocked", "Could not finish."))
+
+    assert result["status"] == "failed"
+
+
+def test_finalize_guard_is_inert_when_preflight_never_ran(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, monkeypatch)
+    assert tools._latest_preflight_diagnostics is None
+
+    result = json.loads(tools.finalize_run("accepted", "done", "Delivered."))
+
+    assert result["status"] == "accepted"
 
 
 # --- Task 3: brand_logo_auto place-once (no re-injection) -------------------

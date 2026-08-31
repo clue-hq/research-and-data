@@ -662,11 +662,16 @@ def test_wired_handler_records_role_on_the_instance():
 # ============================================================================
 
 
-def test_harness_attaches_usage_capture_to_all_three_role_models(tmp_path, monkeypatch):
-    """create_design_deepagent must hand deepagents models whose OWN `.callbacks`
-    field carries a UsageCaptureHandler — one per role, with the role label — using
-    REAL BaseChatModel instances (each role a SEPARATE instance, so instance-level
-    callbacks attribute cleanly and never cross-contaminate)."""
+def test_harness_retires_local_usage_capture_and_role_labels_at_the_gateway(
+    tmp_path, monkeypatch
+):
+    """P3.2 (PD-part3 delta 6): the design-local UsageCaptureHandler is RETIRED —
+    the governed gateway's role-labelled ``model_call_usage`` record is the ONE
+    usage authority, and attaching both would double count. The harness must hand
+    deepagents models that carry NO UsageCaptureHandler, thread the per-role
+    gateway label through init_model instead, keep trace capture design-local,
+    and still build three SEPARATE instances (gateway attribution is
+    per-instance too)."""
     import sys
     import types
 
@@ -698,16 +703,18 @@ def test_harness_attaches_usage_capture_to_all_three_role_models(tmp_path, monke
     monkeypatch.setitem(sys.modules, "deepagents.backends.filesystem", fsmod)
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
 
-    # A REAL BaseChatModel per call, so attach_usage_capture appends the handler
-    # to its own `.callbacks` field. A fresh instance per call mirrors the harness
-    # contract (three roles → three instances).
+    # A REAL BaseChatModel per call (fresh instance per call mirrors the harness
+    # contract), capturing every init_model kwarg so the gateway role label is
+    # observable.
     from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
-    monkeypatch.setattr(
-        "lumen_agent.llm.init_model",
-        lambda *a, **k: FakeListChatModel(responses=["ok"]),
-        raising=False,
-    )
+    init_calls: list[dict] = []
+
+    def fake_init_model(*args, **kwargs):
+        init_calls.append(kwargs)
+        return FakeListChatModel(responses=["ok"])
+
+    monkeypatch.setattr("lumen_agent.llm.init_model", fake_init_model, raising=False)
     monkeypatch.setattr(
         "lumen_agent.llm.assert_all_role_models_support_image_input",
         lambda config: None,
@@ -719,14 +726,30 @@ def test_harness_attaches_usage_capture_to_all_three_role_models(tmp_path, monke
     create_design_deepagent("Make a poster", runtime_config(tmp_path))
     kwargs = captured["kwargs"]
 
-    def _roles_on(model):
-        callbacks = getattr(model, "callbacks", None) or []
-        return {cb._role for cb in callbacks if isinstance(cb, UsageCaptureHandler)}
+    from lumen_agent.trace_callbacks import TraceCallbackHandler
 
-    assert _roles_on(kwargs["model"]) == {"orchestrator"}
+    def _usage_handlers(model):
+        callbacks = getattr(model, "callbacks", None) or []
+        return [cb for cb in callbacks if isinstance(cb, UsageCaptureHandler)]
+
+    def _has_trace(model):
+        callbacks = getattr(model, "callbacks", None) or []
+        return any(isinstance(cb, TraceCallbackHandler) for cb in callbacks)
+
     subs = {s["name"]: s for s in kwargs["subagents"]}
-    assert _roles_on(subs["lumen-dsl-author"]["model"]) == {"author"}
-    assert _roles_on(subs["lumen-visual-reviewer"]["model"]) == {"reviewer"}
+    for model in (
+        kwargs["model"],
+        subs["lumen-dsl-author"]["model"],
+        subs["lumen-visual-reviewer"]["model"],
+    ):
+        assert _usage_handlers(model) == []  # retired — the gateway is the authority
+        assert _has_trace(model)  # non-usage trace capture stays design-local
+    # The per-role label rides the GATEWAY build instead of a local callback.
+    assert [call.get("role") for call in init_calls] == [
+        "design_orchestrator",
+        "design_author",
+        "design_reviewer",
+    ]
     # Three SEPARATE instances (no dedupe) — the orchestrator instance is not the
     # author instance even though ids match, so their handlers never cross-fire.
     assert kwargs["model"] is not subs["lumen-dsl-author"]["model"]

@@ -96,13 +96,16 @@ def snapshot_bound(handler: PhaseHandler, *, storage: StorageBackend | None) -> 
 
 
 def build_reverse_profiling_handler(
-    *, judge: FaithfulnessJudge | None = None
+    *, judge: FaithfulnessJudge | None = None, enforce_budget: bool = True
 ) -> ReverseProfilingHandler:
     """The ``REVERSE_PROFILING`` handler (M5.1). ``judge`` is the M9.3 faithfulness judge the
     client-KB synthesis step routes tier-4 synthesized claims through — pass a
     ``FaithfulnessJudgeImpl`` over the shared gateway in production; ``None`` runs the pipeline
-    without the synthesized-claim faithfulness check (the handler tolerates it)."""
-    return ReverseProfilingHandler(judge=judge)
+    without the synthesized-claim faithfulness check (the handler tolerates it).
+
+    ``enforce_budget`` is ``Settings.budget_controls_enabled`` (FI pilot budget-controls);
+    False stops an exhausted client-KB envelope from pausing the run."""
+    return ReverseProfilingHandler(judge=judge, enforce_budget=enforce_budget)
 
 
 def register_reverse_profiling_handler(
@@ -110,10 +113,14 @@ def register_reverse_profiling_handler(
     judge: FaithfulnessJudge | None = None,
     storage: StorageBackend | None,
     register: _Register = register_phase_handler,
+    enforce_budget: bool = True,
 ) -> PhaseHandler:
     """Build + register the ``REVERSE_PROFILING`` handler (snapshot-wrapped when ``storage`` is
     passed — this phase **fetches**, so the wrapper is load-bearing)."""
-    handler = snapshot_bound(build_reverse_profiling_handler(judge=judge), storage=storage)
+    handler = snapshot_bound(
+        build_reverse_profiling_handler(judge=judge, enforce_budget=enforce_budget),
+        storage=storage,
+    )
     register(handler)
     return handler
 
@@ -253,12 +260,17 @@ def build_tier_checkpoint_handler(
     *,
     sealed_account_reader: SealedDiscoveryAccountReader | None = None,
     session_factory: ConnFactory = transaction,
+    enforce_budget: bool = True,
 ) -> TierCheckpointPhaseHandler:
     """The TIER_CHECKPOINT handler (M6.4): tier the stored Pass-A scores, estimate Pass-B cost, and
-    run the durable human gate. Config defaults to its production constants."""
+    run the durable human gate. Config defaults to its production constants.
+
+    ``enforce_budget`` is ``Settings.budget_controls_enabled`` (FI pilot budget-controls); False
+    stops a projected-over-cap estimate from overriding a human ``approve``."""
     return TierCheckpointPhaseHandler(
         sealed_account_reader=sealed_account_reader,
         session_factory=session_factory,
+        enforce_budget=enforce_budget,
     )
 
 
@@ -268,6 +280,7 @@ def register_tier_checkpoint_handler(
     sealed_account_reader: SealedDiscoveryAccountReader | None = None,
     session_factory: ConnFactory = transaction,
     register: _Register = register_phase_handler,
+    enforce_budget: bool = True,
 ) -> PhaseHandler:
     """Build + register the TIER_CHECKPOINT handler. The phase does **not** fetch (it tiers stored
     scores), so the snapshot wrapper is harmless — applied only for uniformity when ``storage`` is
@@ -276,6 +289,7 @@ def register_tier_checkpoint_handler(
         build_tier_checkpoint_handler(
             sealed_account_reader=sealed_account_reader,
             session_factory=session_factory,
+            enforce_budget=enforce_budget,
         ),
         storage=storage,
     )

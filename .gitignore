@@ -34,6 +34,10 @@ htmlcov/
 
 # Browser-tool artifacts (Playwright MCP console/page logs)
 .playwright-mcp/
+.gstack/
+
+# Design-API runtime byproduct (asset blobs written during live editor browser sessions)
+.artifacts/
 
 # Founder ruling 2026-08-30: .context (session artifacts, sample-run evidence) is tracked.
 # Conductor may re-add ".context/" to .git/info/exclude; this negation keeps it tracked anyway.

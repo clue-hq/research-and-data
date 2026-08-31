@@ -1,0 +1,16 @@
+{
+  "name": "abandon-01-scrap-it",
+  "kind": "abandon",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [],
+  "message": "Actually, scrap this design for now - we'll come back to it after the pivot.",
+  "judgment": {
+    "action": "finish",
+    "reason": "abandoned"
+  },
+  "expected": {
+    "action": "finish",
+    "reason": "abandoned",
+    "fail_safe": false
+  }
+}

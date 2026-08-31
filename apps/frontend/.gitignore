@@ -20,6 +20,9 @@
 # production
 /build
 
+# generated vendor assets (scripts/copy-design-vendor.mjs)
+/public/vendor/
+
 # misc
 .DS_Store
 *.pem

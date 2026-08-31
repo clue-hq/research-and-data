@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api import ExecutionRunEventWriter, StorageParameterArtifactStore, build_tool_invoker
 from clue_api.execution_wiring import StorageExecutionParameterStore
 from clue_config import Settings
-from clue_core import ExecutionId
+from clue_core import ExecutionId, new_execution_id
 from clue_db import ConnFactory
 from clue_execution import (
     BarrierNode,
@@ -125,12 +125,14 @@ class _CertifiedEcho(Tool):
         # because after the Lane B join it is what separates "the worker invoked this" from "the
         # human did" — two calls can carry the same receipt and mean different things.
         self.identities: list[tuple[str | None, str | None, str | None]] = []
+        self.parent_execution_ids: list[ExecutionId | None] = []
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, _Input)
         self.calls += 1
         self.values.append(inputs.value)
         self.identities.append((ctx.principal_kind, ctx.actor_id, ctx.action_ref))
+        self.parent_execution_ids.append(ctx.parent_execution_id)
         return ToolResult(
             tool=self.name,
             version=self.version,
@@ -176,6 +178,7 @@ async def _runtime(
     storage: _MemoryStorage | None = None,
     controls: Any | None = None,
     pre_satisfied_nodes: dict[str, dict[str, Any]] | None = None,
+    parent_execution_id: ExecutionId | None = None,
 ) -> tuple[ExecutionId, RecipeExecutor, _CertifiedEcho, LeaseGeneration]:
     workspace_id = await seed_workspace(conn, "ws-c5-executor")
     factory = _factory(conn)
@@ -300,6 +303,19 @@ async def _runtime(
         compatibility=compatibility,
         journal=journal,
     )
+    if parent_execution_id is not None:
+        await conn.execute(
+            text(
+                "INSERT INTO execution "
+                "(id, workspace_id, started_by, parameter_manifest_hash, pin_manifest_hash) "
+                "VALUES (:id, :workspace_id, 'agent', :sha, :sha)"
+            ),
+            {
+                "id": parent_execution_id,
+                "workspace_id": workspace_id,
+                "sha": "a" * 64,
+            },
+        )
     start = await starter.start(
         workspace_id=workspace_id,
         recipe_revision_id=revision.recipe_revision_id,
@@ -307,6 +323,7 @@ async def _runtime(
         parameter_artifact_key=artifact_key,
         parameter_manifest_hash=digest,
         actor="human",
+        parent_execution_id=parent_execution_id,
         pre_satisfied_nodes=pre_satisfied_nodes,
     )
     invoker = build_tool_invoker(
@@ -1213,6 +1230,25 @@ def test_ambient_invocation_identity_reaches_the_tool_or_stays_absent() -> None:
             # Still a service invocation — the worker is who it is whether or not a turn sent it —
             # but with no receipt at all, which is what refuses a human gate.
             assert off_turn_tool.identities == [("service", "svc_execution_worker", None)]
+
+    run_async(scenario())
+
+
+def test_recipe_tool_context_preserves_the_parent_execution_lineage() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            parent_execution_id = new_execution_id()
+            execution_id, executor, tool, generation = await _runtime(
+                conn,
+                parent_execution_id=parent_execution_id,
+            )
+            result = await executor.execute(
+                execution_id,
+                worker_id="worker",
+                lease_generation=generation,
+            )
+            assert result.status is ExecutionStatus.COMPLETED
+            assert tool.parent_execution_ids == [parent_execution_id]
 
     run_async(scenario())
 

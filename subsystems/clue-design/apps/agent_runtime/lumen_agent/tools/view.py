@@ -10,6 +10,7 @@ from typing import Optional
 from py_lumen_obs import get_logger, log_span
 
 from ..paths import to_virtual
+from .asset_preview import rasterize_vector_preview
 from .substrate import LumenDesignTools, blob_path_for_digest
 
 logger = get_logger("lumen_agent.tools.view")
@@ -23,6 +24,45 @@ logger = get_logger("lumen_agent.tools.view")
 # attached, so no provider can reject the block. Nearest-neighbor keeps it
 # honest — it magnifies the real pixels without inventing detail.
 _VISION_MIN_PX = 512
+
+# The other end of the same class of provider refusal, found on the first realistic
+# website generation (genweb slice 0): a whole-page capture of a 3-4 section landing
+# page comes out 1440x14325 (and 768x8095 at the narrow width), and OpenRouter refuses
+# it outright — "invalid_prompt ... image dimensions exceed max allowed size: 8000
+# pixels". The web turn is transactional, so that refusal discarded all 84 authored
+# nodes. We downscale any over-ceiling image to the ceiling BEFORE it is attached, with
+# headroom under the provider's 8000px so no rounding can land on the limit. LANCZOS
+# (not NEAREST) on the way down: a downscale must keep the page legible enough to judge,
+# and unlike the upscale it invents no detail — it averages the pixels that are there.
+_VISION_MAX_PX = 7500
+
+# The SAME refusal one limit lower, and the one web review actually lives under (genweb
+# slice 2, G5): once a single request carries more than 20 image blocks, the provider's
+# per-image dimension limit drops, and the first realistic chat-driven landing page died
+# on the orchestrator's own call after ~28 minutes — "messages.1.content.39.image.source.
+# base64.data: At least one of the image dimensions exceed max allowed size for
+# many-image requests: 2000 pixels" (run_c6f4485…, anthropic/claude-opus-4.8 through
+# OpenRouter's /responses endpoint). The turn is transactional, so the whole authored
+# page was discarded.
+#
+# The number is evidence, not folklore. Probed against that same provider and endpoint
+# (2026-08-19): 20 x 200x7500 ACCEPTED, 21 x 200x7500 REFUSED — the threshold is >20
+# images; 40 x 200x3000/4000/5000/6000/7500 REFUSED, 40 x 200x2000 ACCEPTED — 2000 is
+# accepted at twice the image count that killed the run. The vendor doc states the same
+# rule: "If a single API request contains more than 20 images, a stricter per-image
+# dimension limit applies ... resize each image so that neither dimension exceeds
+# 2000 px, or keep the request to 20 or fewer image and document blocks."
+#
+# Why the web path clamps here unconditionally rather than counting images: an image is
+# encoded ONCE, at attach time, and then lives in the conversation history that every
+# later request replays. By the time a request is "many-image", the earlier images are
+# already inside it at their original size — a clamp that only tightened on the 21st
+# image would still send the first twenty oversized, and still be refused. Clamping every
+# web view image is therefore the only version that provably survives accumulation, and
+# it costs little real fidelity: providers downscale to their own long-edge budget anyway
+# (Claude's high-resolution tier renders at most a 2576px long edge), so a whole-page
+# capture was never actually being judged at 7500px.
+_VISION_MANY_IMAGE_MAX_PX = 2000
 
 
 def _latest_preview_png(tools: LumenDesignTools) -> Optional[Path]:
@@ -47,8 +87,16 @@ def _latest_preview_png(tools: LumenDesignTools) -> Optional[Path]:
 
 
 def _asset_manifest_ids(tools: LumenDesignTools) -> list[str]:
-    manifest = tools.config.brand_kit_assets or {}
-    return sorted(manifest.keys())
+    """Every asset id this turn can view: the kit's, then the workspace library's.
+
+    W1.1: the library half is the only DISCOVERY surface a scene turn has for a
+    pre-generated asset — the manifest is looked up by id, never rendered into the
+    prompt, so without it an agent that mistypes an id is told nothing useful.
+    The API caps the library manifest (see `SCENE_TURN_ASSET_LIBRARY_MAX`), so this
+    list stays short by construction."""
+    kit = tools.config.brand_kit_assets or {}
+    library = tools.config.asset_library or {}
+    return sorted(kit.keys()) + sorted(set(library.keys()) - set(kit.keys()))
 
 
 def _reference_entries(tools: LumenDesignTools) -> list[tuple[int, str, dict]]:
@@ -68,37 +116,63 @@ def _reference_target_labels(tools: LumenDesignTools) -> list[str]:
     return [f"reference:{i}" for (i, _aid, _e) in _reference_entries(tools)]
 
 
-def _normalize_image_bytes(raw: bytes) -> tuple[bytes, str]:
-    """Return (bytes, mime) for `raw`, upscaling to `_VISION_MIN_PX` on the short
-    side when either dimension is below the vision-provider minimum.
+def _normalize_image_bytes(raw: bytes, max_px: int = _VISION_MAX_PX) -> tuple[bytes, str]:
+    """Return (bytes, mime) for `raw`, clamped into the vision provider's accepted
+    size band: at least `_VISION_MIN_PX` on the short side, at most `max_px` on the
+    long side.
 
-    Sub-minimum images are magnified with nearest-neighbor (aspect preserved) so
-    a provider can never reject the block; already-large images pass through
-    unchanged. Raises on unreadable/corrupt bytes — the caller contains it into
-    an honest error string so the turn continues.
+    `max_px` defaults to the SINGLE-image ceiling `_VISION_MAX_PX`. Callers whose
+    images accumulate in one request — the website harness, whose review conversation
+    carries three widths per render plus state captures — pass
+    `_VISION_MANY_IMAGE_MAX_PX` instead.
+
+    Sub-minimum images are magnified with nearest-neighbor and over-ceiling ones are
+    reduced with LANCZOS — aspect preserved either way — so a provider can never
+    reject the block; an image already inside the band passes through byte-identical.
+    Raises on unreadable/corrupt bytes — the caller contains it into an honest error
+    string so the turn continues.
+
+    The ceiling wins when a single image violates both bounds (an extreme sliver
+    whose long side is over the ceiling and whose short side is still under the
+    floor after the reduction): the two bounds are then unsatisfiable together at a
+    fixed aspect, and the over-ceiling refusal is the one realistic page captures hit.
     """
     from PIL import Image
 
     with Image.open(io.BytesIO(raw)) as img:
         img.load()
         width, height = img.size
-        if width >= _VISION_MIN_PX and height >= _VISION_MIN_PX:
-            return raw, "image/png"
-        scale = _VISION_MIN_PX / float(min(width, height))
-        new_size = (max(_VISION_MIN_PX, round(width * scale)), max(_VISION_MIN_PX, round(height * scale)))
+        scale = 1.0
+        if min(width, height) < _VISION_MIN_PX:
+            scale = _VISION_MIN_PX / float(min(width, height))
+        if max(width, height) * scale > max_px:
+            scale = max_px / float(max(width, height))
+        if scale == 1.0:
+            return raw, "image/png"  # already inside the band — untouched bytes
+        if scale > 1.0:
+            new_size = (max(_VISION_MIN_PX, round(width * scale)), max(_VISION_MIN_PX, round(height * scale)))
+            resample = Image.NEAREST
+        else:
+            new_size = (
+                max(1, min(max_px, round(width * scale))),
+                max(1, min(max_px, round(height * scale))),
+            )
+            resample = Image.LANCZOS
         if img.mode not in ("RGB", "RGBA"):
             img = img.convert("RGBA")
-        upscaled = img.resize(new_size, Image.NEAREST)
+        resized = img.resize(new_size, resample)
         buffer = io.BytesIO()
-        upscaled.save(buffer, format="PNG")
+        resized.save(buffer, format="PNG")
         return buffer.getvalue(), "image/png"
 
 
-def _image_block(png_path: Path) -> dict:
-    """Build a base64 image block, normalizing sub-minimum images to the vision
-    floor so the block cannot be rejected downstream. May raise on unreadable/
-    corrupt bytes — `_view_content` is wrapped to contain that into a string."""
-    normalized, mime = _normalize_image_bytes(png_path.read_bytes())
+def _image_block(png_path: Path, max_px: int = _VISION_MAX_PX) -> dict:
+    """Build a base64 image block, normalizing the image into the vision provider's
+    accepted size band so the block cannot be rejected downstream. `max_px` is the
+    long-side ceiling to clamp to (see `_normalize_image_bytes`). May raise on
+    unreadable/corrupt bytes — `_view_content` is wrapped to contain that into a
+    string."""
+    normalized, mime = _normalize_image_bytes(png_path.read_bytes(), max_px=max_px)
     data = base64.b64encode(normalized).decode("ascii")
     return {
         "type": "image",
@@ -169,11 +243,28 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
 
     if target.startswith("asset:"):
         asset_id = target[len("asset:"):]
-        manifest = tools.config.brand_kit_assets or {}
-        entry = manifest.get(asset_id)
+        # W1.1: two by-value manifests answer `asset:<id>` — the attached kit's
+        # assets, then the workspace ASSET LIBRARY. Before this, only the kit was
+        # consulted, so a pre-generated `asset_gen_*` background was invisible to a
+        # scene turn however real it was in the database (Apollo POC 2026-08-26,
+        # `.context/ref-ads-pilot-apollo-report.md` §6.1). Kit first: an id in both
+        # is a kit asset, and the kit entry carries the curated title/usage.
+        entry = (tools.config.brand_kit_assets or {}).get(asset_id)
+        if not isinstance(entry, dict):
+            entry = (tools.config.asset_library or {}).get(asset_id)
         resolved = None
+        record = entry.get("record") or {} if isinstance(entry, dict) else {}
         if isinstance(entry, dict):
-            resolved = tools._asset_preview_path(entry.get("record") or {})
+            resolved = tools._asset_preview_path(record)
+        if resolved is None and record:
+            # D3: a vector whose stored thumbnail is not pixels has no preview to
+            # resolve — rasterize it through the engine, once, and cache it. The
+            # agent must never place a mark it cannot look at (apollo.io, W5).
+            rasterized = rasterize_vector_preview(
+                tools.core, record, asset_id, tools.config.effective_asset_store_root
+            )
+            if rasterized is not None:
+                resolved = (str(rasterized), None, None)
         if resolved is None:
             available = _asset_manifest_ids(tools)
             content = [
@@ -272,9 +363,10 @@ def make_view_tool(tools: LumenDesignTools):
     @tool
     def view(target: str) -> list:
         """Look at real pixels. target="preview" returns the latest rendered PNG;
-        target="asset:<asset_id>" returns that kit asset's source preview
-        thumbnail. Returns image content so you can judge by looking, not by
-        guessing from metadata."""
+        target="asset:<asset_id>" returns that asset's source preview thumbnail —
+        a brand-kit asset OR one from this workspace's asset library (including
+        pre-generated imagery). Returns image content so you can judge by looking,
+        not by guessing from metadata."""
         # Containment (sweep A2): NOTHING inside view() — a provider-rejectable
         # image, an unreadable file, a corrupt/undecodable thumbnail — may
         # propagate as an unhandled exception and kill the turn unfinalized. On

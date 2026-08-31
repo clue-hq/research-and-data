@@ -1,8 +1,19 @@
 "use client";
 
+import Image from "next/image";
 import { MessageResponse } from "@/components/ai-elements/message-response";
 import { unavailableMessageBody } from "../model/chat-message";
+import type { GateAnswerDisplay } from "../model/chat-gate";
+import {
+  designReferenceThumbnailUrl,
+  gateResponseBodyDisplay,
+  humanizeMessageBody,
+} from "../model/chat-message-presentation";
 import type { TranscriptMessage } from "../model/chat-transcript";
+import {
+  DESIGN_GENERATION_WAIT_NOTICE,
+  designTurnFailureNotice,
+} from "../model/design-leg";
 import type { ProjectEntity } from "../model/project-workspace";
 import { ChatMessagePartView, type ChatPartActions } from "./chat-message-part";
 import { ProjectIcon } from "./project-icon";
@@ -16,15 +27,19 @@ import styles from "./project-flow.module.css";
  * difference between this component and the phase-enum transcript it replaces.
  */
 export function ChatTranscript({
+  activeUserMessageId = null,
   actions,
   assistantName = "Clue",
   contextEntities = [],
+  gateAnswerForTurn,
   messages,
   onInspectTurn,
 }: {
+  activeUserMessageId?: string | null;
   actions: ChatPartActions;
   assistantName?: string;
   contextEntities?: readonly ProjectEntity[];
+  gateAnswerForTurn?: (turnId: string) => GateAnswerDisplay | null;
   messages: readonly TranscriptMessage[];
   /**
    * The dev-lens affordance, or absent.
@@ -39,9 +54,23 @@ export function ChatTranscript({
 }) {
   return (
     <div className={styles.transcript} role="log">
-      {messages.map((message) => (
-        <article
+      {messages.map((message) => {
+        const gateAnswer =
+          message.role === "user"
+            ? (gateAnswerForTurn?.(message.turnId) ??
+              gateResponseBodyDisplay(message.body))
+            : null;
+        const displayBody =
+          gateAnswer === null && message.body !== null
+            ? humanizeMessageBody(message.body)
+            : null;
+
+        return (
+          <article
           className={styles.projectMessage}
+          data-active-message={
+            message.id === activeUserMessageId ? "true" : undefined
+          }
           data-optimistic={message.optimistic || undefined}
           data-role={message.role}
           data-state={message.state}
@@ -53,7 +82,7 @@ export function ChatTranscript({
               {assistantName}
               {onInspectTurn && !message.optimistic ? (
                 <button
-                  aria-label={`Inspect turn ${message.turnId}`}
+                  aria-label="Inspect response details"
                   className={styles.turnLensTrigger}
                   onClick={() => onInspectTurn(message.turnId)}
                   type="button"
@@ -75,20 +104,62 @@ export function ChatTranscript({
                         candidate.id === ref.objectId &&
                         candidate.type === ref.objectType,
                     );
+                    const fallbackLabel =
+                      ref.objectType === "contact"
+                        ? "Selected contact"
+                        : ref.objectType === "account"
+                          ? "Selected account"
+                          : ref.objectType === "design_node"
+                            ? "Selected design element"
+                            : ref.objectType === "design_document"
+                              ? "Design"
+                              : "Reference image";
+                    const label = entity?.label ?? ref.label ?? fallbackLabel;
                     return (
-                      <span key={`${ref.ordinal}:${ref.objectType}:${ref.objectId}`}>
-                        @{entity?.label ?? `${ref.objectType} ${ref.objectId}`}
+                      <span
+                        className={
+                          ref.objectType === "design_asset"
+                            ? styles.messageReferenceImage
+                            : undefined
+                        }
+                        key={`${ref.ordinal}:${ref.objectType}:${ref.objectId}`}
+                        title={label}
+                      >
+                        {ref.objectType === "design_asset" && ref.thumbnailDigest ? (
+                          <Image
+                            alt=""
+                            className={styles.messageReferenceThumbnail}
+                            height={18}
+                            src={designReferenceThumbnailUrl(ref.thumbnailDigest)}
+                            unoptimized
+                            width={18}
+                          />
+                        ) : null}
+                        {ref.objectType === "account" || ref.objectType === "contact"
+                          ? `@${label}`
+                          : label}
                       </span>
                     );
                   })}
               </div>
             ) : null}
-            {message.body !== null ? (
-              <div className={styles.messageText}>
-                <MessageResponse>{message.body}</MessageResponse>
+            {gateAnswer !== null ? (
+              <div className={styles.gateAnswerReceipt} role="status">
+                <ProjectIcon name="status-check" size={14} />
+                <span>{gateAnswer.label}</span>
+                {gateAnswer.detail !== null ? (
+                  <small>{`Requested changes: ${gateAnswer.detail}`}</small>
+                ) : null}
               </div>
             ) : null}
-            {message.body === null && message.bodyUnavailableReason ? (
+            {displayBody !== null ? (
+              <div className={styles.messageText}>
+                <MessageResponse>{displayBody}</MessageResponse>
+              </div>
+            ) : null}
+            {gateAnswer === null &&
+            message.body === null &&
+            message.bodyUnavailableReason ? (
               // An erased, oversized, or non-text body is reported. An empty
               // string here would render as a message nobody wrote.
               <p className={styles.messageText} role="note">
@@ -128,6 +199,10 @@ export function ChatTranscript({
             {message.role === "assistant" &&
             message.state === "failed" &&
             message.body === null &&
+            // A typed failure now renders its own sentence below, so the
+            // generic placeholder would only say the same thing worse. It
+            // exists for the failures that carry no code at all.
+            message.failureCode === null &&
             !message.parts.some(
               (part) =>
                 part.kind === "reasoning" ||
@@ -137,14 +212,43 @@ export function ChatTranscript({
                 Response failed
               </p>
             ) : null}
-            {message.failureCode ? (
-              <p className={styles.messageText} role="note">
-                {message.failureCode}
+            {message.generatingDesign ? (
+              // Genweb slice 3, founder requirements 4 + 5: the one honest
+              // thing this surface knows about a running design turn. No
+              // percentage, no ETA, no progress bar — none of those would be
+              // derived from anything.
+              <p className={styles.reasoningStatus} role="status">
+                {DESIGN_GENERATION_WAIT_NOTICE}
               </p>
             ) : null}
+            {message.failureCode ? (
+              // Requirement 7: a typed leg refusal renders as a sentence. An
+              // unrecognized code still renders as itself — true, if terse —
+              // rather than as an invented explanation.
+              //
+              // Above the leg lines on purpose: a failed design turn still
+              // emits `leg.awaiting_user` (the leg genuinely came back), and
+              // "what happened" has to be read before "what now".
+              <p className={styles.messageText} role="note">
+                {designTurnFailureNotice(message.failureCode)}
+              </p>
+            ) : null}
+            {message.legNotices.map((notice, index) => (
+              // The design leg's durable lifecycle, in the transcript's own
+              // status-line pattern — the same element the queue and Stop
+              // receipts use. No new component, and no speaker chip.
+              <p
+                className={styles.reasoningStatus}
+                key={`${index}:${notice}`}
+                role="status"
+              >
+                {notice}
+              </p>
+            ))}
           </div>
-        </article>
-      ))}
+          </article>
+        );
+      })}
     </div>
   );
 }

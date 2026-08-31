@@ -67,6 +67,7 @@ from clue_fleet import (
     EntityResearchRunEnvelope,
     launch_entity_research_run,
 )
+from clue_obs import get_logger
 from clue_research.claimstore import WorkspaceScope, claims_by_ids, record_run_lineage
 from clue_research.directives import effective_account_research_directive, get_research_directive
 from clue_research.durable import (
@@ -88,6 +89,8 @@ from clue_research.profiling.committee import (
     ROLE_ON_COMMITTEE,
 )
 from clue_research.profiling.committee.admission import DISCOVERY_PROVENANCE_FIELD
+
+log = get_logger("clue_api.contact_research_fleet_launch")
 
 Money = Annotated[Decimal, Field(ge=0)]
 
@@ -675,10 +678,21 @@ class ContactResearchSelectionApprover:
 
 
 class ContactResearchFleetLauncher:
-    """Project one active approved selection into a separately launched R2 contact run."""
+    """Project one active approved selection into a separately launched R2 contact run.
 
-    def __init__(self, *, conn_factory: ConnFactory = transaction) -> None:
+    ``enforce_budget`` is ``Settings.budget_controls_enabled`` (FI pilot budget-controls); with it
+    False the caller-supplied budget echo and the remaining project headroom no longer refuse a
+    launch the human already approved. The per-target caps still ride the selection and every job is
+    still launched with its own ``budget_cap_cents``, so spend stays attributed and recorded."""
+
+    def __init__(
+        self,
+        *,
+        conn_factory: ConnFactory = transaction,
+        enforce_budget: bool = True,
+    ) -> None:
         self._conn_factory = conn_factory
+        self._enforce_budget = enforce_budget
 
     async def launch(
         self,
@@ -800,18 +814,33 @@ class ContactResearchFleetLauncher:
                     "contact launch selection is outside its account/project authority"
                 )
             estimated = body.execution_budget_cap_cents
-            if (
-                request.expected_estimated_cost_cents != estimated
-                or request.approved_budget_cap_cents != estimated
-            ):
-                raise ContactResearchFleetLaunchError(
-                    "contact launch budget must equal the reviewed exact target budget sum"
-                )
-            if project_run.budget_cap_cents is not None and request.approved_budget_cap_cents > max(
-                Decimal(0), project_run.budget_cap_cents - project_run.spent_cents
-            ):
-                raise ContactResearchFleetLaunchError(
-                    "contact launch exceeds remaining project budget headroom"
+            if self._enforce_budget:
+                if (
+                    request.expected_estimated_cost_cents != estimated
+                    or request.approved_budget_cap_cents != estimated
+                ):
+                    raise ContactResearchFleetLaunchError(
+                        "contact launch budget must equal the reviewed exact target budget sum"
+                    )
+                if (
+                    project_run.budget_cap_cents is not None
+                    and request.approved_budget_cap_cents
+                    > max(Decimal(0), project_run.budget_cap_cents - project_run.spent_cents)
+                ):
+                    raise ContactResearchFleetLaunchError(
+                        "contact launch exceeds remaining project budget headroom"
+                    )
+            else:
+                # FI pilot budget-controls: the selection's own ``execution_budget_cap_cents`` is
+                # still the authority every job below is launched with — the caller's echo simply
+                # stops gating it, because with the amount withheld nobody has a number to echo.
+                log.info(
+                    "contact_research.launch.budget_controls_disabled",
+                    workspace_id=request.workspace_id,
+                    selection_id=str(request.selection_id),
+                    selection_budget_cents=str(estimated),
+                    caller_expected_cents=str(request.expected_estimated_cost_cents),
+                    approved_budget_cap_cents=str(request.approved_budget_cap_cents),
                 )
             research_run_id = uuid5(_RUN_NAMESPACE, request_sha)
             # FI-2 P2 (spec §3): attribute the contact research run to its project inside the launch
@@ -1040,7 +1069,13 @@ class ContactResearchFleetLauncher:
             envelope = EntityResearchRunEnvelope(
                 lifecycle=lifecycle,
                 jobs=tuple(jobs),
-                budget_cap_cents=request.approved_budget_cap_cents,
+                # See the account launcher: with controls off the caller's approved cap is ignored,
+                # so the run-level cap is the selection's own reviewed target sum — the authority
+                # actually issued — rather than a number that could re-refuse the launch through the
+                # envelope's "a job budget cannot exceed its run-wide cap" invariant.
+                budget_cap_cents=(
+                    request.approved_budget_cap_cents if self._enforce_budget else estimated
+                ),
                 concurrency_limit=request.concurrency_limit,
             )
             await launch_entity_research_run(conn, envelope)

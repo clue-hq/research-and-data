@@ -99,6 +99,7 @@ from clue_research.claimstore import insert_claim, record_run_lineage, register_
 from clue_research.durable.discovery import capture_discovery_artifact
 from clue_research.identity import insert_account_entity
 from clue_research.sources import seed_source_manifests
+from clue_research.stage0 import load_client_knowledge_pack
 from clue_spine import create_brand, create_product
 from clue_storage import FsStorage
 from tests._workspace import seed_workspace
@@ -189,6 +190,7 @@ async def _seed_p1_research(
     """P1 discovers acme under ICP-A and researches it; P2's job arrives later."""
 
     workspace_id = await seed_workspace(conn, "fi2-s3-t2")
+    await load_client_knowledge_pack(conn)
     await seed_source_manifests(conn)
     brand = await create_brand(conn, workspace_id=workspace_id, name=f"Brand {uuid4().hex[:6]}")
     product = await create_product(
@@ -816,6 +818,20 @@ def test_fi2_61_a_job_that_calls_no_provider_at_all_finalizes_cleanly(
             assert Decimal(spent) == Decimal("0")
 
     run_async(scenario())
+
+
+def test_account_only_scope_does_not_create_a_false_committee_review_flag() -> None:
+    status, flags = AccountResearchStateStore._committee_coverage_status(
+        committee_requested=False,
+        result_count=0,
+        member_count=0,
+        scope_count=0,
+        ambiguous_count=0,
+        confirmed_empty_count=0,
+    )
+
+    assert status == "complete"
+    assert flags == ()
 
 
 def test_fi2_61_an_empty_close_is_refused_over_a_field_that_was_not_borrowed(

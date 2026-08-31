@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -38,6 +38,7 @@ from pydantic import JsonValue
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.client_context_binding import bind_workspace_client
 from clue_api.frontend_read import FRONTEND_READ_PREFIX
 from clue_api.projections_app import create_projections_app
 from clue_config import load_settings
@@ -80,6 +81,7 @@ from clue_research.durable import (
     insert_account_run,
     save_references,
 )
+from clue_research.icp import load_starter_packs
 from clue_research.identity import (
     insert_account_entity,
     insert_contact_entity,
@@ -87,9 +89,15 @@ from clue_research.identity import (
     stamp_reuse,
 )
 from clue_research.membership import ensure_project_account
-from clue_research.narrative import VALUE_NARRATIVE, load_narrative_pack
+from clue_research.narrative import (
+    ACCOUNT_SUMMARY,
+    VALUE_NARRATIVE,
+    load_narrative_pack,
+    load_prose_pack,
+)
 from clue_research.profiling.committee import PERSONA, ROLE_ON_COMMITTEE, load_committee_pack
 from clue_spine import Project
+from clue_storage import artifact_key, content_address, record_artifact
 from tests._workspace import seed_project, seed_workspace
 from tests.db.conftest import run_async
 from tests.fleet.entity_research_r2_helpers import lifecycle_fixture
@@ -113,17 +121,45 @@ _INSIGHT_FIELD = "fi2read.campaign_insight"
 #: arbitrary key; ``account.recent_funding`` is a real registered (``project_neutral``) field, so
 #: the "unresolved until answered" test can answer it with a real claim.
 _REQUESTED_FIELD = "account.recent_funding"
+_EMPLOYEE_ARTIFACT_BODY = b"Acme Detail reports 1,200 employees."
+_EMPLOYEE_ARTIFACT_KEY = artifact_key(_WS, content_address(_EMPLOYEE_ARTIFACT_BODY))
 
 
 # --- harness --------------------------------------------------------------------------------
 
 
-def _app(conn: AsyncConnection):
+class _MemoryStorage:
+    def __init__(self, blobs: dict[str, bytes] | None = None) -> None:
+        self.blobs = dict(blobs or {})
+
+    async def put(self, key: str, data: bytes, *, media_type: str) -> None:
+        del media_type
+        self.blobs[key] = data
+
+    async def get(self, key: str) -> bytes:
+        return self.blobs[key]
+
+    async def delete(self, key: str) -> None:
+        self.blobs.pop(key, None)
+
+    async def exists(self, key: str) -> bool:
+        return key in self.blobs
+
+    async def presign(self, key: str, *, expires_in: int = 3600) -> str:
+        raise AssertionError(f"must not presign {key!r} for {expires_in}s")
+
+    async def list_blobs(self) -> AsyncIterator[tuple[str, datetime]]:
+        if False:
+            yield "", datetime.min.replace(tzinfo=UTC)
+
+
+def _app(conn: AsyncConnection, *, evidence_storage: _MemoryStorage | None = None):
     return create_projections_app(
         surface=None,  # type: ignore[arg-type]
         tool_invoker=None,  # type: ignore[arg-type]
         settings=load_settings(_env_file=None, frontend_read_enabled=True),
         conn_factory=conn_session_factory(conn),
+        ingestion_storage=evidence_storage,
         manage_db_lifespan=False,
     )
 
@@ -133,9 +169,13 @@ def _client(app) -> httpx.AsyncClient:
 
 
 async def _get(
-    conn: AsyncConnection, account_id: uuid.UUID | str, *, workspace_id: str = _WS
+    conn: AsyncConnection,
+    account_id: uuid.UUID | str,
+    *,
+    workspace_id: str = _WS,
+    evidence_storage: _MemoryStorage | None = None,
 ) -> httpx.Response:
-    async with _client(_app(conn)) as client:
+    async with _client(_app(conn, evidence_storage=evidence_storage)) as client:
         return await client.get(f"{_BASE}/{account_id}", headers={"X-Workspace-Id": workspace_id})
 
 
@@ -233,7 +273,22 @@ async def _account_claim(
     source_key: str = "seed_source",
     private: bool = False,
     observed_at: datetime | None = None,
-) -> None:
+    artifact_body: bytes | None = None,
+) -> uuid.UUID:
+    retained_key: str | None = None
+    if artifact_body is not None:
+        digest = content_address(artifact_body)
+        retained_key = artifact_key(_WS, digest)
+        await record_artifact(
+            conn,
+            storage_key=retained_key,
+            workspace_id=_WS,
+            content_sha256=digest,
+            media_type="text/plain",
+            size_bytes=len(artifact_body),
+            source_key=source_key,
+            source_url="https://example.test/facts",
+        )
     claim = account_claim(
         entity_id=account_id,
         field_key=field_key,
@@ -246,7 +301,7 @@ async def _account_claim(
         source_url="https://example.test/facts",
         evidence_span="seeded",
         observed_at=observed_at,
-    ).model_copy(update={"source_key": source_key})
+    ).model_copy(update={"source_key": source_key, "artifact_key": retained_key})
     # The reuse class is stamped explicitly rather than inferred: ``account.value_narrative`` and
     # the test pack field both declare ``tenant_private`` at the field, and the default
     # ``stamp_reuse`` prefix policy does not match either (M12.1 injects its own policy for the
@@ -255,6 +310,45 @@ async def _account_claim(
         claim.model_copy(update={"reuse_scope": ReuseScope.TENANT_PRIVATE, "workspace_id": _WS})
         if private
         else stamp_reuse(claim, workspace_id=None)
+    )
+    await insert_claim(conn, claim)
+    return uuid.UUID(str(claim.id))
+
+
+async def _account_summary_claim(
+    conn: AsyncConnection,
+    *,
+    account_id: EntityId,
+    paragraphs: Sequence[str],
+    status: VerificationStatus = VerificationStatus.VERIFIED,
+    research_outcome: str = "completed",
+) -> None:
+    """One Lane-E-shaped summary claim with its real tenant-private/verification stamps."""
+
+    claim = account_claim(
+        entity_id=account_id,
+        field_key=ACCOUNT_SUMMARY,
+        value_json={
+            "paragraphs": list(paragraphs),
+            "prompt_version": "account_summary_v1",
+            "synthesized_from_job_id": str(uuid.uuid4()),
+            "research_outcome": research_outcome,
+            "project_id": None,
+        },
+        source_tier=4,
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        confidence=Confidence(0.7),
+        run_id=await _run(conn, kind="entity_research", project_id=None),
+        research_mode=ResearchMode.ACCOUNT_PROFILING,
+        source_url="clue://narrative/prose",
+        evidence_span="verified account facts",
+    ).model_copy(
+        update={
+            "source_key": "llm_synthesis",
+            "verification_status": status,
+            "reuse_scope": ReuseScope.TENANT_PRIVATE,
+            "workspace_id": _WS,
+        }
     )
     await insert_claim(conn, claim)
 
@@ -609,7 +703,9 @@ class _Fixture:
 async def _build(conn: AsyncConnection) -> _Fixture:
     await seed_workspace(conn, _WS)
     await load_narrative_pack(conn)
+    await load_prose_pack(conn)
     await load_committee_pack(conn)
+    await load_starter_packs(conn)
     await _register_insight_field(conn)
 
     project_a = await seed_project(conn, _WS, name="Detail project A")
@@ -643,6 +739,7 @@ async def _build(conn: AsyncConnection) -> _Fixture:
         run_id=await _run(conn, kind="scoring", project_id=project_a.project_id),
         source_key="clearbit",
         observed_at=base,
+        artifact_body=_EMPLOYEE_ARTIFACT_BODY,
     )
     await _account_claim(
         conn,
@@ -809,6 +906,60 @@ def test_the_identity_block_comes_from_the_entity_row() -> None:
 # --- neutral vs relative --------------------------------------------------------------------
 
 
+def test_account_summary_is_a_typed_current_claim_not_a_generic_fact() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            await _account_summary_claim(
+                conn,
+                account_id=fixture.acme,
+                paragraphs=(
+                    "Acme operates a multi-site care network.",
+                    "Its current research record highlights expansion and staffing pressure.",
+                ),
+            )
+
+            payload = (await _get(conn, fixture.acme)).json()
+            assert payload["summary"] == {
+                "state": "available",
+                "paragraphs": [
+                    "Acme operates a multi-site care network.",
+                    "Its current research record highlights expansion and staffing pressure.",
+                ],
+                "researchOutcome": "completed",
+            }
+            assert ACCOUNT_SUMMARY not in _facts(payload)
+
+    run_async(scenario())
+
+
+def test_account_summary_distinguishes_not_composed_from_restricted() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            assert (await _get(conn, fixture.acme)).json()["summary"] == {
+                "state": "not_composed",
+                "paragraphs": [],
+                "researchOutcome": None,
+            }
+
+            await _account_summary_claim(
+                conn,
+                account_id=fixture.acme,
+                paragraphs=("This rejected prose must never be served.",),
+                status=VerificationStatus.REJECTED,
+            )
+            summary = (await _get(conn, fixture.acme)).json()["summary"]
+            assert summary == {
+                "state": "restricted",
+                "paragraphs": [],
+                "researchOutcome": None,
+            }
+            assert "rejected prose" not in str(summary)
+
+    run_async(scenario())
+
+
 def test_neutral_facts_are_served_once_not_once_per_project() -> None:
     """A ``project_neutral`` field is workspace truth: it serves from the canonical merge, at the
     top level, regardless of which project's run happened to write it."""
@@ -828,12 +979,62 @@ def test_neutral_facts_are_served_once_not_once_per_project() -> None:
             assert facts["core.employee_count"]["freshness"] in {"fresh", "stale"}
             assert facts["core.employee_count"]["provider"] == "clearbit"
             assert facts["core.employee_count"]["observedAt"].startswith("2026-08-01")
+            evidence = facts["core.employee_count"]["evidence"]
+            assert evidence["fieldKey"] == "core.employee_count"
+            assert evidence["sourceTitle"] == "clearbit"
+            assert evidence["sourceUrl"] == "https://example.test/facts"
+            assert evidence["evidenceSpan"] == "seeded"
+            assert evidence["confidence"] == pytest.approx(0.9)
+            assert evidence["freshness"] == facts["core.employee_count"]["freshness"]
+            assert evidence["protectedArtifactAvailable"] is True
+            assert evidence["claimId"]
 
             # ...and no neutral field leaks into a project section.
             for section in payload["projectSections"]:
                 keys = {entry["fieldKey"] for entry in section["insights"]}
                 assert "core.employee_count" not in keys
                 assert "core.revenue_band" not in keys
+
+    run_async(scenario())
+
+
+def test_retained_account_evidence_is_streamed_after_current_authorization_only() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            storage = _MemoryStorage({_EMPLOYEE_ARTIFACT_KEY: _EMPLOYEE_ARTIFACT_BODY})
+            payload = (await _get(conn, fixture.acme, evidence_storage=storage)).json()
+            evidence = _facts(payload)["core.employee_count"]["evidence"]
+            assert evidence["protectedArtifactAvailable"] is True
+            assert _EMPLOYEE_ARTIFACT_KEY not in str(payload)
+
+            path = f"{_BASE}/{fixture.acme}/evidence/{evidence['claimId']}"
+            async with _client(_app(conn, evidence_storage=storage)) as client:
+                response = await client.get(path, headers={"X-Workspace-Id": _WS})
+                crossed = await client.get(path, headers={"X-Workspace-Id": _OTHER_WS})
+                unknown = await client.get(
+                    f"{_BASE}/{fixture.acme}/evidence/{uuid.uuid4()}",
+                    headers={"X-Workspace-Id": _WS},
+                )
+
+            assert response.status_code == 200
+            assert response.content == _EMPLOYEE_ARTIFACT_BODY
+            assert response.headers["cache-control"] == "private, no-store"
+            assert response.headers["content-security-policy"].startswith("sandbox")
+            assert response.headers["x-content-type-options"] == "nosniff"
+            assert "signed" not in str(response.headers).lower()
+            assert crossed.status_code == 404
+            assert crossed.json()["error"]["code"] == "EVIDENCE_NOT_FOUND"
+            assert unknown.status_code == 404
+
+            await conn.execute(
+                text("UPDATE artifact SET erased_at=now() WHERE storage_key=:key"),
+                {"key": _EMPLOYEE_ARTIFACT_KEY},
+            )
+            async with _client(_app(conn, evidence_storage=storage)) as client:
+                erased = await client.get(path, headers={"X-Workspace-Id": _WS})
+            assert erased.status_code == 404
+            assert erased.json()["error"]["code"] == "EVIDENCE_NOT_FOUND"
 
     run_async(scenario())
 
@@ -860,6 +1061,10 @@ def test_each_projects_relative_claims_stay_inside_its_own_section() -> None:
 
             assert _values(section_a["insights"]) == ["insight for A"]
             assert _values(section_b["insights"]) == ["insight for B"]
+            for insight in (*section_a["insights"], *section_b["insights"]):
+                assert insight["evidence"]["fieldKey"] == _INSIGHT_FIELD
+                assert insight["evidence"]["sourceUrl"] == "https://example.test/facts"
+                assert insight["evidence"]["evidenceSpan"] == "seeded"
 
             assert [entry["value"]["argument"] for entry in section_a["narratives"]] == [
                 "narrative for A"
@@ -1098,6 +1303,28 @@ def test_an_unknown_id_is_an_enveloped_404() -> None:
     run_async(scenario())
 
 
+def test_the_workspace_client_cannot_be_opened_as_a_target_account() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await seed_workspace(conn, _WS)
+            client = await _account(
+                conn,
+                name="Insight Health",
+                domain="insighthealth.ai",
+            )
+            await bind_workspace_client(
+                conn,
+                workspace_id=_WS,
+                client_entity_id=client,
+            )
+
+            response = await _get(conn, client)
+            assert response.status_code == 404
+            assert response.json()["error"]["code"] == "ACCOUNT_NOT_FOUND"
+
+    run_async(scenario())
+
+
 def test_an_account_in_another_workspace_is_a_404_not_a_leak() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -1168,6 +1395,41 @@ def test_coverage_reports_only_the_accounts_own_unresolved_fields() -> None:
             coverage = (await _get(conn, subject)).json()["coverage"]
             assert coverage["unresolvedFieldKeys"] == [_REQUESTED_FIELD]
             assert "contact.current_title" not in coverage["unresolvedFieldKeys"]
+
+    run_async(scenario())
+
+
+def test_unresolved_pack_fields_carry_their_registry_description() -> None:
+    """A new industry-pack key needs no frontend label map: its registry row explains the gap."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            subject = await _account(conn, name="Pack gap", domain="pack-gap.test")
+            await ensure_project_account(
+                conn,
+                workspace_id=_WS,
+                project_id=fixture.project_a.project_id,
+                account_entity_id=subject,
+                added_via="manual",
+            )
+            await _plant_research_result_fields(
+                conn,
+                account_id=subject,
+                project_id=fixture.project_a.project_id,
+                fields=(("healthcare.npi", "account", subject),),
+            )
+
+            coverage = (await _get(conn, subject)).json()["coverage"]
+            assert coverage["unresolvedFieldKeys"] == ["healthcare.npi"]
+            assert coverage["unresolvedFields"] == [
+                {
+                    "fieldKey": "healthcare.npi",
+                    "description": (
+                        "National Provider Identifier (deterministic registry id; tier-1)."
+                    ),
+                }
+            ]
 
     run_async(scenario())
 
@@ -1292,17 +1554,18 @@ def test_a_non_uuid_id_is_an_enveloped_validation_error() -> None:
 
 
 def test_the_committee_reader_is_not_the_ungoverned_identity_helper() -> None:
-    """FI-1 §4.5 ruling: the committee is read through ``ContactEligibilityResolver``, never
-    ``identity.contact_ids_for_account`` (which knows nothing about display governance)."""
+    """FI-1 §4.5 and Slice-3: Account detail delegates to the one governed committee seam."""
 
     from pathlib import Path
 
     import clue_api.frontend_read.account_detail as module
+    import clue_api.frontend_read.committee as committee
 
-    source = Path(module.__file__).read_text()
-    body = source.split('"""', 2)[2]
-    assert "contact_ids_for_account" not in body
-    assert "ContactEligibilityResolver" in body
+    body = Path(module.__file__).read_text().split('"""', 2)[2]
+    committee_body = Path(committee.__file__).read_text().split('"""', 2)[2]
+    assert "contact_ids_for_account" not in body + committee_body
+    assert "read_governed_committee" in body
+    assert "ContactEligibilityResolver" in committee_body
 
 
 def test_the_unattributed_section_is_absent_when_everything_is_attributed() -> None:
@@ -1390,6 +1653,8 @@ def test_the_route_is_absent_when_the_flag_is_off() -> None:
                     f"{_BASE}/{fixture.acme}", headers={"X-Workspace-Id": _WS}
                 )
             assert response.status_code == 404
+            assert response.json()["error"]["code"] == "NOT_FOUND"
+            assert response.json()["error"]["requestId"] == response.headers["X-Request-Id"]
 
     run_async(scenario())
 
@@ -1400,7 +1665,7 @@ def test_the_project_run_context_rule_is_latest_run_wins() -> None:
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
-            from clue_api.frontend_read.account_detail import latest_project_run_context
+            from clue_api.frontend_read.committee import latest_project_run_context
 
             fixture = await _build(conn)
             newer = new_project_run_id()

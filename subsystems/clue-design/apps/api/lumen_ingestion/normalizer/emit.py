@@ -14,11 +14,18 @@ import re
 
 from ..colorspace import hex_alpha
 from ..evidence import BrandEvidence, FontEvidence, ImageEvidence, LogoEvidence
+from ..logo_policy import allowed_backgrounds_for
+from .geometry import MEASURED_CONFIDENCE
 from .required import (
     REQUIRED_ASSET_TOKENS,
     REQUIRED_COLOR_TOKENS,
 )
-from .roles import DarkColorway, LightRoles, RoleAssignment
+from .roles import (
+    DECLARED_ROLE_CONFIDENCE,
+    DarkColorway,
+    LightRoles,
+    RoleAssignment,
+)
 
 _COLOR_ROLE_MAP = {
     "surface": "surface",
@@ -32,6 +39,47 @@ _COLOR_ROLE_MAP = {
 _PRINT_FONT_CAUTION = (
     "Font licensing was not verified at ingestion; confirm embeddability before print export."
 )
+
+
+#: D-F2 (ruled): a font ingested from a workspace's OWN brand material is embeddable on this
+#: platform, and the basis for that is the platform's Terms of Use — not a license we read off
+#: the site. The old hardcoded ``embeddable: False`` made the publish gate
+#: (``web_export._family_embeddable``) exclude every ingested family from every web export,
+#: so a brand's own site font never shipped on its own generated pages.
+#:
+#: THE BASIS IS ITS OWN FIELD SINCE F1.5. F0 had to encode it inside a ``restrictions`` line:
+#: the engine's ``FontLicense`` (``crates/lumen-core/src/brand.rs``) was a fixed struct, and
+#: while serde ACCEPTS an unknown key, ``validate_brand_kit`` deserializes into that struct and
+#: RE-SERIALIZES it — so the extra key never came back, and the pipeline persists what comes
+#: back. F1.5 added the real ``basis`` field, so the machine-readable answer now rides where a
+#: reader can find it and the round trip is pinned by
+#: ``test_the_basis_survives_the_real_rust_brand_kit_round_trip``.
+#:
+#: The human-readable caveat stays a restriction, because that is what it is: a limit on use,
+#: not an answer to "why may this embed".
+PLATFORM_TERMS_BASIS = "platform-terms"
+_PLATFORM_TERMS_LIMIT = (
+    "Embed permission for this workspace's own brand font comes from the platform Terms of "
+    "Use, not from a license verified at ingestion: off-platform or print reuse still requires "
+    "license confirmation, and the license name above is what the source declared."
+)
+
+
+def _workspace_brand_font_license(license_hint: str | None) -> dict:
+    """The license object for a font ingested from the workspace's own brand material.
+
+    The NAME stays exactly as honest as it was — whatever the source declared, or
+    ``"unknown"``. Nothing here fabricates an "OFL". ``subsettable`` stays ``False``: nobody
+    verified subsetting rights, and D-F2 ruled on embedding only.
+    """
+    return {
+        "name": license_hint or "unknown",
+        "embeddable": True,
+        "subsettable": False,
+        "source_url": None,
+        "basis": PLATFORM_TERMS_BASIS,
+        "restrictions": [_PLATFORM_TERMS_LIMIT],
+    }
 
 
 def _slug(name: str) -> str:
@@ -82,6 +130,7 @@ class KitBuilder:
         self.spacing: dict[str, dict] = {}
         self.radii: dict[str, dict] = {}
         self.stroke_widths: dict[str, dict] = {}
+        self.shadows: dict[str, dict] = {}
         self.opacity: dict[str, dict] = {}
         self.asset_tokens: dict[str, dict] = {}
         self.aliases: dict[str, dict] = {}
@@ -101,14 +150,25 @@ class KitBuilder:
         dark_hex: str | None,
         *,
         record_report: bool = True,
+        confidence: float | None = None,
+        description: str | None = None,
     ) -> None:
-        confidence = _confidence_for(assignment.basis)
+        """Emit one color token.
+
+        `confidence` / `description` override the basis-derived defaults for a
+        color whose story the three bases do not tell — a MEASURED band surface
+        sits at 0.8 between "observed swatch" and "derived", and carries the
+        human context of what recurred (`bands.py`). Both default to today's
+        behaviour, so every existing caller emits byte-identical JSON.
+        """
+        if confidence is None:
+            confidence = _confidence_for(assignment.basis)
         self.confidence_samples.append(confidence)
         modes = {"theme.dark": _color_value(dark_hex)} if dark_hex else {}
         self.colors[path] = {
             "value": _mode_value(_color_value(assignment.hex), modes),
             "role": _color_role(path),
-            "description": None,
+            "description": description,
             "provenance": _provenance(assignment.provenance, confidence),
         }
         if record_report:
@@ -165,14 +225,48 @@ class KitBuilder:
 
     # --- numbers --------------------------------------------------------
 
-    def add_numbers(self, target: dict, values: dict[str, dict], role: str, source: str) -> None:
-        confidence = _confidence_for("derived")
+    def add_numbers(
+        self,
+        target: dict,
+        values: dict[str, dict],
+        role: str,
+        source: str,
+        measured: dict[str, str] | None = None,
+    ) -> None:
+        """Emit one number-scale group.
+
+        `measured` (design-brief slice 2) maps a token path to the evidence
+        pointer that measured it off the brand's live site; those paths carry
+        that pointer at `MEASURED_CONFIDENCE`, every other path keeps the
+        group's derived `source` at 0.6. Number scales stay out of
+        `confidence_samples` exactly as before, so the kit's overall confidence
+        remains the color/type figure it has always been.
+        """
+        derived = _confidence_for("derived")
+        measured = measured or {}
         for path, number in values.items():
+            pointer = measured.get(path)
             target[path] = {
                 "value": _mode_value(number, {}),
                 "role": role,
                 "description": None,
-                "provenance": _provenance(source, confidence),
+                "provenance": _provenance(
+                    pointer or source, MEASURED_CONFIDENCE if pointer else derived
+                ),
+            }
+
+    def add_shadows(self, entries: dict[str, tuple[dict, str]]) -> None:
+        """Emit the measured elevation tokens.
+
+        An empty `entries` leaves `shadows` empty — a site with no box-shadow
+        anywhere is a flat brand, and that IS the finding. `ShadowToken` carries
+        no `role` field (see `crates/lumen-core/src/brand.rs`), so none is set.
+        """
+        for path, (value, pointer) in entries.items():
+            self.shadows[path] = {
+                "value": _mode_value(value, {}),
+                "description": None,
+                "provenance": _provenance(pointer, MEASURED_CONFIDENCE),
             }
 
     # --- assets ---------------------------------------------------------
@@ -207,15 +301,7 @@ class KitBuilder:
             "faces": faces,
             "fallback_stack": font.fallback_stack or fallback,
             "scripts": ["latin"],
-            "license": {
-                "name": font.license_hint or "unknown",
-                "embeddable": False,
-                "subsettable": False,
-                "source_url": None,
-                "restrictions": [
-                    "License not verified at ingestion; do not embed in print exports without confirmation."
-                ],
-            },
+            "license": _workspace_brand_font_license(font.license_hint),
             "provenance": _provenance(f"{font.pointer.source}:{font.pointer.locator}", 0.7),
         }
 
@@ -229,10 +315,12 @@ class KitBuilder:
         min_size_rule = _rule_numeric(self.evidence, "min_size")
 
         for key, group in groups.items():
-            has_reversed = any(g.color_mode_hint == "reversed" for g in group)
-            allowed = ["surface.page", "surface.card"]
-            if has_reversed:
-                allowed.append("surface.inverse")
+            # W1.6: the slot's background policy is derived from the colour modes
+            # of the variants it actually holds — a slot with a light/reversed
+            # mark also allows the dark surfaces, which is the reference-driven
+            # placement the Cursor pilot could not express. One shared rule, so
+            # this cannot drift from the human-curation path in `main.py`.
+            allowed = allowed_backgrounds_for(g.color_mode_hint for g in group)
             entry = {
                 "variants": [
                     {
@@ -391,7 +479,7 @@ class KitBuilder:
                 "radii": self.radii,
                 "stroke_widths": self.stroke_widths,
                 "opacity": self.opacity,
-                "shadows": {},
+                "shadows": self.shadows,
                 "effects": {},
                 "assets": self.asset_tokens,
                 "aliases": self.aliases,
@@ -429,8 +517,19 @@ def _merge_style_tags(existing: list[str], tags: list[str]) -> list[str]:
 
 
 def _confidence_for(basis: str) -> float:
+    # The site stated this role in its own stylesheet (clone-fidelity F0.3). As good as a
+    # directly observed swatch and no better: 1.0 stays reserved for things that cannot be
+    # wrong, and a declaration can still be stale or aspirational.
+    if basis == "declared":
+        return DECLARED_ROLE_CONFIDENCE
     if basis == "evidence":
         return 0.9
+    # Read off the brand's own rendered page, but a cluster representative
+    # rather than a single observed swatch — `geometry.MEASURED_CONFIDENCE`
+    # explains the 0.8. Named here so a caller passing basis="measured" without
+    # an explicit override cannot silently land on the 0.3 default arm.
+    if basis == "measured":
+        return MEASURED_CONFIDENCE
     if basis == "derived":
         return 0.6
     return 0.3

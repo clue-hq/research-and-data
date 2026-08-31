@@ -1,0 +1,195 @@
+/*
+ * AD2.3 / AD2.10: the canvas element, plus Gate G-A's selection overlay.
+ *
+ * AD2.10 (founder ruling, 2026-08-20) makes the stage the VIEWPORT: it fills the
+ * whole neutral output area and the artboard is painted inside it at the current
+ * zoom, bounded by its own edges alone. The dummy's `.imageCanvas` card keeps
+ * its one remaining role — the designed EMPTY state — and is no longer a
+ * container for live content, which is what ruling 17 (now retired) assumed.
+ */
+
+.stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  /*
+   * The workspace surface behind the artboard.
+   *
+   * The name is the design subsystem's own (`--bg-canvas`, its editor
+   * `tokens.css`), and the draw loop reads THIS property off the canvas to
+   * clear the surface with — so the painted pixels and this backdrop are one
+   * value, and a host that defines the property higher up wins for both. The
+   * platform shell defines no `--bg-canvas`, so the value here is the one in
+   * force; it is deliberately not `--clue-ds-color-bg-page` (#F8F9FB), which is
+   * indistinguishable from a white page.
+   */
+  --bg-canvas: #f5f5f5;
+
+  background: var(--bg-canvas);
+  overflow: hidden;
+  touch-action: none;
+}
+
+/* Space held: the stage is armed as a hand tool (a plain press still selects,
+ * so this is a modifier, not a mode). */
+.pannable {
+  cursor: grab;
+}
+
+.panning {
+  cursor: grabbing;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/*
+ * Gate G-A (founder, 2026-08-20 — Variant B): the selection outline.
+ *
+ * Exactly co-extensive with the canvas (both fill the stage), so the overlay's
+ * own px coordinate system is the canvas's own — the adapter's stage-px box
+ * needs no further offset, at any zoom AND at any pan. `pointer-events: none`
+ * is load-bearing, not defensive: selection is a canvas gesture, and an overlay
+ * that swallowed the next press would make the outline unclickable-through the
+ * moment it appeared. The default SVG clip stays on: chrome for content panned
+ * off the viewport must not paint over the surrounding shell.
+ */
+.selectionChrome {
+  display: block;
+  height: 100%;
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  width: 100%;
+}
+
+/*
+ * genad2 Task 5: the zero-page neutral state.
+ *
+ * FOUNDER-DESIGN FLAG (open, 2026-08-23) — this is NOT designed UI. The copy is
+ * ratified; the treatment is not, and the presentation-truth rule forbids this
+ * lane from inventing one. So it is deliberately the plainest thing that can be
+ * read: the shell's own body text, centred on the empty workspace the stage
+ * already paints, with no card, no border and no glyph. Its colour is not a
+ * token — it is this file's OWN editor-palette literal, the same
+ * `rgb(38 37 30 / …)` ink every other rule here writes (the banner text at 92%,
+ * the card border at 10%), taken down to 62% for secondary text. Stated plainly
+ * because an earlier revision of this comment claimed a shared content token
+ * that does not exist, which would send the next reader looking for one.
+ * A designed empty state supersedes every declaration here.
+ *
+ * `pointer-events: none` for the reason the banner layer has it: the workspace
+ * underneath keeps every gesture, and this line needs none.
+ */
+.pagelessNotice {
+  color: rgb(38 37 30 / 62%);
+  font-size: 13px;
+  left: 50%;
+  line-height: 18px;
+  margin: 0;
+  max-width: min(420px, calc(100% - 48px));
+  pointer-events: none;
+  position: absolute;
+  text-align: center;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/*
+ * Gate G-D (founder, 2026-08-21): the engine-forced banners.
+ *
+ * The ruling was "as is from the MVP editor, no separate banner" — so this is
+ * the design subsystem's `.engine-disabled-banner` block
+ * (`subsystems/clue-design/apps/editor/src/app/styles.css:912-974`), its tokens
+ * resolved to the literal values that editor's `tokens.css` gives them, since
+ * the platform shell defines no `--status-error*`. Read-only and degraded-text
+ * share one treatment, which is the second half of the same ruling.
+ *
+ * Two deviations from a literal copy, both shown to the founder before ruling:
+ *
+ *  1. **The background is opaque.** Upstream is `rgba(207, 45, 86, 0.15)`, which
+ *     only reads as pink because that editor's workspace is always light. Ours
+ *     floats over the ARTBOARD, and over a dark ad the body text disappeared
+ *     (previewed). `#efd7dd` is that exact wash composited over the workspace
+ *     grey — same colour, no longer see-through.
+ *  2. **The layer is a flex column.** Upstream pins both banners at
+ *     `top: 14px`, so a simultaneous engine + measurement failure paints one
+ *     over the other.
+ *
+ * `pointer-events` stays off on the layer and on for the banner itself, so the
+ * canvas underneath keeps every gesture the banner does not need.
+ */
+.bannerLayer {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  left: 50%;
+  pointer-events: none;
+  position: absolute;
+  top: 14px;
+  transform: translateX(-50%);
+  width: min(680px, calc(100% - 32px));
+  z-index: 40;
+}
+
+.banner {
+  align-items: flex-start;
+  background: #efd7dd;
+  border: 1px solid #cf2d56;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgb(38 37 30 / 14%);
+  color: #26251e;
+  display: flex;
+  gap: 10px;
+  max-width: 100%;
+  padding: 12px 16px;
+  pointer-events: auto;
+}
+
+.bannerIcon {
+  color: #cf2d56;
+  flex: none;
+  margin-top: 1px;
+}
+
+.bannerBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.bannerTitle {
+  color: #cf2d56;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.bannerText {
+  color: rgb(38 37 30 / 92%);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.bannerCommand {
+  background: #ffffff;
+  border: 1px solid rgb(38 37 30 / 10%);
+  border-radius: 6px;
+  color: #26251e;
+  font-family: var(--font-mono, ui-monospace, sfmono-regular, menlo, monaco, consolas, monospace);
+  font-size: 11.5px;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 3px 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bannerCommandName {
+  color: #cf2d56;
+  font-weight: 700;
+}

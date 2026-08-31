@@ -23,11 +23,8 @@ from clue_core import (
     new_operation_id,
     new_run_id,
 )
-from clue_research.durable import (
-    AccountRunStatus,
-    insert_account_run,
-    list_run_events,
-)
+from clue_execution.run_events import list_run_events
+from clue_research.durable import AccountRunStatus, insert_account_run
 from clue_research.narrative import (
     ResearchViewRecheckService,
     ResearchViewSnapshotService,

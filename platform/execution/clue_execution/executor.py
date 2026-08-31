@@ -172,6 +172,7 @@ class InteractionSlotView:
 @dataclass(frozen=True, slots=True)
 class _Runtime:
     execution_id: ExecutionId
+    parent_execution_id: ExecutionId | None
     workspace_id: str
     project_id: str | None
     project_run_id: ProjectRunId | None
@@ -1486,13 +1487,67 @@ class RecipeExecutor:
             )
 
     async def resume(self, *, execution_id: ExecutionId, actor: str) -> None:
+        resumed = await self._resume(
+            execution_id=execution_id,
+            actor=actor,
+            required_reason_code=None,
+        )
+        if not resumed:
+            raise ExecutionConflict(
+                "only explicitly paused executions can resume; gates require a gate decision"
+            )
+
+    async def resume_if_paused_for(
+        self,
+        *,
+        execution_id: ExecutionId,
+        actor: str,
+        reason_code: str,
+    ) -> bool:
+        """Resume only the exact system pause named by ``reason_code``.
+
+        External provider waits use this on a fresh fleet offer. Human pauses and gates retain
+        their existing explicit authority because a different or absent reason is a no-op.
+        """
+
+        return await self._resume(
+            execution_id=execution_id,
+            actor=actor,
+            required_reason_code=reason_code,
+        )
+
+    async def _resume(
+        self,
+        *,
+        execution_id: ExecutionId,
+        actor: str,
+        required_reason_code: str | None,
+    ) -> bool:
         await self._load_runtime(execution_id)
         async with self._conn_factory() as conn:
             cursor = await get_cursor(conn, execution_id, for_update=True)
             if cursor.status is not ExecutionStatus.PAUSED:
-                raise ExecutionConflict(
-                    "only explicitly paused executions can resume; gates require a gate decision"
-                )
+                return False
+            if required_reason_code is not None:
+                raw_payload = (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT payload_json
+                            FROM execution_event
+                            WHERE execution_id = :execution_id
+                              AND node_id IS NULL
+                              AND event_type = 'execution.paused'
+                            ORDER BY seq DESC
+                            LIMIT 1
+                            """
+                        ),
+                        {"execution_id": execution_id},
+                    )
+                ).scalar_one_or_none()
+                payload = decode_jsonb(raw_payload) if raw_payload is not None else {}
+                if payload.get("reason_code") != required_reason_code:
+                    return False
             await self._journal.append_event(
                 conn,
                 execution_id=execution_id,
@@ -1500,6 +1555,7 @@ class RecipeExecutor:
                 actor=actor,
                 expected_state_version=cursor.state_version,
             )
+        return True
 
     async def decide_gate(
         self,
@@ -1713,6 +1769,7 @@ class RecipeExecutor:
                         actor_id="svc_execution_worker" if node.actor != "human" else actor_id,
                         action_ref=action_ref,
                         execution_id=runtime.execution_id,
+                        parent_execution_id=runtime.parent_execution_id,
                         execution_node_id=node.node_id,
                         execution_node_key=node.spec.node_key,
                         execution_worker_id=worker_id,
@@ -1769,6 +1826,7 @@ class RecipeExecutor:
                         actor_id="svc_execution_worker" if node.actor != "human" else actor_id,
                         action_ref=action_ref,
                         execution_id=runtime.execution_id,
+                        parent_execution_id=runtime.parent_execution_id,
                         execution_node_id=node.node_id,
                         execution_node_key=node.spec.node_key,
                         execution_worker_id=worker_id,
@@ -2171,7 +2229,7 @@ class RecipeExecutor:
                     await conn.execute(
                         text(
                             """
-                            SELECT workspace_id, project_id, project_run_id,
+                            SELECT workspace_id, project_id, project_run_id, parent_execution_id,
                                    recipe_revision_id, parameter_artifact_key,
                                    parameter_manifest_hash
                             FROM execution WHERE id = :execution_id
@@ -2199,6 +2257,11 @@ class RecipeExecutor:
             raise PlaceholderRecipe("placeholder recipes are not executable")
         return _Runtime(
             execution_id=execution_id,
+            parent_execution_id=(
+                ExecutionId(row["parent_execution_id"])
+                if row["parent_execution_id"] is not None
+                else None
+            ),
             workspace_id=workspace_id,
             project_id=str(row["project_id"]) if row["project_id"] is not None else None,
             project_run_id=(

@@ -203,6 +203,35 @@ class DbCompiledContextCardReader:
                     return None
                 value = await get_account(conn, entity_id)
                 version = None if value is None else value.canonical_version
+            elif object_type == "design_document":
+                # P3.1 (master plan §2.4): the design leg's target-document focus ref.
+                # clue_api is the composition root and may import clue_design directly;
+                # the card is a minimal typed summary, never the scene body.
+                from clue_design.documents import get_document as get_design_document
+                from clue_design.errors import DesignNotFoundError
+
+                try:
+                    document = await get_design_document(
+                        conn, workspace_id=workspace_id, document_id=object_id
+                    )
+                except DesignNotFoundError:
+                    return None
+                value = None
+                body = json.dumps(
+                    {
+                        "id": document["id"],
+                        "title": document.get("title"),
+                        "doc_kind": document.get("doc_kind"),
+                        "status": document.get("status"),
+                        "current_version": document.get("current_version"),
+                        "brand_kit_id": document.get("effective_brand_kit_id"),
+                        "brand_kit_version": document.get("effective_brand_kit_version"),
+                    },
+                    sort_keys=True,
+                )
+                # A fresh document's CAS counter is 0, and DomainObjectRef versions are
+                # >= 1 — an unwritten document is honestly unversioned.
+                version = document.get("current_version") or None
             elif object_type == "contact":
                 try:
                     entity_id = EntityId(UUID(object_id))
@@ -225,8 +254,10 @@ class DbCompiledContextCardReader:
                 version = contact.canonical_version
             else:
                 return None
-        if body is None and (value is None or value.workspace_id != workspace_id):
-            return None
+        if body is None:
+            if value is None or value.workspace_id != workspace_id:
+                return None
+            body = value.model_dump_json(exclude_none=False)
         return CompiledContextCard(
             ref=DomainObjectRef(
                 workspace_id=workspace_id,
@@ -234,7 +265,7 @@ class DbCompiledContextCardReader:
                 object_id=object_id,
                 version=version,
             ),
-            body=body if body is not None else value.model_dump_json(exclude_none=False),
+            body=body,
         )
 
 

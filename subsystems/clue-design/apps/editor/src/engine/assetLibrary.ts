@@ -1,4 +1,5 @@
 import type { AssetPlacement, AssetRecord, Diagnostic, NodeId, Operation, SlotId } from "./contracts";
+import { lumenFetch } from "./editorConfig";
 
 /**
  * Workspace asset library client (Phase E slice E7).
@@ -44,7 +45,7 @@ export async function fetchAssets(
   if (query.offset !== undefined) {
     url.searchParams.set("offset", String(query.offset));
   }
-  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  const response = await lumenFetch(url, { headers: { Accept: "application/json" } });
   if (!response.ok) {
     throw new Error(`Asset list failed with status ${response.status}`);
   }
@@ -71,7 +72,7 @@ export async function uploadAsset(
   if (fields.tags) {
     form.append("tags", fields.tags);
   }
-  const response = await fetch(new URL("/assets", apiBaseUrl), {
+  const response = await lumenFetch(new URL("/assets", apiBaseUrl), {
     method: "POST",
     body: form
   });
@@ -126,7 +127,7 @@ export async function generateAsset(
   apiBaseUrl: string,
   request: GenerateAssetRequest
 ): Promise<AssetGenerateResult> {
-  const response = await fetch(new URL("/assets/generate", apiBaseUrl), {
+  const response = await lumenFetch(new URL("/assets/generate", apiBaseUrl), {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
@@ -184,7 +185,7 @@ export async function editAsset(
   apiBaseUrl: string,
   request: EditAssetRequest
 ): Promise<AssetGenerateResult> {
-  const response = await fetch(new URL("/assets/generate", apiBaseUrl), {
+  const response = await lumenFetch(new URL("/assets/generate", apiBaseUrl), {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
@@ -216,15 +217,70 @@ export async function editAsset(
   };
 }
 
-export function assetThumbnailUrl(apiBaseUrl: string, assetId: string): string {
-  return new URL(`/assets/${assetId}/thumbnail`, apiBaseUrl).toString();
-}
-
-export function assetBytesUrl(apiBaseUrl: string, assetId: string): string {
-  return new URL(`/assets/${assetId}/bytes`, apiBaseUrl).toString();
-}
-
 const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+function usableDigest(digest: { algorithm?: string; value?: string } | null | undefined): string | null {
+  if (digest && digest.algorithm === "sha256" && digest.value && SHA256_HEX.test(digest.value)) {
+    return digest.value;
+  }
+  return null;
+}
+
+/**
+ * Public content-addressed bytes URL for a record, or null when unfetchable.
+ *
+ * Browser contexts that render assets — `<img src>`, the canvas image
+ * cache's bare fetcher — cannot send `X-Workspace-Id`, and the registry
+ * endpoints (`/assets/{id}/bytes|thumbnail`) are workspace-gated, so the
+ * ONLY servable URL shape for them is `/asset-store/{digest}` (O4-exempt,
+ * gated by the unguessable sha256 itself — the same URLs lumen-web's
+ * published pages emit). No digest ⇒ null; an empty image is honest, a
+ * guaranteed-401 URL is not.
+ */
+export function publicAssetBytesUrl(
+  apiBaseUrl: string,
+  record: AssetRecord | null | undefined
+): string | null {
+  const digest = usableDigest(record?.media?.digest);
+  return digest ? assetStoreBytesUrl(apiBaseUrl, digest) : null;
+}
+
+/** Thumbnail flavor of `publicAssetBytesUrl`: prefers the thumbnail's own
+ * digest (the API stamps it at the DTO boundary), falls back to full bytes —
+ * a heavier image is still a correct one — then null. */
+export function publicAssetThumbnailUrl(
+  apiBaseUrl: string,
+  record: AssetRecord | null | undefined
+): string | null {
+  const thumbDigest = usableDigest(record?.media?.thumbnail?.digest);
+  if (thumbDigest) {
+    return assetStoreBytesUrl(apiBaseUrl, thumbDigest);
+  }
+  return publicAssetBytesUrl(apiBaseUrl, record);
+}
+
+export interface AssetRecordOptions {
+  apiBaseUrl: string;
+  fetchImpl?: typeof fetch;
+}
+
+/** One registry record (`GET /assets/{id}`), or null when unknown — the
+ * resolver behind id-only `<img>` sites (kit JSON variants, stored logo
+ * ids), which look up the record to learn its public digest. */
+export async function fetchAssetRecord(
+  { apiBaseUrl, fetchImpl = lumenFetch }: AssetRecordOptions,
+  assetId: string
+): Promise<AssetRecord | null> {
+  const response = await fetchImpl(new URL(`/assets/${encodeURIComponent(assetId)}`, apiBaseUrl));
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(`asset record fetch failed (HTTP ${response.status})`);
+  }
+  const payload = (await response.json()) as { asset?: AssetRecord };
+  return payload.asset ?? null;
+}
 
 /** Content-addressed bytes URL (`/asset-store/{digest}`) — immutable,
  * cache-friendly, and independent of the asset REGISTRY. */
@@ -238,19 +294,18 @@ export function assetStoreBytesUrl(apiBaseUrl: string, digestValue: string): str
  * scene (the deepagent's generated imagery, edits, QR codes) is servable by
  * its content digest even when nothing registered it in the asset library.
  * Records without a usable sha256 digest — and asset ids the scene does not
- * carry at all (dangling references) — fall back to the registry endpoint,
- * which stays the last word on whether such an asset exists.
+ * carry at all (dangling references) — resolve to null (unfetchable, which
+ * the canvas image cache models as a skipped load). The old registry
+ * fallback (`/assets/{id}/bytes`) was a lie in this context: the cache
+ * fetches bare (no workspace header), so that URL could only ever 401.
  */
 export function sceneAssetBytesUrl(
   apiBaseUrl: string,
   assets: Record<string, AssetRecord> | undefined,
   assetId: string
-): string {
-  const digest = assets?.[assetId]?.media?.digest;
-  if (digest && digest.algorithm === "sha256" && SHA256_HEX.test(digest.value)) {
-    return assetStoreBytesUrl(apiBaseUrl, digest.value);
-  }
-  return assetBytesUrl(apiBaseUrl, assetId);
+): string | null {
+  const digest = usableDigest(assets?.[assetId]?.media?.digest);
+  return digest ? assetStoreBytesUrl(apiBaseUrl, digest) : null;
 }
 
 /**

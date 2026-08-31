@@ -53,7 +53,7 @@ from langchain_core.outputs import ChatGenerationChunk, GenerationChunk, LLMResu
 from pydantic import JsonValue
 from sqlalchemy import text as sql_text
 
-from clue_api.agent_gate import DECISIONS, GATE_OBJECT_TYPE
+from clue_api.agent_gate import GATE_OBJECT_TYPE, KIND_ICP_CONFIRMATION
 from clue_api.chat.finalize_stream import FinalizeTextDeltaExtractor
 from clue_api.chat.turn_events import (
     TurnEventType,
@@ -138,6 +138,12 @@ class TurnStreamPolicy:
     #: own ``reasoning`` part. The gate lives on the emitter rather than only on the callback
     #: handler so that *every* path to a reasoning delta, present and future, passes one check.
     reasoning_trace: bool = False
+    #: ``Settings.budget_controls_enabled`` (FI pilot budget-controls, ratified 2026-08-11).
+    #: ``False`` is the pilot posture: the rich ``gate`` part leaves ``amount_cents``/``currency``
+    #: unset, so no cost number reaches a human surface. §3.4's contract already declares both
+    #: optional (the thin gate part has always omitted them), so this is an allowed payload, not a
+    #: contract change. The amount stays on the immutable gate row either way.
+    gate_amount_visible: bool = True
 
 
 @dataclass(slots=True)
@@ -806,6 +812,12 @@ class TurnStreamEmitter:
         **``permitted_decisions`` is the full vocabulary even on a closed gate**: what a gate
         *permits* is a property of the gate, and "this one is finished" is said by ``decision`` and
         ``state``, not by silently emptying the option list.
+
+        A third absence is conditional: with FI pilot budget-controls off
+        (``TurnStreamPolicy.gate_amount_visible`` False) ``amount_cents`` and ``currency`` are left
+        unset too. Everything the card needs to be *answerable* — the ref, the kind, the subject ref
+        and its digest, the addressee, the permitted decisions — is unaffected; only the price
+        disappears.
         """
 
         part_id = gate_part_id(
@@ -813,8 +825,13 @@ class TurnStreamEmitter:
             object_id=view.gate_id,
         )
         answer = view.answer
+        unavailable = view.snapshot_erased_at is not None
         await self._part(
-            TurnEventType.PART_COMPLETED if answer is not None else TurnEventType.PART_CREATED,
+            (
+                TurnEventType.PART_COMPLETED
+                if answer is not None or unavailable
+                else TurnEventType.PART_CREATED
+            ),
             GatePart(
                 part_id=part_id,
                 revision=self._revision(part_id),
@@ -823,13 +840,27 @@ class TurnStreamEmitter:
                 # told its kind is "agent_gate" knows only that a gate exists, which is the very
                 # gap this method closes.
                 gate_kind=view.kind,
-                state="responded" if answer is not None else "requested",
-                subject_refs=(_gate_subject_ref(view),),
+                state=(
+                    "unavailable"
+                    if unavailable
+                    else "responded"
+                    if answer is not None
+                    else "requested"
+                ),
+                subject_refs=() if unavailable else (_gate_subject_ref(view),),
                 expected_subject_sha256=view.expected_subject_sha256,
-                amount_cents=_cent_ceiling(view.max_spend_cents),
-                currency=view.currency,
+                amount_cents=(
+                    _cent_ceiling(view.max_spend_cents)
+                    if self._policy.gate_amount_visible and view.max_spend_cents is not None
+                    else None
+                ),
+                currency=(
+                    view.currency
+                    if self._policy.gate_amount_visible and view.max_spend_cents is not None
+                    else None
+                ),
                 addressee_user_id=view.addressee_user_id,
-                permitted_decisions=DECISIONS,
+                permitted_decisions=() if unavailable else view.permitted_decisions,
                 decision=None if answer is None else answer.decision,
                 answered_by_user_id=None if answer is None else answer.answered_by_user_id,
                 answered_at=None if answer is None else answer.answered_at.isoformat(),
@@ -1086,11 +1117,16 @@ def _gate_subject_ref(view: GateView) -> dict[str, JsonValue]:
     string. Parsing is the fallback, not the path.
     """
 
-    identifier = view.subject_snapshot.get("research_directive_id")
+    if view.kind == KIND_ICP_CONFIRMATION:
+        identifier = view.subject_snapshot.get("icp_key")
+        object_type = "icp_spec"
+    else:
+        identifier = view.subject_snapshot.get("research_directive_id")
+        object_type = "research_directive"
     object_id = str(identifier) if isinstance(identifier, str) else view.subject_ref
     ref: dict[str, JsonValue] = {
         "workspace_id": view.workspace_id,
-        "object_type": "research_directive",
+        "object_type": object_type,
         "object_id": object_id,
         "sha256": view.expected_subject_sha256,
     }

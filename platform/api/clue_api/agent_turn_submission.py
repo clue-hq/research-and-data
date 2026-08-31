@@ -75,7 +75,7 @@ _THREAD_WORK_NAMESPACE = uuid5(NAMESPACE_URL, "clue-agent-turn-thread-work")
 _COLUMNS = (
     "turn_id, workspace_id, project_id, thread_id, submitted_by_user_id, "
     "submitted_via_membership_id, onboarding_input_id, message_artifact_key, message_sha256, "
-    "idempotency_key, agent_profile_id, requested_at"
+    "idempotency_key, agent_profile_id, previous_turn_outcome, requested_at"
 )
 
 
@@ -141,6 +141,7 @@ class AgentTurnSubmissionRow(BaseModel):
     message_sha256: str
     idempotency_key: str | None
     agent_profile_id: str | None
+    previous_turn_outcome: str | None
     requested_at: UtcDatetime
 
 
@@ -172,6 +173,7 @@ async def insert_submission(
     idempotency_key: str | None,
     context_refs: Sequence[DomainObjectRef] = (),
     agent_profile_id: str | None = None,
+    previous_turn_outcome: str | None = None,
 ) -> tuple[AgentTurnSubmissionRow, bool]:
     """Insert one submission, or replay it. Returns ``(row, created)``.
 
@@ -192,10 +194,10 @@ async def insert_submission(
                     "INSERT INTO agent_turn_submission "
                     "(turn_id, workspace_id, project_id, thread_id, submitted_by_user_id, "
                     " submitted_via_membership_id, onboarding_input_id, message_artifact_key, "
-                    " message_sha256, idempotency_key, agent_profile_id) "
+                    " message_sha256, idempotency_key, agent_profile_id, previous_turn_outcome) "
                     "VALUES (:turn_id, :workspace_id, :project_id, :thread_id, :user_id, "
                     " :membership_id, :onboarding_input_id, :artifact_key, :sha256, :key, "
-                    " :agent_profile_id) "
+                    " :agent_profile_id, :previous_turn_outcome) "
                     f"ON CONFLICT (turn_id) DO NOTHING RETURNING {_COLUMNS}"
                 ),
                 {
@@ -210,6 +212,7 @@ async def insert_submission(
                     "sha256": message_sha256,
                     "key": idempotency_key,
                     "agent_profile_id": agent_profile_id,
+                    "previous_turn_outcome": previous_turn_outcome,
                 },
             )
         )
@@ -353,9 +356,7 @@ async def submission_context_refs_for_turns(
                 workspace_id=workspace_id,
                 object_type=str(row["object_type"]),
                 object_id=str(row["object_id"]),
-                version=(
-                    None if row["object_version"] is None else int(row["object_version"])
-                ),
+                version=(None if row["object_version"] is None else int(row["object_version"])),
             )
         )
     return {turn_id: tuple(refs) for turn_id, refs in grouped.items()}

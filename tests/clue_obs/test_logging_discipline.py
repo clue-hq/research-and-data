@@ -12,12 +12,17 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 
 _ALLOWED = (REPO / "libs" / "clue-obs" / "clue_obs",)
+# The merged design subsystem retains its own observability/tooling contracts (incl.
+# py_lumen_obs) until the explicit Step-2 integration — the master plan's sanctioned
+# structure-guard carve-out (docs/specs/design-integration-master-plan.md, Step 2). Root
+# policy tests must not silently govern its preserved implementation.
+_EXCLUDED = (REPO / "subsystems" / "clue-design",)
 
 _PATTERN = re.compile(r"\blogging\.getLogger\s*\(")
 
 
 def _is_allowed(path: Path) -> bool:
-    return any(path.is_relative_to(base) for base in _ALLOWED)
+    return any(path.is_relative_to(base) for base in (*_ALLOWED, *_EXCLUDED))
 
 
 def test_no_direct_logging_getlogger_outside_clue_obs() -> None:

@@ -83,6 +83,17 @@ class TurnEventType(StrEnum):
     TEXT_DELTA = "text.delta"
     TEXT_END = "text.end"
     STREAM_RESET = "stream.reset"
+    # P3.7 delta 8 (PD-part3 §3-8): the design-leg lifecycle, on the same thread stream the
+    # speaker chip and the transcript already follow. Emitted transactionally with the durable
+    # leg transition they announce (the open/finish tools; the leg runner), each carrying
+    # ``leg_id`` in the payload — ``leg.closed`` also carries the exit ``reason``. The spec's
+    # sketch said "closing"; with turn-terminal legs the close is one atomic journal+flip, so a
+    # separate closing frame would announce a phase that cannot be observed — dropped in favor
+    # of ``leg.reopened`` (the §2.2 mis-exit re-delegation), which IS a real, durable transition.
+    LEG_OPENED = "leg.opened"
+    LEG_AWAITING_USER = "leg.awaiting_user"
+    LEG_CLOSED = "leg.closed"
+    LEG_REOPENED = "leg.reopened"
 
 
 #: The stored vocabulary as plain strings, kept equal to the enum (and to the DB CHECK) by a test —
@@ -164,10 +175,16 @@ _COLUMNS = (
     "event_type, part_id, part_kind, message_id, run_id, delta_index, payload, occurred_at"
 )
 
-# The per-turn ordinal is assigned in the INSERT itself, from the turn's own high-water mark. Two
-# concurrent emitters would be two live generations of one turn — which per-thread single-flight
-# forbids — so the UNIQUE (turn_id, sequence) constraint turns that impossibility into a loud
-# integrity error instead of two frames claiming one position.
+# The per-turn ordinal is assigned in the INSERT itself, from the turn's own high-water mark.
+# One generation legitimately has multiple emitters: the streaming callback, tool-part projection,
+# and terminal/finalization path can append from independent transactions. Serialize only the
+# high-water-mark allocation for this turn with a transaction-scoped advisory lock. Locking is a
+# separate statement on purpose: PostgreSQL fixes one statement's MVCC snapshot before a lock wait,
+# so a lock CTE and the max-read in the same statement can still observe the pre-wait value.
+# Without the lock, two writers can both observe N and one loses `UNIQUE (turn_id, sequence)`,
+# silently degrading the stream even though the durable turn still completes.
+_TURN_SEQUENCE_LOCK_SQL = text("SELECT pg_advisory_xact_lock(hashtextextended(:turn_lock_key, 0))")
+
 _EMIT_SQL = text(
     f"""
     INSERT INTO agent_turn_event_stream
@@ -208,6 +225,7 @@ async def emit_turn_event(
     the durable turn write and this append simply drops a frame the durable state can still explain.
     """
 
+    await conn.execute(_TURN_SEQUENCE_LOCK_SQL, {"turn_lock_key": str(turn_id)})
     row = (
         (
             await conn.execute(

@@ -275,3 +275,73 @@ mod tests {
         assert!(!href_is_allowed(""));
     }
 }
+
+/// How much of a REJECTED id one diagnostic message may quote (clone-fidelity F3.4).
+///
+/// A valid fragment id is 21 characters and a valid artifact id is not much longer; anything
+/// past this is not an id somebody mistyped, it is a payload.
+pub const MAX_QUOTED_ID_CHARS: usize = 64;
+
+/// One UNTRUSTED id, made safe to sit inside a diagnostic sentence.
+///
+/// The diagnostics that report a *rejected* id interpolate the value that failed the grammar —
+/// which is the only useful thing to say, and is by definition a string nothing has validated.
+/// A raw interpolation therefore lets that value put newlines, backticks and control characters
+/// into a message a human reads in a log and a model reads as context: the backtick closes the
+/// quoting the sentence set up around it, and a newline forges what looks like the next line of
+/// the report. Nothing here is a security boundary — the id has already been refused — but a
+/// diagnostic whose structure the offending input can rewrite is a diagnostic that cannot be
+/// trusted to describe itself.
+///
+/// So: control characters become visible escapes, backticks are neutralised, and the whole thing
+/// is bounded with the cut made visible. The result is always safe to place between backticks.
+pub fn quoted_id(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len().min(MAX_QUOTED_ID_CHARS) + 8);
+    let mut taken = 0usize;
+    for ch in raw.chars() {
+        if taken >= MAX_QUOTED_ID_CHARS {
+            out.push_str("…");
+            break;
+        }
+        taken += 1;
+        match ch {
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            // The quoting character itself: left in the message it would end the quoted span
+            // early and let the rest of the value read as prose.
+            '`' => out.push_str("\\`"),
+            c if c.is_control() => out.push_str(&format!("\\u{{{:04x}}}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod quoted_id_tests {
+    use super::{quoted_id, MAX_QUOTED_ID_CHARS};
+
+    #[test]
+    fn an_ordinary_id_is_untouched() {
+        assert_eq!(quoted_id("frag_0123456789abcdef"), "frag_0123456789abcdef");
+    }
+
+    #[test]
+    fn a_backtick_cannot_close_the_span_it_sits_in() {
+        assert_eq!(quoted_id("frag_`x`"), "frag_\\`x\\`");
+    }
+
+    #[test]
+    fn newlines_and_control_characters_become_visible_escapes() {
+        assert_eq!(quoted_id("a\nb\tc\u{7}"), "a\\nb\\tc\\u{0007}");
+    }
+
+    #[test]
+    fn a_payload_wearing_an_ids_clothes_is_bounded_and_says_it_was_cut() {
+        let quoted = quoted_id(&"x".repeat(MAX_QUOTED_ID_CHARS * 4));
+        assert!(quoted.starts_with(&"x".repeat(MAX_QUOTED_ID_CHARS)));
+        assert!(quoted.ends_with('…'));
+        assert_eq!(quoted.chars().count(), MAX_QUOTED_ID_CHARS + 1);
+    }
+}

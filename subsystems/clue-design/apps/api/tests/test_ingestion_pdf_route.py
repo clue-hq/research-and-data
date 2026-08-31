@@ -12,6 +12,8 @@ returns a queued job but GET reflects the terminal state.
 
 from __future__ import annotations
 
+import hashlib
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -19,7 +21,10 @@ from typing import Any, Callable, Optional
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import make_blob_store, make_client, wait_for_ingestion_job
+
 from lumen_api import main as main_module
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 from lumen_ingestion.evidence import (
     BrandEvidence,
@@ -35,6 +40,20 @@ from py_lumen_config import settings
 REFERENCE_ASSET_ID = "asset_ing_stubpdf00000000"
 
 PDF_HEADER = b"%PDF-1.7\n"
+
+
+def _pdf_bytes() -> bytes:
+    """The exact bytes `_post_pdf` uploads — the staged blob's content address."""
+    return PDF_HEADER + b"body"
+
+
+def engine_cache_dir(app) -> str:
+    """This app's per-workspace engine materialization cache (D4)."""
+    return str(Path(app.state.engine_cache_root) / os.environ["LUMEN_DEV_WORKSPACE_ID"])
+
+
+def _workspace(client: TestClient) -> str:
+    return os.environ["LUMEN_DEV_WORKSPACE_ID"]
 
 
 def _ptr(name: str) -> EvidencePointer:
@@ -123,12 +142,16 @@ def _install_stub_pipeline(
     injectable ``extract`` param mirrors how ``pipeline.py`` lazily resolves
     ``capture.pdf`` — so no Agent A file is imported."""
 
-    def _runner(database_path, asset_store_root, job_id):
+    def _runner(
+        engine_cache_dir, job_id, *, workspace_id, storage=None, expected_generation=None
+    ):
         run_pdf_ingestion(
-            database_path,
-            asset_store_root,
+            engine_cache_dir,
             job_id,
             extract=extract,
+            workspace_id=workspace_id,
+            storage=storage,
+            expected_generation=expected_generation,
         )
 
     monkeypatch.setattr(main_module, "run_pdf_ingestion", _runner)
@@ -142,8 +165,8 @@ def _good_extract(pdf_bytes, filename, *, core, store_root, reporter):
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    app = create_app(tmp_path / "engine-cache")
+    return make_client(app)
 
 
 def _post_pdf(client: TestClient, *, data: bytes = PDF_HEADER + b"body", **form):
@@ -162,11 +185,13 @@ def test_ingest_pdf_happy_path_persists_kit_and_report(
     assert body["schema_version"] == 1
     job = body["job"]
     assert job["kind"] == "pdf"
-    # POST returns the queued job; the background task runs after the response
-    # is serialized (TestClient runs it synchronously before unblocking).
-    assert job["status"] == "queued", job
+    # `queued` OR `running`: the POST re-reads the job after create-and-offer, and the
+    # embedded fleet worker (0.1s poll) may already have claimed it — a pure scheduling race,
+    # and both are snapshots of a successfully-created job (D5: `queued` is alive, not idle).
+    assert job["status"] in {"queued", "running"}, job
     job_id = job["job_id"]
 
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}")
     assert got.status_code == 200, got.text
     got_job = got.json()["job"]
@@ -195,19 +220,23 @@ def test_ingest_pdf_happy_path_persists_kit_and_report(
     assert report["dark_colorway"] == "captured"
 
 
-def test_ingest_pdf_cleans_tmp_file_after_success(
+def test_ingest_pdf_cleans_staged_bytes_after_success(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """D4/R-D4-5: the upload is staged in platform storage, and a run that did not promote it
+    into a live asset must leave nothing behind. (The reference PDF is ingested by the extractor
+    under its OWN asset id, so the staged copy here is genuinely garbage.)"""
     _install_stub_pipeline(monkeypatch, extract=_good_extract)
 
     post = _post_pdf(client)
     assert post.status_code == 200, post.text
     job_id = post.json()["job"]["job_id"]
+    wait_for_ingestion_job(client, job_id)
     got_job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got_job["status"] == "succeeded", got_job
 
-    tmp_path = Path(client.app.state.asset_store_root) / "ingest_tmp" / f"{job_id}.pdf"
-    assert not tmp_path.exists(), "tmp PDF must be deleted after a successful run"
+    staged = hashlib.sha256(_pdf_bytes()).hexdigest()
+    assert not make_blob_store(client.app).exists(staged)
 
 
 def test_ingest_pdf_failure_marks_job_failed_and_cleans_tmp(
@@ -221,49 +250,54 @@ def test_ingest_pdf_failure_marks_job_failed_and_cleans_tmp(
     post = _post_pdf(client)
     assert post.status_code == 200, post.text
     job = post.json()["job"]
-    assert job["status"] == "queued", job
+    # `queued` OR `running`: the POST re-reads the job after create-and-offer, and the
+    # embedded fleet worker (0.1s poll) may already have claimed it — a pure scheduling race,
+    # and both are snapshots of a successfully-created job (D5: `queued` is alive, not idle).
+    assert job["status"] in {"queued", "running"}, job
     job_id = job["job_id"]
 
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got["status"] == "failed", got
     assert got["brand_kit_id"] is None
     assert got["error"] is not None
     assert "extraction exploded" in got["error"]["message"]
 
-    # The tmp file is deleted even on the failure path.
-    tmp_path = Path(client.app.state.asset_store_root) / "ingest_tmp" / f"{job_id}.pdf"
-    assert not tmp_path.exists(), "tmp PDF must be deleted after a failed run"
+    # The staged blob is discarded even on the failure path.
+    staged = hashlib.sha256(_pdf_bytes()).hexdigest()
+    assert not make_blob_store(client.app).exists(staged)
 
     # No pdf kit row was created.
     kits = client.get("/brand-kits").json()
     assert all(k.get("source") != "pdf" for k in kits)
 
 
-def test_ingest_pdf_missing_tmp_file_fails_cleanly(
+def test_ingest_pdf_missing_staged_bytes_fails_cleanly(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # run_pdf_ingestion must never raise; a missing tmp file → job failed with a
-    # clear error rather than a crash.
+    # run_pdf_ingestion must never raise; staged bytes that are gone → job failed with a
+    # clear LUMI0605 rather than a crash.
     _install_stub_pipeline(monkeypatch, extract=_good_extract)
 
     post = _post_pdf(client)
     job_id = post.json()["job"]["job_id"]
-    # Deleting the tmp file before the (synchronous) background task ran is not
-    # possible via the client; instead invoke the pipeline directly with a job
-    # whose tmp file we remove first.
-    tmp_path = Path(client.app.state.asset_store_root) / "ingest_tmp" / f"{job_id}.pdf"
-    # After the happy background run the file is already gone; re-run the
-    # pipeline against the same (now-clean) job to prove missing-tmp handling.
+    # D5 Round C: the happy pass runs on the embedded FLEET worker now, so wait for it before
+    # the second, direct pass — otherwise the two race and the worker's success overwrites the
+    # direct run's failure, which is the thing under test.
+    assert wait_for_ingestion_job(client, job_id)["status"] == "succeeded"
+    # After the happy pass the staged blob is already discarded; re-run the pipeline against
+    # the same (now-clean) job to prove the missing-input handling.
     run_pdf_ingestion(
-        str(client.app.state.database_path),
-        client.app.state.asset_store_root,
+        engine_cache_dir(client.app),
         job_id,
         extract=_good_extract,
+        workspace_id=_workspace(client),
+        storage=client.app.state.storage,
     )
+    wait_for_ingestion_job(client, job_id)
     got = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     assert got["status"] == "failed", got
     assert "LUMI0605" in got["error"]["message"], got["error"]
-    assert not tmp_path.exists()
 
 
 def test_ingest_pdf_rejects_non_pdf_bytes(client: TestClient) -> None:
@@ -292,10 +326,5 @@ def test_ingest_pdf_rejects_oversize(
 
 
 def _read_brand_kit_row(client: TestClient, brand_kit_id: str) -> dict:
-    from lumen_api.database import Repository, connect
 
-    connection = connect(client.app.state.database_path)
-    try:
-        return Repository(connection).require_brand_kit(brand_kit_id)
-    finally:
-        connection.close()
+    return HybridRepository().require_brand_kit(brand_kit_id)

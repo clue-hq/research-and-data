@@ -47,6 +47,7 @@ from httpx import ASGITransport
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.client_context_binding import bind_workspace_client
 from clue_api.frontend_read import FRONTEND_READ_PREFIX, AccountResearchStatusValue
 from clue_api.frontend_read.accounts_list import decode_cursor, encode_cursor
 from clue_api.projections_app import create_projections_app
@@ -624,6 +625,28 @@ def test_a_membership_less_account_renders_as_a_null_heavy_row() -> None:
     run_async(scenario())
 
 
+def test_the_workspace_client_is_not_listed_as_its_own_target_account() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await seed_workspace(conn, _WS)
+            client = await _account(conn, name="Insight Health", domain="insighthealth.ai")
+            target = await _account(conn, name="Neuro Practice", domain="neuro.test")
+            await bind_workspace_client(
+                conn,
+                workspace_id=_WS,
+                client_entity_id=client,
+            )
+
+            response = await _get(conn)
+            assert response.status_code == 200
+            assert [(row["id"], row["name"]) for row in response.json()["data"]] == [
+                (str(target), "Neuro Practice")
+            ]
+            assert response.json()["meta"]["total"] == 1
+
+    run_async(scenario())
+
+
 # --- per-project score attribution ----------------------------------------------------------
 
 
@@ -952,6 +975,42 @@ def test_two_pages_cover_the_workspace_with_no_duplicate_and_no_skip() -> None:
 
             seen = [row["id"] for row in first["data"]] + [row["id"] for row in second["data"]]
             assert len(seen) == len(set(seen)) == 3
+
+    run_async(scenario())
+
+
+def test_numbered_pages_expose_stable_page_metadata_and_no_cursor() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _build(conn)
+
+            first = (await _get(conn, limit=2, page=1)).json()
+            second = (await _get(conn, limit=2, page=2)).json()
+
+            assert [row["name"] for row in first["data"]] == ["Seedling", "Zephyr"]
+            assert [row["name"] for row in second["data"]] == ["Acme"]
+            assert first["meta"] == {
+                "total": 3,
+                "nextCursor": None,
+                "page": 1,
+                "pageSize": 2,
+                "totalPages": 2,
+            }
+            assert second["meta"]["page"] == 2
+            assert second["meta"]["totalPages"] == 2
+
+    run_async(scenario())
+
+
+def test_numbered_page_and_cursor_cannot_be_combined() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _build(conn)
+            first = (await _get(conn, limit=1)).json()
+            response = await _get(conn, limit=1, page=2, cursor=first["meta"]["nextCursor"])
+
+            assert response.status_code == 400
+            assert response.json()["error"]["code"] == "INVALID_PAGINATION"
 
     run_async(scenario())
 

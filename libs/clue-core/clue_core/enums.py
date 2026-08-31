@@ -339,6 +339,22 @@ class ResearchScope(StrEnum):
     PROJECT_RELATIVE = "project_relative"
 
 
+class ProductScopePolicy(StrEnum):
+    """Whether claims for one field may carry a spine ``product_id``.
+
+    This is independent of :class:`ReuseScope` (privacy/tenant reuse) and
+    :class:`ResearchScope` (project-neutral versus project-relative economics).
+
+    * ``FORBIDDEN`` — claims must have ``product_id IS NULL``;
+    * ``REQUIRED`` — claims must carry one exact ``product_id``;
+    * ``OPTIONAL`` — both forms are legitimate, for compatibility and dual-scope marker fields.
+    """
+
+    FORBIDDEN = "forbidden"
+    REQUIRED = "required"
+    OPTIONAL = "optional"
+
+
 class Persona(StrEnum):
     """Buying-committee personas/roles (conventions §3)."""
 

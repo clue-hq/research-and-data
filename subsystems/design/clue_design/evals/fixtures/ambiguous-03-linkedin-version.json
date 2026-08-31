@@ -1,0 +1,17 @@
+{
+  "name": "ambiguous-03-linkedin-version",
+  "kind": "ambiguous",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [],
+  "message": "Can you make a version of this for LinkedIn too?",
+  "judgment": {
+    "action": "continue",
+    "reason": null
+  },
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": false
+  },
+  "why": "Ratified: deriving a format variant of the artifact under iteration is design work on this leg, not new-campaign strategy."
+}

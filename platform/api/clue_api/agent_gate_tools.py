@@ -42,6 +42,7 @@ from clue_api.account_research_estimate import (
 from clue_api.agent_gate import (
     DEFAULT_GATE_CURRENCY,
     KIND_DIRECTIVE_CONFIRMATION,
+    AgentGateSubjectBinding,
     directive_confirmation_gate_id,
     insert_gate,
     money_text,
@@ -73,6 +74,7 @@ from clue_toolbelt import (
 )
 
 __all__ = [
+    "AMOUNT_WITHHELD",
     "GATE_REF_PREFIX",
     "OpenDirectiveConfirmationGateInput",
     "OpenDirectiveConfirmationGateOutput",
@@ -88,6 +90,11 @@ GATE_REF_PREFIX = "agent-gate:"
 #: Bounded so the snapshot stays a readable card rather than a second copy of the directive.
 _MAX_SNAPSHOT_FIELDS = 40
 _MAX_SNAPSHOT_QUESTIONS = 20
+
+#: What ``max_spend_cents`` spells on a model-visible surface when the FI pilot budget-controls
+#: switch is off. The empty string is not a number ``money_text`` can ever produce, so "withheld"
+#: and "zero" stay distinguishable, and the frozen output schema is untouched.
+AMOUNT_WITHHELD = ""
 
 
 def gate_ref(gate_id: UUID) -> str:
@@ -106,6 +113,14 @@ class OpenDirectiveConfirmationGateInput(ToolInput):
     ] = Field(json_schema_extra={TRUSTED_TURN_FIELD: True})
 
 
+# The reference-only result schema. **Frozen** — ``head-of-abm/v23`` pins its
+# ``output_schema_sha256``, so the FI pilot budget-controls switch may not add, remove, or retype a
+# field here — nor even give this class a docstring, which pydantic publishes as the schema's
+# ``description`` and which therefore moves the digest (spec AC5, learned the hard way).
+# Presentation is suppressed by the *value*, not the shape: with controls off ``max_spend_cents``
+# carries ``AMOUNT_WITHHELD`` — the empty string, which no amount ever spells — so the model is told
+# a gate exists without being told a number it must not repeat. ``currency`` stays: a denomination
+# without a quantity discloses nothing.
 class OpenDirectiveConfirmationGateOutput(ToolOutput):
     gate_id: str
     gate_ref: str
@@ -186,8 +201,14 @@ class OpenDirectiveConfirmationGateTool(Tool):
     )
     pin_requirements = ("project_run", "research_directive")
 
-    def __init__(self, *, conn_factory: ConnFactory = transaction) -> None:
+    def __init__(
+        self,
+        *,
+        conn_factory: ConnFactory = transaction,
+        budget_controls_enabled: bool = True,
+    ) -> None:
         self._conn_factory = conn_factory
+        self._budget_controls_enabled = budget_controls_enabled
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -233,7 +254,19 @@ class OpenDirectiveConfirmationGateTool(Tool):
                 # Derived from the durable submission, never proposed: the person who spoke is the
                 # person entitled to answer.
                 addressee_user_id=resolved.turn.submitted_by_user_id or "",
+                subject_bindings=tuple(
+                    AgentGateSubjectBinding(
+                        subject_entity_id=UUID(str(account_id)),
+                        binding_kind="research_directive_account",
+                    )
+                    for account_id in resolved.account_ids
+                ),
             )
+        presented_max_spend: str | None = AMOUNT_WITHHELD
+        if self._budget_controls_enabled:
+            if row.max_spend_cents is None:
+                raise RuntimeError("directive confirmation gate is missing its computed spend cap")
+            presented_max_spend = money_text(row.max_spend_cents)
         return ToolResult(
             tool=self.name,
             version=self.version,
@@ -244,7 +277,11 @@ class OpenDirectiveConfirmationGateTool(Tool):
                 "subject_ref": row.subject_ref,
                 "subject_revision": int(row.subject_revision or 0),
                 "expected_subject_sha256": row.expected_subject_sha256,
-                "max_spend_cents": money_text(row.max_spend_cents),
+                # FI pilot budget-controls: the amount is computed and stored on the immutable row
+                # above in BOTH modes (audit + approval integrity); only its *presentation* is
+                # gated. The model never needs the number — it hands the human a gate_ref and ends
+                # the turn — so withholding it here costs the flow nothing.
+                "max_spend_cents": presented_max_spend,
                 "currency": row.currency,
                 "account_count": len(resolved.account_ids),
                 "addressee_user_id": row.addressee_user_id,
@@ -343,5 +380,14 @@ class OpenDirectiveConfirmationGateTool(Tool):
         )
 
 
-def build_agent_gate_tools(*, conn_factory: ConnFactory = transaction) -> tuple[Tool, ...]:
-    return (OpenDirectiveConfirmationGateTool(conn_factory=conn_factory),)
+def build_agent_gate_tools(
+    *,
+    conn_factory: ConnFactory = transaction,
+    budget_controls_enabled: bool = True,
+) -> tuple[Tool, ...]:
+    return (
+        OpenDirectiveConfirmationGateTool(
+            conn_factory=conn_factory,
+            budget_controls_enabled=budget_controls_enabled,
+        ),
+    )

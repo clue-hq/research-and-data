@@ -89,6 +89,7 @@ from clue_research.durable import (
 )
 from clue_research.identity import get_contact, stamp_reuse
 from clue_research.sources import seed_source_manifests
+from clue_research.stage0 import load_client_knowledge_pack
 from clue_storage import FsStorage
 
 pytestmark = pytest.mark.usefixtures("require_profiling_db")
@@ -395,6 +396,7 @@ async def _channel_intent(
     )
     await load_core_pack(conn)
     await load_compliance_pack(conn)
+    await load_client_knowledge_pack(conn)
     await seed_source_manifests(conn)
     jurisdiction = stamp_reuse(
         Claim(

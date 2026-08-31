@@ -1,0 +1,16 @@
+{
+  "name": "lockin-02-were-done",
+  "kind": "lock_in",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [],
+  "message": "That's the one. We're done here, ship it.",
+  "judgment": {
+    "action": "finish",
+    "reason": "locked"
+  },
+  "expected": {
+    "action": "finish",
+    "reason": "locked",
+    "fail_safe": false
+  }
+}

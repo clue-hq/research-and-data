@@ -486,6 +486,7 @@ class DurableExaWebsetSubmitter:
         pricing: ExaWebsetsPricingPolicy = DEFAULT_EXA_WEBSETS_PRICING,
         poll_after_seconds: int = 15,
         in_flight_grace_seconds: int = 60,
+        enforce_budget: bool = True,
     ) -> None:
         if poll_after_seconds < 1 or in_flight_grace_seconds < 1:
             raise ValueError("Exa submit timing values must be positive")
@@ -495,6 +496,10 @@ class DurableExaWebsetSubmitter:
         self._pricing = pricing
         self._poll_after = timedelta(seconds=poll_after_seconds)
         self._in_flight_grace = timedelta(seconds=in_flight_grace_seconds)
+        # FI pilot budget-controls: threaded from ``Settings.budget_controls_enabled`` at
+        # the composition root and passed to the durable reservation, which stops raising
+        # on the project-run cap while writing every ledger row unchanged.
+        self._enforce_budget = enforce_budget
 
     async def submit(
         self,
@@ -758,6 +763,7 @@ class DurableExaWebsetSubmitter:
                 conn,
                 workspace_id=workspace_id,
                 operation=operation,
+                enforce_budget=self._enforce_budget,
             )
             if created:
                 await update_discovery_batch_state(

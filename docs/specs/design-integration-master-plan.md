@@ -222,8 +222,9 @@ Order matters: tenancy first, then persistence, then execution.
 2. **Mount in the platform shell.** The new platform frontend (built from the new Figma design) owns chat + project/thread structure; when a design leg opens, the editor mounts as an in-session surface — same page, same thread, same stream. Canvas selections flow into turn requests as `focus_refs` (§2.4); agent-applied operations stream back over `design.*` events and render live on the canvas.
 3. **Speaker indicator.** The passive chip (§2.5), driven by leg state from the stream. Display-only.
 4. **Parity gate.** The existing design-editor e2e screenshot suite is the parity checklist; the old standalone editor UX retires only when the mounted surface passes it.
+5. **Public-URL routing — retire the Part-II interim scheme (O6b debt).** Ratified 2026-08-07 (PD contract `docs/specs/PD-part2-design-substrate.md` §6, O6/O6b): publish slugs are **workspace-local** (`design_web_publish` PK `(workspace_id, slug)`), so from Part-II D2 the design API's standalone public serving uses a **temporary workspace-scoped route** (`/w/{workspace_id}/p/{slug}`) in place of the old ambiguous `/p/{slug}` — dev-only traffic, no new table, deliberately disposable. **Part IV owns the real answer**: the serving layer maps a globally unambiguous public URL onto the tenant-local `(workspace_id, slug)` identity (candidates: tenant subdomain, `platform.com/w/{workspace}/{slug}` paths, or a globally-allocated public alias). When that routing ships, the interim route is **deleted**, not kept as a fallback.
 
-**Gate:** the §1 paragraph is demo-able as one continuous session in the new shell.
+**Gate:** the §1 paragraph is demo-able as one continuous session in the new shell — and the Part-II interim public route is gone.
 
 ---
 

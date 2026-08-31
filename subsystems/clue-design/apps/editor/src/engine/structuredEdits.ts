@@ -1,4 +1,5 @@
 import type { Effect, Fill, Node, Operation, Scene, Stroke } from "./contracts";
+import { lumenFetch } from "./editorConfig";
 
 /**
  * TypeScript wrapper for the Phase D structured-edit wire format.
@@ -208,7 +209,7 @@ export async function applyStructuredEdit(
   edit: StructuredEdit,
   options: ApplyEditOptions = {}
 ): Promise<{ envelope: EnvelopeSummary | null; response: Record<string, unknown> }> {
-  const response = await fetch(`${apiBaseUrl}/documents/${documentId}/edits`, {
+  const response = await lumenFetch(`${apiBaseUrl}/documents/${documentId}/edits`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -245,7 +246,7 @@ export async function fetchHistory(
   documentId: string,
   limit = 50
 ): Promise<HistoryEnvelope[]> {
-  const response = await fetch(
+  const response = await lumenFetch(
     `${apiBaseUrl}/documents/${documentId}/history?limit=${limit}`
   );
   if (!response.ok) {
@@ -260,7 +261,7 @@ async function postHistoryAction(
   documentId: string,
   action: "undo" | "redo",
 ): Promise<Record<string, unknown>> {
-  const response = await fetch(`${apiBaseUrl}/documents/${documentId}/${action}`, {
+  const response = await lumenFetch(`${apiBaseUrl}/documents/${documentId}/${action}`, {
     method: "POST"
   });
   if (!response.ok) {
@@ -283,7 +284,7 @@ export async function revertToCheckpoint(
   documentId: string,
   checkpoint: string
 ): Promise<Record<string, unknown>> {
-  const response = await fetch(
+  const response = await lumenFetch(
     `${apiBaseUrl}/documents/${documentId}/revert?checkpoint=${encodeURIComponent(checkpoint)}`,
     { method: "POST" }
   );

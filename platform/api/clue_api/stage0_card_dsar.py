@@ -39,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_agents import PrivacyEraseResult
 from clue_api.agent_turn_wiring import AgentPrivacyService
 from clue_db import ConnFactory, transaction
+from clue_projections.production_context import Stage0ProjectStateCard
 from clue_projections.stage0 import Stage0ProjectCard
 
 #: The ``agent_artifact_subject.binding_kind`` a card carries for each statement it quotes. It is
@@ -84,7 +85,7 @@ class Stage0StatementErasure(BaseModel):
 
 def stage0_card_subject_bindings(
     *,
-    card: Stage0ProjectCard,
+    card: Stage0ProjectCard | Stage0ProjectStateCard,
     base: Sequence[tuple[UUID, str]] = (),
 ) -> tuple[tuple[UUID, str], ...]:
     """The subject bindings a persisted card body must carry (spec §9, "reverse bindings").

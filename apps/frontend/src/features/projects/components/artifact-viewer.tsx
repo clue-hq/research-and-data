@@ -83,7 +83,7 @@ function TableArtifact({ content }: { content: ProjectTableContent }) {
 function CanvasArtifact({ artifact }: { artifact: ProjectArtifact }) {
   return (
     <div className={styles.canvasBoard}>
-      {(artifact.canvasPagePaths ?? [artifact.imagePath]).map((src, index) => (
+      {(artifact.canvasPagePaths ?? (artifact.imagePath ? [artifact.imagePath] : [])).map((src, index) => (
         <div className={styles.canvasPage} key={`${src}-${index}`}>
           <Image alt="" fill sizes="360px" src={src} />
         </div>

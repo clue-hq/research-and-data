@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from uuid import UUID
 
 from clue_agents import DomainObjectRef, ProjectContextArtifact
@@ -62,6 +63,37 @@ def _entity_ids(value: object) -> tuple[EntityId, ...]:
     return tuple(dict.fromkeys(parsed))
 
 
+def _approved_tiers(checkpoint_payload: Mapping[str, object]) -> dict[EntityId, str]:
+    """Resolve both criteria-mode and numeric-score checkpoint approval shapes."""
+
+    approved: dict[EntityId, str] = {}
+    approved_tier = checkpoint_payload.get("approved_tier")
+    if isinstance(approved_tier, str):
+        approved.update(
+            dict.fromkeys(
+                _entity_ids(checkpoint_payload.get("approved_account_ids")), approved_tier
+            )
+        )
+    review = checkpoint_payload.get("review")
+    if not isinstance(review, dict):
+        return approved
+    accounts = review.get("accounts")
+    if not isinstance(accounts, list):
+        return approved
+    for item in accounts:
+        if not isinstance(item, dict):
+            continue
+        account_id_value = item.get("account_id")
+        tier = item.get("tier")
+        if not isinstance(account_id_value, str) or not isinstance(tier, str):
+            continue
+        try:
+            approved[EntityId(UUID(account_id_value))] = tier
+        except ValueError:
+            continue
+    return approved
+
+
 async def compile_account_deep_steering_context(
     *,
     workspace_id: str,
@@ -77,9 +109,16 @@ async def compile_account_deep_steering_context(
 
         checkpoint = await get_checkpoint(conn, project_run_id, ProjectPhase.TIER_CHECKPOINT)
         checkpoint_payload = checkpoint.payload if checkpoint is not None else {}
-        approved_ids = _entity_ids(checkpoint_payload.get("approved_account_ids"))
-        approved_tier_value = checkpoint_payload.get("approved_tier")
-        approved_tier = approved_tier_value if isinstance(approved_tier_value, str) else None
+        approved_tier_by_account = (
+            _approved_tiers(checkpoint_payload)
+            if checkpoint is not None and checkpoint.status.value == "committed"
+            else {}
+        )
+        approved_ids = tuple(approved_tier_by_account)
+        distinct_approved_tiers = set(approved_tier_by_account.values())
+        approved_tier = (
+            next(iter(distinct_approved_tiers)) if len(distinct_approved_tiers) == 1 else None
+        )
 
         directive = (
             await get_latest_research_directive(
@@ -141,7 +180,7 @@ async def compile_account_deep_steering_context(
                     canonical_name=account.canonical_name,
                     primary_domain=account.primary_domain,
                     tier_approved=account_id in approved_ids,
-                    approved_tier=approved_tier if account_id in approved_ids else None,
+                    approved_tier=approved_tier_by_account.get(account_id),
                     in_latest_directive=account_id in directive_ids,
                     in_launch=account_id in launch_ids,
                     account_run_id=str(account_run.id) if account_run is not None else None,
