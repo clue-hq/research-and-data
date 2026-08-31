@@ -1,7 +1,43 @@
 import Image from "next/image";
+import { useState } from "react";
 import { ProjectIcon, type ProjectIconName } from "@/features/projects/components/project-icon";
 import type { GalleryArtifact } from "../model/project-gallery";
 import styles from "./project-gallery.module.css";
+
+/**
+ * A thumbnail that removes itself when the load fails, so a broken thumbnail
+ * (a 502 from the thumbnail route, a version pruned behind our back) leaves the
+ * same empty preview frame an absent one does — never a browser broken-image
+ * element. Key this by `src` at the call site so a newer version's URL gets a
+ * fresh attempt instead of inheriting the previous URL's failure.
+ */
+function ArtifactPreviewImage({
+  loading,
+  sizes,
+  src,
+}: {
+  loading: "eager" | "lazy";
+  sizes: string;
+  src: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    /* unoptimized: the thumbnail route is session-authenticated behind
+       the BFF — the Next image optimizer's server-side refetch carries
+       no session cookie and would 401. The API already serves a
+       card-sized PNG, so there is nothing left to optimize. */
+    <Image
+      alt=""
+      fill
+      loading={loading}
+      onError={() => setFailed(true)}
+      sizes={sizes}
+      src={src}
+      unoptimized
+    />
+  );
+}
 
 function typeIcon(artifact: GalleryArtifact): ProjectIconName {
   if (artifact.collateralType === "microsite") return "web";
@@ -42,19 +78,14 @@ export function GalleryArtifactCard({
       <span className={styles.artifactPreview}>
         {/* An artifact without a thumbnail (ruling 2, now the fallback rather
             than the norm — a real design document has one) renders its preview
-            frame empty rather than showing placeholder artwork. */}
-        {/* unoptimized: the thumbnail route is session-authenticated behind
-            the BFF — the Next image optimizer's server-side refetch carries
-            no session cookie and would 401. The API already serves a
-            card-sized PNG, so there is nothing left to optimize. */}
+            frame empty rather than showing placeholder artwork; a thumbnail
+            that fails to load falls back to that same empty frame. */}
         {artifact.imagePath ? (
-          <Image
-            alt=""
-            fill
+          <ArtifactPreviewImage
+            key={artifact.imagePath}
             loading={preload ? "eager" : "lazy"}
             sizes="(max-width: 780px) 50vw, 200px"
             src={artifact.imagePath}
-            unoptimized
           />
         ) : null}
       </span>
@@ -90,13 +121,11 @@ export function GalleryArtifactListRow({
       <span className={styles.listNameCell}>
         <span className={styles.listThumbnail}>
           {artifact.imagePath ? (
-            <Image
-              alt=""
-              fill
+            <ArtifactPreviewImage
+              key={artifact.imagePath}
               loading={preload ? "eager" : "lazy"}
               sizes="44px"
               src={artifact.imagePath}
-              unoptimized
             />
           ) : null}
         </span>
