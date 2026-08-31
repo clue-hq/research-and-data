@@ -40,8 +40,13 @@ export function GalleryArtifactCard({
       type="button"
     >
       <span className={styles.artifactPreview}>
-        {/* A real design document has no thumbnail (ruling 2): the preview
-            frame renders empty rather than showing placeholder artwork. */}
+        {/* An artifact without a thumbnail (ruling 2, now the fallback rather
+            than the norm — a real design document has one) renders its preview
+            frame empty rather than showing placeholder artwork. */}
+        {/* unoptimized: the thumbnail route is session-authenticated behind
+            the BFF — the Next image optimizer's server-side refetch carries
+            no session cookie and would 401. The API already serves a
+            card-sized PNG, so there is nothing left to optimize. */}
         {artifact.imagePath ? (
           <Image
             alt=""
@@ -49,6 +54,7 @@ export function GalleryArtifactCard({
             loading={preload ? "eager" : "lazy"}
             sizes="(max-width: 780px) 50vw, 200px"
             src={artifact.imagePath}
+            unoptimized
           />
         ) : null}
       </span>
@@ -90,6 +96,7 @@ export function GalleryArtifactListRow({
               loading={preload ? "eager" : "lazy"}
               sizes="44px"
               src={artifact.imagePath}
+              unoptimized
             />
           ) : null}
         </span>
