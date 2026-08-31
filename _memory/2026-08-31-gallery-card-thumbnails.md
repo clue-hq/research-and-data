@@ -167,11 +167,18 @@ LUMEN_CORE_HELPER=$PWD/target/release/lumen-api-helper \
 - **They are not this plan's tests.** Both plan-owned suites were re-run focused, on an
   isolated DB (`clue_thumb_t6`, migrated to head) so the background run was undisturbed:
   `apps/api/tests/test_document_thumbnails.py` **27 passed**, and
-  `tests/design/test_document_thumbnails_dal.py` **3 passed**. All 19 failures are
-  environmental and now triaged: the node toolchain the custom-component compile worker
-  shells out to has no `typescript` installed, so those suites die on
-  `ERR_MODULE_NOT_FOUND` — and no commit on this branch touches any of the files
-  involved. (Note the
+  `tests/design/test_document_thumbnails_dal.py` **3 passed**. Triage (controller,
+  final-review re-check against the log): **17 of 19** die on the missing-`typescript`
+  cause — the node toolchain the custom-component compile worker shells out to has no
+  `typescript` installed (`ERR_MODULE_NOT_FOUND`; 15 log blocks + the
+  `agent_custom_components` singleton's `transient_error` compile status). The other
+  **2 singletons have distinct, pre-existing causes wanting their own triage**:
+  `test_asset_custody.py::test_pure_python_reads_survive_a_wiped_cache` (a 404 from
+  `/asset-store/{digest}` after a wiped cache) and
+  `test_ad_assets_onboarding.py::test_an_empty_harvest_says_so_at_the_top_level` (a
+  stage-vs-summary narration assertion). No commit in THIS PLAN'S WAVE
+  (`d87b6ca2..4c08aca7`) touches any of the six failing files; the wider integration
+  branch has touched the custom-component tests in earlier, unrelated waves. (Note the
   pre-existing Starlette/httpx `testclient` deprecation warning in the output — conftest
   noise, not this plan's.)
 - `clue_thumb_t6` is a second throwaway; drop it alongside `clue_thumb_t1`.
