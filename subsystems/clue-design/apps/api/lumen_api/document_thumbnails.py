@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import io
 import os
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -73,6 +74,16 @@ _TAILWIND_RUNTIME_CANDIDATES = (
 #: document and emit its utilities. web_substrate's base preview pass waits exactly
 #: this long (`web_substrate.py:8918`) on the same runtime and the same html.
 _TAILWIND_SETTLE_MS = 400
+
+#: How many web captures may run at once in this process.
+#:
+#: The route is a sync def, so each capture holds one of Starlette's 40 threadpool
+#: tokens AND one whole Chromium process for the ~2s it takes — a cold gallery of N
+#: web cards would otherwise launch N browsers simultaneously and take the machine's
+#: memory with it. Three bounds that burst while keeping the common case (one or two
+#: cards regenerating) unqueued. No knob: the eventual fix is the plan's pooled
+#: persistent browser, not a tunable, so a constant is enough until that lands.
+_CAPTURE_SLOTS = threading.Semaphore(3)
 
 
 class ThumbnailUnavailable(Exception):
@@ -160,8 +171,10 @@ def web_thumbnail_png(
             "thumbnail.capture_failed", "playwright is not installed"
         ) from error
 
+    # The slot covers launch-through-screenshot — the whole span that owns a browser
+    # process — and is taken with `with`, so a refusal or a crash inside gives it back.
     try:
-        with sync_playwright() as pw:
+        with _CAPTURE_SLOTS, sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             try:
                 context = browser.new_context(

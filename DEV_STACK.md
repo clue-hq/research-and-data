@@ -66,6 +66,14 @@ Then open **http://localhost:3020** and sign in:
   The route's full typed-502 vocabulary is four codes: `thumbnail.tailwind_runtime_missing`,
   `thumbnail.capture_failed`, and the kind-aware engine-error split
   `thumbnail.render_failed` (web) / `thumbnail.export_failed` (scene/ad).
+- **The design-API process must be able to HTTP-fetch its own advertised origin**
+  (`request.base_url`). The web-thumbnail capture composes the document's asset URLs against
+  that origin and the headless page fetches them itself, so if the public host is not
+  reachable from inside the API's own network — the usual reverse-proxy split — the capture
+  still returns **200 with the imagery silently missing**. Nothing client-side can detect
+  that (it is a valid PNG), and the immutable `?v=` cache then pins the bad artwork for the
+  whole life of that document version. Locally this is free (the API's origin is its own
+  `127.0.0.1:8010`); on any deployment, check it before trusting a thumbnail.
 - `/private/tmp/clue-agent-workspaces` exists with mode 700 (the script creates it).
 
 ## Verifying the stack is actually healthy (30 seconds)

@@ -1,3 +1,5 @@
+"use client";
+
 import Image from "next/image";
 import { useState } from "react";
 import { ProjectIcon, type ProjectIconName } from "@/features/projects/components/project-icon";

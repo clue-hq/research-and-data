@@ -162,13 +162,16 @@ LUMEN_CORE_HELPER=$PWD/target/release/lumen-api-helper \
   | 1 | `apps/api/tests/test_asset_custody.py` |
 
   **None is thumbnail-related** — no failure touches `test_document_thumbnails.py`, the
-  thumbnail route, or the generator. Their causes are deliberately not characterized here:
-  **triage sits with the controller**, from the log (`grep '^FAILED'` for the list).
+  thumbnail route, or the generator. Triage was the controller's, from the log
+  (`grep '^FAILED'` for the list); its verdict is the next bullet.
 - **They are not this plan's tests.** Both plan-owned suites were re-run focused, on an
   isolated DB (`clue_thumb_t6`, migrated to head) so the background run was undisturbed:
   `apps/api/tests/test_document_thumbnails.py` **27 passed**, and
-  `tests/design/test_document_thumbnails_dal.py` **3 passed**. Whatever the two failures
-  are, they live elsewhere in `apps/api/tests` and want their own triage. (Note the
+  `tests/design/test_document_thumbnails_dal.py` **3 passed**. All 19 failures are
+  environmental and now triaged: the node toolchain the custom-component compile worker
+  shells out to has no `typescript` installed, so those suites die on
+  `ERR_MODULE_NOT_FOUND` — and no commit on this branch touches any of the files
+  involved. (Note the
   pre-existing Starlette/httpx `testclient` deprecation warning in the output — conftest
   noise, not this plan's.)
 - `clue_thumb_t6` is a second throwaway; drop it alongside `clue_thumb_t1`.
