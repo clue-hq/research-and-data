@@ -868,7 +868,7 @@ git commit -m "docs(design): thumbnail route contract, chromium prerequisite, se
 
 ## Execution ledger — deferred findings and rulings (Tasks 1–3, executed 2026-08-31)
 
-Tasks 1–3 are complete on `integration/frontend-design-part-iv-v2` (commits `f3b6d457` → `596aa690` → `ed330788` + fix `704b2c7a`), each Opus-implemented, Opus-reviewed, and controller-verified first-hand. Task 3 took one fix round (typed-502 boundary), re-review clean. The final whole-branch review (after Task 6) must triage this list; nothing here blocks Tasks 4–6.
+Tasks 1–5 are complete on `integration/frontend-design-part-iv-v2` (commits `f3b6d457` → `596aa690` → `ed330788` + fix `704b2c7a` → `8fcc8c7b` → `1753a430`), each Opus-implemented, Opus-reviewed, and controller-verified first-hand. Task 3 took one fix round (typed-502 boundary), re-review clean; Tasks 1, 2, 4, 5 reviewed clean at round 0. Task 4 proved the BFF passthrough needed no handler change (query string already forwarded); Task 5's review additionally proved end-to-end that `?v=` survives the BFF and drives the route's freshness comparison — the immutable-cache branch is live. The final whole-branch review (after Task 6) must triage this list; nothing here blocks Task 6.
 
 ### Deferred minors (fix at final review or explicitly waive)
 
@@ -886,6 +886,11 @@ Tasks 1–3 are complete on `integration/frontend-design-part-iv-v2` (commits `f
 | 10 | T3 review | No `response_class=Response` on the route → OpenAPI documents a JSON 200; cosmetic | `main.py:get_document_thumbnail` |
 | 11 | T3 re-review | A `CoreError` escaping `render_web_document`'s *unwrapped* calls (brand-kit / custom-component frames) is labeled `thumbnail.export_failed` on a WEB document — contract-valid 502, code off-kind only | `main.py` thumbnail route `except CoreError` |
 | 12 | T2+T3 | Suite-wide Starlette/httpx `testclient` deprecation warning in test output — pre-existing conftest-chain noise, not this plan's | `apps/api` conftest chain |
+| 13 | T4 review | BFF proxy test hardcodes the harness's default base URL `http://design.internal:8000` (sibling-test pattern; both would move together) | `apps/frontend/src/app/api/clue/design/route.test.ts` |
+| 14 | T5 review | Three comments (plan-inherited wording) promise a "fails to load" fallback, but the empty frame guards ABSENCE only — no `onError` anywhere, and `imagePath` is now set unconditionally, so a 502 renders a broken image element and the empty-frame branch is unreachable for the design feed. Task 6's negative check must expect that; soften the wording or rule in a real onError fallback | `gallery.ts` header + helper docblock, `gallery-artifact-card.tsx:41-43` |
+| 15 | T5 review | Two DEAD legacy renderers of `ProjectArtifact.imagePath` would mishandle the new URL if remounted: `projects/components/artifact-gallery.tsx:22` (next/image WITHOUT `unoptimized` → the 401 case) and `artifact-viewer.tsx:86,158` (the Export link would download a card-sized thumbnail). Verified unimported today; latent only | `apps/frontend/src/features/projects/components/` |
+| 16 | T5 | `project-workspace.ts:93-96` schema comment still says design documents "have no thumbnail" — comment drift; the field stays `.optional()` regardless | `apps/frontend/src/features/projects/model/project-workspace.ts` |
+| 17 | T4 note | `etag` is NOT in `FORWARDED_RESPONSE_HEADERS` — revalidation doesn't survive the BFF; harmless under the immutable `?v=` scheme, recorded so nobody designs against it | `apps/frontend/src/auth/bff.ts:9-17` |
 
 ### Resolved along the way (no action left)
 
