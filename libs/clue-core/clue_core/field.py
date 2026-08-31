@@ -22,8 +22,9 @@ from enum import StrEnum
 from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, JsonValue
+from pydantic.json_schema import SkipJsonSchema
 
-from clue_core.enums import PassKind, ResearchScope, ReuseScope
+from clue_core.enums import PassKind, ProductScopePolicy, ResearchScope, ReuseScope
 
 # --- canonical field-key namespaces (conventions §3) -----------------------
 NS_CORE = "core"  # commodity facts: employee_count, primary_domain, work_email...
@@ -185,6 +186,14 @@ class FieldDef(BaseModel):
     # never privacy — that stays ``reuse_scope``'s job. An additive extension of the
     # field_definition contract (conventions §4).
     research_scope: ResearchScope | None = None
+    # Whether claims for this field may carry a product spine id. ``None`` resolves through
+    # :func:`default_product_scope`: client knowledge is company-wide by default, while fields
+    # outside ``client.*`` retain legacy/general optional behavior. Product-specific client fields
+    # must declare ``REQUIRED`` explicitly.
+    # This is registry/storage policy, not model-authored proposal input. Keep it out of generated
+    # JSON schemas so adding the substrate invariant does not silently expand or repin agent tool
+    # authority. Trusted pack loaders and repository readers still set and serialize the value.
+    product_scope: SkipJsonSchema[ProductScopePolicy | None] = None
 
     @property
     def field_class(self) -> FieldClass:
@@ -234,6 +243,27 @@ def resolve_reuse_scope(field: FieldDef) -> ReuseScope | None:
         if field.reuse_scope is not None
         else default_reuse_scope(field.field_class)
     )
+
+
+def default_product_scope(field_key: str) -> ProductScopePolicy:
+    """Return the fail-safe product binding default for one field key.
+
+    Client-KB fields are company-wide unless their definition explicitly opts into product scope.
+    Other historical fields remain optional so this additive contract does not reinterpret their
+    existing claims.
+    """
+
+    return (
+        ProductScopePolicy.FORBIDDEN
+        if field_key.startswith("client.")
+        else ProductScopePolicy.OPTIONAL
+    )
+
+
+def resolve_product_scope(field: FieldDef) -> ProductScopePolicy:
+    """Resolve the declared/default product binding policy for ``field``."""
+
+    return field.product_scope or default_product_scope(field.field_key)
 
 
 # --- field species (FI-2 P3; contract-delta 2026-08-08) ---------------------

@@ -34,12 +34,13 @@ function accountGridTemplate(
   visibleColumns: Record<AccountColumnKey, boolean>,
   columnOrder: AccountColumnKey[],
   columnWidths: AccountColumnWidths,
+  selectionEnabled: boolean,
 ) {
   const orderedVisibleColumns = columnOrder.filter(
     (column) => visibleColumns[column],
   );
 
-  return ["56px"]
+  return (selectionEnabled ? ["56px"] : [])
     .concat(
       orderedVisibleColumns.map((column, index) =>
         index === orderedVisibleColumns.length - 1
@@ -53,9 +54,10 @@ function accountGridTemplate(
 function accountTableMinWidth(
   visibleColumns: Record<AccountColumnKey, boolean>,
   columnWidths: AccountColumnWidths,
+  selectionEnabled: boolean,
 ) {
   return (
-    56 +
+    (selectionEnabled ? 56 : 0) +
     (Object.keys(columnWidths) as AccountColumnKey[]).reduce(
       (total, column) =>
         total +
@@ -94,6 +96,7 @@ function HeaderCell({
   order,
   showLeadingDivider = true,
   pinned = false,
+  selectionEnabled = true,
   width,
 }: {
   column: AccountColumnKey;
@@ -102,6 +105,7 @@ function HeaderCell({
   order: number;
   showLeadingDivider?: boolean;
   pinned?: boolean;
+  selectionEnabled?: boolean;
   width: number;
 }) {
   const constraints = accountColumnWidthConstraints[column];
@@ -117,7 +121,7 @@ function HeaderCell({
             : leadingHeaderBorder
       } ${
         pinned
-          ? "sticky left-14 z-30 overflow-hidden bg-white"
+          ? `sticky ${selectionEnabled ? "left-14" : "left-0"} z-30 overflow-hidden bg-white`
           : ""
       }`}
       role="columnheader"
@@ -243,6 +247,8 @@ function AccountRow({
   columnWidths,
   density,
   onToggle,
+  selectable,
+  selectionEnabled,
   visibleColumns,
 }: {
   account: Account;
@@ -251,6 +257,8 @@ function AccountRow({
   columnWidths: AccountColumnWidths;
   density: AccountTableDensity;
   onToggle: () => void;
+  selectable: boolean;
+  selectionEnabled: boolean;
   visibleColumns: Record<AccountColumnKey, boolean>;
 }) {
   const columnOrderIndex = (column: AccountColumnKey) =>
@@ -275,29 +283,34 @@ function AccountRow({
           visibleColumns,
           columnOrder,
           columnWidths,
+          selectionEnabled,
         ),
       }}
     >
-      <div
-        className={`sticky left-0 z-20 flex h-full items-center bg-white pr-4 pl-6 group-hover:bg-[var(--clue-background-page)] ${leadingCellBorder}`}
-        role="gridcell"
-        style={{ order: 0 }}
-      >
-        <AccountCheckbox
-          checked={checked}
-          className={
-            checked
-              ? "opacity-100"
-              : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-          }
-          label={`Select ${account.name}`}
-          onChange={onToggle}
-        />
-      </div>
+      {selectionEnabled ? (
+        <div
+          className={`sticky left-0 z-20 flex h-full items-center bg-white pr-4 pl-6 group-hover:bg-[var(--clue-background-page)] ${leadingCellBorder}`}
+          role="gridcell"
+          style={{ order: 0 }}
+        >
+          {selectable ? (
+            <AccountCheckbox
+              checked={checked}
+              className={
+                checked
+                  ? "opacity-100"
+                  : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+              }
+              label={`Select ${account.name}`}
+              onChange={onToggle}
+            />
+          ) : null}
+        </div>
+      ) : null}
 
       {visibleColumns.company ? (
         <div
-          className={`sticky left-14 z-20 h-full min-w-0 overflow-hidden bg-white px-4 group-hover:bg-[var(--clue-background-page)] ${pinnedCellBorder}`}
+          className={`${selectionEnabled ? "sticky left-14 z-20" : "sticky left-0 z-20"} h-full min-w-0 overflow-hidden bg-white px-4 group-hover:bg-[var(--clue-background-page)] ${pinnedCellBorder}`}
           role="gridcell"
           style={{ order: columnOrderIndex("company") }}
         >
@@ -379,6 +392,9 @@ interface AccountsTableProps {
   onToggleAccount: (accountId: string) => void;
   onToggleAll: () => void;
   selectedAccountIds: Set<string>;
+  selectableAccountIds: Set<string>;
+  selectionEnabled: boolean;
+  workspaceIsEmpty?: boolean;
   visibleColumns?: Record<AccountColumnKey, boolean>;
 }
 
@@ -392,11 +408,20 @@ export function AccountsTable({
   onToggleAccount,
   onToggleAll,
   selectedAccountIds,
+  selectableAccountIds,
+  selectionEnabled,
+  workspaceIsEmpty = false,
   visibleColumns = defaultAccountColumns,
 }: AccountsTableProps) {
   const allSelected =
-    accounts.length > 0 &&
-    accounts.every((account) => selectedAccountIds.has(account.id));
+    accounts.some((account) => selectableAccountIds.has(account.id)) &&
+    accounts
+      .filter((account) => selectableAccountIds.has(account.id))
+      .every((account) => selectedAccountIds.has(account.id));
+  const someSelected = accounts.some(
+    (account) =>
+      selectableAccountIds.has(account.id) && selectedAccountIds.has(account.id),
+  );
 
   const columnOrderIndex = (column: AccountColumnKey) =>
     columnOrder.indexOf(column) + 1;
@@ -410,7 +435,13 @@ export function AccountsTable({
       aria-label="Accounts"
       className={`${readability.uiRegular} isolate`}
       role="grid"
-      style={{ minWidth: accountTableMinWidth(visibleColumns, columnWidths) }}
+      style={{
+        minWidth: accountTableMinWidth(
+          visibleColumns,
+          columnWidths,
+          selectionEnabled,
+        ),
+      }}
     >
       <div
         className="sticky top-0 z-10 isolate grid h-[var(--clue-ds-product-dimension-table-header-height)] bg-white"
@@ -420,20 +451,24 @@ export function AccountsTable({
             visibleColumns,
             columnOrder,
             columnWidths,
+            selectionEnabled,
           ),
         }}
       >
-        <div
-          className={`sticky left-0 z-40 flex h-[var(--clue-ds-product-dimension-table-header-height)] items-center bg-white pr-4 pl-6 ${leadingHeaderBorder}`}
-          role="columnheader"
-          style={{ order: 0 }}
-        >
-          <AccountCheckbox
-            checked={allSelected}
-            label="Select all visible accounts"
-            onChange={onToggleAll}
-          />
-        </div>
+        {selectionEnabled ? (
+          <div
+            className={`sticky left-0 z-40 flex h-[var(--clue-ds-product-dimension-table-header-height)] items-center bg-white pr-4 pl-6 ${leadingHeaderBorder}`}
+            role="columnheader"
+            style={{ order: 0 }}
+          >
+            <AccountCheckbox
+              checked={allSelected}
+              indeterminate={someSelected && !allSelected}
+              label="Select all Accounts on this page"
+              onChange={onToggleAll}
+            />
+          </div>
+        ) : null}
         {visibleColumns.company ? (
           <HeaderCell
             column="company"
@@ -441,6 +476,7 @@ export function AccountsTable({
             onReset={onColumnResizeReset}
             order={columnOrderIndex("company")}
             pinned
+            selectionEnabled={selectionEnabled}
             width={columnWidths.company}
           />
         ) : null}
@@ -470,6 +506,8 @@ export function AccountsTable({
             density={density}
             key={account.id}
             onToggle={() => onToggleAccount(account.id)}
+            selectable={selectableAccountIds.has(account.id)}
+            selectionEnabled={selectionEnabled}
             visibleColumns={visibleColumns}
           />
         ))
@@ -477,7 +515,9 @@ export function AccountsTable({
         <div
           className={`${readability.densityTransition} ${densityHeightClasses[density]} flex items-center border-b-[0.5px] border-[var(--clue-border-table)] px-6 text-[var(--clue-content-subtle)]`}
         >
-          No accounts match this search.
+          {workspaceIsEmpty
+            ? "No accounts exist in this workspace yet."
+            : "No accounts match this search."}
         </div>
       )}
     </div>

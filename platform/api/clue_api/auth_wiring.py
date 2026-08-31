@@ -5,13 +5,15 @@ domain services consume :class:`clue_auth.RequestPrincipal`; they never import C
 provider claim.
 """
 
+import re
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Literal
+from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, FastAPI, Header, Request
+from fastapi import APIRouter, Depends, FastAPI, Header, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from clue_auth import (
     AuthenticatedSessionView,
@@ -27,14 +29,27 @@ from clue_auth import (
     RequestPrincipal,
     WorkspaceForbidden,
     permissions_for_role,
+    provision_self_serve_workspace,
 )
+from clue_auth.errors import IdentityConflictError, ProvisioningConflict
 from clue_auth.providers import ClerkAuthenticator, ClerkJwtConfig
 from clue_config import Settings
 from clue_db import ConnFactory
+from clue_obs import get_logger
 
 AUTH_PREFIX = "/auth/v1"
 WORKSPACE_HEADER = "X-Clue-Workspace-Id"
 LOCAL_SUBJECT_HEADER = "X-Clue-Local-Auth-Subject"
+REQUEST_ID_HEADER = "X-Request-Id"
+_SAFE_REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+log = get_logger("clue_api.auth")
+
+
+def _request_id(request: Request) -> str:
+    existing = request.headers.get(REQUEST_ID_HEADER, "").strip()
+    if existing and _SAFE_REQUEST_ID.fullmatch(existing):
+        return existing
+    return uuid4().hex
 
 
 class SessionMembershipResponse(BaseModel):
@@ -51,6 +66,7 @@ class SessionResponse(BaseModel):
 
     user_id: str
     memberships: tuple[SessionMembershipResponse, ...]
+    has_inactive_memberships: bool
 
 
 class PrincipalResponse(BaseModel):
@@ -61,6 +77,79 @@ class PrincipalResponse(BaseModel):
     workspace_id: str
     role_key: str
     permissions: frozenset[str]
+
+
+class ProvisionRequest(BaseModel):
+    """FI-4 D-2 onboarding profile submission. ``job_role`` is a title, never ``role_key``."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    first_name: str = Field(min_length=1, max_length=200)
+    last_name: str = Field(min_length=1, max_length=200)
+    job_role: str = Field(min_length=1, max_length=200)
+    company_name: str = Field(min_length=1, max_length=200)
+    company_website: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("first_name", "last_name", "job_role", "company_name")
+    @classmethod
+    def _strip_required(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("must contain non-whitespace characters")
+        return cleaned
+
+    @field_validator("company_website")
+    @classmethod
+    def _normalize_website(cls, value: str | None) -> str | None:
+        """Normalize to a canonical http(s) URL; scheme-less input gains ``https://``.
+
+        Refuses userinfo (catches ``mailto:a@b``-shaped junk), dotless hosts (catches
+        ``javascript:...`` and bare ``localhost``), and non-http(s) schemes; lowercases the
+        scheme and host. This is submission hygiene, not the SSRF boundary — the Stage-0
+        scrape path applies its own network guard before any fetch.
+        """
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        candidate = cleaned if "://" in cleaned else f"https://{cleaned}"
+        try:
+            parsed = urlsplit(candidate)
+            host = parsed.hostname
+            port = parsed.port
+        except ValueError as error:
+            raise ValueError("company_website must be an http(s) URL") from error
+        if (
+            parsed.scheme.lower() not in ("http", "https")
+            or not host
+            or "." not in host
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise ValueError("company_website must be an http(s) URL")
+        netloc = host.lower() + (f":{port}" if port is not None else "")
+        return urlunsplit((parsed.scheme.lower(), netloc, parsed.path, parsed.query, ""))
+
+
+class ProvisionResponse(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    user_id: str
+    workspace_id: str
+    brand_id: str
+    membership_id: str
+    role_key: str
+    company_name: str
+    company_website: str | None
+    first_name: str | None
+    last_name: str | None
+    job_role: str | None
+    created: bool
+    # True on a replay whose submitted company_name differs from the recorded workspace name.
+    # Workspace/brand names are fixed at creation (review ruling 2026-08-12); this flag makes
+    # the divergence detectable instead of silently echoing the old name as if accepted.
+    company_name_ignored: bool
 
 
 def authentication_request(request: Request) -> AuthenticationRequest:
@@ -201,7 +290,9 @@ def build_principal_service(
     return service, closer
 
 
-def build_auth_router(*, service: PrincipalService) -> APIRouter:
+def build_auth_router(
+    *, service: PrincipalService, conn_factory: ConnFactory | None = None
+) -> APIRouter:
     router = APIRouter(prefix=AUTH_PREFIX, tags=["authentication"])
     session_dependency = SessionDependency(service)
     principal_dependency = PrincipalDependency(service, permission="project.read")
@@ -221,6 +312,7 @@ def build_auth_router(*, service: PrincipalService) -> APIRouter:
                 )
                 for item in session.memberships
             ),
+            has_inactive_memberships=session.has_inactive_memberships,
         )
 
     @router.get("/principal", response_model=PrincipalResponse)
@@ -235,15 +327,101 @@ def build_auth_router(*, service: PrincipalService) -> APIRouter:
             permissions=principal.permissions,
         )
 
+    if conn_factory is not None:
+
+        @router.post("/provision", response_model=ProvisionResponse)
+        async def provision(
+            request: Request, response: Response, body: ProvisionRequest
+        ) -> ProvisionResponse:
+            """FI-4 D-2: one replay-safe operation from a live provider session to an owned
+            workspace with its first brand. Requires authentication but deliberately NOT a
+            provisioned identity or membership — this route is how both come to exist.
+
+            Correctness note: this route relies on ``conn_factory`` having commit-on-exit
+            semantics (``clue_db.transaction``) — the whole operation is one transaction and
+            the 409 path must roll everything back. Wiring ``clue_db.connection`` here would
+            silently roll back every successful provision."""
+            request_id = _request_id(request)
+            response.headers[REQUEST_ID_HEADER] = request_id
+            log.info("auth.provision.started", request_id=request_id)
+            try:
+                session = await service.external_session(authentication_request(request))
+                async with conn_factory() as conn:
+                    provisioned = await provision_self_serve_workspace(
+                        conn,
+                        provider_key=session.provider_key,
+                        provider_subject=session.provider_subject,
+                        company_name=body.company_name,
+                        first_name=body.first_name,
+                        last_name=body.last_name,
+                        job_role=body.job_role,
+                        company_website=body.company_website,
+                    )
+            except IdentityConflictError as error:
+                log.info(
+                    "auth.provision.completed",
+                    request_id=request_id,
+                    outcome="conflict",
+                    created=False,
+                )
+                raise ProvisioningConflict(str(error)) from error
+            except PrincipalError:
+                raise
+            except Exception:
+                log.exception(
+                    "auth.provision.failed",
+                    request_id=request_id,
+                    outcome="unexpected_error",
+                )
+                raise
+            log.info(
+                "auth.provision.completed",
+                request_id=request_id,
+                outcome="created" if provisioned.created else "replayed",
+                created=provisioned.created,
+                user_id=provisioned.user.user_id,
+                workspace_id=provisioned.workspace.workspace_id,
+            )
+            return ProvisionResponse(
+                user_id=provisioned.user.user_id,
+                workspace_id=provisioned.workspace.workspace_id,
+                brand_id=provisioned.brand.brand_id,
+                membership_id=provisioned.membership.membership_id,
+                role_key=provisioned.membership.role_key,
+                company_name=provisioned.workspace.name,
+                company_website=provisioned.company_website,
+                first_name=provisioned.user.first_name,
+                last_name=provisioned.user.last_name,
+                job_role=provisioned.user.job_role,
+                created=provisioned.created,
+                company_name_ignored=(
+                    not provisioned.created and provisioned.workspace.name != body.company_name
+                ),
+            )
+
     return router
 
 
-def install_auth_wiring(app: FastAPI, *, service: PrincipalService) -> None:
-    """Install the provider-free session routes and stable auth error envelope."""
+def install_auth_wiring(
+    app: FastAPI, *, service: PrincipalService, conn_factory: ConnFactory | None = None
+) -> None:
+    """Install the provider-free session routes and stable auth error envelope.
+
+    ``conn_factory`` additionally enables ``POST /auth/v1/provision`` (FI-4 D-2 self-serve
+    onboarding); without it the router serves only the session/principal reads."""
 
     @app.exception_handler(PrincipalError)
     async def _principal_error_handler(request: Request, exc: PrincipalError) -> JSONResponse:
-        request_id = request.headers.get("X-Request-Id", "").strip() or str(uuid4())
+        request_id = _request_id(request)
+        if request.url.path == f"{AUTH_PREFIX}/provision":
+            log.info(
+                "auth.provision.completed",
+                request_id=request_id,
+                outcome="refused",
+                created=False,
+                error_code=exc.code,
+                status=exc.status_code,
+            )
         return JSONResponse(
             status_code=exc.status_code,
             content={
@@ -253,10 +431,10 @@ def install_auth_wiring(app: FastAPI, *, service: PrincipalService) -> None:
                     "requestId": request_id,
                 }
             },
-            headers={"X-Request-Id": request_id},
+            headers={REQUEST_ID_HEADER: request_id},
         )
 
-    app.include_router(build_auth_router(service=service))
+    app.include_router(build_auth_router(service=service, conn_factory=conn_factory))
 
 
 __all__ = [

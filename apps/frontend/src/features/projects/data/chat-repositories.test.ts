@@ -92,6 +92,40 @@ test("an idempotency key is stable per act and distinct across acts", () => {
   assert.match(first, /^turn:/);
 });
 
+test("new chat creation carries the transfer act's idempotency key", async () => {
+  const originalFetch = globalThis.fetch;
+  let request: RequestInit | undefined;
+  globalThis.fetch = async (_input, init) => {
+    request = init;
+    return Response.json({
+      data: {
+        id: "thread-1",
+        title: null,
+        href: "/projects/project-1/chats/thread-1",
+        status: "idle",
+        pinned: false,
+        project_id: "project-1",
+        created_at: "2026-08-13T00:00:00Z",
+        updated_at: "2026-08-13T00:00:00Z",
+      },
+    });
+  };
+  try {
+    const repositories = createChatRepositories({ mode: "http", prefix: "/api/clue" });
+    await repositories.threads.create({
+      idempotencyKey: "add-to-chat-thread:stable",
+      projectId: "project-1",
+      title: null,
+    });
+    assert.equal(
+      new Headers(request?.headers).get("idempotency-key"),
+      "add-to-chat-thread:stable",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("the fixture repositories serve a whole conversation", async () => {
   const repositories = createChatRepositories();
   const threads = await repositories.threads.list({ projectId: FIXTURE_PROJECT_ID });

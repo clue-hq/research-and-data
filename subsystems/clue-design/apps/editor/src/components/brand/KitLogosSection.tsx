@@ -1,18 +1,20 @@
 import React from "react";
 
-import { assetBytesUrl } from "@/engine/brandHub";
+import { useAssetPreviewUrl } from "@/hooks/useAssetPreviewUrl";
 import { isReversedVariant, readLogos, type LogoVariant } from "./kitJson";
 
 function LogoThumb({
   variant,
-  apiBaseUrl,
   usage
 }: {
   variant: LogoVariant;
-  apiBaseUrl: string;
   usage: string;
 }): React.ReactElement {
   const reversed = isReversedVariant(variant);
+  // Kit JSON carries only the asset id; the hook resolves the record to a
+  // public /asset-store/{digest} URL (an <img> cannot send the workspace
+  // header a registry URL would demand).
+  const logoUrl = useAssetPreviewUrl(variant.assetId, "bytes");
   return (
     <div className="kit-logo-cell">
       <div
@@ -22,8 +24,8 @@ function LogoThumb({
         style={reversed ? { backgroundColor: "var(--ink)" } : undefined}
         data-testid={`logo-${variant.assetId ?? variant.name}`}
       >
-        {variant.assetId ? (
-          <img src={assetBytesUrl(apiBaseUrl, variant.assetId)} alt={`${usage} logo`} />
+        {variant.assetId && logoUrl ? (
+          <img src={logoUrl} alt={`${usage} logo`} />
         ) : (
           <span className="caption">no asset</span>
         )}
@@ -39,11 +41,9 @@ function LogoThumb({
  * library when the scraper guessed wrong or found nothing. */
 export function KitLogosSection({
   kitJson,
-  apiBaseUrl,
   onChoose
 }: {
   kitJson: any;
-  apiBaseUrl: string;
   onChoose?: (slot: string) => void;
 }): React.ReactElement | null {
   const groups = readLogos(kitJson);
@@ -59,12 +59,7 @@ export function KitLogosSection({
           <p className="eyebrow">{group.usage}</p>
           <div className="grid-cards kit-logo-grid">
             {group.variants.map((variant, index) => (
-              <LogoThumb
-                key={`${variant.name}-${index}`}
-                variant={variant}
-                apiBaseUrl={apiBaseUrl}
-                usage={group.usage}
-              />
+              <LogoThumb key={`${variant.name}-${index}`} variant={variant} usage={group.usage} />
             ))}
           </div>
           {onChoose ? (

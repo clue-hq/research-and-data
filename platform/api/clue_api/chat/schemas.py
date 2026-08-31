@@ -50,6 +50,9 @@ __all__ = [
     "GateWire",
     "MessageListResponse",
     "PageMeta",
+    "PrepareComposerContextRequest",
+    "PreparedComposerContextResponse",
+    "PreparedComposerContextWire",
     "ProjectBootstrapResponse",
     "ProjectBootstrapWire",
     "ProjectShellResponse",
@@ -131,15 +134,46 @@ class GateResponseRequest(_Request):
     gate_id: str = Field(min_length=1, max_length=64)
     decision: Literal["approved", "rejected", "revised"]
     expected_subject_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    expected_estimated_cost_cents: Decimal = Field(ge=0)
+    expected_estimated_cost_cents: Decimal | None = Field(default=None, ge=0)
+    revision_request: str | None = Field(default=None, min_length=1, max_length=4_000)
+    # Present only for a product-selection gate.  It is a human choice, never an authority
+    # coordinate: the server proves it is a member of the gate's immutable candidate snapshot and
+    # then invokes the human-only confirmation tool with ambient workspace/project authority.
+    selected_product_id: str | None = Field(default=None, min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def one_bounded_auxiliary_answer(self) -> GateResponseRequest:
+        if self.revision_request is not None and self.selected_product_id is not None:
+            raise ValueError("revision_request and selected_product_id are mutually exclusive")
+        return self
 
 
 class ContextRefRequest(_Request):
-    """An ordered, workspace-scoped account/contact reference."""
+    """An ordered, workspace-scoped domain-object reference.
 
-    object_type: Literal["account", "contact"]
+    ``design_document`` (P3.1) pins the open leg's document. ``design_node`` is
+    the ordered, per-message selection inside that exact document scene. ``design_asset``
+    identifies one ready image in the design asset library for reference conditioning.
+    """
+
+    object_type: Literal[
+        "account", "contact", "design_document", "design_node", "design_asset"
+    ]
     object_id: str = Field(min_length=1, max_length=200)
     version: int | None = Field(default=None, gt=0)
+
+
+MAX_CONTEXT_REFS_PER_TURN = 100
+
+
+class PrepareComposerContextRequest(_Request):
+    """Resolve an exact unsent Account/Contact set for one project composer."""
+
+    thread_id: str | None = Field(default=None, min_length=1, max_length=200)
+    context_refs: tuple[ContextRefRequest, ...] = Field(
+        min_length=1,
+        max_length=MAX_CONTEXT_REFS_PER_TURN,
+    )
 
 
 class AttachmentRefRequest(_Request):
@@ -170,11 +204,19 @@ class SubmitTurnRequest(_Request):
     spend.
     """
 
-    message: str | None = Field(default=None, min_length=1, max_length=32_000)
+    message: str | None = Field(default=None, max_length=32_000)
     gate_response: GateResponseRequest | None = None
-    context_refs: tuple[ContextRefRequest, ...] = ()
+    context_refs: tuple[ContextRefRequest, ...] = Field(
+        default=(), max_length=MAX_CONTEXT_REFS_PER_TURN
+    )
     attachment_refs: tuple[AttachmentRefRequest, ...] = ()
     agent_profile_id: str | None = Field(default=None, min_length=1, max_length=200)
+    # P3.1 (PD-part3 delta 5): the design turn contract's one-clarification-round echo —
+    # the PREVIOUS design turn's outcome on this thread's open leg, echoed back by the
+    # client. 'clarification_requested' is the only value with routing meaning (the
+    # design runtime withholds request_clarification for that turn). Ignored on
+    # non-design turns; senders arrive with Part IV's surface.
+    previous_turn_outcome: Literal["clarification_requested"] | None = None
 
     @model_validator(mode="after")
     def exactly_one_body(self) -> SubmitTurnRequest:
@@ -186,8 +228,14 @@ class SubmitTurnRequest(_Request):
 
         if (self.message is None) == (self.gate_response is None):
             raise ValueError("supply exactly one of message or gate_response")
-        if self.message is not None and not self.message.strip():
-            raise ValueError("message must contain something other than whitespace")
+        design_asset_refs = tuple(
+            ref for ref in self.context_refs if ref.object_type == "design_asset"
+        )
+        if self.message is not None and not self.message.strip() and not design_asset_refs:
+            raise ValueError(
+                "message must contain something other than whitespace unless reference images "
+                "are supplied"
+            )
         if self.gate_response is not None and (
             self.context_refs or self.attachment_refs or self.agent_profile_id is not None
         ):
@@ -202,7 +250,9 @@ class HomeProjectRequest(_Request):
 
     brand_id: str = Field(min_length=1, max_length=200)
     message: str = Field(min_length=1, max_length=32_000)
-    context_refs: tuple[ContextRefRequest, ...] = ()
+    context_refs: tuple[ContextRefRequest, ...] = Field(
+        default=(), max_length=MAX_CONTEXT_REFS_PER_TURN
+    )
     attachment_refs: tuple[AttachmentRefRequest, ...] = ()
     agent_profile_id: str | None = Field(default=None, min_length=1, max_length=200)
 
@@ -223,14 +273,25 @@ def gate_response_message(response: GateResponseRequest) -> str:
     message under a used key.
     """
 
+    payload: dict[str, str | None] = {
+        "kind": "gate_response",
+        "gate_id": response.gate_id,
+        "decision": response.decision,
+        "expected_subject_sha256": response.expected_subject_sha256,
+        "expected_estimated_cost_cents": (
+            None
+            if response.expected_estimated_cost_cents is None
+            else money_text(response.expected_estimated_cost_cents)
+        ),
+    }
+    if response.revision_request is not None:
+        payload["revision_request"] = response.revision_request
+    # Preserve byte-for-byte compatibility for historical directive answers: an absent optional
+    # product choice adds no new null member to their canonical transcript record.
+    if response.selected_product_id is not None:
+        payload["selected_product_id"] = response.selected_product_id
     return json.dumps(
-        {
-            "kind": "gate_response",
-            "gate_id": response.gate_id,
-            "decision": response.decision,
-            "expected_subject_sha256": response.expected_subject_sha256,
-            "expected_estimated_cost_cents": money_text(response.expected_estimated_cost_cents),
-        },
+        payload,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
@@ -241,9 +302,19 @@ def gate_response_message(response: GateResponseRequest) -> str:
 
 
 def thread_href(*, project_id: str, thread_id: str) -> str:
-    """The frontend route this thread lives at — the authored contract's ``href`` field."""
+    """The frontend route this thread lives at — the authored contract's ``href`` field.
 
-    return f"/projects/{project_id}?thread={thread_id}"
+    Phase R (founder rulings R1/R2, 2026-08-17): the canonical shape is the
+    explicit chats path; the legacy ``?thread=`` query form survives only as a
+    frontend redirect absorber and must not be emitted.
+    """
+
+    return f"/projects/{project_id}/chats/{thread_id}"
+
+
+#: The derived conversation-status vocabulary, single-sourced: :func:`thread_status` is the one
+#: producer, and every wire field that carries it annotates with this alias.
+ConversationStatus = Literal["idle", "running", "approval", "needs-input", "archived"]
 
 
 def thread_status(
@@ -251,7 +322,7 @@ def thread_status(
     status: str,
     open_gate_kinds: tuple[str, ...] = (),
     running: bool = False,
-) -> str:
+) -> ConversationStatus:
     """The conversation status the sidebar renders.
 
     Derived, never stored — the one place the authored five-value vocabulary
@@ -289,17 +360,33 @@ def thread_status(
     return "idle"
 
 
+class ThreadSpeakerWire(_Wire):
+    """Who owns the thread right now (P3.4's speaker-state projection, PD-part3 §1-D1).
+
+    ``design`` while the thread holds an open design leg — every message goes straight to the
+    design deepagent until the leg closes; ``head_of_abm`` otherwise. Part IV renders the chip;
+    this is the data it reads.
+    """
+
+    role: Literal["head_of_abm", "design"]
+    design_leg_id: str | None = None
+    design_leg_state: Literal["open_awaiting_user", "running"] | None = None
+
+
 class ThreadWire(_Wire):
     """One thread, in the sidebar conversation shape plus the fields the shell genuinely owns."""
 
     id: str
     title: str | None
     href: str
-    status: str
+    status: ConversationStatus
     pinned: bool
     project_id: str
     created_at: str
     updated_at: str
+    #: ``None`` on reads that did not derive it (the tool-reference projections after a
+    #: create/rename); the listing always derives it. Absent knowledge is never a guess.
+    speaker: ThreadSpeakerWire | None = None
 
 
 class ThreadMessageWire(_Wire):
@@ -359,6 +446,10 @@ class TurnAcceptedWire(_Wire):
     thread_id: str
     requested_at: str
     replayed: bool
+    #: Accept-time visibility (P3.4): which agent this message will reach — ``design`` when the
+    #: thread holds an open design leg, else ``head_of_abm``. Derived in the accept transaction,
+    #: so the composer can label the pending turn without a second read.
+    routed_to: Literal["head_of_abm", "design"] = "head_of_abm"
 
 
 class TurnAcceptedResponse(_Wire):
@@ -377,6 +468,16 @@ class ComposerContextEntityWire(_Wire):
     secondary_label: str
     image_url: str | None = None
     version: int | None = None
+
+
+class PreparedComposerContextWire(_Wire):
+    project_id: str
+    thread_id: str | None
+    context_entities: tuple[ComposerContextEntityWire, ...]
+
+
+class PreparedComposerContextResponse(_Wire):
+    data: PreparedComposerContextWire
 
 
 class AgentProfileOptionWire(_Wire):
@@ -459,11 +560,61 @@ class ProjectShellResponse(_Wire):
     data: ProjectShellWire
 
 
+class DesignArtifactWire(_Wire):
+    """W1.3 artifact→design-document read seam (v1: ``document_id == id``).
+
+    Design documents are not yet registered as platform artifacts (the Gallery
+    integration is future work), so the v1 seam resolves the artifact id AS the
+    design-document id behind this typed shape — the URL contract survives the
+    later linkage unchanged. Cross-PROJECT containment is not yet provable
+    (the document row carries a workspace, not a project); workspace scoping is
+    enforced, and the project/document linkage (leg-derived or an artifact
+    registry) is the recorded follow-up.
+    """
+
+    id: str
+    project_id: str
+    document_id: str
+    kind: Literal["web", "ad"]
+    title: str
+    status: str
+    current_version_id: str
+
+
+class DesignArtifactResponse(_Wire):
+    data: DesignArtifactWire
+
+
+class DesignArtifactListItemWire(DesignArtifactWire):
+    """One gallery row: the W1.3 item shape plus what a *listed* artifact needs.
+
+    The list is **leg-derived** (v1 ruling 1): a document belongs to the project whose
+    threads hold the design legs that name it, so every listed document carries the
+    thread it came from. ``origin_thread_id`` is the thread of the document's latest
+    leg — a document worked on from two threads reports the most recent one, not all
+    of them; the gallery uses it to link a card back to its conversation.
+    """
+
+    created_at: str
+    updated_at: str
+    origin_thread_id: str
+    # G-H: the card's own facts, carried from the document rather than guessed
+    # by the client. Both are absent when the document does not record them —
+    # a card then states nothing instead of inventing a channel or a size.
+    artifact_type: str | None = None
+    width_px: int | None = None
+    height_px: int | None = None
+
+
+class DesignArtifactListResponse(_Wire):
+    data: tuple[DesignArtifactListItemWire, ...]
+
+
 class SidebarConversationWire(_Wire):
     id: str
     title: str | None
     href: str
-    status: Literal["idle", "running", "approval", "needs-input", "archived"]
+    status: ConversationStatus
     pinned: bool
     updated_at: str
 
@@ -498,6 +649,9 @@ class GateAnswerWire(_Wire):
     turn_id: str
     action_ref: str
     decision: str
+    expected_subject_sha256: str
+    decision_payload: dict[str, Any]
+    selected_option_ref: str | None
     answered_by_user_id: str
     answered_at: str
 
@@ -520,6 +674,12 @@ class GateWire(_Wire):
     numerically, and a float round-trip is the one way a client could send back an amount it never
     saw. :func:`~clue_api.agent_gate.money_text` is the same function the digest and the captured
     request bytes use, so one amount has exactly one spelling everywhere.
+
+    It is ``None`` — absent from the JSON — when FI pilot budget-controls are off: the amount stays
+    on the immutable row, but no human surface may see it, and the answer route correspondingly
+    stops requiring the echo (the ``expected_subject_sha256`` digest check, which is the
+    load-bearing stale-approval guard, is untouched in both modes). ``None`` rather than ``"0"`` or
+    ``""`` deliberately: a withheld amount must not be readable as a real one.
     """
 
     gate_id: str
@@ -532,10 +692,13 @@ class GateWire(_Wire):
     subject_revision: int | None
     expected_subject_sha256: str
     subject_snapshot: dict[str, Any]
-    max_spend_cents: str
-    currency: str
+    permitted_decisions: tuple[str, ...]
+    max_spend_cents: str | None
+    currency: str | None
     addressee_user_id: str
     created_at: str
+    snapshot_erased_at: str | None
+    snapshot_erasure_reason: str | None
     answer: GateAnswerWire | None
     launches: tuple[GateLaunchWire, ...]
 
@@ -544,8 +707,12 @@ class GateListResponse(_Wire):
     data: tuple[GateWire, ...]
 
 
-def gate_wire(view: GateView) -> GateWire:
-    """One thread gate on the wire."""
+def gate_wire(view: GateView, *, budget_controls_enabled: bool = True) -> GateWire:
+    """One thread gate on the wire.
+
+    ``budget_controls_enabled`` is ``Settings.budget_controls_enabled``; False withholds the amount
+    (FI pilot budget-controls). Everything that makes the gate *answerable* — the id, the subject
+    ref, its digest, the addressee — crosses in both modes."""
 
     return GateWire(
         gate_id=view.gate_id,
@@ -558,10 +725,19 @@ def gate_wire(view: GateView) -> GateWire:
         subject_revision=view.subject_revision,
         expected_subject_sha256=view.expected_subject_sha256,
         subject_snapshot=dict(view.subject_snapshot),
-        max_spend_cents=money_text(view.max_spend_cents),
+        permitted_decisions=view.permitted_decisions,
+        max_spend_cents=(
+            money_text(view.max_spend_cents)
+            if budget_controls_enabled and view.max_spend_cents is not None
+            else None
+        ),
         currency=view.currency,
         addressee_user_id=view.addressee_user_id,
         created_at=view.created_at.isoformat(),
+        snapshot_erased_at=(
+            None if view.snapshot_erased_at is None else view.snapshot_erased_at.isoformat()
+        ),
+        snapshot_erasure_reason=view.snapshot_erasure_reason,
         answer=(
             None
             if view.answer is None
@@ -569,6 +745,9 @@ def gate_wire(view: GateView) -> GateWire:
                 turn_id=view.answer.turn_id,
                 action_ref=view.answer.action_ref,
                 decision=view.answer.decision,
+                expected_subject_sha256=view.answer.expected_subject_sha256,
+                decision_payload=dict(view.answer.decision_payload),
+                selected_option_ref=view.answer.selected_option_ref,
                 answered_by_user_id=view.answer.answered_by_user_id,
                 answered_at=view.answer.answered_at.isoformat(),
             )
@@ -586,18 +765,36 @@ def gate_wire(view: GateView) -> GateWire:
     )
 
 
+def thread_speaker_wire(design_leg: dict[str, Any] | None) -> ThreadSpeakerWire:
+    """The speaker from one thread's open-leg row (or its absence)."""
+
+    if design_leg is None:
+        return ThreadSpeakerWire(role="head_of_abm")
+    state = str(design_leg["state"])
+    if state not in ("open_awaiting_user", "running"):  # pragma: no cover - closed is filtered
+        return ThreadSpeakerWire(role="head_of_abm")
+    return ThreadSpeakerWire(
+        role="design",
+        design_leg_id=str(design_leg["id"]),
+        design_leg_state=state,  # type: ignore[arg-type]
+    )
+
+
 def thread_wire(
     view: ThreadView,
     *,
     open_gate_kinds: tuple[str, ...] = (),
     running: bool = False,
+    speaker: ThreadSpeakerWire | None = None,
 ) -> ThreadWire:
     """One thread on the wire.
 
-    Both derivation inputs default to "nothing known" so a caller that has read neither the gates
+    The derivation inputs default to "nothing known" so a caller that has read neither the gates
     nor the submissions-union gets the honest ``idle``/``archived`` answer rather than a guess:
-    ``open_gate_kinds`` from :func:`~clue_projections.open_gate_kinds_for_threads` (D4) and
-    ``running`` from :func:`~clue_projections.threads_running` (D3).
+    ``open_gate_kinds`` from :func:`~clue_projections.open_gate_kinds_for_threads` (D4),
+    ``running`` from :func:`~clue_projections.threads_running` (D3), and ``speaker`` (P3.4) from
+    :func:`~clue_api.design_leg_wiring.design_legs_for_threads` through
+    :func:`thread_speaker_wire` — ``None`` means "not derived", never "head-of-abm".
     """
 
     return ThreadWire(
@@ -613,6 +810,7 @@ def thread_wire(
         project_id=view.project_id,
         created_at=view.created_at.isoformat(),
         updated_at=view.updated_at.isoformat(),
+        speaker=speaker,
     )
 
 
@@ -644,6 +842,7 @@ def message_wire(
     thread_id: str,
     body: str | None = None,
     body_unavailable_reason: str | None = None,
+    ref_presentations: Mapping[tuple[str, str], Mapping[str, Any]] | None = None,
 ) -> ThreadMessageWire:
     """One message on the wire; ``body`` is present only on the D3 hydrated cold-load read.
 
@@ -652,6 +851,13 @@ def message_wire(
     honest about a body it could not serve — erased, too large, not text — instead of returning an
     empty string that renders as a message the user never sent.
     """
+
+    refs: list[dict[str, Any]] = []
+    for ref in item.refs:
+        wire = ref.model_dump(mode="json")
+        if ref_presentations is not None:
+            wire.update(ref_presentations.get((ref.object_type, ref.object_id), {}))
+        refs.append(wire)
 
     return ThreadMessageWire(
         id=str(item.message_id),
@@ -664,7 +870,7 @@ def message_wire(
         body=body,
         body_unavailable_reason=body_unavailable_reason,
         created_at=item.created_at.isoformat(),
-        refs=tuple(ref.model_dump(mode="json") for ref in item.refs),
+        refs=tuple(refs),
     )
 
 
@@ -673,6 +879,7 @@ def message_list_response(
     *,
     thread_id: str,
     bodies: Mapping[str, HydratedBody] | None = None,
+    ref_presentations: Mapping[tuple[str, str], Mapping[str, Any]] | None = None,
 ) -> MessageListResponse:
     """One page on the wire. ``bodies`` is supplied only by the ``?include=bodies`` opt-in.
 
@@ -689,6 +896,7 @@ def message_list_response(
                 body_unavailable_reason=(
                     None if hydrated is None or hydrated.body is not None else hydrated.reason
                 ),
+                ref_presentations=ref_presentations,
             )
             for item in page.items
             for hydrated in ((None if bodies is None else bodies.get(item.body_artifact_key)),)

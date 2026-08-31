@@ -38,15 +38,18 @@ from clue_core import (
     ReadinessGate,
     ReadinessVerdict,
     ReuseScope,
+    RunEventTopic,
     TargetLock,
     new_entity_id,
     new_operation_id,
     new_project_run_id,
     new_run_id,
 )
+from clue_execution.run_events import list_run_events
 from clue_research.adapters import CallableClaimExtractor
 from clue_research.claimstore import WorkspaceScope, claims_by_ids, insert_claim
-from clue_research.durable import RunEventTopic, list_run_events
+from clue_research.durable import ProjectRunStatus
+from clue_research.durable.project_run import set_phase
 from clue_research.icp import create_icp_spec
 from clue_research.identity import insert_account_entity
 from clue_research.sources import is_resolver_bound, unbind_resolver
@@ -62,7 +65,7 @@ from clue_research.stage0 import (
     start_recon,
     submit_onboarding_input,
 )
-from clue_research.stage0.fields import CLIENT_VALUE_PROP
+from clue_research.stage0.fields import CLIENT_PRODUCT_OVERVIEW, CLIENT_VALUE_PROP
 from clue_spine import create_brand, create_product, create_project
 from clue_storage import artifact_key as make_artifact_key
 from clue_storage import record_artifact
@@ -77,8 +80,15 @@ _WORKSPACE = "phase-c4"
 class _RecordingGate:
     def __init__(self) -> None:
         self.requests: list[PreSpendRequest] = []
+        self.rebound = False
+
+    def with_conn_factory(self, conn_factory: object) -> _RecordingGate:
+        del conn_factory
+        self.rebound = True
+        return self
 
     async def check(self, request: PreSpendRequest) -> PreSpendDecision:
+        assert self.rebound, "StartReconTool must gate against its caller-owned lane transaction"
         self.requests.append(request)
         return PreSpendDecision(verdict=PreSpendVerdict.PASS)
 
@@ -217,6 +227,10 @@ def test_url_only_recon_is_two_speed_gated_snapshotted_and_evented() -> None:
                 pre_spend_gate=gate,
                 scrape_binder=binder,
                 storage=storage,
+                # This harness's factory is same-conn and reentrant, so the emitter's
+                # "autonomous" branch still rides the rollback connection — the composed
+                # path is exercised without leaking committed rows out of the test.
+                field_progress_factory=factory,
             )
             inputs = StartReconInput(
                 brand_id=brand.brand_id,
@@ -234,6 +248,7 @@ def test_url_only_recon_is_two_speed_gated_snapshotted_and_evented() -> None:
                 fast = await tool.invoke(inputs, ctx)
                 assert fast.references["fast_status"] == "completed"
                 assert fast.references["background_status"] == "queued"
+                assert gate.rebound is True
                 assert gate.requests
                 assert storage.blobs
 
@@ -259,6 +274,46 @@ def test_url_only_recon_is_two_speed_gated_snapshotted_and_evented() -> None:
                     ("background", "running"),
                     ("background", "completed"),
                 ]
+                # Budget honesty rides the COMPLETED transitions: the cheap fast lane really
+                # does stop at its cap here (so it "completed" without reaching every field),
+                # while the wider background lane runs the whole baseline out.
+                completed = [
+                    event for event in transitions if event.payload["status"] == "completed"
+                ]
+                assert [
+                    (event.payload["lane"], event.payload["budget_exhausted"])
+                    for event in completed
+                ] == [("fast", True), ("background", False)]
+
+                # Per-field motion: a poller sees real fields start and terminate mid-lane.
+                field_events = [
+                    event
+                    for event in events
+                    if event.topic == RunEventTopic.STEP_PROGRESS.value
+                    and event.payload.get("kind") == "stage0.recon.field"
+                ]
+                assert field_events
+                for lane in ("fast", "background"):
+                    lane_events = [
+                        (event.payload["field_key"], event.payload["status"])
+                        for event in field_events
+                        if event.payload["lane"] == lane
+                    ]
+                    value_prop = [status for key, status in lane_events if key == CLIENT_VALUE_PROP]
+                    assert value_prop[0] == "started"
+                    assert value_prop[1] in {"resolved", "empty"}
+                # The events are durable *while the lane runs*, not appended after it:
+                # every fast field event precedes the fast lane's completed transition.
+                fast_completed_seq = next(
+                    event.seq
+                    for event in transitions
+                    if (event.payload["lane"], event.payload["status"]) == ("fast", "completed")
+                )
+                fast_field_seqs = [
+                    event.seq for event in field_events if event.payload["lane"] == "fast"
+                ]
+                assert fast_field_seqs
+                assert max(fast_field_seqs) < fast_completed_seq
             finally:
                 unbind_resolver("firecrawl_site")
 
@@ -304,7 +359,7 @@ def test_c4_lineage_readiness_and_confirmed_run_entry() -> None:
                 research_mode=ResearchMode.ACCOUNT_PROFILING,
                 reuse_scope=ReuseScope.TENANT_PRIVATE,
                 workspace_id=_WORKSPACE,
-                product_id=product.product_id,
+                product_id=None,
             )
             claim_id = await insert_claim(conn, claim)
             spec = await create_icp_spec(
@@ -332,6 +387,22 @@ def test_c4_lineage_readiness_and_confirmed_run_entry() -> None:
                 brand_id=brand.brand_id,
                 name="Other product",
             )
+            product_claim = Claim(
+                entity_id=client,
+                entity_type=EntityType.ACCOUNT,
+                field_key=CLIENT_PRODUCT_OVERVIEW,
+                value_json="Product-specific context",
+                source_tier=1,
+                extraction_method=ExtractionMethod.HUMAN,
+                evidence_span="Product-specific context",
+                confidence=1.0,
+                run_id=new_run_id(),
+                research_mode=ResearchMode.ACCOUNT_PROFILING,
+                reuse_scope=ReuseScope.TENANT_PRIVATE,
+                workspace_id=_WORKSPACE,
+                product_id=product.product_id,
+            )
+            product_claim_id = await insert_claim(conn, product_claim)
             with pytest.raises(ValueError, match="foreign, or unscoped claim"):
                 await compile_product_context(
                     conn,
@@ -340,7 +411,7 @@ def test_c4_lineage_readiness_and_confirmed_run_entry() -> None:
                     product_id=other_product.product_id,
                     client_entity_id=client,
                     client_kb_version=1,
-                    claim_refs=(str(claim_id),),
+                    claim_refs=(str(product_claim_id),),
                 )
             readiness = await evaluate_readiness(
                 conn,
@@ -384,6 +455,45 @@ def test_c4_lineage_readiness_and_confirmed_run_entry() -> None:
             assert run.phase is ProjectPhase.DISCOVERY
             assert run.product_context_version_id == context.version_id
             assert run.readiness_decision_id == readiness.readiness_decision_id
+
+            # A delayed/replayed start must neither fail nor rewind a run which Recipe #1 already
+            # advanced. The same id still cannot be reused for different immutable authority.
+            await set_phase(
+                conn,
+                run_id,
+                phase=ProjectPhase.SCORING,
+                status=ProjectRunStatus.ACTIVE,
+            )
+            await start_confirmed_project_run(
+                conn,
+                project_run_id=run_id,
+                workspace_id=_WORKSPACE,
+                project_id=project.project_id,
+                client_entity_id=client,
+                client_kb_version=1,
+                product_id=product.product_id,
+                product_context_version_id=context.version_id,
+                readiness_decision_id=readiness.readiness_decision_id,
+                icp_key=spec.icp_key,
+                icp_version=spec.version,
+            )
+            advanced = await get_project_run(conn, run_id)
+            assert advanced is not None and advanced.phase is ProjectPhase.SCORING
+            with pytest.raises(ValueError, match="different immutable lineage"):
+                await start_confirmed_project_run(
+                    conn,
+                    project_run_id=run_id,
+                    workspace_id=_WORKSPACE,
+                    project_id=project.project_id,
+                    client_entity_id=client,
+                    client_kb_version=1,
+                    product_id=product.product_id,
+                    product_context_version_id=context.version_id,
+                    readiness_decision_id=readiness.readiness_decision_id,
+                    icp_key=spec.icp_key,
+                    icp_version=spec.version,
+                    budget_cap_cents=Decimal("1"),
+                )
 
     run_async(_run())
 

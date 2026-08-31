@@ -13,6 +13,7 @@ from sqlalchemy import text
 
 from clue_api import build_tool_invoker, create_projections_app
 from clue_api.chat import RequestPrincipal
+from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
 from clue_api.chat.router import _first_thread_title
 from clue_api.thread_wiring import register_thread_tools
 from clue_auth import permissions_for_role
@@ -133,14 +134,11 @@ async def _seed(conn, workspace_id: str):
 async def _workspace_row_count(conn, table: str, workspace_id: str) -> int:
     if table == "fleet_task":
         statement = text(
-            "SELECT count(*) FROM fleet_task "
-            "WHERE payload_json ->> 'workspace_id' = :workspace_id"
+            "SELECT count(*) FROM fleet_task WHERE payload_json ->> 'workspace_id' = :workspace_id"
         )
     else:
         statement = text(f"SELECT count(*) FROM {table} WHERE workspace_id = :workspace_id")
-    return int(
-        (await conn.execute(statement, {"workspace_id": workspace_id})).scalar_one()
-    )
+    return int((await conn.execute(statement, {"workspace_id": workspace_id})).scalar_one())
 
 
 def _body(brand_id: str, message: str = "Start an ABM project for Northstar Labs") -> dict:
@@ -198,16 +196,14 @@ def test_home_read_is_real_scoped_and_capability_honest(require_chat_db: None) -
                     ],
                     "agent_profiles": [
                         {
-                            "id": "head-of-abm@v23",
+                            "id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
                             "label": "GPT-5.6 Terra",
                             "short_label": "GPT-5.6 Terra",
-                            "description": (
-                                "Clue's governed GPT-5.6 Terra conversation profile"
-                            ),
+                            "description": ("Clue's governed GPT-5.6 Terra conversation profile"),
                             "model_id": "openai/gpt-5.6-terra",
                         }
                     ],
-                    "default_agent_profile_id": "head-of-abm@v23",
+                    "default_agent_profile_id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
                     "composer_capabilities": {
                         "context_refs": True,
                         "attachments": False,
@@ -256,7 +252,7 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
                 {"object_type": "account", "object_id": str(second_account)},
                 {"object_type": "account", "object_id": str(first_account)},
             ]
-            request_body["agent_profile_id"] = "head-of-abm@v23"
+            request_body["agent_profile_id"] = PROJECT_CONVERSATION_AGENT_PROFILE_ID
             async with _client(app) as client:
                 created = await client.post(
                     "/api/v1/projects",
@@ -282,12 +278,11 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
             assert second["thread"]["id"] == first["thread"]["id"]
             assert second["turn"]["turn_id"] == first["turn"]["turn_id"]
             assert first["href"] == (
-                f"/projects/{first['project']['id']}?thread={first['thread']['id']}"
+                f"/projects/{first['project']['id']}/chats/{first['thread']['id']}"
             )
 
             turns_path = (
-                f"/api/v1/projects/{first['project']['id']}/threads/"
-                f"{first['thread']['id']}/turns"
+                f"/api/v1/projects/{first['project']['id']}/threads/{first['thread']['id']}/turns"
             )
             async with _client(app) as client:
                 pending_turns = await client.get(
@@ -346,7 +341,7 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
                     {"workspace_id": "ws-home-create"},
                 )
             ).scalar_one()
-            assert submission == "head-of-abm@v23"
+            assert submission == PROJECT_CONVERSATION_AGENT_PROFILE_ID
             context_rows = (
                 (
                     await conn.execute(
@@ -365,9 +360,7 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
                 ("account", str(second_account)),
                 ("account", str(first_account)),
             ]
-            assert list(storage.blobs.values()) == [
-                b"Start an ABM project for Northstar Labs"
-            ]
+            assert list(storage.blobs.values()) == [b"Start an ABM project for Northstar Labs"]
 
     run_async(scenario())
 
@@ -395,9 +388,12 @@ def test_home_bootstrap_refuses_conflicts_foreign_brand_and_invalid_context(
                 unavailable = await client.post(
                     "/api/v1/projects",
                     headers={**headers, "Idempotency-Key": "unsupported"},
-                    json={**_body(brand.brand_id), "context_refs": [
-                        {"object_type": "account", "object_id": "acct_1", "version": None}
-                    ]},
+                    json={
+                        **_body(brand.brand_id),
+                        "context_refs": [
+                            {"object_type": "account", "object_id": "acct_1", "version": None}
+                        ],
+                    },
                 )
                 foreign_brand = await client.post(
                     "/api/v1/projects",

@@ -1,0 +1,3163 @@
+{
+  "schema_version": 1,
+  "brand_kit": {
+    "id": "brand_kit_ing_813df4f30f2d429a853dbccae2277a5a",
+    "version": 1,
+    "name": "Stripe",
+    "approval_status": "draft",
+    "product_ready": true,
+    "source": "website",
+    "description": null,
+    "default_mode": null,
+    "modes": null,
+    "tokens": {
+      "text_tokens": [
+        "text.accent",
+        "text.brand",
+        "text.inverse",
+        "text.muted",
+        "text.primary",
+        "text.secondary"
+      ],
+      "asset_tokens": [
+        "logo.mark",
+        "logo.primary"
+      ],
+      "focus_tokens": [
+        "focus.ring"
+      ],
+      "border_tokens": [
+        "border.brand",
+        "border.default",
+        "border.strong",
+        "border.subtle"
+      ],
+      "radius_tokens": [
+        "radius.badge",
+        "radius.button",
+        "radius.card",
+        "radius.full",
+        "radius.lg",
+        "radius.md",
+        "radius.none",
+        "radius.sm",
+        "radius.xl",
+        "radius.xs"
+      ],
+      "opacity_tokens": [
+        "opacity.disabled",
+        "opacity.emphasis",
+        "opacity.muted",
+        "opacity.overlay",
+        "opacity.scrim",
+        "opacity.subtle"
+      ],
+      "spacing_tokens": [
+        "space.0",
+        "space.1",
+        "space.10",
+        "space.12",
+        "space.16",
+        "space.2",
+        "space.3",
+        "space.4",
+        "space.5",
+        "space.6",
+        "space.8",
+        "space.card.padding",
+        "space.lg",
+        "space.md",
+        "space.page.margin",
+        "space.section",
+        "space.sm",
+        "space.stack.default",
+        "space.stack.loose",
+        "space.stack.tight",
+        "space.xl",
+        "space.xs"
+      ],
+      "surface_tokens": [
+        "surface.accent",
+        "surface.brand",
+        "surface.brand.subtle",
+        "surface.canvas",
+        "surface.card",
+        "surface.elevated",
+        "surface.inverse",
+        "surface.muted",
+        "surface.page"
+      ],
+      "typography_tokens": [
+        "type.body",
+        "type.body.small",
+        "type.caption",
+        "type.cta",
+        "type.display",
+        "type.eyebrow",
+        "type.headline",
+        "type.label",
+        "type.legal",
+        "type.stat",
+        "type.subtitle",
+        "type.title"
+      ],
+      "stroke_width_tokens": [
+        "stroke.width.bold",
+        "stroke.width.card",
+        "stroke.width.default",
+        "stroke.width.divider",
+        "stroke.width.firm",
+        "stroke.width.focus",
+        "stroke.width.hairline",
+        "stroke.width.thin"
+      ]
+    },
+    "assets": {
+      "logo_tokens": [
+        "logo.mark",
+        "logo.primary"
+      ],
+      "font_families": [
+        "SourceCodePro"
+      ],
+      "image_asset_tokens": []
+    },
+    "authoring_rules": [
+      "Use semantic tokens instead of raw colors, sizes, spacing, radii, stroke widths, or opacity when the scene is brand-governed.",
+      "Use style($type.*) for text roles and keep raw font declarations for explicit overrides only.",
+      "Use fill($surface.*), stroke($border.*,$stroke.width.*), g($space.*), pad($space.*), and rd($radius.*).",
+      "Use logo.* and asset.* tokens for brand assets when possible; do not invent token names."
+    ],
+    "created_at": "2026-08-18T12:43:49.842596+00:00",
+    "updated_at": "2026-08-18T12:43:49.842596+00:00"
+  },
+  "brand_kit_json": {
+    "id": "brand_kit_ing_813df4f30f2d429a853dbccae2277a5a",
+    "name": "Stripe",
+    "modes": {
+      "axes": {
+        "theme": [
+          "light",
+          "dark"
+        ],
+        "density": [
+          "comfortable",
+          "compact"
+        ],
+        "accessibility": [
+          "standard",
+          "high_contrast",
+          "large_text"
+        ]
+      },
+      "defaults": {
+        "theme": "light",
+        "density": "comfortable",
+        "accessibility": "standard"
+      }
+    },
+    "assets": {
+      "fonts": {
+        "brand": {
+          "faces": [
+            {
+              "style": "normal",
+              "weight": 500,
+              "asset_id": null,
+              "source_url": "https://stripe.com/mkt-ssr-statics/assets/_next/static/media/SourceCodePro-Medium.f5ba3e6a.woff2"
+            }
+          ],
+          "family": "SourceCodePro",
+          "source": {
+            "url": "https://stripe.com/mkt-ssr-statics/assets/_next/static/media/SourceCodePro-Medium.f5ba3e6a.woff2",
+            "kind": "url"
+          },
+          "license": {
+            "name": "unknown",
+            "embeddable": false,
+            "source_url": null,
+            "subsettable": false,
+            "restrictions": [
+              "License not verified at ingestion; do not embed in print exports without confirmation."
+            ]
+          },
+          "scripts": [
+            "latin"
+          ],
+          "provenance": {
+            "source": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/9d3a49263f73db6f.css :: @font-face SourceCodePro",
+            "confidence": 0.7
+          },
+          "fallback_stack": [
+            "Arial",
+            "sans-serif"
+          ]
+        }
+      },
+      "logos": {
+        "mark": {
+          "usage": "mark",
+          "license": null,
+          "min_size": null,
+          "variants": [
+            {
+              "name": "full_color",
+              "width": null,
+              "height": null,
+              "asset_id": "asset_ing_cb86ad335799c963",
+              "color_mode": "full_color"
+            }
+          ],
+          "clearspace": null,
+          "provenance": {
+            "source": "website:dom :: apple-touch-icon",
+            "confidence": 0.7
+          },
+          "allowed_backgrounds": [
+            "surface.page",
+            "surface.card"
+          ]
+        },
+        "primary": {
+          "usage": "primary",
+          "license": null,
+          "min_size": null,
+          "variants": [
+            {
+              "name": "full_color",
+              "width": null,
+              "height": null,
+              "asset_id": "asset_ing_61a219a05909b652",
+              "color_mode": "full_color"
+            }
+          ],
+          "clearspace": null,
+          "provenance": {
+            "source": "website:dom :: logo-score 5.2 [header-nav+home-link+svg+lockup-aspect]",
+            "confidence": 0.7
+          },
+          "allowed_backgrounds": [
+            "surface.page",
+            "surface.card"
+          ]
+        }
+      },
+      "images": {
+        "img.1": {
+          "role": "og_image",
+          "license": null,
+          "asset_id": "asset_ing_53f9b6455350e5b5",
+          "mime_type": null,
+          "provenance": {
+            "source": "website:dom :: og:image",
+            "confidence": 0.6
+          },
+          "style_tags": [],
+          "crop_allowed": true,
+          "recolor_allowed": false,
+          "allowed_contexts": [],
+          "preferred_color_tokens": []
+        },
+        "img.2": {
+          "role": "photo",
+          "license": null,
+          "asset_id": "asset_ing_7262ca0dc07c8d9c",
+          "mime_type": null,
+          "provenance": {
+            "source": "website:dom :: img",
+            "confidence": 0.6
+          },
+          "style_tags": [],
+          "crop_allowed": true,
+          "recolor_allowed": false,
+          "allowed_contexts": [],
+          "preferred_color_tokens": []
+        },
+        "img.3": {
+          "role": "photo",
+          "license": null,
+          "asset_id": "asset_ing_5ea77b5ffa4992f3",
+          "mime_type": null,
+          "provenance": {
+            "source": "website:dom :: img",
+            "confidence": 0.6
+          },
+          "style_tags": [],
+          "crop_allowed": true,
+          "recolor_allowed": false,
+          "allowed_contexts": [],
+          "preferred_color_tokens": []
+        },
+        "img.4": {
+          "role": "photo",
+          "license": null,
+          "asset_id": "asset_ing_421820f838bdedce",
+          "mime_type": null,
+          "provenance": {
+            "source": "website:dom :: img",
+            "confidence": 0.6
+          },
+          "style_tags": [],
+          "crop_allowed": true,
+          "recolor_allowed": false,
+          "allowed_contexts": [],
+          "preferred_color_tokens": []
+        },
+        "img.5": {
+          "role": "photo",
+          "license": null,
+          "asset_id": "asset_ing_e33a3733dcbaa605",
+          "mime_type": null,
+          "provenance": {
+            "source": "website:dom :: img",
+            "confidence": 0.6
+          },
+          "style_tags": [],
+          "crop_allowed": true,
+          "recolor_allowed": false,
+          "allowed_contexts": [],
+          "preferred_color_tokens": []
+        },
+        "img.6": {
+          "role": "photo",
+          "license": null,
+          "asset_id": "asset_ing_2240f4c56a7ba765",
+          "mime_type": null,
+          "provenance": {
+            "source": "website:dom :: img",
+            "confidence": 0.6
+          },
+          "style_tags": [],
+          "crop_allowed": true,
+          "recolor_allowed": false,
+          "allowed_contexts": [],
+          "preferred_color_tokens": []
+        },
+        "img.7": {
+          "role": "photo",
+          "license": null,
+          "asset_id": "asset_ing_2b0928ca4f3a3c70",
+          "mime_type": null,
+          "provenance": {
+            "source": "website:dom :: img",
+            "confidence": 0.6
+          },
+          "style_tags": [],
+          "crop_allowed": true,
+          "recolor_allowed": false,
+          "allowed_contexts": [],
+          "preferred_color_tokens": []
+        },
+        "img.8": {
+          "role": "photo",
+          "license": null,
+          "asset_id": "asset_ing_1511de1ec38185ac",
+          "mime_type": null,
+          "provenance": {
+            "source": "website:dom :: img",
+            "confidence": 0.6
+          },
+          "style_tags": [],
+          "crop_allowed": true,
+          "recolor_allowed": false,
+          "allowed_contexts": [],
+          "preferred_color_tokens": []
+        },
+        "img.9": {
+          "role": "photo",
+          "license": null,
+          "asset_id": "asset_ing_0888ff6595f4662d",
+          "mime_type": null,
+          "provenance": {
+            "source": "website:dom :: img",
+            "confidence": 0.6
+          },
+          "style_tags": [],
+          "crop_allowed": true,
+          "recolor_allowed": false,
+          "allowed_contexts": [],
+          "preferred_color_tokens": []
+        },
+        "img.10": {
+          "role": "photo",
+          "license": null,
+          "asset_id": "asset_ing_ecf26311cdeb734d",
+          "mime_type": null,
+          "provenance": {
+            "source": "website:dom :: img",
+            "confidence": 0.6
+          },
+          "style_tags": [],
+          "crop_allowed": true,
+          "recolor_allowed": false,
+          "allowed_contexts": [],
+          "preferred_color_tokens": []
+        },
+        "img.11": {
+          "role": "photo",
+          "license": null,
+          "asset_id": "asset_ing_9ea5ee9c9f82fa56",
+          "mime_type": null,
+          "provenance": {
+            "source": "website:dom :: img",
+            "confidence": 0.6
+          },
+          "style_tags": [],
+          "crop_allowed": true,
+          "recolor_allowed": false,
+          "allowed_contexts": [],
+          "preferred_color_tokens": []
+        },
+        "img.12": {
+          "role": "photo",
+          "license": null,
+          "asset_id": "asset_ing_fa2ed16107766130",
+          "mime_type": null,
+          "provenance": {
+            "source": "website:dom :: img",
+            "confidence": 0.6
+          },
+          "style_tags": [],
+          "crop_allowed": true,
+          "recolor_allowed": false,
+          "allowed_contexts": [],
+          "preferred_color_tokens": []
+        },
+        "img.13": {
+          "role": "photo",
+          "license": null,
+          "asset_id": "asset_ing_f436261cad2c2aa9",
+          "mime_type": null,
+          "provenance": {
+            "source": "website:dom :: img",
+            "confidence": 0.6
+          },
+          "style_tags": [],
+          "crop_allowed": true,
+          "recolor_allowed": false,
+          "allowed_contexts": [],
+          "preferred_color_tokens": []
+        }
+      }
+    },
+    "tokens": {
+      "radii": {
+        "radius.lg": {
+          "role": "radius",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 12.0
+            }
+          },
+          "provenance": {
+            "source": "derived:radius-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "radius.md": {
+          "role": "radius",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 8.0
+            }
+          },
+          "provenance": {
+            "source": "derived:radius-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "radius.sm": {
+          "role": "radius",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 4.0
+            }
+          },
+          "provenance": {
+            "source": "derived:radius-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "radius.xl": {
+          "role": "radius",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 16.0
+            }
+          },
+          "provenance": {
+            "source": "derived:radius-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "radius.xs": {
+          "role": "radius",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 2.0
+            }
+          },
+          "provenance": {
+            "source": "derived:radius-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "radius.card": {
+          "role": "radius",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 12.0
+            }
+          },
+          "provenance": {
+            "source": "derived:radius-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "radius.full": {
+          "role": "radius",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 9999.0
+            }
+          },
+          "provenance": {
+            "source": "derived:radius-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "radius.none": {
+          "role": "radius",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 0.0
+            }
+          },
+          "provenance": {
+            "source": "derived:radius-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "radius.badge": {
+          "role": "radius",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 9999.0
+            }
+          },
+          "provenance": {
+            "source": "derived:radius-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "radius.button": {
+          "role": "radius",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 8.0
+            }
+          },
+          "provenance": {
+            "source": "derived:radius-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        }
+      },
+      "assets": {
+        "logo.mark": {
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "asset",
+              "asset_id": "asset_ing_cb86ad335799c963"
+            }
+          },
+          "provenance": {
+            "source": "upload:asset",
+            "confidence": 0.7
+          },
+          "description": "Ingested logo.mark asset"
+        },
+        "logo.primary": {
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "asset",
+              "asset_id": "asset_ing_61a219a05909b652"
+            }
+          },
+          "provenance": {
+            "source": "upload:asset",
+            "confidence": 0.7
+          },
+          "description": "Ingested logo.primary asset"
+        }
+      },
+      "colors": {
+        "focus.ring": {
+          "role": "focus",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#8F9AFF"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#6D70FF"
+            }
+          },
+          "provenance": {
+            "source": "derived:focus.ring",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "text.brand": {
+          "role": "text",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#B5BFFF"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#533AFD"
+            }
+          },
+          "provenance": {
+            "source": "derived:text.brand",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "text.muted": {
+          "role": "text",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#838592"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#2E2E2E"
+            }
+          },
+          "provenance": {
+            "source": "derived:text.muted",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "text.accent": {
+          "role": "text",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#FF9DAB"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#4329D5"
+            }
+          },
+          "provenance": {
+            "source": "derived:text.accent",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "border.brand": {
+          "role": "border",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#6D70FF"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#6D70FF"
+            }
+          },
+          "provenance": {
+            "source": "derived:border.brand",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "surface.card": {
+          "role": "surface",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#16192D"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            }
+          },
+          "provenance": {
+            "source": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .multilingual-support-section__cta-button",
+            "confidence": 0.9
+          },
+          "description": null
+        },
+        "surface.page": {
+          "role": "surface",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#0D0F23"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            }
+          },
+          "provenance": {
+            "source": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .multilingual-support-section__cta-button",
+            "confidence": 0.9
+          },
+          "description": null
+        },
+        "text.inverse": {
+          "role": "text",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#000000"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            }
+          },
+          "provenance": {
+            "source": "derived:text.inverse",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "text.primary": {
+          "role": "text",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#EBEEFC"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#000000"
+            }
+          },
+          "provenance": {
+            "source": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .crypto-payment-form-graphic__button--apple-pay",
+            "confidence": 0.9
+          },
+          "description": null
+        },
+        "border.strong": {
+          "role": "border",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#585C74"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#8F8F8F"
+            }
+          },
+          "provenance": {
+            "source": "derived:border.strong",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "border.subtle": {
+          "role": "border",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#292C42"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#E4E4E4"
+            }
+          },
+          "provenance": {
+            "source": "derived:border.subtle",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "surface.brand": {
+          "role": "surface",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#8F9AFF"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#533AFD"
+            }
+          },
+          "provenance": {
+            "source": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .sessions-section__cta-button",
+            "confidence": 0.9
+          },
+          "description": null
+        },
+        "surface.muted": {
+          "role": "surface",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#1B1D32"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#EEEEEE"
+            }
+          },
+          "provenance": {
+            "source": "derived:surface.muted",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "border.default": {
+          "role": "border",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#3D4158"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#CACACA"
+            }
+          },
+          "provenance": {
+            "source": "derived:border.default",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "surface.accent": {
+          "role": "surface",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#FF8096"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#EA2261"
+            }
+          },
+          "provenance": {
+            "source": "website:css :: --hds-color-core-ruby-400",
+            "confidence": 0.9
+          },
+          "description": null
+        },
+        "surface.canvas": {
+          "role": "surface",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#08091C"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#FDFDFD"
+            }
+          },
+          "provenance": {
+            "source": "derived:surface.canvas",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "text.secondary": {
+          "role": "text",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#B4B6C4"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#161616"
+            }
+          },
+          "provenance": {
+            "source": "derived:text.secondary",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "surface.inverse": {
+          "role": "surface",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#FFFFFF"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#121212"
+            }
+          },
+          "provenance": {
+            "source": "derived:surface.inverse",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "surface.elevated": {
+          "role": "surface",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#1F2237"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            }
+          },
+          "provenance": {
+            "source": "derived:surface.elevated",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.neutral.50": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#FAFAFA"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.neutral.50)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.primary.50": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#F9FAFF"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.primary.50)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.neutral.100": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#F0F0F0"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.neutral.100)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.neutral.200": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#DEDEDE"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.neutral.200)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.neutral.300": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#C4C4C4"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.neutral.300)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.neutral.400": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#A4A4A4"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.neutral.400)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.neutral.500": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#868686"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.neutral.500)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.neutral.600": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#6C6C6C"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.neutral.600)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.neutral.700": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#555555"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.neutral.700)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.neutral.800": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#424242"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.neutral.800)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.neutral.900": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#2E2E2E"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.neutral.900)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.neutral.950": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#000000"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.neutral.950)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.primary.100": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#ECEFFF"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.primary.100)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.primary.200": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#D5DCFF"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.primary.200)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.primary.300": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#B5BFFF"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.primary.300)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.primary.400": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#8F9AFF"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.primary.400)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.primary.500": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#6D70FF"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.primary.500)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.primary.600": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#533AFD"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.primary.600)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.primary.700": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#4329D5"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.primary.700)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.primary.800": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#3420A9"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.primary.800)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.primary.900": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#23137B"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.primary.900)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "palette.primary.950": {
+          "role": "palette",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "hex",
+              "value": "#130750"
+            }
+          },
+          "provenance": {
+            "source": "derived:ramp(palette.primary.950)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "surface.brand.subtle": {
+          "role": "surface",
+          "value": {
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#222546"
+              }
+            },
+            "default": {
+              "kind": "hex",
+              "value": "#ECEFFF"
+            }
+          },
+          "provenance": {
+            "source": "derived:surface.brand.subtle",
+            "confidence": 0.6
+          },
+          "description": null
+        }
+      },
+      "aliases": {
+        "accent.primary": {
+          "token": "surface.accent",
+          "description": "ingestion alias"
+        }
+      },
+      "effects": {},
+      "numbers": {
+        "type.size.lg": {
+          "role": "font_size",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 20.0
+            }
+          },
+          "provenance": {
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "type.size.md": {
+          "role": "font_size",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 16.0
+            }
+          },
+          "provenance": {
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "type.size.sm": {
+          "role": "font_size",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 14.0
+            }
+          },
+          "provenance": {
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "type.size.xl": {
+          "role": "font_size",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 24.0
+            }
+          },
+          "provenance": {
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "type.size.xs": {
+          "role": "font_size",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 12.0
+            }
+          },
+          "provenance": {
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "type.size.2xl": {
+          "role": "font_size",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 32.0
+            }
+          },
+          "provenance": {
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "type.size.3xl": {
+          "role": "font_size",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 36.0
+            }
+          },
+          "provenance": {
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "type.size.4xl": {
+          "role": "font_size",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 40.0
+            }
+          },
+          "provenance": {
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "type.size.5xl": {
+          "role": "font_size",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 48.0
+            }
+          },
+          "provenance": {
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "type.size.6xl": {
+          "role": "font_size",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 64.0
+            }
+          },
+          "provenance": {
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "type.size.7xl": {
+          "role": "font_size",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 80.0
+            }
+          },
+          "provenance": {
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "type.size.8xl": {
+          "role": "font_size",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 96.0
+            }
+          },
+          "provenance": {
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "type.size.9xl": {
+          "role": "font_size",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 128.0
+            }
+          },
+          "provenance": {
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)",
+            "confidence": 0.6
+          },
+          "description": null
+        }
+      },
+      "opacity": {
+        "opacity.muted": {
+          "role": "visibility",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "ratio",
+              "value": 0.56
+            }
+          },
+          "provenance": {
+            "source": "derived:opacity-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "opacity.scrim": {
+          "role": "visibility",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "ratio",
+              "value": 0.64
+            }
+          },
+          "provenance": {
+            "source": "derived:opacity-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "opacity.subtle": {
+          "role": "visibility",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "ratio",
+              "value": 0.72
+            }
+          },
+          "provenance": {
+            "source": "derived:opacity-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "opacity.overlay": {
+          "role": "visibility",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "ratio",
+              "value": 0.48
+            }
+          },
+          "provenance": {
+            "source": "derived:opacity-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "opacity.disabled": {
+          "role": "visibility",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "ratio",
+              "value": 0.4
+            }
+          },
+          "provenance": {
+            "source": "derived:opacity-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "opacity.emphasis": {
+          "role": "visibility",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "ratio",
+              "value": 0.88
+            }
+          },
+          "provenance": {
+            "source": "derived:opacity-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        }
+      },
+      "shadows": {},
+      "spacing": {
+        "space.0": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 0.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.1": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 4.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.2": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 8.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.3": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 12.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.4": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 16.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.5": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 20.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.6": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 24.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.8": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 32.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.10": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 40.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.12": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 48.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.16": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 64.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.lg": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 16.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.md": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 12.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.sm": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 8.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.xl": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 24.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.xs": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 4.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.section": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 64.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.page.margin": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 48.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.stack.loose": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 24.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.stack.tight": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 8.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.card.padding": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 24.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "space.stack.default": {
+          "role": "spacing",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 16.0
+            }
+          },
+          "provenance": {
+            "source": "derived:spacing-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        }
+      },
+      "typography": {
+        "type.cta": {
+          "role": "cta",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "style",
+              "color": "text.inverse",
+              "font_size": 11.0,
+              "font_asset": "brand",
+              "font_family": "SourceCodePro",
+              "font_weight": 600,
+              "line_height": 1.4,
+              "letter_spacing": 0.0
+            }
+          },
+          "provenance": {
+            "source": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button",
+            "confidence": 0.9
+          },
+          "description": null
+        },
+        "type.body": {
+          "role": "body",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "style",
+              "color": "text.primary",
+              "font_size": 16.0,
+              "font_asset": "brand",
+              "font_family": "SourceCodePro",
+              "font_weight": 400,
+              "line_height": 1.45,
+              "letter_spacing": 0.0
+            }
+          },
+          "provenance": {
+            "source": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button",
+            "confidence": 0.9
+          },
+          "description": null
+        },
+        "type.stat": {
+          "role": "stat",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "style",
+              "color": "text.brand",
+              "font_size": 40.0,
+              "font_asset": "brand",
+              "font_family": "SourceCodePro",
+              "font_weight": 700,
+              "line_height": 1.0,
+              "letter_spacing": 0.0
+            }
+          },
+          "provenance": {
+            "source": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button",
+            "confidence": 0.9
+          },
+          "description": null
+        },
+        "type.label": {
+          "role": "label",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "style",
+              "color": "text.primary",
+              "font_size": 13.0,
+              "font_asset": "brand",
+              "font_family": "SourceCodePro",
+              "font_weight": 600,
+              "line_height": 1.2,
+              "letter_spacing": 0.0
+            }
+          },
+          "provenance": {
+            "source": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button",
+            "confidence": 0.9
+          },
+          "description": null
+        },
+        "type.legal": {
+          "role": "legal",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "style",
+              "color": "text.muted",
+              "font_size": 11.0,
+              "font_asset": "brand",
+              "font_family": "SourceCodePro",
+              "font_weight": 400,
+              "line_height": 1.3,
+              "letter_spacing": 0.0
+            }
+          },
+          "provenance": {
+            "source": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button",
+            "confidence": 0.9
+          },
+          "description": null
+        },
+        "type.title": {
+          "role": "title",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "style",
+              "color": "text.primary",
+              "font_size": 23.0,
+              "font_asset": "brand",
+              "font_family": "SourceCodePro",
+              "font_weight": 700,
+              "line_height": 1.15,
+              "letter_spacing": 0.0
+            }
+          },
+          "provenance": {
+            "source": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button",
+            "confidence": 0.9
+          },
+          "description": null
+        },
+        "type.caption": {
+          "role": "caption",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "style",
+              "color": "text.secondary",
+              "font_size": 12.0,
+              "font_asset": "brand",
+              "font_family": "SourceCodePro",
+              "font_weight": 500,
+              "line_height": 1.35,
+              "letter_spacing": 0.0
+            }
+          },
+          "provenance": {
+            "source": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button",
+            "confidence": 0.9
+          },
+          "description": null
+        },
+        "type.display": {
+          "role": "display",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "style",
+              "color": "text.primary",
+              "font_size": 51.0,
+              "font_asset": "brand",
+              "font_family": "SourceCodePro",
+              "font_weight": 700,
+              "line_height": 1.05,
+              "letter_spacing": -0.02
+            }
+          },
+          "provenance": {
+            "source": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button",
+            "confidence": 0.9
+          },
+          "description": null
+        },
+        "type.eyebrow": {
+          "role": "eyebrow",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "style",
+              "color": "text.brand",
+              "font_size": 12.0,
+              "font_asset": "brand",
+              "font_family": "SourceCodePro",
+              "font_weight": 600,
+              "line_height": 1.2,
+              "letter_spacing": 0.08
+            }
+          },
+          "provenance": {
+            "source": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button",
+            "confidence": 0.9
+          },
+          "description": null
+        },
+        "type.headline": {
+          "role": "headline",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "style",
+              "color": "text.primary",
+              "font_size": 32.0,
+              "font_asset": "brand",
+              "font_family": "SourceCodePro",
+              "font_weight": 700,
+              "line_height": 1.1,
+              "letter_spacing": -0.01
+            }
+          },
+          "provenance": {
+            "source": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button",
+            "confidence": 0.9
+          },
+          "description": null
+        },
+        "type.subtitle": {
+          "role": "subtitle",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "style",
+              "color": "text.secondary",
+              "font_size": 20.0,
+              "font_asset": "brand",
+              "font_family": "SourceCodePro",
+              "font_weight": 500,
+              "line_height": 1.3,
+              "letter_spacing": 0.0
+            }
+          },
+          "provenance": {
+            "source": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button",
+            "confidence": 0.9
+          },
+          "description": null
+        },
+        "type.body.small": {
+          "role": "body.small",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "style",
+              "color": "text.primary",
+              "font_size": 14.0,
+              "font_asset": "brand",
+              "font_family": "SourceCodePro",
+              "font_weight": 400,
+              "line_height": 1.4,
+              "letter_spacing": 0.0
+            }
+          },
+          "provenance": {
+            "source": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button",
+            "confidence": 0.9
+          },
+          "description": null
+        }
+      },
+      "stroke_widths": {
+        "stroke.width.bold": {
+          "role": "stroke",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 3.0
+            }
+          },
+          "provenance": {
+            "source": "derived:stroke-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "stroke.width.card": {
+          "role": "stroke",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 1.0
+            }
+          },
+          "provenance": {
+            "source": "derived:stroke-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "stroke.width.firm": {
+          "role": "stroke",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 2.0
+            }
+          },
+          "provenance": {
+            "source": "derived:stroke-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "stroke.width.thin": {
+          "role": "stroke",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 1.0
+            }
+          },
+          "provenance": {
+            "source": "derived:stroke-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "stroke.width.focus": {
+          "role": "stroke",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 2.0
+            }
+          },
+          "provenance": {
+            "source": "derived:stroke-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "stroke.width.default": {
+          "role": "stroke",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 1.0
+            }
+          },
+          "provenance": {
+            "source": "derived:stroke-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "stroke.width.divider": {
+          "role": "stroke",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 1.0
+            }
+          },
+          "provenance": {
+            "source": "derived:stroke-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        },
+        "stroke.width.hairline": {
+          "role": "stroke",
+          "value": {
+            "modes": {},
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 0.5
+            }
+          },
+          "provenance": {
+            "source": "derived:stroke-scale",
+            "confidence": 0.6
+          },
+          "description": null
+        }
+      }
+    },
+    "sources": [
+      {
+        "url": "https://stripe.com",
+        "kind": "website",
+        "confidence": 0.7,
+        "captured_at": "2026-08-18T12:43:40.897063+00:00"
+      }
+    ],
+    "version": 1,
+    "provenance": {
+      "notes": [
+        "Ingested from website evidence.",
+        "Dark colorway synthesized from the light palette."
+      ],
+      "confidence": 0.6944,
+      "created_at": "2026-08-18",
+      "created_by": "lumen_ingestion",
+      "updated_at": null
+    },
+    "constraints": {
+      "tone": [
+        "clear",
+        "professional"
+      ],
+      "imagery": [],
+      "iconography": [],
+      "contrast_pairs": [
+        {
+          "min_ratio": 4.5,
+          "background": "surface.page",
+          "foreground": "text.primary"
+        },
+        {
+          "min_ratio": 4.5,
+          "background": "surface.brand",
+          "foreground": "text.inverse"
+        },
+        {
+          "min_ratio": 4.5,
+          "background": "surface.inverse",
+          "foreground": "text.inverse"
+        }
+      ],
+      "allow_gradients": true,
+      "print_constraints": [
+        "Font licensing was not verified at ingestion; confirm embeddability before print export."
+      ],
+      "accessibility_notes": []
+    },
+    "description": null,
+    "approval_status": "draft",
+    "compatibility_policy": {
+      "require_product_ready_tokens": false,
+      "allow_critical_mode_fallbacks": false,
+      "allow_unapproved_asset_placeholders": true
+    }
+  },
+  "brand_summary": {
+    "id": "brand_kit_ing_813df4f30f2d429a853dbccae2277a5a",
+    "name": "Stripe",
+    "tone": [
+      "clear",
+      "professional"
+    ],
+    "assets": {
+      "logo_tokens": [
+        "logo.mark",
+        "logo.primary"
+      ],
+      "font_families": [
+        "SourceCodePro"
+      ],
+      "image_asset_tokens": []
+    },
+    "tokens": {
+      "text_tokens": [
+        "text.accent",
+        "text.brand",
+        "text.inverse",
+        "text.muted",
+        "text.primary",
+        "text.secondary"
+      ],
+      "asset_tokens": [
+        "logo.mark",
+        "logo.primary"
+      ],
+      "focus_tokens": [
+        "focus.ring"
+      ],
+      "border_tokens": [
+        "border.brand",
+        "border.default",
+        "border.strong",
+        "border.subtle"
+      ],
+      "radius_tokens": [
+        "radius.badge",
+        "radius.button",
+        "radius.card",
+        "radius.full",
+        "radius.lg",
+        "radius.md",
+        "radius.none",
+        "radius.sm",
+        "radius.xl",
+        "radius.xs"
+      ],
+      "opacity_tokens": [
+        "opacity.disabled",
+        "opacity.emphasis",
+        "opacity.muted",
+        "opacity.overlay",
+        "opacity.scrim",
+        "opacity.subtle"
+      ],
+      "spacing_tokens": [
+        "space.0",
+        "space.1",
+        "space.10",
+        "space.12",
+        "space.16",
+        "space.2",
+        "space.3",
+        "space.4",
+        "space.5",
+        "space.6",
+        "space.8",
+        "space.card.padding",
+        "space.lg",
+        "space.md",
+        "space.page.margin",
+        "space.section",
+        "space.sm",
+        "space.stack.default",
+        "space.stack.loose",
+        "space.stack.tight",
+        "space.xl",
+        "space.xs"
+      ],
+      "surface_tokens": [
+        "surface.accent",
+        "surface.brand",
+        "surface.brand.subtle",
+        "surface.canvas",
+        "surface.card",
+        "surface.elevated",
+        "surface.inverse",
+        "surface.muted",
+        "surface.page"
+      ],
+      "typography_tokens": [
+        "type.body",
+        "type.body.small",
+        "type.caption",
+        "type.cta",
+        "type.display",
+        "type.eyebrow",
+        "type.headline",
+        "type.label",
+        "type.legal",
+        "type.stat",
+        "type.subtitle",
+        "type.title"
+      ],
+      "stroke_width_tokens": [
+        "stroke.width.bold",
+        "stroke.width.card",
+        "stroke.width.default",
+        "stroke.width.divider",
+        "stroke.width.firm",
+        "stroke.width.focus",
+        "stroke.width.hairline",
+        "stroke.width.thin"
+      ]
+    },
+    "imagery": [],
+    "version": 1,
+    "ingestion": {
+      "gaps": [
+        "asset.icon.primary",
+        "asset.illustration.primary",
+        "asset.texture.subtle",
+        "logo.reversed",
+        "logo.wordmark"
+      ],
+      "rules": [],
+      "stats": {
+        "fonts": 1,
+        "logos": 2,
+        "rules": 0,
+        "images": 13,
+        "clusters": 101,
+        "colors_observed": 1058
+      },
+      "source": {
+        "url": "https://stripe.com",
+        "kind": "website",
+        "confidence": 0.7,
+        "captured_at": "2026-08-18T12:43:40.897063+00:00"
+      },
+      "narrative": {
+        "url": "https://stripe.com/in",
+        "tagline": null,
+        "brand_name": "Stripe",
+        "text_excerpt": "{\"@context\":\"https://schema.org\",\"@graph\":[{\"@type\":\"WebSite\",\"url\":\"https://stripe.com/\",\"name\":\"Stripe\"},{\"@type\":\"Organization\",\"@id\":\"https://stripe.com/#organization\",\"url\":\"https://stripe.com/\",\"name\":\"Stripe\",\"legalName\":\"Stripe, LLC\",\"founders\":[{\"@type\":\"Person\",\"name\":\"Patrick Collison\"},{\"@type\":\"Person\",\"name\":\"John Collison\"}],\"description\":\"Stripe powers online and in-person payment processing and financial solutions for businesses of all sizes.\",\"logo\":{\"@type\":\"ImageObject\",\"url\":\"https://images.stripeassets.com/fzn2n1nzq965/1hgcBNd12BfT9VLgbId7By/01d91920114b124fb4cf6d448f9f06eb/favicon.svg\"},\"contactPoint\":{\"@type\":\"ContactPoint\",\"contactType\":\"customer support\",\"url\":\"https://support.stripe.com/\",\"availableLanguage\":[\"en\",\"es\",\"fr\",\"ja\",\"de\"]},\"sameAs\":[\"https://twitter.com/stripe\",\"https://youtube.com/@stripe\",\"https://youtube.com/@StripeDev\",\"https://www.linkedin.com/company/stripe/\",\"https://www.facebook.com/StripeHQ\",\"https://en.wikipedia.org/wiki/Stripe,_Inc.\",\"https://www.crunchbase.com/organization/stripe\",\"https://github.com/stripe\",\"https://www.instagram.com/stripehq/\",\"https://www.bloomberg.com/profile/company/0170016D:US\",\"https://finance.yahoo.com/quote/STRI.PVT/\",\"https://www.wikidata.org/wiki/Q7624104\"],\"location\":[{\"@type\":\"Place\",\"name\":\"Stripe Singapore\",\"address\":{\"@type\":\"PostalAddress\",\"streetAddress\":\"60 Anson Road #05-01\",\"addressLocality\":\"Singapore\",\"postalCode\":\"079914\",\"addressCountry\":\"SG\"}},{\"@type\":\"Place\",\"name\":\"Stripe Seattle\",\"address\":{\"@type\":\"PostalAddress\",\"streetAddress\":\"920 5th Avenue, Suite 1900\",\"addressLocality\":\"Seattle\",\"addressRegion\":\"WA\",\"postalCode\":\"98104\",\"addressCountry\":\"US\"}},{\"@type\":\"Place\",\"name\":\"Stripe London\",\"address\":{\"@type\":\"PostalAddress\",\"streetAddress\":\"201 Bishopsgate, 5th Floor\",\"addressLocality\":\"London\",\"postalCode\":\"EC2M 3AB\",\"addressCountry\":\"GB\"}},{\"@type\":\"Place\",\"name\":\"Stripe Chicago\",\"address\":{\"@type\":\"PostalAddress\",\"streetAddress\":\"350 N. Orleans, Suite 5000S\",\"addressLocality\":\"Chicago\",\"addressRegion\":\"IL\",\"postalCode\":\"60654\",\"addressCountry\":\"US\"}},{\"@type\":\"Place\",\"name\":\"Stripe New York\",\"address\":{\"@type\":\"PostalAddress\",\"streetAddress\":\"28 Liberty Street, 48th floor\",\"addressLocality\":\"New York\",\"addressRegion\":\"NY\",\"postalCode\":\"10005\",\"addressCountry\":\"US\"}},{\"@type\":\"Place\",\"name\":\"Stripe South San Francisco\",\"address\":{\"@type\":\"PostalAddress\",\"streetAddress\":\"354 Oyster Point Blvd\",\"addressLocality\":\"South San Francisco\",\"addressRegion\":\"CA\",\"postalCode\":\"94080\",\"addressCountry\":\"US\"}},{\"@type\":\"Place\",\"name\":\"Stripe Dublin\",\"address\":{\"@type\":\"PostalAddress\",\"streetAddress\":\"1 Wilton Park, Wilton Place, Grand Canal Street Lower\",\"addressLocality\":\"Dublin 2\",\"postalCode\":\"D02 FX04\",\"addressCountry\":\"IE\"}},{\"@type\":\"Place\",\"name\":\"Stripe S\u00e3o Paulo\",\"address\":{\"@type\":\"PostalAddress\",\"streetAddress\":\"Alameda Rio Claro 241, Floor 15\",\"addressLocality\":\"S\u00e3o Paulo\",\"addressRegion\":\"SP\",\"postalCode\":\"01332-010\",\"addressCountry\":\"BR\"}},{\"@type",
+        "summary_facts": [
+          "Stripe is a financial services platform that helps all types of businesses accept payments, build flexible billing models and manage money movement."
+        ]
+      },
+      "dark_colorway": "synthesized",
+      "schema_version": 1,
+      "role_assignments": [
+        {
+          "basis": "evidence",
+          "token": "surface.page",
+          "value": "#FFFFFF",
+          "pointer": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .multilingual-support-section__cta-button"
+        },
+        {
+          "basis": "derived",
+          "token": "surface.canvas",
+          "value": "#FDFDFD",
+          "pointer": "derived:surface.canvas"
+        },
+        {
+          "basis": "evidence",
+          "token": "surface.card",
+          "value": "#FFFFFF",
+          "pointer": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .multilingual-support-section__cta-button"
+        },
+        {
+          "basis": "derived",
+          "token": "surface.elevated",
+          "value": "#FFFFFF",
+          "pointer": "derived:surface.elevated"
+        },
+        {
+          "basis": "evidence",
+          "token": "surface.brand",
+          "value": "#533AFD",
+          "pointer": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .sessions-section__cta-button"
+        },
+        {
+          "basis": "derived",
+          "token": "surface.brand.subtle",
+          "value": "#ECEFFF",
+          "pointer": "derived:surface.brand.subtle"
+        },
+        {
+          "basis": "evidence",
+          "token": "surface.accent",
+          "value": "#EA2261",
+          "pointer": "website:css :: --hds-color-core-ruby-400"
+        },
+        {
+          "basis": "derived",
+          "token": "surface.muted",
+          "value": "#EEEEEE",
+          "pointer": "derived:surface.muted"
+        },
+        {
+          "basis": "derived",
+          "token": "surface.inverse",
+          "value": "#121212",
+          "pointer": "derived:surface.inverse"
+        },
+        {
+          "basis": "evidence",
+          "token": "text.primary",
+          "value": "#000000",
+          "pointer": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .crypto-payment-form-graphic__button--apple-pay"
+        },
+        {
+          "basis": "derived",
+          "token": "text.secondary",
+          "value": "#161616",
+          "pointer": "derived:text.secondary"
+        },
+        {
+          "basis": "derived",
+          "token": "text.muted",
+          "value": "#2E2E2E",
+          "pointer": "derived:text.muted"
+        },
+        {
+          "basis": "derived",
+          "token": "text.inverse",
+          "value": "#FFFFFF",
+          "pointer": "derived:text.inverse"
+        },
+        {
+          "basis": "derived",
+          "token": "text.brand",
+          "value": "#533AFD",
+          "pointer": "derived:text.brand"
+        },
+        {
+          "basis": "derived",
+          "token": "text.accent",
+          "value": "#4329D5",
+          "pointer": "derived:text.accent"
+        },
+        {
+          "basis": "derived",
+          "token": "border.subtle",
+          "value": "#E4E4E4",
+          "pointer": "derived:border.subtle"
+        },
+        {
+          "basis": "derived",
+          "token": "border.default",
+          "value": "#CACACA",
+          "pointer": "derived:border.default"
+        },
+        {
+          "basis": "derived",
+          "token": "border.strong",
+          "value": "#8F8F8F",
+          "pointer": "derived:border.strong"
+        },
+        {
+          "basis": "derived",
+          "token": "border.brand",
+          "value": "#6D70FF",
+          "pointer": "derived:border.brand"
+        },
+        {
+          "basis": "derived",
+          "token": "focus.ring",
+          "value": "#6D70FF",
+          "pointer": "derived:focus.ring"
+        },
+        {
+          "basis": "evidence",
+          "token": "type.display",
+          "value": "SourceCodePro 51.0",
+          "pointer": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button"
+        },
+        {
+          "basis": "evidence",
+          "token": "type.headline",
+          "value": "SourceCodePro 32.0",
+          "pointer": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button"
+        },
+        {
+          "basis": "evidence",
+          "token": "type.title",
+          "value": "SourceCodePro 23.0",
+          "pointer": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button"
+        },
+        {
+          "basis": "evidence",
+          "token": "type.subtitle",
+          "value": "SourceCodePro 20.0",
+          "pointer": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button"
+        },
+        {
+          "basis": "evidence",
+          "token": "type.body",
+          "value": "SourceCodePro 16.0",
+          "pointer": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button"
+        },
+        {
+          "basis": "evidence",
+          "token": "type.body.small",
+          "value": "SourceCodePro 14.0",
+          "pointer": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button"
+        },
+        {
+          "basis": "evidence",
+          "token": "type.caption",
+          "value": "SourceCodePro 12.0",
+          "pointer": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button"
+        },
+        {
+          "basis": "evidence",
+          "token": "type.eyebrow",
+          "value": "SourceCodePro 12.0",
+          "pointer": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button"
+        },
+        {
+          "basis": "evidence",
+          "token": "type.label",
+          "value": "SourceCodePro 13.0",
+          "pointer": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button"
+        },
+        {
+          "basis": "evidence",
+          "token": "type.cta",
+          "value": "SourceCodePro 11.0",
+          "pointer": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button"
+        },
+        {
+          "basis": "evidence",
+          "token": "type.stat",
+          "value": "SourceCodePro 40.0",
+          "pointer": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button"
+        },
+        {
+          "basis": "evidence",
+          "token": "type.legal",
+          "value": "SourceCodePro 11.0",
+          "pointer": "website:https://b.stripecdn.com/mkt-ssr-statics/assets/_next/static/css/6166117030041b25.css :: .agentic-commerce-graphic__cta-button"
+        }
+      ]
+    },
+    "mode_axes": {
+      "theme": [
+        "light",
+        "dark"
+      ],
+      "density": [
+        "comfortable",
+        "compact"
+      ],
+      "accessibility": [
+        "standard",
+        "high_contrast",
+        "large_text"
+      ]
+    },
+    "diagnostics": [
+      {
+        "code": "LUMB0613",
+        "hint": null,
+        "phase": "brand",
+        "message": "font asset brand is not marked embeddable for export",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0614",
+        "hint": null,
+        "phase": "brand",
+        "message": "font asset brand is not marked subsettable for PDF export",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0802",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit is missing required mode axis medium",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0817",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit is missing required asset token logo.reversed",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0817",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit is missing required asset token logo.wordmark",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0817",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit is missing required asset token asset.illustration.primary",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0817",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit is missing required asset token asset.texture.subtle",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0817",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit is missing required asset token asset.icon.primary",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0803",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit token surface.canvas is missing required mode value accessibility.high_contrast",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0803",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit token surface.page is missing required mode value accessibility.high_contrast",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0803",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit token surface.card is missing required mode value accessibility.high_contrast",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0803",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit token surface.brand is missing required mode value accessibility.high_contrast",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0803",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit token text.primary is missing required mode value accessibility.high_contrast",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0803",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit token text.secondary is missing required mode value accessibility.high_contrast",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0803",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit token text.inverse is missing required mode value accessibility.high_contrast",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0803",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit token border.default is missing required mode value accessibility.high_contrast",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0803",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit token focus.ring is missing required mode value accessibility.high_contrast",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0803",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit token type.headline is missing required mode value accessibility.large_text",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0803",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit token type.body is missing required mode value accessibility.large_text",
+        "subject": null,
+        "severity": "warning"
+      },
+      {
+        "code": "LUMB0803",
+        "hint": null,
+        "phase": "brand",
+        "message": "product-ready Brand Kit token type.cta is missing required mode value accessibility.large_text",
+        "subject": null,
+        "severity": "warning"
+      }
+    ],
+    "iconography": [],
+    "default_mode": {
+      "values": {
+        "theme": "light",
+        "density": "comfortable",
+        "accessibility": "standard"
+      }
+    },
+    "product_ready": true,
+    "approval_status": "draft",
+    "authoring_rules": [
+      "Use semantic tokens instead of raw colors, sizes, spacing, radii, stroke widths, or opacity when the scene is brand-governed.",
+      "Use style($type.*) for text roles and keep raw font declarations for explicit overrides only.",
+      "Use fill($surface.*), stroke($border.*,$stroke.width.*), g($space.*), pad($space.*), and rd($radius.*).",
+      "Use logo.* and asset.* tokens for brand assets when possible; do not invent token names."
+    ]
+  },
+  "diagnostics": {
+    "audit": [
+      {
+        "source": "engine",
+        "severity": "info",
+        "phase": null,
+        "code": "LUMI0210",
+        "message": "dark colorway synthesized from light palette",
+        "subject": null,
+        "hint": null,
+        "line": null,
+        "column": null
+      },
+      {
+        "source": "engine",
+        "severity": "info",
+        "phase": null,
+        "code": "LUMI0220",
+        "message": "asset token logo.reversed not populated",
+        "subject": null,
+        "hint": null,
+        "line": null,
+        "column": null
+      },
+      {
+        "source": "engine",
+        "severity": "info",
+        "phase": null,
+        "code": "LUMI0220",
+        "message": "asset token logo.wordmark not populated",
+        "subject": null,
+        "hint": null,
+        "line": null,
+        "column": null
+      },
+      {
+        "source": "engine",
+        "severity": "info",
+        "phase": null,
+        "code": "LUMI0220",
+        "message": "asset token asset.illustration.primary not populated",
+        "subject": null,
+        "hint": null,
+        "line": null,
+        "column": null
+      },
+      {
+        "source": "engine",
+        "severity": "info",
+        "phase": null,
+        "code": "LUMI0220",
+        "message": "asset token asset.texture.subtle not populated",
+        "subject": null,
+        "hint": null,
+        "line": null,
+        "column": null
+      },
+      {
+        "source": "engine",
+        "severity": "info",
+        "phase": null,
+        "code": "LUMI0220",
+        "message": "asset token asset.icon.primary not populated",
+        "subject": null,
+        "hint": null,
+        "line": null,
+        "column": null
+      },
+      {
+        "source": "engine",
+        "severity": "warning",
+        "phase": "brand",
+        "code": "LUMB0613",
+        "message": "font asset brand is not marked embeddable for export",
+        "subject": null,
+        "hint": null,
+        "line": null,
+        "column": null
+      },
+      {
+        "source": "engine",
+        "severity": "warning",
+        "phase": "brand",
+        "code": "LUMB0614",
+        "message": "font asset brand is not marked subsettable for PDF export",
+        "subject": null,
+        "hint": null,
+        "line": null,
+        "column": null
+      }
+    ],
+    "current": [],
+    "latest": [
+      {
+        "source": "engine",
+        "severity": "info",
+        "phase": null,
+        "code": "LUMI0210",
+        "message": "dark colorway synthesized from light palette",
+        "subject": null,
+        "hint": null,
+        "line": null,
+        "column": null
+      },
+      {
+        "source": "engine",
+        "severity": "info",
+        "phase": null,
+        "code": "LUMI0220",
+        "message": "asset token asset.icon.primary not populated",
+        "subject": null,
+        "hint": null,
+        "line": null,
+        "column": null
+      },
+      {
+        "source": "engine",
+        "severity": "warning",
+        "phase": "brand",
+        "code": "LUMB0613",
+        "message": "font asset brand is not marked embeddable for export",
+        "subject": null,
+        "hint": null,
+        "line": null,
+        "column": null
+      },
+      {
+        "source": "engine",
+        "severity": "warning",
+        "phase": "brand",
+        "code": "LUMB0614",
+        "message": "font asset brand is not marked subsettable for PDF export",
+        "subject": null,
+        "hint": null,
+        "line": null,
+        "column": null
+      }
+    ]
+  }
+}

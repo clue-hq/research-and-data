@@ -8,6 +8,10 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import text
 
+from clue_api.agent_turn_scope_pin import get_agent_turn_scope_pin
+from clue_api.stage0_project_contracts import TrustedStage0ProjectScopeInput
+from clue_api.stage0_project_scope import resolve_stage0_project_scope
+from clue_api.turn_action import TurnActionUnresolvable, parse_turn_action_ref
 from clue_core import EntityId
 from clue_db import ConnFactory
 from clue_execution import (
@@ -18,7 +22,7 @@ from clue_execution import (
     RecipeExecutor,
 )
 from clue_research.stage0 import current_kb_version
-from clue_toolbelt import ToolContext, ToolResult
+from clue_toolbelt import ToolContext, ToolRegistry, ToolResult
 
 _STAGE0_SLOT = "stage0_interactions"
 
@@ -57,9 +61,11 @@ class Stage0StepPinProvider:
         *,
         compatibility: CompatibilityLoader,
         conn_factory: ConnFactory,
+        tools: ToolRegistry,
     ) -> None:
         self._compatibility = compatibility
         self._conn_factory = conn_factory
+        self._tools = tools
 
     async def _current(
         self,
@@ -112,6 +118,39 @@ class Stage0StepPinProvider:
             digest=pin.digest,
         )
 
+    async def _design_leg_project_pin(
+        self,
+        body: dict[str, JsonValue],
+        *,
+        ctx: ToolContext,
+    ) -> PinRequest:
+        """Resolve ``open_design_leg``'s project pin from the injected presenting-turn ref."""
+
+        from clue_api.turn_action import (
+            TurnActionUnresolvable,
+            load_turn_identity,
+            parse_turn_action_ref,
+        )
+
+        absent = PinRequest(
+            kind="project",
+            key="__not_supplied__",
+            version="missing",
+            required=False,
+        )
+        ref = body.get("source_turn_ref")
+        if not isinstance(ref, str):
+            return absent
+        try:
+            turn_id = parse_turn_action_ref(ref)
+        except TurnActionUnresolvable:
+            return absent
+        async with self._conn_factory() as conn:
+            turn = await load_turn_identity(conn, workspace_id=ctx.workspace_id, turn_id=turn_id)
+        if turn is None:
+            return absent
+        return await self._current(kind="project", key=turn.project_id, ctx=ctx)
+
     async def pins_for(
         self,
         step: RecipeStep,
@@ -124,6 +163,87 @@ class Stage0StepPinProvider:
         declared_context = body.get("declared_context")
         scope_body = nested_scope if isinstance(nested_scope, dict) else {}
         ingestion_context = declared_context if isinstance(declared_context, dict) else {}
+
+        descriptor = self._tools.descriptor(step.tool_name, step.tool_version)
+        if issubclass(descriptor.input_model, TrustedStage0ProjectScopeInput):
+            async with self._conn_factory() as conn:
+                trusted_stage0_scope = await resolve_stage0_project_scope(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    execution_id=ctx.execution_id,
+                )
+            if trusted_stage0_scope is None:
+                raise ExecutionConflict(
+                    "cannot pin a Stage-0 v2 tool without an execution-bound project"
+                )
+            required_scope_kinds = set(descriptor.pin_requirements) & {
+                "brand",
+                "project",
+                "product",
+                "client_kb",
+                "product_kb",
+            }
+            if "brand" in required_scope_kinds:
+                requested.append(
+                    await self._current(kind="brand", key=trusted_stage0_scope.brand_id, ctx=ctx)
+                )
+            if "project" in required_scope_kinds:
+                requested.append(
+                    await self._current(
+                        kind="project", key=trusted_stage0_scope.project_id, ctx=ctx
+                    )
+                )
+            if "product" in required_scope_kinds:
+                if trusted_stage0_scope.product_id is None:
+                    raise ExecutionConflict(
+                        "cannot pin a project-scoped Stage-0 tool before product confirmation"
+                    )
+                requested.append(
+                    await self._current(
+                        kind="product", key=trusted_stage0_scope.product_id, ctx=ctx
+                    )
+                )
+            if "client_kb" in required_scope_kinds:
+                if (
+                    trusted_stage0_scope.client_entity_id is None
+                    or trusted_stage0_scope.client_kb_version is None
+                ):
+                    raise ExecutionConflict(
+                        "cannot pin a project-scoped Stage-0 tool without a Client Knowledge Base"
+                    )
+                requested.append(
+                    await self._exact(
+                        kind="client_kb",
+                        # ``client_kb_version`` is the independently-versioned, account-wide
+                        # company snapshot. The selected product is already frozen by the
+                        # separate ``product`` pin above; applying the company version to a
+                        # product-scoped KB key couples two lineages that legitimately differ.
+                        key=f"{trusted_stage0_scope.client_entity_id}|-",
+                        version=str(trusted_stage0_scope.client_kb_version),
+                        ctx=ctx,
+                    )
+                )
+            if "product_kb" in required_scope_kinds:
+                if (
+                    trusted_stage0_scope.client_entity_id is None
+                    or trusted_stage0_scope.product_id is None
+                    or trusted_stage0_scope.product_kb_version is None
+                ):
+                    raise ExecutionConflict(
+                        "cannot pin a project-scoped Stage-0 tool without selected-product "
+                        "knowledge"
+                    )
+                requested.append(
+                    await self._exact(
+                        kind="product_kb",
+                        key=(
+                            f"{trusted_stage0_scope.client_entity_id}|"
+                            f"{trusted_stage0_scope.product_id}"
+                        ),
+                        version=str(trusted_stage0_scope.product_kb_version),
+                        ctx=ctx,
+                    )
+                )
 
         artifact_pairs: set[tuple[str, str]] = set()
         artifact_key = body.get("artifact_key")
@@ -175,6 +295,55 @@ class Stage0StepPinProvider:
             if isinstance(value, str):
                 requested.append(await self._current(kind=kind, key=value, ctx=ctx))
 
+        # S5-F/S6 production composition: the product-selection gate intentionally exposes no
+        # model-authored scope arguments. Its sole trusted input is the captured turn reference,
+        # while the exact project and company Client-KB pair live in that turn's immutable scope
+        # receipt. Resolve the descriptor's two required pins from that receipt here, at the same
+        # execution-authority seam that resolves every other dynamic tool pin. Deriving them from
+        # current project state would let background publication or a later project mutation
+        # change the authority of an already-running turn.
+        if step.tool_name == "open_product_selection_gate":
+            source_turn_ref = body.get("source_turn_ref")
+            if not isinstance(source_turn_ref, str):
+                raise ExecutionConflict(
+                    "open_product_selection_gate requires its trusted source turn reference"
+                )
+            try:
+                source_turn_id = parse_turn_action_ref(source_turn_ref)
+            except TurnActionUnresolvable as exc:
+                raise ExecutionConflict(
+                    "open_product_selection_gate has an invalid source turn reference"
+                ) from exc
+            async with self._conn_factory() as conn:
+                turn_pin = await get_agent_turn_scope_pin(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    turn_id=source_turn_id,
+                )
+            if (
+                turn_pin is None
+                or turn_pin.client_entity_id is None
+                or turn_pin.client_kb_version is None
+            ):
+                raise ExecutionConflict(
+                    "open_product_selection_gate requires a durable project and Client-KB scope"
+                )
+            requested.extend(
+                (
+                    await self._current(
+                        kind="project",
+                        key=turn_pin.project_id,
+                        ctx=ctx,
+                    ),
+                    await self._exact(
+                        kind="client_kb",
+                        key=f"{turn_pin.client_entity_id}|-",
+                        version=str(turn_pin.client_kb_version),
+                        ctx=ctx,
+                    ),
+                )
+            )
+
         if step.tool_name == "start_recon":
             requested.extend(
                 (
@@ -211,7 +380,19 @@ class Stage0StepPinProvider:
                     ),
                 )
             )
-        if step.tool_name in {"open_directive_confirmation_gate", "launch_account_research"}:
+        # --- PD-part3 P3.4: the design delegation entry ----------------------------------------
+        # The leg's project is not a body field (every authority value is derived from the
+        # presenting turn), so the pin is resolved through the turn ref the engine injected. A
+        # ref that does not resolve is pinned explicitly absent (the launch tool's idiom) — the
+        # tool's own preconditions are what refuse it, with a reason a model can act on.
+        if step.tool_name == "open_design_leg":
+            requested.append(await self._design_leg_project_pin(body, ctx=ctx))
+
+        if step.tool_name in {
+            "open_directive_confirmation_gate",
+            "launch_account_research",
+            "launch_selected_account_research",
+        }:
             project_run_id = body.get("project_run_id")
             if isinstance(project_run_id, str):
                 requested.append(
@@ -222,7 +403,10 @@ class Stage0StepPinProvider:
                 requested.append(
                     await self._current(kind="research_directive", key=directive_id, ctx=ctx)
                 )
-        if step.tool_name == "launch_account_research":
+        if step.tool_name in {
+            "launch_account_research",
+            "launch_selected_account_research",
+        }:
             # Declared absent, not resolved: the selection this launch pins is the selection the
             # launch *creates* (its id is derived from the request digest inside the launch
             # transaction), so requiring it would make the tool permanently unreachable. This is
@@ -301,6 +485,7 @@ class Stage0StepPinProvider:
         client_entity_id = body.get("client_entity_id")
         client_kb_version = body.get("client_kb_version", body.get("kb_version"))
         product_id = body.get("product_id")
+        product_kb_version = body.get("product_kb_version")
         if (
             step.tool_name in {"synthesize_icps", "confirm_icp"}
             and isinstance(client_entity_id, str)
@@ -315,7 +500,7 @@ class Stage0StepPinProvider:
                     conn,
                     entity_id,
                     workspace_id=ctx.workspace_id,
-                    product_id=product_id if isinstance(product_id, str) else None,
+                    product_id=None,
                 )
             if client_kb_version is None:
                 raise ExecutionConflict("cannot pin a missing Client Knowledge Base")
@@ -323,8 +508,22 @@ class Stage0StepPinProvider:
             requested.append(
                 await self._exact(
                     kind="client_kb",
-                    key=f"{client_entity_id}|{product_id if isinstance(product_id, str) else '-'}",
+                    key=f"{client_entity_id}|-",
                     version=str(client_kb_version),
+                    ctx=ctx,
+                )
+            )
+
+        if (
+            isinstance(client_entity_id, str)
+            and isinstance(product_id, str)
+            and isinstance(product_kb_version, int)
+        ):
+            requested.append(
+                await self._exact(
+                    kind="product_kb",
+                    key=f"{client_entity_id}|{product_id}",
+                    version=str(product_kb_version),
                     ctx=ctx,
                 )
             )

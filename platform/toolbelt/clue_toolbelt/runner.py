@@ -30,17 +30,38 @@ invocation is as observable as a successful one."""
 
 from __future__ import annotations
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
+from pydantic_core import PydanticSerializationError
 
 from clue_obs import get_logger, log_span
-from clue_toolbelt.envelope import Tool, ToolContext, ToolResult
+from clue_toolbelt.envelope import Tool, ToolContext, ToolOutput, ToolResult
 from clue_toolbelt.errors import IdempotencyConflict, PreconditionFailed, ToolContractViolation
 from clue_toolbelt.idempotency import IdempotencyStore, StoredInvocation, body_sha256
 from clue_toolbelt.registry import ToolRegistry
 
-__all__ = ["invoke_tool", "validate_tool_result"]
+__all__ = ["invoke_tool", "validate_tool_output_references", "validate_tool_result"]
 
 log = get_logger("clue_toolbelt.runner")
+_JSON_OBJECT = TypeAdapter(dict[str, object])
+
+
+def validate_tool_output_references(
+    output_model: type[ToolOutput], references: dict[str, object]
+) -> dict[str, object]:
+    """Validate a tool result at its durable JSON boundary.
+
+    Tool outputs are domain models, but ``ToolResult.references`` is a JSON document: it is
+    journaled, artifact-backed, and replayed after serialization.  Strict Pydantic models must
+    therefore be validated in JSON mode.  This matters for every JSON-semantic type whose Python
+    representation differs on the wire (for example tuple/array, UUID/string, date/string, and
+    Decimal/number), and keeps that transport rule in one place instead of forcing every tool
+    author to weaken its domain contract.
+
+    The returned mapping is the canonical JSON-native form stored by all durable callers.
+    """
+
+    encoded = _JSON_OBJECT.dump_json(references)
+    return output_model.model_validate_json(encoded).model_dump(mode="json")
 
 
 def _replay_or_conflict(
@@ -62,7 +83,14 @@ def _replay_or_conflict(
 
 
 def validate_tool_result(tool: Tool, result: ToolResult) -> ToolResult:
-    """Validate identity and typed references against the exact registered descriptor."""
+    """Validate identity and typed references against the exact registered descriptor.
+
+    ``ToolResult.references`` is a durable JSON envelope, including on idempotent replay. Validate
+    it in Pydantic's JSON mode so strict UUID/datetime/Decimal and tuple contracts accept their
+    canonical JSON representations without weakening the declared output model. Python-strict
+    validation here made a fresh rich result pass only until ``model_dump(mode='json')`` and made
+    every replay of that same valid result fail.
+    """
     descriptor = tool.descriptor
     if result.tool != descriptor.name or result.version != descriptor.version:
         raise ToolContractViolation(
@@ -70,10 +98,13 @@ def validate_tool_result(tool: Tool, result: ToolResult) -> ToolResult:
             f"returned identity {result.tool}@{result.version}",
         )
     try:
-        output = descriptor.output_model.model_validate(result.references)
-    except ValidationError as exc:
+        references = validate_tool_output_references(
+            descriptor.output_model,
+            result.references,
+        )
+    except (PydanticSerializationError, TypeError, ValueError, ValidationError) as exc:
         raise ToolContractViolation(descriptor.address, str(exc)) from exc
-    return result.model_copy(update={"references": output.model_dump(mode="json")})
+    return result.model_copy(update={"references": references})
 
 
 async def invoke_tool(

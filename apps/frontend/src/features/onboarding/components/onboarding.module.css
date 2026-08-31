@@ -1,0 +1,487 @@
+.page {
+  position: relative;
+  display: grid;
+  min-height: 100dvh;
+  overflow: hidden;
+  color: var(--clue-ds-color-content-neutral, #20242d);
+}
+
+.authPage {
+  background: var(--clue-ds-color-bg-neutral, #fff);
+}
+
+.subtlePage {
+  background: var(--clue-ds-color-bg-subtle, #fcfdfe);
+}
+
+.header {
+  position: absolute;
+  z-index: 2;
+  top: 14px;
+  right: 15px;
+  left: 15px;
+  display: flex;
+  height: 28px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.smallLogo {
+  width: 49px;
+  height: 12px;
+}
+
+.largeLogo {
+  width: 98px;
+  height: 24px;
+}
+
+.accountActions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: var(--clue-ds-color-content-subtle, #5d6470);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.accountActions button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--clue-ds-color-content-neutral, #20242d);
+  cursor: pointer;
+}
+
+.centerStage {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 64px 24px;
+}
+
+.authCard,
+.profileCard {
+  display: flex;
+  width: 440px;
+  max-width: calc(100vw - 32px);
+  flex-direction: column;
+  padding: 24px;
+  border: .5px solid var(--clue-ds-color-border-neutral, #d6d9e0);
+  border-radius: 8px;
+  background: var(--clue-ds-color-bg-neutral, #fff);
+  animation: onboarding-enter 220ms ease-out both;
+}
+
+.authCard {
+  min-height: 256px;
+  gap: 16px;
+}
+
+.authCardExpanded {
+  min-height: 448px;
+  gap: 16px;
+}
+
+.authHeading {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 2px;
+}
+
+.authHeading h1,
+.profileHeading h1,
+.setupState h1,
+.finalizingState h1 {
+  margin: 0;
+  color: var(--clue-ds-color-content-neutral, #20242d);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 36px;
+  letter-spacing: -.02em;
+}
+
+.authHeading p {
+  margin: 0;
+  color: var(--clue-ds-color-content-subtle, #5d6470);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.authHeading button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--clue-ds-color-content-neutral, #20242d);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.authHeading button:hover,
+.accountActions button:hover,
+.footer a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.authButton,
+.profileSubmit {
+  width: 100%;
+  flex: 0 0 auto;
+}
+
+.authButton svg,
+.profileSubmit svg,
+.inputShell svg {
+  width: 18px;
+  height: 18px;
+}
+
+.authField,
+.profileField {
+  display: grid;
+  gap: 8px;
+  color: var(--clue-ds-color-content-neutral, #20242d);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.inputShell,
+.profileField > input,
+.nameGrid input,
+.selectShell {
+  width: 100%;
+  height: 44px;
+  border: .5px solid var(--clue-ds-color-components-input-border, #d7dbe2);
+  border-radius: 4px;
+  background: var(--clue-ds-color-bg-neutral, #f7f8fa);
+  color: var(--clue-ds-color-content-neutral, #20242d);
+}
+
+.inputShell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  color: var(--clue-ds-color-content-disabled, #8d94a0);
+}
+
+.inputShell input {
+  min-width: 0;
+  height: 42px;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--clue-ds-color-content-neutral, #20242d);
+  font-size: 14px;
+}
+
+.inputShell:focus-within,
+.profileField > input:focus,
+.nameGrid input:focus,
+.selectShell:focus-within {
+  border-color: var(--clue-ds-color-content-subtle, #5d6470);
+  box-shadow: 0 0 0 2px rgb(68 72 63 / 8%);
+  outline: none;
+}
+
+.inputShell input::placeholder,
+.profileField input::placeholder {
+  color: var(--clue-ds-color-content-disabled, #8d94a0);
+}
+
+.profileCard {
+  height: 499px;
+  gap: 12px;
+}
+
+.profileHeading {
+  display: grid;
+  gap: 0;
+  margin-bottom: 4px;
+}
+
+.profileHeading p {
+  margin: 0;
+  color: var(--clue-ds-color-content-neutral, #20242d);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.profileField {
+  gap: 6px;
+}
+
+.profileField > input,
+.nameGrid input {
+  min-width: 0;
+  padding: 0 12px;
+  outline: 0;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.nameGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.selectShell {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.selectShell select {
+  width: 100%;
+  height: 42px;
+  padding: 0 36px 0 12px;
+  border: 0;
+  outline: 0;
+  appearance: none;
+  background: transparent;
+  color: var(--clue-ds-color-content-subtle, #5d6470);
+  font-size: 14px;
+}
+
+.selectShell svg {
+  position: absolute;
+  right: 11px;
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+}
+
+.profileSubmit {
+  margin-top: 2px;
+}
+
+.profileSubmit svg {
+  width: 16px;
+  height: 16px;
+}
+
+.footer {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  transform: translateX(-50%);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.footer a {
+  color: var(--clue-ds-color-content-subtle, #5d6470);
+  text-decoration: none;
+}
+
+.setupState,
+.finalizingState {
+  align-self: center;
+  justify-self: center;
+  color: var(--clue-ds-color-content-neutral, #20242d);
+  text-align: center;
+  animation: onboarding-enter 220ms ease-out both;
+}
+
+.setupState {
+  display: flex;
+  width: min(640px, calc(100vw - 32px));
+  flex-direction: column;
+  align-items: center;
+}
+
+.setupState h1 {
+  margin-top: 24px;
+  white-space: nowrap;
+}
+
+.setupList {
+  display: grid;
+  width: 480px;
+  max-width: 100%;
+  min-height: 212px;
+  margin-top: 24px;
+  overflow: hidden;
+  border: .5px solid var(--clue-ds-color-border-neutral, #d6d9e0);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #fff 0%, rgb(255 255 255 / 80%) 72%, rgb(255 255 255 / 10%) 100%);
+  text-align: left;
+}
+
+.setupRow {
+  display: grid;
+  min-height: 42px;
+  grid-template-columns: 24px 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+}
+
+.setupRow_complete,
+.setupRow_running {
+  min-height: 64px;
+}
+
+.setupStatus {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  color: var(--clue-ds-color-content-subtle, #5d6470);
+}
+
+.setupRow_complete .setupStatus {
+  color: var(--clue-ds-color-content-utility-positive, #59774d);
+}
+
+.setupStatus svg {
+  width: 20px;
+  height: 20px;
+}
+
+.setupRow strong,
+.setupRow small {
+  display: block;
+}
+
+.setupRow strong {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.setupRow small {
+  margin-top: 1px;
+  color: var(--clue-ds-color-content-subtle, #5d6470);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.finalizingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.finalizingState > .spinner {
+  width: 20px;
+  height: 20px;
+  margin-bottom: 16px;
+}
+
+.finalizingState p {
+  margin: 4px 0 0;
+  color: var(--clue-ds-color-content-subtle, #5d6470);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  animation: onboarding-spin 800ms linear infinite;
+}
+
+@keyframes onboarding-enter {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes onboarding-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 680px) {
+  .header {
+    top: 18px;
+    right: 18px;
+    left: 18px;
+  }
+
+  .accountActions span {
+    display: none;
+  }
+
+  .centerStage {
+    align-items: start;
+    padding: 84px 16px 64px;
+  }
+
+  .authCard,
+  .authCardExpanded,
+  .profileCard {
+    min-height: 0;
+  }
+
+  .nameGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .setupState {
+    padding: 0 16px;
+  }
+
+  .setupState h1,
+  .finalizingState h1 {
+    font-size: 20px;
+    line-height: 28px;
+    white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .authCard,
+  .profileCard,
+  .setupState,
+  .finalizingState {
+    animation: none;
+  }
+
+  .spinner {
+    animation-duration: 1600ms;
+  }
+}
+
+.authError {
+  margin: 0;
+  color: var(--clue-ds-color-content-utility-critical, #7a2e24);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.authHeading button:disabled {
+  cursor: default;
+  opacity: .5;
+}
+
+.setupStack {
+  display: grid;
+  gap: 20px;
+  align-self: center;
+  justify-self: center;
+  justify-items: center;
+}

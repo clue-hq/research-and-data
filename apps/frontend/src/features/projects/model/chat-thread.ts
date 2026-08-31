@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { projectChatHref } from "@/features/chat-shell/model/chat-shell-routes";
 
 /**
  * The durable thread shell (REQ-21), as the as-built contract serves it.
@@ -169,4 +170,22 @@ export const UNTITLED_THREAD_LABEL = "New chat";
 
 export function threadLabel(thread: ChatThread): string {
   return thread.title ?? UNTITLED_THREAD_LABEL;
+}
+
+/**
+ * The canonical path-based href for a thread (Phase R, rulings R1/R2).
+ *
+ * Single source of thread-URL truth for the controller's writers: builds
+ * `/projects/{id}/chats/{threadId}` through the ratified route helper,
+ * carrying the current query along minus the legacy `thread` key — which is
+ * never written again (`docs/superpowers/plans/2026-08-17-phase-r-chat-route-migration.md`).
+ */
+export function threadRouteHref(
+  projectId: string,
+  threadId: string,
+  currentQuery: string,
+): string {
+  const query = new URLSearchParams(currentQuery);
+  query.delete("thread");
+  return projectChatHref(projectId, threadId, Object.fromEntries(query));
 }

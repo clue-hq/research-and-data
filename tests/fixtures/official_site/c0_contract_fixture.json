@@ -1,0 +1,452 @@
+{
+  "contract_version": "stage0-official-site-c0-v1",
+  "source_keys": {
+    "logical": "official_site",
+    "historical": ["firecrawl_site", "scrapling_site"]
+  },
+  "table_names": [
+    "official_site_crawl_run",
+    "official_site_crawl_page",
+    "official_site_url_observation",
+    "official_site_link_edge",
+    "official_site_fetch_attempt",
+    "official_site_page_snapshot",
+    "official_site_link_expansion",
+    "official_site_alias_observation",
+    "official_site_corpus_checkpoint"
+  ],
+  "enums": {
+    "CrawlMode": ["off", "shadow", "authoritative"],
+    "CrawlPhase": ["fast", "background"],
+    "CrawlRunStatus": [
+      "queued",
+      "fast_active",
+      "fast_closing",
+      "fast_complete",
+      "background_active",
+      "completed",
+      "failed",
+      "cancelled"
+    ],
+    "CrawlPageState": [
+      "discovered",
+      "queued",
+      "leased",
+      "provider_started",
+      "reconciliation_pending",
+      "persistence_pending",
+      "retry_wait",
+      "fetched",
+      "failed",
+      "quarantined",
+      "refused"
+    ],
+    "FetchAttemptState": [
+      "prepared",
+      "dispatched",
+      "provider_succeeded",
+      "persisted",
+      "retryable_no_spend",
+      "failed",
+      "spend_unknown",
+      "reconciled_no_spend",
+      "reconciled_succeeded",
+      "quarantined"
+    ],
+    "LinkExpansionState": ["queued", "leased", "retry_wait", "completed", "failed"],
+    "DiscoveredVia": ["root", "link", "sitemap", "redirect", "canonical"],
+    "LinkRelation": ["anchor", "redirect", "canonical_hint"],
+    "CrawlEligibility": ["fast", "background", "both", "refused"],
+    "AliasKind": ["redirect", "canonical_hint"],
+    "AliasVerificationStatus": [
+      "observed",
+      "verified_same_content",
+      "verified_redirect",
+      "rejected_external",
+      "conflicting"
+    ],
+    "PolicyOutcome": ["admitted", "refused"],
+    "SpendStatus": ["spend_confirmed", "spend_unknown", "no_spend"],
+    "CostKind": ["actual", "estimated", "none"],
+    "RetryClass": [
+      "success",
+      "retryable_no_spend",
+      "permanent",
+      "robots_refused",
+      "policy_refused",
+      "ambiguous"
+    ],
+    "AttemptDisposition": ["retry_no_spend", "fail_permanent", "reconcile", "quarantine"]
+  },
+  "transitions": {
+    "crawl_run": {
+      "queued": ["cancelled", "failed", "fast_active"],
+      "fast_active": ["cancelled", "failed", "fast_closing"],
+      "fast_closing": ["cancelled", "failed", "fast_complete"],
+      "fast_complete": ["background_active", "cancelled", "completed", "failed"],
+      "background_active": ["cancelled", "completed", "failed"],
+      "completed": [],
+      "failed": [],
+      "cancelled": []
+    },
+    "crawl_page": {
+      "discovered": ["failed", "queued", "refused"],
+      "queued": ["failed", "leased", "refused"],
+      "leased": ["failed", "provider_started", "quarantined", "queued", "refused"],
+      "provider_started": ["failed", "persistence_pending", "quarantined", "reconciliation_pending", "refused", "retry_wait"],
+      "reconciliation_pending": ["persistence_pending", "quarantined", "retry_wait"],
+      "persistence_pending": ["fetched", "quarantined"],
+      "retry_wait": ["failed", "quarantined", "queued"],
+      "fetched": [],
+      "failed": [],
+      "quarantined": [],
+      "refused": []
+    },
+    "fetch_attempt": {
+      "prepared": ["dispatched", "failed"],
+      "dispatched": ["failed", "provider_succeeded", "retryable_no_spend", "spend_unknown"],
+      "provider_succeeded": ["persisted", "quarantined"],
+      "persisted": [],
+      "retryable_no_spend": [],
+      "failed": [],
+      "spend_unknown": ["quarantined", "reconciled_no_spend", "reconciled_succeeded"],
+      "reconciled_no_spend": [],
+      "reconciled_succeeded": ["persisted", "quarantined"],
+      "quarantined": []
+    },
+    "link_expansion": {
+      "queued": ["leased"],
+      "leased": ["completed", "failed", "retry_wait"],
+      "retry_wait": ["queued"],
+      "completed": [],
+      "failed": []
+    }
+  },
+  "config": {
+    "contract_version": "stage0-official-site-c0-v1",
+    "crawl_mode": "shadow",
+    "provider_key": "firecrawl",
+    "max_graph_depth": 2,
+    "fast_deadline_seconds": 40,
+    "fast_page_ceiling": 12,
+    "total_page_ceiling": 100,
+    "worker_concurrency": 8,
+    "per_host_concurrency": 3,
+    "lease_ttl_seconds": 90,
+    "heartbeat_seconds": 20,
+    "request_timeout_seconds": 30,
+    "max_response_bytes": 5000000,
+    "max_redirects": 5,
+    "allow_subdomains": false,
+    "url_policy_version": "url-v1",
+    "provider_policy_version": "provider-v1",
+    "robots_policy_version": "robots-v1"
+  },
+  "fetcher_capabilities": {
+    "provider_key": "firecrawl",
+    "single_page_only": true,
+    "supports_operation_lookup": false,
+    "supports_idempotency_key": false,
+    "reports_redirect_chain": false,
+    "reports_outgoing_links": false,
+    "reports_actual_cost": true,
+    "reports_provider_receipt": true,
+    "proves_no_spend_before_dispatch": false
+  },
+  "crawl_run_create": {
+    "workspace_id": "workspace-1",
+    "brand_id": "brand-1",
+    "client_entity_id": "90000000-0000-4000-8000-000000000001",
+    "recon_run_id": "80000000-0000-4000-8000-000000000001",
+    "root_discovered_url": "https://example.com/",
+    "root_fetch_key": "https://example.com/",
+    "allowed_registrable_domain": "example.com",
+    "config": {
+      "contract_version": "stage0-official-site-c0-v1",
+      "crawl_mode": "shadow",
+      "provider_key": "firecrawl",
+      "max_graph_depth": 2,
+      "fast_deadline_seconds": 40,
+      "fast_page_ceiling": 12,
+      "total_page_ceiling": 100,
+      "worker_concurrency": 8,
+      "per_host_concurrency": 3,
+      "lease_ttl_seconds": 90,
+      "heartbeat_seconds": 20,
+      "request_timeout_seconds": 30,
+      "max_response_bytes": 5000000,
+      "max_redirects": 5,
+      "allow_subdomains": false,
+      "url_policy_version": "url-v1",
+      "provider_policy_version": "provider-v1",
+      "robots_policy_version": "robots-v1"
+    }
+  },
+  "crawl_run_ref": {
+    "crawl_run_id": "10000000-0000-4000-8000-000000000001",
+    "workspace_id": "workspace-1",
+    "recon_run_id": "80000000-0000-4000-8000-000000000001",
+    "status": "fast_active",
+    "created": true
+  },
+  "url_observation": {
+    "discovered_url": "https://example.com/pricing/?utm_source=nav#plans",
+    "discovered_via": "link",
+    "fetch_key": "https://example.com/pricing/",
+    "fetch_key_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "source_page_id": "20000000-0000-4000-8000-000000000000",
+    "graph_depth": 1,
+    "link_text": "Pricing",
+    "priority": 10,
+    "priority_reason": ["pricing", "homepage_link"],
+    "eligibility": "both",
+    "policy_outcome": "admitted",
+    "policy_reason": null
+  },
+  "discovery_batch": {
+    "workspace_id": "workspace-1",
+    "crawl_run_id": "10000000-0000-4000-8000-000000000001",
+    "observations": [
+      {
+        "discovered_url": "https://example.com/pricing/?utm_source=nav#plans",
+        "discovered_via": "link",
+        "fetch_key": "https://example.com/pricing/",
+        "fetch_key_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_page_id": "20000000-0000-4000-8000-000000000000",
+        "graph_depth": 1,
+        "link_text": "Pricing",
+        "priority": 10,
+        "priority_reason": ["pricing", "homepage_link"],
+        "eligibility": "both",
+        "policy_outcome": "admitted",
+        "policy_reason": null
+      }
+    ]
+  },
+  "discovery_batch_result": {
+    "observations_recorded": 1,
+    "page_nodes_created": 1,
+    "page_nodes_reprioritized": 0,
+    "saved_links_reexpanded": 0
+  },
+  "claim_next_request": {
+    "workspace_id": "workspace-1",
+    "crawl_run_id": "10000000-0000-4000-8000-000000000001",
+    "worker_id": "worker-fast-1",
+    "eligible_phase": "fast",
+    "lease_ttl_seconds": 90
+  },
+  "crawl_lease": {
+    "workspace_id": "workspace-1",
+    "crawl_run_id": "10000000-0000-4000-8000-000000000001",
+    "page_id": "20000000-0000-4000-8000-000000000001",
+    "worker_id": "worker-fast-1",
+    "lease_generation": 1,
+    "phase": "fast",
+    "fetch_key": "https://example.com/pricing/",
+    "requested_url": "https://example.com/pricing/",
+    "host": "example.com",
+    "graph_depth": 1,
+    "expires_at": "2026-08-14T10:01:30Z"
+  },
+  "fetch_attempt_ref": {
+    "fetch_attempt_id": "30000000-0000-4000-8000-000000000001",
+    "workspace_id": "workspace-1",
+    "crawl_run_id": "10000000-0000-4000-8000-000000000001",
+    "page_id": "20000000-0000-4000-8000-000000000001",
+    "attempt_number": 1,
+    "lease_generation": 1,
+    "operation_key": "crawl:run-1:page-1:attempt-1",
+    "provider_key": "firecrawl",
+    "state": "prepared"
+  },
+  "claim_reconciliation_request": {
+    "workspace_id": "workspace-1",
+    "crawl_run_id": "10000000-0000-4000-8000-000000000001",
+    "worker_id": "reconciler-1",
+    "lease_ttl_seconds": 90
+  },
+  "reconciliation_claim": {
+    "lease": {
+      "workspace_id": "workspace-1",
+      "crawl_run_id": "10000000-0000-4000-8000-000000000001",
+      "page_id": "20000000-0000-4000-8000-000000000001",
+      "worker_id": "reconciler-1",
+      "lease_generation": 2,
+      "phase": "background",
+      "fetch_key": "https://example.com/pricing/",
+      "requested_url": "https://example.com/pricing/",
+      "host": "example.com",
+      "graph_depth": 1,
+      "expires_at": "2026-08-14T10:05:00Z"
+    },
+    "attempt": {
+      "fetch_attempt_id": "30000000-0000-4000-8000-000000000001",
+      "workspace_id": "workspace-1",
+      "crawl_run_id": "10000000-0000-4000-8000-000000000001",
+      "page_id": "20000000-0000-4000-8000-000000000001",
+      "attempt_number": 1,
+      "lease_generation": 1,
+      "operation_key": "crawl:run-1:page-1:attempt-1",
+      "provider_key": "firecrawl",
+      "state": "spend_unknown"
+    }
+  },
+  "claim_persistence_request": {
+    "workspace_id": "workspace-1",
+    "crawl_run_id": "10000000-0000-4000-8000-000000000001",
+    "worker_id": "persistence-worker-1",
+    "lease_ttl_seconds": 90
+  },
+  "persistence_claim": {
+    "lease": {
+      "workspace_id": "workspace-1",
+      "crawl_run_id": "10000000-0000-4000-8000-000000000001",
+      "page_id": "20000000-0000-4000-8000-000000000001",
+      "worker_id": "persistence-worker-1",
+      "lease_generation": 2,
+      "phase": "background",
+      "fetch_key": "https://example.com/pricing/",
+      "requested_url": "https://example.com/pricing/",
+      "host": "example.com",
+      "graph_depth": 1,
+      "expires_at": "2026-08-14T10:05:00Z"
+    },
+    "attempt": {
+      "fetch_attempt_id": "30000000-0000-4000-8000-000000000001",
+      "workspace_id": "workspace-1",
+      "crawl_run_id": "10000000-0000-4000-8000-000000000001",
+      "page_id": "20000000-0000-4000-8000-000000000001",
+      "attempt_number": 1,
+      "lease_generation": 1,
+      "operation_key": "crawl:run-1:page-1:attempt-1",
+      "provider_key": "firecrawl",
+      "state": "provider_succeeded"
+    }
+  },
+  "fetch_request": {
+    "operation_key": "crawl:run-1:page-1:attempt-1",
+    "requested_url": "https://example.com/pricing/",
+    "allowed_hosts": ["example.com"],
+    "timeout_seconds": 30,
+    "max_response_bytes": 5000000,
+    "accepted_mime_types": ["text/html", "text/plain"],
+    "max_redirects": 5,
+    "robots_decision_ref": "robots:example.com:v1"
+  },
+  "fetch_result": {
+    "provider_key": "firecrawl",
+    "provider_request_id": "fc-request-1",
+    "requested_url": "https://example.com/pricing/",
+    "final_url": "https://www.example.com/pricing/",
+    "redirect_chain": [
+      {
+        "from_url": "https://example.com/pricing/",
+        "to_url": "https://www.example.com/pricing/",
+        "http_status": 301
+      }
+    ],
+    "provider_status": "completed",
+    "http_status": 200,
+    "content": "# Pricing\n\nContact sales.",
+    "media_type": "text/markdown",
+    "outgoing_links": [
+      {
+        "discovered_url": "https://www.example.com/customers",
+        "relation": "anchor",
+        "link_text": "Customers"
+      }
+    ],
+    "fetched_at": "2026-08-14T10:00:00Z",
+    "cost_cents": "1.25",
+    "cost_kind": "actual",
+    "spend_status": "spend_confirmed",
+    "retry_class": "success",
+    "receipt": {"credits_used": 1.25}
+  },
+  "artifact_ref": {
+    "workspace_id": "workspace-1",
+    "artifact_key": "workspace-1/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "content_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "size_bytes": 25
+  },
+  "page_snapshot_ref": {
+    "snapshot_id": "40000000-0000-4000-8000-000000000001",
+    "workspace_id": "workspace-1",
+    "crawl_run_id": "10000000-0000-4000-8000-000000000001",
+    "page_id": "20000000-0000-4000-8000-000000000001",
+    "fetch_attempt_id": "30000000-0000-4000-8000-000000000001",
+    "requested_url": "https://example.com/pricing/",
+    "final_url": "https://www.example.com/pricing/",
+    "artifact": {
+      "workspace_id": "workspace-1",
+      "artifact_key": "workspace-1/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "content_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "size_bytes": 25
+    },
+    "fetched_at": "2026-08-14T10:00:00Z"
+  },
+  "corpus_checkpoint_ref": {
+    "checkpoint_id": "50000000-0000-4000-8000-000000000001",
+    "workspace_id": "workspace-1",
+    "crawl_run_id": "10000000-0000-4000-8000-000000000001",
+    "phase": "fast",
+    "version": 1,
+    "snapshot_ids": ["40000000-0000-4000-8000-000000000001"],
+    "snapshot_set_sha256": "e0159c29fae0057f479db5b46c13de11e4b7eabb3b891f772cd9cf5c2e426fda",
+    "coverage": {"categories": ["pricing"], "page_count": 1},
+    "created_at": "2026-08-14T10:00:02Z"
+  },
+  "attempt_outcome": {
+    "disposition": "reconcile",
+    "attempt_state": "spend_unknown",
+    "page_state": "reconciliation_pending",
+    "reason_code": "provider_outcome_ambiguous",
+    "retry_at": null
+  },
+  "reclaim_result": {
+    "requeued_pre_dispatch": 2,
+    "moved_to_reconciliation_pending": 1,
+    "released_persistence_pending": 1
+  },
+  "crawl_progress": {
+    "workspace_id": "workspace-1",
+    "crawl_run_id": "10000000-0000-4000-8000-000000000001",
+    "status": "background_active",
+    "queued": 4,
+    "leased": 1,
+    "provider_active": 2,
+    "reconciliation_pending": 1,
+    "persistence_pending": 1,
+    "fetched": 8,
+    "refused": 3,
+    "failed": 0,
+    "quarantined": 0,
+    "spend_unknown": 1
+  },
+  "materialization_request": {
+    "contract_version": "stage0-official-site-c0-v1",
+    "workspace_id": "workspace-1",
+    "crawl_run_id": "10000000-0000-4000-8000-000000000001",
+    "recon_run_id": "20000000-0000-4000-8000-000000000001",
+    "claim_run_id": "30000000-0000-4000-8000-000000000001",
+    "client_entity_id": "40000000-0000-4000-8000-000000000001",
+    "checkpoint_id": "50000000-0000-4000-8000-000000000001",
+    "phase": "fast",
+    "model_id": "openai/gpt-5.6-luna",
+    "prompt_version": "official-site-extract-v1",
+    "schema_version": "client-kb-v1"
+  },
+  "materialization_result": {
+    "workspace_id": "workspace-1",
+    "crawl_run_id": "10000000-0000-4000-8000-000000000001",
+    "claim_run_id": "30000000-0000-4000-8000-000000000001",
+    "checkpoint_id": "50000000-0000-4000-8000-000000000001",
+    "source_key": "official_site",
+    "client_kb_version": 1,
+    "claim_ids": ["60000000-0000-4000-8000-000000000001"],
+    "filled_fields": ["client.product"],
+    "empty_fields": ["client.pricing_posture"],
+    "failed_fields": []
+  }
+}

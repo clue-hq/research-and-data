@@ -35,16 +35,24 @@ WHAT THIS SUBCLASS ADDS (only what stock does NOT provide):
    still classified to ``INVALID_PATH`` by upload/download), carrying a message
    that teaches the virtual form. We do NOT recompute containment — stock's check
    stands; we only change the exception TYPE so every method handles it uniformly.
+4. W1.5: the typed-``reference_fidelity`` invariant on a reference turn. The
+   fast-loop author writes ``critique.json`` through the generic ``write_file``
+   tool, so THIS backend is the only choke point every self-audit passes through.
+   On a reference turn a ``critique.json`` write is normalized by
+   ``critique_fidelity.normalize_critique_document`` before it lands, promoting a
+   fidelity score the author wrote as prose into the typed field. See that
+   module's docstring for the defect and the exact promotion rule.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from deepagents.backends.filesystem import FilesystemBackend
 from deepagents.backends.protocol import EditResult, WriteResult
 from py_lumen_obs import get_logger
 
+from .critique_fidelity import CRITIQUE_FILENAME, normalize_critique_document
 from .paths import normalize_agent_key
 
 logger = get_logger("lumen_agent.fs_backend")
@@ -65,10 +73,15 @@ class AgentWorkspaceBackend(FilesystemBackend):
         root_dir: str | Path,
         max_file_size_mb: int = 10,
         custom_components_root: str | Path | None = None,
+        reference_turn: bool = False,
     ) -> None:
         super().__init__(
             root_dir=root_dir, virtual_mode=True, max_file_size_mb=max_file_size_mb
         )
+        # W1.5: whether reference assets rode this turn. Only a reference turn
+        # owes a typed `reference_fidelity`, so only a reference turn normalizes
+        # its self-audit; an ordinary turn's `critique.json` is written verbatim.
+        self._reference_turn = bool(reference_turn)
         # Stored from the constructor arg (not ``self.cwd``) so the class also works
         # under the harness's stubbed ``FilesystemBackend``, which does not set cwd.
         self._workspace_root = str(Path(root_dir))
@@ -174,10 +187,27 @@ class AgentWorkspaceBackend(FilesystemBackend):
                 )
         return super()._to_virtual_path(path)
 
+    def _is_critique_key(self, key: str) -> bool:
+        try:
+            normalized = self._normalize_and_map_key(key)
+        except Exception:  # a key we cannot even normalize is not our business.
+            return False
+        return PurePosixPath(normalized).name == CRITIQUE_FILENAME
+
+    def _normalize_self_audit(self, file_path: str, content: str) -> str:
+        """W1.5 — promote a prose fidelity score into the typed field on write."""
+        if not self._reference_turn or not self._is_critique_key(file_path):
+            return content
+        rewritten = normalize_critique_document(content)
+        if rewritten is None:
+            return content
+        logger.debug("critique_reference_fidelity_stamped", key=file_path)
+        return rewritten
+
     def write(self, file_path: str, content: str) -> WriteResult:
         if self._is_component_projection_key(file_path):
             return WriteResult(error=self._projection_write_message())
-        return super().write(file_path, content)
+        return super().write(file_path, self._normalize_self_audit(file_path, content))
 
     def edit(
         self,

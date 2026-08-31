@@ -61,15 +61,15 @@ from __future__ import annotations
 import uuid
 from collections import defaultdict
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import JsonValue
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.contact_eligibility import ContactEligibilityResolver
+from clue_api.client_context_binding import workspace_client_entity_id
 from clue_api.frontend_read.accounts_list import (
     SCORE_FIELD_KEYS,
     ProjectScore,
@@ -78,23 +78,30 @@ from clue_api.frontend_read.accounts_list import (
     project_names,
 )
 from clue_api.frontend_read.app import WorkspaceDep
-from clue_api.frontend_read.committee import (
-    committee_member_displayable,
-    request_bound_conn_factory,
+from clue_api.frontend_read.committee import read_governed_committee
+from clue_api.frontend_read.evidence import (
+    EvidenceReference,
+    evidence_artifact_response,
+    evidence_reference,
+    live_artifact_claim_ids,
+    read_live_artifact,
 )
+from clue_api.frontend_read.prose import ACCOUNT_SUMMARY_FIELD, ProseRead, read_prose
 from clue_core import (
+    ClaimId,
     EntityId,
     EntityType,
     FreshnessState,
     Persona,
-    ProjectRunId,
     ResearchScope,
-    decode_jsonb_scalar,
     reference_time,
 )
 from clue_db import ConnFactory
 from clue_research.claimstore import (
+    FieldFilters,
+    FieldRegistryScope,
     WorkspaceScope,
+    active_merge_policy,
     claims_by_ids,
     current_values,
     # FI-2 P3's one species derivation, which now lives beside ``list_effective_fields`` in the
@@ -102,10 +109,12 @@ from clue_research.claimstore import (
     # the Sumble gap ladder) must answer "is this field project-relative?" exactly as this read
     # layer does, and a research-path module importing a BFF module was the wrong direction.
     field_species,
+    list_effective_fields,
+    merge_claims,
 )
-from clue_research.compliance import load_workspace_policy
 from clue_research.identity import get_account, get_contacts, surviving_id
 from clue_research.membership import ProjectMembership, memberships_for_accounts
+from clue_storage import StorageBackend
 
 #: ``account.value_narrative`` gets its own slot in a project section: it is the FI-2 §5.2 relative
 #: family that is an *argument* rather than a fact, and the frontend renders it as prose, not as a
@@ -135,6 +144,7 @@ class NeutralFact(WireModel):
     freshness: FreshnessState
     observed_at: datetime
     provider: str | None = None
+    evidence: EvidenceReference
 
 
 class RelativeFact(WireModel):
@@ -149,6 +159,7 @@ class RelativeFact(WireModel):
     value: JsonValue
     observed_at: datetime
     provider: str | None = None
+    evidence: EvidenceReference
 
 
 class AccountProjectSection(WireModel):
@@ -187,6 +198,13 @@ class CommitteeMemberRow(WireModel):
     project_ids: tuple[str, ...] = ()
 
 
+class UnresolvedField(WireModel):
+    """A research gap plus the registry-authored explanation of what was requested."""
+
+    field_key: str
+    description: str | None = None
+
+
 class AccountCoverage(WireModel):
     """How much of this account is actually researched — a confidence report, not a guarantee.
 
@@ -199,6 +217,7 @@ class AccountCoverage(WireModel):
 
     researched_field_count: int
     unresolved_field_keys: tuple[str, ...] = ()
+    unresolved_fields: tuple[UnresolvedField, ...] = ()
 
 
 class AccountDetail(WireModel):
@@ -213,17 +232,11 @@ class AccountDetail(WireModel):
     # Set when the requested id was a merged loser: the body is the survivor's, and this names what
     # the caller asked for so a bookmarked/linked id resolves visibly rather than silently.
     redirected_from: uuid.UUID | None = None
+    summary: ProseRead
     neutral_facts: tuple[NeutralFact, ...] = ()
     project_sections: tuple[AccountProjectSection, ...] = ()
     committee: tuple[CommitteeMemberRow, ...] = ()
     coverage: AccountCoverage
-
-
-class ProjectRunContext(WireModel):
-    """The ``(project_run, product)`` pair a project's governed reads run under."""
-
-    project_run_id: ProjectRunId
-    product_id: str | None = None
 
 
 # --- SQL --------------------------------------------------------------------------------------
@@ -248,9 +261,9 @@ _DISTINCT_FIELD_KEYS_TEMPLATE = """
 # dispatches on ``project_id`` alone — ``run_lineage.kind`` is advisory, first-writer-wins metadata
 # over a mixed run-id space and must never decide attribution (FI-2 slice-0 handoff).
 RELATIVE_CLAIMS_TEMPLATE = """
-    SELECT c.field_key, c.value_json, c.observed_at, c.collected_at, c.source_key, l.project_id
+    SELECT c.id, l.project_id
     FROM (
-        SELECT id, field_key, value_json, observed_at, collected_at, source_key, run_id
+        SELECT id, run_id, collected_at
         FROM claim
         WHERE entity_id = :entity_id
           AND field_key IN :field_keys
@@ -286,56 +299,7 @@ _UNRESOLVED_FIELDS = text(
     """
 )
 
-_LATEST_PROJECT_RUN = text(
-    """
-    SELECT id, product_id
-    FROM project_run
-    WHERE workspace_id = :workspace_id AND project_id = :project_id
-    ORDER BY created_at DESC, id DESC
-    LIMIT 1
-    """
-)
-
-
 # --- composition helpers ----------------------------------------------------------------------
-
-
-async def latest_project_run_context(
-    conn: AsyncConnection, *, workspace_id: str, project_id: str
-) -> ProjectRunContext | None:
-    """THE per-project governed-read context rule, recorded in one place (FI-2 §7).
-
-    ``ContactEligibilityResolver`` resolves a committee against an exact ``(project_run, product)``
-    pair, but a *project* has many runs over its life. The recorded rule is **latest run wins**: a
-    project's most recent ``project_run`` row supplies both. It is a rule, not a guess — the newest
-    run is the one whose committee the operator is looking at — and putting it here means the
-    detail view, the contacts endpoints (Task 4) and any later project-lens surface cannot each
-    invent their own.
-
-    Returns ``None`` for a project that has never started a run (its committee is genuinely
-    unknown, not empty-because-we-guessed-wrong).
-    """
-    row = (
-        await conn.execute(
-            _LATEST_PROJECT_RUN, {"workspace_id": workspace_id, "project_id": project_id}
-        )
-    ).first()
-    if row is None:
-        return None
-    return ProjectRunContext(project_run_id=ProjectRunId(row[0]), product_id=row[1])
-
-
-def _reference_time(observed_at: datetime | None, collected_at: datetime) -> datetime:
-    """:func:`~clue_core.reference_time`'s rule, over loose columns.
-
-    Where a whole :class:`~clue_core.Claim` is in hand, call ``core.reference_time(claim)``
-    directly — it is the M9.5 DRY consolidation the merge and the freshness engine share, and this
-    module does exactly that for the neutral-fact winners. The relative-claims read, though,
-    projects five columns out of SQL rather than hydrating claims, so it has an
-    ``(observed_at, collected_at)`` pair and no claim; this restates the same rule for that shape
-    instead of hydrating a claim purely to ask it a two-field question.
-    """
-    return observed_at or collected_at
 
 
 async def _read_distinct_field_keys(
@@ -370,18 +334,26 @@ async def _read_neutral_facts(
     winners = await claims_by_ids(
         conn, [value.provenance.claim_id for value in merged.values()], scope=scope
     )
+    artifact_claim_ids = await live_artifact_claim_ids(
+        conn, claims=winners.values(), workspace_id=scope.workspace_id or ""
+    )
     facts: list[NeutralFact] = []
     for (_entity, field_key), value in merged.items():
         winner = winners.get(value.provenance.claim_id)
+        if winner is None:
+            continue
         facts.append(
             NeutralFact(
                 field_key=field_key,
                 value=value.value_json,
                 freshness=value.freshness_state,
-                observed_at=(
-                    reference_time(winner) if winner is not None else value.provenance.collected_at
+                observed_at=reference_time(winner),
+                provider=winner.source_key,
+                evidence=evidence_reference(
+                    winner,
+                    freshness=value.freshness_state,
+                    artifact_available=str(winner.id) in artifact_claim_ids,
                 ),
-                provider=None if winner is None else winner.source_key,
             )
         )
     return tuple(sorted(facts, key=lambda fact: fact.field_key))
@@ -437,20 +409,52 @@ async def _read_relative_claims(
         )
     ).all()
 
+    claim_ids = [row[0] for row in rows]
+    claims = await claims_by_ids(conn, claim_ids, scope=scope)
+    artifact_claim_ids = await live_artifact_claim_ids(
+        conn, claims=claims.values(), workspace_id=workspace_id
+    )
+    definitions = {
+        str(item.field_def.field_key): item.field_def
+        for item in await list_effective_fields(
+            conn,
+            scope=FieldRegistryScope.for_workspace(workspace_id),
+            filters=FieldFilters(active=None),
+            include_retired=True,
+        )
+    }
+    now = datetime.now(UTC)
+    policy = active_merge_policy()
+
     score_rows: list[tuple[uuid.UUID, str | None, str, Any, datetime]] = []
-    for field_key, raw_value, observed_at, collected_at, source_key, project_id in rows:
-        key = str(field_key)
-        value = decode_jsonb_scalar(raw_value)
+    for claim_id, project_id in rows:
+        claim = claims.get(claim_id)
+        if claim is None:
+            continue
+        key = str(claim.field_key)
+        value = claim.value_json
         project = None if project_id is None else str(project_id)
-        at = _reference_time(observed_at, collected_at)
+        at = reference_time(claim)
         if key in SCORE_FIELD_KEYS:
             score_rows.append((uuid.UUID(str(entity_id)), project, key, value, at))
             continue
+        definition = definitions.get(key)
+        current = merge_claims(
+            (claim,),
+            None if definition is None else definition.freshness_ttl,
+            policy,
+            now,
+        )
         fact = RelativeFact(
             field_key=key,
             value=value,
             observed_at=at,
-            provider=None if source_key is None else str(source_key),
+            provider=claim.source_key,
+            evidence=evidence_reference(
+                claim,
+                freshness=None if current is None else current.freshness_state,
+                artifact_available=str(claim.id) in artifact_claim_ids,
+            ),
         )
         target = partitioned.narratives if key == NARRATIVE_FIELD_KEY else partitioned.insights
         target[project].append(fact)
@@ -468,73 +472,32 @@ async def _read_committee(
     workspace_id: str,
     memberships: Sequence[ProjectMembership],
 ) -> tuple[CommitteeMemberRow, ...]:
-    """The union of every targeting project's governed committee.
+    """Project the shared governed committee into Account-detail rows.
 
-    One ``ContactEligibilityResolver`` per project, each bound to that project's latest-run context
-    (:func:`latest_project_run_context`). The resolver owns *membership* eligibility end to end — a
-    member whose role/persona binding is not STRONG, whose role is implausible, or whose contact row
-    is erased simply does not come back — so this function never re-derives that.
-
-    It does, however, apply :func:`~clue_api.frontend_read.committee.committee_member_displayable`,
-    the workspace **display** policy over the member's role/persona claims. The resolver stops at
-    "is this person really on this committee?"; whether this workspace may *show* them is a separate
-    axis (C7's, applied per statement), and skipping it here was a real leak: the contacts endpoints
-    apply it, so a workspace with professional-public display off would have seen an empty contacts
-    table beside a fully populated committee block for the same account.
-
-    The connection is the request's own, lent to the resolver rather than letting it take a second
-    one from the pool — see ``committee.request_bound_conn_factory`` for the deadlock class.
+    Addressability is not re-derived here: the Contacts list and Contact profile consume the same
+    :func:`read_governed_committee` result, so every member linked from this response is a valid
+    Contact-detail subject under the same workspace policy.
     """
-    policy = await load_workspace_policy(conn, workspace_id=workspace_id)
-    bound = request_bound_conn_factory(conn)
-    by_contact: dict[EntityId, CommitteeMemberRow] = {}
-    projects: dict[EntityId, list[str]] = defaultdict(list)
-    # Memberships only — deliberate, and an asymmetry worth naming against this same response:
-    # ``project_sections`` (and the list's ``researchStatus``) honestly surface a project that
-    # produced research on this account *without* a membership row, but this loop never visits such
-    # a project, so its committee members can surface nowhere. That state should not occur (it is an
-    # anomaly, not a mode); iterating research lineage instead would attribute one project's
-    # committee to an account it does not target, which is the worse failure.
-    for membership in memberships:
-        context = await latest_project_run_context(
-            conn, workspace_id=workspace_id, project_id=membership.project_id
-        )
-        if context is None:
-            continue
-        resolver = ContactEligibilityResolver(
-            project_run_id=context.project_run_id,
-            product_id=context.product_id,
-            conn_factory=bound,
-        )
-        for member in await resolver.resolve_account(
-            account_entity_id=account_id, workspace_id=workspace_id
-        ):
-            if not committee_member_displayable(member, policy):
-                continue
-            projects[member.contact_entity_id].append(membership.project_id)
-            by_contact.setdefault(
-                member.contact_entity_id,
-                CommitteeMemberRow(
-                    contact_id=uuid.UUID(str(member.contact_entity_id)),
-                    persona=member.persona,
-                    role_on_committee=member.role_on_committee,
-                ),
-            )
-    if not by_contact:
+    union, _policy = await read_governed_committee(
+        conn,
+        account_id=account_id,
+        workspace_id=workspace_id,
+        memberships=memberships,
+    )
+    if not union.members:
         return ()
-    contacts = await get_contacts(conn, tuple(by_contact))
+    contacts = await get_contacts(conn, tuple(union.members))
     return tuple(
         sorted(
             (
-                row.model_copy(
-                    update={
-                        "name": (
-                            contacts[contact_id].full_name if contact_id in contacts else None
-                        ),
-                        "project_ids": tuple(projects[contact_id]),
-                    }
+                CommitteeMemberRow(
+                    contact_id=uuid.UUID(str(contact_id)),
+                    name=contacts[contact_id].full_name if contact_id in contacts else None,
+                    persona=member.persona,
+                    role_on_committee=member.role_on_committee,
+                    project_ids=tuple(union.project_ids[contact_id]),
                 )
-                for contact_id, row in by_contact.items()
+                for contact_id, member in union.members.items()
             ),
             key=lambda member: (member.persona.value, str(member.contact_id)),
         )
@@ -554,8 +517,31 @@ async def _read_coverage(
     held = set(held_field_keys)
     # A field research once failed on but has since been answered is not unresolved.
     unresolved = sorted({str(key) for key in rows.scalars()} - held)
+    definitions = (
+        {
+            item.field_def.field_key: item
+            for item in await list_effective_fields(
+                conn,
+                scope=FieldRegistryScope.for_workspace(workspace_id),
+                filters=FieldFilters(active=None),
+                include_retired=True,
+            )
+        }
+        if unresolved
+        else {}
+    )
     return AccountCoverage(
-        researched_field_count=len(held), unresolved_field_keys=tuple(unresolved)
+        researched_field_count=len(held),
+        unresolved_field_keys=tuple(unresolved),
+        unresolved_fields=tuple(
+            UnresolvedField(
+                field_key=field_key,
+                description=(
+                    definitions[field_key].description if field_key in definitions else None
+                ),
+            )
+            for field_key in unresolved
+        ),
     )
 
 
@@ -619,14 +605,16 @@ async def read_account_detail(
     requested = EntityId(account_id)
     canonical = await surviving_id(conn, requested, EntityType.ACCOUNT)
     account = await get_account(conn, canonical)
-    if account is None or account.workspace_id != workspace_id:
+    client_entity_id = await workspace_client_entity_id(conn, workspace_id=workspace_id)
+    if account is None or account.workspace_id != workspace_id or canonical == client_entity_id:
         raise AccountNotFound(str(account_id))
 
     scope = WorkspaceScope.for_workspace(workspace_id)
     field_keys = await _read_distinct_field_keys(conn, entity_id=canonical, scope=scope)
-    species = await field_species(conn, workspace_id=workspace_id, field_keys=field_keys)
-    neutral_keys = [key for key in field_keys if species[key] is ResearchScope.PROJECT_NEUTRAL]
-    relative_keys = [key for key in field_keys if species[key] is ResearchScope.PROJECT_RELATIVE]
+    fact_keys = tuple(key for key in field_keys if key != ACCOUNT_SUMMARY_FIELD)
+    species = await field_species(conn, workspace_id=workspace_id, field_keys=fact_keys)
+    neutral_keys = [key for key in fact_keys if species[key] is ResearchScope.PROJECT_NEUTRAL]
+    relative_keys = [key for key in fact_keys if species[key] is ResearchScope.PROJECT_RELATIVE]
 
     memberships = (
         await memberships_for_accounts(
@@ -636,6 +624,12 @@ async def read_account_detail(
 
     neutral_facts = await _read_neutral_facts(
         conn, entity_id=canonical, field_keys=neutral_keys, scope=scope
+    )
+    summary = await read_prose(
+        conn,
+        entity_id=canonical,
+        field_key=ACCOUNT_SUMMARY_FIELD,
+        scope=scope,
     )
     relative = await _read_relative_claims(
         conn,
@@ -669,6 +663,7 @@ async def read_account_detail(
         registry_ids=account.registry_ids,
         hq_geo=account.hq_geo,
         redirected_from=None if canonical == requested else account_id,
+        summary=summary,
         neutral_facts=neutral_facts,
         project_sections=_sections(memberships, relative, names),
         committee=committee,
@@ -679,7 +674,12 @@ async def read_account_detail(
 # --- the route --------------------------------------------------------------------------------
 
 
-def register_account_detail_routes(router: APIRouter, *, conn_factory: ConnFactory) -> None:
+def register_account_detail_routes(
+    router: APIRouter,
+    *,
+    conn_factory: ConnFactory,
+    evidence_storage: StorageBackend | None = None,
+) -> None:
     """Register ``GET /accounts/{account_id}`` on the workspace-scoped `/frontend/v1` router."""
 
     @router.get("/accounts/{account_id}")
@@ -701,3 +701,80 @@ def register_account_detail_routes(router: APIRouter, *, conn_factory: ConnFacto
                         "message": "no such account in this workspace",
                     },
                 ) from exc
+
+    @router.get("/accounts/{account_id}/evidence/{claim_id}")
+    async def get_account_evidence_artifact(
+        workspace_id: WorkspaceDep,
+        account_id: uuid.UUID,
+        claim_id: uuid.UUID,
+    ) -> Response:
+        """Stream retained evidence only when the current Account read actually exposes it."""
+
+        if evidence_storage is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "EVIDENCE_SERVICE_UNAVAILABLE",
+                    "message": "retained evidence is temporarily unavailable",
+                },
+            )
+        async with conn_factory() as conn:
+            try:
+                detail = await read_account_detail(
+                    conn, workspace_id=workspace_id, account_id=account_id
+                )
+            except AccountNotFound as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "EVIDENCE_NOT_FOUND",
+                        "message": "no such evidence in this workspace",
+                    },
+                ) from exc
+            references = [fact.evidence for fact in detail.neutral_facts]
+            references.extend(
+                fact.evidence
+                for section in detail.project_sections
+                for fact in (*section.narratives, *section.insights)
+            )
+            if not any(
+                reference.claim_id == str(claim_id) and reference.protected_artifact_available
+                for reference in references
+            ):
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "EVIDENCE_NOT_FOUND",
+                        "message": "no such evidence in this workspace",
+                    },
+                )
+            typed_claim_id = ClaimId(claim_id)
+            claims = await claims_by_ids(
+                conn,
+                (typed_claim_id,),
+                scope=WorkspaceScope.for_workspace(workspace_id),
+            )
+            claim = claims.get(typed_claim_id)
+            if claim is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "EVIDENCE_NOT_FOUND",
+                        "message": "no such evidence in this workspace",
+                    },
+                )
+            artifact = await read_live_artifact(
+                conn,
+                claim=claim,
+                workspace_id=workspace_id,
+                storage=evidence_storage,
+            )
+            if artifact is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "EVIDENCE_NOT_FOUND",
+                        "message": "no such evidence in this workspace",
+                    },
+                )
+            return evidence_artifact_response(artifact)

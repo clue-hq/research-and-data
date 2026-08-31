@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
-from uuid import uuid5
+from uuid import UUID, uuid5
 
 from clue_agents import (
     AgentFinalizeEnvelope,
@@ -31,6 +31,7 @@ from clue_agents import (
     AgentTurnOutcome,
     AgentTurnRequest,
     AgentWorkspaceLease,
+    ArtifactRef,
     ContextAssemblyPolicy,
     DelegationRequest,
     DelegationResult,
@@ -50,6 +51,7 @@ from clue_api.agent_platform_wiring import (
 from clue_api.agent_runtime_wiring import CompletionGuard
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.chat.turn_stream import TurnStreamEmitter
+from clue_api.design_leg_wiring import load_head_of_abm_history
 from clue_api.head_of_abm_wiring import (
     HeadOfAbmStage0Runtime,
     build_head_of_abm_stage0_execution,
@@ -75,14 +77,35 @@ __all__ = [
 #: (``c5_tool_not_allowed``). Two surfaces pinning two revisions would mean two different sets of
 #: callable tools for the same role, discovered only at the first refused plan.
 #:
-#: **v6** (FI Lane D D4) widens that slot to the Option-B kickoff chain —
-#: ``draft_account_research_directive@2``, ``open_directive_confirmation_gate@1``,
+#: **v8** is the current hardening revision: v7 added trusted readiness/synthesis @2 and v8 adds
+#: ``open_icp_confirmation_gate@1``. As with the earlier **v6** Option-B kickoff widening —
+#: ``draft_account_research_directive@3``, ``open_directive_confirmation_gate@1``,
 #: ``launch_account_research@1`` — because a surface grant alone is not enough: the C5 slot is a
 #: second, independent ceiling, and until this revision the widened conversation surface would have
 #: shown the model three tools that plan validation then refused. The trial surface still withholds
 #: all three, so raising the shared ceiling grants the trial nothing.
+#:
+#: **v7** (PD-part3 P3.4) adds ``open_design_leg@1`` — the design delegation entry — under the
+#: same rule. The trial surface withholds it too, so the shared ceiling again grants the trial
+#: nothing.
 CONVERSATION_RECIPE_KEY = "recipe0-stage0"
-CONVERSATION_RECIPE_VERSION = 6
+# Revision 19 (genad2) re-pins the delegation entry at ``open_design_leg@4`` — the same tool once
+# more, promoted so a document-less ``doc_kind='scene'`` open births a ZERO-PAGE document the
+# design agent then authors pages into (the format inputs are gone). Revision 18 stays the exact
+# replay input for turns already pinned to it.
+# Revision 18 (genad) re-pins the delegation entry at ``open_design_leg@3`` — the same tool again,
+# promoted so a document-less ``doc_kind='scene'`` open can BIRTH its ad document at a named
+# format. Revision 17 stays the exact replay input for turns already pinned to it.
+# Revision 17 (genweb slice 2) re-pins the delegation entry at ``open_design_leg@2`` — the same
+# tool, promoted so a document-less open can BIRTH its web document. The slot pins an exact
+# address, so the promotion needs its own revision; revision 16 stays the exact replay input for
+# turns already pinned to it.
+# Revision 16 (part-iii merge) is revision 15 plus the ``open_design_leg@1`` delegation entry
+# (PD-part3 P3.4's colliding v7, re-versioned onto the v15 lineage at the integration merge).
+# Revision 14 keeps the current-message Account launch path usable after discovery by admitting
+# the two read-only account-research tools already exposed by the promoted profile/skill. Revision
+# 13 remains the exact replay input for turns that were already pinned to it.
+CONVERSATION_RECIPE_VERSION = 19
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface
@@ -165,6 +188,66 @@ class ConversationTurnEngine:
     def artifacts(self) -> DurableAgentArtifactStore:
         return self.components.artifacts
 
+    async def replay_committed(
+        self,
+        *,
+        turn_id: UUID,
+        workspace_id: str,
+        project_id: str,
+        thread_id: str,
+        actor_id: str,
+        user_message_artifact_ref: ArtifactRef,
+        stream: TurnStreamEmitter | None = None,
+    ) -> ConversationTurnResult | None:
+        """Return an already committed turn before current state is recomposed.
+
+        The production fleet calls this immediately after reading the immutable submission. That
+        ordering is load-bearing for context replay: a retry after background recon advanced the
+        Client-KB must not compile vN+1 cards for a turn whose durable receipt names vN. It also
+        avoids re-driving a recipe execution that the original completed turn already closed.
+
+        History append remains here because a process may have committed finalization authority
+        and crashed before projecting the canonical user/assistant messages. Both appends are
+        derived-id idempotent, exactly like the later in-execution replay path.
+        """
+
+        receipt = await self.components.turns.load(
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+        )
+        if receipt is None:
+            return None
+        if (
+            receipt.project_id != project_id
+            or receipt.thread_id != thread_id
+            or receipt.actor_id != actor_id
+        ):
+            raise ValueError("committed turn replay scope differs from its immutable submission")
+        committed = await self.components.turns.load_committed_outcome(
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+        )
+        if committed is None:
+            return None
+        await self.components.history.append(
+            message_id=uuid5(turn_id, "user"),
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            thread_id=thread_id,
+            role="user",
+            body_ref=user_message_artifact_ref,
+        )
+        if stream is not None:
+            await stream.turn_started()
+        return await self._result_from_outcome(
+            outcome=committed,
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            thread_id=thread_id,
+            stream=stream,
+            replayed=True,
+        )
+
     async def execute(
         self,
         *,
@@ -196,7 +279,12 @@ class ConversationTurnEngine:
 
         constitution = request.constitution
         workspace_id = constitution.workspace_id
-        prior_history = await self.components.history.load(
+        # P3.4 (PD-part3 §2.4): the conversation surface's history is role-scoped — head-of-abm
+        # assembles its own turns and never ingests a design leg's transcript. While a leg is
+        # open this engine does not run at all (the routing rule sends the message to Design);
+        # this load is what keeps the exclusion true after the leg closes.
+        prior_history = await load_head_of_abm_history(
+            self._conn_factory,
             workspace_id=workspace_id,
             thread_id=request.thread_id,
         )
@@ -251,6 +339,27 @@ class ConversationTurnEngine:
             )
         else:
             outcome = committed
+        return await self._result_from_outcome(
+            outcome=outcome,
+            turn_id=request.turn_id,
+            workspace_id=workspace_id,
+            thread_id=request.thread_id,
+            stream=stream,
+            replayed=committed is not None,
+        )
+
+    async def _result_from_outcome(
+        self,
+        *,
+        outcome: AgentTurnOutcome,
+        turn_id: UUID,
+        workspace_id: str,
+        thread_id: str,
+        stream: TurnStreamEmitter | None,
+        replayed: bool,
+    ) -> ConversationTurnResult:
+        """Resolve one durable outcome into its canonical message and optional projection."""
+
         assistant_message: str | None = None
         envelope: AgentFinalizeEnvelope | None = None
         if outcome.finalization_ref is not None:
@@ -262,10 +371,10 @@ class ConversationTurnEngine:
                     await self.components.artifacts.read(envelope.user_message_artifact_ref)
                 ).decode()
                 await self.components.history.append(
-                    message_id=uuid5(request.turn_id, "assistant"),
-                    turn_id=request.turn_id,
+                    message_id=uuid5(turn_id, "assistant"),
+                    turn_id=turn_id,
                     workspace_id=workspace_id,
-                    thread_id=request.thread_id,
+                    thread_id=thread_id,
                     role="assistant",
                     body_ref=envelope.user_message_artifact_ref,
                 )
@@ -275,12 +384,12 @@ class ConversationTurnEngine:
                 outcome=outcome,
                 envelope=envelope,
                 assistant_message=assistant_message,
-                replayed=committed is not None,
+                replayed=replayed,
             )
         return ConversationTurnResult(
             outcome=outcome,
             assistant_message=assistant_message,
-            replayed=committed is not None,
+            replayed=replayed,
         )
 
     async def _project_turn_close(

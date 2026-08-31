@@ -1,5 +1,6 @@
 import type { BrandKitSummary, Diagnostic, Scene } from "./contracts";
 import { diagnosticsFromUnknown, responseStatus } from "./brandDiagnostics";
+import { lumenFetch } from "./editorConfig";
 
 export interface BrandGovernanceRequest {
   scene: Scene;
@@ -31,7 +32,7 @@ export function createApiBrandGovernanceRunner({
       `/documents/${encodeURIComponent(documentId ?? scene.meta.id)}/brand-governance`,
       apiBaseUrl
     );
-    const response = await fetch(url, {
+    const response = await lumenFetch(url, {
       method: "POST",
       headers: {
         "content-type": "application/json"

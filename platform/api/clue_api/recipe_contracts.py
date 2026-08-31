@@ -16,11 +16,13 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     "start_recon@1",
     "record_interview_answer@1",
     "confirm_project_product@1",
-    "evaluate_stage0_readiness@1",
-    "synthesize_icps@1",
+    "evaluate_stage0_readiness@2",
+    "synthesize_icps@3",
+    "open_icp_confirmation_gate@1",
     "confirm_icp@1",
     "override_stage0_readiness@1",
-    "start_confirmed_project_run@1",
+    "open_discovery_configuration_gate@1",
+    "start_confirmed_project_run@3",
     "propose_field@2",
     "propose_source@1",
     "submit_ingestion@1",
@@ -30,13 +32,37 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # anything in that slot is certified here first.
     "inspect_statement_history@1",
     "inspect_readiness_history@1",
+    # FI production context S4-D (recipe0-stage0@8): strict artifact-bound reads behind the
+    # bounded Client-KB index. Both are effect-free and pin only the exact Client-KB checkpoint;
+    # project/workspace/client authority is injected from the production constitution.
+    "list_client_knowledge@2",
+    "inspect_client_claim@2",
+    # S5-D (recipe0-stage0@9): selected-product knowledge stays a separate exact Product-KB
+    # surface. Scope is injected from the paired turn pin; both reads are effect-free.
+    "list_product_knowledge@1",
+    "inspect_product_claim@1",
+    # S5-F: this model-callable action presents the exact pinned catalog to the human but cannot
+    # confirm a product. Its deterministic gate identity makes retries domain-idempotent.
+    "open_product_selection_gate@1",
     # FI Lane D D4 (added in recipe0-stage0@6): the Option-B kickoff chain. Anything runnable in
     # the Stage-0 interaction slot is replay-certified here first, and these three are the whole
     # point of the widened conversation surface — draft the direction, present its confirmation
     # gate, and launch what the human's confirming turn approved.
-    "draft_account_research_directive@2",
+    "draft_account_research_directive@3",
     "open_directive_confirmation_gate@1",
+    "get_research_view@1",
     "launch_account_research@1",
+    # FI-2 exact current-message Account launch, retained in integration recipe0-stage0@11.
+    "launch_selected_account_research@1",
+    "read_account_research_run@1",
+    # PD-part3 P3.4 (added in recipe0-stage0@16 on this lineage): the design delegation entry,
+    # promoted to @2 in @17 (genweb slice 2 — a document-less open births the web document), to @3
+    # in @18 (genad — a document-less ``doc_kind='scene'`` open births the ad document at a named
+    # format) and to @4 in @19 (genad2 — the scene births ZERO pages and the design agent authors
+    # them, so the format inputs are gone). Opening a leg is still a durable write with no spend
+    # and no dispatch; each birth is one governed create keyed on the same replay identity as the
+    # leg, so a retried delegation converges on one leg and one document rather than minting twins.
+    "open_design_leg@4",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

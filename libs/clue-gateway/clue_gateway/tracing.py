@@ -24,6 +24,7 @@ from opentelemetry.trace import Span
 from clue_core.gateway import Completion, EmbeddingResult, LLMGateway, Message, TokenUsage
 from clue_obs import get_logger
 from clue_obs.otel import (
+    ATTR_AGENT_ROLE,
     ATTR_COMPLETION_TOKENS,
     ATTR_COST_CENTS,
     ATTR_MODEL,
@@ -88,15 +89,20 @@ def record_model_call(
     usage: TokenUsage,
     cost_cents: Decimal,
     duration_ms: float,
+    role: str | None = None,
 ) -> None:
     """Record one direct or agentic call through the shared model-observability seam.
 
     ``served_model`` is the id that actually answered — it may differ from ``requested_model``
-    under the configured fallback. Cached-prefill share is deliberately absent:
-    :class:`~clue_core.gateway.TokenUsage` carries no cached-token count today; add a
-    ``cached_prompt_tokens`` field to the event when the gateway types expose one.
+    under the configured fallback. ``role`` (P3.2) is the agent-role attribution label — the
+    ONE per-role usage authority (PD-part3 delta 6); ``cached_prompt_tokens`` is the
+    provider-reported cached-prefill share (0 unless the OpenRouter ``usage.include``
+    passthrough is on), the measurable form of the design runtime's prefill economics.
     """
-    apply_attributes(span, _result_attrs(served_model, usage, cost_cents))
+    attrs = _result_attrs(served_model, usage, cost_cents)
+    if role is not None:
+        attrs[ATTR_AGENT_ROLE] = role
+    apply_attributes(span, attrs)
     _log.info(
         EVENT_MODEL_CALL_USAGE,
         call_kind=call_kind,
@@ -104,9 +110,11 @@ def record_model_call(
         served_model=served_model,
         prompt_tokens=usage.prompt_tokens,
         completion_tokens=usage.completion_tokens,
+        cached_prompt_tokens=usage.cached_prompt_tokens,
         total_tokens=usage.total_tokens,
         cost_cents=cost_cents,
         duration_ms=round(duration_ms, 3),
+        **({"role": role} if role is not None else {}),
     )
 
 

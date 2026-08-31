@@ -5,8 +5,9 @@ Turns brand-kit logos/images into human-readable library metadata
 ``NullDescriber`` (the default everywhere, incl. tests) returns ``[None]*n``;
 ``OpenRouterDescriber`` (env-gated) captions via a multimodal OpenRouter call.
 
-``DescriptionStore`` persists results in the ``asset_descriptions`` table
-(migration 008), protecting human-authored rows from AI overwrites.
+``DescriptionStore`` persists results in the ``design_asset_description`` table
+(Postgres, via ``clue_design.descriptions`` since Part II D2.3), protecting
+human-authored rows from AI overwrites.
 ``apply_descriptions`` orchestrates: cache hits stamp directly, misses with
 resolvable bytes get a downscaled preview and one batched ``describe`` call,
 then results are persisted and stamped onto the evidence.
@@ -19,11 +20,11 @@ from __future__ import annotations
 
 import base64
 import json
-import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Callable, Protocol, runtime_checkable
 
+from clue_design import descriptions as design_descriptions
+from lumen_api.design_store import DesignStoreBridge, default_workspace_id
 from py_lumen_config import settings
 
 from .evidence import BrandEvidence, ImageEvidence, LogoEvidence
@@ -34,10 +35,20 @@ PREVIEW_MAX_PX = 512
 #: diagnostic — loud enough to name the cause, bounded so a giant HTML error
 #: page never floods the report.
 FAILURE_EXCERPT_MAX = 300
-
-
-def _default_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+#: How many IMAGES one ingestion may caption (design-quality Wave 1, ruling R4).
+#: Describe exactly what the agent will be shown and nothing more: the brand
+#: card lists at most this many images, so a 17th caption is spend nobody ever
+#: reads. Logos are exempt — they are few and they are the brand's mark.
+#:
+#: This is a deliberate MIRROR of ``lumen_agent.brand_card.MAX_IMAGE_LIST``, not
+#: an import: ``apps/api`` does not depend on ``apps/agent_runtime`` (its
+#: pyproject excludes the agent-runtime trio on purpose, and every ``lumen_agent``
+#: reference in this app is a lazy in-function import), so a module-level import
+#: here would break ``lumen-api`` as a standalone distribution. Tests may import
+#: both — ``test_ingestion_describe.py::
+#: test_described_image_cap_mirrors_the_brand_card_constant`` fails the build the
+#: moment the two numbers drift.
+MAX_DESCRIBED_IMAGES = 16
 
 
 # --- contracts ------------------------------------------------------------------
@@ -82,62 +93,70 @@ class NullDescriber:
 
 
 class DescriptionStore:
-    """Durable store for asset descriptions (migration 008).
+    """Durable store for asset descriptions (Part II slice D2.3: Postgres, same surface).
 
-    Takes a ``sqlite3.Connection`` like the other ingestion stores. Timestamps
-    are minted by an injectable ``now_iso`` (default ISO-8601 UTC) so tests can
-    freeze them. ``put_ai`` never overwrites a human-authored row.
+    The SQL moved to ``clue_design.descriptions``; every method routes through one
+    :class:`~lumen_api.design_store.DesignStoreBridge` call (one coroutine, one loop, one
+    transaction — the O5 rule) and returns the same shapes as before. ``put_ai`` still never
+    overwrites a human-authored row — the guard is the DAL's conditional ``ON CONFLICT``.
+
+    D2.5B deleted the vestigial ``connection`` (the SQLite handle) and ``now_iso`` (timestamps
+    have been the database's ``now()`` since the port) constructor arguments along with the
+    SQLite substrate itself. ``workspace_id`` defaults to the configured dev workspace, like
+    ``HybridRepository``.
     """
 
-    def __init__(
-        self,
-        connection: sqlite3.Connection,
-        now_iso: Callable[[], str] = _default_now_iso,
-    ) -> None:
-        self.connection = connection
-        self.now_iso = now_iso
+    def __init__(self, *, workspace_id: str | None = None) -> None:
+        self.workspace_id = workspace_id or default_workspace_id()
+        self._bridge = DesignStoreBridge(self.workspace_id)
 
     def get_many(self, asset_ids: list[str]) -> dict[str, dict]:
-        if not asset_ids:
-            return {}
-        placeholders = ",".join("?" for _ in asset_ids)
-        rows = self.connection.execute(
-            f"SELECT * FROM asset_descriptions WHERE asset_id IN ({placeholders})",
-            list(asset_ids),
-        ).fetchall()
-        return {row["asset_id"]: _row_to_dict(row) for row in rows}
+        return self._bridge._run(
+            lambda conn: design_descriptions.get_many(
+                conn, workspace_id=self.workspace_id, asset_ids=list(asset_ids)
+            )
+        )
 
     def put_ai(self, result: DescribeResult, model: str) -> None:
-        now = self.now_iso()
-        self.connection.execute(
-            """
-            INSERT INTO asset_descriptions (
-              asset_id, title, description, usage, tags_json,
-              origin, model, created_at, updated_at
+        self._bridge._run(
+            lambda conn: design_descriptions.put_ai(
+                conn,
+                workspace_id=self.workspace_id,
+                asset_id=result.asset_id,
+                title=result.title,
+                description=result.description,
+                usage=result.usage,
+                tags=list(result.tags),
+                model=model,
             )
-            VALUES (?, ?, ?, ?, ?, 'ai', ?, ?, ?)
-            ON CONFLICT(asset_id) DO UPDATE SET
-              title = excluded.title,
-              description = excluded.description,
-              usage = excluded.usage,
-              tags_json = excluded.tags_json,
-              origin = 'ai',
-              model = excluded.model,
-              updated_at = excluded.updated_at
-            WHERE asset_descriptions.origin != 'human'
-            """,
-            (
-                result.asset_id,
-                result.title,
-                result.description,
-                result.usage,
-                json.dumps(list(result.tags)),
-                model,
-                now,
-                now,
-            ),
         )
-        self.connection.commit()
+
+    def merge_human(
+        self,
+        asset_id: str,
+        title: str | None,
+        description: str | None,
+        usage: str | None,
+        tags: list[str] | None,
+    ) -> None:
+        """Patch a human description: ``None`` keeps whatever is stored (Part II D6 Round C).
+
+        The merge is ONE statement in the DAL. ``PUT /assets/{id}/description`` used to read the
+        row, substitute in Python and write the whole record back through :meth:`put_human` —
+        two transactions with no lock between them, so two concurrent patches of different fields
+        each reverted the other's.
+        """
+        self._bridge._run(
+            lambda conn: design_descriptions.merge_human(
+                conn,
+                workspace_id=self.workspace_id,
+                asset_id=asset_id,
+                title=title,
+                description=description,
+                usage=usage,
+                tags=None if tags is None else list(tags),
+            )
+        )
 
     def put_human(
         self,
@@ -147,48 +166,17 @@ class DescriptionStore:
         usage: str | None,
         tags: list[str],
     ) -> None:
-        now = self.now_iso()
-        self.connection.execute(
-            """
-            INSERT INTO asset_descriptions (
-              asset_id, title, description, usage, tags_json,
-              origin, model, created_at, updated_at
+        self._bridge._run(
+            lambda conn: design_descriptions.put_human(
+                conn,
+                workspace_id=self.workspace_id,
+                asset_id=asset_id,
+                title=title,
+                description=description,
+                usage=usage,
+                tags=list(tags),
             )
-            VALUES (?, ?, ?, ?, ?, 'human', NULL, ?, ?)
-            ON CONFLICT(asset_id) DO UPDATE SET
-              title = excluded.title,
-              description = excluded.description,
-              usage = excluded.usage,
-              tags_json = excluded.tags_json,
-              origin = 'human',
-              model = NULL,
-              updated_at = excluded.updated_at
-            """,
-            (
-                asset_id,
-                title,
-                description,
-                usage,
-                json.dumps(list(tags)),
-                now,
-                now,
-            ),
         )
-        self.connection.commit()
-
-
-def _row_to_dict(row: sqlite3.Row) -> dict:
-    return {
-        "asset_id": row["asset_id"],
-        "title": row["title"],
-        "description": row["description"],
-        "usage": row["usage"],
-        "tags": json.loads(row["tags_json"]) if row["tags_json"] else [],
-        "origin": row["origin"],
-        "model": row["model"],
-        "created_at": row["created_at"],
-        "updated_at": row["updated_at"],
-    }
 
 
 # --- orchestration --------------------------------------------------------------
@@ -197,31 +185,41 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
 def apply_descriptions(
     evidence: BrandEvidence,
     *,
-    connection: sqlite3.Connection,
     describer: AssetDescriber,
     resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
     reporter: Callable[[str, float], None],
     rasterize_svg: Callable[[str], bytes | None] | None = None,
+    resolve_thumbnail: Callable[[str], "tuple[bytes, str] | None"] | None = None,
     diagnostics: list[dict] | None = None,
+    workspace_id: str | None = None,
 ) -> BrandEvidence:
     """Stamp title/description/usage_note/tags onto ``evidence`` logos+images.
 
-    Cache hits (any origin) stamp directly; each miss gets its OWN describe
-    call (one image per request — a timeout or malformed image costs exactly
-    one caption, never a batch; the ``asset_descriptions`` cache makes the
-    per-image latency a once-per-lifetime cost). SVGs raster through the
-    injected ``rasterize_svg`` seam (the engine renderer, in production).
+    Cache hits (any origin) stamp directly; each *selected* miss gets its OWN
+    describe call (one image per request — a timeout or malformed image costs
+    exactly one caption, never a batch; the ``asset_descriptions`` cache makes
+    the per-image latency a once-per-lifetime cost). Vectors raster through
+    their STORED thumbnail when they have one (W1.2 rasterizes every SVG at
+    ingest), else through the injected ``rasterize_svg`` seam.
 
-    Nothing is skipped silently: every miss that ends undescribed appends one
-    named warning to ``diagnostics`` (LUMI0803 describe failed, LUMI0804
-    preview unavailable, LUMI0805 bytes unresolvable), and the final reporter
-    call carries the described-N-of-M summary. An INACTIVE describer (Null, or
-    OpenRouter without the env gate/key) skips the miss pass entirely — off is
-    off, not N failures. Deterministic with ``NullDescriber``.
+    Wave 1 ruling R4 bounds what is captioned: ALL logos, plus the top
+    :data:`MAX_DESCRIBED_IMAGES` images by pixel area. The rest stay
+    undescribed — the card would not have shown them anyway — but they still
+    stamp whatever the description store already holds, so a caption is never
+    lost to the bound.
+
+    Nothing is skipped silently: every *selected* miss that ends undescribed
+    appends one named warning to ``diagnostics`` (LUMI0803 describe failed,
+    LUMI0804 preview unavailable, LUMI0805 bytes unresolvable), and the final
+    reporter call carries the described-N-of-M summary plus the count held back
+    by the bound. An image outside the bound is not a failure and gets no
+    diagnostic. An INACTIVE describer (Null, or OpenRouter without the env
+    gate/key) skips the miss pass entirely — off is off, not N failures.
+    Deterministic with ``NullDescriber``.
     """
     reporter("Describing your assets…", 0.80)
     sink = diagnostics if diagnostics is not None else []
-    store = DescriptionStore(connection)
+    store = DescriptionStore(workspace_id=workspace_id)
     model = settings.lumen_ingestion_describe_model
 
     # asset_id -> evidence entry (logos + images). Both stamp identically.
@@ -245,8 +243,8 @@ def apply_descriptions(
     for asset_id, row in cached.items():
         _stamp(targets[asset_id], row)
 
-    misses = [a for a in targets if a not in cached]
-    if not misses or not getattr(describer, "active", True):
+    pending = [a for a in targets if a not in cached]
+    if not pending or not getattr(describer, "active", True):
         reporter(
             f"Asset descriptions: {len(cached)}/{len(targets)} cached"
             + ("" if getattr(describer, "active", True) else " (describe disabled)"),
@@ -254,10 +252,13 @@ def apply_descriptions(
         )
         return evidence
 
+    misses = _select_for_describe(evidence, pending)
+    beyond_bound = len(pending) - len(misses)
+
     described = 0
     failed = 0
     for asset_id, preview in _previews(
-        misses, kinds, resolve_bytes, rasterize_svg, sink
+        misses, kinds, resolve_bytes, rasterize_svg, resolve_thumbnail, sink
     ):
         if preview is None:
             failed += 1
@@ -296,10 +297,82 @@ def apply_descriptions(
 
     reporter(
         f"Asset descriptions: {described + len(cached)}/{len(targets)} "
-        f"({described} new, {len(cached)} cached, {failed} failed)",
+        f"({described} new, {len(cached)} cached, {failed} failed)"
+        + (
+            f", {beyond_bound} beyond the top-{MAX_DESCRIBED_IMAGES} image bound"
+            if beyond_bound
+            else ""
+        ),
         0.85,
     )
     return evidence
+
+
+def _pixel_area(image: ImageEvidence) -> int:
+    """An image's pixel area, or 0 when the capture never measured it — an
+    unmeasured record ranks LAST rather than being guessed at, but it is still
+    eligible for a slot the measured ones leave free.
+
+    Know what these dimensions ARE, because they are not uniform across capture
+    paths and this is the ranking key:
+
+    * uploads and PDF captures measure the decoded image — these are true raster
+      dimensions;
+    * a website ``<img>`` carries the **DOM width/height attribute**
+      (``capture/parse.py`` ``_int_attr``), which is the author's markup, not
+      the asset's real size — a 2400px hero declared ``width="600"`` ranks as
+      600px;
+    * a CSS ``background-image`` carries **no dimensions at all**
+      (``capture/parse.py``'s background branch builds its ``ParsedAsset``
+      without them), so it scores 0 and ranks last — which on a
+      background-hero site means the hero is the first thing the bound drops.
+
+    Ranking off the asset record's true raster dims instead (what
+    ``engine_mirror.record_pixel_dims`` reads, and what W1.3 already puts on the
+    brand card) is the correct fix and is DEFERRED to a later slice by controller
+    ruling — it needs a per-asset record read this seam does not currently have.
+    Until then the cost is bounded and is not a regression: a mis-ranked or
+    dimensionless image goes undescribed, exactly as every image did before this
+    slice existed.
+    """
+    width, height = image.width, image.height
+    if not width or not height:
+        return 0
+    return int(width) * int(height)
+
+
+def _select_for_describe(evidence: BrandEvidence, pending: list[str]) -> list[str]:
+    """The R4 bound: every LOGO, plus the top :data:`MAX_DESCRIBED_IMAGES`
+    images by pixel area. Returns a subset of ``pending`` in ``pending`` order,
+    so downstream ordering (and therefore the diagnostics order) is unchanged.
+
+    An asset that is both a logo and an image is a logo — logos are the brand's
+    mark and are never held back by the image bound. Ties break on evidence
+    order, keeping the selection deterministic for a given kit.
+
+    The ranking runs over the WHOLE image set and is intersected with ``pending``
+    only afterwards — never the other way round. Ranking the cache-miss list
+    instead would make the bound leak across runs: asset ids are content-
+    addressed, so a re-harvest of the same site turns run 1's captions into cache
+    hits and leaves exactly the images the bound excluded outstanding, which
+    would then rank as "the top 16 of what's left" and be captioned after all.
+    Enough re-ingestions and the whole kit is described. The bound is a property
+    of the kit's images, not of one run's misses.
+    """
+    logo_ids = {logo.asset_id for logo in evidence.logos}
+
+    ranked: list[tuple[int, int, str]] = []
+    seen: set[str] = set()
+    for position, image in enumerate(evidence.images):
+        asset_id = image.asset_id
+        if asset_id in logo_ids or asset_id in seen:
+            continue
+        seen.add(asset_id)
+        ranked.append((-_pixel_area(image), position, asset_id))
+    ranked.sort()
+
+    within_bound = logo_ids | {a for _area, _position, a in ranked[:MAX_DESCRIBED_IMAGES]}
+    return [asset_id for asset_id in pending if asset_id in within_bound]
 
 
 def _previews(
@@ -307,6 +380,7 @@ def _previews(
     kinds: dict[str, str],
     resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
     rasterize_svg: Callable[[str], bytes | None] | None,
+    resolve_thumbnail: Callable[[str], "tuple[bytes, str] | None"] | None,
     sink: list[dict],
 ):
     """Yield (asset_id, preview_b64 | None) per miss, appending one named
@@ -323,7 +397,7 @@ def _previews(
             continue
         data, mime = resolved
         if mime == "image/svg+xml" or _is_svg_bytes(data):
-            raster = rasterize_svg(asset_id) if rasterize_svg is not None else None
+            raster = _vector_raster(asset_id, resolve_thumbnail, rasterize_svg)
             if raster is None:
                 _warn(
                     sink,
@@ -345,6 +419,35 @@ def _previews(
         yield asset_id, preview
 
 
+def _vector_raster(
+    asset_id: str,
+    resolve_thumbnail: Callable[[str], "tuple[bytes, str] | None"] | None,
+    rasterize_svg: Callable[[str], bytes | None] | None,
+) -> bytes | None:
+    """Raster bytes for a vector asset, or None when it has none.
+
+    The STORED thumbnail comes first: since W1.2 every ingested SVG carries a
+    real PNG thumbnail on its record, so this is a blob read rather than a
+    fresh engine rasterization. A legacy record with no thumbnail (or one whose
+    'thumbnail' is the vector itself) falls through to the ``rasterize_svg``
+    seam, and a vector with neither keeps today's skip.
+    """
+    if resolve_thumbnail is not None:
+        try:
+            stored = resolve_thumbnail(asset_id)
+        except Exception:  # noqa: BLE001 - a thumbnail read must never sink the asset
+            stored = None
+        if stored is not None:
+            thumbnail, thumbnail_mime = stored
+            if (
+                thumbnail
+                and thumbnail_mime != "image/svg+xml"
+                and not _is_svg_bytes(thumbnail)
+            ):
+                return thumbnail
+    return rasterize_svg(asset_id) if rasterize_svg is not None else None
+
+
 def _warn(sink: list[dict], code: str, message: str) -> None:
     sink.append({"code": code, "severity": "warning", "message": message})
 
@@ -363,12 +466,12 @@ def _describe_failure_suffix(describer: "AssetDescriber") -> str:
 def describe_kit_assets(
     brand_kit: dict,
     *,
-    connection: sqlite3.Connection,
     describer: AssetDescriber,
     resolve_bytes: Callable[[str], "tuple[bytes, str] | None"],
     rasterize_svg: Callable[[str], bytes | None] | None = None,
     diagnostics: list[dict] | None = None,
     brand_name: str | None = None,
+    workspace_id: str | None = None,
 ) -> dict:
     """Backfill (imagery slice 1): stamp title/description/usage_note onto the
     KIT's own logo/image entries — cache-first over ``asset_descriptions``,
@@ -378,7 +481,7 @@ def describe_kit_assets(
     frozen into the kit JSON at publish — healing the library alone never
     reaches the agent's brand card."""
     sink = diagnostics if diagnostics is not None else []
-    store = DescriptionStore(connection)
+    store = DescriptionStore(workspace_id=workspace_id)
     model = settings.lumen_ingestion_describe_model
     assets = brand_kit.get("assets") or {}
 
@@ -425,8 +528,10 @@ def describe_kit_assets(
         return counts
 
     context = _context(brand_name, "backfill")
+    # The kit backfill is deliberately UNBOUNDED and thumbnail-less: it heals a
+    # published kit's own entries on demand (W1.4 governs the ingestion pass).
     for asset_id, preview in _previews(
-        misses, kinds, resolve_bytes, rasterize_svg, sink
+        misses, kinds, resolve_bytes, rasterize_svg, None, sink
     ):
         if preview is None:
             counts["failed"] += 1

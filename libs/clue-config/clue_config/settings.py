@@ -45,6 +45,11 @@ _AUTH_PARTIES_FORMAT_ERROR: Final = (
     "comma-separated list (https://app.example,http://localhost:3000)"
 )
 
+_OFFICIAL_SITE_ALLOWLIST_FORMAT_ERROR: Final = (
+    "CLUE_STAGE0_OFFICIAL_SITE_CRAWL_WORKSPACE_ALLOWLIST must be a JSON array "
+    '(["ws-a","ws-b"]) or a comma-separated list (ws-a,ws-b)'
+)
+
 
 def _parse_string_list(value: Any, format_error: str) -> Any:
     """Accept a JSON array *or* a plain comma-separated list for a ``tuple[str, ...]`` setting.
@@ -105,6 +110,31 @@ class Settings(BaseSettings):
     # excluded by the merge policy.
     # Env: ``CLUE_VERIFICATION_ENABLED``.
     verification_enabled: bool = True
+
+    # Pilot master switch for budget/cost *controls* (FI-pilot-budget-controls, ratified
+    # 2026-08-11). True is today's behavior. False is the pilot posture: users are never shown a
+    # cost or budget number and **nothing on the platform stops a pre-approved action on budget
+    # grounds** — hard spend control lives at the provider consoles instead. Specifically, when
+    # False: (a) the directive-confirmation gate still computes and durably stores
+    # ``max_spend_cents`` (audit + approval integrity) but the amount leaves every model- and
+    # human-visible surface; (b) the R9 atomic tool-batch admission, the M7.5 project-run budget
+    # pre-gate, and the launchers' economic equality/headroom checks admit instead of refusing.
+    # Spend **recording** is untouched in both modes — reservations, settlements, ``spent_cents``,
+    # and the M13.4 cost observability all keep accumulating honestly, so a pilot deployment
+    # over-spends visibly rather than silently. Structural controls stay on in both modes:
+    # depth/fanout caps, the exact human-approved account selection, canary/quality suspension, the
+    # M9.1 pre-spend *authority* gate, and the gate's directive-digest binding.
+    # Deployment-scoped, not pinned per run (the same accepted caveat as ``verification_enabled``).
+    # Env: ``CLUE_BUDGET_CONTROLS_ENABLED``.
+    budget_controls_enabled: bool = True
+
+    # --- production metrics export -------------------------------------------------------
+    # Tests/dev may retain the deterministic in-memory sink. A production-auth deployment must
+    # choose OTLP explicitly and provide the collector's HTTP /v1/metrics endpoint; otherwise a
+    # process that appears observable would silently discard every metric at shutdown.
+    metrics_exporter: Literal["memory", "otlp"] = "memory"
+    metrics_otlp_endpoint: str | None = None
+    metrics_export_interval_ms: int = Field(default=10_000, ge=100)
 
     # --- fleet worker (PB-B1; append-only per the Phase B treaty §3.2) ----------------------
     # How often an idle worker polls the task queue. Env: ``CLUE_FLEET_POLL_INTERVAL_S``.
@@ -234,6 +264,28 @@ class Settings(BaseSettings):
     # not authorize a provider. Exa/Sumble/channel switches above remain independent hard gates.
     # Env: ``CLUE_ENTITY_RESEARCH_RUNTIME_ENABLED``.
     entity_research_runtime_enabled: bool = False
+    # Part II D5 Round B production cutover for design agent turns (scene + website). This switch
+    # owns only whether the detached fleet worker registers the ``design_job`` handler; the design
+    # API always offers the work, and its own embedded worker (LUMEN_EMBEDDED_FLEET_WORKER) is
+    # what drains it in development. Off by default because a platform worker without the design
+    # app installed cannot execute a design turn — registering the handler there would claim work
+    # it must then fail. Env: ``CLUE_DESIGN_RUNTIME_ENABLED``.
+    design_runtime_enabled: bool = False
+    # Part II D5 Round C: how often the stranded-design-work reaper sweeps, in seconds. Gated by
+    # ``design_runtime_enabled`` (a deployment that does not drain design work must not re-offer
+    # it); ``<= 0`` disables the sweep entirely, the ``storage_orphan_sweep_interval_s``
+    # convention. Sized well above the fleet lease TTL and task-staleness window so a pass never
+    # races a worker that is merely between heartbeats.
+    # Env: ``CLUE_DESIGN_REAPER_INTERVAL_S``.
+    design_reaper_interval_s: float = 300.0
+    # Base URL of the design API (``lumen_api``) for the few platform surfaces that must reach it
+    # as a SERVICE rather than through the ``clue_design`` DAL — today only the brand-kit
+    # onboarding trigger, which enqueues a website ingestion through the design toolbelt's own
+    # guarded route instead of writing design rows behind its back. ``None`` (the default) means
+    # the platform makes no server-side design-API calls at all: the trigger logs that it is
+    # unconfigured and does nothing, which is a posture, not an error. Env:
+    # ``CLUE_DESIGN_API_BASE_URL``.
+    design_api_base_url: str | None = None
     # R9 requires a positive worst-case monetary reservation even when a subscription provider
     # reports credits while ``sumble_cents_per_credit`` is intentionally zero. This admission
     # floor is released after settlement and is never recorded as spend. It is policy, not an
@@ -310,6 +362,16 @@ class Settings(BaseSettings):
     # comma-separated list, for the same shell-``source`` reason as the agent allowlist.
     # Env: ``CLUE_FRONTEND_CORS_ALLOW_ORIGINS``.
     frontend_cors_allow_origins: Annotated[tuple[str, ...], NoDecode] = ()
+    # Authenticated, user-initiated professional-email acquisition for the Contacts table. This is
+    # intentionally distinct from ``contact_channel_enrichment_enabled``: that switch owns C5's
+    # stricter independently-validated delivery workflow, while this one exposes provider-observed
+    # Exa + Sumble results without promoting ``contact_entity.verified_email``. Missing provider
+    # credentials remain an honest per-provider unavailable outcome. Budget controls do not stop
+    # this explicit user action; realized provider units/cost are still recorded durably.
+    # Env: ``CLUE_FRONTEND_CONTACT_EMAIL_LOOKUP_ENABLED`` /
+    # ``CLUE_FRONTEND_CONTACT_EMAIL_POLL_AFTER_S``.
+    frontend_contact_email_lookup_enabled: bool = False
+    frontend_contact_email_poll_after_s: int = Field(default=5, ge=1, le=300)
 
     # --- FI Lane D production chat surface --------------------------------------------------
     # One default-off gate over the whole ``/api/v1`` chat router (REQ-21's thread shell today;
@@ -423,6 +485,21 @@ class Settings(BaseSettings):
     auth_clerk_jwks_url: str | None = None
     auth_clerk_issuer: str | None = None
     auth_clerk_authorized_parties: Annotated[tuple[str, ...], NoDecode] = ()
+    # FI-4 slice 1: gates POST /auth/v1/provision (self-serve workspace creation). Default-off
+    # like every neighbouring write surface — an unconfigured deployment serves session reads
+    # only; enabling requires an explicit operator decision because each valid provider session
+    # can mint one workspace+brand. Env: ``CLUE_SELF_SERVE_PROVISIONING_ENABLED``.
+    self_serve_provisioning_enabled: bool = False
+
+    # --- Lane E E3 value-narrative synthesis ------------------------------------------------
+    # One default-off gate over the on-completion positioning step (the M12.1 Positioner behind
+    # the governed ``synthesize_value_narrative@1`` tool). Off means the fleet never *offers* a
+    # finalized account job to it — no journal rows, no spend — and the tool, which still registers
+    # everywhere so the C6 authority surface is identical in every process, refuses
+    # ``value_narrative_not_composed``. Same posture as the C7 block above: activation is a
+    # deployment decision, and rollback stops new narratives without touching the append-only
+    # claims already written. Env: ``CLUE_VALUE_NARRATIVE_SYNTHESIS_ENABLED``.
+    value_narrative_synthesis_enabled: bool = False
 
     # --- local Clue Trial canary ------------------------------------------------------------
     # The Sumble-only founder acceptance surface is never part of the default production app.
@@ -497,12 +574,99 @@ class Settings(BaseSettings):
     # backlog). Env: ``CLUE_SSE_REPLAY_PAGE_LIMIT``.
     sse_replay_page_limit: int = 10_000
 
+    # --- Stage-0 recon envelopes (FI-4 slice 3 close-out; append-only per treaty §3.2) --------
+    # The two per-lane spend caps of the governed Stage-0 recon policy, made per-deployment
+    # tunable so the founder ruling "onboarding is budget-unconstrained — envelopes must never
+    # truncate onboarding research" (FI-onboarding-contract-gap-review §9, 2026-08-13) has an
+    # actual mechanism instead of a code change. Read by
+    # :func:`clue_config.stage0.stage0_policy_from_settings`, which the composition root
+    # (``build_toolbelt``) uses to build the ``Stage0Policy`` the recon tools run under.
+    #
+    # The fast default is 25¢, not the frozen ``DEFAULT_STAGE0_POLICY``'s 5¢: at the default
+    # ``CLUE_SCRAPE_BACKEND=firecrawl`` (~1¢/fetch) the full eleven-field Client-KB walk costs
+    # ~11¢, so 5¢ released the user with the last checklist groups unreached ("stopped at the
+    # research budget"). 25¢ covers the whole walk with headroom. ``DEFAULT_STAGE0_POLICY``
+    # itself is unchanged (5/100) — it is the library default many tests pin; the *production*
+    # default is this settings-derived one. Env: ``CLUE_STAGE0_FAST_BUDGET_CENTS`` /
+    # ``CLUE_STAGE0_BACKGROUND_BUDGET_CENTS``.
+    # ``gt=0``: a zero envelope would refuse the whole walk, and the ruling says an envelope must
+    # never truncate onboarding — so a mistyped ``0`` fails at construction rather than silently
+    # shipping an onboarding that researches nothing.
+    stage0_fast_budget_cents: Decimal = Field(default=Decimal("25"), gt=0)
+    stage0_background_budget_cents: Decimal = Field(default=Decimal("100"), gt=0)
+
+    # --- durable Stage-0 official-site crawl (FI C6; default-off canary) -----------------
+    # Shadow creates durable acquisition/checkpoint evidence for explicitly named workspaces but
+    # leaves the historical field resolver and Client-KB release authoritative. C7 supplies the
+    # checkpoint materializer required before authoritative mode can be composed.
+    stage0_official_site_crawl_mode: Literal["off", "shadow", "authoritative"] = "off"
+    stage0_official_site_crawl_workspace_allowlist: Annotated[tuple[str, ...], NoDecode] = ()
+    stage0_page_fetcher: Literal["firecrawl", "scrapling"] = "firecrawl"
+    stage0_crawl_max_depth: Literal[2] = 2
+    stage0_crawl_fast_deadline_seconds: int = Field(default=40, ge=1, le=40)
+    stage0_crawl_fast_page_ceiling: int = Field(default=12, ge=1)
+    stage0_crawl_total_page_ceiling: int = Field(default=100, ge=1)
+    stage0_crawl_worker_concurrency: int = Field(default=8, ge=1)
+    stage0_crawl_per_host_concurrency: int = Field(default=3, ge=1)
+    stage0_crawl_lease_ttl_seconds: int = Field(default=90, ge=3)
+    stage0_crawl_heartbeat_seconds: int = Field(default=20, ge=1)
+    stage0_crawl_request_timeout_seconds: int = Field(default=30, ge=1)
+    stage0_crawl_max_response_bytes: int = Field(default=5_000_000, ge=1)
+    stage0_crawl_allow_subdomains: bool = False
+    stage0_crawl_robots_policy: Literal["respect"] = "respect"
+    stage0_crawl_url_policy_version: Literal["official-site-url-v1"] = "official-site-url-v1"
+    # C7 materialization policy. Model selection remains configuration-only; category/field calls
+    # are bounded separately from acquisition workers and never share an open DB connection.
+    stage0_extraction_model: str = "openai/gpt-5.6-luna"
+    stage0_extraction_concurrency: int = Field(default=4, ge=1, le=16)
+
+    # --- retention (design-integration Part II D8, ruling R-D8-4) ---------------------------
+    # How often the fleet worker deletes spent ``stream_token`` rows (used or expired). ``<= 0``
+    # disables the loop, the ``storage_orphan_sweep_interval_s`` convention. Default ON: both
+    # consume statements require ``used_at IS NULL AND expires_at > now()``, so a swept row was
+    # already unreadable by every code path and its deletion is unobservable — there is nothing to
+    # canary. Env: ``CLUE_STREAM_TOKEN_SWEEP_INTERVAL_S``.
+    stream_token_sweep_interval_s: float = 3600.0  # 1h
+    # How often the fleet worker prunes a TERMINAL design run's PROGRESS ``run_event`` rows.
+    # ``<= 0`` disables it, and it is the founder-facing switch: this sweep is the only one in the
+    # platform that destroys durable run-visibility history, so it is **off until deliberately
+    # turned on**. Its safety floors (never a terminal row, never a non-design subject, never a
+    # non-terminal run, never inside the retention floor) are baked into the pruner's code, not
+    # into this knob. Env: ``CLUE_DESIGN_RUN_EVENT_PRUNE_INTERVAL_S``.
+    design_run_event_prune_interval_s: float = 0.0
+    # How long a design run must have been terminal before its progress events may be pruned.
+    # Clamped UP in code to a hard 7-day floor that strictly exceeds the design stream's 24h replay
+    # horizon, so a within-horizon reconnect can never observe a hole; configuring less is logged
+    # and ignored, never honoured. Env: ``CLUE_DESIGN_RUN_EVENT_RETENTION_S``.
+    design_run_event_retention_s: float = 2_592_000.0  # 30d
+
+    @field_validator("stage0_crawl_max_depth", mode="before")
+    @classmethod
+    def _coerce_stage0_crawl_max_depth(cls, value: Any) -> Any:
+        """Coerce the env string form so the documented ``CLUE_STAGE0_CRAWL_MAX_DEPTH=2`` loads.
+
+        The field is ``Literal[2]`` on purpose (the depth is pinned policy, not a knob), but
+        pydantic will not coerce ``"2"`` from the environment into a literal int — so a
+        deployment that copies ``.env.example`` verbatim (the 2026-08-31 env-parity rule makes
+        that the norm) would crash at startup on the only value the field accepts. Any other
+        value still fails validation loudly, exactly as before.
+        """
+
+        if isinstance(value, str) and value.strip().isdigit():
+            return int(value.strip())
+        return value
+
     @field_validator("agent_workspace_allowlist", mode="before")
     @classmethod
     def _parse_agent_workspace_allowlist(cls, value: Any) -> Any:
         """Accept a JSON array *or* a plain comma-separated list of workspace ids."""
 
         return _parse_string_list(value, _ALLOWLIST_FORMAT_ERROR)
+
+    @field_validator("stage0_official_site_crawl_workspace_allowlist", mode="before")
+    @classmethod
+    def _parse_official_site_workspace_allowlist(cls, value: Any) -> Any:
+        return _parse_string_list(value, _OFFICIAL_SITE_ALLOWLIST_FORMAT_ERROR)
 
     @field_validator("frontend_cors_allow_origins", mode="before")
     @classmethod
@@ -546,6 +710,38 @@ class Settings(BaseSettings):
         if self.auth_environment == "production" and self.projections_auth_mode == "local_header":
             raise ValueError(
                 "production authentication forbids the local-header projections resolver"
+            )
+        if self.metrics_exporter == "otlp" and not self.metrics_otlp_endpoint:
+            raise ValueError(
+                "CLUE_METRICS_OTLP_ENDPOINT is required when CLUE_METRICS_EXPORTER=otlp"
+            )
+        if self.auth_environment == "production" and self.metrics_exporter != "otlp":
+            raise ValueError(
+                "production requires CLUE_METRICS_EXPORTER=otlp; the in-memory sink is not an "
+                "exporter"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_official_site_crawl_bounds(self) -> Settings:
+        if self.stage0_crawl_fast_page_ceiling > self.stage0_crawl_total_page_ceiling:
+            raise ValueError(
+                "CLUE_STAGE0_CRAWL_FAST_PAGE_CEILING cannot exceed the total page ceiling"
+            )
+        if self.stage0_crawl_per_host_concurrency > self.stage0_crawl_worker_concurrency:
+            raise ValueError(
+                "CLUE_STAGE0_CRAWL_PER_HOST_CONCURRENCY cannot exceed worker concurrency"
+            )
+        if 2 * self.stage0_crawl_heartbeat_seconds >= self.stage0_crawl_lease_ttl_seconds:
+            raise ValueError(
+                "two Stage-0 crawl heartbeat intervals must fit strictly inside the lease TTL"
+            )
+        if (
+            self.stage0_official_site_crawl_mode != "off"
+            and not self.stage0_official_site_crawl_workspace_allowlist
+        ):
+            raise ValueError(
+                "enabled Stage-0 official-site crawling requires an explicit workspace allowlist"
             )
         return self
 

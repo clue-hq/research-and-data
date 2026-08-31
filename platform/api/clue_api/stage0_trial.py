@@ -121,6 +121,7 @@ from clue_projections import (
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.stage0 import (
     CLIENT_BASELINE_FIELDS,
+    CLIENT_ICP_SYNTHESIS_FIELDS,
     ClientInput,
     ClientKnowledgeBaseRef,
     ICPConfirmation,
@@ -491,7 +492,6 @@ async def create_stage0_trial_session(
             ClientInput(name=company_name, website=website),
             workspace_id=workspace.workspace_id,
             budget_cap_cents=Decimal(0),
-            product_id=product.product_id,
             max_source_tier=0,
         )
     state = Stage0TrialState(
@@ -865,18 +865,21 @@ class Stage0Trial:
                 EntityId(self.state.client_entity_id),
                 workspace_id=self.state.workspace_id,
                 version=self.state.client_kb_version,
-                product_id=self.state.product_id,
+                product_id=None,
             )
             statements = await read_statements(
                 conn,
                 workspace_id=self.state.workspace_id,
                 project_id=self.state.project_id,
             )
-            # One shared compilation of the Client-KB metrics every Stage-0 readiness evaluation
-            # is scored against (the Clue-Trial spine scores the discovery gate through the same
-            # helper), plus this surface's own per-turn interview counters.
+            # One shared metric compiler, with this ICP gate's explicit nine-field denominator;
+            # the Clue-Trial discovery gate uses the broader company-knowledge denominator.
+            # Per-turn interview counters remain additional surface-owned evidence.
             metrics: dict[str, Any] = {
-                **client_kb_readiness_metrics(claims),
+                **client_kb_readiness_metrics(
+                    claims,
+                    baseline_field_keys=CLIENT_ICP_SYNTHESIS_FIELDS,
+                ),
                 "project_state_statements": len(statements),
                 "routed_statements_this_turn": counts.total,
                 "material_statements_this_turn": counts.non_unmapped,
@@ -925,7 +928,7 @@ class Stage0Trial:
                 EntityId(self.state.client_entity_id),
                 workspace_id=self.state.workspace_id,
                 version=self.state.client_kb_version,
-                product_id=self.state.product_id,
+                product_id=None,
             )
             raw = await claims_for(
                 conn,
@@ -962,7 +965,6 @@ class Stage0Trial:
                 ),
                 workspace_id=self.state.workspace_id,
                 budget_cap_cents=Decimal(0),
-                product_id=self.state.product_id,
                 max_source_tier=0,
             )
         if UUID(str(refreshed.ref.client_entity_id)) != self.state.client_entity_id:
@@ -1003,7 +1005,9 @@ class Stage0Trial:
                 ClientKnowledgeBaseRef(
                     client_entity_id=EntityId(self.state.client_entity_id),
                     client_kb_version=self.state.client_kb_version,
-                    product_id=self.state.product_id,
+                    # The trial state's Client-KB version is the account-wide company lineage.
+                    # Product identity remains an independent, already-confirmed project pin.
+                    product_id=None,
                 ),
                 workspace_id=self.state.workspace_id,
                 project_statements=resolved.statements,
@@ -1132,7 +1136,7 @@ class Stage0Trial:
                 EntityId(self.state.client_entity_id),
                 workspace_id=self.state.workspace_id,
                 version=self.state.client_kb_version,
-                product_id=self.state.product_id,
+                product_id=None,
             )
             memories = await self._rows(
                 conn,

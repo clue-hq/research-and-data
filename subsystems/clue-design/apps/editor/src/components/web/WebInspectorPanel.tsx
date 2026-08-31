@@ -79,6 +79,13 @@ import {
   WebCustomComponentInspector,
   type CustomComponentArtifactStatus
 } from "@/components/web/WebCustomComponentInspector";
+import {
+  WebDormantSectionsCard,
+  WebFragmentInspector,
+  type FragmentAssetOption,
+  type FragmentCardStatus
+} from "@/components/web/WebFragmentInspector";
+import type { FragmentCard } from "@/engine/webFragmentCards";
 
 /**
  * The Inspect-mode panel: reads the selected node from the loaded WebDoc and
@@ -124,6 +131,21 @@ interface WebInspectorPanelProps {
   customComponentRepublishRequired: boolean;
   onEditCustomComponentWithAI: (node: WebNode) => void;
   onRepublish: () => void;
+  /** The selected cloned section's registry card (F3.2) — its status, condition,
+   * repair lineage, hidden-on-source provenance and slot manifest. */
+  fragmentCard: FragmentCard | null;
+  fragmentCardStatus: FragmentCardStatus;
+  fragmentCardError: string | null;
+  /** Every section the source site HIDES (D-F8). They are on no page, so nothing can select
+   * one — and the inspector is the only place a human is shown them. */
+  dormantSections: FragmentCard[];
+  /** The document's own asset records — what an asset slot may resolve to (LUMW0035). */
+  documentAssets: FragmentAssetOption[];
+  onGenerateFragmentPreview: (fragmentId: string) => void;
+  onActivateFragment: (fragmentId: string) => void;
+  onRetireFragment: (fragmentId: string) => void;
+  fragmentActionBusy: boolean;
+  fragmentActionError: string | null;
   applyOps: (operations: WebOperation[], intent?: string) => void;
   busy: boolean;
   /** Info note (409 reload) and inline error (422 diagnostic), surfaced in the
@@ -162,6 +184,16 @@ export function WebInspectorPanel({
   customComponentRepublishRequired,
   onEditCustomComponentWithAI,
   onRepublish,
+  fragmentCard,
+  fragmentCardStatus,
+  fragmentCardError,
+  dormantSections,
+  documentAssets,
+  onGenerateFragmentPreview,
+  onActivateFragment,
+  onRetireFragment,
+  fragmentActionBusy,
+  fragmentActionError,
   applyOps,
   busy,
   note,
@@ -174,6 +206,17 @@ export function WebInspectorPanel({
         <p className="web-empty-hint">
           Click any element in the preview to edit its text, color, and layout.
         </p>
+        {/* D-F8: a hidden-on-source section is on no page, so it can never be selected — and
+            the inspector is the ONE place a human sees and activates one. The empty state is
+            where it is always reachable, rather than only while some other node happens to be
+            selected. */}
+        <WebDormantSectionsCard
+          sections={dormantSections}
+          busy={fragmentActionBusy}
+          error={fragmentActionError}
+          onGeneratePreview={onGenerateFragmentPreview}
+          onActivate={onActivateFragment}
+        />
       </div>
     );
   }
@@ -221,6 +264,15 @@ export function WebInspectorPanel({
         customComponentRepublishRequired={customComponentRepublishRequired}
         onEditCustomComponentWithAI={onEditCustomComponentWithAI}
         onRepublish={onRepublish}
+        fragmentCard={fragmentCard}
+        fragmentCardStatus={fragmentCardStatus}
+        fragmentCardError={fragmentCardError}
+        documentAssets={documentAssets}
+        onGenerateFragmentPreview={onGenerateFragmentPreview}
+        onActivateFragment={onActivateFragment}
+        onRetireFragment={onRetireFragment}
+        fragmentActionBusy={fragmentActionBusy}
+        fragmentActionError={fragmentActionError}
         applyOps={applyOps}
         busy={busy}
       />
@@ -497,6 +549,15 @@ interface BodyProps {
   customComponentRepublishRequired: boolean;
   onEditCustomComponentWithAI: (node: WebNode) => void;
   onRepublish: () => void;
+  fragmentCard: FragmentCard | null;
+  fragmentCardStatus: FragmentCardStatus;
+  fragmentCardError: string | null;
+  documentAssets: FragmentAssetOption[];
+  onGenerateFragmentPreview: (fragmentId: string) => void;
+  onActivateFragment: (fragmentId: string) => void;
+  onRetireFragment: (fragmentId: string) => void;
+  fragmentActionBusy: boolean;
+  fragmentActionError: string | null;
   applyOps: (operations: WebOperation[], intent?: string) => void;
   busy: boolean;
 }
@@ -521,6 +582,15 @@ function WebInspectorBody({
   customComponentRepublishRequired,
   onEditCustomComponentWithAI,
   onRepublish,
+  fragmentCard,
+  fragmentCardStatus,
+  fragmentCardError,
+  documentAssets,
+  onGenerateFragmentPreview,
+  onActivateFragment,
+  onRetireFragment,
+  fragmentActionBusy,
+  fragmentActionError,
   applyOps,
   busy
 }: BodyProps): React.ReactElement {
@@ -539,6 +609,32 @@ function WebInspectorBody({
   const applyProps = (props: WebNodeProps, intent: string) => {
     applyOps([setNodePropsOp(pageId, node.id, props)], intent);
   };
+
+  // A cloned section gets its OWN body and none of the generic cards (F3.2). That is the D-F3
+  // ruling made structural rather than remembered: the class escape hatch would let somebody
+  // write `h-[3000px]` onto a frozen band — the manual resize the ruling forbids — and the
+  // spacing card would re-lay-out somebody else's section from the outside. The slot values are
+  // the whole editing surface a clone has, and they are what this card offers.
+  if (node.kind === "fragment") {
+    return (
+      <div className="web-insp-cards">
+        <WebFragmentInspector
+          node={node}
+          card={fragmentCard}
+          cardStatus={fragmentCardStatus}
+          cardError={fragmentCardError}
+          documentAssets={documentAssets}
+          busy={busy}
+          applyProps={applyProps}
+          onGeneratePreview={onGenerateFragmentPreview}
+          onActivate={onActivateFragment}
+          onRetire={onRetireFragment}
+          actionBusy={fragmentActionBusy}
+          actionError={fragmentActionError}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="web-insp-cards">

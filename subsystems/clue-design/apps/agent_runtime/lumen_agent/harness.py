@@ -22,7 +22,16 @@ from typing import Any, Optional
 from langchain.agents.structured_output import ToolStrategy
 from py_lumen_obs import configure, get_logger
 
+from .budget import BudgetExhausted, RunBudget, attach_budget_callback
+from .cancellation import (
+    CANCELLED_EVENT,
+    CANCELLED_STOP_REASON,
+    TurnCancelled,
+    attach_cancellation_callback,
+)
+from .checkpoint import invoke_turn_graph
 from .config import AgentRuntimeConfig
+from .frame import build_frame_payload
 from .models.schemas import VisualCritique
 from .models.state import CONSTITUTION_FIELDS, LumenTurnState
 from .prompts import (
@@ -30,6 +39,7 @@ from .prompts import (
     build_orchestrator_prompt,
     build_reviewer_prompt,
 )
+from .run_metrics import emit_run_metrics
 from .tools.render import make_render_preview_tool
 from .tools.substrate import LumenDesignTools
 from .tools.view import make_view_tool
@@ -38,17 +48,98 @@ from .workspace import initial_turn_state, scaffold_workspace, workspace_root
 logger = get_logger("lumen_agent.harness")
 
 
+# --- fast loop v1 §5.7: the skill index the orchestrator selects from --------
+
+
+def _materialized_skill_index(config: AgentRuntimeConfig) -> list[tuple[str, str]]:
+    """`[(name, description)]` for every materialized skill, sorted by name.
+
+    Composed from the workspace's `.deepagent/skills/<name>/SKILL.md`
+    frontmatter, so the flag-on orchestrator can match a brief to a FORMAT skill
+    without an `ls` — the same push-don't-fetch move §5.1 makes for the author,
+    and the reason §5.7's required-decisions list can say "read the skill's
+    `## Defaults & required decisions` section" and have that be one read_file.
+
+    THE FORMAT-SKILL INTERFACE (§6.1, so a skill written by its own owner plugs
+    in with no code change here):
+      * `name:` and `description:` in the SKILL.md frontmatter are what this
+        index shows; the description is what the orchestrator matches against,
+        so it must name the trigger phrases.
+      * `required_decisions:` — an OPTIONAL frontmatter list of
+        `{id, question, default}` mappings, the machine-readable twin of the
+        prose section. Not consumed here (the orchestrator reads the prose);
+        declared so the two can be checked against each other.
+      * `## Defaults & required decisions` — the named section the flag-on
+        orchestrator prompt reads for the §5.7 gate.
+      * `## Self-audit checklist` — the named section the flag-on AUTHOR prompt
+        scores its §5.3 `critique.json` against.
+      * `pinned_knowledge:` — an OPTIONAL frontmatter list of
+        knowledge_docs-relative paths this skill's work needs inlined. Feeds
+        `frame.pinned_knowledge_paths` once pre-dispatch skill selection exists;
+        until then `LUMEN_AGENT_FAST_LOOP_PINNED_KNOWLEDGE` is that seam.
+
+    Never raises: a malformed or unreadable SKILL.md is skipped, because a
+    broken skill file must degrade the index, not fail the turn.
+    """
+    skills_dir = Path(config.workspace_root) / ".deepagent" / "skills"
+    index: list[tuple[str, str]] = []
+    try:
+        children = sorted(child for child in skills_dir.iterdir() if child.is_dir())
+    except OSError:
+        return index
+    for child in children:
+        try:
+            text = (child / "SKILL.md").read_text(encoding="utf-8")
+        except OSError:
+            continue
+        index.append((child.name, _skill_description(text) or "(no description)"))
+    return index
+
+
+def _skill_description(text: str) -> Optional[str]:
+    """The `description:` value from a SKILL.md's YAML frontmatter, flattened.
+
+    A hand-rolled two-key read rather than a YAML dependency: the frontmatter
+    shape is fixed by the skill contract above, descriptions are routinely
+    wrapped across continuation lines, and pulling PyYAML into the runtime for
+    one field would be the larger change.
+    """
+    if not text.startswith("---"):
+        return None
+    end = text.find("\n---", 3)
+    if end == -1:
+        return None
+    lines = text[3:end].splitlines()
+    collected: list[str] = []
+    capturing = False
+    for line in lines:
+        stripped = line.strip()
+        if capturing:
+            # A continuation line is indented and is not the next `key:` pair.
+            if line[:1].isspace() and stripped:
+                collected.append(stripped)
+                continue
+            break
+        if stripped.startswith("description:"):
+            capturing = True
+            first = stripped[len("description:") :].strip()
+            if first:
+                collected.append(first)
+    return " ".join(collected) or None
+
+
 # --- assembly (§5) ----------------------------------------------------------
 
 
-def _fresh_model(runtime_config: AgentRuntimeConfig, model_id: str):
-    """Build ONE role model instance bound to the OpenRouter gateway.
+def _fresh_model(runtime_config: AgentRuntimeConfig, model_id: str, role: str | None = None):
+    """Build ONE role model instance through the platform's governed gateway.
 
     Extracted to module scope (was a closure in create_design_deepagent) so the
     website-mode harness (harness_web) builds its three role minds through the
     exact same constructor. The `from .llm import init_model` stays LAZY so the
     per-role-models test's monkeypatch of `lumen_agent.llm.init_model` is
     honored (it patches the module attribute this local import re-reads).
+    ``role`` (P3.2) labels the governed instance for per-role attribution.
     """
     from .llm import init_model
 
@@ -60,25 +151,69 @@ def _fresh_model(runtime_config: AgentRuntimeConfig, model_id: str):
         max_tokens=runtime_config.agent_max_tokens,
         provider_sort=runtime_config.agent_provider_sort,
         timeout_s=runtime_config.agent_llm_timeout_s,
+        role=role,
+        fallback_model=runtime_config.agent_fallback_model,
     )
 
 
-def _instrument(runtime_config: AgentRuntimeConfig, tools, model_id: str, role: str):
-    """A role model with per-role usage + trace capture attached IN PLACE.
+def _instrument(
+    runtime_config: AgentRuntimeConfig,
+    tools,
+    model_id: str,
+    role: str,
+    budget: Any = None,
+    *,
+    cancel_probe: Any = None,
+):
+    """A role model, role-labelled at the gateway, with trace capture attached.
 
-    Capture is best-effort — a wiring or callback failure never blocks assembly
-    or breaks a run. attach_* mutates the model in place and returns the SAME
-    BaseChatModel object, so per-role attribution rides that instance's own
-    instance-level callbacks (three instances = three roles; never deduped).
+    P3.2 (PD-part3 delta 6): per-role USAGE capture moved into the governed
+    gateway — the role rides ``provider.build(role=...)`` onto the instance, and
+    the gateway's ``model_call_usage`` record (role-tagged, with cost and the
+    cached-prefill share) is the ONE usage authority. The design-local
+    ``attach_usage_capture`` is deliberately NOT attached anymore — attaching
+    both would double count. Trace capture (non-usage reasoning/tool telemetry)
+    stays design-local. Three instances = three roles; never deduped — the
+    gateway's attribution is per-instance too.
     `tools` only needs a `record(...)` method, so both LumenDesignTools and
     LumenWebTools work here.
+
+    Fast-loop v1 §7: when `tools` carries a `metrics` accumulator
+    (`run_metrics.RunMetrics`), the trace handler folds this role's calls into
+    it. `getattr` rather than an attribute access on purpose — the web tools do
+    not carry one yet, and a substrate without it must keep working unchanged.
+
+    Fast-loop v1 §5.6: `budget` is the run's shared `RunBudget` (None off the
+    flag, and None for every web-mode caller). It attaches a SECOND handler that
+    refuses a model call once the run is out of calls or wall clock. Kept
+    separate from the trace handler on purpose: the tracer's whole contract is
+    that it never affects the run, and the budget's whole contract is that it
+    does.
+
+    A3 (defect R3-D): `cancel_probe` is the run's "has a human asked this to
+    stop?" callable, and it attaches a THIRD handler on the same seam and for
+    the same reason the budget's is a handler at all — the model call is the
+    only place a running graph can be refused. Deliberately independent of
+    `budget`: a cancel must work whether or not the fast loop (and so the
+    budget) is on, because a human's stop is not a tuning knob. None — every
+    CLI / fixture / offline / synchronous-preview caller — leaves the callback
+    list byte-identical to before.
+
+    KEYWORD-ONLY, and the caller omits it entirely when there is no probe. That
+    is not style: `_instrument` is a monkeypatch seam that shipped suites spy on
+    with a five-parameter signature, so a sixth POSITIONAL argument would break
+    them — and a suite breaking on a parameter its subject never uses is a false
+    alarm about a real seam. A no-probe build therefore calls this with exactly
+    the pre-A3 argument list.
     """
     from .trace_callbacks import attach_trace_callback
-    from .usage_capture import attach_usage_capture
 
-    model = _fresh_model(runtime_config, model_id)
-    attach_usage_capture(model, tools, role=role)
-    attach_trace_callback(model, role=role)
+    model = _fresh_model(runtime_config, model_id, role=f"design_{role}")
+    attach_trace_callback(model, role=role, metrics=getattr(tools, "metrics", None))
+    if budget is not None:
+        attach_budget_callback(model, budget, role)
+    if cancel_probe is not None:
+        attach_cancellation_callback(model, cancel_probe, role)
     return model
 
 
@@ -116,9 +251,26 @@ def create_design_deepagent(
     event_sink=None,
     *,
     clarification_already_requested: bool = False,
+    checkpointer: Any = None,
+    scene_checkpoint=None,
+    cancel_requested=None,
 ) -> tuple[Any, LumenDesignTools]:
     """Build the v0 deepagent + substrate. Mirrors
     factory.create_lumen_design_agent's signature so callers can swap.
+
+    `cancel_requested` (A3, defect R3-D) is the run's cancellation probe: a
+    zero-argument callable answering "has a human asked this run to stop?". It
+    is consulted immediately before every model call, on all three roles, and a
+    True answer raises `TurnCancelled` out of the graph. `None` — every CLI /
+    fixture / offline path, and the synchronous preview route — keeps the turn
+    uncancellable and byte-identical to before. See `cancellation.py` for why
+    the model call is the only boundary available, and what "cancelled" is
+    therefore allowed to mean.
+
+    `scene_checkpoint` (P0.4) is the checkpoint-commit sink: each verified
+    authoring round hands it the operation ledger so the caller can make the
+    round durable mid-run. `None` — every CLI/fixture/offline path — keeps the
+    run save-on-finalize-only. See `LumenDesignTools.checkpoint_scene`.
 
     `clarification_already_requested` is the STRUCTURAL one-round-per-turn guard:
     when the PREVIOUS turn ended `clarification_requested`, this turn does NOT get
@@ -126,6 +278,13 @@ def create_design_deepagent(
     user's answer, recording any residual assumption via record_gap (never a
     second question round). The API sets it from the turn request's
     `previous_turn_outcome`.
+
+    `checkpointer` (D5 Round B) is an optional LangGraph `BaseCheckpointSaver`.
+    When present the graph compiles durably, so a turn's message history and
+    graph position survive the process that ran it. It is `None` for the CLI /
+    fixtures / offline paths, which keeps their behaviour byte-identical. See
+    `checkpoint.py` for what durability does and does NOT buy the design
+    harness (short answer: resume-as-restart, honestly).
     """
     try:
         from deepagents import create_deep_agent
@@ -146,7 +305,11 @@ def create_design_deepagent(
     materialize_agent_workspace(runtime_config)
 
     tools = LumenDesignTools(
-        runtime_config, prompt, initial_scene=initial_scene, event_sink=event_sink
+        runtime_config,
+        prompt,
+        initial_scene=initial_scene,
+        event_sink=event_sink,
+        scene_checkpoint=scene_checkpoint,
     )
 
     scaffold_workspace(tools, prompt)
@@ -158,7 +321,14 @@ def create_design_deepagent(
     # W-isolation (D1): virtual-mode backend rooted at the isolated workspace. The
     # agent's `/` IS the workspace; absolute paths re-anchor under the root (no
     # escape), and the subclass forgives stale host-absolute/legacy path forms.
-    backend = AgentWorkspaceBackend(root_dir=str(runtime_config.workspace_root))
+    # `reference_turn` (W1.5): on a reference turn the backend normalizes any
+    # `critique.json` the author writes so the typed `reference_fidelity` is
+    # always stamped — the fast loop has no typed critique writer, only
+    # `write_file`, so this backend is the invariant's only choke point.
+    backend = AgentWorkspaceBackend(
+        root_dir=str(runtime_config.workspace_root),
+        reference_turn=bool(runtime_config.reference_assets),
+    )
 
     from .llm import assert_all_role_models_support_image_input
 
@@ -195,14 +365,68 @@ def create_design_deepagent(
     # `provider_sort` pins one replica so this cache is actually reused. The
     # per-role constructor/instrumentation now lives at module scope
     # (_fresh_model/_instrument) so the website-mode harness shares it verbatim.
+    #
+    # Fast loop §5.6: ONE budget shared by all three roles — the ceiling is on
+    # the RUN, so the orchestrator cannot buy itself more calls by delegating.
+    # None off the flag, which is what keeps every model instance's callback
+    # list byte-identical to a pre-fast-loop turn.
+    fast_loop = bool(runtime_config.fast_loop)
+    budget = None
+    if fast_loop:
+        budget = RunBudget(
+            # D1: the guidance the agent steers by...
+            target_llm_calls=runtime_config.fast_loop_target_llm_calls,
+            target_wall_clock_s=runtime_config.fast_loop_target_wall_clock_s,
+            # ...and the distant circuit breaker that is the only hard stop.
+            max_llm_calls=runtime_config.fast_loop_max_llm_calls,
+            wall_clock_s=runtime_config.fast_loop_wall_clock_s,
+            metrics=tools.metrics,
+        )
+        tools.metrics.attach_budget(budget)
+        tools.fast_loop_budget = budget
+
+    # A3: passed only when there IS one, so a turn with no probe calls `_instrument` with the
+    # exact pre-A3 argument list — see that function's docstring for why that matters.
+    cancel_kwargs = {} if cancel_requested is None else {"cancel_probe": cancel_requested}
+
     orchestrator_model = _instrument(
-        runtime_config, tools, runtime_config.orchestrator_model, "orchestrator"
+        runtime_config,
+        tools,
+        runtime_config.orchestrator_model,
+        "orchestrator",
+        budget,
+        **cancel_kwargs,
     )
-    author_model = _instrument(runtime_config, tools, runtime_config.author_model, "author")
-    reviewer_model = _instrument(runtime_config, tools, runtime_config.reviewer_model, "reviewer")
+    author_model = _instrument(
+        runtime_config, tools, runtime_config.author_model, "author", budget, **cancel_kwargs
+    )
+    # The reviewer's model is built even when R3 quarantines the subagent below:
+    # construction costs nothing (a thin client object, no network), the web
+    # harness shares this constructor, and building it keeps the reviewer role
+    # REGISTERED with run_metrics — so a quarantined run reports the reviewer at
+    # zero calls rather than omitting it, which is the fact worth seeing.
+    reviewer_model = _instrument(
+        runtime_config,
+        tools,
+        runtime_config.reviewer_model,
+        "reviewer",
+        budget,
+        **cancel_kwargs,
+    )
 
     view = make_view_tool(tools)
-    render_preview = make_render_preview_tool(tools)
+    # `budget` is None off the flag, so the orchestrator's render summary stays
+    # byte-identical to a pre-fast-loop turn. Under the flag it appends the
+    # round-boundary headroom line — this render IS the round boundary.
+    render_preview = make_render_preview_tool(tools, budget=budget)
+    # §5.2: the author's own render. Same substrate, same round-directory
+    # custody — but it does NOT checkpoint. See the trigger site in
+    # tools/render.py for the full reasoning; the short version is that a
+    # checkpoint must keep meaning "a round was accepted", and the author renders
+    # mid-round precisely to find what is still wrong.
+    author_render_preview = (
+        make_render_preview_tool(tools, checkpoint=False) if fast_loop else None
+    )
 
     # RC (D4/D5): references rode this turn → the orchestrator/author/reviewer
     # prompts gain their reference blocks. No references → every build_* call is a
@@ -223,6 +447,23 @@ def create_design_deepagent(
     # until invoked); each role's prompt still names the skills primary to it.
     workspace_skills = ["/.deepagent/skills"]
 
+    # §5.1: the composed frame payload rides the author's SYSTEM prompt, which is
+    # assembled once per turn and never mutated — inside the cache-stable prefix
+    # the L1 invariant above protects, so it is paid for once, not per call.
+    frame_payload = build_frame_payload(tools) if fast_loop else None
+
+    author_tools = [
+        view,
+        tools.inspect,
+        tools.compile_dsl_block,
+        tools.asset,
+        tools.fetch_logo,
+        tools.validate_binding_set,
+        tools.preflight_design,
+    ]
+    if author_render_preview is not None:
+        author_tools.append(author_render_preview)
+
     subagents = [
         {
             "name": "lumen-dsl-author",
@@ -231,16 +472,15 @@ def create_design_deepagent(
                 "Give it a round directory containing direction.md; it authors, "
                 "self-verifies, saves artifacts, and reports."
             ),
-            "system_prompt": build_author_prompt(workspace_str, has_references=has_references),
+            "system_prompt": build_author_prompt(
+                workspace_str,
+                has_references=has_references,
+                fast_loop=fast_loop,
+                frame_payload=frame_payload,
+                inner_iterations=runtime_config.fast_loop_inner_iterations,
+            ),
             "model": author_model,
-            "tools": [
-                view,
-                tools.inspect,
-                tools.compile_dsl_block,
-                tools.asset,
-                tools.validate_binding_set,
-                tools.preflight_design,
-            ],
+            "tools": author_tools,
             "skills": workspace_skills,
         },
         {
@@ -268,6 +508,35 @@ def create_design_deepagent(
             "response_format": ToolStrategy(VisualCritique),
         },
     ]
+
+    # --- fast loop §5.3 / ruling R3: reviewer QUARANTINED, not deleted -------
+    # On a scene turn under the fast loop the `lumen-visual-reviewer` subagent is
+    # not registered, so the orchestrator cannot dispatch it — the same
+    # tool-absence enforcement `request_clarification` uses, and the same
+    # quarantine pattern as M8D-R1: the code path stays whole. Its prompt builder,
+    # its model instance, its ToolStrategy(VisualCritique) response format and its
+    # entire dict above are still constructed on every turn and are one config
+    # flag from being live again; the WEB harness (harness_web) never consults
+    # this flag and keeps its reviewer unconditionally (§3 non-goal).
+    #
+    # Why quarantine at all: the reviewer's measured catches were mechanical
+    # (cropped text, contrast, dead nodes) — now covered by preflight plus an
+    # author that sees its own render — while taste is beyond both roles and
+    # belongs to the human in the chat leg. Each round-trip cost ~25 model calls,
+    # two or three times per run, which is most of the gap to the §1 budget.
+    #
+    # `LUMEN_AGENT_SCENE_REVIEWER=1` is the kill-switch: it puts the reviewer back
+    # WITHOUT leaving the fast loop, which is both §7's kill-switch check and the
+    # rollback if self-audit scores diverge from human acceptance on a defect class.
+    if not runtime_config.scene_reviewer_enabled:
+        quarantined = [sa for sa in subagents if sa["name"] == "lumen-visual-reviewer"]
+        subagents = [sa for sa in subagents if sa["name"] != "lumen-visual-reviewer"]
+        logger.info(
+            "scene_reviewer_quarantined",
+            run_id=tools.run_id,
+            quarantined=[sa["name"] for sa in quarantined],
+            reason="fast_loop_v1_r3",
+        )
 
     orchestrator_tools = [
         view,
@@ -297,14 +566,134 @@ def create_design_deepagent(
         state_schema=LumenTurnState,
         permissions=_filesystem_permissions(),
         tools=orchestrator_tools,
-        system_prompt=build_orchestrator_prompt(workspace_str, has_references=has_references),
+        system_prompt=build_orchestrator_prompt(
+            workspace_str,
+            has_references=has_references,
+            fast_loop=fast_loop,
+            scene_reviewer=runtime_config.scene_reviewer_enabled,
+            # §5.7: composed at assembly time so selecting a format skill costs
+            # no `ls` — see _materialized_skill_index for the skill interface.
+            skills=_materialized_skill_index(runtime_config) if fast_loop else None,
+            # D1: the prompt is handed the TARGET, never the backstop.
+            target_llm_calls=runtime_config.fast_loop_target_llm_calls,
+            target_wall_clock_s=runtime_config.fast_loop_target_wall_clock_s,
+            inner_iterations=runtime_config.fast_loop_inner_iterations,
+        ),
         subagents=subagents,
         name="lumen-design-deepagent",
+        checkpointer=checkpointer,
     )
     return agent, tools
 
 
 # --- runner (§7) ------------------------------------------------------------
+
+
+def _finalize_interrupted_run(
+    tools: LumenDesignTools,
+    *,
+    gap_summary: str,
+    gap_detail: str,
+    stop_reason: str,
+    headline: str,
+) -> dict:
+    """THE graceful stop. One body, shared by every reason a turn is halted early.
+
+    Extracted at A3 (defect R3-D) from `_finalize_on_budget_exhausted`, which was
+    the only caller when the budget backstop was the only thing that could stop a
+    run. Cancellation is now the second, and it must land the *same* guarantees
+    rather than a look-alike of them — so the two callers below differ only in
+    what they SAY, never in what they do.
+
+    Three things the fast loop §5.6 spec demands of this path, in order:
+
+    1. NEVER DISCARD WORK. The 20m42s baseline died on a quota 403 at finalize
+       and threw away a fully valid scene, because the only write was
+       save-on-finalize. P0.4 changed that: every accepted round is already a
+       document version, so what survives an early stop survives without this
+       function doing anything clever. What this function must not do is
+       overwrite that with a `failed` verdict when a real draft stands.
+    2. NEVER FABRICATE. A run that never authored anything gets `failed`. A run
+       whose scene has nodes gets `completed_with_warnings` and says exactly
+       what was cut short. Neither is ever `accepted` — nothing accepted this.
+    3. RECORD THE GAP. One `record_gap` naming what stopped the run and what
+       remained, so the honest incompleteness is in the ledger the editor reads
+       and not only in a log line.
+    """
+    try:
+        tools.record_gap(
+            # `agent_protocol` is the GapArea for "the loop itself stopped the
+            # work" — the enum has no budget or cancellation member and inventing
+            # a label would only earn a "[reported area: …]" prefix from
+            # `_coerce_gap_area`.
+            "agent_protocol",
+            gap_summary,
+            gap_detail,
+        )
+    except Exception as error:  # noqa: BLE001 - the gap must not block the finalize
+        logger.warning(
+            "interrupted_gap_record_failed",
+            stop_reason=stop_reason,
+            error=f"{type(error).__name__}: {error}",
+        )
+
+    has_content = bool((tools.scene or {}).get("nodes"))
+    status = "completed_with_warnings" if has_content else "failed"
+    summary = headline + (
+        "A draft stands and every accepted round was already saved to the "
+        "document; what remains is recorded as a gap."
+        if has_content
+        else "Nothing had been authored yet, so there is no draft to keep."
+    )
+    raw = tools.finalize_run(status, stop_reason, summary)
+    return json.loads(raw)
+
+
+def _finalize_on_budget_exhausted(tools: LumenDesignTools, breach: BudgetExhausted) -> dict:
+    """Fast loop §5.6: the BACKSTOP's honest stop. Wording only — see the shared body above."""
+    return _finalize_interrupted_run(
+        tools,
+        gap_summary=(
+            f"run stopped by the {breach.kind} budget before the design was accepted"
+        ),
+        gap_detail=(
+            f"{breach.kind} budget: limit {breach.limit}, observed "
+            f"{breach.observed}. Fast loop §5.6 stops the run at the ceiling "
+            "rather than grinding past it. Any round already accepted was "
+            "checkpointed to the document and stands; the round in flight did "
+            "not complete."
+        ),
+        stop_reason=f"budget_exhausted_{breach.kind}",
+        headline=(
+            f"Stopped at the {breach.kind} budget ({breach.limit:g} allowed, "
+            f"{breach.observed:g} observed) before the design was accepted. "
+        ),
+    )
+
+
+def _finalize_on_cancelled(tools: LumenDesignTools, cancelled: TurnCancelled) -> dict:
+    """A3 (defect R3-D): a human asked, so the run stopped. Wording only — shared body above.
+
+    The founder-visible truth is `stop_reason = "cancelled_by_request"`, and it is deliberately
+    the ONE thing this path says differently from the budget's. A cancelled run is not a failed
+    run and is not a runaway run; conflating any two of those in the durable record is exactly
+    the dishonesty the whole result envelope exists to prevent.
+    """
+    requested = f" (requested at {cancelled.requested_at})" if cancelled.requested_at else ""
+    return _finalize_interrupted_run(
+        tools,
+        gap_summary="run cancelled by request before the design was accepted",
+        gap_detail=(
+            f"A human asked this turn to stop{requested}, and it stopped at the next "
+            "model-call boundary rather than running to completion. Any round already "
+            "accepted was checkpointed to the document and stands; the round in flight did "
+            "not complete. Nothing here says the design was wrong — only that it was not "
+            "finished."
+        ),
+        stop_reason=CANCELLED_STOP_REASON,
+        headline=f"Cancelled by request{requested} before the design was accepted. ",
+    )
+
 
 
 def run_deepagent_turn(
@@ -314,6 +703,10 @@ def run_deepagent_turn(
     event_sink=None,
     *,
     clarification_already_requested: bool = False,
+    checkpointer: Any = None,
+    thread_id: str | None = None,
+    scene_checkpoint=None,
+    cancel_requested=None,
 ) -> tuple[dict, LumenDesignTools]:
     """Create + invoke + guarantee an honest finalize payload.
 
@@ -324,6 +717,21 @@ def run_deepagent_turn(
 
     `clarification_already_requested` rides through to the harness's structural
     one-round-per-turn guard (see create_design_deepagent).
+
+    `checkpointer` / `thread_id` (D5 Round B) are the durable-execution seam.
+    Supplied together by the fleet handler: the graph compiles on the given
+    checkpointer and runs on `thread_id` — the DESIGN RUN ID, per the D5 ruling,
+    so graph state, run row, event stream and fleet work id all key on one
+    identifier. Without them the turn threads on `tools.run_id` exactly as it
+    did before, which is what every CLI/fixture/offline caller still wants.
+
+    `scene_checkpoint` (P0.4) rides through to the substrate's checkpoint-commit
+    seam — see `create_design_deepagent`.
+
+    `cancel_requested` (A3, defect R3-D) is the run's cancellation probe. Supplied
+    by the fleet path, where it reads the run row's durable cancel request; `None`
+    everywhere else. A cancelled turn finalizes through the SAME graceful path the
+    budget backstop uses, with `stop_reason = "cancelled_by_request"`.
     """
     agent, tools = create_design_deepagent(
         prompt,
@@ -331,6 +739,9 @@ def run_deepagent_turn(
         initial_scene=initial_scene,
         event_sink=event_sink,
         clarification_already_requested=clarification_already_requested,
+        checkpointer=checkpointer,
+        scene_checkpoint=scene_checkpoint,
+        cancel_requested=cancel_requested,
     )
 
     # Per-run trace substrate (deliverables 2+3): attach THIS run's full-detail
@@ -354,14 +765,65 @@ def run_deepagent_turn(
     )
 
     initial_state = {"messages": [{"role": "user", "content": prompt}], **initial_turn_state(tools, prompt)}
+    # D5: the durable thread is the DESIGN RUN, not the runtime's private run id. When no
+    # thread_id is supplied the runtime id keeps its old double duty (thread + trace-dir name);
+    # when one is, the runtime id degrades to trace-dir naming only.
     invoke_config = {
         "recursion_limit": 200,
-        "configurable": {"thread_id": tools.run_id},
+        "configurable": {"thread_id": thread_id or tools.run_id},
     }
 
     exception_text: Optional[str] = None
+    budget_breach: Optional[BudgetExhausted] = None
+    cancellation: Optional[TurnCancelled] = None
     try:
-        agent.invoke(initial_state, config=invoke_config)
+        # A3: the boundary BEFORE the first model call. A run cancelled while it sat queued (or
+        # between a lease takeover and its redrive) must not pay for a single call to discover
+        # that; the callback seam can only refuse a call that is already being made, so the graph
+        # is never entered at all in that case. `cancel_requested` is None off the fleet path, so
+        # this is a no-op for every CLI / fixture / preview caller.
+        if cancel_requested is not None and cancel_requested():
+            raise TurnCancelled()
+        invoke_turn_graph(
+            agent,
+            initial_state,
+            invoke_config=invoke_config,
+            checkpointer=checkpointer,
+            thread_id=thread_id,
+        )
+    except TurnCancelled as error:
+        # A3 (defect R3-D). NOT a failure and NOT a runaway — a human asked. Caught above the
+        # generic handler for the same reason BudgetExhausted is: the finalize below has to be
+        # able to say WHY the run ended, and "orchestrator_did_not_finalize" would be a lie
+        # about a run that did exactly what it was told.
+        cancellation = error
+        exception_text = f"{type(error).__name__}: {error}"
+        # `record` is BOTH the file trace and the run's live event stream (see
+        # `LumenDesignTools.record`), so this one call is what an SSE consumer sees the
+        # moment the cancel is honoured — well before the graceful finalize below lands the
+        # terminal `done` frame. `sink_extra` is the only channel that rides the push, which
+        # is why the stop reason is stated there and not only in the trace payload.
+        tools.record(
+            "coordinator",
+            CANCELLED_EVENT,
+            output_summary=str(error)[:500],
+            payload={"stop_reason": CANCELLED_STOP_REASON},
+            sink_extra={"stop_reason": CANCELLED_STOP_REASON},
+        )
+    except BudgetExhausted as error:
+        # Fast loop §5.6. NOT a failure — a deliberate, harness-enforced stop.
+        # It is caught before the generic handler so the finalize below can be
+        # honest about WHY the run ended and about what survives: every accepted
+        # round is already committed to the document (P0.4), so the cost of
+        # stopping here is the round in flight, not the run.
+        budget_breach = error
+        exception_text = f"{type(error).__name__}: {error}"
+        tools.record(
+            "coordinator",
+            "deepagent_turn_budget_exhausted",
+            output_summary=str(error)[:500],
+            payload=error.as_dict(),
+        )
     except Exception as error:  # noqa: BLE001 - honest failure, recorded verbatim
         exception_text = f"{type(error).__name__}: {error}"
         tools.record(
@@ -371,17 +833,47 @@ def run_deepagent_turn(
             payload={"exception": exception_text},
         )
 
-    final_path = tools.trace_dir / "final.json"
-    if final_path.exists():
-        payload = json.loads(final_path.read_text(encoding="utf-8"))
-        return payload, tools
+    # Fast-loop v1 §7: ONE run_metrics summary on EVERY terminal outcome. The
+    # `finally` is the whole point — a run that died on a quota 403 mid-finalize
+    # (the 20m42s baseline) is precisely the run whose 43-minutes-went-where
+    # numbers matter most, and a metrics emission that only fired on the happy
+    # path would miss it. `emit_run_metrics` itself never raises.
+    payload: Optional[dict] = None
+    try:
+        final_path = tools.trace_dir / "final.json"
+        if final_path.exists():
+            payload = json.loads(final_path.read_text(encoding="utf-8"))
+            return payload, tools
 
-    # The orchestrator never finalized — HONEST failure, never a fabricated success.
-    detail = exception_text or "agent ended without finalize"
-    raw = tools.finalize_run(
-        "failed",
-        "orchestrator_did_not_finalize",
-        detail,
-    )
-    payload = json.loads(raw)
-    return payload, tools
+        # A3: before the budget, because a human's stop outranks a machine's — though the two
+        # are mutually exclusive in practice (the first raise out of the graph wins) and the
+        # `final.json` check above still outranks BOTH: a turn the orchestrator already
+        # finalized is finished, and a cancel that arrived after that is simply too late. It is
+        # honest to say so rather than to rewrite a real result as a cancellation.
+        if cancellation is not None:
+            payload = _finalize_on_cancelled(tools, cancellation)
+            return payload, tools
+
+        if budget_breach is not None:
+            payload = _finalize_on_budget_exhausted(tools, budget_breach)
+            return payload, tools
+
+        # The orchestrator never finalized — HONEST failure, never a fabricated success.
+        detail = exception_text or "agent ended without finalize"
+        raw = tools.finalize_run(
+            "failed",
+            "orchestrator_did_not_finalize",
+            detail,
+        )
+        payload = json.loads(raw)
+        return payload, tools
+    finally:
+        final = payload or {}
+        emit_run_metrics(
+            tools,
+            outcome=final.get("outcome") or final.get("status") or "failed",
+            status=final.get("status") or "failed",
+            stop_reason=final.get("stop_reason")
+            or (exception_text or "no final payload"),
+            rounds_dir=workspace_root(tools) / "rounds",
+        )

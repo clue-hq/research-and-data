@@ -1466,3 +1466,77 @@
   opacity: 0.7;
 }
 .web-app .web-toast-close:hover { opacity: 1; }
+
+/* --- cloned-section (fragment) inspector, clone-fidelity F3.2 ------------ */
+/* Founder rulings D-F3 / D-F6 / D-F8: a clone shows its picture, its condition,
+   its repair lineage and — when the source site hides it — the evidence that
+   said so plus the one affordance that wakes it. Tokens only (frontend rule 3);
+   the two structural additions are a preview figure and a lineage list. */
+.web-insp-frag-preview {
+  margin: 0 0 var(--space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.web-insp-frag-preview img {
+  width: 100%;
+  height: auto;
+  max-height: 220px;
+  object-fit: cover;
+  object-position: top;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-white);
+}
+.web-insp-frag-evidence {
+  margin: 0;
+  padding-left: var(--space-md);
+  color: var(--text-muted);
+  font-size: var(--text-body-sm);
+  line-height: 1.4;
+}
+.web-insp-frag-lineage {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+.web-insp-frag-lineage > li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-sm);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-white);
+}
+.web-insp-frag-lineage-head {
+  color: var(--text-primary);
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.web-insp-frag-dormant {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-sm) 0 0;
+  border-top: 1px solid var(--border-default);
+}
+.web-insp-frag-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+/* The header's `.web-insp-action` is a 26px icon square; these carry words. */
+.brand-app .web-insp-frag-actions .web-insp-action {
+  width: auto;
+  height: auto;
+  padding: 4px var(--space-sm);
+  font-size: var(--text-body-sm);
+}
+.brand-app .web-insp-frag-actions .web-insp-action.is-danger {
+  color: var(--status-error);
+}

@@ -5,7 +5,10 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import event
 
+from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
 from clue_api.thread_store import create_thread, set_thread_pinned
+from clue_core import AccountStatus
+from clue_research.identity import insert_account_entity
 from clue_spine import create_project
 from tests._identity import fixture_membership_id
 from tests.api.test_home_project_bootstrap_db import (
@@ -83,14 +86,14 @@ def test_project_shell_is_scoped_real_and_fixture_free(require_chat_db: None) ->
             assert data["context_entities"] == []
             assert data["agent_profiles"] == [
                 {
-                    "id": "head-of-abm@v23",
+                    "id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
                     "label": "GPT-5.6 Terra",
                     "short_label": "GPT-5.6 Terra",
                     "description": "Clue's governed GPT-5.6 Terra conversation profile",
                     "model_id": "openai/gpt-5.6-terra",
                 }
             ]
-            assert data["default_agent_profile_id"] == "head-of-abm@v23"
+            assert data["default_agent_profile_id"] == PROJECT_CONVERSATION_AGENT_PROFILE_ID
             assert data["composer_capabilities"] == {
                 "context_refs": True,
                 "attachments": False,
@@ -101,6 +104,76 @@ def test_project_shell_is_scoped_real_and_fixture_free(require_chat_db: None) ->
                     404,
                     "PROJECT_NOT_FOUND",
                 )
+
+    run_async(scenario())
+
+
+def test_composer_context_prepares_an_existing_active_thread(require_chat_db: None) -> None:
+    del require_chat_db
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            brand = await _seed(conn, "ws-r3-existing-context")
+            project = await create_project(
+                conn,
+                workspace_id="ws-r3-existing-context",
+                brand_id=brand.brand_id,
+                name="Existing context project",
+                status="active",
+            )
+            thread_id = "thr_r3_existing_context"
+            await create_thread(
+                conn,
+                thread_id=thread_id,
+                workspace_id="ws-r3-existing-context",
+                project_id=project.project_id,
+                title="Existing chat",
+                created_by_user_id=USER_ID,
+                created_via_membership_id=fixture_membership_id(
+                    workspace_id="ws-r3-existing-context",
+                    user_id=USER_ID,
+                ),
+            )
+            account_id = await insert_account_entity(
+                conn,
+                canonical_name="Existing Thread Account",
+                primary_domain="existing-thread.example",
+                status=AccountStatus.ACTIVE,
+                workspace_id="ws-r3-existing-context",
+            )
+            app, _storage = _app(conn)
+
+            async with _client(app) as client:
+                response = await client.post(
+                    f"/api/v1/projects/{project.project_id}/composer-context/prepare",
+                    headers={"X-Workspace-Id": "ws-r3-existing-context"},
+                    json={
+                        "thread_id": thread_id,
+                        "context_refs": [
+                            {
+                                "object_type": "account",
+                                "object_id": str(account_id),
+                                "version": None,
+                            }
+                        ],
+                    },
+                )
+
+            assert response.status_code == 200, response.text
+            assert response.json()["data"] == {
+                "project_id": project.project_id,
+                "thread_id": thread_id,
+                "context_entities": [
+                    {
+                        "object_type": "account",
+                        "object_id": str(account_id),
+                        "label": "Existing Thread Account",
+                        "secondary_label": "existing-thread.example",
+                        "image_url": None,
+                        "version": 1,
+                    }
+                ],
+            }
 
     run_async(scenario())
 

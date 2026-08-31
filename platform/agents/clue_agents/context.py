@@ -103,9 +103,7 @@ class ContextCandidate(ContextValue):
     ref: ArtifactRef | DomainObjectRef
     body: str = Field(min_length=1)
     role: Literal["system", "user", "assistant", "tool"] = "system"
-    origin: Literal["trusted_context", "history", "current_user_instruction"] = (
-        "trusted_context"
-    )
+    origin: Literal["trusted_context", "history", "current_user_instruction"] = "trusted_context"
     materialized_path: str | None = None
     required: bool = False
 
@@ -438,9 +436,7 @@ class FocusLayerSource:
                     # The assembler sorts by stable key before budgeting and emission. Prefixing
                     # the durable submission order keeps the user's account/contact sequence
                     # intact all the way into L5 instead of silently alphabetizing it.
-                    stable_key=(
-                        f"{ordinal:06d}:{ref.object_type}:{ref.object_id}:{ref.version}"
-                    ),
+                    stable_key=(f"{ordinal:06d}:{ref.object_type}:{ref.object_id}:{ref.version}"),
                     ref=ref,
                     body=card.body,
                     materialized_path=_card_path("focus", ref),
@@ -566,6 +562,33 @@ class TurnLayerSource:
                         f"byte_count={captured.byte_count}"
                     ),
                     role="system",
+                )
+            )
+        # ``request.focus_refs`` are the exact Account/Contact references durably captured on
+        # this human submission. L5 hydrates those objects, but hydration alone does not tell the
+        # model whether an Account came from the *current message* or from ambient project focus.
+        # Keep that authority distinction explicit in L7 so phrases such as "the selected
+        # account" resolve to the submitted ordered set and never widen to the project catalog.
+        # One candidate per ref preserves both its domain receipt and its submission order.
+        for index, current_ref in enumerate(request.focus_refs):
+            result.append(
+                ContextCandidate(
+                    stable_key=f"150-current-context-ref:{index:06d}",
+                    ref=current_ref,
+                    body=(
+                        "Current human-message context reference: the platform durably captured "
+                        "this exact ordered subject on the user's current message. Treat words "
+                        "such as selected, this, these, or them as naming exactly these current "
+                        "message references; never widen, replace, or ask the user to retype "
+                        "them. The platform supplies authoritative values to governed tools. "
+                        f"ordinal={index} object_type={current_ref.object_type} "
+                        f"object_id={current_ref.object_id} version={current_ref.version}"
+                    ),
+                    role="system",
+                    materialized_path=(
+                        "inputs/current-context/"
+                        f"{index:06d}-{current_ref.object_type}-{current_ref.object_id}.txt"
+                    ),
                 )
             )
         # The only user-authored message in L7 is deliberately last. Attachment and capture

@@ -3,28 +3,34 @@ from __future__ import annotations
 import asyncio
 import base64
 import copy
+import hashlib
+import inspect
 import io
 import json
 import logging
-import os
 import re
+
+# D2.5B: SQLite is DELETED from this API. `sqlite3` survives here only as the API's
+# constraint-violation EXCEPTION TYPE — `design_store.DesignStoreBridge` translates Postgres
+# IntegrityError/DataError into `sqlite3.IntegrityError` so the 409 DTOs below are unchanged.
+# See the import comment in design_store.py. Renaming it to a design-native error is a
+# follow-up, not part of the deletion slice.
 import sqlite3
-import sys
-import threading
 import time
 import zipfile
+import contextlib
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import (
-    BackgroundTasks,
     Depends,
     FastAPI,
     File,
     Form,
+    Header,
     HTTPException,
     Query,
     Request,
@@ -32,29 +38,68 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
-    FileResponse,
     HTMLResponse,
     JSONResponse,
     Response,
     StreamingResponse,
 )
 
-from . import image_cache, image_provider, web_export
+from . import ad_runtime, document_thumbnails, image_cache, image_provider, web_export
+from .asset_custody import (
+    ensure_materialized,
+    materialize_scene_assets,
+    read_asset_bytes,
+    record_digests,
+    register_engine_write,
+    register_scene_asset_backstop,
+    register_web_asset_backstop,
+    write_cache_blob,
+)
 from .core import CoreClient, CoreError, has_error_diagnostics
 from .custom_component_compiler import (
     DEFAULT_COMPILER_TIMEOUT_SECONDS,
-    compile_and_persist_custom_component,
     compile_custom_component,
     default_compiler_worker_path,
 )
+from .export_policy import (
+    export_warning_views,
+    has_blocking_export_diagnostics,
+    partition_export_diagnostics,
+)
+from .agent_account_logos import DurableAgentAccountLogoBinder
+from .agent_cloned_sections import DurableAgentClonedSectionRegistry
 from .agent_custom_components import DurableAgentCustomComponentRegistry
 from .custom_component_runtime import (
     build_custom_component_runtime_frames,
     default_runtime_host_path,
     web_doc_uses_custom_components,
 )
+from .fragments.render import (
+    build_fragment_render_package,
+    empty_fragment_render_package,
+    fragment_collision_diagnostics,
+    fragment_css_sheet,
+    fragment_render_map,
+    web_doc_fragment_ids,
+)
+from .fragments import (
+    ISOLATION_PREVIEW_MEDIA_TYPE,
+    IsolationRenderFailed,
+    attach_web_fragment_preview,
+    read_web_fragment,
+    render_isolation_preview,
+    screenshot_isolation_page,
+    set_web_fragment_status,
+)
+from .fragment_inspector import (
+    FRAGMENT_CARD_SCHEMA_VERSION,
+    activation_target,
+    dormant_fragment_cards,
+    fragment_card,
+    retirement_verdict,
+)
 from .custom_components import (
-    persist_custom_component_source_revision,
+    CUSTOM_COMPONENT_MEMBER_MEDIA_TYPES,
     resolve_custom_component_artifact_blob,
     resolve_custom_component_source_snapshot,
 )
@@ -62,12 +107,19 @@ from .database import (
     CustomComponentArtifactConflict,
     CustomComponentReferenceError,
     CustomComponentSourceVersionConflict,
+    DesignResourceVersionConflict,
+    FragmentReferenceError,
     NotFoundError,
-    Repository,
     WebDocumentVersionConflict,
-    connect,
-    run_migrations,
+    WebPublishRevisionConflict,
     utc_now,
+)
+from . import run_stream
+from .design_store import (
+    DesignBlobStore,
+    HybridRepository,
+    read_public_design_blob,
+    resolve_workspace_id,
 )
 from .font_library import manifest as font_library_manifest
 from .dto import (
@@ -99,6 +151,7 @@ from .models import (
     WebPublishRequest,
     SetAgentInstructionsRequest,
     SetLayoutManagedEditingRequest,
+    SetWebNoindexRequest,
     AttachBrandKitRequest,
     ApplyOperationsRequest,
     ApplyStructuredEditRequest,
@@ -126,6 +179,7 @@ from .models import (
     GenerateQrRequest,
     GenerateBrandKitRequest,
     IngestWebsiteRequest,
+    OnboardAdAssetsRequest,
     PreflightRequest,
     PreflightPreviewRequest,
     ReplaceSceneRequest,
@@ -138,14 +192,32 @@ from .models import (
 from lumen_ingestion.capture.uploads import sniff_mime
 from lumen_ingestion.describe import DescriptionStore
 from lumen_ingestion.jobs import IngestionJobStore
+from lumen_ingestion.jobs import new_id as ingestion_new_id
+from lumen_ingestion.logo_policy import extend_allowed_backgrounds
+from lumen_ingestion.ad_library.onboarding import run_ad_assets_onboarding
 from lumen_ingestion.pipeline import (
     run_asset_ingestion,
     run_pdf_ingestion,
     run_website_ingestion,
 )
+from clue_db import db_lifespan, get_engine
+from clue_design import storage as design_storage
+from clue_design.envelopes import DesignIngestionEnvelope, DesignTurnEnvelope
+from clue_design.enums import DesignIngestionKind
+from clue_design.errors import DesignFragmentActivationError, DesignFragmentPreviewError
+from clue_design.leg_context import render_leg_turn_prompt
+from clue_design.runs import work_id_for_run as design_work_id_for_run
+from clue_design.storage import location_digest
+from clue_storage import StorageBackend, storage_from_settings
+
 from py_lumen_config import settings
 from py_lumen_obs import bind_request_id, configure, get_logger, unbind_context
 
+from clue_execution import OperationConflict
+from clue_toolbelt import IdempotencyConflict, PreconditionFailed
+from pydantic import ValidationError
+
+from .toolbelt.wiring import DesignRunSubject, DesignToolInvocations, design_tool_host
 from .observability import (
     REQUEST_ID_HEADER,
     artifact_summary,
@@ -179,13 +251,9 @@ def _bridge_uvicorn_loggers() -> None:
 
 _AGENT_RELEVANT_PREFIXES = ("/agent", "/documents")
 
-# Run-events SSE idle cadence (live-design-streaming D2). Poll the durable
-# run_events table fast so authoring batches (compile/asset-placement ops) land
-# on the canvas promptly; emit the keepalive comment slowly so a quiet run does
-# not spam a comment every poll. Keepalive fires once every
-# ~ceil(KEEPALIVE / POLL) idle polls. Replay semantics are unchanged.
-_RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS = 0.25
-_RUN_EVENTS_SSE_KEEPALIVE_INTERVAL_SECONDS = 1.0
+# The run-event SSE cadence constants moved to ``lumen_api.run_stream`` at D7, with the rest of the
+# stream: it is one seam now (emit, auth, replay, frame), and a cadence knob two modules away from
+# the loop it paces is how the two drift.
 
 
 def _is_agent_relevant(path: str) -> bool:
@@ -243,6 +311,169 @@ def failed_agent_turn_response(code: str, message: str, detail: str) -> JsonObje
     }
 
 
+def conflicted_agent_turn_response(
+    base_version: int, current_version: int
+) -> JsonObject:
+    """Terminal result for a LEG scene turn that lost its version race (genad Task 5).
+
+    The scene twin of ``conflicted_web_turn_response``, and it exists for the same reason: once
+    the executor owns the persist, "the document moved under me" is a real terminal outcome that
+    is neither a success nor a runtime failure, and the human needs to be told which two versions
+    disagreed. Direct editor turns never reach it — they propose, and the editor's own route
+    commits under its own CAS.
+
+    The two versions are named in the PROSE (``summary`` AND ``stop_reason``), not only in the
+    structured keys — but be honest about who reads that prose TODAY: nobody. The builder is
+    leg-only, so the editor's own panel never sees it, and on the platform side a conflicted
+    turn comes back with run status ``failed``, which ``design_leg_wiring`` short-circuits into
+    ``_fail_turn`` — a typed unfinalized turn with NO assistant message, so the scene branch of
+    ``_assistant_summary`` (the only ``stop_reason`` reader) never runs on it. The prose is
+    therefore durable RESULT-PAYLOAD content: it makes the run row self-explanatory to an
+    operator reading it, and it is ready for the first surface that renders it.
+
+    That surface arrives with the **genad founder item: conflict routing** — whether a
+    CAS-conflicted turn stays a typed failed turn (today's ratified honest-terminal shape, web
+    parity) or is rewired to land back in the thread with a message. Until that is decided, a
+    marketer who loses the race sees a failed turn with no inline prose. Whichever way it goes,
+    the sentence must keep naming BOTH versions and saying their own edit survived — a bare
+    "Design turn conflicted." is technically true and practically useless."""
+
+    message = (
+        f"This design moved from version {base_version} to version {current_version} while "
+        "the AI turn was running, so the turn's changes were not applied. Your newer edits "
+        "were preserved — send the instruction again to design against the current version."
+    )
+    return {
+        **failed_agent_turn_response(
+            "agent_turn.version_conflict",
+            message,
+            (
+                f"The turn started at version {base_version}; the stored "
+                f"document is now version {current_version}."
+            ),
+        ),
+        "status": "conflicted",
+        # The platform's scene summarizer reads ONLY this key for its sentence; the scene result
+        # shape has no other prose slot it consumes.
+        "stop_reason": message,
+        "base_version": base_version,
+        "current_version": current_version,
+    }
+
+
+# The engine's own verdict on a scene with no page/artboard ("document must contain at least one
+# page/artboard", `validate_scene`). A turn whose applied result is page-less trips it during the
+# replay, so the engine refuses the operations before the gate below ever sees a scene — the code
+# is matched to name that refusal for what it is rather than as "could not be replayed".
+PAGELESS_SCENE_DIAGNOSTIC = "LUMV0100"
+
+
+def is_pageless_scene_refusal(diagnostics: List[JsonObject]) -> bool:
+    """Is this ``CoreError``'s diagnostic list the engine's page-less verdict?
+
+    ``CoreError.diagnostics`` is normalized to a list by its constructor (``core.py``:
+    ``diagnostics or []``), so the list-ness is a type, not a thing to re-check — the per-item
+    ``isinstance`` stays because the ITEMS are engine JSON this process did not build.
+    """
+
+    return any(
+        isinstance(diagnostic, dict)
+        and diagnostic.get("code") == PAGELESS_SCENE_DIAGNOSTIC
+        for diagnostic in diagnostics
+    )
+
+
+def pageless_agent_turn_response(engine_message: str | None = None) -> JsonObject:
+    """Terminal result for a LEG scene turn that produced no page (genad2 Task 3).
+
+    Since the zero-page birth (genad2 ruling 1) a chat-born scene document starts with NO pages
+    — `open_design_leg@4` mints none, and the design trio authors the page itself. That makes a
+    turn which generated nothing look exactly like a turn which generated a design at this seam:
+    the document is still page-less either way, and a "proposed" result would tell a marketer
+    their ad is ready while the gallery has nothing to open. A page-less result is therefore a
+    terminal FAILURE with nothing written, in the same shape as the replay refusal beside it.
+
+    The sentence rides BOTH prose slots for the reason ``conflicted_agent_turn_response`` spells
+    out: the platform's scene summarizer (``_assistant_summary``, design_leg_wiring) reads only
+    ``stop_reason``, and ``failed_agent_turn_response`` leaves it None, so a refusal built naively
+    from it is contentless by construction. Be honest about who reads it TODAY: a failed run is
+    short-circuited by ``_fail_turn`` before that summarizer runs, so this is durable
+    result-payload prose — legible to an operator reading the run row, and ready for whichever
+    surface the genad founder item on failure/conflict routing hands it to.
+
+    ``engine_message`` is the engine's OWN text, passed through on the arm where the ENGINE is
+    the one that refused (its ``LUMV0100`` validation of the applied scene). Its replay-failure
+    sibling has always forwarded ``error.message`` and this arm dropped it, so an operator
+    reading the run row could not tell the engine's verdict from this function's generic
+    sentence. Today that text is terse ("operation batch produced an invalid scene") — the
+    value is that it is the ENGINE speaking, and it improves for free when the engine's wording
+    does. It rides the DETAIL, never the summary: the marketer-facing prose is founder copy and
+    stays one fixed sentence. Absent on the post-replay gate below, where no engine complained
+    and quoting one would be an invention.
+    """
+
+    message = (
+        "Design finished without creating a page — nothing was saved; "
+        "send another message to try again."
+    )
+    detail = (
+        "The turn's result contains no page, so there would be nothing to show; "
+        "the design was not saved and the document is unchanged."
+    )
+    if engine_message:
+        detail = f"{detail} The engine reported: {engine_message}"
+    return {
+        **failed_agent_turn_response(
+            "agent_turn.pageless_result",
+            message,
+            detail,
+        ),
+        "stop_reason": message,
+    }
+
+
+def with_web_turn_failure_diagnostic(response: JsonObject) -> JsonObject:
+    """Guarantee a non-applied website turn carries its reason as a real diagnostic.
+
+    The web twin of the scene path's ``agent_runtime.no_proposal`` synthesis (see
+    ``run_agent_turn_preview``): a turn that dies inside the runtime — the reviewer's
+    vision call refused, a recursion limit, an orchestrator crash — comes back with the
+    reason only in ``summary`` and an EMPTY ``diagnostics``, so every surface that reads
+    diagnostics (the editor's panel, the platform's leg projections) reports an
+    unexplained failure. Observed live: OpenRouter's "image dimensions exceed max
+    allowed size: 8000 pixels" refusal discarded 84 authored nodes with nothing in
+    ``diagnostics`` to say why.
+
+    Never overwrites diagnostics that already exist (``failed_agent_turn_response`` and
+    ``conflicted_web_turn_response`` author their own) and never invents a message: the
+    text IS the runtime's own summary.
+    """
+    if response.get("status") == "applied":
+        return response
+    existing = response.get("diagnostics")
+    if isinstance(existing, list) and existing:
+        return response
+    summary = response.get("summary")
+    message = (
+        str(summary).strip()
+        if isinstance(summary, str) and summary.strip()
+        else "The website turn ended without applying any change, and gave no reason."
+    )
+    outcome = response.get("outcome")
+    return {
+        **response,
+        "diagnostics": [
+            agent_diagnostic(
+                "web_turn.no_result",
+                message,
+                "validation",
+                "error",
+                f"The runtime reported outcome {outcome!r}." if outcome else None,
+            )
+        ],
+    }
+
+
 def conflicted_web_turn_response(
     base_version: int, current_version: int
 ) -> JsonObject:
@@ -275,44 +506,140 @@ def conflicted_web_turn_response(
     }
 
 
-def _fail_orphaned_runs(database_path: Path) -> None:
-    """Fail every run left 'running' by a previous API process.
+# D5 Round B: the startup orphan sweep (``_fail_orphaned_runs``) is DELETED with the daemon
+# threads it existed for. Turns ran inside this process, so a restart silently killed every
+# in-flight one and left its row ``running`` forever; the sweep failed them at boot so the
+# editor's SSE stream would settle instead of hanging. Leased fleet work needs none of it: a dead
+# worker's lease expires, and a takeover worker re-claims the SAME run through the D5 CAS and
+# runs it. Keeping the sweep would now actively destroy recoverable work at every deploy.
 
-    Agent/web turns execute on daemon threads inside THIS process; a server
-    restart kills them silently, so at startup any 'running' row is an orphan
-    by construction (live failure 2026-07-29: an API bounce orphaned two
-    in-flight website turns, which sat 'running' for hours while the editor
-    saw only a dead stream). Each orphan gets a terminal result plus an
-    `error` run-event so open SSE pollers settle to `done` immediately.
+
+def _build_embedded_fleet_worker(app: FastAPI) -> Any:
+    """The design API's own :class:`~clue_fleet.work_worker.LeasedWorkWorker`, or ``None``.
+
+    Registers ONLY the design handler — the API drains design work and nothing else; project
+    runs and recipe executions remain the platform worker's business. The handler reads its host
+    capabilities from ``app.state`` at execution time (not construction time), so a test that
+    installs an ``agent_turn_runner`` stub after the app is built is still honoured.
+
+    Returns ``None`` when the switch is off, or when the fleet/handler imports are unavailable —
+    the same degradation contract the agent runtime itself has: a machine missing the extras gets
+    an API that serves everything except turns, never an import crash at startup.
+
+    **OPERATIONAL HAZARD — an embedded worker drains the WHOLE queue, not its own app's work
+    (diagnosed live 2026-08-19/20).** The queue is a shared Postgres table, and the worker leases
+    by work KIND, not by which process offered the job. So every design API pointed at one
+    database competes for the same design jobs, and the winner is whoever polls first (0.1s). A
+    developer machine that still has a hours-old design API running on another port therefore
+    executes today's jobs against yesterday's code — and because ingestion imports its capture
+    tiers lazily, that stale process happily served static ingests while failing every rendered
+    one at the import edge (`ImportError: cannot import name 'GeometryEvidence' from
+    'lumen_ingestion.evidence'`), from a process nobody was looking at. There is no code fence
+    for this today: before verifying anything through the UI, check that exactly ONE design API
+    with `LUMEN_EMBEDDED_FLEET_WORKER=1` is running against your database. A real fence (the
+    lease carrying the worker's code identity) belongs to the fleet, not here.
     """
-    store = Repository(connect(database_path))
+    if not settings.lumen_embedded_fleet_worker:
+        return None
     try:
-        orphans = store.list_running_runs()
-        for run in orphans:
-            failed = failed_agent_turn_response(
-                "agent_runtime.orphaned",
-                "The turn was interrupted by an API server restart and did not finish.",
-                f"run {run['run_id']} was still 'running' at startup; "
-                "worker threads do not survive a restart",
-            )
-            if run["doc_kind"] == "web":
-                failed["doc_kind"] = "web"
-            store.set_run_result(run["run_id"], "failed", failed)
-            store.append_run_event(
-                run["run_id"], "error", {"message": "orphaned by server restart"}
-            )
-        if orphans:
-            log_event(
-                api_logger,
-                logging.WARNING,
-                "orphaned_runs_failed",
-                run_ids=[run["run_id"] for run in orphans],
-            )
-    finally:
-        store.connection.close()
+        from clue_fleet.work_worker import LeasedWorkWorker
+
+        from .fleet_handler import DesignTurnHost, build_design_job_handler
+    except Exception:
+        log_event(
+            api_logger,
+            logging.WARNING,
+            "embedded_fleet_worker_unavailable",
+            detail="design fleet dependencies are not importable; turns will not be drained",
+        )
+        return None
+
+    def host() -> Any:
+        return DesignTurnHost(
+            agent_turn_runner=app.state.agent_turn_runner,
+            web_turn_runner=app.state.web_turn_runner,
+            core=app.state.core,
+            compiler_node_bin=app.state.custom_component_compiler_node_bin,
+            compiler_worker=app.state.custom_component_compiler_worker,
+            compiler_timeout_seconds=(
+                app.state.custom_component_compiler_timeout_seconds
+            ),
+            storage=app.state.storage,
+            # D5 Round C: the app's engine-cache tree, so worker-path materialization mirrors
+            # into the SAME place the request paths read (a suite that builds the app with an
+            # explicit root would otherwise have its worker writing into the settings default).
+            engine_cache_root=app.state.engine_cache_root,
+        )
+
+    worker = LeasedWorkWorker(
+        handlers=(build_design_job_handler(host_provider=host),),
+        # Poll briskly: a human is watching an SSE stream for this turn to start, and the drain
+        # is one indexed query. The lease TTL/heartbeat keep the platform defaults' 2:1 ratio.
+        poll_interval=0.1,
+        worker_id=f"lumen-api-embedded:{uuid4()}",
+    )
+    log_event(
+        api_logger,
+        logging.INFO,
+        "embedded_fleet_worker_started",
+        worker_id=worker.worker_id,
+    )
+    return worker
 
 
-def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> FastAPI:
+#: Ingestion kind -> the governed enqueue tool that offers it (D6 Round C). Three tools rather
+#: than one kind-parameterized tool, so the journal names the gesture without an operator having
+#: to decode the envelope — the same reading that kept undo and redo apart in Round B.
+_INGESTION_TOOLS = {
+    "website": "design_ingest_website",
+    "pdf": "design_ingest_pdf",
+    "asset_upload": "design_ingest_assets",
+    "ad_assets": "design_ingest_ad_assets",
+}
+
+
+def _ingestion_offer_payload(
+    repo: HybridRepository, kind: str, request: JsonObject
+) -> JsonObject:
+    """Build ONE ingestion enqueue body: the ids, the durable request and the frozen envelope.
+
+    The WRITE — the ``design_ingestion_job`` row and its ``design_job`` fleet task, in one
+    transaction — is the D5 Round C shape and the exact mirror of the turn half
+    (``HybridRepository.create_run_and_offer``, R-D5-B5): together or not at all, because a job
+    row with no task never starts and never fails, and a task with no job row is a worker that
+    claims work it cannot find. Since D6 Round C that write lives in the governed tool; what
+    stays here is the payload it needs.
+
+    Both ids are minted HERE rather than server-side inside the INSERT, because the frozen
+    envelope names the job it dispatches — an id discovered only after the insert could not have
+    ridden the payload it was enqueued with. The envelope carries no copy of ``request``: the
+    staged inputs already live durably on the job row (``design_ingestion_job.request_json``,
+    platform-storage digests since D4), and :func:`clue_design.ingestion.read_staged_request` is
+    the side-effect-free read a requeued worker recovers them with. Duplicating them into the
+    task payload would create a second, divergeable copy of the same truth.
+    """
+    job_id = ingestion_new_id("ingest")
+    work_id = uuid4()
+    envelope = DesignIngestionEnvelope(
+        work_id=work_id,
+        workspace_id=repo.workspace_id,
+        kind="ingestion",
+        job_id=job_id,
+        ingestion_kind=DesignIngestionKind(kind),
+    ).model_dump(mode="json")
+    return {
+        "job_id": job_id,
+        "work_id": str(work_id),
+        "request": request,
+        "envelope": envelope,
+    }
+
+
+def create_app(
+    engine_cache_root: Optional[Path] = None,
+    *,
+    storage: Optional[StorageBackend] = None,
+) -> FastAPI:
     # The ONE logging setup for the API: hand off to the shared obs module.
     # mode/format come from the environment (LUMEN_LOG_MODE / LUMEN_LOG_FORMAT);
     # nothing else in apps/api configures logging after this. Idempotent, so a
@@ -324,7 +651,54 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         # uvicorn has configured its own logging by the time lifespan startup
         # runs; fold its loggers into the shared bridge so there is one stream.
         _bridge_uvicorn_loggers()
-        yield
+        # D5 Round B (R-D5-B5): the embedded design fleet worker. Turns are leased fleet work
+        # now, so without a drain an offered turn would sit `queued` forever. In production the
+        # detached clue_api.fleet_main worker drains it; in development (and under this suite)
+        # there is no second process, so the API runs the SAME handler on its own event loop.
+        # One execution path, two hosts.
+        #
+        # Started as a lifespan task, so it exists only while the app is serving: FastAPI runs
+        # lifespan only under `with TestClient(...)`, which is exactly the boundary a test wants
+        # — a test that never enters the context manager gets no worker and no background DB
+        # traffic. Cancelled on shutdown and awaited, so nothing outlives the app.
+        worker = _build_embedded_fleet_worker(_app)
+        async with contextlib.AsyncExitStack() as stack:
+            task = None
+            reaper = None
+            if worker is not None:
+                # The fleet queue/lease repositories read the PROCESS-GLOBAL engine
+                # (``clue_db.transaction``), which only ``db_lifespan`` installs. The design
+                # store deliberately does not use it (``DesignStoreBridge`` owns a private
+                # engine per call — the O5 rule), so the design API has never entered it. The
+                # embedded worker is the first thing here that needs it.
+                #
+                # Entered conditionally because ``db_lifespan`` refuses re-entry: a process that
+                # already has an engine (a platform host embedding this app) keeps its own.
+                try:
+                    get_engine()
+                except RuntimeError:
+                    await stack.enter_async_context(db_lifespan())
+                task = asyncio.create_task(worker.run())
+                # D5 Round C: the stranded-work reaper rides with the embedded worker — same
+                # process-global engine, same "in development nothing else is running" argument.
+                # Gated on the worker existing rather than on its own switch alone: a reaper with
+                # no drain could re-offer work that nothing would then claim.
+                from .fleet_reaper import start_reaper
+
+                reaper = start_reaper(interval_s=settings.lumen_design_reaper_interval_s)
+            try:
+                yield
+            finally:
+                if reaper is not None:
+                    from .fleet_reaper import stop_reaper
+
+                    await stop_reaper(reaper)
+                if task is not None:
+                    assert worker is not None
+                    worker.stop()
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
 
     app = FastAPI(title="ABM Design Engine Persistence API", lifespan=lifespan)
     app.add_middleware(
@@ -334,13 +708,26 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.state.database_path = database_path or settings.lumen_api_database_path
-    app.state.asset_store_root = (
+    # D4 (R-D4-1): NOT a store — the root of the Rust engine's TRANSIENT materialization cache.
+    # Durable custody of every design byte is platform storage (below); the engine only ever
+    # sees `{root}/{workspace_id}/sha256/{ab}/{digest}`, which Python writes back from after an
+    # engine write and materializes into before an engine read. Wiping this tree loses nothing.
+    # Resolution order (unchanged in spirit from the old asset-store anchor): an explicit
+    # LUMEN_ASSET_STORE_ROOT wins, then this parameter (how a suite keeps its cache in tmp_path),
+    # then the git-ignored repo-local default. The old `database_path` vestige is GONE with it —
+    # it named no database since D2.5B and anchored nothing else.
+    app.state.engine_cache_root = Path(
         settings.lumen_asset_store_root
-        or app.state.database_path.parent / "asset-store"
+        or engine_cache_root
+        or settings.effective_asset_store_root
     )
-    app.state.custom_component_store_root = (
-        Path(app.state.asset_store_root) / "custom-components"
+    # D4: design BYTES live in platform storage (clue_storage), not under the asset-store tree.
+    # ONE process-wide backend, selected by settings alone (fs vs S3) — no caller learns which
+    # it holds. The parameter exists so a test can inject an `FsStorage(tmp_path)` and keep its
+    # blobs disposable; production always takes the configured default. The
+    # `custom-components/` sub-tree this replaced is deleted, not deprecated.
+    app.state.storage = (
+        storage if storage is not None else storage_from_settings()
     )
     app.state.custom_component_compiler_node_bin = "node"
     app.state.custom_component_compiler_worker = default_compiler_worker_path()
@@ -349,6 +736,12 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     )
     app.state.custom_component_runtime_host = default_runtime_host_path()
     app.state.core = CoreClient()
+    # The isolation render's BROWSER half, injected at the composition root (F3.4, ledger
+    # T18-M-13). Production takes the Playwright shutter; a test hands in its own callable and
+    # gets the real render — the real engine page, the real fail-closed asset route — without a
+    # Chromium. Previously a test reached in and rebound `main.render_isolation_preview`, which
+    # worked and taught nothing about how the browser dependency is actually supplied.
+    app.state.isolation_shooter = screenshot_isolation_page
     app.state.agent_turn_runner = None
     # Website-mode turn test seam: a callable (document, prompt, model, root) ->
     # envelope that replaces the real run_web_agent_turn in tests. None = live.
@@ -357,9 +750,31 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     # to scripts/web_static_css.mjs with it. A test overrides this (e.g. "false")
     # to exercise the honest compile-failure path.
     app.state.web_export_node_bin = "node"
-    if migrate:
-        run_migrations(app.state.database_path)
-    _fail_orphaned_runs(app.state.database_path)
+    # Part II D6: THE governed design write path. Every converted domain's mutation runs through
+    # this invoker — the platform's own `ToolInvoker`, over the platform's own `tool_invocation`
+    # + execution-journal tables (see `lumen_api.toolbelt.wiring`). The host's members are
+    # THUNKS, not snapshots, because the suites above override `app.state.*` (and monkeypatch
+    # `main.compile_custom_component`) after `create_app` returns; a snapshotting host would
+    # silently ignore those seams.
+    app.state.design_tools = DesignToolInvocations(
+        host=design_tool_host(
+            storage=app.state.storage,
+            core=lambda: app.state.core,
+            # A thunk, not the function object: ``engine_cache_dir`` is defined further down
+            # this factory, so binding it eagerly here would be a NameError.
+            engine_cache_dir=lambda ws: engine_cache_dir(ws),
+            web_export_node_bin=lambda: app.state.web_export_node_bin,
+            compiler_node_bin=lambda: app.state.custom_component_compiler_node_bin,
+            compiler_worker_path=lambda: Path(app.state.custom_component_compiler_worker),
+            compiler_timeout_seconds=(
+                lambda: app.state.custom_component_compiler_timeout_seconds
+            ),
+            # Read through the module global on every call: the compiler suites replace
+            # `main.compile_custom_component` to drive fake compiler responses.
+            compile_fn=lambda: compile_custom_component,
+        ),
+        storage=app.state.storage,
+    )
 
     @app.middleware("http")
     async def structured_request_logging(request: Request, call_next):
@@ -440,6 +855,62 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             },
         )
 
+    @app.exception_handler(FragmentReferenceError)
+    def fragment_reference_handler(
+        _request: Request, error: FragmentReferenceError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": {
+                    "code": error.code,
+                    "message": error.message,
+                    "node_id": error.node_id,
+                    "fragment_id": error.fragment_id,
+                }
+            },
+        )
+
+    @app.exception_handler(DesignFragmentActivationError)
+    def fragment_activation_handler(
+        _request: Request, error: DesignFragmentActivationError
+    ) -> JSONResponse:
+        """D-F8's refusal, worded for the person who has to act on it (T16 §6.6).
+
+        409 rather than 422: nothing about the request is malformed — the section simply is not
+        in a state where waking it is a decision anybody could make. The ``reason`` code is the
+        whole point of the mapping: a human must read "get a preview first", never a 500 and
+        never a sentence a surface has to parse to find the button it should offer.
+        """
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": f"fragment.activation_{error.reason}",
+                    "reason": error.reason,
+                    "message": str(error),
+                    "fragment_id": error.fragment_id,
+                }
+            },
+        )
+
+    @app.exception_handler(DesignFragmentPreviewError)
+    def fragment_preview_handler(
+        _request: Request, error: DesignFragmentPreviewError
+    ) -> JSONResponse:
+        """A preview is attached once (F3.2). Its sibling refusal, mapped on the same terms."""
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": f"fragment.preview_{error.reason}",
+                    "reason": error.reason,
+                    "message": str(error),
+                    "fragment_id": error.fragment_id,
+                }
+            },
+        )
+
     @app.exception_handler(CustomComponentArtifactConflict)
     def custom_component_artifact_conflict_handler(
         _request: Request, error: CustomComponentArtifactConflict
@@ -472,6 +943,28 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             },
         )
 
+    @app.exception_handler(WebPublishRevisionConflict)
+    def web_publish_revision_conflict_handler(
+        _request: Request, error: WebPublishRevisionConflict
+    ) -> JSONResponse:
+        """D6 Round C: a publish-revision content-address collision is a 409, not a 500.
+
+        ``register_web_publish_revision`` compares the stored package against the one being
+        registered and used to raise a bare ``ValueError`` that nothing caught. It is the same
+        species the component registry already names — a content-addressed id re-used with
+        different content — so it gets the same treatment: a typed refusal with the id on it.
+        """
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": "web_publish.revision_conflict",
+                    "message": str(error),
+                    "publish_id": error.publish_id,
+                }
+            },
+        )
+
     @app.exception_handler(sqlite3.Error)
     def database_error_handler(_request: Request, error: sqlite3.Error) -> JSONResponse:
         log_event(
@@ -490,16 +983,650 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             },
         )
 
-    def asset_store_root() -> str:
-        return str(app.state.asset_store_root)
+    def engine_cache_dir(workspace_id: str) -> str:
+        """This workspace's engine materialization cache (D4 / R-D4-1), created on demand.
 
-    def repository() -> Repository:
-        connection = connect(app.state.database_path)
+        Everything the engine reads or writes goes through a per-WORKSPACE cache dir, never a
+        shared one: the engine resolves purely by digest, so a single global tree would let one
+        tenant's export silently read another tenant's bytes for any digest they both happen to
+        hold. The per-workspace split makes that unexpressible without touching the engine's
+        layout below the workspace segment (a fixed contract).
+        """
+        path = Path(app.state.engine_cache_root) / workspace_id
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+    def request_cache_dir(repo: HybridRepository) -> str:
+        """The engine cache for the request's own tenant — the O4-safe spelling."""
+        return engine_cache_dir(repo.workspace_id)
+
+    def blob_store(repo: HybridRepository) -> DesignBlobStore:
+        """The design BYTE store for a request, scoped to the same tenant as its row store (D4).
+
+        Storage keys are workspace-scoped (``{workspace_id}/design/{sha256}``), so byte custody
+        follows the O4 seam automatically: a handle built from the request's repository can only
+        read and write that tenant's blobs.
+        """
+        return DesignBlobStore(app.state.storage, repo.workspace_id)
+
+    def public_blob_store(workspace_id: str) -> DesignBlobStore:
+        """The O6b analogue of ``public_repository``: an anonymous publish-asset GET names its
+        tenant in the PATH and must never create a workspace row."""
+        return DesignBlobStore(
+            app.state.storage, workspace_id, ensure_workspace=False
+        )
+
+    def repository(request: Request) -> HybridRepository:
+        # D2.5B: SQLite is deleted; every store domain is Postgres via clue_design. The O4 seam is
+        # STRICT — resolve_workspace_id 401s when X-Workspace-Id is absent instead of falling
+        # back to the dev workspace. Three routes are exempt because they cannot receive a
+        # header and take no tenant state: /build-info (engine handshake), /asset-store/{digest}
+        # (content-addressed public bytes the PUBLISHED page and the origin-"null" preview
+        # iframe load — a custom header there would fail CORS preflight), and the
+        # /w/{workspace_id}/... public serving group, which names its tenant in the path (O6b).
+        # The run-event SSE stream WAS a fourth ("?workspace_id=", because EventSource cannot send
+        # headers); D7 closed it — the stream is opened with a single-use token minted through this
+        # very dependency, and its workspace is read off the token row.
+        return HybridRepository(workspace_id=resolve_workspace_id(request))
+
+    def public_repository(workspace_id: str) -> HybridRepository:
+        # O6b (RATIFIED 2026-08-08, option (a); PD-part2-design-substrate §6). The public
+        # publish routes serve anonymous visitors, who send no X-Workspace-Id header — so the
+        # tenant comes from the PATH instead. `ensure_workspace=False`: an anonymous GET must
+        # never create a workspace row, so an unknown tenant reads nothing and 404s through the
+        # fail-closed workspace-scoped reads. INTERIM AND DISPOSABLE: Part-IV item 5 owns real
+        # public routing and DELETES this whole surface.
+        return HybridRepository(workspace_id=workspace_id, ensure_workspace=False)
+
+    # --- D6: the ONE shim from a design route to the governed write path ------------------- #
+
+    def run_design_tool(
+        name: str,
+        body: JsonObject,
+        *,
+        workspace_id: str,
+        idempotency_key: Optional[str] = None,
+        actor: str = "human",
+        refusals: Optional[Dict[str, Any]] = None,
+    ) -> JsonObject:
+        """Invoke one design tool through the real ToolInvoker and return its REFERENCES.
+
+        Part II D6, ruling R-D6-2. Three things happen here and nowhere else:
+
+        * **Operation identity.** An ``Idempotency-Key`` header derives a stable operation id (so
+          a retry replays the journal's terminal node and the A9 record instead of re-executing);
+          without one the id is fresh per request, which is exactly the pre-D6 semantics. Same
+          derivation as the platform's own ``POST /tools/{name}`` route.
+        * **Refusal mapping.** A tool refuses with machine-readable ``reason_code``s. ``refusals``
+          maps the ones a route has always had a *specific* wire contract for back to that exact
+          HTTPException/domain error, so the editor's error bodies are unchanged. Anything
+          unmapped falls through to the platform's generic ``precondition_failed`` 422 — loud, and
+          never a silent-empty success.
+        * **Conflict mapping.** A9/journal conflicts are 409, a malformed body is 422.
+
+        Everything a tool *raises* (NotFoundError, CustomComponentSourceVersionConflict,
+        WebExportError, sqlite3.IntegrityError …) propagates untouched to the app-level exception
+        handlers — the journal records the failed attempt on the way past.
+        """
         try:
-            yield Repository(connection)
-        finally:
-            connection.close()
+            result = app.state.design_tools.invoke(
+                name,
+                body,
+                workspace_id=workspace_id,
+                actor=actor,
+                idempotency_key=idempotency_key,
+            )
+        except PreconditionFailed as refused:
+            for failure in refused.failures:
+                handler = (refusals or {}).get(failure.reason_code)
+                if handler is not None:
+                    raise handler(failure.message) from refused
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "precondition_failed",
+                    "reason_codes": list(refused.reason_codes),
+                    "failures": [
+                        {"reason_code": item.reason_code, "message": item.message}
+                        for item in refused.failures
+                    ],
+                },
+            ) from refused
+        except IdempotencyConflict as conflict:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "idempotency_conflict",
+                    "reason": conflict.reason,
+                    "key": conflict.key,
+                },
+            ) from conflict
+        except OperationConflict as conflict:
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "idempotency_conflict", "reason": "operation"},
+            ) from conflict
+        except ValidationError as invalid:
+            raise HTTPException(status_code=422, detail=invalid.errors()) from invalid
+        return dict(result.references)
 
+    # --- D6 Round B: the shared refusal/conflict wire contracts for document writes --------- #
+
+    def _document_refusals(document_id: str) -> Dict[str, Any]:
+        """The exact bodies the editor has always seen for a refused document write.
+
+        Defence in depth, like ``_publish_refusals``: every converted route resolves and gates the
+        document itself (it needs the row to build its response), so from HTTP these are
+        unreachable — only a non-HTTP caller (the batch loop, the fleet worker, a future agent)
+        can trip them. ``document.exists`` is the one genuinely NEW body: a caller-supplied
+        duplicate ``document_id`` used to reach the store and surface as a 500
+        ``database.error`` (an IntegrityError through the sqlite3 handler). It is now a loud,
+        typed 409 that writes nothing.
+        """
+        kind_conflict = lambda message: HTTPException(  # noqa: E731 - one shape, two reason codes
+            status_code=409,
+            detail={"code": "document.kind_unsupported", "message": message},
+        )
+        return {
+            "design_document_not_found": lambda _message: NotFoundError(
+                "document", document_id
+            ),
+            "design_document_not_scene": kind_conflict,
+            "design_document_not_web": kind_conflict,
+            "design_document_finalized": lambda message: HTTPException(
+                status_code=409,
+                detail={"code": "document.finalized", "message": message},
+            ),
+            "design_document_exists": lambda message: HTTPException(
+                status_code=409,
+                detail={
+                    "code": "document.exists",
+                    "message": message,
+                    "resource_id": document_id,
+                },
+            ),
+            "design_document_kind_unsupported": lambda message: HTTPException(
+                status_code=422,
+                detail={"code": "document.kind_unsupported", "message": message},
+            ),
+        }
+
+    def _base_version_conflict(conflict: WebDocumentVersionConflict) -> HTTPException:
+        """The 409 the in-transaction CAS produces (R-D6-B1).
+
+        Byte-identical to ``require_base_version``'s body: the handler pre-check and the DAL's
+        row-locked CAS are two statements of ONE contract, and a caller must not be able to tell
+        which of them refused. The pre-check is the fast, friendly path; this is what closes the
+        window between it and the write, across the engine round-trip in between.
+        """
+        return HTTPException(
+            status_code=409,
+            detail={
+                "code": "edits.base_version_mismatch",
+                "message": (
+                    f"base_version {conflict.expected} does not match current document "
+                    f"version {conflict.current}; reload the document and rebuild the edit"
+                ),
+                "current_version": conflict.current,
+            },
+        )
+
+    def _snapshot_refusals(document_id: str, snapshot_id: str) -> Dict[str, Any]:
+        """``_document_refusals`` plus the snapshot domain key's own conflict.
+
+        Also a NEW body: a caller-supplied duplicate ``snapshot_id`` used to reach the store and
+        surface as a 500 ``database.error``; it is now a typed 409 that writes nothing.
+        """
+        return {
+            **_document_refusals(document_id),
+            "design_snapshot_exists": lambda message: HTTPException(
+                status_code=409,
+                detail={
+                    "code": "snapshot.exists",
+                    "message": message,
+                    "resource_id": snapshot_id,
+                },
+            ),
+        }
+
+    def _finalize_refusals(document_id: str, template_revision_id: str) -> Dict[str, Any]:
+        """``_document_refusals`` plus the finalize domain key's own conflict (new 409, as for
+        snapshots: a caller-supplied duplicate revision id used to reach the store as a 500)."""
+        return {
+            **_document_refusals(document_id),
+            "design_template_revision_exists": lambda message: HTTPException(
+                status_code=409,
+                detail={
+                    "code": "template_revision.exists",
+                    "message": message,
+                    "resource_id": template_revision_id,
+                },
+            ),
+        }
+
+    def _apply_scene_operations(
+        repo: HybridRepository,
+        tool: str,
+        document_id: str,
+        *,
+        scene: JsonObject,
+        diagnostics: List[JsonObject],
+        operations: List[JsonObject],
+        source: str,
+        actor: Any,
+        envelope: Optional[JsonObject],
+        base_version: Optional[int],
+    ) -> JsonObject:
+        """One governed scene-state advance, then the row the caller's DTO is built from.
+
+        The ONE call shape for `design_apply_operations` / `design_apply_edits`: the tool
+        returns references, so the document row is re-read (the same `get_document` projection
+        `update_document_state` returned pre-D6, so every response body is unchanged).
+        """
+        try:
+            run_design_tool(
+                tool,
+                {
+                    "document_id": document_id,
+                    "scene": scene,
+                    "diagnostics": diagnostics,
+                    "operations": operations,
+                    "source": source,
+                    "actor_kind": actor.kind,
+                    "actor_id": actor.id,
+                    "envelope": envelope,
+                    "expected_base_version": base_version,
+                },
+                workspace_id=store_workspace_id(repo),
+                refusals=_document_refusals(document_id),
+            )
+        except WebDocumentVersionConflict as conflict:
+            raise _base_version_conflict(conflict) from conflict
+        return repo.require_document(document_id)
+
+    def _effective_brand_payload(
+        source: str,
+        brand_kit: Optional[JsonObject],
+        mode: Optional[JsonObject],
+        *,
+        persist: bool,
+    ) -> Optional[JsonObject]:
+        """The store's ``(source, brand_kit, mode)`` triple as the tool's named object.
+
+        The ported rule, verbatim: persist the effective brand when the caller asked for it, and
+        ALWAYS when the resolution had no document-level opinion to preserve.
+        """
+        if not (persist or source in {"platform_default", "none"}):
+            return None
+        return {"source": source, "brand_kit": brand_kit, "mode": mode}
+
+    def _persist_preflight(
+        repo: HybridRepository,
+        document_id: str,
+        *,
+        scene: JsonObject,
+        diagnostics: List[JsonObject],
+        operations: List[JsonObject],
+        actor_id: str,
+        effective_brand: Optional[JsonObject],
+        base_version: Optional[int] = None,
+    ) -> JsonObject:
+        """The ONE preflight-persist call shape — POST /preflight and POST /export share it.
+
+        The two routes' writes were already identical apart from the envelope ``actor_id``
+        (``preflight`` vs ``export_preflight``): same scene, same diagnostics, same operation
+        list shape, same ``system`` source and ``system`` actor kind, same ``preflight``
+        diagnostic kind, same effective-brand rule. So the cores DO genuinely unify (R-D6-B2's
+        "check"), and ``design_persist_preflight`` takes that one string as a parameter rather
+        than existing twice.
+        """
+        try:
+            run_design_tool(
+                "design_persist_preflight",
+                {
+                    "document_id": document_id,
+                    "scene": scene,
+                    "diagnostics": diagnostics,
+                    "operations": operations,
+                    "actor_id": actor_id,
+                    "effective_brand": effective_brand,
+                    "expected_base_version": base_version,
+                },
+                workspace_id=store_workspace_id(repo),
+                refusals=_document_refusals(document_id),
+            )
+        except WebDocumentVersionConflict as conflict:
+            raise _base_version_conflict(conflict) from conflict
+        return repo.require_document(document_id)
+
+    def _record_diagnostics(
+        repo: HybridRepository,
+        document_id: str,
+        kind: str,
+        diagnostics: List[JsonObject],
+    ) -> None:
+        """The ONE diagnostics-append call shape (six callers across five report kinds)."""
+        run_design_tool(
+            "design_record_diagnostics",
+            {
+                "document_id": document_id,
+                "kind": kind,
+                "diagnostics": diagnostics,
+            },
+            workspace_id=store_workspace_id(repo),
+            refusals=_document_refusals(document_id),
+        )
+
+    def _derive_web_document(
+        repo: HybridRepository,
+        new_document_id: str,
+        *,
+        web_doc: JsonObject,
+        template: JsonObject,
+        account_id: Optional[str],
+    ) -> JsonObject:
+        """The ONE derive-persist call shape — the HTTP route and the batch loop share it.
+
+        Same reasoning as `_publish_web` in Round A: the batch loop used to reproduce the whole
+        derive persist inline, so the write now exists once and a batch derivation is journaled
+        exactly like a manual one.
+        """
+        derived = run_design_tool(
+            "design_derive_web_document",
+            {
+                "document_id": new_document_id,
+                "web_doc": web_doc,
+                "template_document_id": template["id"],
+                "template_doc_version": template["current_version"],
+                "account_id": account_id,
+            },
+            workspace_id=store_workspace_id(repo),
+            refusals=_document_refusals(new_document_id),
+        )
+        return {"id": derived["document_id"], "title": derived["title"]}
+
+    def _redrive_web_document(
+        repo: HybridRepository,
+        existing: JsonObject,
+        *,
+        web_doc: JsonObject,
+        title: str,
+    ) -> JsonObject:
+        """Re-derive ONTO the document an account already owns (clone-fidelity F4.3, R25-8).
+
+        ``design_derive_web_document`` is create-only — it refuses an id that exists, which is
+        correct for a first derivation and useless for a second one. A re-run has to be a state
+        WRITE, so it takes the same governed web-document advance an editor edit takes: one
+        history envelope, the CAS on the version it read, the fragment-reference gate. The page
+        keeps its id (and therefore its slug, and therefore the URL somebody already sent out)
+        and gains a revision rather than a twin.
+
+        The whole document is replaced, deliberately: a derivation is a projection of the
+        template plus one account's values, so the forward operation is a bare replace. The
+        INVERSE carries the document as it stood (T25 review I-1) — the exact shape the undo
+        path replays for a replace envelope — so a re-run that overwrote a manual edit is one
+        undo away instead of an irrecoverable overwrite that also sealed the page's undo stack
+        (the reviewer reproduced both: the destroyed edit, and the 409 on undo).
+        """
+        run_design_tool(
+            "design_apply_web_operations",
+            {
+                "document_id": existing["id"],
+                "web_doc": web_doc,
+                "operations": [{"kind": "replace_web_doc"}],
+                "inverse_operations": [
+                    {"kind": "replace_web_doc", "web_doc": existing["scene"]}
+                ],
+                "intent": f"re-derive: {title}"[:120],
+                "checkpoint_label": "Account re-derive",
+                # `system`, not `editor`/`agent`: no human wrote this revision and no model did
+                # — the batch re-projected the template. (`design_op_source` has exactly four
+                # values; a fifth would be a migration for a label.)
+                "actor_kind": "system",
+                "source": "system",
+                "expected_base_version": existing["current_version"],
+            },
+            workspace_id=store_workspace_id(repo),
+            refusals=_document_refusals(existing["id"]),
+        )
+        return {"id": existing["id"], "title": title}
+
+    # --- D6 Round C: brand kits, ingestion, assets, personalization ------------------------ #
+
+    def _brand_kit_refusals(
+        brand_kit: Optional[JsonObject] = None, brand_kit_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """The exact bodies a refused brand-kit write has always produced.
+
+        ``brand_kit.version_exists`` used to come from catching ``sqlite3.IntegrityError`` on the
+        composite primary key; it is a typed precondition now and writes nothing. The 404 is the
+        same ``NotFoundError`` the store raised.
+        """
+        resolved_id = brand_kit_id or str((brand_kit or {}).get("id") or "")
+        return {
+            "design_brand_kit_exists": lambda _message: duplicate_brand_kit_error(
+                brand_kit or {"id": resolved_id}
+            ),
+            "design_brand_kit_not_found": lambda _message: NotFoundError(
+                "brand_kit", resolved_id
+            ),
+        }
+
+    def _brand_kit_version_moved(conflict: DesignResourceVersionConflict) -> HTTPException:
+        """The 409 the in-transaction version allocator's CAS produces (D6 Round C).
+
+        A curation that was built against version N cannot be published on top of version M — it
+        would silently discard whatever M added. The client reloads the kit and re-curates.
+        """
+        return HTTPException(
+            status_code=409,
+            detail={
+                "code": "brand_kit.version_moved",
+                "message": (
+                    f"brand kit {conflict.key} moved from version {conflict.expected} to "
+                    f"{conflict.current} while this change was being prepared; reload the kit "
+                    "and re-apply it"
+                ),
+                "current_version": conflict.current,
+            },
+        )
+
+    def _create_brand_kit(
+        repo: HybridRepository,
+        brand_kit: JsonObject,
+        brand_summary: JsonObject,
+        diagnostics: List[JsonObject],
+        source: str,
+    ) -> JsonObject:
+        """The ONE 'publish a kit version the caller already numbered' call shape.
+
+        Four callers share it: POST /brand-kits, the /generate and /compile-styles persist
+        halves, and (with ``on_conflict='adopt'``, from the worker) the ingestion pipeline.
+        """
+        ref = run_design_tool(
+            "design_create_brand_kit",
+            {
+                "brand_kit": brand_kit,
+                "brand_summary": brand_summary,
+                "diagnostics": diagnostics,
+                "source": source,
+            },
+            workspace_id=store_workspace_id(repo),
+            refusals=_brand_kit_refusals(brand_kit),
+        )
+        return repo.require_brand_kit(ref["brand_kit_id"], ref["version"])
+
+    def _publish_brand_kit_version(
+        repo: HybridRepository,
+        brand_kit: JsonObject,
+        brand_summary: JsonObject,
+        diagnostics: List[JsonObject],
+        source: str,
+        *,
+        expected_base_version: int,
+    ) -> JsonObject:
+        """The ONE 'publish the next version of this kit' call shape (logo, describe-assets).
+
+        The version is allocated inside the write transaction, so two concurrent curations
+        serialize instead of racing to the same number; a stale base is a typed 409.
+        """
+        try:
+            ref = run_design_tool(
+                "design_publish_brand_kit_version",
+                {
+                    "brand_kit": brand_kit,
+                    "brand_summary": brand_summary,
+                    "diagnostics": diagnostics,
+                    "source": source,
+                    "expected_base_version": expected_base_version,
+                },
+                workspace_id=store_workspace_id(repo),
+                refusals=_brand_kit_refusals(brand_kit),
+            )
+        except DesignResourceVersionConflict as conflict:
+            raise _brand_kit_version_moved(conflict) from conflict
+        return repo.require_brand_kit(ref["brand_kit_id"], ref["version"])
+
+    def _offer_ingestion(repo: HybridRepository, kind: str, request: JsonObject) -> JsonObject:
+        """The ONE ingestion-enqueue call shape — the three ingest routes share it.
+
+        The job row and its ``design_job`` fleet task are written in one transaction inside the
+        tool; the ids and the frozen envelope are minted here because the envelope names the job
+        it dispatches (see ``_ingestion_offer_payload``).
+        """
+        payload = _ingestion_offer_payload(repo, kind, request)
+        job_ref = run_design_tool(
+            _INGESTION_TOOLS[kind],
+            payload,
+            workspace_id=store_workspace_id(repo),
+        )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "ingestion_job_offered",
+            job_id=job_ref["job_id"],
+            work_id=job_ref["work_id"],
+            kind=kind,
+            workspace_id=repo.workspace_id,
+        )
+        return IngestionJobStore(workspace_id=repo.workspace_id).require(job_ref["job_id"])
+
+    def _asset_refusals(asset_id: str) -> Dict[str, Any]:
+        """The exact bodies a refused asset write has always produced."""
+        return {
+            "design_asset_not_found": lambda _message: NotFoundError("asset", asset_id),
+            "design_asset_referenced": lambda message: HTTPException(
+                status_code=409, detail=message
+            ),
+            "design_asset_status_invalid": lambda message: HTTPException(
+                status_code=422,
+                detail={"code": "asset.status_unsupported", "message": message},
+            ),
+        }
+
+    def _set_asset_status(
+        repo: HybridRepository, asset_id: str, status: str
+    ) -> JsonObject:
+        """The ONE archive/restore call shape — one tool, both directions.
+
+        Kept a single status-assignment tool rather than an ``archive`` and a ``restore``: unlike
+        Round B's undo/redo (two different durable gestures over a history stack) these are one
+        column taking one of two values, and naming them separately would claim a distinction the
+        write does not have.
+        """
+        run_design_tool(
+            "design_set_asset_status",
+            {"asset_id": asset_id, "status": status},
+            workspace_id=store_workspace_id(repo),
+            refusals=_asset_refusals(asset_id),
+        )
+        return repo.require_asset_record(asset_id)
+
+    def _register_asset_record(
+        repo: HybridRepository, record: JsonObject, *, tool: str = "design_register_asset_record"
+    ) -> JsonObject:
+        """The ONE 'persist an engine-produced asset record' call shape.
+
+        Three callers: the upload route, the QR route (which passes the content-keyed tool) and
+        the registered-provider branch of the generate route.
+        """
+        ref = run_design_tool(
+            tool,
+            {"record": record},
+            workspace_id=store_workspace_id(repo),
+        )
+        return repo.require_asset_record(ref["asset_id"])
+
+    def _persist_instance(
+        repo: HybridRepository,
+        instance: JsonObject,
+        *,
+        generated_records: Optional[List[JsonObject]] = None,
+        repair_requests: Optional[List[JsonObject]] = None,
+    ) -> JsonObject:
+        """The ONE derived-instance persist call shape (the derive route and both batch loops).
+
+        The tool returns references, so the instance row is re-read — the same
+        ``get_instance`` projection ``upsert_instance`` returned pre-D6, so every response body
+        and every manifest entry is unchanged.
+        """
+        ref = run_design_tool(
+            "design_derive_instance",
+            {
+                "instance": instance,
+                "generated_records": generated_records or [],
+                "repair_requests": repair_requests or [],
+            },
+            workspace_id=store_workspace_id(repo),
+        )
+        return repo.require_instance(ref["instance_id"])
+
+    def _advance_batch(
+        repo: HybridRepository, tool: str, body: JsonObject
+    ) -> JsonObject:
+        """One chunk of batch progress through the governed tool. Returns the tool's reference.
+
+        ``advanced=False`` means a concurrent resumer already moved the cursor past this chunk;
+        the caller stops and reports where the batch actually is (never an error — a resume that
+        discovers the work is already being done has nothing to complain about).
+        """
+        return run_design_tool(
+            tool,
+            body,
+            workspace_id=store_workspace_id(repo),
+            refusals={
+                "design_batch_not_found": lambda _message: NotFoundError(
+                    "batch", str(body["batch_id"])
+                )
+            },
+        )
+
+    def _snapshot_after_write(
+        repo: HybridRepository, document_id: str, reason: Optional[str]
+    ) -> Optional[JsonObject]:
+        """The optional post-write snapshot the mutating scene routes take.
+
+        A SECOND governed invocation rather than a field on the state tool: it is a second
+        durable write with its own domain key (the snapshot id), and folding it into the state
+        advance would make that advance's replay policy a lie about one of its two effects.
+        """
+        if not reason:
+            return None
+        snapshot_id = new_id("snap")
+        run_design_tool(
+            "design_create_snapshot",
+            {
+                "document_id": document_id,
+                "snapshot_id": snapshot_id,
+                "reason": reason,
+            },
+            workspace_id=store_workspace_id(repo),
+            refusals=_snapshot_refusals(document_id, snapshot_id),
+        )
+        return repo.require_snapshot(document_id, snapshot_id)
+
+    # O4-exempt (no X-Workspace-Id): a process-wide engine stamp with no tenant state, read by
+    # the editor's version handshake before any workspace context exists.
     @app.get("/build-info")
     def build_info() -> JsonObject:
         """Engine build info for the Track E version handshake.
@@ -519,7 +1646,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "build_info": app.state.build_info,
         }
 
-    @app.get("/font-library")
+    # Tenant-free payload, but an editor-only route: it carries the header like every other
+    # authenticated call so the strict O4 seam has exactly three exemptions, not four.
+    @app.get("/font-library", dependencies=[Depends(resolve_workspace_id)])
     def font_library() -> JsonObject:
         """The curated font-library manifest (Track B): always-present
         families with per-weight faces in the asset store, measured metrics,
@@ -532,7 +1661,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.post("/brand-kits")
     def create_brand_kit(
-        payload: CreateBrandKitRequest, repo: Repository = Depends(repository)
+        payload: CreateBrandKitRequest, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         try:
             validation = app.state.core.validate_brand_kit(
@@ -548,20 +1677,18 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         diagnostics = summary_response.get("diagnostics") or validation.get(
             "diagnostics", []
         )
-        try:
-            record = repo.create_brand_kit(
-                brand_kit,
-                summary_response.get("brand_summary") or {},
-                diagnostics,
-                payload.source,
-            )
-        except sqlite3.IntegrityError as error:
-            raise duplicate_brand_kit_error(brand_kit) from error
+        record = _create_brand_kit(
+            repo,
+            brand_kit,
+            summary_response.get("brand_summary") or {},
+            diagnostics,
+            payload.source,
+        )
         return brand_kit_created_dto(record, diagnostics)
 
     @app.post("/brand-kits/generate")
     def generate_brand_kit(
-        payload: GenerateBrandKitRequest, repo: Repository = Depends(repository)
+        payload: GenerateBrandKitRequest, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         try:
             result = app.state.core.generate_brand_kit(payload.seed)
@@ -572,15 +1699,13 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         diagnostics = result.get("diagnostics", [])
         record = None
         if payload.persist:
-            try:
-                record = repo.create_brand_kit(
-                    brand_kit,
-                    result.get("brand_summary") or {},
-                    diagnostics,
-                    "generated",
-                )
-            except sqlite3.IntegrityError as error:
-                raise duplicate_brand_kit_error(brand_kit) from error
+            record = _create_brand_kit(
+                repo,
+                brand_kit,
+                result.get("brand_summary") or {},
+                diagnostics,
+                "generated",
+            )
         return brand_kit_generation_dto(
             record,
             brand_kit,
@@ -591,7 +1716,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.post("/brand-kits/compile-styles")
     def compile_styles_brand_kit(
-        payload: CompileStylesBrandKitRequest, repo: Repository = Depends(repository)
+        payload: CompileStylesBrandKitRequest, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         try:
             result = app.state.core.compile_styles_brand_kit(
@@ -607,15 +1732,13 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         diagnostics = result.get("diagnostics", [])
         record = None
         if payload.persist:
-            try:
-                record = repo.create_brand_kit(
-                    brand_kit,
-                    result.get("brand_summary") or {},
-                    diagnostics,
-                    "styles",
-                )
-            except sqlite3.IntegrityError as error:
-                raise duplicate_brand_kit_error(brand_kit) from error
+            record = _create_brand_kit(
+                repo,
+                brand_kit,
+                result.get("brand_summary") or {},
+                diagnostics,
+                "styles",
+            )
         return brand_kit_generation_dto(
             record,
             brand_kit,
@@ -626,7 +1749,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.post("/brand-kits/validate")
     def validate_brand_kit(
-        payload: ValidateBrandKitRequest, repo: Repository = Depends(repository)
+        payload: ValidateBrandKitRequest, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         brand_kit = resolve_brand_kit_payload(
             repo,
@@ -650,7 +1773,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.post("/brand-kits/compatibility")
     def compare_brand_kit_compatibility(
-        payload: BrandCompatibilityRequest, repo: Repository = Depends(repository)
+        payload: BrandCompatibilityRequest, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         from_brand_kit, from_record = resolve_brand_kit_for_compatibility(
             repo, payload.from_brand_kit, payload.from_ref
@@ -668,13 +1791,19 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         diagnostics = result.get("diagnostics", [])
         stored_report = None
         if payload.persist_report and from_record is not None and to_record is not None:
-            stored_report = repo.create_brand_compatibility_report(
-                new_id("brand_report"),
-                from_record["brand_kit"],
-                to_record["brand_kit"],
-                result.get("brand_compatibility") or {},
-                diagnostics,
+            report_id = new_id("brand_report")
+            run_design_tool(
+                "design_create_brand_compatibility_report",
+                {
+                    "report_id": report_id,
+                    "from_brand_kit": from_record["brand_kit"],
+                    "to_brand_kit": to_record["brand_kit"],
+                    "report": result.get("brand_compatibility") or {},
+                    "diagnostics": diagnostics,
+                },
+                workspace_id=store_workspace_id(repo),
             )
+            stored_report = repo.require_brand_compatibility_report(report_id)
         return brand_compatibility_dto(
             result.get("brand_compatibility") or {},
             diagnostics,
@@ -684,7 +1813,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     @app.get("/brand-kits")
     def list_brand_kits(
         all_versions: bool = Query(default=False),
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> List[JsonObject]:
         return [
             brand_kit_summary(record)
@@ -697,8 +1826,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     @app.post("/brand-kits/ingest/website")
     async def ingest_website(
         payload: IngestWebsiteRequest,
-        background_tasks: BackgroundTasks,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         guard = _resolve_guard_url()
         try:
@@ -706,24 +1834,26 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         except Exception as error:  # CaptureError / ValueError from the guard
             raise ingest_url_rejected(payload.url, error) from error
 
-        job = IngestionJobStore(repo.connection).create(
-            "website", payload.model_dump()
-        )
-        background_tasks.add_task(
-            run_website_ingestion,
-            str(app.state.database_path),
-            asset_store_root(),
-            job["job_id"],
-        )
+        # D5 Round C: the ingestion is OFFERED, not started. The route creates the job row and
+        # its ``design_job`` fleet task in ONE transaction and returns; a leased worker (detached
+        # or embedded) claims and executes it. This replaces ``BackgroundTasks``, which ran the
+        # pipeline inside the API process — so a restart silently killed it and left the job
+        # ``running`` forever, with nothing to re-offer it.
+        #
+        # The ``run_in_threadpool`` dance that used to wrap the store call is gone with it: it
+        # existed because this is the one ASYNC ingestion endpoint and the sync store facade
+        # cannot ``asyncio.run`` inside a live loop. ``design_store.run_isolated`` has
+        # handled exactly that since D2.3 by handing the coroutine to a one-shot worker thread,
+        # so the extra hop was doing nothing the bridge does not already do.
+        job = _offer_ingestion(repo, "website", payload.model_dump())
         return {"schema_version": 1, "job": ingestion_job_dto(job)}
 
     @app.post("/brand-kits/ingest/pdf")
     def ingest_pdf(
-        background_tasks: BackgroundTasks,
         file: UploadFile = File(...),
         name: Optional[str] = Form(None),
         brand_kit_id: Optional[str] = Form(None),
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         data = file.file.read()
         max_bytes = asset_max_bytes()
@@ -751,43 +1881,45 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 },
             )
 
-        # Create the job first so its id names the tmp file, then write the
-        # bytes to <asset_store_root>/ingest_tmp/<job_id>.pdf and record that
-        # path in the job request — run_pdf_ingestion reads + deletes it. The
-        # PDF bytes themselves are never stored in the job row.
-        job = IngestionJobStore(repo.connection).create(
+        # D4 (R-D4-5): the uploaded bytes are STAGED IN PLATFORM STORAGE, not in an
+        # `ingest_tmp/` directory beside a cache. A background job may outlive the process that
+        # accepted the upload, so its input has to be durable — a tmp file under a wipeable
+        # materialization cache was the one place these bytes could not safely live. The job
+        # request carries the staged DIGEST; `run_pdf_ingestion` reads it back through the blob
+        # store and the `finally` cleanup deletes it unless it was promoted to a live asset.
+        #
+        # D5 Round C reorders this: the bytes are staged BEFORE the job row exists, so the row
+        # can be created with its complete request AND its fleet task in one transaction. Under
+        # ``BackgroundTasks`` the order had to be create → stage → update_request → dispatch,
+        # which left a job row briefly claiming inputs it did not yet have; staging first is
+        # free (the register is content-addressed and idempotent, and an abandoned staged blob
+        # is exactly what the orphan sweep already collects).
+        blobs = blob_store(repo)
+        blobs.register(
+            data,
+            media_type="application/pdf",
+            source_key=design_storage.SOURCE_KEY_INGEST_STAGING,
+        )
+        job = _offer_ingestion(
+            repo,
             "pdf",
             {
                 "filename": file.filename,
                 "name": name,
                 "brand_kit_id": brand_kit_id,
                 "size_bytes": len(data),
+                "staged_digest": hashlib.sha256(data).hexdigest(),
+                "media_type": "application/pdf",
             },
-        )
-        tmp_dir = Path(asset_store_root()) / "ingest_tmp"
-        tmp_dir.mkdir(parents=True, exist_ok=True)
-        tmp_path = tmp_dir / f"{job['job_id']}.pdf"
-        tmp_path.write_bytes(data)
-
-        request = dict(job["request"])
-        request["tmp_path"] = str(tmp_path)
-        job = IngestionJobStore(repo.connection).update_request(job["job_id"], request)
-
-        background_tasks.add_task(
-            run_pdf_ingestion,
-            str(app.state.database_path),
-            asset_store_root(),
-            job["job_id"],
         )
         return {"schema_version": 1, "job": ingestion_job_dto(job)}
 
     @app.post("/brand-kits/ingest/assets")
     def ingest_assets(
-        background_tasks: BackgroundTasks,
         files: List[UploadFile] = File(...),
         name: Optional[str] = Form(None),
         brand_kit_id: Optional[str] = Form(None),
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         if not files:
             raise HTTPException(
@@ -838,55 +1970,132 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 },
             )
 
-        # Create the job first so its id names the tmp files, then write each
-        # file's bytes to <asset_store_root>/ingest_tmp/<job_id>_<idx>_<name>
-        # and record those paths in the job request — run_asset_ingestion reads
-        # + deletes them. The file bytes themselves are never stored in the job
-        # row.
-        job = IngestionJobStore(repo.connection).create(
+        # D4 (R-D4-5): each uploaded file is STAGED IN PLATFORM STORAGE (see the PDF route for
+        # why a tmp file under the engine cache is not a safe home for a background job's
+        # input). The job request carries each file's staged DIGEST; `run_asset_ingestion` reads
+        # them back through the blob store and cleans up the ones that were not promoted.
+        # D5 Round C: staged first, then the job row and its fleet task in ONE transaction — see
+        # the PDF route for why the order flipped.
+        blobs = blob_store(repo)
+
+        file_specs: List[JsonObject] = []
+        for upload, data in payloads:
+            media_type = upload.content_type or "application/octet-stream"
+            blobs.register(
+                data,
+                media_type=media_type,
+                source_key=design_storage.SOURCE_KEY_INGEST_STAGING,
+            )
+            file_specs.append(
+                {
+                    "filename": upload.filename,
+                    "content_type": upload.content_type,
+                    "staged_digest": hashlib.sha256(data).hexdigest(),
+                    "media_type": media_type,
+                }
+            )
+
+        job = _offer_ingestion(
+            repo,
             "asset_upload",
             {
                 "name": name,
                 "brand_kit_id": brand_kit_id,
                 "file_count": len(payloads),
+                "files": file_specs,
             },
-        )
-        tmp_dir = Path(asset_store_root()) / "ingest_tmp"
-        tmp_dir.mkdir(parents=True, exist_ok=True)
-
-        file_specs: List[JsonObject] = []
-        for idx, (upload, data) in enumerate(payloads):
-            safe_name = _sanitize_tmp_filename(upload.filename)
-            tmp_path = tmp_dir / f"{job['job_id']}_{idx}_{safe_name}"
-            tmp_path.write_bytes(data)
-            file_specs.append(
-                {
-                    "filename": upload.filename,
-                    "content_type": upload.content_type,
-                    "tmp_path": str(tmp_path),
-                }
-            )
-
-        request = dict(job["request"])
-        request["files"] = file_specs
-        job = IngestionJobStore(repo.connection).update_request(job["job_id"], request)
-
-        background_tasks.add_task(
-            run_asset_ingestion,
-            str(app.state.database_path),
-            asset_store_root(),
-            job["job_id"],
         )
         return {"schema_version": 1, "job": ingestion_job_dto(job)}
 
+    # --- Brand Ad Assets v1 W2 (flag-gated: LUMEN_BRAND_AD_ASSETS) ---------------------------
+    #
+    # The routes below are REGISTERED ONLY WHEN THE FLAG IS ON. That is deliberately stronger
+    # than a 403 inside a live handler: with the flag off the paths do not exist, so the app's
+    # surface — its route table, its OpenAPI schema, every 404 — is byte-identical to an app
+    # built without this lane at all. Nothing else in the app reads the lane's tables, so flag
+    # off is genuinely zero behaviour change and not merely a refusal.
+    if settings.lumen_brand_ad_assets:
+
+        @app.post("/brand-ad-assets/onboard")
+        def onboard_ad_assets(
+            payload: OnboardAdAssetsRequest,
+            repo: HybridRepository = Depends(repository),
+        ) -> JsonObject:
+            """Offer one ad-assets onboarding job (harvest → distil → pre-generate).
+
+            Like the three brand-kit ingest routes, this does not do the work: it writes the
+            job row and its ``design_job`` fleet task in one transaction and returns the job
+            reference. A leased worker runs the pipeline; poll it at
+            ``GET /brand-kits/ingest/{job_id}`` — it is an ingestion job, of a fourth kind.
+
+            Own ads only (D2): exactly one of ``company_domain`` / ``page_id``, both naming the
+            CLIENT's own advertiser. There is no competitor input in v1.
+            """
+            domain = (payload.company_domain or "").strip()
+            page = (payload.page_id or "").strip()
+            if bool(domain) == bool(page):
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "ad_assets.advertiser_ambiguous",
+                        "message": (
+                            "supply exactly one of company_domain or page_id — the advertiser "
+                            "must be unambiguous before any vendor credit is spent"
+                        ),
+                    },
+                )
+            if payload.max_pages < 1 or payload.max_creatives < 1:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "ad_assets.bad_bounds",
+                        "message": "max_pages and max_creatives must both be at least 1",
+                    },
+                )
+            # Fail here rather than in the worker: an unknown kit would only surface as a
+            # foreign-key error at the very end, after the harvest had already been paid for.
+            repo.require_brand_kit(payload.brand_kit_id, payload.brand_kit_version)
+
+            job = _offer_ingestion(repo, "ad_assets", payload.model_dump())
+            return {"schema_version": 1, "job": ingestion_job_dto(job)}
+
+        @app.get("/brand-ad-assets/{brand_kit_id}")
+        def get_ad_assets_lane(
+            brand_kit_id: str, repo: HybridRepository = Depends(repository)
+        ) -> JsonObject:
+            """The lane's current state for one brand kit: latest card + its pre-generated assets.
+
+            An un-harvested brand answers ``card: null`` with an empty asset list rather than a
+            404: "this brand has no ad DNA yet" is an ordinary state of the world for every
+            consumer of this lane, and a 404 would make it look like a mistake.
+            """
+            from lumen_ingestion.ad_library.store import AdAssetsStore
+
+            store = AdAssetsStore(workspace_id=repo.workspace_id)
+            card = store.latest_card(brand_kit_id=brand_kit_id)
+            pregenerated = (
+                store.list_pregenerated(
+                    card_id=card["card_id"], card_version=int(card["version"])
+                )
+                if card
+                else []
+            )
+            return {
+                "schema_version": 1,
+                "brand_kit_id": brand_kit_id,
+                "card": card,
+                "pregenerated_assets": pregenerated,
+                "creatives": store.list_creatives(limit=50),
+            }
+
     @app.get("/brand-kits/ingest")
     def list_ingestion_jobs(
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         """Most-recent 50 ingestion jobs (public dto — no request/evidence
         bodies). Registered adjacent to the param route; the literal segment
         only matches when the path has no trailing job id."""
-        jobs = IngestionJobStore(repo.connection).list_recent(50)
+        jobs = IngestionJobStore(workspace_id=repo.workspace_id).list_recent(50)
         return {
             "schema_version": 1,
             "jobs": [ingestion_job_dto(job) for job in jobs],
@@ -894,9 +2103,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.get("/brand-kits/ingest/{job_id}")
     def get_ingestion_job(
-        job_id: str, repo: Repository = Depends(repository)
+        job_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
-        job = IngestionJobStore(repo.connection).get(job_id)
+        job = IngestionJobStore(workspace_id=repo.workspace_id).get(job_id)
         if job is None:
             raise HTTPException(
                 status_code=404,
@@ -909,7 +2118,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.get("/brand-kits/{brand_kit_id}")
     def get_latest_brand_kit(
-        brand_kit_id: str, repo: Repository = Depends(repository)
+        brand_kit_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         # The platform default kit is the ENGINE's builtin, not an ingested
         # kit — it has no registry row by definition. Serve it from the
@@ -943,7 +2152,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.get("/brand-kits/{brand_kit_id}/versions/{version}")
     def get_brand_kit_version(
-        brand_kit_id: str, version: int, repo: Repository = Depends(repository)
+        brand_kit_id: str, version: int, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         return brand_kit_detail_dto(repo.require_brand_kit(brand_kit_id, version))
 
@@ -951,13 +2160,17 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def set_brand_kit_approval(
         brand_kit_id: str,
         payload: SetBrandKitApprovalRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         """Flip the approval state on the latest version of a kit (approve /
         revert to draft). Unknown kit → 404; invalid status → 422 (model)."""
-        record = repo.update_brand_kit_approval(
-            brand_kit_id, payload.approval_status
+        ref = run_design_tool(
+            "design_set_brand_kit_approval",
+            {"brand_kit_id": brand_kit_id, "approval_status": payload.approval_status},
+            workspace_id=store_workspace_id(repo),
+            refusals=_brand_kit_refusals(brand_kit_id=brand_kit_id),
         )
+        record = repo.require_brand_kit(ref["brand_kit_id"], ref["version"])
         log_event(
             api_logger,
             logging.INFO,
@@ -971,7 +2184,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def set_brand_kit_logo(
         brand_kit_id: str,
         payload: SetBrandKitLogoRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         """Human logo curation: promote a library asset into a logo slot of
         the kit's latest version and publish it as a NEW version (manual
@@ -1003,12 +2216,24 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 "height": None,
             }
         ]
+        # W1.6: the slot now holds a different mark, so its background policy must
+        # cover it. Promoting a reversed logo into a slot that ingestion wrote as
+        # light-only would otherwise leave the kit saying that mark may never sit
+        # on a dark field — the exact vocabulary gap the Cursor pilot hit. Widening
+        # only: an existing allowance is never dropped, and an empty list (which
+        # means "do not check this slot") is left empty.
+        slot["allowed_backgrounds"] = extend_allowed_backgrounds(
+            slot.get("allowed_backgrounds"), [payload.color_mode]
+        )
         slot["provenance"] = {
             "confidence": 1.0,
             "source": f"manual :: human-selected {asset.get('label') or payload.asset_id}",
         }
         logos[payload.slot] = slot
-        brand_kit["version"] = int(brand_kit.get("version") or 1) + 1
+        # The version this kit will carry is ALLOCATED by the write (D6 Round C) — the number
+        # set here is provisional, only so the engine validates the same shape it always has.
+        base_version = int(record["version"])
+        brand_kit["version"] = base_version + 1
 
         try:
             validation = app.state.core.validate_brand_kit(
@@ -1023,15 +2248,14 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         diagnostics = summary_response.get("diagnostics") or validation.get(
             "diagnostics", []
         )
-        try:
-            created = repo.create_brand_kit(
-                brand_kit,
-                summary_response.get("brand_summary") or {},
-                diagnostics,
-                "manual",
-            )
-        except sqlite3.IntegrityError as error:
-            raise duplicate_brand_kit_error(brand_kit) from error
+        created = _publish_brand_kit_version(
+            repo,
+            brand_kit,
+            summary_response.get("brand_summary") or {},
+            diagnostics,
+            "manual",
+            expected_base_version=base_version,
+        )
         log_event(
             api_logger,
             logging.INFO,
@@ -1039,13 +2263,13 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             brand_kit_id=brand_kit_id,
             slot=payload.slot,
             asset_id=payload.asset_id,
-            version=brand_kit["version"],
+            version=created["version"],
         )
         return brand_kit_created_dto(created, diagnostics)
 
     @app.post("/brand-kits/{brand_kit_id}/describe-assets")
     def describe_brand_kit_assets(
-        brand_kit_id: str, repo: Repository = Depends(repository)
+        brand_kit_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         """Imagery slice 1 backfill: describe the latest kit version's
         logo/image assets (cache-first — only misses cost a vision call) and,
@@ -1073,7 +2297,10 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         # that already carries the up-to-date ramp is left byte-identical, so
         # this alone never forces a no-op republish.
         ensure_type_size_ramp(brand_kit)
-        store_root = str(asset_store_root())
+        # D4: byte reads resolve durably (`make_resolve_bytes` reads through the blob store);
+        # only the SVG rasterizer touches the engine, and it materializes what it needs.
+        blobs = blob_store(repo)
+        cache_dir = request_cache_dir(repo)
         describe_diagnostics: list = []
         # Glyph-coverage audit backfill (same pattern as the ramp): kits ingested
         # before the audit get fonts.*.metrics.missing_glyphs stamped from their
@@ -1081,17 +2308,17 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         # on republish without a full re-ingestion. Advisory LUMI0806 warnings.
         ensure_glyph_coverage(
             brand_kit,
-            make_resolve_bytes(repo, store_root),
+            make_resolve_bytes(repo, blobs),
             describe_diagnostics,
         )
         counts = describe_kit_assets(
             brand_kit,
-            connection=repo.connection,
             describer=resolve_describer(),
-            resolve_bytes=make_resolve_bytes(repo, store_root),
-            rasterize_svg=make_rasterize_svg(repo, store_root),
+            resolve_bytes=make_resolve_bytes(repo, blobs),
+            rasterize_svg=make_rasterize_svg(repo, blobs, cache_dir),
             diagnostics=describe_diagnostics,
             brand_name=record.get("name"),
+            workspace_id=repo.workspace_id,
         )
         if json.dumps(brand_kit, sort_keys=True) == before:
             # Nothing stamped (all failed, describe disabled, or already
@@ -1102,7 +2329,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 "counts": counts,
                 "diagnostics": describe_diagnostics,
             }
-        brand_kit["version"] = int(brand_kit.get("version") or 1) + 1
+        # Provisional, as on the logo route: the write allocates the real number (D6 Round C).
+        base_version = int(record["version"])
+        brand_kit["version"] = base_version + 1
         try:
             validation = app.state.core.validate_brand_kit(
                 brand_kit, product_ready=False
@@ -1117,21 +2346,20 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             summary_response.get("diagnostics")
             or validation.get("diagnostics", [])
         ) + describe_diagnostics
-        try:
-            created = repo.create_brand_kit(
-                brand_kit,
-                summary_response.get("brand_summary") or {},
-                diagnostics,
-                "manual",
-            )
-        except sqlite3.IntegrityError as error:
-            raise duplicate_brand_kit_error(brand_kit) from error
+        created = _publish_brand_kit_version(
+            repo,
+            brand_kit,
+            summary_response.get("brand_summary") or {},
+            diagnostics,
+            "manual",
+            expected_base_version=base_version,
+        )
         log_event(
             api_logger,
             logging.INFO,
             "brand_kit_assets_described",
             brand_kit_id=brand_kit_id,
-            version=brand_kit["version"],
+            version=created["version"],
             **counts,
         )
         response = brand_kit_created_dto(created, diagnostics)
@@ -1141,13 +2369,13 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.get("/brand-compatibility-reports/{report_id}")
     def get_brand_compatibility_report(
-        report_id: str, repo: Repository = Depends(repository)
+        report_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         return repo.require_brand_compatibility_report(report_id)
 
     @app.post("/documents")
     def create_document(
-        payload: CreateDocumentRequest, repo: Repository = Depends(repository)
+        payload: CreateDocumentRequest, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         if payload.doc_kind not in ("scene", "web"):
             raise HTTPException(
@@ -1160,13 +2388,27 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     ),
                 },
             )
+        # D6 Round B: the id is minted HERE when the client omits one, so the durable identity
+        # `design_create_document` claims is always one its caller named (the DOMAIN_IDEMPOTENT
+        # key). The engine round-trip below stays in the route — the tool governs only the write
+        # (R-D6-B4).
         document_id = payload.document_id or new_id("doc")
         try:
             if payload.doc_kind == "web":
                 result = app.state.core.web_new_doc(
                     document_id, payload.title, payload.brand_kit_ref
                 )
-                document = repo.create_document(result["web_doc"], doc_kind="web")
+                run_design_tool(
+                    "design_create_document",
+                    {
+                        "document_id": document_id,
+                        "scene": result["web_doc"],
+                        "doc_kind": "web",
+                    },
+                    workspace_id=store_workspace_id(repo),
+                    refusals=_document_refusals(document_id),
+                )
+                document = repo.require_document(document_id)
                 log_event(
                     api_logger,
                     logging.INFO,
@@ -1175,7 +2417,10 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     title=document["title"],
                     version=document["current_version"],
                     doc_kind="web",
-                    has_brand_kit=payload.brand_kit_ref is not None,
+                    has_brand_kit=(
+                        (document["scene"].get("theme") or {}).get("brand_kit")
+                        is not None
+                    ),
                 )
                 return document_created_dto(document)
             if payload.scene is None:
@@ -1206,11 +2451,21 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
             if scene["meta"]["id"] != document_id:
                 document_id = scene["meta"]["id"]
-            document = repo.create_document(
-                scene,
-                brand_kit=payload.brand_kit,
-                effective_brand_source="document" if payload.brand_kit else None,
+            run_design_tool(
+                "design_create_document",
+                {
+                    "document_id": document_id,
+                    "scene": scene,
+                    "doc_kind": "scene",
+                    "brand_kit": payload.brand_kit,
+                    "effective_brand_source": (
+                        "document" if payload.brand_kit else None
+                    ),
+                },
+                workspace_id=store_workspace_id(repo),
+                refusals=_document_refusals(document_id),
             )
+            document = repo.require_document(document_id)
             log_event(
                 api_logger,
                 logging.INFO,
@@ -1227,7 +2482,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.get("/documents/{document_id}")
     def get_document(
-        document_id: str, repo: Repository = Depends(repository)
+        document_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         return public_document(require_document(repo, document_id))
 
@@ -1235,43 +2490,81 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def set_agent_instructions(
         document_id: str,
         payload: SetAgentInstructionsRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         """2e: per-document standing instructions for the agent. Stored on the
         document (they survive reloads) and sent by the editor with every
         turn; an empty/blank body clears them."""
         require_scene_document(require_document(repo, document_id))
         instructions = (payload.instructions or "").strip() or None
-        document = repo.set_agent_instructions(document_id, instructions)
+        written = run_design_tool(
+            "design_set_agent_instructions",
+            {"document_id": document_id, "instructions": instructions},
+            workspace_id=store_workspace_id(repo),
+            refusals=_document_refusals(document_id),
+        )
         return {
             "schema_version": 1,
             "document_id": document_id,
-            "agent_instructions": document["agent_instructions"],
+            # The tool returns the stored value as a reference, so no re-read is needed.
+            "agent_instructions": written["value"],
         }
 
     @app.put("/documents/{document_id}/layout-managed-editing")
     def set_layout_managed_editing(
         document_id: str,
         payload: SetLayoutManagedEditingRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         """Per-document advanced opt-out from handoff-absolute: when enabled,
         the editor skips both freeze seams (Accept and first gesture) so agent
         auto-layout stays live. Forward-only — enabling never un-freezes
         containers that are already Free."""
         require_scene_document(require_document(repo, document_id))
-        document = repo.set_layout_managed_editing(document_id, payload.enabled)
+        written = run_design_tool(
+            "design_set_layout_managed_editing",
+            {"document_id": document_id, "enabled": payload.enabled},
+            workspace_id=store_workspace_id(repo),
+            refusals=_document_refusals(document_id),
+        )
         return {
             "schema_version": 1,
             "document_id": document_id,
-            "layout_managed_editing": document["layout_managed_editing"],
+            "layout_managed_editing": written["value"],
+        }
+
+    @app.put("/documents/{document_id}/web-noindex")
+    def set_web_noindex(
+        document_id: str,
+        payload: SetWebNoindexRequest,
+        repo: HybridRepository = Depends(repository),
+    ) -> JsonObject:
+        """THE explicit action ruling R-F1 asks for, in both directions.
+
+        `noindex` is stored on the DOCUMENT, so every publish route emits the robots meta on a
+        stamped page whether or not it knows the flag exists. This is the only surface that can
+        take it off again — and the field is required, so a caller who names no value gets a 422
+        rather than a silent clear. (The ABM batch is the stamp's first writer; a human turning
+        an account page back into an indexable one is what this route serves.)
+        """
+        require_web_document(require_document(repo, document_id))
+        written = run_design_tool(
+            "design_set_web_noindex",
+            {"document_id": document_id, "enabled": payload.noindex},
+            workspace_id=store_workspace_id(repo),
+            refusals=_document_refusals(document_id),
+        )
+        return {
+            "schema_version": 1,
+            "document_id": document_id,
+            "web_noindex": written["value"],
         }
 
     @app.put("/documents/{document_id}/scene")
     def replace_scene(
         document_id: str,
         payload: ReplaceSceneRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_scene_document(document)
@@ -1282,7 +2575,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             raise core_http_error(error) from error
         diagnostics = validation.get("diagnostics", [])
         if has_error_diagnostics(diagnostics):
-            repo.store_diagnostics(document_id, "structural", diagnostics)
+            _record_diagnostics(repo, document_id, "structural", diagnostics)
             raise HTTPException(
                 status_code=422,
                 detail={
@@ -1301,7 +2594,30 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     "message": "scene.meta.id must match the route document id",
                 },
             )
-        document = repo.replace_scene(document_id, scene, diagnostics)
+        # D4 backstop (R-D4-1): this is an ACCEPT seam — an outside author (the editor, an
+        # agent turn) hands us a whole scene, and any asset it generated mid-turn exists only in
+        # the engine's wipeable cache until now. Give those bytes durable custody before the
+        # write promotes their records into the registry, so the registry can never outlive the
+        # bytes it points at. One pass; skip-if-already-durable, so it is normally all skips.
+        register_scene_asset_backstop(blob_store(repo), request_cache_dir(repo), scene)
+        # D6 Round B (R-D6-B1), honest window recorded AT THE SITE: this route's request
+        # contract (`ReplaceSceneRequest`) carries NO base_version, so there is nothing to CAS
+        # against and the tool is invoked with `expected_base_version=None`. The DAL's row lock
+        # still serializes concurrent replaces, but two whole-scene replaces racing each other
+        # remain last-writer-wins — as they were pre-D6. Closing it means adding a base_version
+        # to the wire contract (an editor change, out of D6's scope); D6 does not invent a
+        # request field, and does not pretend the window is closed.
+        run_design_tool(
+            "design_replace_scene",
+            {
+                "document_id": document_id,
+                "scene": scene,
+                "diagnostics": diagnostics,
+            },
+            workspace_id=store_workspace_id(repo),
+            refusals=_document_refusals(document_id),
+        )
+        document = repo.require_document(document_id)
         log_event(
             api_logger,
             logging.INFO,
@@ -1316,7 +2632,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def apply_operations(
         document_id: str,
         payload: ApplyOperationsRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         if not payload.operations:
             raise HTTPException(
@@ -1344,23 +2660,28 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 "inverse_operations"
             ),
         }
-        updated = repo.update_document_state(
-            document_id,
-            result["scene"],
-            diagnostics,
-            payload.operations,
-            payload.source,
-            payload.actor.kind,
-            payload.actor.id,
-            "structural",
-            effective_brand=None,
-            envelope=envelope,
+        # D4 backstop — see PUT /scene: an `upsert_asset` operation can carry a record whose
+        # bytes the caller only ever wrote into the engine cache.
+        register_scene_asset_backstop(
+            blob_store(repo), request_cache_dir(repo), result["scene"]
         )
-        snapshot = None
-        if payload.snapshot_reason:
-            snapshot = repo.create_snapshot(
-                document_id, new_id("snap"), payload.snapshot_reason
-            )
+        # D6 Round B: the engine round-trip above is the ROUTE's (R-D6-B4); the tool governs the
+        # durable write, with `base_version` threaded through to the DAL's row-locked CAS —
+        # which is what closes the window `require_base_version` above cannot (it read the
+        # version BEFORE the engine call).
+        updated = _apply_scene_operations(
+            repo,
+            "design_apply_operations",
+            document_id,
+            scene=result["scene"],
+            diagnostics=diagnostics,
+            operations=payload.operations,
+            source=payload.source,
+            actor=payload.actor,
+            envelope=envelope,
+            base_version=payload.base_version,
+        )
+        snapshot = _snapshot_after_write(repo, document_id, payload.snapshot_reason)
         log_event(
             api_logger,
             logging.INFO,
@@ -1385,7 +2706,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.get("/documents/{document_id}/operations")
     def list_operations(
-        document_id: str, repo: Repository = Depends(repository)
+        document_id: str, repo: HybridRepository = Depends(repository)
     ) -> List[JsonObject]:
         return repo.list_operations(document_id)
 
@@ -1394,7 +2715,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         document_id: str,
         limit: int = 50,
         offset: int = 0,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         envelopes = repo.list_envelopes(
             document_id, limit=limit, offset=offset, newest_first=True
@@ -1407,7 +2728,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.get("/documents/{document_id}/checkpoints")
     def list_checkpoints(
-        document_id: str, repo: Repository = Depends(repository)
+        document_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         envelopes = repo.list_envelopes(document_id, newest_first=True)
         checkpoints = [
@@ -1427,7 +2748,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "checkpoints": checkpoints,
         }
 
-    def perform_undo_step(repo: Repository, document_id: str) -> JsonObject:
+    def perform_undo_step(repo: HybridRepository, document_id: str) -> JsonObject:
         """Apply one document-level undo as a new appended envelope."""
         document = require_document(repo, document_id)
         require_scene_document(document)
@@ -1461,28 +2782,37 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         except CoreError as error:
             raise core_http_error(error) from error
         diagnostics = result.get("diagnostics", [])
-        repo.update_document_state(
-            document_id,
-            result["scene"],
-            diagnostics,
-            target["inverse_operations"],
-            "system",
-            "system",
-            "history",
-            "structural",
-            effective_brand=None,
-            envelope={
-                "intent": f"undo:{target['intent'] or target['batch_id']}",
-                "reverts_batch_id": target["batch_id"],
-                "touched_targets": target["touched_targets"],
-                "inverse_operations": target["operations"],
-            },
-        )
+        # D6 Round B: the version the route just read is threaded into the DAL's row-locked CAS.
+        # Undo is a read-then-write loop over the stacks, so a concurrent edit landing between
+        # the read and this write used to interleave silently (the undo would rewind a scene it
+        # never saw); it is now the same `edits.base_version_mismatch` 409 every other scene
+        # write produces.
+        try:
+            run_design_tool(
+                "design_undo_document",
+                {
+                    "document_id": document_id,
+                    "scene": result["scene"],
+                    "diagnostics": diagnostics,
+                    "operations": target["inverse_operations"],
+                    "envelope": {
+                        "intent": f"undo:{target['intent'] or target['batch_id']}",
+                        "reverts_batch_id": target["batch_id"],
+                        "touched_targets": target["touched_targets"],
+                        "inverse_operations": target["operations"],
+                    },
+                    "expected_base_version": document["current_version"],
+                },
+                workspace_id=store_workspace_id(repo),
+                refusals=_document_refusals(document_id),
+            )
+        except WebDocumentVersionConflict as conflict:
+            raise _base_version_conflict(conflict) from conflict
         return target
 
     @app.post("/documents/{document_id}/undo")
     def undo_document(
-        document_id: str, repo: Repository = Depends(repository)
+        document_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         reverted = perform_undo_step(repo, document_id)
         document = require_document(repo, document_id)
@@ -1504,7 +2834,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.post("/documents/{document_id}/redo")
     def redo_document(
-        document_id: str, repo: Repository = Depends(repository)
+        document_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_scene_document(document)
@@ -1526,23 +2856,27 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         except CoreError as error:
             raise core_http_error(error) from error
         diagnostics = result.get("diagnostics", [])
-        repo.update_document_state(
-            document_id,
-            result["scene"],
-            diagnostics,
-            target["operations"],
-            "system",
-            "system",
-            "history",
-            "structural",
-            effective_brand=None,
-            envelope={
-                "intent": f"redo:{target['intent'] or target['batch_id']}",
-                "reapplies_batch_id": target["batch_id"],
-                "touched_targets": target["touched_targets"],
-                "inverse_operations": target["inverse_operations"],
-            },
-        )
+        try:
+            run_design_tool(
+                "design_redo_document",
+                {
+                    "document_id": document_id,
+                    "scene": result["scene"],
+                    "diagnostics": diagnostics,
+                    "operations": target["operations"],
+                    "envelope": {
+                        "intent": f"redo:{target['intent'] or target['batch_id']}",
+                        "reapplies_batch_id": target["batch_id"],
+                        "touched_targets": target["touched_targets"],
+                        "inverse_operations": target["inverse_operations"],
+                    },
+                    "expected_base_version": document["current_version"],
+                },
+                workspace_id=store_workspace_id(repo),
+                refusals=_document_refusals(document_id),
+            )
+        except WebDocumentVersionConflict as conflict:
+            raise _base_version_conflict(conflict) from conflict
         document = require_document(repo, document_id)
         log_event(
             api_logger,
@@ -1563,7 +2897,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def revert_to_checkpoint(
         document_id: str,
         checkpoint: str,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_scene_document(document)
@@ -1613,6 +2947,14 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                         "batch_id": batch_id,
                     },
                 )
+        # D6 Round B — DEVIATION from R-D6-B2's suggested `design_revert_document`, argued at the
+        # site: revert owns NO durable mutation of its own. It is N undo steps, and each step's
+        # engine round-trip depends on the scene the previous step wrote, so a single tool would
+        # have to run N engine calls inside itself (forbidden by R-D6-B4) or write N envelopes
+        # from a scene chain computed off-store. Instead each step goes through the SAME governed
+        # `design_undo_document` the /undo route uses, with its own operation id and its own
+        # base version — so a concurrent edit mid-revert stops the revert with the standard 409
+        # instead of quietly rewinding past it.
         reverted = []
         for _ in pending:
             reverted.append(perform_undo_step(repo, document_id)["batch_id"])
@@ -1638,7 +2980,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def apply_structured_edit(
         document_id: str,
         payload: ApplyStructuredEditRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_scene_document(document)
@@ -1674,23 +3016,19 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "inverse_operations": edit_metadata.get("inverse_operations"),
             "lineage": edit_metadata.get("lineage"),
         }
-        updated = repo.update_document_state(
+        updated = _apply_scene_operations(
+            repo,
+            "design_apply_edits",
             document_id,
-            result["scene"],
-            diagnostics,
-            operations,
-            payload.source,
-            payload.actor.kind,
-            payload.actor.id,
-            "structural",
-            effective_brand=None,
+            scene=result["scene"],
+            diagnostics=diagnostics,
+            operations=operations,
+            source=payload.source,
+            actor=payload.actor,
             envelope=envelope,
+            base_version=payload.base_version,
         )
-        snapshot = None
-        if payload.snapshot_reason:
-            snapshot = repo.create_snapshot(
-                document_id, new_id("snap"), payload.snapshot_reason
-            )
+        snapshot = _snapshot_after_write(repo, document_id, payload.snapshot_reason)
         log_event(
             api_logger,
             logging.INFO,
@@ -1719,27 +3057,37 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def create_snapshot(
         document_id: str,
         payload: CreateSnapshotRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         require_scene_document(require_document(repo, document_id))
-        snapshot = repo.create_snapshot(
-            document_id, payload.snapshot_id or new_id("snap"), payload.reason
+        # D6 Round B: minted HERE when the client omits one, so the tool's DOMAIN key is always
+        # a caller-named identity (see `design_create_snapshot`'s replay note).
+        snapshot_id = payload.snapshot_id or new_id("snap")
+        run_design_tool(
+            "design_create_snapshot",
+            {
+                "document_id": document_id,
+                "snapshot_id": snapshot_id,
+                "reason": payload.reason,
+            },
+            workspace_id=store_workspace_id(repo),
+            refusals=_snapshot_refusals(document_id, snapshot_id),
         )
         return {
             "schema_version": 1,
             "status": "created",
-            "snapshot": snapshot_summary(snapshot),
+            "snapshot": snapshot_summary(repo.require_snapshot(document_id, snapshot_id)),
         }
 
     @app.get("/documents/{document_id}/snapshots")
     def list_snapshots(
-        document_id: str, repo: Repository = Depends(repository)
+        document_id: str, repo: HybridRepository = Depends(repository)
     ) -> List[JsonObject]:
         return [snapshot_summary(snapshot) for snapshot in repo.list_snapshots(document_id)]
 
     @app.get("/documents/{document_id}/snapshots/{snapshot_id}")
     def get_snapshot(
-        document_id: str, snapshot_id: str, repo: Repository = Depends(repository)
+        document_id: str, snapshot_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         return repo.require_snapshot(document_id, snapshot_id)
 
@@ -1747,7 +3095,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def preflight_document(
         document_id: str,
         payload: PreflightRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_scene_document(document)
@@ -1759,7 +3107,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 document["scene"],
                 brand_kit,
                 mode,
-                brand_fonts=brand_kit_font_spec(repo, brand_kit, asset_store_root()),
+                brand_fonts=brand_kit_font_spec(
+                    repo, brand_kit, blob_store(repo), request_cache_dir(repo)
+                ),
             )
         except CoreError as error:
             raise core_http_error(error) from error
@@ -1773,24 +3123,22 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         )
         updated_document = document
         if not has_error_diagnostics(diagnostics):
-            effective = (
-                (source, brand_kit, mode)
-                if payload.persist_effective_brand or source in {"platform_default", "none"}
-                else None
-            )
-            updated_document = repo.update_document_state(
+            updated_document = _persist_preflight(
+                repo,
                 document_id,
-                result["scene"],
-                diagnostics,
-                operations,
-                "system",
-                "system",
-                "preflight",
-                "preflight",
-                effective_brand=effective,
+                scene=result["scene"],
+                diagnostics=diagnostics,
+                operations=operations,
+                actor_id="preflight",
+                effective_brand=_effective_brand_payload(
+                    source,
+                    brand_kit,
+                    mode,
+                    persist=payload.persist_effective_brand,
+                ),
             )
         else:
-            repo.store_diagnostics(document_id, "preflight", diagnostics)
+            _record_diagnostics(repo, document_id, "preflight", diagnostics)
 
         log_event(
             api_logger,
@@ -1816,11 +3164,17 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     @app.post("/export-preview")
     def export_preview(
         payload: ExportPreviewRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         # K3: a stateless export still shapes text with the scene's kit fonts
         # — the scene ref is the only kit signal this route carries.
-        brand_fonts = scene_brand_fonts(repo, payload.scene, asset_store_root())
+        blobs = blob_store(repo)
+        cache_dir = request_cache_dir(repo)
+        brand_fonts = scene_brand_fonts(repo, payload.scene, blobs, cache_dir)
+        # D4 read-through: the engine resolves image pixels from its cache by digest, so every
+        # asset this scene names must be materialized before the export runs (a durably-absent
+        # digest is left out and the engine reports LUME0210, exactly as before).
+        materialize_scene_assets(blobs, cache_dir, [payload.scene])
         try:
             result = app.state.core.export_preview(
                 payload.scene,
@@ -1828,7 +3182,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 payload.page_ids,
                 payload.profile,
                 raise_on_error=False,
-                asset_store_root=asset_store_root(),
+                asset_store_root=cache_dir,
                 brand_fonts=brand_fonts,
             )
         except CoreError as error:
@@ -1838,11 +3192,15 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         diagnostics = result.get("diagnostics", [])
         if not result.get("ok", False) and not diagnostics:
             diagnostics = diagnostics_from_helper_error(result.get("error"))
+        # P0.3: same severity split as /documents/{id}/export. A policy lint
+        # must not report a rendered preview as failed.
         status = (
             "failed"
-            if not result.get("ok", False) or has_error_diagnostics(diagnostics)
+            if not result.get("ok", False)
+            or has_blocking_export_diagnostics(diagnostics)
             else "ok"
         )
+        warnings = export_warning_views(diagnostics)
         log_event(
             api_logger,
             logging.INFO,
@@ -1850,6 +3208,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             status=status,
             format=payload.format,
             page_id_count=len(payload.page_ids or []),
+            advisory_diagnostics=len(warnings),
             **artifact_summary(export),
             **diagnostic_summary(diagnostics),
         )
@@ -1857,13 +3216,27 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "schema_version": 1,
             "status": status,
             "diagnostics": diagnostics,
+            "warnings": warnings,
             "export": compact_export_result(export),
         }
 
+    # Synchronous turn preview: stores nothing, but it is an editor call like any other, so it
+    # sits inside the strict seam rather than becoming a headerless hole beside /agent/turns.
     @app.post("/agent/turn-preview")
-    def agent_turn_preview(payload: AgentTurnPreviewRequest) -> JsonObject:
-        runner = app.state.agent_turn_runner or run_agent_turn_preview
-        result = runner(payload, repo_root())
+    def agent_turn_preview(
+        payload: AgentTurnPreviewRequest,
+        workspace_id: str = Depends(resolve_workspace_id),
+    ) -> JsonObject:
+        override = app.state.agent_turn_runner
+        # The test seam's stubs take (payload, root); only the real runner takes the tenant,
+        # which since D4 decides which engine materialization cache the turn uses.
+        result = (
+            override(payload, repo_root())
+            if override is not None
+            else run_agent_turn_preview(
+                payload, repo_root(), workspace_id=workspace_id
+            )
+        )
         log_event(
             api_logger,
             logging.INFO,
@@ -1885,85 +3258,77 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.post("/agent/turns")
     def start_agent_turn(
-        payload: AgentTurnPreviewRequest, repo: Repository = Depends(repository)
+        payload: AgentTurnPreviewRequest, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
-        # Async turn: start the run in a background thread and return its id
-        # immediately. The thread streams progress events into the durable
-        # run-event store (via the loop's event_sink) and writes the final
-        # result on completion; the editor subscribes over SSE. The synchronous
-        # /agent/turn-preview stays as-is for tests, CLI, and fixtures.
+        # D5 Round B: the turn is OFFERED, not started. The route creates the run row and its
+        # ``design_job`` fleet task in one transaction and returns; a leased fleet worker (the
+        # detached one, or the embedded one this app runs in development) claims and executes it.
+        # The editor's contract is unchanged — it POSTs, takes ``run_id``, and subscribes to the
+        # SSE stream, which polls the same durable run/event rows the worker writes through.
         #
-        # RC (adversarial-gate ship-blocker 1): validate + resolve reference
-        # attachments HERE, before the run row exists — inside the worker the
-        # catch-all would swallow the resolver's 422s into a generic
-        # agent_runtime.failed and the client would never see
-        # reference.asset_not_found / too_many / preview_unavailable. The
-        # resolved manifest rides into the worker so SVG rasterization is not
-        # paid twice.
-        resolved_reference_assets = resolve_agent_turn_references(payload)
+        # RC (adversarial-gate ship-blocker 1): validate + resolve reference attachments HERE,
+        # before the run row exists — inside the worker the catch-all would swallow the
+        # resolver's 422s into a generic agent_runtime.failed and the client would never see
+        # reference.asset_not_found / too_many / preview_unavailable. The resolved manifest rides
+        # into the envelope so SVG rasterization is not paid twice.
+        resolved_reference_assets = resolve_agent_turn_references(payload, blob_store(repo))
         run_id = f"run_{uuid4().hex}"
-        repo.create_run(run_id, payload.document_id)
-        root = repo_root()
-        database_path = app.state.database_path
-        override = app.state.agent_turn_runner
-
-        def worker() -> None:
-            store = Repository(connect(database_path))
-            try:
-
-                def sink(event_type: str, data: JsonObject) -> None:
-                    try:
-                        store.append_run_event(run_id, event_type, data)
-                    except Exception:
-                        pass
-
-                try:
-                    if override is not None:
-                        response = override(payload, root)
-                    else:
-                        response = run_agent_turn_preview(
-                            payload,
-                            root,
-                            event_sink=sink,
-                            resolved_reference_assets=resolved_reference_assets,
-                        )
-                    status = (
-                        "failed"
-                        if response.get("status") in ("failed", "error")
-                        else "succeeded"
-                    )
-                    store.set_run_result(run_id, status, response)
-                    store.append_run_event(
-                        run_id, "result", {"status": response.get("status")}
-                    )
-                except Exception as error:  # pragma: no cover - defensive
-                    failed = failed_agent_turn_response(
-                        "agent_runtime.failed",
-                        "Agent turn crashed before returning a proposal.",
-                        str(error),
-                    )
-                    store.set_run_result(run_id, "failed", failed)
-                    store.append_run_event(run_id, "error", {"message": str(error)})
-            finally:
-                store.connection.close()
-
-        threading.Thread(
-            target=worker, name=f"agent-turn-{run_id}", daemon=True
-        ).start()
+        work_id = design_work_id_for_run(run_id)
+        # The FROZEN by-value work description. It captures exactly what the pre-D5 worker
+        # closure captured (the request, the resolved references, the workspace) so a takeover
+        # worker replays the same turn instead of re-reading state that has since moved. Brand
+        # kit, fonts and the engine cache are resolved from it inside the runner, exactly as
+        # before — they were never closure state.
+        envelope = DesignTurnEnvelope(
+            work_id=work_id,
+            workspace_id=repo.workspace_id,
+            kind="agent_turn",
+            run_id=run_id,
+            # The D5 ruling: the design run IS the LangGraph thread.
+            checkpoint_thread_id=run_id,
+            document_id=payload.document_id,
+            config={
+                "request": payload.model_dump(mode="json"),
+                "reference_assets": resolved_reference_assets,
+                # W4 offer-time freeze (Wave-C fix #1): the ad lane rides the envelope BY
+                # VALUE, decided by THIS process's flag and database — the claiming worker
+                # consumes it verbatim, so a flag-off claimant can no longer silently strip
+                # the turn's auto-references (the Wave-B W-B2 failure). A frozen None is a
+                # decision too: "this turn has no lane".
+                "ad_lane": ad_runtime.frozen_lane_payload(repo.workspace_id),
+            },
+        ).model_dump(mode="json")
+        # D6 Round B: the ENQUEUE is the durable mutation, so it is the tool. Everything above
+        # stays in the handler on purpose — the 422-before-a-row-exists comment above is exactly
+        # why a tool precondition cannot own reference resolution.
+        run_design_tool(
+            "design_start_agent_turn",
+            {
+                "run_id": run_id,
+                "work_id": str(work_id),
+                "document_id": payload.document_id,
+                "envelope": envelope,
+            },
+            workspace_id=store_workspace_id(repo),
+            refusals=_document_refusals(payload.document_id or ""),
+        )
         log_event(
             api_logger,
             logging.INFO,
-            "agent_turn_started",
+            "agent_turn_offered",
             run_id=run_id,
+            work_id=str(work_id),
             document_id=payload.document_id,
             active_page_id=payload.active_page_id,
             target_node_ids=payload.target_node_ids,
         )
-        return {"schema_version": 1, "run_id": run_id, "status": "running"}
+        # ``queued`` is the honest status of a run nobody has claimed yet. The editor's
+        # agentRunner.ts reads only ``run_id`` from this response, so no client behaviour changes.
+        return {"schema_version": 1, "run_id": run_id, "status": "queued"}
 
     @app.get("/agent/runs/{run_id}")
     def get_agent_run(
-        run_id: str, repo: Repository = Depends(repository)
+        run_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         run = repo.get_run(run_id)
         if run is None:
@@ -1974,94 +3339,144 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "schema_version": 1,
             "run_id": run_id,
             "status": run["status"],
-            "events": repo.list_run_events(run_id, after_seq=0),
+            "events": repo.list_run_events(run_id),
             "result": run["result"],
         }
 
-    @app.get("/agent/runs/{run_id}/events")
-    async def stream_agent_run_events(run_id: str, request: Request):
-        database_path = app.state.database_path
+    @app.post("/agent/runs/{run_id}/cancel")
+    def cancel_agent_run(
+        run_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """Ask an in-flight design run to stop (A3, defect R3-D).
 
-        def read_run() -> Optional[JsonObject]:
-            store = Repository(connect(database_path))
-            try:
-                return store.get_run(run_id)
-            finally:
-                store.connection.close()
+        WHAT THIS DOES: stamps a durable cancellation request on the run row and returns. It does
+        NOT stop anything itself. The run is driven by a fleet worker in another process, and the
+        only thing this process and that one share is Postgres — so the request is a row, and the
+        worker honours it.
 
-        def poll_once(
-            after_seq: int,
-        ) -> tuple[List[JsonObject], Optional[JsonObject]]:
-            # One SQLite connection per poll iteration: read the new events and,
-            # only when the caller needs it (an idle poll, or a terminal event
-            # just arrived), the run row — reusing the SAME Repository instead of
-            # opening a second connection for a separate read_run. Replay
-            # semantics are unchanged: events still drive `last_seq`, and the run
-            # row supplies the terminal result exactly as before.
-            store = Repository(connect(database_path))
-            try:
-                events = store.list_run_events(run_id, after_seq=after_seq)
-                needs_run = (not events) or any(
-                    event["type"] in ("result", "error") for event in events
-                )
-                run = store.get_run(run_id) if needs_run else None
-                return events, run
-            finally:
-                store.connection.close()
+        **THE V1 BOUNDARY, STATED PLAINLY: cancellation takes effect at the next model-call
+        boundary. A call already in flight is not killed.** Python cannot interrupt the thread a
+        synchronous turn body runs on (the fleet handler has said the same about its own
+        cooperative stop since D5), so the honest promise is "no further model calls will be
+        paid for", not "this stops right now". Worst-case latency is one model call, bounded by
+        ``agent_llm_timeout_s``. If a run must die faster than that, the lever is the lease, not
+        this route.
 
-        # Resume point: EventSource re-sends Last-Event-ID on auto-reconnect;
-        # an explicit ?after= (used by resume-on-mount after a snapshot fetch)
-        # takes precedence.
-        header_id = request.headers.get("last-event-id")
-        after_param = request.query_params.get("after")
-        try:
-            start_seq = int(after_param if after_param is not None else header_id or 0)
-        except (TypeError, ValueError):
-            start_seq = 0
+        WHAT SURVIVES: everything already durable. P0.4 commits each accepted authoring round to
+        the document as it happens, so a cancelled run keeps every round it finished and loses
+        only the round in flight. The worker then takes the SAME graceful-finalize path the
+        budget backstop uses and lands an honest terminal result whose ``stop_reason`` is
+        ``cancelled_by_request``.
 
-        if await asyncio.to_thread(read_run) is None:
+        IDEMPOTENT, three honest answers, all HTTP 200 — see ``cancellation`` in the body:
+        ``requested`` (the ask landed), ``already_requested`` (someone asked first; the original
+        timestamp is returned unchanged), ``already_terminal`` (the run had already finished —
+        not an error, just a race a human lost). A refusal here would only invite a retry loop
+        against a row that will never move again.
+
+        404 on an unknown or cross-tenant run, indistinguishable — the same fail-closed posture
+        as the run snapshot and the stream-token mint above.
+        """
+        outcome = repo.request_run_cancellation(run_id)
+        log_event(
+            api_logger,
+            logging.INFO,
+            "agent_run_cancel_requested",
+            run_id=run_id,
+            outcome=outcome["outcome"],
+            run_status=outcome["status"],
+        )
+        return {
+            "schema_version": 1,
+            "run_id": run_id,
+            # The run's status as it stands RIGHT NOW, not what it will become. The worker owns
+            # the terminal write; announcing an outcome here would be a guess, and a guess that
+            # races the only writer entitled to make it.
+            "status": outcome["status"],
+            "cancellation": outcome["outcome"],
+            "cancel_requested_at": outcome["cancel_requested_at"],
+        }
+
+    @app.post("/agent/runs/{run_id}/stream-token")
+    def mint_agent_run_stream_token(
+        run_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """Mint the single-use token that opens this run's event stream (D7, R-D7-B4).
+
+        Header-authenticated like every other design route — that is the whole point. The stream
+        itself cannot carry ``X-Workspace-Id`` (the browser opens it with a bare GET), and until
+        D7 it took ``?workspace_id=`` instead: a tenant *claim* in a query string, strict about
+        being present but unable to be strict about being true. Now the tenant is proven HERE,
+        recorded on the token row, and read back out of it when the stream opens.
+
+        404 on an unknown or cross-tenant run, indistinguishable — the same posture as the run
+        snapshot above, and it is what stops an authenticated caller from holding open live tails
+        against arbitrary ids.
+        """
+        if repo.get_run(run_id) is None:
             raise HTTPException(
                 status_code=404, detail=f"agent_run {run_id} was not found"
             )
+        return {
+            "schema_version": 1,
+            "stream_token": repo.mint_run_stream_token(run_id),
+        }
 
-        async def event_stream():
-            last_seq = start_seq
-            yield "retry: 1000\n\n"
-            # Emit the keepalive comment only once every ~1s of idle polling
-            # even though we poll every 250ms (D2: poll fast, keepalive slow).
-            polls_per_keepalive = max(
-                1,
-                round(
-                    _RUN_EVENTS_SSE_KEEPALIVE_INTERVAL_SECONDS
-                    / _RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS
-                ),
+    @app.get("/agent/runs/{run_id}/events")
+    async def stream_agent_run_events(
+        run_id: str,
+        request: Request,
+        stream_token: str = Query(...),
+    ):
+        """This run's activity, as Server-Sent Events. Token-gated; NO workspace parameter.
+
+        The token is consumed up front — single-use, subject-bound, and the only statement of
+        tenancy this route accepts. A used / expired / wrong-run / unknown token is one 401 with
+        one message: they must be indistinguishable, or the refusal itself becomes an oracle for
+        which runs exist.
+
+        Framing is unchanged from the polled era (R-D7-B1): ``progress`` frames carrying
+        ``{seq, type, data, created_at}`` and one terminal ``done`` frame carrying the run's result
+        envelope. ``?after=`` still wins over ``Last-Event-ID``; both are now cursors into the
+        platform outbox's global seq rather than a per-run counter.
+        """
+        try:
+            token = UUID(stream_token)
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "code": "stream.token_invalid",
+                    "message": "A valid single-use stream token is required.",
+                },
+            ) from exc
+        workspace_id = await run_stream.consume_run_stream_token_isolated(
+            token=token, run_id=run_id
+        )
+        if workspace_id is None:
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "code": "stream.token_invalid",
+                    "message": "A valid single-use stream token is required.",
+                },
             )
-            idle_polls = 0
-            while True:
-                if await request.is_disconnected():
-                    return
-                events, run = await asyncio.to_thread(poll_once, last_seq)
-                for event in events:
-                    last_seq = event["seq"]
-                    if event["type"] in ("result", "error"):
-                        yield sse_frame(event["seq"], "done", (run or {}).get("result"))
-                        return
-                    yield sse_frame(event["seq"], "progress", event)
-                if not events:
-                    # Terminal with no terminal event yet (defensive): the run
-                    # finished but the marker append lost the race — close out.
-                    if run and run["status"] in ("succeeded", "failed"):
-                        yield sse_frame(last_seq, "done", run.get("result"))
-                        return
-                    if idle_polls % polls_per_keepalive == 0:
-                        yield ": keepalive\n\n"
-                    idle_polls += 1
-                    await asyncio.sleep(_RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS)
-                else:
-                    idle_polls = 0
+
+        # Resume point: the streaming client re-sends Last-Event-ID on reconnect; an explicit
+        # ?after= (resume-on-mount after a snapshot fetch) still takes precedence.
+        header_id = request.headers.get("last-event-id")
+        after_param = request.query_params.get("after")
+        try:
+            cursor: Optional[int] = int(
+                after_param if after_param is not None else header_id or 0
+            )
+        except (TypeError, ValueError):
+            cursor = 0
 
         return StreamingResponse(
-            event_stream(),
+            run_stream.stream_run_events(
+                workspace_id=workspace_id, run_id=run_id, cursor=cursor
+            ),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -2074,12 +3489,14 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def start_web_turn(
         document_id: str,
         payload: WebTurnRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
-        # Async website-mode turn: mirror start_agent_turn's worker shape, but
-        # the web worker OWNS the persist — on an applied result it replaces the
-        # stored WebDoc through update_web_document (the scene path defers the
-        # write to a separate Accept). Gate to web docs up front.
+        # D5 Round B: offered, not started (see start_agent_turn). The web EXECUTOR still owns
+        # the persist — on an applied result it replaces the stored WebDoc through
+        # update_web_document (the scene path defers the write to a separate Accept) — but it now
+        # runs on a fleet worker instead of a daemon thread. Gate to web docs up front: every
+        # check below happens before the run row exists, so a bad request still 4xx's the caller
+        # rather than dying inside a worker where only a failed envelope would reach the editor.
         document = require_document(repo, document_id)
         require_web_document(document)
         require_draft_document(document, "start an AI turn")
@@ -2106,191 +3523,43 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 "notes": account["notes"],
             }
         run_id = f"run_{uuid4().hex}"
-        repo.create_run(run_id, document_id)
-        root = repo_root()
-        database_path = app.state.database_path
-        override = app.state.web_turn_runner
-        prompt = payload.prompt
-        model = payload.model
-        target_node_ids = payload.target_node_ids
-        base_version = payload.base_version
-
-        def worker() -> None:
-            store = Repository(connect(database_path))
-            try:
-
-                def sink(event_type: str, data: JsonObject) -> None:
-                    try:
-                        store.append_run_event(run_id, event_type, data)
-                    except Exception:
-                        pass
-
-                try:
-                    doc = store.require_document(document_id)
-                    if doc["current_version"] != base_version:
-                        response = conflicted_web_turn_response(
-                            base_version, doc["current_version"]
-                        )
-                    elif override is not None:
-                        # Backward-compatible seam: existing stubs take four
-                        # positional args; only pass the scoped-target ids when
-                        # the request carried them (a five-arg stub), and only
-                        # pass account_card as a keyword when the turn is
-                        # personalized (so the un-personalized 4/5-arg stubs are
-                        # untouched).
-                        account_kwargs = (
-                            {"account_card": account_card} if account_card else {}
-                        )
-                        if target_node_ids:
-                            response = override(
-                                doc, prompt, model, root, target_node_ids,
-                                **account_kwargs,
-                            )
-                        else:
-                            response = override(
-                                doc, prompt, model, root, **account_kwargs
-                            )
-                    else:
-                        asset_library = workspace_asset_library_manifest(
-                            store, store.connection
-                        )
-                        component_account_id = doc.get("account_id")
-                        custom_component_registry = (
-                            DurableAgentCustomComponentRegistry(
-                                database_path=Path(database_path),
-                                store_root=Path(
-                                    app.state.custom_component_store_root
-                                ),
-                                account_id=component_account_id,
-                                document_id=document_id,
-                                node_binary=(
-                                    app.state.custom_component_compiler_node_bin
-                                ),
-                                worker_path=Path(
-                                    app.state.custom_component_compiler_worker
-                                ),
-                                timeout_seconds=(
-                                    app.state
-                                    .custom_component_compiler_timeout_seconds
-                                ),
-                                compile_fn=compile_custom_component,
-                            )
-                            if isinstance(component_account_id, str)
-                            and component_account_id
-                            else None
-                        )
-                        response = run_web_agent_turn(
-                            doc,
-                            prompt,
-                            model,
-                            root,
-                            event_sink=sink,
-                            target_node_ids=target_node_ids,
-                            account_card=account_card,
-                            asset_library=asset_library,
-                            custom_component_registry=custom_component_registry,
-                        )
-                    if response.get("status") == "applied":
-                        operations = response.get("operations")
-                        if not isinstance(operations, list):
-                            response = failed_agent_turn_response(
-                                "web_turn.operations_missing",
-                                "The AI turn did not return a replayable operation history.",
-                                "The candidate document was not committed.",
-                            )
-                        elif not operations:
-                            if response.get("web_doc") != doc["scene"]:
-                                response = failed_agent_turn_response(
-                                    "web_turn.operations_incomplete",
-                                    "The AI turn's operation history did not describe its result.",
-                                    "The candidate document was not committed.",
-                                )
-                        else:
-                            try:
-                                replay = app.state.core.web_apply_ops(
-                                    doc["scene"], operations, raise_on_error=False
-                                )
-                            except CoreError as error:
-                                response = failed_agent_turn_response(
-                                    "web_turn.operations_replay_failed",
-                                    "The AI turn's operations could not be replayed.",
-                                    error.message,
-                                )
-                            else:
-                                if (
-                                    not replay.get("ok")
-                                    or replay.get("web_doc") != response.get("web_doc")
-                                ):
-                                    response = failed_agent_turn_response(
-                                        "web_turn.operations_incomplete",
-                                        "The AI turn's operation history did not reproduce its result.",
-                                        "The candidate document was not committed.",
-                                    )
-                                else:
-                                    try:
-                                        updated = store.update_web_document(
-                                            document_id,
-                                            replay["web_doc"],
-                                            intent=prompt[:120],
-                                            checkpoint_label="Website turn",
-                                            operations=operations,
-                                            inverse_operations=replay.get(
-                                                "inverse_operations"
-                                            ),
-                                            expected_base_version=base_version,
-                                        )
-                                    except WebDocumentVersionConflict as conflict:
-                                        response = conflicted_web_turn_response(
-                                            conflict.expected, conflict.current
-                                        )
-                                    except CustomComponentReferenceError as error:
-                                        response = failed_agent_turn_response(
-                                            error.code,
-                                            error.message,
-                                            (
-                                                f"Node {error.node_id} references "
-                                                f"artifact {error.artifact_id}."
-                                            ),
-                                        )
-                                    else:
-                                        response["current_version"] = updated[
-                                            "current_version"
-                                        ]
-                    status = (
-                        "succeeded"
-                        if response.get("status") == "applied"
-                        else "failed"
-                    )
-                    store.set_run_result(
-                        run_id, status, {**response, "doc_kind": "web"}
-                    )
-                    store.append_run_event(
-                        run_id, "result", {"status": response.get("status")}
-                    )
-                except Exception as error:  # pragma: no cover - defensive
-                    failed = failed_agent_turn_response(
-                        "agent_runtime.failed",
-                        "Website turn crashed before returning a result.",
-                        str(error),
-                    )
-                    store.set_run_result(
-                        run_id, "failed", {**failed, "doc_kind": "web"}
-                    )
-                    store.append_run_event(run_id, "error", {"message": str(error)})
-            finally:
-                store.connection.close()
-
-        threading.Thread(
-            target=worker, name=f"web-turn-{run_id}", daemon=True
-        ).start()
+        work_id = design_work_id_for_run(run_id)
+        # Same frozen-envelope discipline as the scene turn. ``account_card`` rides by value
+        # because it was resolved (and 404'd) BEFORE the run row existed and must not be re-read
+        # by a takeover worker; ``base_version`` rides because the turn is defined against one
+        # exact stored revision and a retry must still refuse to clobber newer human edits.
+        envelope = DesignTurnEnvelope(
+            work_id=work_id,
+            workspace_id=repo.workspace_id,
+            kind="web_turn",
+            run_id=run_id,
+            checkpoint_thread_id=run_id,
+            document_id=document_id,
+            config={
+                "request": payload.model_dump(mode="json"),
+                "account_card": account_card,
+            },
+        ).model_dump(mode="json")
+        run_design_tool(
+            "design_start_web_turn",
+            {
+                "run_id": run_id,
+                "work_id": str(work_id),
+                "document_id": document_id,
+                "envelope": envelope,
+            },
+            workspace_id=store_workspace_id(repo),
+            refusals=_document_refusals(document_id),
+        )
         log_event(
             api_logger,
             logging.INFO,
-            "web_turn_started",
+            "web_turn_offered",
             run_id=run_id,
+            work_id=str(work_id),
             document_id=document_id,
         )
-        return {"schema_version": 1, "run_id": run_id, "status": "running"}
+        return {"schema_version": 1, "run_id": run_id, "status": "queued"}
 
     @app.get("/documents/{document_id}/web/render")
     def render_web_document(
@@ -2300,7 +3569,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         runtime_src: Optional[str] = None,
         bridge: int = 0,
         nonce: Optional[str] = None,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         # Render the stored WebDoc to HTML for the editor iframe (editor mode,
         # instrumented) or a delivery snapshot. Assets resolve against this
@@ -2313,7 +3582,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         require_web_document(document)
         web_doc = document["scene"]
         brand_kit, _source, _assets, brand_fonts = resolve_web_turn_brand_kit(
-            web_doc, database_path=app.state.database_path
+            web_doc, blob_store(repo)
         )
         # Kit @font-face: emit rules that point the browser at the kit's stored
         # faces (served from this request's own /asset-store origin) so the
@@ -2344,7 +3613,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     override_variables = {}
             runtime_frames = build_custom_component_runtime_frames(
                 repo,
-                Path(app.state.custom_component_store_root),
+                blob_store(repo),
                 account_id=account_id if isinstance(account_id, str) else None,
                 web_doc=web_doc,
                 page_id="home",
@@ -2370,6 +3639,21 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     detail={"code": "web_render.bad_nonce", "message": str(error)},
                 ) from error
         asset_base_url = str(request.base_url).rstrip("/") + "/asset-store"
+        # F1.3: resolve the page's cloned-section artifacts out of durable custody and hand the
+        # engine the markup map + the concatenated scoped CSS. An id that will not resolve is
+        # left OUT of the map on purpose — the engine renders its placeholder and says so
+        # (LUMW0412), which is what keeps a document with a dead pin editable.
+        fragment_ids = web_doc_fragment_ids(web_doc, "home")
+        fragment_package = (
+            build_fragment_render_package(
+                app.state.storage,
+                workspace_id=store_workspace_id(repo),
+                web_doc=web_doc,
+                page_id="home",
+            )
+            if fragment_ids
+            else empty_fragment_render_package()
+        )
         try:
             response = app.state.core.web_render(
                 web_doc,
@@ -2381,20 +3665,179 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 custom_component_runtimes=runtime_frames,
                 brand_kit=brand_kit,
                 font_face_css=font_face_css,
+                # The artifact's OWN byte references are rebased onto THIS request's origin
+                # (F1.5 fix wave): they are stored root-relative, which the editor's srcDoc
+                # iframe has no origin to resolve, so every image inside a cloned section
+                # rendered broken while slot-bound assets — which go through the engine's
+                # asset_base_url — worked.
+                fragments=fragment_render_map(
+                    fragment_package, fragment_ids, asset_base_url=asset_base_url
+                ),
+                fragment_css=fragment_css_sheet(
+                    fragment_package, fragment_ids, asset_base_url=asset_base_url
+                ),
             )
         except CoreError as error:
             raise core_http_error(error) from error
+        diagnostics = list(response.get("diagnostics", []))
+        # The ledgered cascade risk, reported not refused: compiled utilities land after fragment
+        # CSS, so a cloned class the document also authors is overruled.
+        diagnostics.extend(
+            fragment_collision_diagnostics(fragment_package, web_doc, "home")
+        )
         return {
             "schema_version": 1,
             "html": response.get("html"),
-            "diagnostics": response.get("diagnostics", []),
+            "diagnostics": diagnostics,
         }
+
+    @app.get("/documents/{document_id}/thumbnail", response_class=Response)
+    def get_document_thumbnail(
+        document_id: str,
+        request: Request,
+        v: Optional[str] = None,
+        repo: HybridRepository = Depends(repository),
+    ) -> Response:
+        # Gallery-card preview (2026-08-31 ruling): PNG for both kinds, built
+        # LAZILY here on first read — never in the write path — and cached by
+        # (document, version) in the blob store. Sync route => threadpool, so the
+        # Playwright capture blocks a worker thread, not the event loop (NOT the
+        # [slice3xstage0] class of bug).
+        document = require_document(repo, document_id)
+        version = int(document["current_version"])
+        blobs = blob_store(repo)
+
+        cached = repo.get_document_thumbnail(document_id, version)
+        data: Optional[bytes] = None
+        if cached is not None:
+            try:
+                _media, data = blobs.read_blob(cached["sha256"])
+            except NotFoundError:
+                data = None  # dangling index row — regenerate below
+
+        if data is None:
+            # The KIND decides the generator, never the shape of the payload: a
+            # scene's pages are a map and a web doc's are a list, and the scene
+            # page picker answers None on a list QUIETLY, so shape-sniffing would
+            # mis-route without ever erroring. Same default as the two
+            # `require_*_document` gates.
+            kind = document.get("doc_kind", "scene")
+            try:
+                if kind == "web":
+                    # Called in-process so the composed HTML carries THIS request's
+                    # origin for its asset URLs — the capture page fetches them.
+                    rendered = render_web_document(
+                        document_id,
+                        request,
+                        mode="editor",
+                        runtime_src=None,
+                        bridge=0,
+                        nonce=None,
+                        repo=repo,
+                    )
+                    html = rendered.get("html")
+                    if not isinstance(html, str) or not html:
+                        # A render that returned no html would screenshot the
+                        # literal text "None" and CACHE it under this version —
+                        # a poisoned card that never expires. Refuse instead.
+                        raise document_thumbnails.ThumbnailUnavailable(
+                            "thumbnail.render_failed", "web render returned no html"
+                        )
+                    data = document_thumbnails.web_thumbnail_png(html)
+                else:
+                    scene = document["scene"]
+                    cache_dir = request_cache_dir(repo)
+                    materialize_scene_assets(blobs, cache_dir, [scene])
+                    result = app.state.core.export_preview(
+                        scene,
+                        "png",
+                        document_thumbnails.first_page_ids(scene),
+                        default_export_profile("png"),
+                        raise_on_error=False,
+                        asset_store_root=cache_dir,
+                        brand_fonts=scene_brand_fonts(repo, scene, blobs, cache_dir),
+                    )
+                    data = document_thumbnails.downscale_png(
+                        document_thumbnails.png_from_export_result(result)
+                    )
+            except document_thumbnails.ThumbnailUnavailable as error:
+                raise HTTPException(
+                    status_code=502,
+                    detail={"code": error.code, "message": str(error)},
+                ) from error
+            except CoreError as error:
+                # The helper can fail BEFORE `raise_on_error` is consulted (a dead
+                # subprocess, an unparseable response), so `raise_on_error=False`
+                # above does not make this unreachable — `/export-preview` catches
+                # CoreError for the same reason. A thumbnail's contract is 502
+                # `thumbnail.*`, so it is normalized here rather than left to
+                # `core_http_error`'s 422.
+                raise HTTPException(
+                    status_code=502,
+                    detail={
+                        # Kind-aware: only the scene branch exports. A CoreError from
+                        # the web branch escaped a RENDER, so labelling it
+                        # `export_failed` would name a step that never ran.
+                        "code": (
+                            "thumbnail.render_failed"
+                            if kind == "web"
+                            else "thumbnail.export_failed"
+                        ),
+                        "message": str(error),
+                    },
+                ) from error
+            except HTTPException as error:
+                # The in-process `render_web_document` above answers ITS OWN
+                # failures with `core_http_error`'s 422 `web_render.*`, which
+                # would otherwise escape this route as a 422 the frozen contract
+                # never promises. Catching HTTPException broadly is safe HERE and
+                # only here: the 404 (`require_document`) is raised ABOVE this try,
+                # and the render call is the only thing inside it that raises one.
+                # DO NOT widen this try upward — it would swallow the 404.
+                raise HTTPException(
+                    status_code=502,
+                    detail={
+                        "code": "thumbnail.render_failed",
+                        "message": str(error.detail),
+                    },
+                ) from error
+            sha256 = hashlib.sha256(data).hexdigest()
+            # `register` returns the workspace-scoped STORAGE KEY; the index row and
+            # `read_blob` both speak the bare digest, which registration is addressed
+            # by, so the local one is the authoritative spelling.
+            blobs.register(data, media_type="image/png", source_key="document_thumbnail")
+            repo.record_document_thumbnail(
+                document_id, version, sha256=sha256, media_type="image/png"
+            )
+            log_event(
+                api_logger,
+                logging.INFO,
+                "document_thumbnail_generated",
+                document_id=document_id,
+                version=version,
+                kind=kind,
+                byte_count=len(data),
+            )
+
+        # A caller that named the version it wants may cache the answer forever —
+        # the key changes on the next edit. Anyone else gets the current bytes and
+        # no permission to keep them under a key that does not identify them.
+        fresh = v == str(version)
+        return Response(
+            content=data,
+            media_type="image/png",
+            headers={
+                "Cache-Control": (
+                    "private, max-age=31536000, immutable" if fresh else "no-store"
+                )
+            },
+        )
 
     @app.post("/documents/{document_id}/web/operations")
     def apply_web_operations(
         document_id: str,
         payload: WebOperationsRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         # Manual website-mode edit: run the batch through the checked-apply
         # helper (a batch that would leave the doc invalid is rejected with
@@ -2432,30 +3875,25 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 },
             )
         try:
-            updated = repo.update_web_document(
-                document_id,
-                result["web_doc"],
-                intent=payload.intent or "Manual edit",
-                checkpoint_label="Manual edit",
-                operations=payload.operations,
-                inverse_operations=result.get("inverse_operations"),
-                actor_kind="editor",
-                source="editor",
-                expected_base_version=payload.base_version,
+            run_design_tool(
+                "design_apply_web_operations",
+                {
+                    "document_id": document_id,
+                    "web_doc": result["web_doc"],
+                    "operations": payload.operations,
+                    "inverse_operations": result.get("inverse_operations"),
+                    "intent": payload.intent or "Manual edit",
+                    "checkpoint_label": "Manual edit",
+                    "actor_kind": "editor",
+                    "source": "editor",
+                    "expected_base_version": payload.base_version,
+                },
+                workspace_id=store_workspace_id(repo),
+                refusals=_document_refusals(document_id),
             )
         except WebDocumentVersionConflict as conflict:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "edits.base_version_mismatch",
-                    "message": (
-                        f"base_version {conflict.expected} does not match current "
-                        f"document version {conflict.current}; reload the document "
-                        "and rebuild the edit"
-                    ),
-                    "current_version": conflict.current,
-                },
-            ) from conflict
+            raise _base_version_conflict(conflict) from conflict
+        updated = repo.require_document(document_id)
         log_event(
             api_logger,
             logging.INFO,
@@ -2477,7 +3915,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         }
 
     def _apply_web_undo_step(
-        repo: Repository, document: JsonObject, target: JsonObject
+        repo: HybridRepository, document: JsonObject, target: JsonObject
     ) -> JsonObject:
         """Compute the pre-undo → reverted WebDoc for one undo, handling both
         envelope shapes: a legacy whole-document `replace_web_doc` marker swaps
@@ -2529,7 +3967,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.post("/documents/{document_id}/web/undo")
     def undo_web_document(
-        document_id: str, repo: Repository = Depends(repository)
+        document_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_web_document(document)
@@ -2558,18 +3996,21 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             )
         step = _apply_web_undo_step(repo, document, target)
         try:
-            updated = repo.update_web_document(
-                document_id,
-                step["web_doc"],
-                intent=f"undo:{target['intent'] or target['batch_id']}",
-                checkpoint_label="Undo",
-                operations=step["operations"],
-                inverse_operations=step["inverse_operations"],
-                actor_kind="system",
-                source="system",
-                reverts_batch_id=target["batch_id"],
-                expected_base_version=document["current_version"],
+            run_design_tool(
+                "design_undo_web_document",
+                {
+                    "document_id": document_id,
+                    "web_doc": step["web_doc"],
+                    "operations": step["operations"],
+                    "inverse_operations": step["inverse_operations"],
+                    "intent": f"undo:{target['intent'] or target['batch_id']}",
+                    "batch_id": target["batch_id"],
+                    "expected_base_version": document["current_version"],
+                },
+                workspace_id=store_workspace_id(repo),
+                refusals=_document_refusals(document_id),
             )
+            updated = repo.require_document(document_id)
         except WebDocumentVersionConflict as conflict:
             raise HTTPException(
                 status_code=409,
@@ -2601,7 +4042,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.post("/documents/{document_id}/web/redo")
     def redo_web_document(
-        document_id: str, repo: Repository = Depends(repository)
+        document_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_web_document(document)
@@ -2666,18 +4107,21 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             new_doc = result["web_doc"]
             inverse_ops = result.get("inverse_operations")
         try:
-            updated = repo.update_web_document(
-                document_id,
-                new_doc,
-                intent=f"redo:{target['intent'] or target['batch_id']}",
-                checkpoint_label="Redo",
-                operations=forward_ops,
-                inverse_operations=inverse_ops,
-                actor_kind="system",
-                source="system",
-                reapplies_batch_id=target["batch_id"],
-                expected_base_version=document["current_version"],
+            run_design_tool(
+                "design_redo_web_document",
+                {
+                    "document_id": document_id,
+                    "web_doc": new_doc,
+                    "operations": forward_ops,
+                    "inverse_operations": inverse_ops,
+                    "intent": f"redo:{target['intent'] or target['batch_id']}",
+                    "batch_id": target["batch_id"],
+                    "expected_base_version": document["current_version"],
+                },
+                workspace_id=store_workspace_id(repo),
+                refusals=_document_refusals(document_id),
             )
+            updated = repo.require_document(document_id)
         except WebDocumentVersionConflict as conflict:
             raise HTTPException(
                 status_code=409,
@@ -2709,7 +4153,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.get("/documents/{document_id}/web/theme")
     def get_web_theme(
-        document_id: str, repo: Repository = Depends(repository)
+        document_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         # The compiled theme's inspector surface: the resolved token map +
         # families the editor's Appearance panel reads. Diagnostics are the
@@ -2718,7 +4162,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         require_web_document(document)
         web_doc = document["scene"]
         brand_kit, _source, _assets, _fonts = resolve_web_turn_brand_kit(
-            web_doc, database_path=app.state.database_path
+            web_doc, blob_store(repo)
         )
         try:
             response = app.state.core.web_validate(web_doc, brand_kit)
@@ -2737,7 +4181,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.get("/documents/{document_id}/web/export")
     def export_web_document(
-        document_id: str, repo: Repository = Depends(repository)
+        document_id: str, repo: HybridRepository = Depends(repository)
     ) -> Response:
         # Build a self-contained static-site zip (delivery html + statically
         # compiled site.css + embedded fonts + copied image bytes + SEO +
@@ -2750,8 +4194,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 app.state.core,
                 repo,
                 document,
-                store_root=asset_store_root(),
-                database_path=app.state.database_path,
+                blobs=blob_store(repo),
                 generated_at=utc_now(),
                 node_bin=app.state.web_export_node_bin,
             )
@@ -2789,56 +4232,74 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    @app.post("/documents/{document_id}/web/publish")
-    def publish_web_document(
-        document_id: str,
-        payload: WebPublishRequest,
-        request: Request,
-        repo: Repository = Depends(repository),
+    def _publish_refusals(slug: str, document_id: str) -> Dict[str, Any]:
+        """The exact wire contract the editor has always seen for a refused publish.
+
+        The document refusals are defence in depth: the HTTP route resolves and kind-checks the
+        document itself (it needs the title for the default slug), so only a non-HTTP caller —
+        the batch loop, or a future agent — can reach them.
+        """
+        return {
+            "design_publish_slug_invalid": lambda message: HTTPException(
+                status_code=422,
+                detail={"code": "web_publish.bad_slug", "message": message},
+            ),
+            "design_publish_slug_taken": lambda message: HTTPException(
+                status_code=409,
+                detail={"code": "web_publish.slug_taken", "message": message},
+            ),
+            "design_document_not_found": lambda _message: NotFoundError(
+                "document", document_id
+            ),
+            "design_document_not_web": lambda message: HTTPException(
+                status_code=409,
+                detail={"code": "document.kind_unsupported", "message": message},
+            ),
+        }
+
+    def _publish_web(
+        repo: HybridRepository,
+        document: JsonObject,
+        *,
+        slug: str,
+        public_base: str,
+        idempotency_key: Optional[str] = None,
+        noindex: bool = False,
     ) -> JsonObject:
-        document = require_document(repo, document_id)
-        require_web_document(document)
-        slug = (payload.slug or "").strip() or web_default_slug(
-            document["title"], document_id
-        )
-        if not WEB_SLUG_PATTERN.fullmatch(slug):
+        """Publish through the governed tool. The ONE call site shape for both callers.
+
+        The node static-css compile lives inside the tool; its two honest failures still surface
+        as the pre-D6 502s (the tool re-raises them, the journal records the failed attempt).
+
+        ``noindex`` (clone-fidelity F4.3, ruling R25-4) is a PER-PAGE option, defaulting off:
+        the batch's ABM account pages ask for it and nothing else does, so an ordinary homepage
+        publish is byte-identical to what it produced before this task.
+        """
+        try:
+            return run_design_tool(
+                "design_publish_web",
+                {
+                    "document_id": document["id"],
+                    "public_base": public_base,
+                    "slug": slug,
+                    "noindex": noindex,
+                },
+                workspace_id=store_workspace_id(repo),
+                idempotency_key=idempotency_key,
+                refusals=_publish_refusals(slug, document["id"]),
+            )
+        except web_export.WebExportUnresolvedMarkers as error:
+            # R25-7: the un-derived TEMPLATE renders its `{{account.…}}` markers to a visitor.
+            # A 422, not a 502: nothing broke — the wrong document was handed to publish, and the
+            # right one is one derive away.
             raise HTTPException(
                 status_code=422,
                 detail={
-                    "code": "web_publish.bad_slug",
-                    "message": (
-                        f"slug {slug!r} must match ^[a-z0-9][a-z0-9-]{{2,63}}$"
-                    ),
+                    "code": "web_publish.unresolved_markers",
+                    "message": str(error),
+                    "markers": list(error.markers),
                 },
-            )
-        existing = repo.get_web_publish(slug)
-        if existing is not None and existing["document_id"] != document_id:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "web_publish.slug_taken",
-                    "message": (
-                        f"slug {slug!r} is already published by another document"
-                    ),
-                },
-            )
-        public_base = str(request.base_url).rstrip("/")
-        try:
-            package = web_export.build_publish_package(
-                app.state.core,
-                repo,
-                document,
-                store_root=asset_store_root(),
-                database_path=app.state.database_path,
-                slug=slug,
-                public_base=public_base,
-                node_bin=app.state.web_export_node_bin,
-            )
-            web_export.persist_publish_assets(
-                Path(asset_store_root()),
-                package.assets,
-                package.manifest["custom_components"].get("assets"),
-            )
+            ) from error
         except web_export.WebExportCompileError as error:
             raise HTTPException(
                 status_code=502,
@@ -2853,29 +4314,25 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 detail={"code": "web_export.failed", "message": str(error)},
             ) from error
 
-        publish_id = f"webpub_{package.package_digest}"
-        repo.register_web_publish_revision(
-            {
-                "publish_id": publish_id,
-                "slug": slug,
-                "document_id": document_id,
-                "doc_version": document["current_version"],
-                "html": package.html,
-                "html_digest": package.html_digest,
-                "manifest": package.manifest,
-                "manifest_digest": package.manifest_digest,
-                "package_digest": package.package_digest,
-                "runtime_version": package.runtime_version,
-                "created_at": utc_now(),
-            }
+    @app.post("/documents/{document_id}/web/publish")
+    def publish_web_document(
+        document_id: str,
+        payload: WebPublishRequest,
+        request: Request,
+        repo: HybridRepository = Depends(repository),
+        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    ) -> JsonObject:
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        slug = (payload.slug or "").strip() or web_default_slug(
+            document["title"], document_id
         )
-        publish = repo.upsert_web_publish(
-            slug,
-            document_id,
-            document["current_version"],
-            package.html,
-            package.runtime_version,
-            publish_id,
+        publish = _publish_web(
+            repo,
+            document,
+            slug=slug,
+            public_base=str(request.base_url).rstrip("/"),
+            idempotency_key=idempotency_key,
         )
         log_event(
             api_logger,
@@ -2888,19 +4345,19 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         return {
             "schema_version": 1,
             "slug": slug,
-            "url": f"/p/{slug}",
+            "url": public_publish_path(repo, slug),
             "doc_version": publish["doc_version"],
             "runtime_version": publish["runtime_version"],
             "publish_id": publish["publish_id"],
             "manifest_digest": publish.get("manifest_digest"),
             "package_digest": publish.get("package_digest"),
             "html_digest": publish.get("html_digest"),
-            "previous_available": publish["previous_html"] is not None,
+            "previous_available": publish["previous_available"],
         }
 
     @app.get("/documents/{document_id}/web/publish")
     def get_web_publish_state(
-        document_id: str, repo: Repository = Depends(repository)
+        document_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_web_document(document)
@@ -2911,7 +4368,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "schema_version": 1,
             "published": True,
             "slug": publish["slug"],
-            "url": f"/p/{publish['slug']}",
+            "url": public_publish_path(repo, publish["slug"]),
             "doc_version": publish["doc_version"],
             "status": publish["status"],
             "publish_id": publish.get("publish_id"),
@@ -2922,50 +4379,60 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "updated_at": publish["updated_at"],
         }
 
+    def _publish_not_found(slug: str) -> HTTPException:
+        return HTTPException(
+            status_code=404,
+            detail={
+                "code": "web_publish.not_found",
+                "message": f"no publish for slug {slug!r}",
+            },
+        )
+
     @app.delete("/web/publishes/{slug}")
     def unpublish_web_document(
-        slug: str, repo: Repository = Depends(repository)
+        slug: str,
+        repo: HybridRepository = Depends(repository),
+        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     ) -> JsonObject:
-        publish = repo.set_web_publish_status(slug, "unpublished")
-        if publish is None:
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "code": "web_publish.not_found",
-                    "message": f"no publish for slug {slug!r}",
-                },
-            )
+        publish = run_design_tool(
+            "design_unpublish_web",
+            {"slug": slug},
+            workspace_id=store_workspace_id(repo),
+            idempotency_key=idempotency_key,
+            refusals={
+                "design_publish_not_found": lambda _m: _publish_not_found(slug),
+            },
+        )
         log_event(
             api_logger,
             logging.INFO,
             "web_publish_unpublished",
             slug=slug,
-            document_id=publish["document_id"],
-            publish_id=publish.get("publish_id"),
         )
         return {"schema_version": 1, "slug": slug, "status": publish["status"]}
 
     @app.post("/web/publishes/{slug}/rollback")
     def rollback_web_document(
-        slug: str, repo: Repository = Depends(repository)
+        slug: str,
+        repo: HybridRepository = Depends(repository),
+        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     ) -> JsonObject:
-        result = repo.rollback_web_publish(slug)
-        if result == "not_found":
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "code": "web_publish.not_found",
-                    "message": f"no publish for slug {slug!r}",
-                },
-            )
-        if result == "no_previous":
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "web_publish.no_previous",
-                    "message": f"slug {slug!r} has no previous publish to roll back to",
-                },
-            )
+        # D6: rollback is a current<->previous SWAP, so a blind retry is actively destructive —
+        # this is THE design route an `Idempotency-Key` matters most on. With one, the journal's
+        # terminal node + the A9 record replay the first outcome instead of swapping back.
+        result = run_design_tool(
+            "design_rollback_web_publish",
+            {"slug": slug},
+            workspace_id=store_workspace_id(repo),
+            idempotency_key=idempotency_key,
+            refusals={
+                "design_publish_not_found": lambda _m: _publish_not_found(slug),
+                "design_publish_no_previous": lambda message: HTTPException(
+                    status_code=409,
+                    detail={"code": "web_publish.no_previous", "message": message},
+                ),
+            },
+        )
         log_event(
             api_logger,
             logging.INFO,
@@ -2988,47 +4455,53 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     # --- P5 personalization accounts (D3) --------------------------------- #
 
-    def _require_logo_resolves(repo: Repository, logo_asset_id: Optional[str]) -> None:
-        """A provided logo_asset_id must be a known library asset (D3 → 422)."""
-        if not logo_asset_id:
-            return
-        try:
-            repo.require_asset_record(logo_asset_id)
-        except NotFoundError as error:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code": "web_account.logo_unresolved",
-                    "message": (
-                        f"logo_asset_id {logo_asset_id!r} does not resolve to a "
-                        "known asset"
-                    ),
-                    "resource_id": error.resource_id,
-                },
-            ) from error
-
-    @app.post("/web/accounts")
-    def create_web_account(
-        payload: CreateWebAccountRequest, repo: Repository = Depends(repository)
-    ) -> JsonObject:
-        account_id = payload.account_id or new_web_account_id()
-        if payload.account_id and repo.get_web_account(payload.account_id) is not None:
-            raise HTTPException(
+    def _account_refusals(account_id: str, logo_asset_id: Optional[str]) -> Dict[str, Any]:
+        """The ported ``_require_logo_resolves`` / duplicate-id wire contracts (D3 → 422/409)."""
+        return {
+            "design_account_exists": lambda message: HTTPException(
                 status_code=409,
                 detail={
                     "code": "web_account.exists",
-                    "message": f"account {payload.account_id!r} already exists",
-                    "resource_id": payload.account_id,
+                    "message": message,
+                    "resource_id": account_id,
                 },
-            )
-        _require_logo_resolves(repo, payload.logo_asset_id)
-        account = repo.create_web_account(
-            account_id,
-            payload.name,
-            payload.domain,
-            payload.logo_asset_id,
-            dict(payload.data),
-            payload.notes,
+            ),
+            "design_account_logo_unresolved": lambda message: HTTPException(
+                status_code=422,
+                detail={
+                    "code": "web_account.logo_unresolved",
+                    "message": message,
+                    "resource_id": logo_asset_id,
+                },
+            ),
+            "design_account_not_found": lambda _message: NotFoundError(
+                "web_account", account_id
+            ),
+        }
+
+    @app.post("/web/accounts")
+    def create_web_account(
+        payload: CreateWebAccountRequest,
+        repo: HybridRepository = Depends(repository),
+        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    ) -> JsonObject:
+        # D6: the id is minted HERE when the client omits one, so the tool's durable identity is
+        # always one its caller named — which is what makes `design_create_web_account`
+        # domain-idempotent (R-D6-3) instead of an unkeyed write.
+        account_id = payload.account_id or new_web_account_id()
+        run_design_tool(
+            "design_create_web_account",
+            {
+                "account_id": account_id,
+                "name": payload.name,
+                "domain": payload.domain,
+                "logo_asset_id": payload.logo_asset_id,
+                "data": dict(payload.data),
+                "notes": payload.notes,
+            },
+            workspace_id=store_workspace_id(repo),
+            idempotency_key=idempotency_key,
+            refusals=_account_refusals(account_id, payload.logo_asset_id),
         )
         log_event(
             api_logger,
@@ -3037,15 +4510,18 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             account_id=account_id,
             has_logo=payload.logo_asset_id is not None,
         )
-        return account
+        # The tool returns references; the account DTO the editor reads is re-read from the row
+        # the tool just wrote (same `require_web_account` projection `create_web_account`
+        # returned pre-D6, so the response body is unchanged).
+        return repo.require_web_account(account_id)
 
     @app.get("/web/accounts")
-    def list_web_accounts(repo: Repository = Depends(repository)) -> JsonObject:
+    def list_web_accounts(repo: HybridRepository = Depends(repository)) -> JsonObject:
         return {"accounts": repo.list_web_accounts()}
 
     @app.get("/web/accounts/{account_id}")
     def get_web_account(
-        account_id: str, repo: Repository = Depends(repository)
+        account_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         try:
             return repo.require_web_account(account_id)
@@ -3056,7 +4532,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.get("/web/accounts/{account_id}/custom-components")
     def list_custom_components(
-        account_id: str, repo: Repository = Depends(repository)
+        account_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         """List account-local component families without exposing another tenant."""
         repo.require_web_account(account_id)
@@ -3078,7 +4554,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def get_custom_component(
         account_id: str,
         slug: str,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         repo.require_web_account(account_id)
         return {
@@ -3092,7 +4568,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def get_custom_component_artifact(
         account_id: str,
         artifact_id: str,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         repo.require_web_account(account_id)
         return {
@@ -3110,7 +4586,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         account_id: str,
         artifact_id: str,
         member: str,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> Response:
         if member not in {"source", "bundle", "css", "first_frame"}:
             raise HTTPException(
@@ -3136,60 +4612,67 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             )
         _, data = resolve_custom_component_artifact_blob(
             repo,
-            Path(app.state.custom_component_store_root),
+            blob_store(repo),
             account_id=account_id,
             artifact_id=artifact_id,
             member=member,  # type: ignore[arg-type]
         )
-        media_types = {
-            "source": "application/json",
-            "bundle": "text/javascript; charset=utf-8",
-            "css": "text/css; charset=utf-8",
-            "first_frame": "text/html; charset=utf-8",
-        }
-        return Response(content=data, media_type=media_types[member])
+        # D4: the ONE member↔media-type table, shared with the write path — a member is served
+        # as exactly the type its blob's `artifact` row records.
+        return Response(
+            content=data,
+            media_type=CUSTOM_COMPONENT_MEMBER_MEDIA_TYPES[member],
+        )
 
     @app.put("/web/accounts/{account_id}/custom-components/{slug}/source")
     def put_custom_component_source(
         account_id: str,
         slug: str,
         payload: PutCustomComponentSourceRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
+        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     ) -> JsonObject:
-        repo.require_web_account(account_id)
-        try:
-            revision = persist_custom_component_source_revision(
-                repo,
-                Path(app.state.custom_component_store_root),
-                account_id=account_id,
-                slug=slug,
-                expected_version=payload.expected_version,
-                files=dict(payload.files),
-                provenance={
+        written = run_design_tool(
+            "design_write_component_source",
+            {
+                "account_id": account_id,
+                "slug": slug,
+                "expected_version": payload.expected_version,
+                "files": dict(payload.files),
+                "provenance": {
                     "kind": "custom_component_source_write",
                     "actor": payload.actor.model_dump(),
                 },
-            )
-        except ValueError as error:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code": "custom_component.source_invalid",
-                    "message": str(error),
-                    "slug": slug,
-                },
-            ) from error
+            },
+            workspace_id=store_workspace_id(repo),
+            idempotency_key=idempotency_key,
+            refusals={
+                "design_account_not_found": lambda _m: NotFoundError(
+                    "web_account", account_id
+                ),
+                "design_component_source_invalid": lambda message: HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "custom_component.source_invalid",
+                        "message": message,
+                        "slug": slug,
+                    },
+                ),
+            },
+        )
         return {
             "schema_version": 1,
             "component": repo.require_custom_component(account_id, slug),
-            "source": revision,
+            "source": repo.require_custom_component_source_revision(
+                account_id, written["revision_id"]
+            ),
         }
 
     @app.get("/web/accounts/{account_id}/custom-components/{slug}/source")
     def get_custom_component_source(
         account_id: str,
         slug: str,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         repo.require_web_account(account_id)
         revision = repo.get_current_custom_component_source(account_id, slug)
@@ -3197,7 +4680,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             raise NotFoundError("custom_component_source", slug)
         _, files = resolve_custom_component_source_snapshot(
             repo,
-            Path(app.state.custom_component_store_root),
+            blob_store(repo),
             account_id=account_id,
             revision_id=revision["revision_id"],
         )
@@ -3213,7 +4696,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def list_custom_component_source_revisions(
         account_id: str,
         slug: str,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         repo.require_custom_component(account_id, slug)
         return {
@@ -3228,23 +4711,41 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         account_id: str,
         slug: str,
         payload: CompileCustomComponentRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
+        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     ) -> Any:
-        response = compile_and_persist_custom_component(
-            repository=repo,
-            store_root=Path(app.state.custom_component_store_root),
-            node_binary=app.state.custom_component_compiler_node_bin,
-            worker_path=Path(app.state.custom_component_compiler_worker),
-            timeout_seconds=app.state.custom_component_compiler_timeout_seconds,
-            account_id=account_id,
-            slug=slug,
-            source_version=payload.source_version,
-            actor=payload.actor.model_dump(),
-            # Keep the module seam injectable: compiler integration tests and
-            # operators can still replace main.compile_custom_component.
-            compile_fn=compile_custom_component,
+        # The compiler node binary / worker path / timeout and the injectable
+        # `main.compile_custom_component` seam all reach the core through the tool host's
+        # thunks, so operators and the compiler suites keep the exact same overrides.
+        compiled = run_design_tool(
+            "design_compile_component",
+            {
+                "account_id": account_id,
+                "slug": slug,
+                "source_version": payload.source_version,
+                "actor": payload.actor.model_dump(),
+            },
+            workspace_id=store_workspace_id(repo),
+            idempotency_key=idempotency_key,
+            refusals={
+                "design_component_not_found": lambda _m: NotFoundError(
+                    "custom_component", slug
+                ),
+            },
         )
-        status = response.pop("compile_status")
+        artifact_id = compiled["artifact_id"]
+        response = {
+            "schema_version": 1,
+            "compilation": repo.require_custom_component_compilation(
+                account_id, compiled["compilation_id"]
+            ),
+            "artifact": (
+                repo.require_custom_component_artifact(account_id, artifact_id)
+                if artifact_id is not None
+                else None
+            ),
+        }
+        status = compiled["compile_status"]
         if status == "failed":
             return JSONResponse(status_code=422, content=response)
         if status == "transient_error":
@@ -3257,7 +4758,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def list_custom_component_compilations(
         account_id: str,
         slug: str,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         repo.require_custom_component(account_id, slug)
         return {
@@ -3271,31 +4772,33 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def update_web_account(
         account_id: str,
         payload: UpdateWebAccountRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
+        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     ) -> JsonObject:
-        try:
-            repo.require_web_account(account_id)
-        except NotFoundError as error:
-            raise HTTPException(
-                status_code=404, detail=not_found_detail(error)
-            ) from error
         # Partial update: only the fields the client actually sent are written.
         patch = payload.model_dump(exclude_unset=True)
-        if "logo_asset_id" in patch:
-            _require_logo_resolves(repo, patch["logo_asset_id"])
-        account = repo.update_web_account(account_id, patch)
-        return account
+        run_design_tool(
+            "design_update_web_account",
+            {"account_id": account_id, "patch": patch},
+            workspace_id=store_workspace_id(repo),
+            idempotency_key=idempotency_key,
+            refusals=_account_refusals(account_id, patch.get("logo_asset_id")),
+        )
+        return repo.require_web_account(account_id)
 
     @app.delete("/web/accounts/{account_id}")
     def delete_web_account(
-        account_id: str, repo: Repository = Depends(repository)
+        account_id: str,
+        repo: HybridRepository = Depends(repository),
+        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     ) -> JsonObject:
-        try:
-            repo.delete_web_account(account_id)
-        except NotFoundError as error:
-            raise HTTPException(
-                status_code=404, detail=not_found_detail(error)
-            ) from error
+        run_design_tool(
+            "design_delete_web_account",
+            {"account_id": account_id},
+            workspace_id=store_workspace_id(repo),
+            idempotency_key=idempotency_key,
+            refusals=_account_refusals(account_id, None),
+        )
         return {"deleted": True}
 
     # --- P5 templates (D4) ------------------------------------------------ #
@@ -3304,7 +4807,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def save_web_template(
         document_id: str,
         payload: SaveWebTemplateRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         # Clone the CURRENT web doc payload into a NEW template row: fresh
         # undo/redo stacks, version 0, is_template=1, same theme/brand ref.
@@ -3315,7 +4818,21 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         title = (payload.title or "").strip() or f"{document['title']} — template"
         web_doc["id"] = new_document_id
         web_doc["title"] = title
-        template = repo.create_web_template(web_doc, document.get("account_id"))
+        created = run_design_tool(
+            "design_create_web_template",
+            {
+                "document_id": new_document_id,
+                "web_doc": web_doc,
+                "account_id": document.get("account_id"),
+                # F2.2: this template is a COPY of `document_id`, so its fragment pins are
+                # inherited, not chosen. Without saying so, retiring one cloned section would
+                # block saving a document that has pinned it since before the retirement.
+                "source_document_id": document_id,
+            },
+            workspace_id=store_workspace_id(repo),
+            refusals=_document_refusals(new_document_id),
+        )
+        template = {"id": created["document_id"], "title": created["title"]}
         log_event(
             api_logger,
             logging.INFO,
@@ -3326,7 +4843,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         return {"document_id": template["id"], "title": template["title"]}
 
     @app.get("/web/templates")
-    def list_web_templates(repo: Repository = Depends(repository)) -> JsonObject:
+    def list_web_templates(repo: HybridRepository = Depends(repository)) -> JsonObject:
         templates = [
             {
                 "document_id": doc["id"],
@@ -3339,11 +4856,177 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         ]
         return {"templates": templates}
 
+    # --- the fragment inspector card (clone-fidelity F3.2) ------------------------------------
+    # Four thin routes over machinery that already exists: the registry reads, the F3.0
+    # activation gate, the F3.1 lineage resolver, and P-7's isolation render. No rule is
+    # restated here — the routes are a surface, and every refusal below is somebody else's,
+    # translated into a status code.
+    #
+    # The literal-segment route is registered BEFORE the `{fragment_id}` one for the same reason
+    # the ingestion routes are (FastAPI matches in registration order).
+
+    @app.get("/web/fragments/dormant")
+    def list_dormant_fragments(repo: HybridRepository = Depends(repository)) -> JsonObject:
+        """Every section the source site HIDES (D-F8).
+
+        Dormant sections are on no page, so nothing can select one — and D-F8 makes the inspector
+        the one place a human sees and activates them. This is how the inspector reaches them.
+        """
+        return {
+            "schema_version": FRAGMENT_CARD_SCHEMA_VERSION,
+            "sections": dormant_fragment_cards(
+                app.state.storage, workspace_id=store_workspace_id(repo)
+            ),
+        }
+
+    @app.get("/web/fragments/{fragment_id}")
+    def read_fragment_card(
+        fragment_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        return fragment_card(
+            app.state.storage,
+            workspace_id=store_workspace_id(repo),
+            fragment_id=fragment_id,
+        )
+
+    @app.post("/web/fragments/{fragment_id}/preview")
+    def generate_fragment_preview(
+        fragment_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """Photograph this section's own bytes in isolation, and keep the picture (P-7).
+
+        The two rows that reach here are the two nothing ever photographed: a hidden-on-source
+        clone (D-F8 asks for a preview before a human may activate it) and a composed repair
+        (ruling R17-2 — otherwise the human releasing it is approving a section nobody can see).
+        A row that already has a preview is refused: a preview is attached once, because a
+        decision was made against the picture that is there.
+        """
+        workspace_id = store_workspace_id(repo)
+        loaded = read_web_fragment(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        )
+        # Asked BEFORE the render, off the row that was just read. The attach refuses this
+        # anyway, but discovering it there means a browser launch and up to
+        # ISOLATION_TIMEOUT_MS of work whose only possible outcome is a 409 and an orphan blob.
+        # The verdict is free here; the picture is not.
+        if loaded.row.get("preview_digest"):
+            raise DesignFragmentPreviewError(
+                fragment_id,
+                "already_present",
+                f"fragment {fragment_id} already carries a preview: a preview is attached once "
+                "and never replaced, because a human's decision was made against the picture "
+                "that is there",
+            )
+        # No brand kit is threaded in: a harvested clone carries all of its own styling, and a
+        # repair's artifact carries a stylesheet compiled against its kit at repair time —
+        # including the theme's own custom properties (F3.1 §1.3). Handing a kit here would be a
+        # second opinion about how the section looks.
+        try:
+            png, page = render_isolation_preview(
+                app.state.core,
+                loaded,
+                read_blob=blob_store(repo).read_blob,
+                shoot=app.state.isolation_shooter,
+            )
+        except IsolationRenderFailed as failure:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": failure.code,
+                    "message": failure.message,
+                    "fragment_id": fragment_id,
+                },
+            ) from failure
+        attach_web_fragment_preview(
+            app.state.storage,
+            workspace_id=workspace_id,
+            fragment_id=fragment_id,
+            preview=png,
+            # P-7's labelling clause, made durable: the kind of picture comes from the thing
+            # that MADE it, and lands on the row beside the digest — never inferred later from
+            # the mint's provenance, which is about the mint's own crop and would say nothing
+            # for a repair and "measured" for a section the capture measured but never cropped.
+            preview_basis=page.basis,
+            media_type=ISOLATION_PREVIEW_MEDIA_TYPE,
+        )
+        return fragment_card(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        )
+
+    @app.post("/web/fragments/{fragment_id}/activate")
+    def activate_fragment(
+        fragment_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """A human wakes a hidden-on-source section (D-F8). The gate is the DAL's, not this.
+
+        Straight to ``approved``, deliberately: the person pressing this IS the approval D-F8
+        asks for, and leaving it ``draft`` would mean the next brand-kit approval released it as
+        a side effect of an unrelated decision — the automatic release dormancy exists to prevent.
+        """
+        workspace_id = store_workspace_id(repo)
+        row = read_web_fragment(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        ).row
+        target = activation_target(row)
+        if target is None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "fragment.not_dormant",
+                    "message": (
+                        f"fragment {fragment_id} is {row.get('status')!r}, not a section the "
+                        "source site hides — there is nothing to activate."
+                    ),
+                    "fragment_id": fragment_id,
+                },
+            )
+        set_web_fragment_status(
+            workspace_id=workspace_id, fragment_id=fragment_id, status=target
+        )
+        return fragment_card(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        )
+
+    @app.post("/web/fragments/{fragment_id}/retire")
+    def retire_fragment(
+        fragment_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """Retire a REPAIR (ruling R17-2). Never the harvested original (ruling R17-3).
+
+        The only in-product way out of a lineage holding two released repairs, which the recreate
+        walk refuses to assemble — correctly, since ranking two deliberate repairs of the same
+        band silently would discard one. Retire is not release: no new approval granularity is
+        introduced, this is the ``deprecated`` move every section has always had.
+
+        The original is refused because it is the EVIDENCE D-F6 preserves: retiring it to settle
+        an argument between two of its repairs throws away the thing the argument is about.
+        """
+        workspace_id = store_workspace_id(repo)
+        row = read_web_fragment(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        ).row
+        verdict = retirement_verdict(row)
+        if not verdict["retirable"]:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": f"fragment.{verdict['reason']}",
+                    "message": verdict["message"],
+                    "fragment_id": fragment_id,
+                },
+            )
+        set_web_fragment_status(
+            workspace_id=workspace_id, fragment_id=fragment_id, status="deprecated"
+        )
+        return fragment_card(
+            app.state.storage, workspace_id=workspace_id, fragment_id=fragment_id
+        )
+
     @app.post("/documents/{document_id}/web/derive")
     def derive_web_document(
         document_id: str,
         payload: DeriveWebRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         # Derive a personalized copy of a web doc (D4 + editor-wave amendment):
         # account_id is OPTIONAL. Absent → an empty value map (a plain,
@@ -3396,11 +5079,11 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 },
             )
 
-        derived = repo.create_document(
-            result["web_doc"],
-            doc_kind="web",
-            template_document_id=document["id"],
-            template_doc_version=document["current_version"],
+        derived = _derive_web_document(
+            repo,
+            new_document_id,
+            web_doc=result["web_doc"],
+            template=document,
             account_id=payload.account_id,
         )
         log_event(
@@ -3421,8 +5104,29 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     # --- P5 batch generate + publish (D5) --------------------------------- #
 
+    def _account_logo_state(
+        account: JsonObject, asset_records: List[JsonObject]
+    ) -> JsonObject:
+        """What the manifest says about this account's logo (ruling R25-2).
+
+        The batch NEVER fetches: it uses whatever ``design_account.logo_asset_id`` already holds,
+        because populating logos for N accounts is an explicit per-account act somebody performs
+        first (``bind_account_logo``), never a fan-out this route starts. So the honest thing a
+        run owes its reader is a per-account statement of what it FOUND — and *empty is CORRECT*,
+        never a failure row.
+        """
+        logo_asset_id = account.get("logo_asset_id")
+        if not logo_asset_id:
+            return {"bound": False, "reason": "no_logo_on_account"}
+        if not asset_records:
+            # The column names an asset whose registry row is gone (a DELETE detaches it via the
+            # FK, but a row can also be archived out from under an old stamp). The derive leaves
+            # the template's own fallback; say WHY rather than reporting a bound logo that is not.
+            return {"bound": False, "reason": "asset_unresolvable", "asset_id": str(logo_asset_id)}
+        return {"bound": True, "asset_id": str(logo_asset_id)}
+
     def _derive_publish_account(
-        repo: Repository,
+        repo: HybridRepository,
         template: JsonObject,
         account_id: str,
         publish: bool,
@@ -3432,6 +5136,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         """Derive (and optionally publish) one account against `template`.
         Never raises: any failure is captured on the manifest row (status
         "failed" + error) so a bad account can never kill the batch."""
+        abm = slug_base == ABM_SLUG_BASE
         account = repo.get_web_account(account_id)
         row: JsonObject = {
             "account_id": account_id,
@@ -3441,18 +5146,36 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "url": None,
             "status": "failed",
             "unbound": [],
+            # R25-5: publish state per account, readable off the persisted manifest rather than
+            # only in the POST's response. `logo` is R25-2's half; `noindex` is R25-4's.
+            "logo": {"bound": False, "reason": "account_not_found"},
+            "noindex": False,
             "error": None,
         }
         try:
             if account is None:
                 raise ValueError(f"account {account_id!r} not found")
             values, asset_records = account_values(account, repo)
+            row["logo"] = _account_logo_state(account, asset_records)
             title = f"{template['title']} — {account['name']}"
+            # R25-8: an ABM run addresses ONE document per (template, account) so a re-run
+            # converges instead of doubling the page count; a generic run keeps its per-run id.
+            new_document_id = (
+                abm_derived_document_id(template["id"], account_id)
+                if abm
+                else new_id("doc")
+            )
+            existing: Optional[JsonObject] = None
+            if abm:
+                try:
+                    existing = repo.require_document(new_document_id)
+                except NotFoundError:
+                    existing = None
             result = app.state.core.web_derive(
                 doc=template["scene"],
                 values=values,
                 assets=asset_records,
-                new_doc_id=new_id("doc"),
+                new_doc_id=new_document_id,
                 new_title=title,
                 raise_on_error=False,
             )
@@ -3464,62 +5187,62 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     "code", "web_derive.rejected"
                 )
                 return row
-            derived = repo.create_document(
-                result["web_doc"],
-                doc_kind="web",
-                template_document_id=template["id"],
-                template_doc_version=template["current_version"],
-                account_id=account_id,
-            )
+            if existing is not None:
+                # The re-derive: commit the new derivation ONTO the document this account already
+                # owns, through the same governed web write an editor edit takes, so the page
+                # keeps its id, its slug and its history instead of being replaced by a twin.
+                derived = _redrive_web_document(
+                    repo, existing, web_doc=result["web_doc"], title=title
+                )
+            else:
+                # D6 Round B: the batch derive used to reproduce the persist inline. It now calls
+                # the SAME governed tool the HTTP route does (see `_derive_web_document`).
+                derived = _derive_web_document(
+                    repo,
+                    new_document_id,
+                    web_doc=result["web_doc"],
+                    template=template,
+                    account_id=account_id,
+                )
             row["document_id"] = derived["id"]
             row["status"] = "derived"
+            # R-F1, corrected placement (T27 review C-1, reproduced live): the stamp rides the
+            # DERIVE, not the publish. It used to sit inside `if publish:`, so an
+            # `{"abm": true, "publish": false}` run derived real ABM account pages with
+            # `web_noindex = False` — and the next publish was the editor's plain button, which
+            # carries no noindex field, serving the account page INDEXED. An ABM page is born
+            # stamped (create AND redrive — a redrive also heals a pre-stamp document), publish
+            # or not; a stamp with no publish behind it is inert, which is exactly why it is
+            # safe to write here and wrong to defer.
+            if abm:
+                run_design_tool(
+                    "design_set_web_noindex",
+                    {"document_id": derived["id"], "enabled": True},
+                    workspace_id=store_workspace_id(repo),
+                )
             if publish:
                 slug = _unique_batch_slug(
                     repo,
                     f"{slug_base}-{web_slugify(account['name'])}",
                     derived["id"],
                 )
-                package = web_export.build_publish_package(
-                    app.state.core,
-                    repo,
-                    derived,
-                    store_root=asset_store_root(),
-                    database_path=app.state.database_path,
-                    slug=slug,
-                    public_base=public_base,
-                    node_bin=app.state.web_export_node_bin,
-                )
-                web_export.persist_publish_assets(
-                    Path(asset_store_root()),
-                    package.assets,
-                    package.manifest["custom_components"].get("assets"),
-                )
-                publish_id = f"webpub_{package.package_digest}"
-                repo.register_web_publish_revision(
-                    {
-                        "publish_id": publish_id,
-                        "slug": slug,
-                        "document_id": derived["id"],
-                        "doc_version": derived["current_version"],
-                        "html": package.html,
-                        "html_digest": package.html_digest,
-                        "manifest": package.manifest,
-                        "manifest_digest": package.manifest_digest,
-                        "package_digest": package.package_digest,
-                        "runtime_version": package.runtime_version,
-                        "created_at": utc_now(),
-                    }
-                )
-                repo.upsert_web_publish(
-                    slug,
-                    derived["id"],
-                    derived["current_version"],
-                    package.html,
-                    package.runtime_version,
-                    publish_id,
+                # D6: the batch path used to reproduce the whole publish sequence inline. It now
+                # calls the SAME governed tool the HTTP route does, so a batch publish is
+                # journaled exactly like a manual one and the sequence exists once.
+                #
+                # R25-4: an ABM account page is reachable by its explicit URL and by nothing else
+                # — absent from every navigation (F4.1's shells have no way out) and out of the
+                # index. `noindex` is asked for HERE, per page, rather than flipped globally.
+                #
+                # R-F1: the durable stamp was written at DERIVE time above (T27 review C-1);
+                # the publish tool resolves the document itself, so it reads the row that
+                # stamp just wrote. The explicit `noindex=abm` below is belt to that braces.
+                _publish_web(
+                    repo, derived, slug=slug, public_base=public_base, noindex=abm
                 )
                 row["slug"] = slug
-                row["url"] = f"/p/{slug}"
+                row["url"] = public_publish_path(repo, slug)
+                row["noindex"] = abm
                 row["status"] = "published"
             return row
         except Exception as error:  # noqa: BLE001 — one account never kills a batch
@@ -3535,19 +5258,39 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             return row
 
     def _process_web_batch(
-        repo: Repository, batch: JsonObject, public_base: str
+        repo: HybridRepository, batch: JsonObject, public_base: str
     ) -> JsonObject:
         """Synchronous-chunked processing (chunk 5): the cursor persists after
         every chunk so an interrupted batch resumes exactly where it stopped.
         Status is "partial" mid-way and "completed" when the cursor reaches the
         account count; "failed" only when the batch itself cannot run (the
         template is gone)."""
+        def _advance(
+            batch_id: str, expected: int, cursor: int, status: str, manifest: List[JsonObject]
+        ) -> JsonObject:
+            return _advance_batch(
+                repo,
+                "design_advance_web_batch",
+                {
+                    "batch_id": batch_id,
+                    "expected_cursor": expected,
+                    "cursor": cursor,
+                    "status": status,
+                    "manifest": manifest,
+                },
+            )
+
         try:
             template = repo.require_document(batch["template_document_id"])
         except NotFoundError:
-            return repo.update_web_batch_progress(
-                batch["batch_id"], batch["cursor"], "failed", batch["manifest"]
+            _advance(
+                batch["batch_id"],
+                batch["cursor"],
+                batch["cursor"],
+                "failed",
+                batch["manifest"],
             )
+            return repo.require_web_batch(batch["batch_id"])
 
         account_ids = batch["account_ids"]
         total = len(account_ids)
@@ -3555,6 +5298,11 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         cursor = batch["cursor"]
 
         while cursor < total:
+            # D6 Round C single-flight, half one — see ``_process_batch``. It matters more here:
+            # a duplicate instance derivation converges on its deterministic id, but a duplicate
+            # web derivation mints a fresh doc_ and may publish a second slug.
+            if int(repo.require_web_batch(batch["batch_id"])["cursor"]) != cursor:
+                return repo.require_web_batch(batch["batch_id"])
             chunk_end = min(cursor + WEB_BATCH_CHUNK_SIZE, total)
             for index in range(cursor, chunk_end):
                 manifest.append(
@@ -3567,16 +5315,15 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                         public_base,
                     )
                 )
+            status = "completed" if chunk_end >= total else "partial"
+            if not _advance(batch["batch_id"], cursor, chunk_end, status, manifest)["advanced"]:
+                return repo.require_web_batch(batch["batch_id"])
             cursor = chunk_end
-            status = "completed" if cursor >= total else "partial"
-            batch = repo.update_web_batch_progress(
-                batch["batch_id"], cursor, status, manifest
-            )
+            batch = repo.require_web_batch(batch["batch_id"])
         if cursor >= total and batch["status"] != "completed":
             # Empty account set (the while loop never ran): still terminal.
-            batch = repo.update_web_batch_progress(
-                batch["batch_id"], cursor, "completed", manifest
-            )
+            _advance(batch["batch_id"], cursor, cursor, "completed", manifest)
+            batch = repo.require_web_batch(batch["batch_id"])
         return batch
 
     @app.post("/documents/{document_id}/web/batch")
@@ -3584,28 +5331,75 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         document_id: str,
         payload: WebBatchRequest,
         request: Request,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_web_document(document)
         # Unknown accounts are NOT pre-validated: a missing account is a
         # per-account failure on its manifest row, never a batch-level error.
-        slug_base = (payload.slug_base or "").strip() or web_slugify(document["title"])
-        public_base = str(request.base_url).rstrip("/")
-        batch = repo.create_web_batch(
-            {
-                "batch_id": new_id("wbatch"),
-                "template_document_id": document["id"],
-                "template_doc_version": document["current_version"],
-                "status": "partial",
-                "account_ids": payload.account_ids,
-                "publish": payload.publish,
-                "slug_base": slug_base,
-                "cursor": 0,
-                "manifest": [],
-            }
+        requested_base = (payload.slug_base or "").strip()
+        if payload.abm and requested_base and requested_base != ABM_SLUG_BASE:
+            # Two slug bases in one request is two different runs. Overriding one silently would
+            # publish pages at URLs the caller did not ask for — and, because the persisted slug
+            # base IS the ABM mode, would also decide `noindex` and document convergence behind
+            # their back. Refuse and name both.
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "web_batch.slug_base_conflict",
+                    "message": (
+                        f"this batch asks for ABM slugs ({ABM_SLUG_BASE!r}) and for slug_base "
+                        f"{requested_base!r}. An ABM run publishes at "
+                        f"'{ABM_SLUG_BASE}-<account>' and nowhere else — drop slug_base, or drop "
+                        "abm and name the base you want."
+                    ),
+                },
+            )
+        slug_base = (
+            ABM_SLUG_BASE
+            if payload.abm
+            else requested_base or web_slugify(document["title"])
         )
-        batch = _process_web_batch(repo, batch, public_base)
+        if not payload.abm and slug_base == ABM_SLUG_BASE:
+            # `abm: true` is the ONLY door into ABM semantics (T25 review I-3). The persisted
+            # slug base IS the mode, so a template merely TITLED "ABM" (title-slugged to
+            # "abm") or a hand-passed slug_base="abm" would otherwise switch a plain batch
+            # into noindex + in-place convergence nobody asked for — silently, and durably,
+            # because a resumed batch reads the persisted base.
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "web_batch.slug_base_reserved",
+                    "message": (
+                        f"slug base {ABM_SLUG_BASE!r} is reserved for ABM runs, and this "
+                        "request did not ask for one. If you want ABM account pages "
+                        f"('{ABM_SLUG_BASE}-<account>', noindex, one converging document per "
+                        "account), say `abm: true`; otherwise pass a different slug_base — "
+                        "nothing was derived or published."
+                    ),
+                },
+            )
+        public_base = str(request.base_url).rstrip("/")
+        batch_ref = run_design_tool(
+            "design_create_web_batch",
+            {
+                "batch": {
+                    "batch_id": new_id("wbatch"),
+                    "template_document_id": document["id"],
+                    "template_doc_version": document["current_version"],
+                    "status": "partial",
+                    "account_ids": payload.account_ids,
+                    "publish": payload.publish,
+                    "slug_base": slug_base,
+                    "cursor": 0,
+                    "manifest": [],
+                }
+            },
+            workspace_id=store_workspace_id(repo),
+        )
+        batch = _process_web_batch(
+            repo, repo.require_web_batch(batch_ref["batch_id"]), public_base
+        )
         log_event(
             api_logger,
             logging.INFO,
@@ -3620,7 +5414,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.post("/web/batches/{batch_id}/resume")
     def resume_web_batch(
-        batch_id: str, request: Request, repo: Repository = Depends(repository)
+        batch_id: str, request: Request, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         batch = repo.require_web_batch(batch_id)
         if batch["status"] == "completed":
@@ -3631,19 +5425,31 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.get("/web/batches/{batch_id}")
     def get_web_batch(
-        batch_id: str, repo: Repository = Depends(repository)
+        batch_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         return web_batch_response(repo.require_web_batch(batch_id))
 
-    @app.get("/p-assets/{asset_name}")
-    def serve_publish_asset(asset_name: str) -> Response:
+    # --- O6b interim public serving surface ------------------------------- #
+    # RATIFIED 2026-08-08 (option (a)), docs/specs/PD-part2-design-substrate.md §6: publish
+    # slugs became workspace-LOCAL when design_web_publish gained PK (workspace_id, slug) — O6 —
+    # so a bare /p/{slug} is genuinely AMBIGUOUS across tenants and is DELETED (404), not kept
+    # as a fallback. The workspace comes from the PATH because a public visitor sends no header.
+    # Part-IV item 5 (design-integration-master-plan.md) owns the real public routing and
+    # DELETES these three routes when it ships.
+
+    @app.get("/w/{workspace_id}/p-assets/{asset_name}")
+    def serve_publish_asset(workspace_id: str, asset_name: str) -> Response:
+        # D4: per-tenant byte custody is real, so the workspace segment is no longer decorative —
+        # it IS the storage scope this read resolves against (`{workspace}/design/{sha256}`).
+        # Another tenant's digest simply has no row here and 404s, the same refusal an unknown
+        # digest gets. `ensure_workspace=False`: an anonymous GET must never create a workspace.
         match = re.fullmatch(r"([0-9a-f]{64})\.(js|css|html)", asset_name)
         if match is None:
             return Response(status_code=404)
         digest, extension = match.groups()
         try:
             data, media_type = web_export.resolve_publish_asset(
-                Path(asset_store_root()), digest, extension
+                public_blob_store(workspace_id), digest, extension
             )
         except web_export.WebExportError:
             return Response(status_code=404)
@@ -3658,9 +5464,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             },
         )
 
-    @app.get("/p/{slug}/manifest.json")
+    @app.get("/w/{workspace_id}/p/{slug}/manifest.json")
     def serve_publish_manifest(
-        slug: str, repo: Repository = Depends(repository)
+        workspace_id: str, slug: str, repo: HybridRepository = Depends(public_repository)
     ) -> Response:
         publish = repo.get_web_publish(slug)
         if publish is None or publish["status"] != "active":
@@ -3683,11 +5489,12 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             },
         )
 
-    @app.get("/p/{slug}")
+    @app.get("/w/{workspace_id}/p/{slug}")
     def serve_published_page(
+        workspace_id: str,
         slug: str,
         request: Request,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(public_repository),
     ) -> HTMLResponse:
         publish = repo.get_web_publish(slug)
         if publish is None or publish["status"] != "active":
@@ -3717,19 +5524,19 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def export_document(
         document_id: str,
         payload: ExportDocumentRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_scene_document(document)
         profile = resolve_document_export_profile(document["scene"], payload)
         export_format = profile.get("format") or payload.format
 
+        blobs = blob_store(repo)
+        cache_dir = request_cache_dir(repo)
         try:
             source, brand_kit = choose_effective_brand(app.state.core, repo, document, payload)
             mode = choose_effective_brand_mode(document, brand_kit, payload.mode)
-            document_brand_fonts = brand_kit_font_spec(
-                repo, brand_kit, asset_store_root()
-            )
+            document_brand_fonts = brand_kit_font_spec(repo, brand_kit, blobs, cache_dir)
             preflight_result = app.state.core.preflight_scene(
                 document["scene"], brand_kit, mode, brand_fonts=document_brand_fonts
             )
@@ -3739,8 +5546,18 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         preflight_diagnostics = preflight_result.get("diagnostics", [])
         preflight = preflight_result.get("preflight") or {}
         preflight_operations = preflight_operation_list(preflight)
-        if preflight.get("has_errors") or has_error_diagnostics(preflight_diagnostics):
-            repo.store_diagnostics(document_id, "export", preflight_diagnostics)
+        # P0.3 severity split. `preflight.has_errors` is the engine's own
+        # `any(severity == Error)` over THIS same diagnostics list (see the
+        # helper's PreflightScene arm), so it carries no information the list
+        # does not — and consulting it here would re-block the advisory codes
+        # the split exists to let through. The blocking predicate is now the
+        # single source of truth; `has_errors` still rides the response as the
+        # raw engine signal.
+        blocking_diagnostics, advisory_diagnostics = partition_export_diagnostics(
+            preflight_diagnostics
+        )
+        if blocking_diagnostics:
+            _record_diagnostics(repo, document_id, "export", preflight_diagnostics)
             log_event(
                 api_logger,
                 logging.INFO,
@@ -3751,6 +5568,8 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 effective_brand_source=source,
                 profile_name=profile.get("name"),
                 preflight_blocked=True,
+                blocking_diagnostics=len(blocking_diagnostics),
+                advisory_diagnostics=len(advisory_diagnostics),
                 **diagnostic_summary(preflight_diagnostics),
             )
             return document_export_response(
@@ -3765,28 +5584,39 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 export={},
                 profile=profile,
             )
+        # Advisory-only diagnostics do NOT return here: the export proceeds and
+        # the render runs. They are recorded with the export-phase diagnostics
+        # below (that call already includes `preflight_diagnostics`, so there is
+        # nothing to record separately) and surfaced on the response as
+        # `warnings` for the editor's export menu — ruling R5, editor surface
+        # only, never the end client.
 
         export_scene = preflight_result.get("scene", document["scene"])
         updated_document = document
         if payload.persist_preflight and document["status"] == "draft":
-            effective = (
-                (source, brand_kit, mode)
-                if payload.persist_effective_brand or source in {"platform_default", "none"}
-                else None
-            )
-            updated_document = repo.update_document_state(
+            # D6 Round B: /export's persist half is the SAME governed write /preflight uses —
+            # only the envelope `source` string differs (see `_persist_preflight`). Its read
+            # half (the engine's preflight + the export render) stays a route concern.
+            updated_document = _persist_preflight(
+                repo,
                 document_id,
-                export_scene,
-                preflight_diagnostics,
-                preflight_operations,
-                "system",
-                "system",
-                "export_preflight",
-                "preflight",
-                effective_brand=effective,
+                scene=export_scene,
+                diagnostics=preflight_diagnostics,
+                operations=preflight_operations,
+                actor_id="export_preflight",
+                effective_brand=_effective_brand_payload(
+                    source,
+                    brand_kit,
+                    mode,
+                    persist=payload.persist_effective_brand,
+                ),
             )
             export_scene = updated_document["scene"]
 
+        # D4 read-through: the export renders real pixels, so materialize every digest the
+        # scene names into the engine cache first (the preflight above may have rewritten the
+        # scene, hence both).
+        materialize_scene_assets(blobs, cache_dir, [export_scene, document["scene"]])
         try:
             export_result = app.state.core.export_preview(
                 export_scene,
@@ -3794,7 +5624,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 payload.page_ids,
                 profile,
                 raise_on_error=False,
-                asset_store_root=asset_store_root(),
+                asset_store_root=cache_dir,
                 brand_fonts=document_brand_fonts,
             )
         except CoreError as error:
@@ -3805,10 +5635,15 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         if not export_result.get("ok", False) and not export_diagnostics:
             export_diagnostics = diagnostics_from_helper_error(export_result.get("error"))
         diagnostics = preflight_diagnostics + export_diagnostics
-        repo.store_diagnostics(document_id, "export", diagnostics)
+        _record_diagnostics(repo, document_id, "export", diagnostics)
+        # P0.3: an advisory-only diagnostic must not flip a rendered export to
+        # "failed" here either — the bytes exist and are correct. Export-phase
+        # diagnostics (licence refusals, missing pages) are unclassified and so
+        # block by default, which is the fail-closed behavior we want.
         status = (
             "failed"
-            if not export_result.get("ok", False) or has_error_diagnostics(diagnostics)
+            if not export_result.get("ok", False)
+            or has_blocking_export_diagnostics(diagnostics)
             else "ok"
         )
         log_event(
@@ -3821,6 +5656,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             effective_brand_source=source,
             profile_name=profile.get("name"),
             preflight_blocked=False,
+            advisory_diagnostics=len(advisory_diagnostics),
             **artifact_summary(export),
             **diagnostic_summary(diagnostics),
         )
@@ -3840,7 +5676,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     @app.post("/preflight-preview")
     def preflight_preview(
         payload: PreflightPreviewRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         try:
             source, brand_kit = choose_effective_brand_for_scene_preview(
@@ -3851,7 +5687,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 payload.scene,
                 brand_kit,
                 mode,
-                brand_fonts=brand_kit_font_spec(repo, brand_kit, asset_store_root()),
+                brand_fonts=brand_kit_font_spec(
+                    repo, brand_kit, blob_store(repo), request_cache_dir(repo)
+                ),
             )
         except CoreError as error:
             raise core_http_error(error) from error
@@ -3903,7 +5741,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def attach_brand_kit_to_document(
         document_id: str,
         payload: AttachBrandKitRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_scene_document(document)
@@ -3918,22 +5756,26 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             raise core_http_error(error) from error
 
         diagnostics = result.get("diagnostics", [])
-        updated = repo.update_document_state(
-            document_id,
-            result["scene"],
-            diagnostics,
-            [operation],
-            "api",
-            payload.actor.kind,
-            payload.actor.id,
-            "structural",
-            effective_brand=("brand_kit_library", brand_kit, mode),
+        run_design_tool(
+            "design_attach_brand_kit",
+            {
+                "document_id": document_id,
+                "scene": result["scene"],
+                "diagnostics": diagnostics,
+                "operations": [operation],
+                "actor_kind": payload.actor.kind,
+                "actor_id": payload.actor.id,
+                "effective_brand": {
+                    "source": "brand_kit_library",
+                    "brand_kit": brand_kit,
+                    "mode": mode,
+                },
+            },
+            workspace_id=store_workspace_id(repo),
+            refusals=_document_refusals(document_id),
         )
-        snapshot = None
-        if payload.snapshot_reason:
-            snapshot = repo.create_snapshot(
-                document_id, new_id("snap"), payload.snapshot_reason
-            )
+        updated = repo.require_document(document_id)
+        snapshot = _snapshot_after_write(repo, document_id, payload.snapshot_reason)
         return operation_application_dto(
             updated,
             result.get("applied_operations", 0),
@@ -3946,7 +5788,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def validate_document_brand_governance(
         document_id: str,
         payload: ValidateDocumentBrandGovernanceRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_scene_document(document)
@@ -3962,7 +5804,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             raise core_http_error(error) from error
 
         diagnostics = result.get("diagnostics", [])
-        repo.store_diagnostics(document_id, "brand_governance", diagnostics)
+        _record_diagnostics(repo, document_id, "brand_governance", diagnostics)
         return brand_governance_dto(
             document,
             brand_kit,
@@ -3974,7 +5816,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def finalize_document(
         document_id: str,
         payload: FinalizeTemplateRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_scene_document(document)
@@ -3988,38 +5830,45 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         try:
             result = app.state.core.finalize_template(scene, template_revision_id)
         except CoreError as error:
-            repo.store_diagnostics(document_id, "finalize", diagnostics_from_core_error(error))
+            _record_diagnostics(
+                repo, document_id, "finalize", diagnostics_from_core_error(error)
+            )
             raise core_http_error(error) from error
 
         diagnostics = result.get("diagnostics", [])
         finalized_scene = result["scene"]
-        revision = repo.create_template_revision(
-            document_id,
-            template_revision_id,
-            source_snapshot_id,
-            finalized_scene,
-            slot_summary(finalized_scene),
+        # D6 Round B: the revision row and the document's finalize advance are ONE operation
+        # (a revision without the finalized document, or the reverse, is a broken template), so
+        # they are one tool — keyed on the caller-named template_revision_id.
+        run_design_tool(
+            "design_finalize_document",
+            {
+                "document_id": document_id,
+                "template_revision_id": template_revision_id,
+                "source_snapshot_id": source_snapshot_id,
+                "scene": finalized_scene,
+                "slot_summary": slot_summary(finalized_scene),
+                "diagnostics": diagnostics,
+                "actor_kind": payload.actor.kind,
+                "actor_id": payload.actor.id,
+            },
+            workspace_id=store_workspace_id(repo),
+            refusals=_finalize_refusals(document_id, template_revision_id),
         )
         operation = {
             "kind": "finalize_template",
             "template_revision_id": template_revision_id,
         }
-        updated = repo.update_document_state(
-            document_id,
-            finalized_scene,
+        return finalize_dto(
+            repo.require_document(document_id),
+            repo.require_template_revision(template_revision_id),
             diagnostics,
-            [operation],
-            "system",
-            payload.actor.kind,
-            payload.actor.id,
-            "finalize",
-            effective_brand=None,
+            operation,
         )
-        return finalize_dto(updated, revision, diagnostics, operation)
 
     @app.get("/template-revisions/{template_revision_id}")
     def get_template_revision(
-        template_revision_id: str, repo: Repository = Depends(repository)
+        template_revision_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         return repo.require_template_revision(template_revision_id)
 
@@ -4040,7 +5889,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             + _sanitize_id_component(binding_set_id)
         )
 
-    def _binding_asset_records(repo: Repository, binding: JsonObject) -> list:
+    def _binding_asset_records(repo: HybridRepository, binding: JsonObject) -> list:
         """Resolve asset records referenced by binding values. Missing
         records are NOT an HTTP error here: derivation reports LUMG0301
         per slot, which is the honest per-instance verdict."""
@@ -4057,7 +5906,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         return records
 
     def _derive_and_persist_instance(
-        repo: Repository,
+        repo: HybridRepository,
         revision: JsonObject,
         binding: JsonObject,
         export_formats: list,
@@ -4069,17 +5918,28 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         binding_set_id = binding.get("binding_set_id") or new_id("bind")
         instance_id = _instance_id(revision_id, binding_set_id)
         records = _binding_asset_records(repo, binding)
+        blobs = blob_store(repo)
+        cache_dir = request_cache_dir(repo)
+        # D4 read-through: derive renders the template scene AND the per-binding asset records
+        # (an account logo the binding substitutes in), so both sets of digests must be in the
+        # engine cache before the call.
+        materialize_scene_assets(blobs, cache_dir, [revision["scene"]])
+        ensure_materialized(
+            blobs,
+            cache_dir,
+            (digest for record in records for digest, _mime in record_digests(record)),
+        )
         result = app.state.core.derive_instance(
             scene=revision["scene"],
             binding_set=binding,
             asset_records=records,
-            store_root=asset_store_root(),
+            store_root=cache_dir,
             export_formats=export_formats,
             export_dpi=export_dpi,
             export_profile=export_profile,
             # Bulk runs shape with the template's kit faces — without this
             # every instance silently substituted bundled Inter.
-            brand_fonts=scene_brand_fonts(repo, revision["scene"], asset_store_root()),
+            brand_fonts=scene_brand_fonts(repo, revision["scene"], blobs, cache_dir),
             raise_on_error=False,
         )
 
@@ -4087,7 +5947,8 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             diagnostics = result.get("diagnostics", [])
             if not diagnostics:
                 diagnostics = diagnostics_from_helper_error(result.get("error"))
-            instance = repo.upsert_instance(
+            return _persist_instance(
+                repo,
                 {
                     "instance_id": instance_id,
                     "template_revision_id": revision_id,
@@ -4101,15 +5962,40 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     "fit_report": {},
                     "artifacts": [],
                     "generated_assets": {},
-                }
+                },
             )
-            return instance
 
         payload = result.get("instance") or {}
         fit_report = payload.get("fit_report") or {}
         status = "failed" if payload.get("has_errors") else "derived"
         generated = payload.get("generated") or {}
-        instance = repo.upsert_instance(
+        # D4 write-back, BEFORE anything is persisted. Derive writes two kinds of bytes into the
+        # cache: rendered EXPORT ARTIFACTS (the per-instance png/svg the row then references)
+        # and GENERATED asset records (e.g. a re-fit crop). Both get durable custody here, and
+        # the generated records are re-pointed at their storage keys so the registry rows the
+        # loop below writes never advertise a cache path.
+        register_engine_write(
+            blobs,
+            cache_dir,
+            relative_paths=payload.get("artifacts") or [],
+            source_key=design_storage.SOURCE_KEY_ENGINE_ARTIFACT,
+        )
+        for entry in generated.values():
+            record = (entry or {}).get("record")
+            if record:
+                register_engine_write(
+                    blobs,
+                    cache_dir,
+                    record=record,
+                    source_key=design_storage.SOURCE_KEY_ASSET,
+                )
+        # D6 Round C: the instance row, the library records for the assets the derivation
+        # generated, and the repair-queue rows for the slots it could not fit are ONE
+        # derivation's durable footprint — all keyed off the same deterministic instance id —
+        # so they are one governed write, not three. A partial application (an instance whose
+        # generated crop was never registered) is exactly the state nobody can repair.
+        return _persist_instance(
+            repo,
             {
                 "instance_id": instance_id,
                 "template_revision_id": revision_id,
@@ -4123,23 +6009,18 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 "fit_report": fit_report,
                 "artifacts": payload.get("artifacts", []),
                 "generated_assets": generated,
-            }
-        )
-
-        # Generated assets become first-class library records.
-        for entry in generated.values():
-            record = (entry or {}).get("record")
-            if record:
-                repo.create_asset_record(record)
-
-        # AskAgentToRepair entries land in the template-level repair queue.
-        for request_ in payload.get("repair_requests", []):
-            repair_id = "rep_" + _sanitize_id_component(
-                f"{revision_id}_{request_['slot_key']}_{binding_set_id}"
-            )
-            repo.upsert_repair_request(
+            },
+            generated_records=[
+                record
+                for entry in generated.values()
+                if (record := (entry or {}).get("record"))
+            ],
+            repair_requests=[
                 {
-                    "repair_id": repair_id,
+                    "repair_id": "rep_"
+                    + _sanitize_id_component(
+                        f"{revision_id}_{request_['slot_key']}_{binding_set_id}"
+                    ),
                     "template_revision_id": revision_id,
                     "slot_key": request_["slot_key"],
                     "node_id": request_["node_id"],
@@ -4148,9 +6029,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     "reason": request_["reason"],
                     "status": "open",
                 }
-            )
-
-        return instance
+                for request_ in payload.get("repair_requests", [])
+            ],
+        )
 
     def _public_instance(instance: JsonObject, include_scene: bool = True) -> JsonObject:
         public = dict(instance)
@@ -4161,7 +6042,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     @app.post("/binding-sets")
     def create_binding_set(
         payload: CreateBindingSetRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         binding = payload.binding_set
         binding_set_id = binding.get("binding_set_id")
@@ -4199,7 +6080,12 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     "diagnostics": diagnostics,
                 },
             )
-        stored = repo.upsert_binding_set(binding, "valid", diagnostics)
+        run_design_tool(
+            "design_upsert_binding_set",
+            {"binding": binding, "status": "valid", "diagnostics": diagnostics},
+            workspace_id=store_workspace_id(repo),
+        )
+        stored = repo.require_binding_set(binding_set_id)
         log_event(
             api_logger,
             logging.INFO,
@@ -4212,14 +6098,14 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.get("/binding-sets/{binding_set_id}")
     def get_binding_set(
-        binding_set_id: str, repo: Repository = Depends(repository)
+        binding_set_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         return repo.require_binding_set(binding_set_id)
 
     @app.get("/binding-sets")
     def list_binding_sets(
         template_revision_id: Optional[str] = Query(None),
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         return {
             "binding_sets": repo.list_binding_sets(template_revision_id),
@@ -4227,16 +6113,20 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.delete("/binding-sets/{binding_set_id}")
     def delete_binding_set(
-        binding_set_id: str, repo: Repository = Depends(repository)
+        binding_set_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
-        repo.delete_binding_set(binding_set_id)
+        run_design_tool(
+            "design_delete_binding_set",
+            {"binding_set_id": binding_set_id},
+            workspace_id=store_workspace_id(repo),
+        )
         return {"deleted": binding_set_id}
 
     @app.post("/template-revisions/{template_revision_id}/instances")
     def derive_instance_route(
         template_revision_id: str,
         payload: DeriveInstanceRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         revision = repo.require_template_revision(template_revision_id)
         if payload.binding_set is not None:
@@ -4291,7 +6181,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def get_instance(
         instance_id: str,
         include_scene: bool = Query(True),
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         return _public_instance(
             repo.require_instance(instance_id), include_scene
@@ -4299,7 +6189,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.get("/template-revisions/{template_revision_id}/instances")
     def list_revision_instances(
-        template_revision_id: str, repo: Repository = Depends(repository)
+        template_revision_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         repo.require_template_revision(template_revision_id)
         return {
@@ -4332,7 +6222,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         return [code for code in codes if not (code in seen or seen.add(code))]
 
     def _process_batch(
-        repo: Repository, revision: JsonObject, batch: JsonObject
+        repo: HybridRepository, revision: JsonObject, batch: JsonObject
     ) -> JsonObject:
         """Synchronous-chunked batch processing (Track D Decision 4):
         the cursor persists after every chunk, so an interrupted batch
@@ -4350,6 +6240,11 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         cursor = batch["cursor"]
 
         while cursor < len(binding_set_ids):
+            # D6 Round C single-flight, half one: re-read the cursor before spending a chunk on
+            # the engine. It shrinks the double-derive window to one chunk; the compare-and-set
+            # on the write below is what makes double-WRITING impossible.
+            if int(repo.require_batch(batch["batch_id"])["cursor"]) != cursor:
+                return repo.require_batch(batch["batch_id"])
             chunk_end = min(cursor + batch["chunk_size"], len(binding_set_ids))
             for index in range(cursor, chunk_end):
                 stored = repo.require_binding_set(binding_set_ids[index])
@@ -4378,18 +6273,33 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                         "error_codes": _instance_error_codes(instance),
                     }
                 )
-            cursor = chunk_end
-            status = "completed" if cursor >= len(binding_set_ids) else "running"
-            batch = repo.update_batch_progress(
-                batch["batch_id"], cursor, status, counts, manifest, diagnostics
+            status = "completed" if chunk_end >= len(binding_set_ids) else "running"
+            progress = _advance_batch(
+                repo,
+                "design_advance_instance_batch",
+                {
+                    "batch_id": batch["batch_id"],
+                    "expected_cursor": cursor,
+                    "cursor": chunk_end,
+                    "status": status,
+                    "counts": counts,
+                    "manifest": manifest,
+                    "diagnostics": diagnostics,
+                },
             )
+            if not progress["advanced"]:
+                # Another resumer owns this batch. Stop and report where it actually is —
+                # a resume that discovers the work is already being done is not an error.
+                return repo.require_batch(batch["batch_id"])
+            cursor = chunk_end
+            batch = repo.require_batch(batch["batch_id"])
         return batch
 
     @app.post("/template-revisions/{template_revision_id}/batches")
     def create_instance_batch(
         template_revision_id: str,
         payload: CreateInstanceBatchRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         revision = repo.require_template_revision(template_revision_id)
         if not payload.binding_set_ids:
@@ -4443,19 +6353,23 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     },
                 )
         chunk_size = max(1, payload.chunk_size)
-        batch = repo.create_batch(
+        batch_ref = run_design_tool(
+            "design_create_instance_batch",
             {
-                "batch_id": new_id("batch"),
-                "template_revision_id": template_revision_id,
-                "status": "running",
-                "binding_set_ids": payload.binding_set_ids,
-                "export_formats": payload.export_formats,
-                "export_profile": export_profile,
-                "chunk_size": chunk_size,
-                "cursor": 0,
-            }
+                "batch": {
+                    "batch_id": new_id("batch"),
+                    "template_revision_id": template_revision_id,
+                    "status": "running",
+                    "binding_set_ids": payload.binding_set_ids,
+                    "export_formats": payload.export_formats,
+                    "export_profile": export_profile,
+                    "chunk_size": chunk_size,
+                    "cursor": 0,
+                }
+            },
+            workspace_id=store_workspace_id(repo),
         )
-        batch = _process_batch(repo, revision, batch)
+        batch = _process_batch(repo, revision, repo.require_batch(batch_ref["batch_id"]))
         log_event(
             api_logger,
             logging.INFO,
@@ -4469,7 +6383,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.post("/batches/{batch_id}/resume")
     def resume_instance_batch(
-        batch_id: str, repo: Repository = Depends(repository)
+        batch_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         batch = repo.require_batch(batch_id)
         if batch["status"] == "completed":
@@ -4480,13 +6394,13 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.get("/batches/{batch_id}")
     def get_instance_batch(
-        batch_id: str, repo: Repository = Depends(repository)
+        batch_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         return repo.require_batch(batch_id)
 
     @app.post("/instances/preview")
     def preview_instance(
-        payload: InstancePreviewRequest, repo: Repository = Depends(repository)
+        payload: InstancePreviewRequest, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         """Stateless worst-case/instance preview (slice G9): derive a
         binding set against an inline scene (treated as a finalized
@@ -4508,15 +6422,18 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 },
             }
         export_format = payload.format if payload.format in {"svg", "png"} else "svg"
+        blobs = blob_store(repo)
+        cache_dir = request_cache_dir(repo)
+        materialize_scene_assets(blobs, cache_dir, [scene])
         try:
             result = app.state.core.derive_instance(
                 scene=scene,
                 binding_set=payload.binding_set,
                 asset_records=[],
-                store_root=asset_store_root(),
+                store_root=cache_dir,
                 export_formats=[export_format],
                 export_dpi=96,
-                brand_fonts=scene_brand_fonts(repo, scene, asset_store_root()),
+                brand_fonts=scene_brand_fonts(repo, scene, blobs, cache_dir),
                 raise_on_error=False,
             )
         except CoreError as error:
@@ -4537,12 +6454,21 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             )
 
         payload_instance = result.get("instance") or {}
+        # D4 write-back: nothing about this preview persists, but the engine still put its
+        # rendered artifact into the cache — register it so a cache wipe between here and the
+        # read below cannot lose it, and so repeat previews of identical output dedup.
+        register_engine_write(
+            blobs,
+            cache_dir,
+            relative_paths=payload_instance.get("artifacts") or [],
+            source_key=design_storage.SOURCE_KEY_ENGINE_ARTIFACT,
+        )
         artifact_payload: Optional[JsonObject] = None
         for artifact in payload_instance.get("artifacts", []):
             relative = artifact.get("relative_path")
             if not relative:
                 continue
-            artifact_path = Path(asset_store_root()) / relative
+            artifact_path = Path(cache_dir) / relative
             if not artifact_path.exists():
                 continue
             data = artifact_path.read_bytes()
@@ -4573,12 +6499,47 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def list_template_repair_queue(
         template_revision_id: str,
         status: Optional[str] = Query(None),
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         repo.require_template_revision(template_revision_id)
         return {
             "repairs": repo.list_repair_queue(template_revision_id, status),
         }
+
+    def public_asset_record(record: JsonObject) -> JsonObject:
+        """DTO-boundary enrichment: stamp the content digests the editor's
+        public serving needs (`/asset-store/{digest}` — the only URL an
+        `<img src>` can use, since it cannot send `X-Workspace-Id`) as
+        explicit fields. Ref parsing stays server-owned policy
+        (`clue_design.storage.location_digest`); no client ever takes the
+        tail of an `opaque_ref`. Read-time and non-mutating — stored rows
+        keep their written shape.
+        """
+        media = record.get("media")
+        if not isinstance(media, dict):
+            return record
+        enriched = None
+        thumbnail = media.get("thumbnail")
+        if isinstance(thumbnail, dict) and not thumbnail.get("digest"):
+            thumb_digest = location_digest(thumbnail.get("location"))
+            if thumb_digest:
+                enriched = {
+                    **media,
+                    "thumbnail": {
+                        **thumbnail,
+                        "digest": {"algorithm": "sha256", "value": thumb_digest},
+                    },
+                }
+        if not (enriched or media).get("digest"):
+            full_digest = location_digest(media.get("location"))
+            if full_digest:
+                enriched = {
+                    **(enriched or media),
+                    "digest": {"algorithm": "sha256", "value": full_digest},
+                }
+        if enriched is None:
+            return record
+        return {**record, "media": enriched}
 
     @app.post("/assets")
     def upload_asset(
@@ -4588,7 +6549,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         uploaded_by: Optional[str] = Form(None),
         license_json: Optional[str] = Form(None),
         tags: Optional[str] = Form(None),
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         data = file.file.read()
         max_bytes = asset_max_bytes()
@@ -4606,9 +6567,11 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         tag_list = [tag.strip() for tag in (tags or "").split(",") if tag.strip()] or None
 
         asset_id = f"asset_{uuid4().hex[:12]}"
+        blobs = blob_store(repo)
+        cache_dir = request_cache_dir(repo)
         try:
             result = app.state.core.ingest_asset(
-                store_root=asset_store_root(),
+                store_root=cache_dir,
                 bytes_base64=base64.b64encode(data).decode("ascii"),
                 asset_id=asset_id,
                 label=label or file.filename or asset_id,
@@ -4656,7 +6619,14 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
         asset_payload = result.get("asset") or {}
         record = asset_payload.get("record") or {}
-        stored = repo.create_asset_record(record)
+        # D4 write-back BEFORE the registry row: the engine wrote the bytes (and a thumbnail)
+        # into its cache; give them durable custody and re-point the record's locations at the
+        # storage keys (R-D4-4), so the row that lands — and the response the editor caches —
+        # never advertises a path under a wipeable tree.
+        register_engine_write(
+            blobs, cache_dir, record=record, source_key=design_storage.SOURCE_KEY_ASSET
+        )
+        stored = _register_asset_record(repo, record)
         log_event(
             api_logger,
             logging.INFO,
@@ -4670,7 +6640,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         )
         return {
             "schema_version": 1,
-            "asset": stored["asset"],
+            "asset": public_asset_record(stored["asset"]),
             "deduplicated": asset_payload.get("deduplicated", False),
             "diagnostics": diagnostics,
         }
@@ -4678,12 +6648,32 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     @app.post("/assets/generate/qr")
     def generate_qr_asset(
         payload: GenerateQrRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
-        asset_id = f"asset_qr_{uuid4().hex[:12]}"
+        # D6 Round C: the row id is DERIVED from the request, not minted. A QR is a pure
+        # function of its payload — the engine already reports ``deduplicated`` on the second
+        # call because the rendered bytes are identical — so a random id was the only thing
+        # making an identical repeat accumulate library rows that all point at one blob. With a
+        # content-derived id the registry write is a real upsert and
+        # ``design_register_qr_asset`` can honestly declare DOMAIN_IDEMPOTENT.
+        asset_id = "asset_qr_" + hashlib.sha256(
+            json.dumps(
+                {
+                    "data": payload.data,
+                    "label": payload.label,
+                    "ec_level": payload.ec_level,
+                    "print_media": payload.print_media,
+                    "target_width_mm": payload.target_width_mm,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()[:12]
+        blobs = blob_store(repo)
+        cache_dir = request_cache_dir(repo)
         try:
             result = app.state.core.generate_qr(
-                store_root=asset_store_root(),
+                store_root=cache_dir,
                 data=payload.data,
                 asset_id=asset_id,
                 label=payload.label,
@@ -4719,7 +6709,11 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
         asset_payload = result.get("asset") or {}
         record = asset_payload.get("record") or {}
-        stored = repo.create_asset_record(record)
+        # D4 write-back before the registry row (see POST /assets).
+        register_engine_write(
+            blobs, cache_dir, record=record, source_key=design_storage.SOURCE_KEY_ASSET
+        )
+        stored = _register_asset_record(repo, record, tool="design_register_qr_asset")
         log_event(
             api_logger,
             logging.INFO,
@@ -4733,7 +6727,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         )
         return {
             "schema_version": 1,
-            "asset": stored["asset"],
+            "asset": public_asset_record(stored["asset"]),
             "qr": asset_payload.get("qr") or {},
             "deduplicated": asset_payload.get("deduplicated", False),
             "diagnostics": diagnostics,
@@ -4742,13 +6736,15 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     @app.post("/assets/generate")
     def generate_asset(
         payload: GenerateAssetRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         """Public Phase E provider-registry surface (lands with Phase G):
         run any registered generation provider and persist the normalized
         asset record."""
         asset_id = f"asset_gen_{uuid4().hex[:12]}"
         cache_key: Optional[str] = None
+        blobs = blob_store(repo)
+        cache_dir = request_cache_dir(repo)
         if image_provider.is_image_model_provider(payload.provider):
             # Phase 3b image EDIT: resolve the source asset's pixels up front.
             # The edit keys the cache on the source digest (same instruction on
@@ -4760,12 +6756,10 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 source_stored = repo.require_asset_record(payload.source_asset_id)
                 source_media = (source_stored["asset"].get("media") or {})
                 source_digest = (source_media.get("digest") or {}).get("value")
-                blob_path = (
-                    resolve_store_path(f"sha256/{source_digest[:2]}/{source_digest}")
-                    if source_digest
-                    else None
-                )
-                if blob_path is None or not blob_path.is_file():
+                # D4: a pure-Python read — go straight to durable storage. Routing it through
+                # the engine cache would mean materializing bytes no engine call will read.
+                source_bytes = read_asset_bytes(blobs, source_digest)
+                if source_bytes is None:
                     raise HTTPException(
                         status_code=409,
                         detail={
@@ -4778,7 +6772,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                         },
                     )
                 source_images = [
-                    (blob_path.read_bytes(), source_media.get("mime_type") or "image/png")
+                    (source_bytes, source_media.get("mime_type") or "image/png")
                 ]
             # RC (D-RC2.5): reference-conditioned GENERATION — resolve the
             # request's reference_asset_ids into real bytes (the field was inert
@@ -4792,7 +6786,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 if ref_ids:
                     reference_images, reference_digests = (
                         resolve_reference_images_for_generate(
-                            repo, ref_ids, asset_store_root()
+                            repo, blobs, cache_dir, ref_ids
                         )
                     )
             # Generation cache: re-use the asset produced by an identical earlier
@@ -4812,8 +6806,15 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 reference_digests=reference_digests,
                 source_digest=source_digest,
             )
-            cached_record = image_cache.lookup(asset_store_root(), cache_key)
-            if cached_record:
+            # D6 Round C: the ledger is Postgres (``design_generation_result``), not the JSON
+            # sidecar under the wipeable engine cache. This probe is a READ and deliberately not
+            # a tool — it is what AVOIDS the provider spend, and it has to run before it. The
+            # write that claims the key is governed (``design_register_generated_asset``) and
+            # re-checks the ledger inside its own transaction, so two requests that both reach
+            # here on a miss still converge on one asset.
+            cached = repo.get_generation_result(cache_key)
+            if cached:
+                cached_record = cached["asset"]
                 log_event(
                     api_logger,
                     logging.INFO,
@@ -4826,7 +6827,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 )
                 return {
                     "schema_version": 1,
-                    "asset": cached_record,
+                    "asset": public_asset_record(cached_record),
                     "provider": {"id": payload.provider},
                     "deduplicated": True,
                     "diagnostics": [],
@@ -4872,7 +6873,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 ) from error
             try:
                 result = app.state.core.ingest_asset(
-                    store_root=asset_store_root(),
+                    store_root=cache_dir,
                     bytes_base64=base64.b64encode(generated.image_bytes).decode("ascii"),
                     asset_id=asset_id,
                     label=payload.label or (payload.prompt[:60].strip() or asset_id),
@@ -4919,7 +6920,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             }
             try:
                 result = app.state.core.generate_asset(
-                    store_root=asset_store_root(),
+                    store_root=cache_dir,
                     provider=payload.provider,
                     request=request,
                     asset_id=asset_id,
@@ -4954,11 +6955,23 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
         asset_payload = result.get("asset") or {}
         record = asset_payload.get("record") or {}
-        stored = repo.create_asset_record(record)
+        # D4 write-back before the registry row (see POST /assets). Covers both branches: the
+        # Python image provider's bytes re-ingested through the engine, and a registered
+        # provider's `generate_asset`.
+        register_engine_write(
+            blobs, cache_dir, record=record, source_key=design_storage.SOURCE_KEY_ASSET
+        )
         if cache_key is not None:
-            # Record the request → asset mapping so an identical repeat re-uses
-            # this asset instead of re-paying the model.
-            image_cache.store(asset_store_root(), cache_key, stored["asset"])
+            # One governed write: the registry row AND the ledger claim, in one transaction, so
+            # an identical repeat re-places this asset instead of re-paying the model.
+            ref = run_design_tool(
+                "design_register_generated_asset",
+                {"record": record, "generation_key": cache_key},
+                workspace_id=store_workspace_id(repo),
+            )
+            stored = repo.require_asset_record(ref["asset_id"])
+        else:
+            stored = _register_asset_record(repo, record)
         log_event(
             api_logger,
             logging.INFO,
@@ -4971,7 +6984,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         )
         return {
             "schema_version": 1,
-            "asset": stored["asset"],
+            "asset": public_asset_record(stored["asset"]),
             "provider": asset_payload.get("provider") or {"id": payload.provider},
             "deduplicated": asset_payload.get("deduplicated", False),
             "diagnostics": diagnostics,
@@ -4984,7 +6997,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         include_archived: bool = Query(False),
         limit: int = Query(50, ge=1, le=200),
         offset: int = Query(0, ge=0),
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         rows = repo.list_asset_records(
             kind=kind,
@@ -4995,7 +7008,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         )
         return {
             "schema_version": 1,
-            "assets": [row["asset"] for row in rows],
+            "assets": [public_asset_record(row["asset"]) for row in rows],
             "count": len(rows),
             "limit": limit,
             "offset": offset,
@@ -5004,63 +7017,48 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     @app.post("/assets/{asset_id}/archive")
     def archive_asset(
         asset_id: str,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
-        stored = repo.update_asset_status(asset_id, "archived")
+        stored = _set_asset_status(repo, asset_id, "archived")
         log_event(
             api_logger,
             logging.INFO,
             "asset_archived",
             asset_id=asset_id,
         )
-        return {"schema_version": 1, "asset": stored["asset"]}
+        return {"schema_version": 1, "asset": public_asset_record(stored["asset"])}
 
     @app.post("/assets/{asset_id}/restore")
     def restore_asset(
         asset_id: str,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
-        stored = repo.update_asset_status(asset_id, "ready")
+        stored = _set_asset_status(repo, asset_id, "ready")
         log_event(
             api_logger,
             logging.INFO,
             "asset_restored",
             asset_id=asset_id,
         )
-        return {"schema_version": 1, "asset": stored["asset"]}
+        return {"schema_version": 1, "asset": public_asset_record(stored["asset"])}
 
     @app.delete("/assets/{asset_id}")
     def hard_delete_asset(
         asset_id: str,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
-        stored = repo.require_asset_record(asset_id)
-        record = stored["asset"]
-
-        # Record-level reference check (archive-first lifecycle): a hard
-        # delete is refused while any document scene references the asset.
-        referencing = repo.count_documents_referencing(f'"{asset_id}"')
-        if referencing:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"asset {asset_id} is referenced by {referencing} document(s); "
-                    "archive it instead or remove the references first"
-                ),
-            )
-
-        repo.delete_asset_record(asset_id)
-
-        # Byte-level lifecycle (Decision 4): bytes leave the store only
-        # when no remaining record or document references their digest.
-        removed_digests: List[str] = []
-        for digest_value in record_digest_values(record):
-            if repo.count_assets_with_digest(digest_value):
-                continue
-            if repo.count_documents_referencing(digest_value):
-                continue
-            if delete_stored_digest(digest_value):
-                removed_digests.append(digest_value)
+        # D6 Round C: the reference check (archive-first lifecycle — a hard delete is refused
+        # while any document scene still names the asset) is the tool's PRECONDITION, and the
+        # row delete plus the digest-by-digest byte GC are its one operation core. They are not
+        # separable: a window in which the row is gone and the bytes are not is a leak nothing
+        # records as owed.
+        deletion = run_design_tool(
+            "design_delete_asset",
+            {"asset_id": asset_id},
+            workspace_id=store_workspace_id(repo),
+            refusals=_asset_refusals(asset_id),
+        )
+        removed_digests: List[str] = list(deletion["removed_digests"])
 
         log_event(
             api_logger,
@@ -5075,27 +7073,10 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "removed_digests": removed_digests,
         }
 
-    def record_digest_values(record: JsonObject) -> List[str]:
-        values: List[str] = []
-        media = record.get("media") or {}
-        digest = media.get("digest") or {}
-        if digest.get("value"):
-            values.append(digest["value"])
-        thumbnail = media.get("thumbnail") or {}
-        thumbnail_ref = (thumbnail.get("location") or {}).get("opaque_ref") or ""
-        if thumbnail_ref.startswith("sha256/"):
-            thumbnail_digest = thumbnail_ref.rsplit("/", 1)[-1]
-            if thumbnail_digest and thumbnail_digest not in values:
-                values.append(thumbnail_digest)
-        return values
-
-    def delete_stored_digest(digest_value: str) -> bool:
-        relative = f"sha256/{digest_value[:2]}/{digest_value}"
-        path = resolve_store_path(relative)
-        if not path.is_file():
-            return False
-        path.unlink()
-        return True
+    # D6 Round C: ``record_digest_values`` and ``delete_stored_digest`` moved INTO the delete
+    # tool's operation core (``toolbelt.assets.delete_asset_and_orphaned_bytes``), verbatim —
+    # the reference counting and the durable-custody-then-cache-mirror ordering are part of the
+    # one destructive operation, not route glue. They had no other caller.
 
     # GET /assets/descriptions is registered BEFORE GET /assets/{asset_id} so
     # the literal "descriptions" segment is not captured as an asset id (FastAPI
@@ -5103,11 +7084,11 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     @app.get("/assets/descriptions")
     def get_asset_descriptions(
         asset_ids: str = Query(..., description="comma-separated asset ids"),
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         ids = [ident for ident in (asset_ids or "").split(",") if ident.strip()]
         ids = [ident.strip() for ident in ids][:200]
-        store = DescriptionStore(repo.connection)
+        store = DescriptionStore(workspace_id=repo.workspace_id)
         return {
             "schema_version": 1,
             "descriptions": store.get_many(ids),
@@ -5117,35 +7098,41 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def set_asset_description(
         asset_id: str,
         payload: SetAssetDescriptionRequest,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         """Human-author an asset's library metadata (partial merge with the
-        existing row). 404 only when the asset RECORD doesn't exist."""
-        repo.require_asset_record(asset_id)
-        store = DescriptionStore(repo.connection)
-        existing = store.get_many([asset_id]).get(asset_id) or {}
+        existing row). 404 only when the asset RECORD doesn't exist.
 
-        def _merge(key: str, incoming: Optional[Any]) -> Any:
-            return incoming if incoming is not None else existing.get(key)
-
-        store.put_human(
-            asset_id,
-            title=_merge("title", payload.title),
-            description=_merge("description", payload.description),
-            usage=_merge("usage", payload.usage),
-            tags=payload.tags if payload.tags is not None else list(existing.get("tags") or []),
+        D6 Round C: the merge moved INTO the write. It used to happen here — read the row,
+        substitute the caller's non-``None`` fields, write the whole record back — which is a
+        read-modify-write across two transactions with no lock between them, so two concurrent
+        patches of *different* fields each wrote the view they had read and the later one
+        silently reverted the earlier one's field. It is a single ``COALESCE`` upsert now,
+        evaluated under the conflicting row's own lock.
+        """
+        run_design_tool(
+            "design_set_asset_description",
+            {
+                "asset_id": asset_id,
+                "title": payload.title,
+                "description": payload.description,
+                "usage": payload.usage,
+                "tags": payload.tags,
+            },
+            workspace_id=store_workspace_id(repo),
+            refusals=_asset_refusals(asset_id),
         )
-        return store.get_many([asset_id])[asset_id]
+        return DescriptionStore(workspace_id=repo.workspace_id).get_many([asset_id])[asset_id]
 
     @app.get("/assets/{asset_id}")
     def get_asset(
         asset_id: str,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         stored = repo.require_asset_record(asset_id)
         return {
             "schema_version": 1,
-            "asset": stored["asset"],
+            "asset": public_asset_record(stored["asset"]),
             "created_at": stored["created_at"],
             "updated_at": stored["updated_at"],
         }
@@ -5153,26 +7140,39 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     @app.get("/assets/{asset_id}/bytes")
     def get_asset_bytes(
         asset_id: str,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> Response:
+        # D4: a pure-Python read straight from durable storage — resolved BY DIGEST, so the
+        # three historical `opaque_ref` shapes (and their three provider labels) all serve, and
+        # no stored ref is ever interpreted as a filesystem path.
         stored = repo.require_asset_record(asset_id)
         record = stored["asset"]
         media = record.get("media") or {}
-        location = media.get("location") or {}
-        if location.get("provider") != "local-store" or not location.get("opaque_ref"):
+        digest = location_digest(media.get("location"))
+        if digest is None:
             raise HTTPException(
                 status_code=404,
                 detail=f"asset {asset_id} has no locally stored bytes",
             )
-        path = resolve_store_path(location["opaque_ref"])
-        if not path.is_file():
+        data = read_asset_bytes(blob_store(repo), digest)
+        if data is None:
             raise HTTPException(
                 status_code=404,
                 detail=f"asset {asset_id} bytes are missing from the store",
             )
         media_type = media.get("mime_type") or "application/octet-stream"
-        return Response(content=path.read_bytes(), media_type=media_type)
+        return Response(content=data, media_type=media_type)
 
+    # O4-exempt (no X-Workspace-Id), RULED at D2.5A: the PUBLISHED page loads its images and
+    # @font-face bytes from here (lumen-web's delivery render emits /asset-store/{digest} URLs),
+    # and so does the editor's origin-"null" srcdoc preview iframe — neither can send a header,
+    # and a custom header would turn these into preflighted requests the wildcard CORS response
+    # cannot satisfy. The bytes are content-addressed and immutable, so serving them without a
+    # tenant leaks nothing an unguessable sha256 did not already gate.
+    # RESIDUAL (matches the platform's [B2×presign] follow-up): content addressing is not
+    # authorization. D4 gave every design byte per-tenant durable custody, but this route still
+    # resolves ACROSS tenants (ruling R-D4-7) so the public/preview surfaces keep working —
+    # Part-IV auth owns the serving policy for workspace-scoped blobs.
     @app.get("/asset-store/{digest}")
     def get_asset_store_bytes(digest: str) -> Response:
         """Content-addressed byte serving. The editor canvas resolves image
@@ -5189,19 +7189,25 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             raise HTTPException(
                 status_code=404, detail="not a sha256 content digest"
             )
-        # The store layout has ONE owner: resolve through the same helper
-        # every opaque_ref-based route uses.
-        path = resolve_store_path(f"sha256/{digest[:2]}/{digest}")
-        if not path.is_file():
+        # D4 (R-D4-7): resolved through the `artifact` table — any LIVE row in the design
+        # namespace holding this content hash, deterministically picked. Deliberately
+        # workspace-UNSCOPED (see `clue_design.storage.read_public_design_blob`): the route is
+        # O4-exempt and used to serve one global content-addressed tree, so scoping it would
+        # break the published page and the origin-"null" preview iframe it exists for.
+        try:
+            media_type, data = read_public_design_blob(app.state.storage, digest)
+        except NotFoundError as error:
             raise HTTPException(
                 status_code=404,
                 detail=f"no stored bytes for digest {digest}",
-            )
-        with path.open("rb") as handle:
-            head = handle.read(512)
-        return FileResponse(
-            path,
-            media_type=sniff_mime(head) or "application/octet-stream",
+            ) from error
+        # The row's media type is authoritative EXCEPT when the producer had nothing better to
+        # say; then fall back to sniffing, which is what this route always did.
+        if media_type == "application/octet-stream":
+            media_type = sniff_mime(data[:512]) or "application/octet-stream"
+        return Response(
+            content=data,
+            media_type=media_type,
             headers={
                 "Cache-Control": "public, max-age=31536000, immutable",
                 # Content-addressed public bytes, CDN-style. Required because
@@ -5216,59 +7222,58 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     @app.get("/assets/{asset_id}/thumbnail")
     def get_asset_thumbnail(
         asset_id: str,
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> Response:
+        # D4: same shape as /bytes — durable read, resolved by digest.
         stored = repo.require_asset_record(asset_id)
         record = stored["asset"]
         thumbnail = (record.get("media") or {}).get("thumbnail") or {}
-        location = thumbnail.get("location") or {}
-        if location.get("provider") != "local-store" or not location.get("opaque_ref"):
+        digest = location_digest(thumbnail.get("location"))
+        if digest is None:
             raise HTTPException(
                 status_code=404,
                 detail=f"asset {asset_id} has no thumbnail",
             )
-        path = resolve_store_path(location["opaque_ref"])
-        if not path.is_file():
+        data = read_asset_bytes(blob_store(repo), digest)
+        if data is None:
             raise HTTPException(
                 status_code=404,
                 detail=f"asset {asset_id} thumbnail bytes are missing from the store",
             )
         media_type = thumbnail.get("mime_type") or "application/octet-stream"
-        return Response(content=path.read_bytes(), media_type=media_type)
-
-    def resolve_store_path(opaque_ref: str) -> Path:
-        root = Path(app.state.asset_store_root).resolve()
-        candidate = (root / opaque_ref).resolve()
-        if root != candidate and root not in candidate.parents:
-            raise HTTPException(status_code=400, detail="invalid asset location")
-        return candidate
+        return Response(content=data, media_type=media_type)
 
     def asset_max_bytes() -> int:
         return settings.lumen_asset_max_bytes
 
     @app.post("/asset-metadata")
     def create_asset_metadata(
-        payload: AssetMetadataRequest, repo: Repository = Depends(repository)
+        payload: AssetMetadataRequest, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
-        data = (
-            payload.model_dump()
-            if hasattr(payload, "model_dump")
-            else payload.dict()
+        # Retired by design-integration Part II (ratified decision O3,
+        # docs/specs/PD-part2-design-substrate.md §6): the legacy asset_metadata
+        # surface is gone; the asset registry (/assets) is the only writer.
+        raise HTTPException(
+            status_code=410,
+            detail={
+                "code": "asset_metadata.gone",
+                "message": (
+                    "the legacy asset_metadata surface was retired by "
+                    "design-integration Part II (PD contract O3); use the asset "
+                    "registry (/assets)"
+                ),
+            },
         )
-        data["asset_id"] = data["asset_id"] or new_id("asset")
-        if data.get("document_id"):
-            require_document(repo, data["document_id"])
-        return repo.create_asset_metadata(data)
 
     @app.get("/asset-metadata/{asset_id}")
     def get_asset_metadata(
-        asset_id: str, repo: Repository = Depends(repository)
+        asset_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         return repo.require_asset_metadata(asset_id)
 
     @app.get("/documents/{document_id}/summary")
     def get_summary(
-        document_id: str, repo: Repository = Depends(repository)
+        document_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_scene_document(document)
@@ -5291,7 +7296,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.get("/documents/{document_id}/slots")
     def get_slots(
-        document_id: str, repo: Repository = Depends(repository)
+        document_id: str, repo: HybridRepository = Depends(repository)
     ) -> List[JsonObject]:
         document = require_document(repo, document_id)
         require_scene_document(document)
@@ -5299,7 +7304,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
     @app.get("/documents/{document_id}/geometry")
     def get_geometry(
-        document_id: str, repo: Repository = Depends(repository)
+        document_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_scene_document(document)
@@ -5314,7 +7319,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def get_diagnostics(
         document_id: str,
         kind: Optional[str] = Query(default=None),
-        repo: Repository = Depends(repository),
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         latest = repo.latest_diagnostics(document_id, kind)
         if latest:
@@ -5332,7 +7337,22 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 app = create_app()
 
 
-def require_document(repo: Repository, document_id: str) -> JsonObject:
+def store_workspace_id(repo: HybridRepository) -> str:
+    """The workspace the store is bound to."""
+    return repo.workspace_id
+
+
+def public_publish_path(repo: HybridRepository, slug: str) -> str:
+    """The ONE builder for a publish's public path — O6b interim scheme.
+
+    Publish slugs are workspace-local (O6), so every minted link carries the tenant in the
+    path. The workspace comes from the STORE the publish row lives in, never from the request
+    URL. Part-IV item 5 (design-integration-master-plan.md) replaces this scheme wholesale.
+    """
+    return f"/w/{store_workspace_id(repo)}/p/{slug}"
+
+
+def require_document(repo: HybridRepository, document_id: str) -> JsonObject:
     try:
         return repo.require_document(document_id)
     except NotFoundError as error:
@@ -5421,6 +7441,57 @@ def web_default_slug(title: str, document_id: str) -> str:
 WEB_BATCH_CHUNK_SIZE = 5
 
 
+# --- CP2: the ABM batch (clone-fidelity F4.3, rulings D-F5 / R25-3) ---------
+#
+# An ABM batch derives ONE page per target account off a campaign TEMPLATE and publishes each at
+# a flat `abm-<account>` slug. Three behaviours ride together and they all key off ONE fact —
+# `slug_base == ABM_SLUG_BASE` — deliberately:
+#
+#   * the slug shape (`abm_account_slug`, D-F5);
+#   * `noindex` on every published account page (R25-4 — these pages are reachable by explicit
+#     URL only and must never be indexed);
+#   * one derived document per (template, account), converged rather than re-minted (R25-8).
+#
+# The persisted `slug_base` IS the mode, rather than a second column that could disagree with it,
+# so a RESUMED batch behaves exactly like the run that started it with no schema change. The
+# consequence is stated rather than hidden: a caller who passes `slug_base="abm"` by hand gets
+# ABM semantics, which is the same thing they asked for — `abm-<account>` pages ARE account
+# pages. `abm: true` on the request is the named way to ask, and it refuses a conflicting
+# `slug_base` instead of quietly overriding it.
+ABM_SLUG_BASE = "abm"
+
+
+def abm_account_slug(account_name: str) -> str:
+    """The CP2 account slug: ``abm-`` + the account's display name, slugified (D-F5).
+
+    Deterministic and stated exactly, because these URLs get sent to real people: lowercase, any
+    non-alphanumeric run collapsed to one dash, leading/trailing dashes trimmed
+    (:func:`web_slugify`), an unslugifiable name falling back to ``site``. Collisions — two
+    accounts with the same display name — are suffixed ``-2``, ``-3``, … by
+    :func:`_unique_batch_slug`, which also REUSES a slug already owned by the same document, so a
+    re-run keeps the URL somebody already sent out.
+
+    ``"Goodman Campbell Brain & Spine"`` → ``"abm-goodman-campbell-brain-spine"``.
+    """
+    return f"{ABM_SLUG_BASE}-{web_slugify(account_name)}"
+
+
+def abm_derived_document_id(template_document_id: str, account_id: str) -> str:
+    """The ONE derived document a (template, account) pair owns — R25-8's convergence.
+
+    The generic batch mints ``new_id("doc")`` per account, so re-running it after a template edit
+    doubles the document count AND takes a fresh ``-2`` slug (the old document still owns the
+    first one) — fifty accounts become a hundred pages at ninety-nine URLs. An ABM run addresses
+    a deterministic id instead, exactly as the INSTANCE batch's ``inst_<rev>_<bind>`` already
+    does (the web batch's own single-flight comment names that asymmetry as the reason it
+    matters more here). Existing ⇒ the derivation is committed onto it; absent ⇒ it is created.
+    """
+    digest = hashlib.sha256(
+        f"{template_document_id}\0{account_id}".encode("utf-8")
+    ).hexdigest()
+    return f"doc_abm_{digest[:24]}"
+
+
 def coverage_unbound_keys(coverage: JsonObject) -> List[str]:
     """A manifest row's `unbound` = the union of the derive coverage's
     unbound_slots + unbound_vars KEYS (deduped, sorted). Each entry is a
@@ -5433,7 +7504,7 @@ def coverage_unbound_keys(coverage: JsonObject) -> List[str]:
     return sorted(keys)
 
 
-def _unique_batch_slug(repo: Repository, base_slug: str, document_id: str) -> str:
+def _unique_batch_slug(repo: HybridRepository, base_slug: str, document_id: str) -> str:
     """The account's publish slug, with collision suffixing: if `base_slug` is
     already owned by a DIFFERENT document, append -2, -3, … until free. A slug
     already owned by THIS document is reused (a re-publish). The batch never
@@ -5503,7 +7574,7 @@ def require_base_version(document: JsonObject, base_version: Optional[int]) -> N
         )
 
 
-def latest_envelope_summary(repo: Repository, document_id: str) -> Optional[JsonObject]:
+def latest_envelope_summary(repo: HybridRepository, document_id: str) -> Optional[JsonObject]:
     envelopes = repo.list_envelopes(document_id, limit=1, newest_first=True)
     if not envelopes:
         return None
@@ -5591,7 +7662,7 @@ def duplicate_brand_kit_error(brand_kit: JsonObject) -> HTTPException:
 
 
 def resolve_brand_kit_payload(
-    repo: Repository,
+    repo: HybridRepository,
     brand_kit: Optional[JsonObject],
     brand_kit_id: Optional[str],
     version: Optional[int],
@@ -5618,7 +7689,7 @@ def resolve_brand_kit_payload(
 
 
 def resolve_brand_kit_for_compatibility(
-    repo: Repository,
+    repo: HybridRepository,
     brand_kit: Optional[JsonObject],
     brand_ref: Optional[Any],
 ) -> Tuple[JsonObject, Optional[JsonObject]]:
@@ -5645,7 +7716,7 @@ def resolve_brand_kit_for_compatibility(
 
 
 def resolve_document_governance_brand(
-    repo: Repository,
+    repo: HybridRepository,
     document: JsonObject,
     payload: ValidateDocumentBrandGovernanceRequest,
 ) -> JsonObject:
@@ -5749,7 +7820,7 @@ def scene_medium_mode_value(scene: JsonObject) -> Optional[str]:
 
 def choose_effective_brand(
     core: CoreClient,
-    repo: Repository,
+    repo: HybridRepository,
     document: JsonObject,
     payload: PreflightRequest,
 ) -> Tuple[str, Optional[JsonObject]]:
@@ -5794,7 +7865,7 @@ def choose_effective_brand(
 
 def choose_effective_brand_for_scene_preview(
     core: CoreClient,
-    repo: Repository,
+    repo: HybridRepository,
     scene: JsonObject,
     payload: PreflightPreviewRequest,
 ) -> Tuple[str, Optional[JsonObject]]:
@@ -5893,14 +7964,6 @@ def _sniff_supported_asset(data: bytes) -> bool:
     except Exception:
         return False
     return "<svg" in text
-
-
-def _sanitize_tmp_filename(filename: Optional[str]) -> str:
-    """Sanitize an uploaded filename for use in a tmp path: keep only
-    ``[A-Za-z0-9._-]`` and cap length. Never returns empty."""
-    base = os.path.basename(filename or "")
-    cleaned = re.sub(r"[^A-Za-z0-9._-]", "_", base).strip("._") or "asset"
-    return cleaned[:80]
 
 
 def ingest_url_rejected(url: str, error: Exception) -> HTTPException:
@@ -6097,8 +8160,17 @@ def document_export_response(
         },
         "operations": operation_summaries(preflight_operations),
         "diagnostics": diagnostic_views(diagnostics, diagnostics),
+        # P0.3 / ruling R5. Error-severity diagnostics that are policy lints
+        # rather than render blockers: the export SUCCEEDED with these present.
+        # An editor-surface channel only — the export menu renders them; the
+        # end client who receives the artifact never sees them.
+        "warnings": export_warning_views(diagnostics),
         "preflight": {
+            # The raw engine signal — `any(severity == Error)`. Deliberately
+            # NOT the export gate any more: consult `warnings` and `status` to
+            # tell "refused" from "exported with advisories".
             "has_errors": preflight.get("has_errors", False),
+            "advisory_warnings": len(export_warning_views(diagnostics)),
             "brand_ref_operations": len(preflight.get("brand_ref_operations", [])),
             "token_operations": len(preflight.get("token_operations", [])),
             "layout_operations": len(preflight.get("layout_operations", [])),
@@ -6347,14 +8419,45 @@ def repo_root() -> Path:
 #: resolving (and rasterizing SVGs) twice.
 _REFERENCES_UNRESOLVED = object()
 
+#: P3.7 TOCTOU fix: a leg-pinned turn's brand kit is resolved ONCE, fail-loud, at the
+#: dispatch gate and handed to the runtime BY VALUE. This sentinel means 'not a pinned
+#: turn — resolve tolerantly from the scene ref as always'.
+_BRAND_KIT_UNRESOLVED = object()
+
 
 def run_agent_turn_preview(
     payload: AgentTurnPreviewRequest,
     root: Path,
     event_sink=None,
     resolved_reference_assets=_REFERENCES_UNRESOLVED,
+    frozen_ad_lane=ad_runtime.FROZEN_LANE_ABSENT,
+    *,
+    workspace_id: str,
+    blobs: Optional[DesignBlobStore] = None,
+    engine_cache_root: Optional[Path] = None,
+    checkpointer: Any = None,
+    thread_id: Optional[str] = None,
+    resolved_brand_kit: Any = _BRAND_KIT_UNRESOLVED,
+    scene_checkpoint: Any = None,
+    cancel_requested: Any = None,
 ) -> JsonObject:
-    ensure_agent_runtime_path(root)
+    # D4: the turn's tenant. It decides which engine materialization cache the runtime reads and
+    # writes — and the accept seam that gives those bytes durable custody looks in that same
+    # cache, so a turn pointed at the wrong workspace would silently lose everything it
+    # generated. D5 Round C made it REQUIRED: the old `workspace_id or default_workspace_id()`
+    # meant a caller that simply forgot ran against the dev tenant instead of failing.
+    #
+    # `blobs` / `engine_cache_root` (D5 Round C) are the dispatching app's byte backend and
+    # engine-cache tree. Omitted (the CLI and direct callers) they are re-derived from settings,
+    # which is exactly what a detached fleet worker has; the embedded worker passes the app's,
+    # so an injected backend cannot stage bytes in one place and read them from another.
+    turn_workspace_id = workspace_id
+    turn_blobs = blobs if blobs is not None else api_blob_store(turn_workspace_id)
+    turn_cache_root = (
+        engine_cache_root
+        if engine_cache_root is not None
+        else api_engine_cache_root(turn_workspace_id)
+    )
     try:
         from lumen_agent.config import AgentRuntimeConfig
         from lumen_agent.harness import run_deepagent_turn
@@ -6374,9 +8477,26 @@ def run_agent_turn_preview(
     # a worker-thread 422 would be swallowed by its catch-all; adversarial-gate
     # ship-blocker 1) and hands the manifest in via resolved_reference_assets.
     if resolved_reference_assets is _REFERENCES_UNRESOLVED:
-        reference_assets = resolve_agent_turn_references(payload)
+        reference_assets = resolve_agent_turn_references(payload, turn_blobs)
     else:
         reference_assets = resolved_reference_assets
+
+    # W4 (Brand Ad Assets v1 §5): the lane the turn runs with, resolved ONCE, here, for both
+    # of the things a turn takes out of it — the auto-attached references below and the
+    # described card that rides the frame payload further down. Since the Wave-C offer-time
+    # freeze, a fleet-claimed turn arrives with the lane FROZEN in its envelope and this line
+    # consumes it verbatim (no flag check, no database read — the offering process decided);
+    # only a legacy envelope, or a direct in-process caller like the sync preview route,
+    # composes at claim time — and a flag-off process doing that now says so loudly instead
+    # of silently declining (the Wave-B W-B2 failure shape).
+    ad_lane = ad_runtime.resolve_turn_ad_lane(frozen_ad_lane, workspace_id=turn_workspace_id)
+    if ad_lane is not None and not reference_assets:
+        # MANUAL REFERENCES ALWAYS WIN. The platform suggests; the human decides (the
+        # minimum-input / client-has-the-wheel rule). A turn that already carries attachments
+        # is left exactly as the human composed it — no top-up to the cap, no reordering.
+        reference_assets = resolve_auto_ad_references(
+            payload, turn_blobs, turn_cache_root, ad_lane
+        )
 
     try:
         config = AgentRuntimeConfig.from_env(root)
@@ -6387,14 +8507,22 @@ def run_agent_turn_preview(
         if payload.model:
             config = replace(config, model=payload.model)
         if config.asset_store_root is None:
-            # A seeded scene references assets ingested through the API's store;
-            # the agent must export from the same root or seeded imagery fails
-            # with LUME0210 (asset bytes missing). LUMEN_AGENT_ASSET_STORE still
-            # overrides explicitly.
-            config = replace(config, asset_store_root=api_asset_store_root())
-        brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = (
-            resolve_agent_turn_brand_kit(payload)
-        )
+            # D4: the runtime's engine reads and writes the SAME per-workspace materialization
+            # cache the API's own engine calls use — a seeded scene's imagery is materialized
+            # there, and anything the turn generates lands there and is given durable custody at
+            # the accept seam (the scene-persist backstop). Pointing the runtime anywhere else
+            # fails seeded imagery with LUME0210. LUMEN_AGENT_ASSET_STORE still overrides.
+            config = replace(config, asset_store_root=turn_cache_root)
+        if resolved_brand_kit is _BRAND_KIT_UNRESOLVED:
+            brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = (
+                resolve_agent_turn_brand_kit(payload, turn_blobs)
+            )
+        else:
+            # P3.7 TOCTOU fix: a leg-pinned turn's kit was resolved once, fail-loud, at the
+            # dispatch gate. Re-resolving here would reopen the exact window the pin exists
+            # to close — the tolerant resolver's except returns None and the runtime falls
+            # back to the platform default kit, silently, in the wrong brand.
+            brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = resolved_brand_kit
         if brand_kit is not None:
             # K0 (kit application): the document's attached kit rides the run
             # config BY VALUE so the runtime preflights against it instead of
@@ -6409,6 +8537,22 @@ def run_agent_turn_preview(
                 brand_kit_source=brand_kit_source,
                 brand_kit_assets=brand_kit_assets,
                 brand_fonts=brand_fonts,
+            )
+        asset_library = resolve_scene_turn_asset_library(turn_blobs, turn_cache_root)
+        if asset_library is not None:
+            # W1.1 (Brand Ad Assets v1 §5): the bounded workspace ASSET LIBRARY rides
+            # the run BY VALUE — the same rule as brand_kit_assets and
+            # reference_assets, and the same manifest website mode has always had.
+            # Without it a scene turn could view and place only kit assets and this
+            # turn's reference attachments, so a pre-generated background was
+            # unusable (Apollo POC 2026-08-26). The store root is pinned for the same
+            # reason the reference branch pins it: the read-through staged those
+            # bytes in THIS cache, so pointing the runtime elsewhere would blind
+            # `view("asset:…")` and render placed library imagery as an empty chip.
+            config = replace(
+                config,
+                asset_library=asset_library,
+                asset_store_root=turn_cache_root,
             )
         turn_targets = editor_target_node_ids(payload)
         if turn_targets:
@@ -6433,8 +8577,26 @@ def run_agent_turn_preview(
             config = replace(
                 config,
                 reference_assets=reference_assets,
-                asset_store_root=api_asset_store_root(),
+                asset_store_root=turn_cache_root,
             )
+        ad_dna_card = ad_runtime.context_card(ad_lane)
+        if ad_dna_card:
+            # W4: the brand's published-ad styles, DESCRIBED, ride the run BY VALUE next to
+            # the brand card — the same rule as brand_kit and reference_assets. It is advisory
+            # context and nothing more: no gate, no required structure, no refusal (D5). It
+            # rides whether or not this turn's references were auto-attached, because a human
+            # who attached their own references still benefits from knowing what this brand's
+            # published ads look like.
+            config = replace(config, ad_dna_card=ad_dna_card)
+        ad_pregenerated = ad_runtime.context_pregenerated(ad_lane)
+        if ad_pregenerated:
+            # W5/R2-D: and the grounds pre-generation made from that description, BY VALUE for
+            # the same reason. Rides independently of the card block above (a lane can hold
+            # imagery whose prose failed to render) and independently of references, because
+            # the reason this list exists is that nothing else in the turn ever names these
+            # ids — not the asset index, which is kit-only, and not `view`, which lists library
+            # ids only once the author has already guessed one wrong.
+            config = replace(config, ad_pregenerated_assets=ad_pregenerated)
         # Slice 2 D4: the loop is mandatory-multimodal (Director + reviewer attach
         # images every turn). Fail LOUDLY here, before the run authors, if the
         # configured model is text-only — otherwise the run dies mid-turn at the
@@ -6461,6 +8623,19 @@ def run_agent_turn_preview(
             initial_scene=agent_seed_scene(payload),
             event_sink=event_sink,
             clarification_already_requested=clarification_already_requested,
+            # D5 Round B: durable graph state keyed on the DESIGN RUN. Both are None on every
+            # non-fleet path (CLI, fixtures, the synchronous /agent/turn-preview route), which
+            # keeps those turns byte-identical to pre-D5.
+            checkpointer=checkpointer,
+            thread_id=thread_id,
+            # P0.4: the checkpoint-commit sink. Supplied only by a leg turn (the one turn kind
+            # that owns a persist), so every other caller keeps save-on-finalize-only.
+            scene_checkpoint=scene_checkpoint,
+            # A3 (defect R3-D): the run's durable cancel probe. Supplied only by the fleet
+            # executor, which is the only caller whose turn has a run row to be cancelled
+            # THROUGH — the synchronous preview route holds the request open and has no id a
+            # second caller could name.
+            cancel_requested=cancel_requested,
         )
     except Exception as error:
         return failed_agent_turn_response(
@@ -6550,6 +8725,14 @@ def run_web_agent_turn(
     account_card: Optional[JsonObject] = None,
     asset_library: Optional[JsonObject] = None,
     custom_component_registry: Any = None,
+    account_logo_binder: Any = None,
+    *,
+    workspace_id: str,
+    blobs: Optional[DesignBlobStore] = None,
+    engine_cache_root: Optional[Path] = None,
+    checkpointer: Any = None,
+    thread_id: Optional[str] = None,
+    cancel_requested: Any = None,
 ) -> JsonObject:
     """Run one website-mode turn against a WebDoc document. Mirrors
     run_agent_turn_preview's config assembly (env config + model override +
@@ -6574,8 +8757,18 @@ def run_web_agent_turn(
     `custom_component_registry`: an account/document-bound capability. Unlike
     brand/assets it is not passed by value because source/compile operations
     must be durable between runs; the runtime receives typed methods, never
-    database/store paths."""
-    ensure_agent_runtime_path(root)
+    database/store paths.
+
+    `account_logo_binder` (F4.3): the G1+G2 bridge, the same kind of capability
+    and passed in for the same reason — its two durable writes are the GOVERNED
+    asset/account tools, and the invoker that runs them lives at the worker
+    seam. None means this turn cannot bind a fetched mark to an account; the
+    tool says so and refuses, and an empty account logo stays correct.
+
+    The workspace's CLONED SECTIONS (F2.3) ride the same way, and are built here
+    rather than taken as an argument: unlike the component registry they need no
+    account and no document, only this turn's tenant and its engine cache, both
+    of which are already resolved below."""
     try:
         from lumen_agent.config import AgentRuntimeConfig
         from lumen_agent.harness_web import run_deepagent_web_turn
@@ -6586,6 +8779,26 @@ def run_web_agent_turn(
             str(error),
         )
 
+    # D4: see run_agent_turn_preview — the turn's tenant picks its engine cache. REQUIRED since
+    # D5 Round C; the old fallback chain ended at the dev workspace, which meant a caller that
+    # forgot silently read and wrote another tenant's data. The custom-component registry carries
+    # a workspace of its own and the two must not disagree — assert rather than prefer one, so a
+    # mismatch is a loud bug instead of a silent re-scope.
+    registry_workspace_id = getattr(
+        getattr(custom_component_registry, "blobs", None), "workspace_id", None
+    )
+    if registry_workspace_id is not None and registry_workspace_id != workspace_id:
+        raise ValueError(
+            "web turn workspace disagrees with its custom-component registry's: "
+            f"{workspace_id!r} vs {registry_workspace_id!r}"
+        )
+    turn_workspace_id = workspace_id
+    turn_blobs = blobs if blobs is not None else api_blob_store(turn_workspace_id)
+    turn_cache_root = (
+        engine_cache_root
+        if engine_cache_root is not None
+        else api_engine_cache_root(turn_workspace_id)
+    )
     web_doc = document["scene"]
     if target_node_ids:
         prompt = prompt + _describe_web_turn_targets(web_doc, target_node_ids)
@@ -6594,11 +8807,69 @@ def run_web_agent_turn(
         if model:
             config = replace(config, model=model)
         if config.asset_store_root is None:
-            # Generated imagery must land in (and export from) the API's store,
-            # exactly as the scene path pins it.
-            config = replace(config, asset_store_root=api_asset_store_root())
+            # D4: generated imagery must land in (and export from) the request workspace's
+            # engine cache, exactly as the scene path pins it.
+            config = replace(config, asset_store_root=turn_cache_root)
+        # The agent's in-loop preview resolves every `<img data-asset=…>` against
+        # `config.asset_base_url`. Unlike the HTTP render route above (which derives it from
+        # `request.base_url`), this path has NO request: a web turn is leased fleet work and
+        # runs in a detached worker. So the value is CONFIGURED — `AgentRuntimeConfig.from_env`
+        # reads `settings.asset_base_url` (LUMEN_API_ORIGIN), and it is asserted here rather
+        # than re-derived so there is exactly one home for it. It used to be a hardcoded
+        # `http://127.0.0.1:8000/asset-store` inside the agent substrate, pointing at a port
+        # nothing has listened on since the design API moved to 8010 — which is why the agent
+        # saw broken images in its own screenshots and stripped every asset it placed.
+        if not config.asset_base_url:
+            raise ValueError(
+                "web turn has no asset_base_url — the agent's preview would render every "
+                "placed image broken. Set LUMEN_API_ORIGIN to the design API's origin."
+            )
         if asset_library is not None:
             config = replace(config, asset_library=asset_library)
+        # F1.3: resolve the artifacts this document ALREADY pins HERE, where the database is, and
+        # hand them to the runtime BY VALUE — the same rule asset_library follows, because a fleet
+        # worker never reads the API database.
+        #
+        # This is the turn's STARTING package, not its final one (amended F2.3). Nothing in a turn
+        # can mint a fragment, but a turn CAN now pin one: `insert_cloned_section` adds the
+        # artifact it just resolved to this package (`_admit_fragment_artifact`), so a band the
+        # agent placed renders in its own screenshots instead of coming back as the engine's
+        # placeholder for the visual reviewer to judge. A pin that reaches the document by any
+        # OTHER route mid-turn — hand-built ops naming an id nothing resolved — still renders the
+        # placeholder, which is the honest answer rather than an improvised one.
+        if web_doc_fragment_ids(web_doc, "home"):
+            config = replace(
+                config,
+                fragment_render_package=build_fragment_render_package(
+                    turn_blobs.storage,
+                    workspace_id=turn_workspace_id,
+                    web_doc=web_doc,
+                    page_id="home",
+                ),
+            )
+        # F2.3: the WORKSPACE's released cloned sections, as a capability rather than a value —
+        # the rule `custom_component_registry` follows, for the same reason. The package above
+        # answers "what does this document already pin?"; this answers "what may it pin next?",
+        # and that second question is a PERMISSION question whose answer must come from the
+        # document write's own gate at the moment it is asked, not from a snapshot of the
+        # registry taken when the turn was composed.
+        config = replace(
+            config,
+            cloned_section_registry=DurableAgentClonedSectionRegistry(
+                blobs=turn_blobs, cache_dir=turn_cache_root
+            ),
+        )
+        if account_logo_binder is not None:
+            # F4.3 (ruling R25-1): the G1+G2 bridge. Passed IN rather than built here — unlike
+            # the cloned-section registry it needs the governed tool invoker, which lives at the
+            # worker seam (the `custom_component_registry` shape, and for the same reason).
+            #
+            # It is NOT gated on `account_card`: an ABM template is authored for the whole
+            # campaign rather than for one account, so the turn that fetches a target's mark
+            # usually carries no card — and refusing to bind then would leave exactly the gap
+            # this closes. The binder's own doors (the account must exist in THIS workspace, the
+            # bytes must be durably readable) are the permission answer, taken when it is asked.
+            config = replace(config, account_logo_binder=account_logo_binder)
         if custom_component_registry is not None:
             config = replace(
                 config,
@@ -6615,7 +8886,7 @@ def run_web_agent_turn(
                 config, turn_target_node_ids=list(target_node_ids)
             )
         brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = (
-            resolve_web_turn_brand_kit(web_doc)
+            resolve_web_turn_brand_kit(web_doc, turn_blobs)
         )
         if brand_kit is not None:
             config = replace(
@@ -6636,7 +8907,9 @@ def run_web_agent_turn(
             config = replace(
                 config,
                 account_card=account_card,
-                account_assets=resolve_account_assets(account_card),
+                account_assets=resolve_account_assets(
+                    account_card, turn_workspace_id
+                ),
             )
         # Mandatory-multimodal (the reviewer attaches screenshots): fail loud
         # before authoring if the configured model is text-only.
@@ -6652,6 +8925,13 @@ def run_web_agent_turn(
             config=config,
             initial_web_doc=web_doc,
             event_sink=event_sink,
+            # D5 Round B: see run_agent_turn_preview.
+            checkpointer=checkpointer,
+            thread_id=thread_id,
+            # A3 (defect R3-D): see run_agent_turn_preview. A web turn's cancelled outcome is
+            # `failed` with nothing applied — website mode persists once at the end, so there
+            # is no partial work a stop could keep.
+            cancel_requested=cancel_requested,
         )
     except Exception as error:
         return failed_agent_turn_response(
@@ -6675,27 +8955,1126 @@ def run_web_agent_turn(
     }
 
 
-def sse_frame(seq: int, event: str, data: Any) -> str:
-    """One Server-Sent Events frame. `id:` carries the monotonic run-event
-    seq so the browser's EventSource replays from it via Last-Event-ID."""
-    return f"id: {seq}\nevent: {event}\ndata: {json.dumps(data)}\n\n"
+# --- fleet turn executors (D5 Round B) --------------------------------------------------------
+#
+# These are the pre-D5 daemon-thread worker closures, promoted to module functions and driven
+# from the frozen envelope instead of from captured locals. They live HERE, in main.py, because
+# every by-value resolver they need (brand kit, fonts, references, the asset library, the engine
+# cache root, the custom-component registry) already lives here; ``fleet_handler`` imports them
+# lazily to avoid the import cycle that direction would otherwise create.
+#
+# Contract: return ``(run_status, response, event_type, event_data)`` and NEVER raise — the caller
+# lands all four in one fenced ``complete_run``. An executor that raised would leave a claimed run
+# with no terminal row, which is the one failure the whole slice exists to make impossible.
 
 
-def ensure_agent_runtime_path(root: Path) -> None:
-    agent_runtime_path = str(root / "apps" / "agent_runtime")
-    api_path = str(root / "apps" / "api")
-    for path in [agent_runtime_path, api_path, str(root)]:
-        if path not in sys.path:
-            sys.path.insert(0, path)
+def _turn_blob_store(host: Any, workspace_id: str) -> DesignBlobStore:
+    """The turn's byte store. Prefers the host's injected backend (a test's throwaway
+    ``FsStorage``) and falls back to the process-wide configured one, which is what a detached
+    fleet worker always has."""
+    return (
+        DesignBlobStore(host.storage, workspace_id)
+        if host.storage is not None
+        else api_blob_store(workspace_id)
+    )
 
 
-def api_asset_store_root() -> Path:
-    """The API's asset store root, resolved exactly as create_app resolves it."""
-    return settings.effective_asset_store_root
+def _turn_design_tools(
+    host: Any, subject: Optional[DesignRunSubject] = None
+) -> DesignToolInvocations:
+    """The governed design write path for one turn (Part II D6, ruling R-D6-5).
+
+    The deep agent's two durable component writes (source + compile) go through the SAME tools
+    the HTTP routes do, so an agent-authored component is journaled and A9-keyed exactly like a
+    human-authored one — with ``actor="agent"`` on the invocation span (REQ-20 parity). The host
+    here is whichever one is driving the turn (the live ``app.state`` under the embedded worker,
+    the fleet handler's frozen turn host under a detached one), so a test's injected storage and
+    stubbed compiler reach the tools unchanged.
+
+    ``subject`` (D7) names the run these invocations belong to and the lease generation they are
+    fenced by, so each one's journal events also reach that run's event stream. It is ``None`` for
+    any caller with no run in flight — the tools then journal exactly as before and emit nothing.
+    """
+    storage = host.storage if host.storage is not None else storage_from_settings()
+    return DesignToolInvocations(
+        host=design_tool_host(
+            storage=storage,
+            core=lambda: _turn_core(host),
+            engine_cache_dir=lambda ws: str(_host_engine_cache_root(host, ws)),
+            web_export_node_bin=lambda: "node",
+            compiler_node_bin=lambda: host.compiler_node_bin,
+            compiler_worker_path=lambda: Path(
+                host.compiler_worker
+                if host.compiler_worker is not None
+                else default_compiler_worker_path()
+            ),
+            compiler_timeout_seconds=lambda: (
+                host.compiler_timeout_seconds
+                if host.compiler_timeout_seconds is not None
+                else DEFAULT_COMPILER_TIMEOUT_SECONDS
+            ),
+            compile_fn=lambda: compile_custom_component,
+        ),
+        storage=storage,
+        run_subject=subject,
+    )
+
+
+def _host_engine_cache_root(host: Any, workspace_id: str) -> Path:
+    """The job's engine materialization cache, preferring the dispatching app's tree.
+
+    D5 Round C closes the last "re-derived default" on the worker path. ``api_engine_cache_root``
+    resolves the root from ``settings``; an app built with an explicit ``engine_cache_root`` (the
+    whole design suite, and any deployment that overrides it) would then have its worker write
+    into a DIFFERENT tree from the one its request paths read. Byte custody is durable either way
+    since D4, but the mirror divergence is exactly the kind of invisible split this round exists
+    to remove — so when the host carries the app's root, that is the one used.
+    """
+    if host.engine_cache_root is not None:
+        path = Path(host.engine_cache_root) / workspace_id
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    return api_engine_cache_root(workspace_id)
+
+
+def _turn_core(host: Any) -> CoreClient:
+    """The Rust engine client. The detached fleet worker has no ``app.state`` to take one from,
+    so it builds the same client ``create_app`` would."""
+    return host.core if host.core is not None else CoreClient()
+
+
+def _page_dimensions(page: JsonObject) -> Optional[tuple[str, str, str]]:
+    """``("1200", "1200", "pt")`` for a page whose size the scene states, else ``None``."""
+
+    size = page.get("size")
+    if not isinstance(size, dict):
+        return None
+    rendered: list[str] = []
+    for key in ("width", "height"):
+        value = size.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        rendered.append(str(int(value)) if float(value).is_integer() else f"{float(value):g}")
+    unit = size.get("unit")
+    return rendered[0], rendered[1], unit if isinstance(unit, str) else ""
+
+
+def _quotable_page_name(page: JsonObject) -> Optional[str]:
+    """The page's own name, iff it can ride a DSL string literal verbatim.
+
+    The example below restates this name to keep the page-modify line legal (see
+    :func:`_empty_page_steering_note`), so it must be reproduced EXACTLY — a name carrying a
+    quote, a backslash or a newline would need escaping this note cannot verify against the
+    grammar, and a guessed escape in an instruction block is worse than no instruction. Every
+    engine-minted page has a plain name (the ad birth's format label; ``lower_page`` names a
+    DSL-born page after its id), so this is a guard, not a common path.
+    """
+
+    name = page.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return None
+    if any(character in name for character in ('"', "\\", "\n", "\r")):
+        return None
+    return name
+
+
+def _empty_page_steering_note(scene: Any) -> Optional[str]:
+    """The document-state block a LEG turn gets when every page of its scene is EMPTY.
+
+    A chat-born ad (genad) is BORN with one empty artboard page — the leg-open birth mints
+    ``new_scene`` plus one ``add_page`` at the resolved format — where every scene leg before
+    it pinned a document that already had content. The author model's from-scratch habit is to
+    open the turn with a top-level ``page ...`` block, and on this shape that cannot work: the
+    page id already exists, so a page line that parses is refused by the engine (``page <id>
+    already exists``, ``operations.rs::add_page``) and one that does not parse leaves its
+    indented elements without a parent (``LUMD0402``). The acceptance walk watched five runs
+    thrash the repair loop on exactly that, across two different author models, until the
+    request died upstream.
+
+    So the turn states the document's shape as DATA and quotes the form that works. Every
+    quoted form was verified against the real engine before it was written here:
+
+    * ``#page:<page_id> name("<its current name>")`` + an indented subtree is the empty-page
+      compose path (``dsl.rs``'s "Empty-page compose gap": a top-level page modification opens
+      that page as the parent frame). The property is NOT decoration — ``is_modification_line``
+      requires at least two tokens, so a LONE ``#page:<page_id>`` line is read as a COMMENT and
+      its children are orphaned into the very LUMD0402 this block exists to prevent (which is
+      what the engine's own LUMD0402 hint currently suggests; see the report's residual).
+      ``name(...)`` restating the page's own name is the one page property that provably leaves
+      the stored page byte-identical — ``size(w,h,px)`` compiles too but rewrites the page's
+      derived orientation, so it is deliberately not quoted.
+    * The element / quoted-text line shapes, the ``#<id> property(...)`` modify line and
+      ``reconcile(<container>)`` are the author prompt's own dialect (``lumen_agent/
+      prompts.py``), so the note teaches no new grammar — it only says which of the author's
+      existing moves this document is asking for.
+
+    Returns ``None`` — no block at all — for a scene with NO pages (the genuine from-scratch
+    case, where ``page ...`` is the correct move), for any scene where a page already has
+    children (the pre-genad shape, whose prompt must stay byte-identical), and for a page whose
+    name cannot be quoted verbatim (no example can be written safely, so none is).
+    """
+
+    if not isinstance(scene, dict):
+        return None
+    pages = scene.get("pages")
+    if not isinstance(pages, dict) or not pages:
+        return None
+
+    described: list[str] = []
+    for page_id, page in pages.items():
+        if not isinstance(page, dict) or page.get("children"):
+            return None
+        dimensions = _page_dimensions(page)
+        stated = ""
+        if dimensions is not None:
+            stated = f" — {dimensions[0]}×{dimensions[1]} {dimensions[2]}".rstrip()
+        described.append(f"- {page_id}{stated}")
+
+    example_id = str(next(iter(pages)))
+    example_page = pages[next(iter(pages))]
+    example_name = _quotable_page_name(example_page)
+    if example_name is None:
+        return None
+    example_size = _page_dimensions(example_page)
+    root_size = f"{example_size[0]},{example_size[1]}" if example_size else "fill,fill"
+
+    return "\n".join(
+        [
+            "DOCUMENT STATE (data, not instructions):",
+            "This document already exists and its artboard page has already been created. "
+            "The page is EMPTY — it has no children yet — and filling it is this turn's job.",
+            "",
+            "Existing empty page(s):",
+            *described,
+            "",
+            "Do NOT author a top-level `page ...` line for a page listed above. That page id "
+            "already exists, so a page line that parses is refused by the engine (`page <id> "
+            "already exists`) and a page line that does not parse leaves its indented elements "
+            "without a parent (LUMD0402) — either way the block fails and the repair loop "
+            "burns the turn re-creating a page that is already there.",
+            "",
+            "To FILL the existing page, open it with a top-level page-modify line and indent "
+            "the subtree under it:",
+            "",
+            f'    #page:{example_id} name("{example_name}")',
+            f"      ad_root fr p(0,0) s({root_size})",
+            '        headline text "Your headline" p(64,64) s(400,hug)',
+            "",
+            "The `name(...)` on that first line restates the page's OWN name and changes "
+            "nothing; it is there because a modify line needs at least one property — a lone "
+            "`#page:<page_id>` line is read as a comment and its children are then orphaned. "
+            "Do not restate the page size: it is already set, and re-stating it rewrites the "
+            "page.",
+            "",
+            "Once the page has content, edit nodes with `#<node_id> property(...)` modify "
+            "lines, and add, remove or reorder children inside an existing container with "
+            "`reconcile(<container_id>)` followed by that container's full intended child "
+            "subtree.",
+        ]
+    )
+
+
+def execute_agent_turn_job(
+    envelope: Any,
+    *,
+    store: HybridRepository,
+    host: Any,
+    event_sink: Any,
+    checkpointer: Any = None,
+    lease_generation: Optional[int] = None,
+) -> Tuple[str, JsonObject, str, JsonObject]:
+    """One scene-mode turn, executed from its frozen envelope.
+
+    A LEG turn (genad Task 5) OWNS its persist, exactly as the web executor has since D6: the
+    proposal is replayed against the stored document and committed under the leg block's frozen
+    ``document_base_version``, so a turn that took minutes can never silently clobber a human
+    edit made while it ran. A DIRECT editor turn carries no ``leg`` block, keeps proposing, and
+    its result envelope stays byte-identical — the editor still owns that commit through
+    ``POST /documents/{id}/operations``.
+
+    ``lease_generation`` (D7) fences the governed tool invocation that persist makes, exactly as
+    it fences the web executor's.
+    """
+    run_subject = DesignRunSubject(
+        run_id=envelope.run_id, lease_generation=lease_generation
+    )
+    payload = AgentTurnPreviewRequest.model_validate(envelope.config.get("request") or {})
+    # G9: the USER's own words, captured BEFORE the leg prompt render below composes the brief
+    # and the history into them. This is the human-facing ``intent`` on the durable edit
+    # envelope, so it must never become the rendered brief block.
+    user_message = payload.prompt
+    # An explicit None means "resolved: this turn has no references" — distinct from a missing
+    # key. Platform LEG envelopes carry the frozen reference ids in ``request`` and deliberately
+    # do not assemble or rasterize this worker's runtime manifest while accepting the turn, so a
+    # missing manifest must take the normal in-worker resolution path. Using ``.get`` without the
+    # sentinel made every accepted platform reference silently inert.
+    reference_assets = envelope.config.get("reference_assets", _REFERENCES_UNRESOLVED)
+    # W4 offer-time freeze: same missing-key-vs-null discipline as the reference manifest
+    # above. A missing key is a LEGACY envelope (claim-time compose, now loud when this
+    # process's flag is off); a present key — even null — is the offerer's decision, consumed
+    # verbatim so the claiming process's env cannot change what the turn sees.
+    frozen_ad_lane = envelope.config.get("ad_lane", ad_runtime.FROZEN_LANE_ABSENT)
+
+    # --- P3.7: consume the platform leg envelope's frozen context ------------------------------
+    # A design-leg turn (PD-part3 §2.3/§2.4) carries the delegation bundle, the leg history,
+    # and the leg's pins on ``config``. Non-leg turns carry none of these and stay
+    # byte-identical.
+    leg_block = envelope.config.get("leg") or {}
+    delegation_bundle = envelope.config.get("delegation_bundle")
+    leg_history = envelope.config.get("history")
+
+    pinned_kit_id = leg_block.get("brand_kit_id") if isinstance(leg_block, dict) else None
+    resolved_brand_kit: Any = _BRAND_KIT_UNRESOLVED
+    if pinned_kit_id:
+        # The D5 fail-closed brand pin, TOCTOU-free (adversarial-review fix): ONE read owns
+        # both the check and the value. The kit is resolved fully here — kit, asset
+        # manifest, font spec — fail-loud, and handed to the runtime BY VALUE, so the
+        # tolerant resolver (whose except falls back to the platform default kit) never
+        # runs for a pinned turn. A pin is (id, version): a version-less pin is refused
+        # here rather than injecting a scene ref the engine cannot deserialize mid-turn.
+        pinned_version = leg_block.get("brand_kit_version")
+        try:
+            if pinned_version is None:
+                raise ValueError(
+                    "the leg's brand pin carries no version; a pin is (id, version)"
+                )
+            pinned_version = int(pinned_version)
+            resolved_brand_kit = load_brand_kit_by_value(
+                workspace_id=envelope.workspace_id,
+                brand_kit_id=str(pinned_kit_id),
+                version=pinned_version,
+                blobs=_turn_blob_store(host, envelope.workspace_id),
+                source="leg_pin",
+                ensure_workspace=False,
+            )
+        except Exception as error:
+            failed = failed_agent_turn_response(
+                "design_leg.brand_pin_unresolvable",
+                "The design leg pins a brand kit this workspace cannot resolve.",
+                f"brand_kit_id={pinned_kit_id} version={pinned_version}: {error}",
+            )
+            return "failed", failed, "error", {"message": "brand pin unresolvable"}
+        pinned_scene = dict(payload.scene or {})
+        pinned_meta = dict(pinned_scene.get("meta") or {})
+        pinned_meta["brand_kit"] = {"id": str(pinned_kit_id), "version": pinned_version}
+        pinned_scene["meta"] = pinned_meta
+        payload = payload.model_copy(update={"scene": pinned_scene})
+
+    # genad walk F1: a LEG turn on an all-empty-paged scene (the chat-born ad at birth) is
+    # steered to FILL its existing artboard rather than author a `page ...` line the engine
+    # cannot accept. LEG-ONLY and shape-gated: a direct editor turn (no leg block) and a leg
+    # turn on a content-bearing or page-less scene compose byte-identically to before. The
+    # block sits AFTER the brief and history and immediately before the user's message, so
+    # the prefill-cached prefix those two form (P3.7's block order) is untouched.
+    steering_note = _empty_page_steering_note(payload.scene) if leg_block else None
+    composed_prompt = f"{steering_note}\n\n{payload.prompt}" if steering_note else payload.prompt
+    if delegation_bundle or leg_history:
+        composed_prompt = render_leg_turn_prompt(
+            bundle=delegation_bundle if isinstance(delegation_bundle, dict) else None,
+            history=leg_history if isinstance(leg_history, list) else None,
+            prompt=composed_prompt,
+        )
+    if composed_prompt != payload.prompt:
+        payload = payload.model_copy(update={"prompt": composed_prompt})
+
+    # --- genad Task 5: is this turn's proposal ours to commit? ---------------------------------
+    # ALL of: a leg block, a pinned document, and the leg's frozen CAS base. A direct editor turn
+    # fails the first; a legacy (AD4.R-era) document-less leg fails the second and third. A
+    # missing ``document_base_version`` is read as "preview-only", never as version zero — a
+    # fabricated base would CAS against whatever happens to sit at the head and clobber it.
+    document_id = payload.document_id
+    base_version = leg_block.get("document_base_version") if isinstance(leg_block, dict) else None
+    leg_persist = bool(leg_block) and bool(document_id) and base_version is not None
+
+    override = host.agent_turn_runner
+    root = repo_root()
+    workspace_id = envelope.workspace_id
+    try:
+        doc: Optional[JsonObject] = None
+        committer: Optional[_LegSceneCommitter] = None
+        if leg_persist:
+            # The web executor's early-out, verbatim in spirit: a turn that already lost the
+            # race comes back conflicted BEFORE the trio spends a token. The governed write
+            # below still carries ``expected_base_version`` for the race window after this read.
+            doc = store.require_document(document_id)
+            if doc["current_version"] != base_version:
+                # P0.4 replay guard. A moved document is USUALLY a human who edited while we ran
+                # — but it is also what THIS run's own checkpoints look like to a redrive (a
+                # takeover restarts the agent from the frozen envelope, so its fresh operation
+                # history would double-apply onto its own committed work). Ask the run's durable
+                # event stream which of the two happened before blaming a human.
+                if _own_checkpoint_version(
+                    store, run_id=envelope.run_id, document_id=str(document_id)
+                ) == doc["current_version"]:
+                    interrupted = failed_agent_turn_response(
+                        "agent_turn.interrupted_after_checkpoint",
+                        "This design turn was interrupted after part of it was saved.",
+                        f"The design was saved at version {doc['current_version']} before the "
+                        "turn stopped. Ask again to keep going from there — nothing is lost.",
+                    )
+                    return "failed", interrupted, "result", {"status": interrupted["status"]}
+                conflicted = conflicted_agent_turn_response(
+                    base_version, doc["current_version"]
+                )
+                return "failed", conflicted, "result", {"status": conflicted["status"]}
+            committer = _LegSceneCommitter(
+                doc=doc,
+                document_id=str(document_id),
+                host=host,
+                store=store,
+                run_subject=run_subject,
+                workspace_id=workspace_id,
+                run_id=envelope.run_id,
+                intent=user_message,
+            )
+        if override is not None:
+            response = _call_turn_override(
+                override, payload, root, scene_checkpoint=_checkpoint_sink(committer)
+            )
+        else:
+            response = run_agent_turn_preview(
+                payload,
+                root,
+                event_sink=event_sink,
+                resolved_reference_assets=reference_assets,
+                frozen_ad_lane=frozen_ad_lane,
+                workspace_id=envelope.workspace_id,
+                # D5 Round C: the dispatching app's byte backend + engine-cache tree, so an
+                # injected backend cannot stage bytes in one place and read them from another.
+                blobs=_turn_blob_store(host, envelope.workspace_id),
+                engine_cache_root=_host_engine_cache_root(host, envelope.workspace_id),
+                checkpointer=checkpointer,
+                thread_id=envelope.checkpoint_thread_id,
+                resolved_brand_kit=resolved_brand_kit,
+                # P0.4: only a LEG turn owns a persist, so only a leg turn checkpoints. A direct
+                # editor turn passes None and stays save-nothing, exactly as before.
+                scene_checkpoint=_checkpoint_sink(committer),
+                # A3 (defect R3-D): every fleet-driven turn is cancellable, leg or not — the
+                # doomed W5 run was a plain editor turn, and "you can only stop it if it came
+                # from chat" would be an arbitrary line to draw through a paid run.
+                cancel_requested=_run_cancel_probe(store, envelope.run_id),
+            )
+        operations = response.get("operations")
+        if committer is not None and doc is not None and response.get("status") == "proposed":
+            # ``doc`` is set together with ``leg_persist``, above — so everything in here is
+            # LEG-ONLY, and a direct editor turn still falls straight through untouched.
+            if isinstance(operations, list) and operations:
+                response = _persist_leg_scene_proposal(
+                    response,
+                    committer=committer,
+                    operations=operations,
+                    document_id=str(document_id),
+                    base_version=int(base_version),
+                    store=store,
+                )
+            elif not (committer.scene.get("pages") or {}):
+                # genad2 Task 3, the empty-proposal half of the >=1-page gate. A proposal with
+                # nothing in it never reaches the persist function (there is nothing to replay),
+                # so the gate is repeated here over the STORED scene — which, after P0.4, means
+                # the scene this turn's last checkpoint left there, not the one it started from.
+                # On a document that HAS a page an empty proposal is what it always was — a pure
+                # clarification, a real outcome with nothing to commit, still a success. On a
+                # page-less newborn it is a generation that produced nothing, and calling that a
+                # finished design is exactly the lie the gate exists to refuse.
+                response = pageless_agent_turn_response()
+        # ``conflicted`` is minted ONLY by the leg-persist path above; a direct editor turn can
+        # never produce it, so this mapping stays byte-identical for non-leg turns.
+        status = (
+            "failed"
+            if response.get("status") in ("failed", "error", "conflicted")
+            else "succeeded"
+        )
+        if (
+            status == "failed"
+            and committer is not None
+            and committer.committed_operations
+            and "current_version" not in response
+        ):
+            # P0.4 — the whole point, stated on the way out. The turn failed (a quota 403 at
+            # finalize, a crash, a budget ceiling), but checkpoints made real work durable while
+            # it ran. Naming the saved version keeps the result honest: the run failed AND the
+            # gallery moved, which is strictly better than the old "nothing was saved".
+            response = _leg_scene_version_stamp(
+                response, str(document_id), int(base_version), store
+            )
+        return status, response, "result", {"status": response.get("status")}
+    except Exception as error:  # pragma: no cover - defensive; the runner already folds failures
+        failed = failed_agent_turn_response(
+            "agent_runtime.failed",
+            "Agent turn crashed before returning a proposal.",
+            str(error),
+        )
+        return "failed", failed, "error", {"message": str(error)}
+
+
+#: The durable mark one P0.4 checkpoint commit leaves on its run's event stream. It is BOTH the
+#: frontend's mid-run progress signal (the canvas can pin a real version instead of waiting out
+#: the whole generation on version 0) and the replay guard's evidence: a redrive reads it back to
+#: recognise a document its OWN earlier attempt advanced.
+SCENE_CHECKPOINT_EVENT = "scene_checkpoint_committed"
+
+
+class _LegSceneCommitter:
+    """Every durable scene write ONE leg turn makes, in ledger order, through the one governed
+    write path — the P0.4 mid-run checkpoints and the final commit alike.
+
+    Before P0.4 a leg turn wrote once, at finalize, so a run that died on the last call (the
+    2026-08-24 quota 403 at 20m42s) discarded a fully valid, reviewer-accepted scene and left the
+    document at version 0. Now each verified authoring round commits, and a terminal failure
+    costs one round instead of the run.
+
+    The arithmetic is what makes checkpoints *strictly additive*. Each write applies only the
+    operations not yet durable onto the scene the previous write produced, and CAS's on the
+    version that write left behind; ``update_document_state`` advances the version by exactly
+    ``len(ops)``. So a turn proposing N operations ends at ``base + N`` whether it checkpointed
+    five times or not at all — same destination, same final scene, just visible on the way.
+
+    A checkpoint is BEST-EFFORT and a commit is not: :meth:`checkpoint` swallows every failure
+    (a lost version is never a lost run, and the un-committed tail is simply re-offered inside
+    the next checkpoint), while :meth:`commit` raises so the finalize path can keep minting the
+    exact honest refusals it always has.
+    """
+
+    def __init__(
+        self,
+        *,
+        doc: JsonObject,
+        document_id: str,
+        host: Any,
+        store: HybridRepository,
+        run_subject: DesignRunSubject,
+        workspace_id: str,
+        run_id: str,
+        intent: str,
+    ) -> None:
+        self._document_id = document_id
+        self._host = host
+        self._store = store
+        self._run_subject = run_subject
+        self._workspace_id = workspace_id
+        self._run_id = run_id
+        self._intent = intent
+        #: The version the next write CAS's against — the leg's frozen base until we move it.
+        self.version = int(doc["current_version"])
+        #: The scene the next write applies its operations onto.
+        self.scene: JsonObject = doc["scene"]
+        #: How much of the run's operation ledger is already durable.
+        self.committed_operations = 0
+
+    def pending(self, operations: List[JsonObject]) -> List[JsonObject]:
+        """The ledger tail this turn has not yet made durable."""
+        return list(operations)[self.committed_operations :]
+
+    def replay(self, delta: List[JsonObject]) -> JsonObject:
+        """Reproduce ``delta`` through the engine against the scene the next write overwrites.
+
+        The agent's operation history is a CLAIM until this succeeds — an unreplayable history
+        would otherwise be committed as a scene nobody can undo — and the inverse operations the
+        edit envelope carries come out of this same call. Raises :class:`CoreError`.
+        """
+        return _turn_core(self._host).apply_operations(self.scene, delta)
+
+    def commit(self, delta: List[JsonObject], applied: JsonObject, label: str) -> None:
+        """Write one already-replayed operation batch, then advance our bookkeeping.
+
+        The caller replays and vets ``delta`` first (the engine reproducing the agent's claimed
+        history against the scene we are about to overwrite is the precondition for trusting it),
+        so this is only the write. Raises on conflict or write failure — nothing is advanced when
+        it does, which is what lets a refused checkpoint be re-offered whole.
+        """
+        # D4 backstop, unchanged and now per-commit: imagery a turn generated lives only in the
+        # engine's wipeable cache until an accept seam gives it durable custody. A checkpoint IS
+        # an accept seam, so custody must happen here too — otherwise a checkpointed scene could
+        # reference bytes that the next cache wipe takes with it.
+        register_scene_asset_backstop(
+            _turn_blob_store(self._host, self._workspace_id),
+            _host_engine_cache_root(self._host, self._workspace_id),
+            applied["scene"],
+        )
+        _turn_design_tools(self._host, self._run_subject).invoke(
+            "design_apply_operations",
+            {
+                "document_id": self._document_id,
+                "scene": applied["scene"],
+                "diagnostics": applied.get("diagnostics", []),
+                "operations": delta,
+                "source": "agent",
+                "actor_kind": "agent",
+                "actor_id": self._run_id,
+                "envelope": {
+                    # The USER's words, never the composed runtime prompt (G9).
+                    "intent": self._intent[:120],
+                    "checkpoint_label": label,
+                    "inverse_operations": (applied.get("edit") or {}).get(
+                        "inverse_operations"
+                    ),
+                },
+                "expected_base_version": self.version,
+            },
+            workspace_id=self._workspace_id,
+            actor="agent",
+            actor_id=self._run_id,
+        )
+        self.version += len(delta)
+        self.scene = applied["scene"]
+        self.committed_operations += len(delta)
+
+    def checkpoint(self, operations: List[JsonObject], meta: JsonObject) -> None:
+        """The runtime's checkpoint sink (see ``LumenDesignTools.checkpoint_scene``).
+
+        Contains everything. A checkpoint that cannot be taken — the engine refuses the replay, a
+        human edit moved the document under us, the write fails — is logged and dropped, and the
+        run continues to its own finalize, which is still the turn's authority.
+        """
+        delta = self.pending(operations)
+        if not delta:
+            return
+        try:
+            applied = self.replay(delta)
+            if has_error_diagnostics(applied.get("diagnostics") or []):
+                # The same precondition finalize enforces: an operation history the engine cannot
+                # reproduce is not committed. Here it is simply skipped — finalize will say so.
+                return self._skip(delta, meta, "the engine refused the round's operations")
+            if not (applied["scene"].get("pages") or {}):
+                # genad2's >=1-page gate: a page-less scene is not a design yet, so there is
+                # nothing worth a version. Not an error — just too early to checkpoint.
+                return
+            self.commit(delta, applied, "Design turn (in progress)")
+        except Exception as error:  # noqa: BLE001 - a checkpoint never fails a run
+            return self._skip(delta, meta, str(error))
+        try:
+            self._store.emit_run_event(
+                self._run_id,
+                SCENE_CHECKPOINT_EVENT,
+                {
+                    "document_id": self._document_id,
+                    "version": self.version,
+                    "operations": self.committed_operations,
+                    "reason": meta.get("reason"),
+                    "preflight_clean": meta.get("preflight_clean"),
+                },
+                expected_generation=self._run_subject.lease_generation,
+            )
+        except Exception as error:  # noqa: BLE001 - the commit already landed; the mark is extra
+            # Losing the mark costs the frontend one progress frame and costs a redrive its
+            # self-recognition (it will read the moved document as a human conflict, which is
+            # wrong but safe — it refuses rather than double-commits).
+            api_logger.warning(
+                "leg_scene_turn.checkpoint_mark_failed",
+                document_id=self._document_id,
+                run_id=self._run_id,
+                version=self.version,
+                error=str(error),
+            )
+
+    def _skip(self, delta: List[JsonObject], meta: JsonObject, reason: str) -> None:
+        """Record a checkpoint that could not be taken. The operations stay un-acknowledged, so
+        the next checkpoint (or finalize) carries them again."""
+        api_logger.warning(
+            "leg_scene_turn.checkpoint_skipped",
+            document_id=self._document_id,
+            run_id=self._run_id,
+            base_version=self.version,
+            pending_operations=len(delta),
+            trigger=meta.get("reason"),
+            error=reason,
+        )
+
+
+def _own_checkpoint_version(
+    store: HybridRepository, *, run_id: str, document_id: str
+) -> Optional[int]:
+    """The version this run's OWN last P0.4 checkpoint left the document at, or None.
+
+    Read off the run's durable event stream, which survives a takeover because it is keyed on the
+    run — so a redrive can tell "my earlier attempt already moved this document" apart from "a
+    human edited it while I ran". Best-effort: an unreadable stream returns None and the caller
+    falls back to treating the move as somebody else's, which refuses rather than double-commits.
+    """
+    try:
+        events = store.list_run_events(run_id)
+    except Exception:  # noqa: BLE001 - never fail a turn on a progress-stream read
+        return None
+    version: Optional[int] = None
+    for event in events:
+        if not isinstance(event, dict) or event.get("type") != SCENE_CHECKPOINT_EVENT:
+            continue
+        data = event.get("data")
+        if not isinstance(data, dict) or data.get("document_id") != document_id:
+            continue
+        candidate = data.get("version")
+        if isinstance(candidate, int):
+            version = candidate
+    return version
+
+
+def _checkpoint_sink(committer: Optional["_LegSceneCommitter"]):
+    """The runtime's P0.4 sink for this turn, or None when the turn owns no persist."""
+    return None if committer is None else committer.checkpoint
+
+
+def _run_cancel_probe(store: HybridRepository, run_id: str):
+    """This run's cancellation probe (A3, defect R3-D): the runtime's read of a durable stamp.
+
+    The whole cross-process seam in one closure. The human's cancel arrives on a web process; the
+    turn is driven by a fleet worker that shares nothing with it but Postgres, so the ONLY way
+    the two can meet is a row the asker writes and the driver reads. This is the driver's half.
+
+    Wrapped in :class:`~lumen_agent.cancellation.CancellationProbe`, which makes it sticky (a
+    cancel never un-cancels), throttled on the negative answer (one read per model call would be
+    fine; one per retry storm is wasteful), and FAIL-OPEN — a database blip reads as "not
+    cancelled" rather than becoming the run's cause of death. Durability is what makes this
+    survive a worker restart or a lease takeover: the redrive re-reads the same stamp.
+    """
+    from lumen_agent.cancellation import CancellationProbe
+
+    return CancellationProbe(lambda: store.cancellation_requested(run_id))
+
+
+def _call_turn_override(override: Any, payload: Any, root: Path, *, scene_checkpoint: Any):
+    """Call the injected turn-runner test seam, handing it the checkpoint sink only if it wants it.
+
+    ``DesignTurnHost.agent_turn_runner`` is a test double whose shipped contract is
+    ``(payload, root)``. P0.4 needs a stub to be *able* to checkpoint (that is the only way to
+    drive the mid-run path without a live model), so the sink is offered as a keyword — and every
+    existing two-argument stub keeps working untouched, which is the point of asking first.
+    """
+    try:
+        parameters = inspect.signature(override).parameters
+    except (TypeError, ValueError):  # pragma: no cover - builtins/C callables
+        parameters = {}
+    wants_sink = "scene_checkpoint" in parameters or any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+    if wants_sink:
+        return override(payload, root, scene_checkpoint=scene_checkpoint)
+    return override(payload, root)
+
+
+def _persist_leg_scene_proposal(
+    response: JsonObject,
+    *,
+    committer: "_LegSceneCommitter",
+    operations: List[JsonObject],
+    document_id: str,
+    base_version: int,
+    store: HybridRepository,
+) -> JsonObject:
+    """Commit ONE leg scene turn's proposal, or refuse honestly. Never both, never neither.
+
+    Exactly one durable write happens here, and only on the path where the engine reproduced the
+    agent's own operation history against the stored scene.
+
+    P0.4: "the proposal" now means *the part of it that is not durable yet*. The committer has
+    been taking checkpoints of verified rounds while the turn ran, so this replays and writes
+    only the tail, onto the scene the last checkpoint produced and CAS'd on the version it left.
+    The destination is unchanged — ``base + len(operations)``, the same final scene — and a turn
+    whose last checkpoint already carried everything writes nothing at all, because there is
+    nothing left to write, not because anything was dropped.
+    """
+
+    delta = committer.pending(operations)
+    if not delta:
+        # Fully checkpointed: every operation is already durable at the head, and the scene there
+        # is byte-for-byte the one a single finalize write would have produced. Reporting the
+        # version is all that is left.
+        return _leg_scene_version_stamp(response, document_id, base_version, store)
+    try:
+        # The agent's operation history is a CLAIM until the engine reproduces it HERE, against
+        # the scene we are about to overwrite. This is a precondition on trusting it, not a
+        # formality: an unreplayable history would otherwise be committed as a scene nobody can
+        # undo, and the inverse operations the checkpoint needs come out of this same call.
+        applied = committer.replay(delta)
+    except CoreError as error:
+        if is_pageless_scene_refusal(error.diagnostics):
+            # Not an unreplayable history — the operations replayed fine and simply did not
+            # amount to a page, which the engine refuses as an invalid scene. Same fact as the
+            # gate below, reached first because the engine validates the result for us — so the
+            # engine's own text rides the detail, exactly as the replay refusal beside it does.
+            return pageless_agent_turn_response(error.message)
+        return failed_agent_turn_response(
+            "agent_turn.operations_replay_failed",
+            "The AI turn's operations could not be replayed.",
+            error.message,
+        )
+    if has_error_diagnostics(applied.get("diagnostics") or []):
+        return failed_agent_turn_response(
+            "agent_turn.operations_replay_failed",
+            "The AI turn's operations could not be replayed.",
+            "The engine reported errors replaying the turn's operations; "
+            "the proposal was not committed.",
+        )
+    # genad2 Task 3 — the >=1-page success gate, read off the scene that would be written. The
+    # engine's own LUMV0100 refusal above is what fires today, but the authoritative statement of
+    # the contract is this one (it survives an engine that ever admits a page-less scene): a leg
+    # turn only succeeds if what it applied has somewhere to be seen.
+    if not (applied["scene"].get("pages") or {}):
+        return pageless_agent_turn_response()
+    try:
+        # The SAME governed write the /documents/{id}/operations route makes, with
+        # ``actor="agent"`` on the invocation (REQ-20 parity) and — through the committer — the
+        # leg's frozen base (or the version this turn's last checkpoint left) as the CAS that
+        # closes the window the early check cannot. The D4 asset-custody backstop rides inside
+        # `commit`, so every accept seam this turn opens gets it, not only the last one.
+        committer.commit(delta, applied, "Design turn")
+    except WebDocumentVersionConflict as conflict:
+        # The race window between the early check and this write — the DAL's row-locked CAS is
+        # what actually decides it, and losing is an honest terminal outcome, not a crash.
+        return conflicted_agent_turn_response(conflict.expected, conflict.current)
+    # PAST THE POINT OF NO RETURN. The governed write above has COMMITTED; everything below only
+    # describes it.
+    return _leg_scene_version_stamp(response, document_id, base_version, store)
+
+
+def _leg_scene_version_stamp(
+    response: JsonObject,
+    document_id: str,
+    base_version: int,
+    store: HybridRepository,
+) -> JsonObject:
+    """Stamp the committed document's version onto the turn's result.
+
+    A convenience (it lets the platform's projection pin the new version), so its failure must
+    not propagate to the executor's outer handler, which would fold a committed turn into
+    `agent_runtime.failed` and tell a marketer nothing was saved while their ad sits changed in
+    the gallery. A missing `current_version` is the honest degradation — the same shape a
+    preview-only leg turn returns — and readers already treat the key as optional. The write's
+    OWN failure stays fatal/conflicted, in the caller.
+    """
+    try:
+        current_version = store.require_document(document_id)["current_version"]
+    except Exception as error:  # pragma: no cover - exercised by the stub-store test
+        api_logger.warning(
+            "leg_scene_turn.version_reread_failed",
+            document_id=document_id,
+            base_version=base_version,
+            error=str(error),
+        )
+        return response
+    return {**response, "current_version": current_version}
+
+
+def execute_web_turn_job(
+    envelope: Any,
+    *,
+    store: HybridRepository,
+    host: Any,
+    event_sink: Any,
+    checkpointer: Any = None,
+    lease_generation: Optional[int] = None,
+) -> Tuple[str, JsonObject, str, JsonObject]:
+    """One website-mode turn, executed from its frozen envelope.
+
+    Unlike the scene path this executor OWNS the persist: an applied result is replayed against
+    the stored document and committed under the envelope's ``base_version``, so a turn that took
+    minutes can never silently clobber a human edit made while it ran.
+
+    ``lease_generation`` (D7) fences the run-event side of this turn's governed tool invocations,
+    exactly as it fences the executor's progress sink and its terminal write.
+    """
+    run_subject = DesignRunSubject(
+        run_id=envelope.run_id, lease_generation=lease_generation
+    )
+    request = envelope.config.get("request") or {}
+    payload = WebTurnRequest.model_validate(request)
+    account_card = envelope.config.get("account_card")
+    document_id = envelope.document_id
+
+    # --- G9: consume the platform leg envelope's frozen context --------------------------------
+    # A design-leg turn (PD-part3 §2.3/§2.4) carries the delegation bundle and the leg history on
+    # ``config``; the scene executor has composed both into its prompt since P3.7, and this one
+    # read only ``config.request`` — so a chat-born generation ran on the raw text of the user's
+    # LATEST message alone ("go ahead" generated from almost nothing, and every iteration turn
+    # lost the standing brief). Same renderer, same block order (brief, history, message), so
+    # both executors reassemble the session identically. A direct BFF turn carries neither block
+    # and its prompt stays byte-identical.
+    delegation_bundle = envelope.config.get("delegation_bundle")
+    leg_history = envelope.config.get("history")
+    user_message = payload.prompt
+    prompt = (
+        render_leg_turn_prompt(
+            bundle=delegation_bundle if isinstance(delegation_bundle, dict) else None,
+            history=leg_history if isinstance(leg_history, list) else None,
+            prompt=user_message,
+        )
+        if delegation_bundle or leg_history
+        else user_message
+    )
+
+    model = payload.model
+    target_node_ids = payload.target_node_ids
+    base_version = payload.base_version
+    override = host.web_turn_runner
+    root = repo_root()
+    workspace_id = envelope.workspace_id
+    try:
+        doc = store.require_document(document_id)
+        if doc["current_version"] != base_version:
+            response = conflicted_web_turn_response(base_version, doc["current_version"])
+        elif override is not None:
+            # Backward-compatible seam: existing stubs take four positional args; only pass the
+            # scoped-target ids when the request carried them (a five-arg stub), and only pass
+            # account_card as a keyword when the turn is personalized (so the un-personalized
+            # 4/5-arg stubs are untouched).
+            account_kwargs = {"account_card": account_card} if account_card else {}
+            if target_node_ids:
+                response = override(
+                    doc, prompt, model, root, target_node_ids, **account_kwargs
+                )
+            else:
+                response = override(doc, prompt, model, root, **account_kwargs)
+        else:
+            asset_library = workspace_asset_library_manifest(store)
+            component_account_id = doc.get("account_id")
+            custom_component_registry = (
+                DurableAgentCustomComponentRegistry(
+                    blobs=_turn_blob_store(host, workspace_id),
+                    account_id=component_account_id,
+                    document_id=document_id,
+                    # D6 (R-D6-5): the registry's two durable writes route through the governed
+                    # design tools. The compiler knobs it used to hold are now the tool host's
+                    # thunks, resolved the same way off-request as on it.
+                    invocations=_turn_design_tools(host, run_subject),
+                )
+                if isinstance(component_account_id, str) and component_account_id
+                else None
+            )
+            response = run_web_agent_turn(
+                doc,
+                prompt,
+                model,
+                root,
+                event_sink=event_sink,
+                target_node_ids=target_node_ids,
+                account_card=account_card,
+                asset_library=asset_library,
+                custom_component_registry=custom_component_registry,
+                # F4.3 (R25-1): composed HERE, beside the component registry, because like it
+                # this capability's durable writes go through the governed design tools and the
+                # invoker is only assemblable at this seam. Unlike it there is no account or
+                # document to gate on — the binder's own workspace-scoped doors decide.
+                account_logo_binder=DurableAgentAccountLogoBinder(
+                    blobs=_turn_blob_store(host, workspace_id),
+                    cache_dir=_host_engine_cache_root(host, workspace_id),
+                    invocations=_turn_design_tools(host, run_subject),
+                ),
+                workspace_id=workspace_id,
+                # D5 Round C: see the scene executor.
+                blobs=_turn_blob_store(host, workspace_id),
+                engine_cache_root=_host_engine_cache_root(host, workspace_id),
+                checkpointer=checkpointer,
+                thread_id=envelope.checkpoint_thread_id,
+                # A3 (defect R3-D): the same durable probe the scene executor builds, so ONE
+                # route can honestly stop either kind of design run.
+                cancel_requested=_run_cancel_probe(store, envelope.run_id),
+            )
+        if response.get("status") == "applied":
+            operations = response.get("operations")
+            if not isinstance(operations, list):
+                response = failed_agent_turn_response(
+                    "web_turn.operations_missing",
+                    "The AI turn did not return a replayable operation history.",
+                    "The candidate document was not committed.",
+                )
+            elif not operations:
+                if response.get("web_doc") != doc["scene"]:
+                    response = failed_agent_turn_response(
+                        "web_turn.operations_incomplete",
+                        "The AI turn's operation history did not describe its result.",
+                        "The candidate document was not committed.",
+                    )
+            else:
+                try:
+                    replay = _turn_core(host).web_apply_ops(
+                        doc["scene"], operations, raise_on_error=False
+                    )
+                except CoreError as error:
+                    response = failed_agent_turn_response(
+                        "web_turn.operations_replay_failed",
+                        "The AI turn's operations could not be replayed.",
+                        error.message,
+                    )
+                else:
+                    if not replay.get("ok") or replay.get("web_doc") != response.get("web_doc"):
+                        response = failed_agent_turn_response(
+                            "web_turn.operations_incomplete",
+                            "The AI turn's operation history did not reproduce its result.",
+                            "The candidate document was not committed.",
+                        )
+                    else:
+                        try:
+                            # Durable custody BEFORE the governed write, mirroring the
+                            # scene accept seam. An agent tool can ingest bytes mid-turn
+                            # (a fetched account logo), and until this ran the web lane
+                            # had no backstop at all — the document committed citing
+                            # bytes that lived only in a wipeable engine cache.
+                            register_web_asset_backstop(
+                                _turn_blob_store(host, workspace_id),
+                                _host_engine_cache_root(host, workspace_id),
+                                replay["web_doc"],
+                            )
+                            # D6 Round B: the worker's persist is the SAME governed write the
+                            # /web/operations route makes, with `actor="agent"` on the
+                            # invocation (REQ-20 parity) and the envelope's frozen
+                            # `base_version` as the CAS. The operation-replay verification
+                            # above stays HERE and stays loud: it is a precondition on trusting
+                            # the agent's own history, and it needs the engine.
+                            _turn_design_tools(host, run_subject).invoke(
+                                "design_apply_web_operations",
+                                {
+                                    "document_id": document_id,
+                                    "web_doc": replay["web_doc"],
+                                    "operations": operations,
+                                    "inverse_operations": replay.get(
+                                        "inverse_operations"
+                                    ),
+                                    # The USER's words, never the composed runtime prompt: this
+                                    # is the human-facing label on the durable edit envelope,
+                                    # and a leg turn's composed prompt opens with the fenced
+                                    # brief block (G9).
+                                    "intent": user_message[:120],
+                                    "checkpoint_label": "Website turn",
+                                    "actor_kind": "agent",
+                                    "source": "agent",
+                                    "expected_base_version": base_version,
+                                },
+                                workspace_id=workspace_id,
+                                actor="agent",
+                                actor_id=envelope.run_id,
+                            )
+                            updated = store.require_document(document_id)
+                        except WebDocumentVersionConflict as conflict:
+                            response = conflicted_web_turn_response(
+                                conflict.expected, conflict.current
+                            )
+                        except CustomComponentReferenceError as error:
+                            response = failed_agent_turn_response(
+                                error.code,
+                                error.message,
+                                (
+                                    f"Node {error.node_id} references "
+                                    f"artifact {error.artifact_id}."
+                                ),
+                            )
+                        except FragmentReferenceError as error:
+                            response = failed_agent_turn_response(
+                                error.code,
+                                error.message,
+                                (
+                                    f"Node {error.node_id} references "
+                                    f"fragment {error.fragment_id}."
+                                ),
+                            )
+                        else:
+                            response["current_version"] = updated["current_version"]
+        status = "succeeded" if response.get("status") == "applied" else "failed"
+        return (
+            status,
+            {**with_web_turn_failure_diagnostic(response), "doc_kind": "web"},
+            "result",
+            {"status": response.get("status")},
+        )
+    except Exception as error:  # pragma: no cover - defensive
+        failed = failed_agent_turn_response(
+            "agent_runtime.failed",
+            "Website turn crashed before returning a result.",
+            str(error),
+        )
+        return "failed", {**failed, "doc_kind": "web"}, "error", {"message": str(error)}
+
+
+def execute_ingestion_job(
+    envelope: Any,
+    *,
+    host: Any,
+    expected_generation: Optional[int] = None,
+) -> str:
+    """One brand-kit ingestion, executed from its frozen envelope. Returns the job's status.
+
+    The ingestion sibling of :func:`execute_agent_turn_job` / :func:`execute_web_turn_job`, and
+    it lives here for the same two reasons: the workspace-scoped engine-cache root it needs is a
+    ``main`` concern, and the three ``run_*_ingestion`` names are resolved from THIS module's
+    namespace at call time — which is the seam the ingestion route suites patch to inject their
+    capture/extract/analyze stubs. Calling ``lumen_ingestion.pipeline`` directly from the handler
+    would silently bypass every one of those tests.
+
+    Never raises: the pipeline drives the job to a terminal row itself (``run_ingestion_job``
+    captures any exception onto it) and a fenced write is dropped rather than propagated. The
+    status is read back afterwards so the fleet's ``WorkResult`` reports the real outcome instead
+    of assuming success.
+    """
+    workspace_id = envelope.workspace_id
+    kind = DesignIngestionKind(envelope.ingestion_kind)
+    runner = {
+        DesignIngestionKind.WEBSITE: run_website_ingestion,
+        DesignIngestionKind.PDF: run_pdf_ingestion,
+        DesignIngestionKind.ASSET_UPLOAD: run_asset_ingestion,
+        # Brand Ad Assets v1 W2. Same signature, same never-raises contract, same fence — the
+        # lane is a fourth ingestion kind rather than a second job system (see the enum).
+        DesignIngestionKind.AD_ASSETS: run_ad_assets_onboarding,
+    }[kind]
+    runner(
+        str(_host_engine_cache_root(host, workspace_id)),
+        envelope.job_id,
+        # The tenant is the envelope's, never a re-derived default: a worker-path write that
+        # silently picks a workspace is the D2.5A residual this round closes.
+        workspace_id=workspace_id,
+        # The dispatching app's byte backend when there is one (the embedded worker + the design
+        # suite); the detached worker has none and falls back to the configured backend, which is
+        # what staged the upload in that deployment anyway.
+        storage=host.storage,
+        expected_generation=expected_generation,
+    )
+    job = IngestionJobStore(workspace_id=workspace_id).get(envelope.job_id)
+    return str((job or {}).get("status") or "unknown")
+
+
+# D5 Round B (R-D5-B1): ``ensure_agent_runtime_path`` is DELETED. It inserted
+# apps/agent_runtime, apps/api and the design-tree root into ``sys.path`` at call time so the
+# lazy ``lumen_agent`` import below could resolve. That trick is unavailable to an out-of-process
+# fleet worker, which is why ``lumen-agent-runtime``, ``py-lumen-obs`` and ``py-lumen-config`` are
+# now installed uv workspace members. The lazy import and its ``agent_runtime.unavailable``
+# degradation stay exactly as they were — a machine without the runtime extras must still get an
+# honest failure envelope rather than an import crash at module load.
+
+
+def api_engine_cache_root(workspace_id: str) -> Path:
+    """One workspace's engine materialization cache, resolved as ``create_app`` resolves it.
+
+    The off-request-thread twin of the app's own ``engine_cache_dir``: agent-turn workers and
+    the by-value resolvers below run outside a request, so they cannot read ``app.state``.
+    Deliberately per-WORKSPACE for the same reason the in-app accessor is — the engine resolves
+    purely by digest, so one shared tree would let a turn read another tenant's bytes.
+    """
+    path = settings.effective_asset_store_root / workspace_id
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def api_blob_store(workspace_id: str) -> DesignBlobStore:
+    """A design blob-store handle for code that has no request to take one from.
+
+    D5 Round C closed the D2.5A residual this carried: ``workspace_id`` was optional and fell
+    back to the configured dev workspace, so any off-request caller that simply forgot to thread
+    a tenant read and wrote the dev tenant's bytes instead of failing. It is now REQUIRED, and
+    every worker-path caller passes the job's own workspace out of its frozen envelope.
+
+    What SURVIVES, deliberately: the backend comes from ``settings``, not ``app.state.storage``,
+    because this function has no app handle by construction — its callers are the ones with no
+    request. On the worker path that residual is gone a different way: the executors pass the
+    host's ``DesignBlobStore`` (built from ``app.state.storage`` for the embedded worker) into
+    the turn/ingestion runners, so this function is reached only by the CLI, fixtures, and the
+    off-request resolver defaults. A suite that injects a throwaway backend into ``create_app``
+    and then drives one of THOSE paths must point ``CLUE_STORAGE_FS_ROOT`` at the same place
+    (the conftest fixture does).
+    """
+    return DesignBlobStore(storage_from_settings(), workspace_id)
 
 
 def resolve_agent_turn_brand_kit(
     payload: AgentTurnPreviewRequest,
+    blobs: DesignBlobStore,
 ) -> Tuple[
     Optional[JsonObject], Optional[str], Optional[JsonObject], Optional[JsonObject]
 ]:
@@ -6718,22 +10097,42 @@ def resolve_agent_turn_brand_kit(
     ref = meta.get("brand_kit") if isinstance(meta, dict) else None
     if not isinstance(ref, dict) or not ref.get("id"):
         return None, None, None, None
-    database_path = settings.lumen_api_database_path
     try:
-        connection = connect(database_path)
+        # D5 Round C: `blobs` is REQUIRED and names the caller's tenant. It used to default to
+        # `api_blob_store()` — the configured dev workspace — which meant an off-request caller
+        # that forgot to thread a workspace resolved another tenant's kit.
+        return load_brand_kit_by_value(
+            workspace_id=blobs.workspace_id,
+            brand_kit_id=str(ref["id"]),
+            version=ref.get("version"),
+            blobs=blobs,
+            source="document",
+        )
     except Exception:
         return None, None, None, None
-    try:
-        repo = Repository(connection)
-        record = repo.require_brand_kit(str(ref["id"]), ref.get("version"))
-        brand_kit = record["brand_kit"]
-        manifest = brand_kit_asset_manifest(repo, connection, brand_kit)
-        font_spec = brand_kit_font_spec(repo, brand_kit, str(api_asset_store_root()))
-        return brand_kit, "document", manifest, font_spec
-    except Exception:
-        return None, None, None, None
-    finally:
-        connection.close()
+
+
+def load_brand_kit_by_value(
+    *,
+    workspace_id: str,
+    brand_kit_id: str,
+    version: Optional[int],
+    blobs: DesignBlobStore,
+    source: str,
+    ensure_workspace: bool = True,
+) -> Tuple[JsonObject, str, JsonObject, Optional[JsonObject]]:
+    """One read that owns both the check and the value: kit + asset manifest + font spec,
+    fail-LOUD (P3.7 TOCTOU fix). The tolerant `resolve_agent_turn_brand_kit` wraps this for
+    unpinned turns; the leg-pin gate calls it directly and fails the turn on ANY error —
+    an unreachable database refuses rather than silently designing in the default kit."""
+
+    repo = HybridRepository(workspace_id, ensure_workspace=ensure_workspace)
+    record = repo.require_brand_kit(brand_kit_id, version)
+    brand_kit = record["brand_kit"]
+    cache_dir = str(api_engine_cache_root(workspace_id))
+    manifest = brand_kit_asset_manifest(repo, brand_kit, blobs, cache_dir)
+    font_spec = brand_kit_font_spec(repo, brand_kit, blobs, cache_dir)
+    return brand_kit, source, manifest, font_spec
 
 
 def _is_replace_web_doc(operations: Any) -> bool:
@@ -6771,7 +10170,7 @@ def _replace_web_doc_payload(operations: Any) -> Optional[JsonObject]:
 
 
 def _web_revert_envelope_for(
-    repo: Repository, document_id: str, batch_id: str
+    repo: HybridRepository, document_id: str, batch_id: str
 ) -> JsonObject:
     """The most recent revert envelope that undid `batch_id`. Its
     inverse_operations carries the whole doc that historical batch installed —
@@ -6866,7 +10265,7 @@ def build_web_font_face_css(
 
 
 def resolve_web_turn_brand_kit(
-    web_doc: JsonObject, database_path: Optional[Path] = None
+    web_doc: JsonObject, blobs: DesignBlobStore
 ) -> Tuple[
     Optional[JsonObject], Optional[str], Optional[JsonObject], Optional[JsonObject]
 ]:
@@ -6879,33 +10278,29 @@ def resolve_web_turn_brand_kit(
     Resolution failures never fail the turn: no ref, an unknown kit id, or an
     unreadable database all return (None, None, None, None) and the pipeline
     falls back to the platform default kit — the same silent-fallback contract
-    the scene path has. `database_path` defaults to the process-global API DB
-    (mirrors the scene resolver); callers holding the request-scoped DB (the
-    render endpoint) pass it so tests resolve against their own temp DB."""
+    the scene path has. `blobs` (D4) is the tenant's byte store, used to materialize the kit's
+    font faces AND its asset/thumbnail bytes into the engine cache; REQUIRED since D5 Round C,
+    because a defaulted one named the dev workspace and quietly resolved the wrong tenant's
+    kit."""
     theme = web_doc.get("theme") if isinstance(web_doc, dict) else None
     ref = theme.get("brand_kit") if isinstance(theme, dict) else None
     if not isinstance(ref, dict) or not ref.get("id"):
         return None, None, None, None
-    path = database_path or settings.lumen_api_database_path
     try:
-        connection = connect(path)
-    except Exception:
-        return None, None, None, None
-    try:
-        repo = Repository(connection)
+        # D5 Round C: `blobs` is REQUIRED and names the caller's tenant — see the scene twin.
+        repo = HybridRepository(blobs.workspace_id)
         record = repo.require_brand_kit(str(ref["id"]), ref.get("version"))
         brand_kit = record["brand_kit"]
-        manifest = brand_kit_asset_manifest(repo, connection, brand_kit)
-        font_spec = brand_kit_font_spec(repo, brand_kit, str(api_asset_store_root()))
+        cache_dir = str(api_engine_cache_root(blobs.workspace_id))
+        manifest = brand_kit_asset_manifest(repo, brand_kit, blobs, cache_dir)
+        font_spec = brand_kit_font_spec(repo, brand_kit, blobs, cache_dir)
         return brand_kit, "document", manifest, font_spec
     except Exception:
         return None, None, None, None
-    finally:
-        connection.close()
 
 
 def account_values(
-    account: JsonObject, repo: Repository
+    account: JsonObject, repo: HybridRepository
 ) -> Tuple[Dict[str, JsonObject], List[JsonObject]]:
     """Project a personalization account (P5 D3) into the flat `account.*` value
     namespace (D1) + the logo's engine AssetRecord for the derive call.
@@ -6949,7 +10344,7 @@ def account_values(
 
 
 def resolve_account_assets(
-    account_card: JsonObject, database_path: Optional[Path] = None
+    account_card: JsonObject, workspace_id: str
 ) -> Optional[JsonObject]:
     """The account-logo manifest a personalized turn hands the runtime BY VALUE
     (mirrors resolve_web_turn_brand_kit / brand_kit_asset_manifest): the account
@@ -6961,27 +10356,20 @@ def resolve_account_assets(
     logo_asset_id = account_card.get("logo_asset_id")
     if not logo_asset_id:
         return None
-    path = database_path or settings.lumen_api_database_path
     try:
-        connection = connect(path)
-    except Exception:
-        return None
-    try:
-        repo = Repository(connection)
+        # D2.3: the asset registry lives on Postgres. `workspace_id` is the turn's tenant, and
+        # REQUIRED since D5 Round C — a None used to mean the dev workspace.
+        repo = HybridRepository(workspace_id)
         record = repo.require_asset_record(str(logo_asset_id))
         return {str(logo_asset_id): {"record": record.get("asset") or record}}
     except Exception:
         return None
-    finally:
-        connection.close()
 
 
 WEB_AGENT_ASSET_LIBRARY_MAX = 2_000
 
 
-def workspace_asset_library_manifest(
-    repo: Repository, connection
-) -> JsonObject:
+def workspace_asset_library_manifest(repo: HybridRepository) -> JsonObject:
     """Grounded website-agent inventory of real workspace asset records.
 
     The API owns persistence, so it materializes a bounded, non-archived
@@ -7000,7 +10388,11 @@ def workspace_asset_library_manifest(
         if (row.get("asset") or {}).get("id")
     ]
     try:
-        descriptions = DescriptionStore(connection).get_many(asset_ids)
+        # D5 Round C: workspace-scoped. `DescriptionStore()` defaulted to the DEV workspace, so
+        # every tenant's asset-library manifest was annotated from the dev tenant's description
+        # rows (in practice: no descriptions at all, silently). The registry read beside it has
+        # always been correctly scoped, which is what hid the split.
+        descriptions = DescriptionStore(workspace_id=repo.workspace_id).get_many(asset_ids)
     except Exception:
         descriptions = {}
 
@@ -7023,15 +10415,155 @@ def workspace_asset_library_manifest(
     return manifest
 
 
+# --- W1.1: the workspace asset library -> SCENE turn -----------------------------------------
+#
+# THE BOUND LIVES HERE, and it is deliberately far smaller than website mode's
+# `WEB_AGENT_ASSET_LIBRARY_MAX` (2_000). The two manifests are consumed differently:
+#
+#   * A WEBSITE turn only ever SEARCHES its manifest (`search_assets` scores it in Python and
+#     returns ≤8 hits), so 2_000 entries cost memory and nothing else.
+#   * A SCENE turn has no search tool. Its manifest is looked up by id — and, more expensively,
+#     every entry's bytes are pulled out of durable storage into the per-workspace engine cache
+#     by the read-through below, because a placed asset that never materializes renders as an
+#     empty chip. Its ids are also listed back to the agent by `view`'s honest-miss text, which
+#     IS prompt-cache surface.
+#
+# So the scene manifest is the workspace's MOST RECENTLY UPDATED placeable images, capped. That
+# ordering is the DAL's (`updated_at DESC, asset_id`) and it is the right one for this feature:
+# the assets a scene turn wants are the ones the onboarding harvest / pre-generation lane just
+# wrote. If a client ever needs to reach further back, the answer is a search tool on the scene
+# side — NOT a bigger dump into every turn's context.
+SCENE_TURN_ASSET_LIBRARY_MAX = 24
+
+# Fonts and documents are not placeable in a scene, and shipping them would spend read-through
+# on bytes no image node can ever bind. `vector` stays: SVG library assets are placeable and
+# ingestion gives them raster thumbnails.
+SCENE_TURN_ASSET_LIBRARY_KINDS = frozenset({"raster_image", "logo", "vector"})
+
+# The kind/status filter runs in Python (the DAL takes one `kind` at a time), so the query
+# over-fetches a BOUNDED window of the recency order and keeps the first N placeable rows.
+# The window is what stops a library whose newest rows are all fonts from yielding nothing;
+# it is a scan bound, never a manifest bound.
+SCENE_TURN_ASSET_LIBRARY_SCAN = SCENE_TURN_ASSET_LIBRARY_MAX * 8
+
+
+def scene_turn_asset_library_manifest(
+    repo: HybridRepository,
+    blobs: DesignBlobStore,
+    cache_dir: str,
+) -> JsonObject:
+    """The bounded workspace-library manifest a SCENE turn can view and place.
+
+    W1.1 (Brand Ad Assets v1 §5). `workspace_asset_library_manifest` had exactly one
+    call site — the website-mode turn — so a scene turn saw only `brand_kit_assets`
+    and this turn's `reference_assets`. A pre-generated `asset_gen_*` background was
+    therefore unviewable AND unplaceable however healthy it was in the database
+    (Apollo POC 2026-08-26, `.context/ref-ads-pilot-apollo-report.md` §6.1). This is
+    the missing third channel, built from the same rows and the same description
+    store, then bounded (see the constants above) and byte-backed.
+
+    Read-through, the P0.1 pattern (fast-loop v1 §4), identical to
+    `brand_kit_asset_manifest`: the runtime resolves previews BY DIGEST out of the
+    per-workspace engine cache, so durable bytes are materialized there first.
+    Without it a fleet worker sees the manifest and none of the pixels — a silent
+    empty chip, which is the failure mode this whole item exists to kill. Fail-SOFT
+    like every other read-through: a digest with no durable bytes is left absent and
+    `view("asset:…")` degrades to its honest missing-file text.
+    """
+    manifest: JsonObject = {}
+    # The DAL already returns `updated_at DESC, asset_id`; keep THAT order rather than
+    # re-sorting here, so recency has exactly one definition and no timestamp shape has
+    # to be re-derived in Python.
+    for row in repo.list_asset_records(
+        include_archived=False,
+        limit=SCENE_TURN_ASSET_LIBRARY_SCAN,
+        offset=0,
+    ):
+        if len(manifest) >= SCENE_TURN_ASSET_LIBRARY_MAX:
+            break
+        record = row.get("asset") or {}
+        asset_id = record.get("id")
+        # `status` is mirrored onto the record; only a READY asset is placeable, and
+        # the runtime's library seam refuses anything else anyway.
+        if not asset_id or record.get("status") != "ready":
+            continue
+        if record.get("kind") not in SCENE_TURN_ASSET_LIBRARY_KINDS:
+            continue
+        manifest[str(asset_id)] = {
+            "record": record,
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+        }
+
+    try:
+        descriptions = DescriptionStore(workspace_id=repo.workspace_id).get_many(
+            list(manifest.keys())
+        )
+    except Exception:
+        descriptions = {}
+    for asset_id, entry in manifest.items():
+        described = descriptions.get(asset_id) or {}
+        for field in ("title", "description", "usage", "tags"):
+            if described.get(field):
+                entry[field] = described[field]
+
+    ensure_materialized(
+        blobs,
+        cache_dir,
+        (
+            digest
+            for entry in manifest.values()
+            for digest, _mime in record_digests(entry["record"])
+        ),
+    )
+    return manifest
+
+
+def resolve_scene_turn_asset_library(
+    blobs: DesignBlobStore,
+    cache_dir: Path,
+) -> Optional[JsonObject]:
+    """The scene turn's library manifest, or None when it cannot be built.
+
+    Tolerant on purpose, exactly like `resolve_agent_turn_brand_kit`: an unreachable
+    database or an empty library must never fail a turn — the run simply designs
+    without the library, which is the pre-W1.1 behaviour. An EMPTY manifest returns
+    None too, so a workspace with no library assets leaves `config.asset_library`
+    unset and its turn stays byte-identical to before.
+
+    `cache_dir` is the TURN's engine cache, threaded in rather than re-derived: a
+    fleet worker injects its own, and staging bytes in one tree while the runtime
+    reads another is exactly the split D5 Round C closed elsewhere."""
+    try:
+        repo = HybridRepository(blobs.workspace_id)
+        manifest = scene_turn_asset_library_manifest(repo, blobs, str(cache_dir))
+    except Exception:
+        return None
+    return manifest or None
+
+
 def brand_kit_asset_manifest(
-    repo: Repository, connection, brand_kit: JsonObject
+    repo: HybridRepository,
+    brand_kit: JsonObject,
+    blobs: DesignBlobStore,
+    cache_dir: str,
 ) -> JsonObject:
     """K2: {asset_id: {record, title, description, usage}} for the kit's logo
     variants and brand images. Records come back VERBATIM from the library
     (they were engine-built at ingestion) — the runtime rewrites only the
     scene copy's provenance. Missing records are skipped silently: a kit may
     reference assets whose bytes/rows never landed, and a partial manifest
-    beats a failed turn."""
+    beats a failed turn.
+
+    D4 read-through (fast-loop v1 §4 P0.1): the runtime resolves each record's
+    preview BY DIGEST out of the per-workspace engine cache (`_asset_preview_path`
+    → `blob_path_for_digest`), so the kit's asset and thumbnail bytes have to be
+    pulled out of durable storage into that cache first — exactly as
+    `brand_kit_font_spec` does for faces and `reference_asset_manifest` does for
+    attachment previews. Without it a fleet worker (or any process whose cache
+    was never the ingesting one's) sees the manifest but none of the pixels.
+    Fail-soft like every other read-through: a digest with no durable bytes is
+    left absent and `view("asset:…")` degrades to its honest missing-file text."""
     assets = brand_kit.get("assets") or {}
     asset_ids: list[str] = []
     for logo in (assets.get("logos") or {}).values():
@@ -7051,7 +10583,7 @@ def brand_kit_asset_manifest(
     try:
         from lumen_ingestion.describe import DescriptionStore
 
-        descriptions = DescriptionStore(connection).get_many(asset_ids)
+        descriptions = DescriptionStore().get_many(asset_ids)
     except Exception:
         descriptions = {}
 
@@ -7066,6 +10598,16 @@ def brand_kit_asset_manifest(
             if described.get(field):
                 entry[field] = described[field]
         manifest[asset_id] = entry
+
+    ensure_materialized(
+        blobs,
+        cache_dir,
+        (
+            digest
+            for entry in manifest.values()
+            for digest, _mime in record_digests(entry["record"])
+        ),
+    )
     return manifest
 
 
@@ -7100,26 +10642,71 @@ def _dedupe_and_cap_reference_ids(raw: Optional[List[str]]) -> List[str]:
 
 
 def resolve_reference_images_for_generate(
-    repo: Repository, asset_ids: List[str], store_root: str
+    repo: HybridRepository,
+    blobs: DesignBlobStore,
+    cache_dir: str,
+    asset_ids: List[str],
 ) -> Tuple[List[Tuple[bytes, str]], List[str]]:
     """RC (D-RC2.5): resolve already-deduped+capped reference ids into order-
     sorted (bytes, mime) reference images + their preview digests, via the SAME
     RC manifest machinery the agent turn uses — same hard 422s (unknown id /
     broken preview) and the same SVG rasterize. The manifest guarantees each
-    preview blob exists (it 422s otherwise), so the bytes read is safe."""
-    manifest = reference_asset_manifest(repo, repo.connection, asset_ids, store_root)
+    preview blob is durable (it 422s otherwise), so the read is safe."""
+    manifest = reference_asset_manifest(repo, blobs, cache_dir, asset_ids)
     images: List[Tuple[bytes, str]] = []
     digests: List[str] = []
     for entry in sorted(manifest.values(), key=lambda e: e.get("order", 0)):
         digest = entry["preview_digest"]
-        blob = Path(store_root) / "sha256" / digest[:2] / digest
-        images.append((blob.read_bytes(), entry.get("mime_type") or "image/png"))
+        images.append((blobs.read(digest), entry.get("mime_type") or "image/png"))
         digests.append(digest)
     return images, digests
 
 
-def resolve_agent_turn_references(
+def resolve_auto_ad_references(
     payload: AgentTurnPreviewRequest,
+    blobs: DesignBlobStore,
+    cache_dir: Path,
+    lane: Any,
+) -> Optional[JsonObject]:
+    """W4: the brand's OWN published ads, attached when the human attached none.
+
+    Brand Ad Assets v1 §4 ("the platform auto-attaches the ≤4 most relevant harvested
+    references"). Selection lives in `lumen_api.ad_runtime` and states its own reasoning; this
+    function is only the bridge from selected asset ids to the by-value manifest, built by the
+    SAME `reference_asset_manifest` the manual path uses — one definition of what a reference
+    is, so an auto-attached one and a hand-attached one are indistinguishable to the runtime.
+
+    THE ONE DELIBERATE ASYMMETRY AGAINST THE MANUAL PATH: this never raises. A bad manual
+    attachment is a loud 422 because it is explicit user intent (D2) and a reference the user
+    picked but the loop never saw is worse than a rejected request. An AUTO attachment is the
+    platform's own suggestion — a stale creative row or an unreadable preview must cost the
+    turn its references, never the turn itself. Hence the bare except around a resolver whose
+    whole contract is to throw.
+
+    Consequence worth stating rather than discovering: attaching references makes this a
+    REFERENCE turn, so the runtime's existing reference machinery switches on (the author
+    views `reference:<n>`, the typed `reference_fidelity` is stamped, and a finalize-accept
+    needs a fidelity judgment). That is the intended behaviour for an ad turn on a brand whose
+    ads we harvested — it is why W1.5 exists — and it is exactly what W5 measures.
+    """
+    # The brief the selector matches against is `payload.prompt` as it stands HERE. On a leg
+    # turn that is already the composed prompt (the leg's frozen brief, then the history, then
+    # the user's message, in that order), so the truncation inside the selector keeps the
+    # brief — which is the part that actually describes the ad — and drops the tail.
+    asset_ids = ad_runtime.select_reference_asset_ids(payload.prompt or "", lane)
+    if not asset_ids:
+        return None
+    try:
+        return reference_asset_manifest(
+            HybridRepository(blobs.workspace_id), blobs, str(cache_dir), asset_ids
+        )
+    except Exception:  # noqa: BLE001 - an auto-attachment may never fail a turn
+        api_logger.warning("auto_ad_references_unresolvable")
+        return None
+
+
+def resolve_agent_turn_references(
+    payload: AgentTurnPreviewRequest, blobs: DesignBlobStore
 ) -> Optional[JsonObject]:
     """RC (D2): the user-attached references for THIS turn, resolved from the
     asset library into a by-value manifest so the runtime never reads the API
@@ -7131,31 +10718,32 @@ def resolve_agent_turn_references(
     asset_ids = _dedupe_and_cap_reference_ids(payload.reference_asset_ids)
     if not asset_ids:
         return None
-    store_root = str(api_asset_store_root())
-    connection = connect(settings.lumen_api_database_path)
-    try:
-        repo = Repository(connection)
-        return reference_asset_manifest(repo, connection, asset_ids, store_root)
-    finally:
-        connection.close()
+    # D5 Round C: `blobs` is REQUIRED and names the caller's tenant (it defaulted to the dev
+    # workspace, which made an unthreaded call read another tenant's library).
+    return reference_asset_manifest(
+        HybridRepository(blobs.workspace_id),
+        blobs,
+        str(api_engine_cache_root(blobs.workspace_id)),
+        asset_ids,
+    )
 
 
 def reference_asset_manifest(
-    repo: Repository,
-    connection,
+    repo: HybridRepository,
+    blobs: DesignBlobStore,
+    cache_dir: str,
     asset_ids: List[str],
-    store_root: str,
 ) -> JsonObject:
     """RC (D2): {asset_id: {record, preview_digest, mime_type, width, height,
     dominant_colors, title, description, order}} — EXACTLY the config.py
     reference_assets contract. Records come back VERBATIM from the library. A
     missing id is a hard 422 (never a silent skip — references are explicit
-    user intent). SVG references are engine-rasterized to a 512px PNG written
-    into the shared content-addressed store AT RESOLVE TIME, so the runtime
-    only ever handles raster previews; a rasterize failure is a 422 (LUMI0804-
-    class spirit — a broken preview on an explicit attachment fails the
-    request, never degrades). dominant_colors/title/description are advisory."""
-    import hashlib
+    user intent). SVG references are engine-rasterized to a 512px PNG that is
+    given DURABLE custody and mirrored into the engine cache AT RESOLVE TIME, so
+    the runtime (which reads the cache) only ever handles raster previews; a
+    rasterize failure is a 422 (LUMI0804-class spirit — a broken preview on an
+    explicit attachment fails the request, never degrades).
+    dominant_colors/title/description are advisory."""
     import io
 
     from PIL import Image
@@ -7164,11 +10752,12 @@ def reference_asset_manifest(
     from lumen_ingestion.pipeline import make_rasterize_svg
 
     try:
-        descriptions = DescriptionStore(connection).get_many(asset_ids)
+        # D5 Round C: workspace-scoped — see workspace_asset_library_manifest for the same fix.
+        descriptions = DescriptionStore(workspace_id=repo.workspace_id).get_many(asset_ids)
     except Exception:
         descriptions = {}
 
-    rasterize_svg = make_rasterize_svg(repo, store_root)
+    rasterize_svg = make_rasterize_svg(repo, blobs, cache_dir)
     manifest: JsonObject = {}
     for order, asset_id in enumerate(asset_ids):
         try:
@@ -7202,18 +10791,16 @@ def reference_asset_manifest(
                 )
             preview_bytes = png_bytes
             preview_digest = hashlib.sha256(png_bytes).hexdigest()
-            blob_path = (
-                Path(store_root) / "sha256" / preview_digest[:2] / preview_digest
+            # D4: the rasterized preview is a real derived artifact — durable custody first
+            # (idempotent on identical bytes), then the engine-cache mirror the runtime reads
+            # through `view("reference:<n>")`. Registering before mirroring is the same
+            # row-before-blob ordering the seam itself uses.
+            blobs.register(
+                png_bytes,
+                media_type="image/png",
+                source_key=design_storage.SOURCE_KEY_ENGINE_ARTIFACT,
             )
-            if not blob_path.is_file():
-                # Atomic write (review fix): a content-addressed blob must never
-                # be observable half-written — a crash mid-write would park
-                # corrupt bytes at a valid digest path forever. Write a tmp
-                # sibling and rename into place (os.replace is atomic on POSIX).
-                blob_path.parent.mkdir(parents=True, exist_ok=True)
-                tmp_path = blob_path.with_name(f".{preview_digest}.tmp-{os.getpid()}")
-                tmp_path.write_bytes(png_bytes)
-                os.replace(tmp_path, blob_path)
+            write_cache_blob(cache_dir, preview_digest, png_bytes)
         else:
             digest = (media.get("digest") or {}).get("value")
             if not digest:
@@ -7228,11 +10815,13 @@ def reference_asset_manifest(
                     },
                 )
             preview_digest = str(digest)
-            blob_path = Path(store_root) / "sha256" / preview_digest[:2] / preview_digest
             # Review fix (channel refuter, minor 1): a raster reference whose
-            # store blob is gone fails HERE like the SVG branch does — D2 says
+            # bytes are gone fails HERE like the SVG branch does — D2 says
             # boundary 422, never a silent mid-run degrade to a pixel-less view.
-            if not blob_path.is_file():
+            # D4: "gone" is now a DURABLE-storage miss, and the bytes are mirrored into the
+            # engine cache so the runtime can view them.
+            preview_bytes = read_asset_bytes(blobs, preview_digest)
+            if preview_bytes is None:
                 raise HTTPException(
                     status_code=422,
                     detail={
@@ -7244,7 +10833,7 @@ def reference_asset_manifest(
                         "diagnostics": [],
                     },
                 )
-            preview_bytes = blob_path.read_bytes()
+            write_cache_blob(cache_dir, preview_digest, preview_bytes)
 
         # dominant_colors is advisory: an empty list on any failure never blocks.
         dominant_colors: List[str] = []
@@ -7296,7 +10885,10 @@ def _reference_dimensions(record: JsonObject) -> Tuple[Optional[int], Optional[i
 
 
 def scene_brand_fonts(
-    repo: Repository, scene: Optional[JsonObject], store_root: str
+    repo: HybridRepository,
+    scene: Optional[JsonObject],
+    blobs: DesignBlobStore,
+    cache_dir: str,
 ) -> Optional[JsonObject]:
     """K3 for stateless/scene-only paths: resolve the scene's own brand-kit
     reference (`meta.brand_kit`) to its font spec so shaping uses the kit's
@@ -7314,11 +10906,14 @@ def scene_brand_fonts(
         )["brand_kit"]
     except NotFoundError:
         return None
-    return brand_kit_font_spec(repo, referenced, store_root)
+    return brand_kit_font_spec(repo, referenced, blobs, cache_dir)
 
 
 def brand_kit_font_spec(
-    repo: Repository, brand_kit: Optional[JsonObject], store_root: str
+    repo: HybridRepository,
+    brand_kit: Optional[JsonObject],
+    blobs: DesignBlobStore,
+    cache_dir: str,
 ) -> Optional[JsonObject]:
     """K3: {store_root, faces: [{digest, family, weight?, style?}]} for the
     kit's font faces, resolved from the asset library. The helper reads the
@@ -7372,7 +10967,13 @@ def brand_kit_font_spec(
                 faces.append(spec_face)
     if not faces:
         return None
-    return {"store_root": store_root, "faces": faces}
+    # D4 read-through: the helper loads each face's BYTES from `store_root`, which is now the
+    # engine's per-workspace materialization cache — so every face has to be pulled out of
+    # durable storage before the spec is handed over. Fail-soft: a face whose bytes are durably
+    # absent is left un-materialized and the helper reports it (LUMS0101), exactly as it did
+    # when the byte was missing from the local tree.
+    ensure_materialized(blobs, cache_dir, (face["digest"] for face in faces))
+    return {"store_root": str(cache_dir), "faces": faces}
 
 
 def agent_seed_scene(payload: AgentTurnPreviewRequest) -> Optional[JsonObject]:

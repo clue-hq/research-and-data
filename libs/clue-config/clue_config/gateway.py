@@ -15,6 +15,7 @@ we report a real measured cost or zero, never a fabricated one.
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -93,6 +94,13 @@ class GatewayConfig(BaseModel):
     embedding_model: str = "openai/text-embedding-3-small"
     # Optional fallback model id tried when the primary errors (config; ``None`` = no fallback).
     fallback_model: str | None = None
+    # P3.2 (PD-part3 delta 6) — OpenRouter economics knobs, policy as data. ``provider.sort``
+    # pins routing to one replica ordering, which is what makes a stable prompt-cache prefix
+    # actually HIT (the design runtime's ~95% cached-prefill invariant); ``usage.include``
+    # asks OpenRouter for the usage-accounting block (cached/reasoning token detail). Defaults
+    # OFF: existing call sites keep their exact wire shape.
+    openrouter_provider_sort: Literal["price", "throughput", "latency"] | None = None
+    openrouter_usage_include: bool = False
     timeout_s: float = Field(default=30.0, gt=0)
     max_retries: int = Field(default=2, ge=0)
     # Force the deterministic stub (no live call). The factory ALSO stubs when no key is present.
@@ -109,6 +117,13 @@ class GatewayConfig(BaseModel):
     # baseline for every agent model this config builds — which is why it is set from exactly one
     # place, ``default_gateway_config`` below, under the dev-only reasoning-trace setting.
     agent_reasoning: ReasoningRequest | None = None
+    # Route non-OpenAI agent models over chat-completions instead of the Responses endpoint.
+    # OpenRouter's ``/responses`` translation for non-OpenAI providers rejects array-shaped
+    # message content (grok-4.6 400s ``invalid_union: expected string, received array`` on the
+    # platform conversation's tool-result follow-ups — live, 2026-08-27). Default OFF so the
+    # design deepagent, whose plain-string turns are proven on the Responses path, keeps its
+    # exact wire shape; the platform's ``default_gateway_config`` opts in.
+    openrouter_chat_completions_fallback: bool = False
 
     def cost_cents(self, model: str, usage: TokenUsage) -> CostCents:
         """Cost of a call to ``model`` with the given usage, from the configured price table.
@@ -148,8 +163,13 @@ def default_gateway_config() -> GatewayConfig:
             synthesis_model=settings.synthesis_model,
             judge_model=settings.judge_model,
             agent_reasoning=reasoning,
+            openrouter_chat_completions_fallback=True,
         )
-    return GatewayConfig(synthesis_model=settings.synthesis_model, agent_reasoning=reasoning)
+    return GatewayConfig(
+        synthesis_model=settings.synthesis_model,
+        agent_reasoning=reasoning,
+        openrouter_chat_completions_fallback=True,
+    )
 
 
 DEFAULT_GATEWAY_CONFIG = default_gateway_config()

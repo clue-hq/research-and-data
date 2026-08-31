@@ -1,26 +1,433 @@
 # Projects, threads, generations, and artifacts API contract
 
-Status: **R0 ratified; repair slices R1-R9 implemented. Later slices remain pending where noted.**
+Status: **R0 ratified; repair slices R1-R9 implemented; Stage-0/project hardening contract ratified and Slices 0-4 implemented. Slice 5 is explicitly deferred. Slice 6 automated/adversarial acceptance is complete, but authenticated browser acceptance remains pending. The combined human-gate contract is ratified; its merge implementation and acceptance remain pending. Later slices remain pending where noted.**
 
 Owner for backend integration: Aaryan.
+
+## Canonical frontend routes — founder-ratified 2026-08-17 (Phase R, rulings R1–R3)
+
+Adopted from the design repo's canonical-routes contract
+(`clue-hq/clue-frontend` `docs/api-contracts/projects.md`), as built by the
+Phase R route migration (`docs/superpowers/plans/2026-08-17-phase-r-chat-route-migration.md`):
+
+| Destination | Route | Ownership |
+| --- | --- | --- |
+| Projects list | `/projects` | Workspace |
+| Project root | `/projects/:projectId` | Legacy absorber: `?thread=` server-redirects to the chats path; threadless renders and canonicalizes to the default thread's chats path |
+| Project Gallery | `/projects/:projectId/chats/:chatId?surface=gallery` | One Gallery per Project |
+| Legacy Gallery entry | `/projects/:projectId/gallery` | Compatibility redirect only; threadless carries `?surface=gallery` through the absorber so the Gallery intent survives |
+| Project chat | `/projects/:projectId/chats/:chatId` | Many chats per Project; the canonical thread `href` shape every backend emitter produces (`thread_href` in `platform/api/clue_api/chat/schemas.py`) |
+| Project artifact | `/projects/:projectId/artifacts/:artifactId` | Artifact remains in the Project Gallery |
+
+**The legacy `/projects/:projectId?thread=:chatId` form redirects to these
+canonical destinations and must not be emitted by new UI or by the backend.**
+Pane state on the chats route is `?surface=` (`chat|gallery|web|ad`) plus
+`?edit=1` and `?selection=` — **this supersedes the earlier-ratified
+`?artifact=` split-view param (ruling R2, 2026-08-17), which was never built
+and must not be introduced.** The historical-proposal sections later in this
+document retain the legacy `?thread=` form as unedited history and are
+non-authoritative. The R6 protected-shell paragraph ("R6 implementation
+status") is unchanged by the route migration.
+
+**Chat-flow editor integration — as built, 2026-08-19** (plan
+`docs/superpowers/plans/2026-08-19-chat-flow-editor-integration.md`, slices 1–5,
+commits `f7540b63`/`f6d63cdc`/`3957166a`/`3ba169be`/`95922696`):
+
+- **The chats-route feed props.** `chats/[chatId]/page.tsx` server-fetches the
+  per-project design-artifact feed (`loadGalleryFeed` — the same shared helper
+  the artifact page uses) and threads `{artifacts, documentIds}` as NEW
+  optional props through `ProjectWorkspaceShell` → `ChatSurface`. The feed
+  rides these props only; `workspace.artifacts` remains the schema-hard empty
+  tuple (`z.tuple([])`) and is NOT the artifact transport. Absent props (the
+  legacy `/projects/:projectId` absorber) → the gallery keeps its honest empty
+  state.
+- **Pane-state write-back.** The R2 params now round-trip: the chats route
+  reads them once at mount (unchanged) and writes them back on every pane
+  change via `router.replace` (never `push`; loop-guarded; params it does not
+  own — `?handoff=`, anything future — survive). Serialization rules: resting
+  state (rail closed) = the bare URL with NO pane params; `?surface=chat` is
+  its accepted inbound alias (parsed deliberately, canonicalized back to the
+  bare URL); `surface=web|ad` from the open artifact's kind; `edit=1` only on
+  the artifact surface while editing; `selection=<inspector schema token>` only
+  while editing and only when ≠ `canvas`. `?artifact=` is never emitted
+  (test-pinned).
+- **Known limitation — deep links restore pane state, not the open artifact.**
+  The ratified vocabulary carries no artifact identity (artifact identity on
+  the chats route is a runtime tab selection, not a URL param), so a shared
+  `?surface=web&edit=1&selection=text` URL opened fresh lands rail-open on the
+  Gallery with the conversation showing; the pane params survive un-rewritten.
+  **Open founder decision (surfaced 2026-08-19, undecided):** whether to ratify
+  an artifact-identity param so a shared link reopens the exact artifact in the
+  exact editing state — any such param needs a new ruling since `?artifact=`
+  is superseded and forbidden.
 
 The durable thread/turn/gate/stream surface, atomic Home bootstrap, complete
 project workspace read, and tenant-scoped sidebar catalog are implemented.
 In HTTP mode those repositories all use authenticated backend data and never
-fall back to fixtures. Artifact integration is not yet available, so a real
-project deliberately returns and renders an empty Gallery.
+fall back to fixtures. ~~Artifact integration is not yet available, so a real
+project deliberately returns and renders an empty Gallery.~~ **[Superseded
+2026-08-18/19: the leg-derived per-project design-artifact list read is live
+(`GET /api/v1/projects/{id}/design-artifacts`), and both the artifact route and
+the chats route serve the real gallery feed through it — see the chat-flow
+section above.]**
 
 Authority order inside this document is:
 
-1. **Executable integration contract (2026-08-10)** below.
-2. **As-built thread-shell contract (2026-08-08)** for endpoints the executable
+1. **Combined human-gate amendment (2026-08-15)** below.
+2. **Stage-0/project hardening amendment (2026-08-11)** where the combined amendment does not supersede it.
+3. **Executable integration contract (2026-08-10)** where neither amendment supersedes it.
+4. **As-built thread-shell contract (2026-08-08)** for endpoints the executable
    section does not amend.
-3. Earlier read/write/preview proposals, retained only as design history.
+5. Earlier read/write/preview proposals, retained only as design history.
 
 When `CLUE_PROJECTS_API_BASE_URL` is configured, every projects repository must
 use the same-origin authenticated BFF and validate the corresponding wire
 schema. HTTP mode never falls back to fixtures after a refusal, parse error, or
 network failure. Presentation components do not call the API directly.
+
+### Combined human-gate amendment (2026-08-15)
+
+This amendment freezes the merge contract shared by directive confirmation,
+ICP confirmation, and product selection. It defines the target shape before the
+schema, backend, resource, frontend, and test conflicts are resolved; it is not
+an assertion that the combined implementation has already passed acceptance.
+
+#### One durable gate substrate
+
+- The current interactive gate kinds are `directive_confirmation`,
+  `icp_confirmation`, and `product_selection`. `plan_approval` and
+  `budget_approval` remain reserved gate vocabulary, but do not become
+  interactive merely because their strings are recognized by storage.
+- Every immutable gate retains its exact workspace, project, thread, opening
+  turn, kind, subject reference, nullable subject revision, canonical subject
+  snapshot, matching SHA-256 digest, permitted decisions, human addressee, and
+  privacy/erasure bindings. The model may ask to open a gate; it cannot author
+  any of that authority.
+- `max_spend_cents` and `currency` are a paired nullable value. Non-spend gates
+  store both as null. When an amount is withheld by deployment policy, every
+  human-visible projection also returns null/absent rather than manufacturing
+  `0`, an empty string, or an empty currency.
+- Erased snapshots, stale subjects, foreign workspace/project/thread gates,
+  wrong addressees, malformed references or digests, unsupported kinds, and
+  already-answered gates are non-interactive. The frontend renders recovery,
+  never decision controls, for those states.
+
+Every immutable answer receipt retains the answering turn and action reference,
+decision, reviewed subject digest, `decision_payload`, nullable
+`selected_option_ref`, human actor, and answer time. The route derives actor,
+action, scope, and durable option reference; none is accepted as browser or
+model authority.
+
+#### Kind-specific answer invariants
+
+| Gate kind and decision | Required auxiliary value | Forbidden value |
+|---|---|---|
+| `icp_confirmation + revised` | one bounded, trimmed, non-blank `decision_payload.revision_request` | `selected_option_ref` |
+| `icp_confirmation + approved/rejected` | empty `decision_payload` | `selected_option_ref` |
+| `product_selection + approved` | one `selected_option_ref` proved to be a candidate in the immutable snapshot | any `decision_payload` member |
+| `product_selection + rejected/revised` | none | `selected_option_ref` and every `decision_payload` member |
+| `directive_confirmation` | none under the current contract | `selected_option_ref` and every `decision_payload` member |
+
+`decision_payload` is reserved for bounded auxiliary decision input; its only
+current member is the ICP `revision_request`. `selected_option_ref` is the
+dedicated durable product-selection field. A request or receipt can therefore
+never carry both revision text and a product choice. Every decision must also
+belong to the exact gate's `permitted_decisions` tuple.
+
+#### Frontend request and presentation contract
+
+The turn endpoint retains one structured `gate_response` alternative to a
+normal message:
+
+```jsonc
+{
+  "gate_id": "<durable-gate-uuid>",
+  "decision": "approved|rejected|revised",
+  "expected_subject_sha256": "<64-lowercase-hex>",
+  "expected_estimated_cost_cents": null,
+  "revision_request": "<ICP revision text; only when required>",
+  "selected_product_id": "<catalog product id; only when required>"
+}
+```
+
+The last two members are mutually exclusive and are omitted unless their gate
+kind and decision require them. `selected_product_id` is a browser transport
+name, not durable authority: after validating membership in the gated snapshot,
+the server persists the corresponding value as `selected_option_ref` and
+invokes the existing human-only product confirmation operation.
+
+Frontend decision state is a discriminated union keyed by gate kind and action:
+an ordinary decision, an ICP revision with required text, or a product approval
+with one required candidate. It must not overload a generic third string as
+either revision text or product ID. The card dispatches by fetched durable
+`gate.kind`; unsupported or invalid shapes fail closed.
+
+Canonical answer history renders semantic receipts. Product approval shows the
+chosen product's retained display name from the immutable gate snapshot, never
+raw transport JSON or a technical product ID. ICP answers retain the existing
+Profile approved/declined/Changes requested presentation. Optional members that
+were absent from a historical canonical message remain absent during replay.
+
+### Ratified Stage-0/project hardening amendment (2026-08-11)
+
+This amendment replaces the browser-probe defects documented in
+`.context/defect-log.md` with one durable authority chain. Slice 0 freezes the
+contracts and repairs the two stale test signals. Slice 1 registers the trusted
+readiness and synthesis tools, persists their durable records, and promotes the
+active Stage-0 recipe/profile. Slice 2 implements the durable ICP gate and
+answer lifecycle; rendering and remaining UI changes stay owned by Slices 3-6.
+
+- `synthesize_icps` is available to the governed Stage-0 conversation profile.
+  A successful call persists one or more draft, versioned `icp_spec` rows and
+  returns their exact durable proposal references. A readiness-policy revision
+  is never described or serialized as an ICP version; no ICP exists until an
+  `icp_spec` row exists.
+- ICP confirmation is a supported durable `agent_gate` kind. Its immutable row
+  stores the exact ICP subject reference, ICP revision, canonical subject
+  snapshot SHA-256, permitted decisions, and human addressee. Only the stored
+  gate may produce interactive Approve, Reject, or Revise controls.
+- A gate response travels through the existing structured `gate_response`
+  route. The server revalidates workspace/addressee, permitted decision,
+  subject revision, and expected digest before inserting the immutable answer
+  receipt. Approve activates the exact draft ICP; Reject and Revise preserve
+  the receipt without activating it.
+- Thin model references, malformed ids such as `human_only`, unsupported gate
+  kinds, missing durable rows, and stale subjects render as non-interactive
+  **Human action required** recovery notices. A model-emitted digest is not
+  authority.
+- Stage-0 readiness input metrics are engine-derived from the pinned,
+  account-wide company Client-KB claims. The confirmed product is a separate
+  trusted project pin, and its optional Product-KB has an independent version;
+  company and product version numbers are never required to match. Coverage and
+  verified-claim counts use the effective expected-field set: the substantive
+  company Client-KB baseline plus any tenant-local required-field extensions.
+  An empty configured extension list cannot erase the baseline or turn an empty
+  knowledge base into a misleading ready state. The wire field is named
+  `readiness_policy_version`.
+- Home project creation accepts an optional explicit `project_name`. When it is
+  absent, the server derives a bounded durable name from the initial brief.
+  The same stored title feeds bootstrap, project header, and sidebar reads;
+  `Untitled project` is no longer the creation default.
+- The authenticated session membership includes `workspace_name`. Shell
+  controls render that display name while retaining `workspace_id` only as the
+  internal selection value.
+- During text-only Stage 0 an empty Gallery is collapsed by default, with an
+  explicit reopen control. Composer submission clears both browser-owned draft
+  state and the focused Slate value; layout permits bounded editor scrolling
+  without horizontal conversation overflow or sticky-header clipping.
+
+#### Slice 4 presentation and workspace invariants
+
+- A successful submission clears the exact accepted prompt and ordered mention
+  set from both controlled draft state and Slate history. A newer draft typed
+  while the request is in flight is not cleared, and blur is not a second
+  draft-authority path.
+- Canonical structured gate-response messages remain immutable in storage, but
+  the default transcript projects the fetched durable answer as **Profile
+  approved**, **Profile declined**, or **Changes requested**. The normal chat
+  never renders the gate id, expected digest, subject id, or transport JSON;
+  those details remain available through the explicit turn inspector.
+- The composer height is content-driven and bounded. The editor scrolls
+  internally before it can overlap the mention/model/send footer.
+- Every split-pane and transcript flex boundary may shrink (`min-width: 0`),
+  message prose and inline code wrap, and only vertical conversation scrolling
+  is permitted. New user turns are positioned below the project and thread
+  headers rather than under them.
+- A project with no artifacts opens conversation-first and exposes an obvious
+  **Open Gallery** control. The explicit `/gallery` route still honors the
+  user's request to open the Gallery, including its empty state — since
+  Phase R it does so as a compatibility redirect carrying `?surface=gallery`
+  through the absorber (see "Canonical frontend routes" above).
+
+The amendment supersedes the earlier `Untitled project` and initially-open empty
+Gallery rules retained later in this document as implementation history.
+
+#### Slice 6 acceptance checkpoint (2026-08-12)
+
+Slice 6 tests Slices 0-4 only. The workspace-display-name and durable-project-name
+changes assigned to Slice 5 are deliberately excluded from both acceptance and
+adversarial conclusions.
+
+- A fresh isolated PostgreSQL database completed head → previous revision → head
+  across the two Stage-0 migrations, and Alembic reported one head.
+- The focused backend/adversarial matrix passes 165 tests. It includes the trusted
+  readiness inputs, versioned ICP synthesis, exact-subject gate lifecycle, all
+  three human decisions, replay/tenancy/digest refusals, durable-turn fixture,
+  active skill materialization, the complete tool-authority registry, and the
+  promoted-recipe lifecycle.
+- Frontend acceptance passes 165 tests, ESLint, design-system token generation,
+  and the Next.js webpack production build.
+- The complete repository suite passes 4,381 tests and skips 23. Its remaining
+  failures are classified separately: shared-database/order-sensitive legacy
+  tests, the pre-existing clue-design logging-discipline scan, and an untouched
+  mypy failure in `agent_gate_tools.py`. Slice-owned registry/recipe failures
+  found by this run were repaired and pass in isolation and in the focused
+  matrix.
+- Authenticated browser acceptance remains open. The in-app Clerk session was
+  expired; Chrome could enumerate tabs but could not establish a controllable
+  acceptance tab even after the one supported recovery attempt. No fixture-only
+  browser run is accepted as a substitute for browser → API → PostgreSQL proof.
+
+#### Frozen Stage-0 authority contracts
+
+The confirmed-discovery transition has an additional ratified amendment:
+[`FI-stage0-confirmed-discovery-run-contract.md`](../../../../docs/specs/FI-stage0-confirmed-discovery-run-contract.md).
+The frontend never submits a `product_context_version_id`, readiness decision id, ICP lineage,
+Client/Product-KB version, or budget value to start the active confirmed run. The backend derives
+or reuses the immutable context receipt from the already pinned Stage-0 inputs. With
+`CLUE_BUDGET_CONTROLS_ENABLED=false`, no discovery-spend gate is returned or rendered; the
+boundary is evaluated and recorded internally in record-only mode. Discovery count/criteria, when
+they genuinely require confirmation, use the separate directive-confirmation flow and are not
+product-context or budget authority.
+
+The existing `evaluate_stage0_readiness@1` and `synthesize_icps@1` schemas remain
+unchanged for historical replay. Their corrected successors are new versioned
+contracts. Slice 1 registers their `@2` successors without silently changing an
+`@1` schema already pinned by profiles and receipts.
+
+`evaluate_stage0_readiness@2` exposes exactly one model-authored input:
+
+```json
+{ "gate": "icp_synthesis" }
+```
+
+Workspace, project, product, client entity, pinned Client-KB version, claim set,
+field policy, metrics and verdict are trusted runtime/backend values. The model
+cannot supply or override them. Its reference-first output is:
+
+```json
+{
+  "readiness_decision_id": "<uuid>",
+  "gate": "icp_synthesis",
+  "verdict": "ready",
+  "coverage_ratio": 0.78,
+  "verified_claims": 0,
+  "available_field_keys": ["client.differentiator", "client.product"],
+  "reason_codes": [],
+  "readiness_policy_version": 1
+}
+```
+
+The Insight Health fixture currently has seven available baseline fields out of
+nine, but those official-site claims are not independently verified; its
+authoritative metrics are therefore `coverage_ratio=7/9`,
+`available_field_keys` containing seven entries, and `verified_claims=0`.
+
+`synthesize_icps@3` has no model-authored input fields. The runtime supplies the
+exact ready Stage-0 scope and links the write to the readiness decision. It
+returns one or more persisted draft references plus bounded, exact presentation
+projections of those same drafts:
+
+```json
+{
+  "readiness_decision_id": "<uuid>",
+  "icp_specs": [
+    {
+      "workspace_id": "<internal-workspace-id>",
+      "icp_key": "independent-neurosurgery-practices",
+      "icp_version": 1,
+      "status": "draft"
+    }
+  ],
+  "presentations": [
+    {
+      "icp_key": "independent-neurosurgery-practices",
+      "icp_version": 1,
+      "name": "Independent neurosurgery practices",
+      "rationale": "Practices where missed calls and manual routing constrain growth.",
+      "target_criteria": ["Independent neurosurgery practice", "US-based"],
+      "buying_signals": ["High inbound call volume", "Manual scheduling workflow"],
+      "discovery_motion": "discovery",
+      "content_truncated": false
+    }
+  ]
+}
+```
+
+The agent writes this synthesis as the normal assistant message in the same
+awaiting-input turn that opens the separate ICP approval card. The card is only
+the decision control; it does not
+replace, contain, or hide the explanatory ICP message. Opaque lineage fields are
+not a substitute for the presentation.
+
+An interactive ICP gate has kind `icp_confirmation` and stores the durable
+`icp_spec` composite reference, the same ICP version as `subject_revision`, the
+canonical subject snapshot, its matching SHA-256 digest, the exact permitted
+decision tuple `approved | rejected | revised`, and `addressee_user_id`.
+`human_only`, a model-produced digest, or an unfetched `open_gate_ref` cannot
+satisfy this contract.
+
+The normal turn route carries an ICP answer as
+`gate_response={gate_id, decision, expected_subject_sha256,
+expected_estimated_cost_cents:null}`. A `revised` decision additionally requires
+one bounded, non-blank `revision_request`; that text is persisted in the answer
+receipt and the gated draft remains byte-identical. Approve and Reject accept no
+revision payload. The shared cost echo remains governed by the existing
+directive/budget-gate rules when that gate stores a spend amount. Actor,
+addressee, action reference, subject and authority remain server-derived and
+are never accepted from the browser or model.
+
+#### Slice 2 implementation status (2026-08-12)
+
+- `open_icp_confirmation_gate@1` is registered in the promoted Stage-0 profile
+  and recipe. The model supplies only a synthesized `icp_key` and version; the
+  runtime derives the project, thread, exact draft snapshot/digest, supported
+  decisions and human addressee.
+- `agent_gate.permitted_decisions` is durable data. Non-spend gates store a
+  paired null amount/currency rather than a fabricated zero. Each immutable
+  answer receipt echoes the reviewed digest and stores a bounded structured
+  decision payload.
+- Route checks and a database trigger independently enforce the exact digest,
+  permitted decision and addressee. The route also re-resolves the current
+  product/client/Client-KB lineage and compares the complete draft snapshot
+  before accepting a new answer.
+- Approve activates exactly the gated draft in the same transaction as the
+  receipt. Reject leaves it draft. Revise stores the requested changes and
+  leaves the original draft unchanged so a later synthesis must create a new
+  version.
+- Slice 2 deliberately stopped at the backend authority boundary. Slice 3 now
+  provides the typed ICP decision surface, including the required Revise input,
+  without treating rich stream fields as authority.
+
+#### Slice 3 implementation status (2026-08-12)
+
+- A gate part is only a signal to resolve an `agent_gate` UUID. Decision controls
+  are derived exclusively from the fetched durable gate after exact workspace,
+  project, thread, subject revision/digest, supported kind, permitted decision,
+  unanswered state and authenticated addressee checks.
+- `human_only`, non-`agent_gate` refs, malformed UUIDs, rich-but-unfetched parts,
+  missing rows, unsupported kinds, wrong addressees and invalid authority
+  records render **Human action required** notices with no decision controls.
+- A gate-read failure no longer fails the transcript/turn read. The notice
+  offers **Retry gate verification**; a missing, unsupported, model-only or
+  stale proposal offers **Ask Stage 0 to regenerate**, which submits an ordinary
+  human-authored recovery turn rather than manufacturing a gate locally.
+- ICP **Revise** opens a bounded required-text form and posts
+  `decision=revised`, the exact fetched digest, null spend and the trimmed
+  `revision_request` through the structured turn route. Approve and Reject send
+  no revision text. Backend `GATE_SUBJECT_STALE` and related refusals replace the
+  card with an explicit per-gate recovery state.
+- An answered gate stays in history only when its immutable answer receipt
+  echoes the gate digest and one of the gate's permitted decisions. The recorded
+  ICP revision request is projected from that receipt.
+
+#### Human-facing receipt presentation (2026-08-12)
+
+- Durable gate and tool receipts remain authoritative transport records, not
+  presentation models. Normal chat projects them through an explicit allowlist
+  of business facts such as coverage, proposal name, account count and status.
+- Internal ids, object references, hashes, digests, operation keys, tool schema
+  versions and backend refusal details never render in the normal transcript,
+  gate card, activity labels, recovery copy, source fallbacks or accessibility
+  labels. The turn inspector retains those diagnostics behind an explicit
+  developer-oriented action.
+- Known operations receive stable human labels. Unknown operations fail closed:
+  the transcript shows only a generic activity label and completion state; it
+  never renders an arbitrary tool name, input or output payload.
+- Decision controls use action language appropriate to the reviewed subject
+  (for example, **Approve profile** or **Start research**). Integrity checks
+  still send and verify the fetched durable identifiers and digest internally;
+  hiding them from the card does not weaken gate authority.
 
 ### R3 implementation status (2026-08-10)
 
@@ -124,13 +531,32 @@ network failure. Presentation components do not call the API directly.
   reload.
 - The composer keeps one visible model selector, as explicitly ruled for R8.
   Its only option is the server-advertised promoted profile
-  `head-of-abm@v23`, labelled **GPT-5.6 Terra** and backed by
-  `openai/gpt-5.6-terra`. The chosen profile id is accepted, persisted, and
+  `head-of-abm@v32`, labelled **GPT-5.6 Terra** and backed by
+  `openai/gpt-5.6-terra`. Its governed gateway baseline requests reasoning
+  effort `high`; an explicit environment policy may still override that baseline. The chosen
+  profile id is accepted, persisted, and
   checked by the detached worker before the promoted profile is executed.
 - Attachments remain unavailable because this deployment has no durable upload
   receipt endpoint. Both Home and project reads advertise `attachments=false`,
   the frontend hides the control in HTTP mode, and the backend refuses any
   attempted attachment receipt instead of accepting a browser-local URL.
+
+### Scene-design reference images (2026-08-24)
+
+The generic attachment capability above remains false. One design-specific exception is live:
+while the selected thread has an open **scene** design leg and its ad document is open, the
+project composer uploads up to four PNG/JPEG/WebP/SVG inspiration images through the existing
+design BFF `POST /assets` seam. These are submitted as ordered `design_asset` `context_refs`,
+never as generic `attachment_refs`.
+
+Before accepting the turn, the platform proves the open leg is scene-backed and every referenced
+asset belongs to the workspace, is `ready`, is one of the four image media types, and still has
+readable durable bytes. A fifth ref is `422 CONTEXT_REF_LIMIT_EXCEEDED`; missing/cross-workspace
+assets or bytes are scoped `404`s. The accepted ids stay on the immutable submission receipt and
+become `request.reference_asset_ids` in the design-leg envelope. Transcript reads batch-join the
+current asset library only for display metadata (`label`, `media_type`, `thumbnail_digest`). A
+reference-only ordinary message may have an empty text body; without a `design_asset` ref, the
+existing non-whitespace message rule still applies.
 
 ### R9 implementation status (2026-08-10)
 
@@ -154,6 +580,107 @@ network failure. Presentation components do not call the API directly.
   can pin the preview. Enter and Space invoke the same pin/collapse transition;
   Escape still dismisses an unpinned preview.
 
+### Immutable resource integration ruling (2026-08-16)
+
+The active conversation profile is `head-of-abm@v32`. The pilot bytes remain
+authoritative and immutable at profiles `v24`/`v25`, skills `v11`/`v12`, and
+recipes `v7`/`v8`; the onboarding lineage remains immutable at profiles
+`v26`–`v28`, skills `v13`–`v15`, and recipe `v9`. None of those historical
+addresses is rewritten. The former combined lineage at profile `v29`, skill `v16`, and recipe
+`v10` also remains immutable. The confirmed-run-v2 lineage at profile `v30`, skill `v17`, and
+recipe `v11` remains immutable. The provider-neutral discovery lineage at profile `v31`, skill
+`v18`, and recipe `v12` also remains immutable. The active Slice-5 lineage is profile `v32`, skill
+`v19`, and recipe `v13`:
+
+- Stage-0 owns `stage0-interview@v19`, trusted readiness `@2`, bounded presentation-bearing
+  synthesis `@3`, provider-neutral
+  run-start `@3`, the scope-only `open_discovery_configuration_gate@1`, and the durable
+  exact-subject `open_icp_confirmation_gate@1` lifecycle;
+- FI-2 owns `account-deep-steering@v4` and
+  `launch_selected_account_research@1` for exact current-message Account refs;
+- production context owns the bounded Client-KB/Product-KB readers and the
+  human-addressed `open_product_selection_gate@1` lifecycle;
+- the project composer keeps FI-2's typed accepted/failed/not-submitted result
+  and clears transferred context only after durable acceptance, while applying
+  Stage-0's exact-draft clearing rule so a newer in-flight draft survives;
+- project initialization composes the FI-2 handoff/thread destination with the
+  Stage-0 conversation-first focus rule for an empty Gallery.
+
+Before this ruling was applied, the configured Singapore target database and
+the retained FI-2 final database were audited read-only for queued/running work
+carrying Denver's colliding profile or canonical recipe hashes. None existed,
+so no hash-keyed compatibility lookup is required. If a future deployment does
+contain such a pin, startup must fail closed until those exact bytes can be
+resolved; a version-only fallback may not reinterpret it.
+
+This is a union of independent authorities, not a choice of one branch's entire
+file. Account selection does not bypass the Stage-0 ICP gate, and the Stage-0
+gate does not consume or broaden FI-2's exact Account context.
+
+### FI-2 Slice 9B — selected records as next-message context (2026-08-13)
+
+The Accounts and Contacts tables can prepare up to 100 selected records for an
+existing project chat or an idempotently created new chat. This reuses the
+composer's existing structured `@` reference system; names and avatars are
+presentation, while workspace-scoped ids, object types and canonical versions
+are the submitted authority.
+
+`POST /api/v1/projects/{projectId}/composer-context/prepare` accepts:
+
+```json
+{
+  "thread_id": "thread_01J...",
+  "context_refs": [
+    {
+      "object_type": "account",
+      "object_id": "de305d54-75b4-431b-adb2-eb6b9e546014",
+      "version": null
+    }
+  ]
+}
+```
+
+`thread_id` is nullable for a new-chat destination. The route requires
+`thread.write`, validates project/thread/workspace scope and active-thread
+state, then returns the exact ordered context entries with current canonical
+versions and display-safe labels. It writes no domain state. The actual turn
+submission repeats tenancy/version validation and is the only operation that
+persists the references in `agent_turn_submission_context_ref`.
+
+The browser transfers the prepared draft through a 30-minute, tab-scoped
+`sessionStorage` record addressed by an opaque UUID. A URL never carries entity
+ids. Failure to prepare or store leaves the originating selection untouched.
+After transfer, the visible composer chips become the editable source of truth.
+The refs are consumed only when the turn endpoint accepts that message; failed
+submissions keep them, and later messages never inherit them implicitly.
+
+The table action itself is not a research action and requires no confirmation.
+It performs no project-membership mutation, provider call or spend. The user
+must still write the instruction that explains what the agent should do.
+
+For the explicit same-message instruction to launch deep Account research,
+the active `head-of-abm@v32` profile may call
+`launch_selected_account_research@1`. This is a narrow FI pilot path, not a
+relaxation of `launch_account_research@1`:
+
+- the server derives the initiating human and membership from the captured
+  turn, requires `research.launch`, and requires the project run to belong to
+  that turn's project;
+- every durable context ref must be an Account, and the tool-proposed ordered
+  Account ids must equal that exact current-message sequence—no widening,
+  duplicates, Contact substitution or inferred project-wide set;
+- the latest immutable research directive must name the same set, and the
+  server computes the estimate rather than accepting browser/model cost input;
+- when `CLUE_BUDGET_CONTROLS_ENABLED=false`, the same explicit command is the
+  attributable confirmation receipt, so there is no second confirmation turn;
+- when budget controls are enabled, this direct path refuses and the existing
+  durable directive gate plus `launch_account_research@1` remains mandatory.
+
+Attaching Accounts without explicit launch language only supplies discussion
+context. Attaching Contacts never authorizes Account research. Contact deep
+research remains a separately governed selection and launch flow. A successful
+launch receipt means queued or replayed, never completed research.
+
 ### Post-R9 storage-lifecycle repair (2026-08-10)
 
 - A durable artifact row whose physical blob is gone is a per-message
@@ -169,6 +696,44 @@ network failure. Presentation components do not call the API directly.
 - Local API and worker processes that share a database must also share one
   explicit persistent artifact root. Both report the normalized root at
   startup; database clones cannot be reused independently of their blobs.
+
+### Pilot budget-controls — gate amount is optional (2026-08-11)
+
+- The gate amount is **optional on every human-visible surface**. With the
+  deployment switch `CLUE_BUDGET_CONTROLS_ENABLED` off (the pilot posture,
+  `docs/specs/FI-pilot-budget-controls.md`), `GET …/threads/:threadId/gates`
+  serves `max_spend_cents: null` and the rich `gate` stream part omits
+  `amount_cents` and `currency`. The amount is withheld, not missing: it stays
+  on the immutable gate row for audit and integrity.
+- Null rather than `"0"` or `""`, deliberately — a withheld amount must never be
+  readable as a real one. The frontend schema accepts null/absent and the
+  approval card renders **no cost row at all**: no `$0.00`, no empty currency,
+  no dash standing in for a number nobody may see.
+- The amount does not gate answerability. `expected_subject_sha256` is the one
+  field that makes a card answerable in both postures; a card missing only the
+  amount stays clickable.
+- `expected_estimated_cost_cents` is nullable at the shared request seam. A
+  non-spend ICP gate must send null/omit it; sending any amount is
+  `GATE_AMOUNT_UNEXPECTED`. For a spend-bearing gate with controls enabled it
+  must echo the exact displayed amount; with controls off the amount check is
+  skipped. The `expected_subject_sha256` digest check remains armed in every
+  posture and is the load-bearing stale-approval guard.
+
+### Production context-reference read (S6, 2026-08-15)
+
+- `GET /api/v1/projects/{project_id}/threads/{thread_id}/turns/{turn_id}/context-refs`
+  is an authenticated, `thread.read`, workspace-scoped read of the exact durable
+  context receipt used by that production turn.
+- Before assembly commits it returns `data.state: "pending"`. Afterwards it
+  returns the bundle schema/policy/counter versions, aggregate hash, assembly
+  time, per-layer budgets/counts, and every included/excluded artifact or domain
+  reference with its reason code.
+- This is not the dev inspector and has no hydration mode. Its schema contains
+  no body, text, claim value, evidence span, source URL, email, credential, or
+  token field. Exact content remains accessible only through the separately
+  governed artifact/knowledge surfaces.
+- A foreign project, thread, turn, or workspace is the existing scoped `404`,
+  never a response that confirms the object exists.
 
 ## Ownership model
 
@@ -253,10 +818,10 @@ The stable errors this integration branches on are:
 |---|---|---|
 | 400 | `IDEMPOTENCY_KEY_REQUIRED` | A required write omitted a usable idempotency header. |
 | 401 | `AUTHENTICATION_REQUIRED` / `SESSION_INVALID` | No valid authenticated session. |
-| 403 | `WORKSPACE_FORBIDDEN` / `PERMISSION_DENIED` / `MEMBERSHIP_STATE_CHANGED` | The internal principal cannot act in the selected workspace. |
-| 404 | `BRAND_NOT_FOUND` / `PROJECT_NOT_FOUND` / `THREAD_NOT_FOUND` / `TURN_NOT_FOUND` / `CONTEXT_REF_NOT_FOUND` / `ATTACHMENT_NOT_FOUND` / `AGENT_PROFILE_NOT_FOUND` | The scoped object cannot be used; foreign-object existence is not disclosed. |
+| 403 | `WORKSPACE_FORBIDDEN` / `PERMISSION_DENIED` / `MEMBERSHIP_STATE_CHANGED` / `GATE_FORBIDDEN` | The internal principal cannot act in the selected workspace or answer a gate addressed to another user. |
+| 404 | `BRAND_NOT_FOUND` / `PROJECT_NOT_FOUND` / `THREAD_NOT_FOUND` / `TURN_NOT_FOUND` / `CONTEXT_REF_NOT_FOUND` / `ATTACHMENT_NOT_FOUND` / `AGENT_PROFILE_NOT_FOUND` / `GATE_NOT_FOUND` | The scoped object cannot be used; foreign-object existence is not disclosed. |
 | 409 | `IDEMPOTENCY_CONFLICT` / `CAPABILITY_UNAVAILABLE` / `THREAD_ARCHIVED` / `TURN_NOT_RUNNING` / `GATE_ALREADY_ANSWERED` / `GATE_SUBJECT_STALE` / `GATE_AMOUNT_STALE` | The request is valid JSON but conflicts with durable state or advertised capability. |
-| 422 | `VALIDATION_ERROR` / `INVALID_CURSOR` | The request shape, value, or pagination cursor is invalid. |
+| 422 | `VALIDATION_ERROR` / `INVALID_CURSOR` / `GATE_ID_MALFORMED` / `GATE_KIND_UNSUPPORTED` / `GATE_DECISION_UNSUPPORTED` / `GATE_REVISION_REQUEST_REQUIRED` / `GATE_REVISION_REQUEST_UNEXPECTED` / `GATE_AMOUNT_UNEXPECTED` | The request shape, value, gate kind/decision, or pagination cursor is invalid. |
 | 500 | `INTERNAL_ERROR` | An unexpected server failure; details stay in correlated logs. |
 | 503 | `BODIES_UNAVAILABLE` | This deployment cannot hydrate transcript bodies. |
 
@@ -288,14 +853,14 @@ nothing. It requires `project.read`.
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v23",
+        "id": "head-of-abm@v32",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v23",
+    "default_agent_profile_id": "head-of-abm@v32",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,
@@ -349,7 +914,7 @@ accepts:
     }
   ],
   "attachment_refs": [],
-  "agent_profile_id": "head-of-abm@v23"
+  "agent_profile_id": "head-of-abm@v32"
 }
 ```
 
@@ -412,7 +977,7 @@ the same ids and `replayed=true`:
     "thread": {
       "id": "thr_01J...",
       "title": "Start an ABM project for Northstar Labs",
-      "href": "/projects/prj_01J...?thread=thr_01J...",
+      "href": "/projects/prj_01J.../chats/thr_01J...",
       "status": "running",
       "pinned": false,
       "project_id": "prj_01J...",
@@ -425,7 +990,7 @@ the same ids and `replayed=true`:
       "requested_at": "2026-08-10T12:00:00Z",
       "replayed": false
     },
-    "href": "/projects/prj_01J...?thread=thr_01J..."
+    "href": "/projects/prj_01J.../chats/thr_01J..."
   }
 }
 ```
@@ -486,14 +1051,14 @@ project shell:
     ],
     "agent_profiles": [
       {
-        "id": "head-of-abm@v23",
+        "id": "head-of-abm@v32",
         "label": "GPT-5.6 Terra",
         "short_label": "GPT-5.6 Terra",
         "description": "Clue's governed GPT-5.6 Terra conversation profile",
         "model_id": "openai/gpt-5.6-terra"
       }
     ],
-    "default_agent_profile_id": "head-of-abm@v23",
+    "default_agent_profile_id": "head-of-abm@v32",
     "composer_capabilities": {
       "context_refs": true,
       "attachments": false,
@@ -529,7 +1094,7 @@ defaults to 50 and is constrained to 1–100:
         {
           "id": "thr_01J...",
           "title": "Start an ABM project for Northstar Labs",
-          "href": "/projects/prj_01J...?thread=thr_01J...",
+          "href": "/projects/prj_01J.../chats/thr_01J...",
           "status": "running",
           "pinned": false,
           "updated_at": "2026-08-10T12:00:00Z"
@@ -565,6 +1130,10 @@ It requires `Idempotency-Key`, accepts exactly one of `message` or
 `context_refs`, `attachment_refs`, and `agent_profile_id` use the same shapes
 and capability rules as Home bootstrap, but are valid only with an ordinary
 `message`; a gate response plus any of them is `422 VALIDATION_ERROR`.
+The scene-design exception above is represented only by typed `design_asset`
+`context_refs`; `attachment_refs` remains disabled. Its hard cap is four at both
+the composer and admission boundary, and the reference set is snapshotted before
+the request is queued.
 
 The submissions-union read adds an explicit hydration opt-in so a queued user
 message survives a reload before the worker has materialized its canonical
@@ -722,8 +1291,9 @@ In HTTP mode:
   all use HTTP repositories behind the same transport selection.
 - An error stays an error. No repository catches it and substitutes fixture
   projects, threads, artifacts, messages, models, accounts, or contacts.
-- Attachments stay hidden until a durable upload/capture endpoint returns the
-  attachment receipt defined in §3.
+- Generic attachments stay hidden. The only upload affordance is the scene-leg
+  reference-image exception above, backed by the design asset registry and durable bytes;
+  it does not advertise or populate generic `attachment_refs`.
 - Model selection is visible because the backend advertises the one real Terra
   profile and persists the chosen `agent_profile_id` on every message
   submission. No second/decorative option is rendered.
@@ -1030,3 +1600,131 @@ read surfaces union submissions with turn events (founder-acked two-phase turn i
 2026-08-08). Streaming/live transcript arrives via the D3 SSE contract
 (charter §§3.1–3.6); `GET …/runs/:runId` polling in the proposal is superseded by that stream
 for chat-visible progress.
+
+### Gallery leg-derived design-artifact feed (2026-08-18, ratified)
+
+**Endpoint:** `GET /api/v1/projects/{project_id}/design-artifacts` — the per-project gallery's
+list read, sibling of the W1.3 single-artifact resolver and sharing its exact auth/scoping
+posture (workspace fail-closed on both the leg and document sides; unknown or foreign-workspace
+project → 404 `PROJECT_NOT_FOUND`).
+
+**Semantics (leg-derived v1, founder-ratified 2026-08-18):** the project's documents are the
+DISTINCT non-null `document_id`s of `design_leg` rows whose thread belongs to the project
+(`design_leg JOIN agent_thread`), restricted to the caller's workspace and `doc_kind = 'web'`
+(scene/ad documents stay out until the ad-editor plan). Order: `updated_at DESC`. A document
+with no leg belongs to no project and appears in no gallery — the ratified, accepted gap.
+A workspace-wide listing was considered and REJECTED (it would show every project's documents
+in every gallery).
+
+**Wire:** `{data: [{id, project_id, document_id, kind, title, status, current_version_id,
+created_at, updated_at, origin_thread_id}]}` — the W1.3 item shape plus three fields;
+`origin_thread_id` is the document's latest leg's thread. In the v1 seam `id == document_id`.
+
+This supersedes the R3/R7-era `artifacts: []` posture for the project gallery: the artifact
+route now feeds the gallery real cards through `DesignArtifactRepository.list(projectId)`
+(fixture + HTTP adapters) and the pure `toProjectArtifact` mapper. ~~Cards carry no thumbnail
+(`imagePath` optional — ruling 2: the frame renders without artwork; no placeholder imagery)~~
+**[SUPERSEDED 2026-08-31 — cards carry REAL artwork: `toProjectArtifact` now composes
+`imagePath` from the versioned thumbnail route, for both kinds. The empty frame survives as
+the FALLBACK (a failed load), not the universal state. See "Design-document thumbnails
+(2026-08-31)" below.]** Cards still carry no fabricated account attribution (unattributed
+artifacts show no account badge).
+
+**Two durable contract rules (recorded by founder order):**
+1. **Every future artifact-creation surface MUST write project linkage at creation time** —
+   the gallery's "create a new artifact" affordance, Duplicate, and any non-agent path must
+   open/write a `design_leg` (or the registry linkage that replaces it) binding the document
+   to the project, or the artifact will appear in no gallery.
+2. **This read is replaced WHOLESALE when the real platform-artifact registry lands**
+   (documents registered as platform artifacts with first-class project linkage). No
+   incremental migration of the leg-derived query.
+
+#### Kind-aware feed — resolved contract (2026-08-20, AD2.1)
+
+**Supersedes the `doc_kind = 'web'` restriction above.** The feed now serves **every** doc
+kind a leg names, and `kind` on the wire is real rather than constant: a `web` document
+reports `kind: "web"`, a `scene` document reports `kind: "ad"` — the same expression the
+single-artifact read (`GET …/design-artifacts/{artifact_id}`) already applied. The old filter
+made the chats route structurally unable to reach an ad artifact (audit finding F1): the
+document existed, the leg named it, and the gallery dropped it. Nothing else about the read
+changed — the wire shape, the ordering (`updated_at DESC`), the workspace fail-closed posture,
+and the leg-derived project binding are untouched, and `doc_kind` itself is never leaked.
+
+**[AMENDED 2026-08-23 — ads can now be CHAT-BORN.** Founder genad ruling 1 reverses the v1
+"a design leg cannot create a scene document" refusal: `open_design_leg@3` births a scene
+document at a ratified format, brand-stamped, the way `@2` already births web ones. So a
+`kind: "ad"` card appears in this feed **at leg-open**, before any generation turn has run —
+not only for editor-seeded documents. The read itself is unchanged (the leg names the new
+document at birth, satisfying durable contract rule 1 above). Plan:
+`docs/superpowers/plans/2026-08-23-chat-driven-ad-creation.md`.]**
+
+**[AMENDED AGAIN 2026-08-23 (evening) — the birth carries NO format.** Founder genad2
+ruling 1 supersedes the format half of the note above: `open_design_leg@**4**` births a
+**zero-page** scene document (`pages == {}`) with **no format or dimension parameters** —
+`ad_format`/`ad_width`/`ad_height` are gone from the tool's input model, and the platform
+page-minter (`AD_FORMAT_PRESETS`/`ad_birth_page`/`mint_empty_ad_document`) is deleted. The
+**design agent authors the page itself** — size, unit (px for digital, mm/in for print) and
+layout come from the user's own words. Unchanged: the birth is still one transaction with
+the leg insert, still brand-stamped, still pinned at `document_version_guard=0`, and a
+`kind: "ad"` card still appears in this feed at leg-open. The one wire consequence: a
+newborn ad has no page, so `document_page_pixels` is honestly `null` and the card's
+dimensions are absent until the agent's first generation turn persists a page (the
+frontend renders the pageless state rather than fabricating a size). Plan:
+`docs/superpowers/plans/2026-08-23-agent-authored-pages.md`.]**
+
+**Resolved frontend mapping (`toProjectArtifact`):**
+
+| wire `kind` | `type` | `collateralType` | `imagePath` |
+| --- | --- | --- | --- |
+| `"web"` | `"website"` | `"microsite"` | absent — **superseded 2026-08-31, see below** |
+| `"ad"` | `"canvas"` | **absent** | absent — **superseded 2026-08-31, see below** |
+
+- `type: "canvas"` is what carries the ad into the editor with **zero mount changes** — both
+  mounts reconstruct the artifact kind as `source.type === "website" ? "web" : "ad"`.
+- `collateralType` is **omitted** for ads, not guessed. The document knows it is an ad; it does
+  not know which channel, and `linkedin-ad` / `meta-ad` are channel claims. Note the
+  consequence, unchanged by this task: the gallery's own `normalizeGalleryArtifact` still
+  defaults an absent collateral type on a `canvas` artifact to `linkedin-ad` (its
+  dummy-era fallback), so an ad card currently *labels* as "LinkedIn ad" and groups under
+  "Ads". Honest channel labelling for real ad documents needs a founder ruling on the
+  vocabulary and is deliberately out of AD2.1's scope.
+- ~~**No thumbnail** — ruling 2 holds for ads exactly as for websites: the card frame renders
+  empty rather than showing placeholder artwork (the ratified honest empty card).~~
+  **[SUPERSEDED 2026-08-31 — design documents have real thumbnails now; see the next
+  section. The empty frame survives as the FALLBACK, not the universal state.]** `size`
+  falls to the gallery's `square` 1080×1080 default for canvas artifacts that have no page.
+
+### Design-document thumbnails (2026-08-31)
+
+`GET /api/clue/design/documents/{documentId}/thumbnail?v={currentVersionId}` →
+`200 image/png`. Lazily generated server-side on first read (web: Chromium
+screenshot of the render HTML at 1448×1086 → 724×543; ad/scene: engine Skia
+PNG of page 1, max edge 724) and cached by `(document, version)` in the design
+blob store. `v` equal to the document's current version ⇒
+`Cache-Control: private, max-age=31536000, immutable`; any other `v` serves the
+current bytes with `no-store`. Generation failure is a typed 502
+(`thumbnail.*`); the gallery card's empty preview frame is the fallback.
+The four codes are `thumbnail.tailwind_runtime_missing` (no Tailwind browser
+runtime for the web capture), `thumbnail.capture_failed` (Playwright/Chromium
+missing or the screenshot itself failed), and a **kind-aware split of the engine
+`CoreError`** — `thumbnail.render_failed` on a web document (the failing step is
+the render; the web branch never exports) and `thumbnail.export_failed` on a
+scene (the engine PNG export).
+The frontend composes this URL in `toProjectArtifact` from the list read's
+`documentId` + `currentVersionId` — no wire-shape change.
+
+**Notes from the 2026-08-31 live browser walk** (evidence in
+`_memory/2026-08-31-gallery-card-thumbnails.md`):
+
+- Both card `Image`s are `unoptimized`, so the browser fetches the URL directly and the
+  BFF's session cookie rides along; Next's optimizer would strip it and 401.
+- A failed load falls back through `onError`, so a 502 shows the ruled empty frame — not
+  a broken-image glyph — and the rest of the gallery is unaffected. A 200 carrying a
+  *wrong* body cannot trip that fallback; correctness of the artwork is a server concern.
+- Generation happens on the READ path only. An inspector write bumps `currentVersionId`,
+  which changes the URL; the new version's PNG is produced by the next gallery read, so
+  the editor's edit round-trip is untouched.
+- Superseded-version rows and blobs are kept (no pruning) — a deliberate follow-up, not a
+  leak: the index is `(workspace, document, version)`.
+- `etag` is not in the BFF's forwarded response headers, so revalidation does not survive
+  the proxy. Harmless under the immutable `?v=` scheme — do not design against it.

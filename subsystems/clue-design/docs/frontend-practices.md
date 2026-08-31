@@ -75,6 +75,32 @@ crates/lumen-wasm    Rust engine in WASM; owns the local scene.
    jsdom (see `engine/editQueue.ts:59`). Wrap it:
    `(input, init) => fetch(input, init)`. Same for any Window-bound API.
 
+8a. **The design API is reached ONLY through `lumenFetch`** (added 2026-08-12,
+   after the D2.5A escape). The API's O4 workspace seam refuses any request
+   without `X-Workspace-Id` (401 `workspace.header_required`), and
+   `engine/editorConfig.ts::lumenFetch` is the one wrapper that attaches it.
+   Data-layer modules default `fetchImpl = lumenFetch`; a bare global `fetch`
+   — as a call OR as a default/fallback value (`= fetch`, `?? fetch`) — ships
+   a transport that 401s in every real browser while the unit suite stays
+   green (tests inject `fetchImpl` or stub the global; the default is dead
+   code to them). Enforced twice: statically by
+   `scripts/check_editor_bare_fetch.mjs` (in `npm run lint`; exemptions need
+   an allowlist entry AND a why-exempt comment at the site — currently
+   `editorConfig`, `runEventStream`, `canvaskit/imageCache`,
+   `canvaskit/loadCanvasKit`, `wasmEngine`) and dynamically by
+   `engine/__tests__/workspaceHeaderDefaults.test.ts`, which calls the
+   data layer WITHOUT injected transports and asserts the header on the wire.
+   The `<img src>` corollary (closed 2026-08-12): an `<img>` cannot carry the
+   header at all, so image `src` URLs must be PUBLIC content-addressed ones —
+   `/asset-store/{digest}` — never registry URLs. Sites holding an
+   `AssetRecord` build them with `publicAssetBytesUrl` /
+   `publicAssetThumbnailUrl` (engine/assetLibrary); id-only sites resolve the
+   record through `useAssetPreviewUrl` (hooks/), which fetches
+   `GET /assets/{id}` via lumenFetch and caches. The API stamps
+   `media.thumbnail.digest` at its DTO boundary (`public_asset_record`) so no
+   client ever parses a storage ref. Null means unfetchable — render nothing,
+   never a guaranteed-401 URL.
+
 9. **Comments state invariants, not history.** Good: "engine owns local
    scene application." Bad: "added in Phase 2a." No new Phase/Wave/Track
    comments; history belongs in `docs/` and `.context/`. Clean old ones

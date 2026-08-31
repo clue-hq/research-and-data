@@ -31,6 +31,21 @@ class GatewayError(RuntimeError):
     any other failure and gives the caller a clear message instead of leaking SDK-shape errors.
     """
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        completion: Completion | None = None,
+        failure_code: str = "gateway_error",
+    ) -> None:
+        super().__init__(message)
+        # A successful HTTP response can still be terminally unusable (for example, a response
+        # that exhausted its output budget before emitting text).  Preserve only the bounded,
+        # provider-neutral accounting metadata so durable callers can distinguish that known
+        # outcome from a transport ambiguity.  The raw response/error body is deliberately absent.
+        self.completion = completion
+        self.failure_code = failure_code
+
 
 class OpenRouterGateway:
     """Live :class:`~clue_core.gateway.LLMGateway` backed by OpenRouter."""
@@ -95,11 +110,23 @@ class OpenRouterGateway:
                 error = getattr(resp, "error", None)
                 if error is not None:
                     detail = getattr(error, "message", None) or str(error)
+                    completion = self._to_completion(resp, candidate)
                     raise GatewayError(
-                        f"gateway returned an error for model {candidate!r}: {detail}"
+                        f"gateway returned an error for model {candidate!r}: {detail}",
+                        completion=completion,
+                        failure_code="gateway_response_error",
                     )
                 if not self._output_text(resp):
-                    raise GatewayError(f"gateway returned no output text for model {candidate!r}")
+                    completion = self._to_completion(resp, candidate)
+                    reason = completion.finish_reason or "unknown"
+                    safe_reason = "".join(
+                        character if character.isalnum() else "_" for character in reason.lower()
+                    ).strip("_")[:48]
+                    raise GatewayError(
+                        f"gateway returned no output text for model {candidate!r}",
+                        completion=completion,
+                        failure_code=f"gateway_no_output_{safe_reason or 'unknown'}",
+                    )
                 return self._to_completion(resp, candidate)
             # Normalize SDK / malformed-response errors → try fallback, else re-raise below.
             except Exception as exc:

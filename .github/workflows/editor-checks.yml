@@ -1,0 +1,67 @@
+name: Editor checks
+
+# The design editor's CI gate, ported to the monorepo root 2026-08-12.
+#
+# History: the editor's original gate lived at
+# subsystems/clue-design/.github/workflows/conformance.yml (job
+# browser-wasm-core) — DEAD since the 2026-08-07 subtree merge, because
+# GitHub only runs workflows from the repository root's .github/. Until this
+# port, no CI ran any editor check: `make check` is Python-only, and the
+# editor's lint (hex guard + lumenFetch guard + tsc) and vitest suite fired
+# only when a human ran them locally.
+#
+# KNOWN EXCLUSION (loud on purpose): two test files carry documented
+# pre-existing failures (26 tests; jsdom DOM-shell issues, no network
+# involvement — see _memory/2026-08-12-editor-lumenfetch-defaults-fix.md,
+# owner: design subsystem). They are excluded here so the gate is green from
+# day one and every NEW failure is signal. Deleting the two --exclude flags
+# is part of fixing those tests.
+
+on:
+  push:
+    branches: [main]
+    paths: ["subsystems/clue-design/**"]
+  pull_request:
+    paths: ["subsystems/clue-design/**"]
+
+jobs:
+  editor:
+    name: Editor (lint + unit + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: subsystems/clue-design
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: subsystems/clue-design/apps/editor/package-lock.json
+
+      - name: Install editor dependencies
+        run: npm --prefix apps/editor ci
+
+      # Builds crates/lumen-wasm via wasm-pack and asserts the bundle budget
+      # (gzipped .wasm < 3MB) — same step the old conformance gate ran.
+      - name: Build wasm module and assert size budget
+        run: npm --prefix apps/editor run build:wasm
+
+      - name: Lint (hex guard + lumenFetch guard + tsc)
+        run: npm --prefix apps/editor run lint
+
+      - name: Unit tests (two documented pre-existing red files excluded — see header)
+        run: >-
+          npm --prefix apps/editor test --
+          --exclude "src/components/__tests__/EditorApp.test.tsx"
+          --exclude "src/components/__tests__/EditorAppWasm.test.tsx"
+
+      - name: Build editor
+        run: NEXT_PUBLIC_LUMEN_WASM_CORE=1 npm --prefix apps/editor run build

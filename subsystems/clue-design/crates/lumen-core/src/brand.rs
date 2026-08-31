@@ -1403,6 +1403,19 @@ pub struct FontLicense {
     pub source_url: Option<String>,
     #[serde(default)]
     pub restrictions: Vec<String>,
+    /// WHY this font may be embedded, when the answer is not the license `name`
+    /// itself (clone-fidelity D-F2). A font ingested from a workspace's own
+    /// brand material is embeddable on this platform under the platform's Terms
+    /// of Use — `basis: "platform-terms"` — while `name` keeps saying only what
+    /// the source declared, which is usually nothing verifiable. The engine
+    /// never interprets it: producers write it, the publish gate reads it, and
+    /// the field exists so the answer survives the typed round trip instead of
+    /// being smuggled through a restrictions line.
+    ///
+    /// Absent on every kit written before F1.5, and `skip_serializing_if` keeps
+    /// those kits' bytes identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub basis: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -2816,6 +2829,7 @@ fn generated_font_assets(font_family: &str) -> BTreeMap<String, FontAsset> {
                 subsettable: true,
                 source_url: None,
                 restrictions: Vec::new(),
+                basis: None,
             },
             provenance: Some(TokenProvenance {
                 source: "brand_seed".to_owned(),
@@ -3590,14 +3604,36 @@ impl<'a> TokenResolver<'a> {
                 }
                 text.style_token = None;
 
-                if let Some(color_token) = style.color {
+                // Fill precedence: a role's baked color is a DEFAULT for text
+                // that carries no color of its own. An author who wrote an
+                // explicit `fill(...)` on the text node — token or literal —
+                // already had it materialized by the node-fill walk at the top
+                // of `resolve_node`, and that choice WINS. Before this rule the
+                // role clobbered `fills[0]` unconditionally, so authoring
+                // `style($type.display) fill($text.inverse)` (white on a brand
+                // ground) silently rendered the role's `text.primary` black.
+                //
+                // The honest signal for "the author wrote this fill" is the
+                // fill id: every author fill is named by the DSL compiler
+                // (`paint_{node}_fill_{n}`) or by the caller, while the only
+                // fill this block ever synthesizes is `{node}_text_fill`. That
+                // one stays role-owned, so a re-resolve (a rebound role over an
+                // already-resolved scene) still updates its own fill in place
+                // instead of freezing the previous role's color.
+                let role_owned_fill_id = PaintId::from(format!("{}_text_fill", node.id.as_str()));
+                let has_author_fill = node
+                    .fills
+                    .first()
+                    .is_some_and(|fill| fill.id != role_owned_fill_id);
+
+                if let Some(color_token) = style.color.filter(|_| !has_author_fill) {
                     if let Some(color) = self.resolve_color_ref(&color_token, subject.clone()) {
                         // P1.1: keep the resolved text color legible against the
                         // surface it sits on. A type role bakes in one color (e.g.
                         // type.headline -> text.inverse, white), which is invisible on
                         // the opposite surface (a white headline on a light page). If
                         // contrast is poor, flip to the better-contrasting default text
-                        // color; otherwise the author's color is preserved.
+                        // color; otherwise the role's color is preserved.
                         let color =
                             self.contrast_corrected_text_color(&node.id, color, subject.clone());
                         let paint = Paint::Solid { color };
@@ -3605,7 +3641,7 @@ impl<'a> TokenResolver<'a> {
                             fill.paint = paint;
                         } else {
                             node.fills.push(Fill {
-                                id: PaintId::from(format!("{}_text_fill", node.id.as_str())),
+                                id: role_owned_fill_id,
                                 paint,
                             });
                         }
@@ -5466,6 +5502,7 @@ fn compile_font_directive(name: &str, value: &str, kit: &mut BrandKit) -> Result
                 subsettable: true,
                 source_url: None,
                 restrictions: Vec::new(),
+                basis: None,
             },
             provenance: None,
             metrics: None,

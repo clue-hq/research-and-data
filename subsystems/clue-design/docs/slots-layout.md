@@ -763,7 +763,7 @@ All diagnostics below use `Phase::Layout`.
 | `LUMV0814` | Warning | Slot | `Clip` or `Ellipsis` may lose overflowing content. |
 | `LUMV0815` | Warning | Slot | Slot needs agent repair under `AskAgentToRepair`. |
 | `LUMV0816` | Advice | Slot | Slot would require expansion, but V1 does not resize containers. |
-| `LUMV0820` | Error | Slot | Image-like slot has no image policy. |
+| `LUMV0820` | Error | Slot | Image-like slot has no image policy. Repair: `#slot:key image_policy(...)`. DSL-created image slots are born with `ImagePolicy::default()`, so this now only fires on documents authored before that. **Classified ADVISORY at the export gate** (`apps/api/lumen_api/export_policy.py`): it is a policy lint, not render-impossible, so an export succeeds and reports it as a warning. |
 | `LUMV0821` | Error | Slot | Image focal point is outside `0.0..=1.0`. |
 | `LUMV0822` | Error | Slot | Image aspect ratio is non-positive. |
 | `LUMV0823` | Error | Slot | Print-sensitive image slot lacks a `min_dpi` policy. |

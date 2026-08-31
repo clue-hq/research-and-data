@@ -164,12 +164,13 @@ async def _mark_contact_channel_artifacts(
     erased_keys: list[str],
     field_keys: frozenset[str] | None = None,
 ) -> None:
-    """Sever and erase every C5 artifact edge for the in-scope contact channels.
+    """Sever and erase every channel-artifact edge for the in-scope Contact.
 
     C5 request/CSV, provider response, validation, and receipt artifacts are all explicitly bound
-    to the contact. Only the observation artifact is also cited by a claim, so claim tombstoning
-    alone is insufficient for DSAR or retention. This helper closes that copy surface while
-    retaining the append-only ledger rows and content hashes for audit.
+    to the contact. FI-2 interactive email lookup artifacts use the same subject index. Only a
+    provider's final observation is also cited by a claim, so claim tombstoning alone is
+    insufficient for DSAR or retention. This helper closes both copy surfaces while retaining the
+    append-only ledger rows and content hashes for audit.
     """
 
     channels = []
@@ -184,18 +185,32 @@ async def _mark_contact_channel_artifacts(
             await conn.execute(
                 text(
                     """
-                    SELECT DISTINCT subject.artifact_key
-                    FROM discovery_artifact_subject subject
-                    JOIN contact_channel_operation operation
-                      ON operation.workspace_id=subject.workspace_id
-                     AND operation.id::text=subject.reference_id
-                    WHERE subject.workspace_id=:workspace_id
-                      AND subject.subject_kind='contact'
-                      AND subject.subject_entity_id=:contact_id
-                      AND subject.reference_kind LIKE 'contact_channel_%'
-                      AND subject.tombstoned_at IS NULL
-                      AND operation.channel::text = ANY(:channels)
-                    ORDER BY subject.artifact_key
+                    SELECT DISTINCT artifact_key FROM (
+                        SELECT subject.artifact_key
+                        FROM discovery_artifact_subject subject
+                        JOIN contact_channel_operation operation
+                          ON operation.workspace_id=subject.workspace_id
+                         AND operation.id::text=subject.reference_id
+                        WHERE subject.workspace_id=:workspace_id
+                          AND subject.subject_kind='contact'
+                          AND subject.subject_entity_id=:contact_id
+                          AND subject.reference_kind LIKE 'contact_channel_%'
+                          AND subject.tombstoned_at IS NULL
+                          AND operation.channel::text = ANY(:channels)
+                        UNION ALL
+                        SELECT subject.artifact_key
+                        FROM discovery_artifact_subject subject
+                        JOIN contact_email_lookup lookup
+                          ON lookup.workspace_id=subject.workspace_id
+                         AND lookup.id::text=subject.reference_id
+                        WHERE 'email' = ANY(:channels)
+                          AND subject.workspace_id=:workspace_id
+                          AND subject.subject_kind='contact'
+                          AND subject.subject_entity_id=:contact_id
+                          AND subject.reference_kind='contact_email_lookup_provider'
+                          AND subject.tombstoned_at IS NULL
+                    ) channel_artifacts
+                    ORDER BY artifact_key
                     """
                 ),
                 {
@@ -230,6 +245,24 @@ async def _mark_contact_channel_artifacts(
             "channels": channels,
         },
     )
+    if "email" in channels:
+        await conn.execute(
+            text(
+                """
+                UPDATE discovery_artifact_subject subject
+                   SET tombstoned_at=COALESCE(subject.tombstoned_at, now())
+                  FROM contact_email_lookup lookup
+                 WHERE lookup.workspace_id=subject.workspace_id
+                   AND lookup.id::text=subject.reference_id
+                   AND subject.workspace_id=:workspace_id
+                   AND subject.subject_kind='contact'
+                   AND subject.subject_entity_id=:contact_id
+                   AND subject.reference_kind='contact_email_lookup_provider'
+                   AND subject.tombstoned_at IS NULL
+                """
+            ),
+            {"workspace_id": workspace_id, "contact_id": contact_entity_id},
+        )
     already_marked = set(erased_keys)
     for artifact_key in rows:
         if (

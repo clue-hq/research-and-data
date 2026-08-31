@@ -70,6 +70,7 @@ from clue_api.chat.turn_events import (
     TURN_EVENT_TYPES,
     TurnEventRow,
     TurnEventType,
+    emit_turn_event,
     list_turn_events,
     prune_turn_events,
 )
@@ -84,6 +85,7 @@ from clue_api.execution_wiring import build_tool_invoker
 from clue_api.projections_app import create_projections_app
 from clue_config import Settings, load_settings
 from clue_core import ProjectRunId
+from clue_db import db_lifespan
 from clue_fleet import FleetTaskKind, FleetTaskStatus, claim_next_task, finish_task
 from clue_projections import (
     AGENT_TURN_TASK_DEDUP_PREFIX,
@@ -337,6 +339,64 @@ async def _frames(conn: Any, *, workspace_id: str, turn_id: UUID) -> list[Any]:
 
 def _of_type(frames: list[Any], event_type: TurnEventType) -> list[Any]:
     return [frame for frame in frames if frame.event_type == event_type.value]
+
+
+def test_turn_event_sequence_allocator_serializes_concurrent_emitters() -> None:
+    """Legitimate emitters for one generation must never race on ``max(sequence) + 1``."""
+
+    async def scenario() -> None:
+        schema = f"turn_event_lock_{uuid4().hex}"
+        turn_id = uuid4()
+        async with db_lifespan() as engine:
+            try:
+                async with engine.begin() as conn:
+                    # A private clone lets independent committed transactions exercise the exact
+                    # production SQL without leaving turn/workspace fixtures in the shared test
+                    # database. LIKE does not copy foreign keys; it does copy the per-turn unique
+                    # index and the wire-shape constraints this test needs.
+                    await conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+                    await conn.execute(
+                        text(
+                            f'CREATE TABLE "{schema}".agent_turn_event_stream '
+                            "(LIKE public.agent_turn_event_stream INCLUDING ALL)"
+                        )
+                    )
+
+                async def append(index: int) -> TurnEventRow:
+                    async with engine.begin() as conn:
+                        await conn.execute(text(f'SET LOCAL search_path TO "{schema}", public'))
+                        return await emit_turn_event(
+                            conn,
+                            workspace_id="ws_turn_event_lock",
+                            project_id="prj_turn_event_lock",
+                            thread_id="thr_turn_event_lock",
+                            turn_id=turn_id,
+                            event_type=TurnEventType.PART_UPDATED,
+                            part_id=f"part:{index}",
+                            part_kind=PartKind.AGENT_ACTIVITY.value,
+                            payload={"index": index},
+                        )
+
+                rows = await asyncio.gather(*(append(index) for index in range(32)))
+                assert sorted(row.sequence for row in rows) == list(range(1, 33))
+                assert len({row.event_id for row in rows}) == 32
+
+                async with engine.begin() as conn:
+                    count, minimum, maximum = (
+                        await conn.execute(
+                            text(
+                                f'SELECT count(*), min(sequence), max(sequence) FROM "{schema}".'
+                                "agent_turn_event_stream WHERE turn_id=:turn_id"
+                            ),
+                            {"turn_id": turn_id},
+                        )
+                    ).one()
+                assert (count, minimum, maximum) == (32, 1, 32)
+            finally:
+                async with engine.begin() as conn:
+                    await conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+
+    run_async(scenario())
 
 
 class _FakeStreamingModel(BaseChatModel):
@@ -1505,12 +1565,13 @@ def test_missing_required_artifact_is_a_terminal_failed_turn(tmp_path: Path) -> 
                 submitted_by_user_id=USER_ID,
                 submitted_via_membership_id=f"{MEMBERSHIP_ID}-{project.workspace_id}",
             )
-            request = SimpleNamespace(turn_id=turn_id)
             with pytest.raises(RequiredTurnArtifactMissing):
+                # P3.4 made the watched wrapper body-agnostic (the routing rule selects the
+                # turn body); this drives it exactly as the head-of-abm path composes it.
                 await runner._execute_watched(
-                    request=request,  # type: ignore[arg-type]
-                    lease=None,
+                    run=lambda: engine.execute(),
                     submission=submission,  # type: ignore[arg-type]
+                    turn_id=turn_id,
                     stream=emitter,
                 )
             assert engine.calls == 1
@@ -1520,15 +1581,19 @@ def test_missing_required_artifact_is_a_terminal_failed_turn(tmp_path: Path) -> 
             assert len(failed) == 1
             assert failed[0].payload["failure_code"] == REQUIRED_CONTEXT_ARTIFACT_MISSING
             latest = (
-                await conn.execute(
-                    text(
-                        "SELECT status, reason_code FROM agent_turn_event "
-                        "WHERE workspace_id=:workspace AND turn_id=:turn "
-                        "ORDER BY seq DESC LIMIT 1"
-                    ),
-                    {"workspace": project.workspace_id, "turn": turn_id},
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT status, reason_code FROM agent_turn_event "
+                            "WHERE workspace_id=:workspace AND turn_id=:turn "
+                            "ORDER BY seq DESC LIMIT 1"
+                        ),
+                        {"workspace": project.workspace_id, "turn": turn_id},
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
             assert (latest["status"], latest["reason_code"]) == (
                 "failed",
                 REQUIRED_CONTEXT_ARTIFACT_MISSING,
@@ -1615,12 +1680,13 @@ def test_stop_cancels_the_active_attempt_and_cannot_look_like_a_finished_message
                     "submitted_via_membership_id": f"{MEMBERSHIP_ID}-{project.workspace_id}",
                 },
             )()
-            request = type("_R", (), {"turn_id": turn_id})()
             with pytest.raises(TurnStopped):
+                # P3.4 made the watched wrapper body-agnostic (the routing rule selects the
+                # turn body); this drives it exactly as the head-of-abm path composes it.
                 await runner._execute_watched(
-                    request=request,  # type: ignore[arg-type]
-                    lease=None,
+                    run=lambda: engine.execute(),
                     submission=submission,  # type: ignore[arg-type]
+                    turn_id=turn_id,
                     stream=emitter,
                 )
             assert engine.cancelled is True

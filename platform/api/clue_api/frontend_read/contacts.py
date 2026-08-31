@@ -9,14 +9,10 @@ their verdicts to Band-2:
 
 1. **membership** — ``project_account`` says which projects target this account, in the recorded
    first-add-wins order (element 0 is the primary project);
-2. **committee membership + product/run scoping** — :class:`ContactEligibilityResolver`, one per
-   targeting project, each bound to that project's ``(project_run, product)`` via
-   :func:`~clue_api.frontend_read.account_detail.latest_project_run_context` — THE recorded
-   per-project context rule, **imported, never re-derived**. The resolver is the FI-1 §4.5 ruling
-   made structural: ``identity.contact_ids_for_account`` knows nothing about run membership,
-   product scope, canonicalization or governance, so it is never used here. A member whose
-   role/persona claim is not strongly bound, whose role is implausible, or whose contact row is
-   erased does not come back — and this module does not second-guess that;
+2. **committee membership + product/run scoping** —
+   :func:`~clue_api.frontend_read.committee.read_governed_committee`, the shared addressability seam
+   used by Account detail, Contacts list and Contact detail. It owns the latest-run context,
+   governed resolver and display-policy decision once; this module only projects its members;
 3. **display governance** — :func:`~clue_api.research_view_governance.display_allowed`, the *same*
    predicate C7 statement governance applies, imported rather than copied. A copy would be free to
    drift from the policy C7 enforces, which is the one thing a second read surface over the same
@@ -59,27 +55,42 @@ missing account).
 from __future__ import annotations
 
 import uuid
-from collections import defaultdict
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.contact_eligibility import ContactEligibilityResolver, GovernedCommitteeContact
-from clue_api.frontend_read.account_detail import AccountNotFound, latest_project_run_context
+from clue_api.auth_wiring import principal_from_request
+from clue_api.client_context_binding import workspace_client_entity_id
+from clue_api.contact_eligibility import GovernedCommitteeContact
+from clue_api.frontend_read.account_detail import AccountNotFound
 from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.committee import (
-    committee_member_displayable,
     current_claims,
-    request_bound_conn_factory,
+    read_governed_committee,
 )
+from clue_api.frontend_read.contact_email_lookup import (
+    ContactEmailLookupService,
+    ContactEmailLookupView,
+    EmailLookupTarget,
+    latest_contact_email_lookups,
+)
+from clue_api.frontend_read.evidence import (
+    EvidenceReference,
+    evidence_artifact_response,
+    evidence_reference,
+    live_artifact_claim_ids,
+    read_live_artifact,
+)
+from clue_api.frontend_read.prose import CONTACT_OVERVIEW_FIELD, ProseRead, read_prose
 from clue_api.research_view_governance import display_allowed
 from clue_core import (
     CONTACT_PROFESSIONAL_FIELD_KEYS,
     Claim,
+    ClaimId,
     ContactEntity,
     EntityId,
     EntityType,
@@ -87,11 +98,21 @@ from clue_core import (
     reference_time,
 )
 from clue_db import ConnFactory
-from clue_research.compliance import WorkspacePolicy, load_workspace_policy
-from clue_research.identity import get_account, get_contacts, surviving_id
-from clue_research.membership import ProjectMembership, memberships_for_accounts
+from clue_research.claimstore import (
+    FieldFilters,
+    FieldRegistryScope,
+    WorkspaceScope,
+    active_merge_policy,
+    claims_by_ids,
+    list_effective_fields,
+    merge_claims,
+)
+from clue_research.compliance import WorkspacePolicy
+from clue_research.identity import get_account, get_contact, get_contacts, surviving_id
+from clue_research.membership import memberships_for_accounts
 from clue_research.profiling.committee import CURRENT_TITLE
 from clue_research.profiling.fields import FACET_PUBLIC_APPEARANCES
+from clue_storage import StorageBackend
 
 #: ``contact.facet.recent_post`` is registered in ``claimstore.CORE_PACK`` (the two proof rows of
 #: the facet field-class live there, not in the M8 facet pack) and has no exported constant, so the
@@ -154,17 +175,11 @@ class GovernedFact(WireModel):
     """
 
     field_key: str
+    claim_id: str | None = None
     value: JsonValue | None = None
     observed_at: datetime | None = None
     provider: str | None = None
     restricted: bool = False
-
-
-class EvidenceChip(WireModel):
-    """A non-link provenance chip (FI-1 G4 v1): which source, and when it stated it."""
-
-    provider: str
-    observed_at: datetime
 
 
 class ContactRow(WireModel):
@@ -190,6 +205,9 @@ class ContactRow(WireModel):
     linkedin_url: str | None = None
     project_ids: tuple[str, ...] = ()
     signals: ContactSignals
+    # Durable provider-observed email acquisition. ``None`` means the user has never requested a
+    # lookup; addresses remain separate from canonical ``verified_email``.
+    email_lookup: ContactEmailLookupView | None = None
 
 
 class ContactProfile(ContactRow):
@@ -197,8 +215,9 @@ class ContactProfile(ContactRow):
 
     account_id: uuid.UUID
     account_name: str
+    overview: ProseRead
     professional_facts: tuple[GovernedFact, ...] = ()
-    evidence: tuple[EvidenceChip, ...] = ()
+    evidence: tuple[EvidenceReference, ...] = ()
     # Set when the requested contact id was a merged loser: the body is the survivor's.
     redirected_from: uuid.UUID | None = None
 
@@ -220,25 +239,6 @@ class ContactListResponse(WireModel):
 # --- composition ------------------------------------------------------------------------------
 
 
-class _CommitteeUnion:
-    """Every governed member of this account, with the projects that target them.
-
-    A member reached through several projects is held **once**, in their *primary* (first-add-wins)
-    targeting project's governed view: that project's run decided which claims are in scope, and
-    blending two runs' claim sets would risk showing product A's title beside product B's role.
-    The projects are unioned; the claims are not.
-    """
-
-    def __init__(self) -> None:
-        self.members: dict[EntityId, GovernedCommitteeContact] = {}
-        self.project_ids: dict[EntityId, list[str]] = defaultdict(list)
-
-    def add(self, member: GovernedCommitteeContact, *, project_id: str) -> None:
-        self.members.setdefault(member.contact_entity_id, member)
-        if project_id not in self.project_ids[member.contact_entity_id]:
-            self.project_ids[member.contact_entity_id].append(project_id)
-
-
 async def _resolve_account(
     conn: AsyncConnection, *, workspace_id: str, account_id: uuid.UUID
 ) -> tuple[EntityId, str]:
@@ -249,49 +249,10 @@ async def _resolve_account(
     """
     canonical = await surviving_id(conn, EntityId(account_id), EntityType.ACCOUNT)
     account = await get_account(conn, canonical)
-    if account is None or account.workspace_id != workspace_id:
+    client_entity_id = await workspace_client_entity_id(conn, workspace_id=workspace_id)
+    if account is None or account.workspace_id != workspace_id or canonical == client_entity_id:
         raise AccountNotFound(str(account_id))
     return canonical, account.canonical_name
-
-
-async def _resolve_union(
-    conn: AsyncConnection,
-    *,
-    account_id: EntityId,
-    workspace_id: str,
-    memberships: Sequence[ProjectMembership],
-) -> _CommitteeUnion:
-    # The resolver reads through the request's OWN connection, never a second one from the pool: a
-    # request that already holds a pool connection and then asks for another (once per targeting
-    # project) can self-deadlock on an exhausted pool under load — see
-    # ``committee.request_bound_conn_factory``.
-    bound = request_bound_conn_factory(conn)
-    union = _CommitteeUnion()
-    # Memberships only — deliberate, and an asymmetry worth naming: the account detail's
-    # ``researchStatus``/``projectSections`` honestly surface a project that produced research on
-    # this account *without* a membership row, but this union never visits such a project, so its
-    # committee members can surface nowhere on this surface. That state should not occur (it is an
-    # anomaly, not a mode); iterating research lineage instead would attribute one project's
-    # committee to an account it does not target, which is the worse failure.
-    for membership in memberships:
-        context = await latest_project_run_context(
-            conn, workspace_id=workspace_id, project_id=membership.project_id
-        )
-        if context is None:
-            # A project that has never started a run has no committee context — its committee is
-            # genuinely unknown, which is not the same as empty, and guessing another project's run
-            # would attribute one project's research to another.
-            continue
-        resolver = ContactEligibilityResolver(
-            project_run_id=context.project_run_id,
-            product_id=context.product_id,
-            conn_factory=bound,
-        )
-        for member in await resolver.resolve_account(
-            account_entity_id=account_id, workspace_id=workspace_id
-        ):
-            union.add(member, project_id=membership.project_id)
-    return union
 
 
 def _role_confidence(member: GovernedCommitteeContact) -> float | None:
@@ -331,6 +292,7 @@ def _professional_facts(
         facts.append(
             GovernedFact(
                 field_key=field_key,
+                claim_id=str(claim.id),
                 value=claim.value_json,
                 observed_at=reference_time(claim),
                 provider=claim.source_key,
@@ -348,28 +310,54 @@ def _signal_type_count(claims: dict[str, Claim], policy: WorkspacePolicy) -> int
     )
 
 
-def _evidence(claims: dict[str, Claim], policy: WorkspacePolicy) -> tuple[EvidenceChip, ...]:
-    """One chip per distinct source backing something we actually showed, newest statement wins.
+async def _evidence(
+    conn: AsyncConnection,
+    *,
+    claims: dict[str, Claim],
+    policy: WorkspacePolicy,
+    workspace_id: str,
+) -> tuple[EvidenceReference, ...]:
+    """One evidence record per displayed current claim, never per provider bucket.
 
-    "Display-eligible" here means the workspace-policy sense — :func:`display_allowed` over the
-    resolver's current claims — not ``GovernedContactClaim.display_eligible``, which the resolver
-    sets ``True`` on everything it selects and which therefore gates nothing on its own. A
-    policy-withheld claim must not announce itself through its provenance, so it contributes no
-    chip. One chip per provider (rather than per claim) because the chip answers "who told us
-    this?", and repeating a source once per field would be noise, not provenance.
+    Mapping the item to ``claim_id`` + ``field_key`` is what lets a reviewer tell which statement
+    the span supports.  A policy-withheld claim contributes no record at all, so neither its value
+    nor its provider, timestamp, URL, span, confidence, or retained-artifact existence leaks.
     """
-    latest: dict[str, datetime] = {}
-    for claim in claims.values():
-        if claim.source_key is None or not display_allowed(claim, policy):
-            continue
-        at = reference_time(claim)
-        known = latest.get(claim.source_key)
-        if known is None or at > known:
-            latest[claim.source_key] = at
-    return tuple(
-        EvidenceChip(provider=provider, observed_at=observed_at)
-        for provider, observed_at in sorted(latest.items())
+
+    displayed = tuple(claim for claim in claims.values() if display_allowed(claim, policy))
+    if not displayed:
+        return ()
+    artifact_claim_ids = await live_artifact_claim_ids(
+        conn, claims=displayed, workspace_id=workspace_id
     )
+    definitions = {
+        str(item.field_def.field_key): item.field_def
+        for item in await list_effective_fields(
+            conn,
+            scope=FieldRegistryScope.for_workspace(workspace_id),
+            filters=FieldFilters(active=None),
+            include_retired=True,
+        )
+    }
+    now = datetime.now(UTC)
+    merge_policy = active_merge_policy()
+    references: list[EvidenceReference] = []
+    for claim in sorted(displayed, key=lambda item: (str(item.field_key), str(item.id))):
+        definition = definitions.get(str(claim.field_key))
+        current = merge_claims(
+            (claim,),
+            None if definition is None else definition.freshness_ttl,
+            merge_policy,
+            now,
+        )
+        references.append(
+            evidence_reference(
+                claim,
+                freshness=None if current is None else current.freshness_state,
+                artifact_available=str(claim.id) in artifact_claim_ids,
+            )
+        )
+    return tuple(references)
 
 
 def _build_row(
@@ -379,6 +367,7 @@ def _build_row(
     project_ids: Sequence[str],
     claims: dict[str, Claim],
     policy: WorkspacePolicy,
+    email_lookup: ContactEmailLookupView | None = None,
 ) -> ContactRow:
     """The list row — and, via ``model_dump``, the shared half of the profile, so the two shapes
     cannot drift into disagreeing about the same member."""
@@ -400,6 +389,7 @@ def _build_row(
         linkedin_url=None if entity is None else entity.linkedin_url,
         project_ids=tuple(project_ids),
         signals=ContactSignals(type_count=_signal_type_count(claims, policy)),
+        email_lookup=email_lookup,
     )
 
 
@@ -421,14 +411,18 @@ async def read_account_contacts(
             conn, workspace_id=workspace_id, account_ids=[uuid.UUID(str(canonical))]
         )
     ).get(uuid.UUID(str(canonical)), ())
-    union = await _resolve_union(
+    union, policy = await read_governed_committee(
         conn,
         account_id=canonical,
         workspace_id=workspace_id,
         memberships=memberships,
     )
-    policy = await load_workspace_policy(conn, workspace_id=workspace_id)
     entities = await get_contacts(conn, tuple(union.members))
+    email_lookups = await latest_contact_email_lookups(
+        conn,
+        workspace_id=workspace_id,
+        contact_ids=tuple(uuid.UUID(str(item)) for item in union.members),
+    )
 
     rows = [
         _build_row(
@@ -437,9 +431,9 @@ async def read_account_contacts(
             project_ids=union.project_ids[contact_id],
             claims=current_claims(member),
             policy=policy,
+            email_lookup=email_lookups.get(uuid.UUID(str(contact_id))),
         )
         for contact_id, member in union.members.items()
-        if committee_member_displayable(member, policy)
     ]
     rows.sort(key=lambda row: (row.persona.value, str(row.id)))
     return ContactListResponse(data=tuple(rows), meta=ContactListMeta(total=len(rows)))
@@ -469,31 +463,50 @@ async def read_contact_profile(
             conn, workspace_id=workspace_id, account_ids=[uuid.UUID(str(canonical_account))]
         )
     ).get(uuid.UUID(str(canonical_account)), ())
-    union = await _resolve_union(
+    union, policy = await read_governed_committee(
         conn,
         account_id=canonical_account,
         workspace_id=workspace_id,
         memberships=memberships,
     )
     member = union.members.get(canonical_contact)
-    policy = await load_workspace_policy(conn, workspace_id=workspace_id)
-    if member is None or not committee_member_displayable(member, policy):
+    if member is None:
         raise ContactNotFound(str(contact_id))
 
     claims = current_claims(member)
+    overview = await read_prose(
+        conn,
+        entity_id=canonical_contact,
+        field_key=CONTACT_OVERVIEW_FIELD,
+        scope=WorkspaceScope.for_workspace(workspace_id),
+        display_allowed=lambda claim: display_allowed(claim, policy),
+    )
     row = _build_row(
         member,
         entity=(await get_contacts(conn, (canonical_contact,))).get(canonical_contact),
         project_ids=union.project_ids[canonical_contact],
         claims=claims,
         policy=policy,
+        email_lookup=(
+            await latest_contact_email_lookups(
+                conn,
+                workspace_id=workspace_id,
+                contact_ids=(uuid.UUID(str(canonical_contact)),),
+            )
+        ).get(uuid.UUID(str(canonical_contact))),
     )
     return ContactProfile(
         **row.model_dump(),
         account_id=uuid.UUID(str(canonical_account)),
         account_name=account_name,
+        overview=overview,
         professional_facts=_professional_facts(claims, policy),
-        evidence=_evidence(claims, policy),
+        evidence=await _evidence(
+            conn,
+            claims=claims,
+            policy=policy,
+            workspace_id=workspace_id,
+        ),
         redirected_from=None if canonical_contact == EntityId(contact_id) else contact_id,
     )
 
@@ -508,7 +521,14 @@ def _account_404() -> HTTPException:
     )
 
 
-def register_contact_routes(router: APIRouter, *, conn_factory: ConnFactory) -> None:
+def register_contact_routes(
+    router: APIRouter,
+    *,
+    conn_factory: ConnFactory,
+    evidence_storage: StorageBackend | None = None,
+    contact_email_lookup: ContactEmailLookupService | None = None,
+    allow_local_mutations: bool = False,
+) -> None:
     """Register the two account-scoped contact routes on the `/frontend/v1` router."""
 
     @router.get("/accounts/{account_id}/contacts")
@@ -547,3 +567,201 @@ def register_contact_routes(router: APIRouter, *, conn_factory: ConnFactory) -> 
                         "message": "no such contact on this account's committee",
                     },
                 ) from exc
+
+    @router.get("/accounts/{account_id}/contacts/{contact_id}/evidence/{claim_id}")
+    async def get_contact_evidence_artifact(
+        workspace_id: WorkspaceDep,
+        account_id: uuid.UUID,
+        contact_id: uuid.UUID,
+        claim_id: uuid.UUID,
+    ) -> Response:
+        """Stream evidence only while the same governed Contact profile still exposes it."""
+
+        if evidence_storage is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "EVIDENCE_SERVICE_UNAVAILABLE",
+                    "message": "retained evidence is temporarily unavailable",
+                },
+            )
+        async with conn_factory() as conn:
+            try:
+                profile = await read_contact_profile(
+                    conn,
+                    workspace_id=workspace_id,
+                    account_id=account_id,
+                    contact_id=contact_id,
+                )
+            except (AccountNotFound, ContactNotFound) as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "EVIDENCE_NOT_FOUND",
+                        "message": "no such evidence in this workspace",
+                    },
+                ) from exc
+            if not any(
+                reference.claim_id == str(claim_id) and reference.protected_artifact_available
+                for reference in profile.evidence
+            ):
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "EVIDENCE_NOT_FOUND",
+                        "message": "no such evidence in this workspace",
+                    },
+                )
+            typed_claim_id = ClaimId(claim_id)
+            resolved = await claims_by_ids(
+                conn,
+                (typed_claim_id,),
+                scope=WorkspaceScope.for_workspace(workspace_id),
+            )
+            claim = resolved.get(typed_claim_id)
+            if claim is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "EVIDENCE_NOT_FOUND",
+                        "message": "no such evidence in this workspace",
+                    },
+                )
+            artifact = await read_live_artifact(
+                conn,
+                claim=claim,
+                workspace_id=workspace_id,
+                storage=evidence_storage,
+            )
+            if artifact is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "EVIDENCE_NOT_FOUND",
+                        "message": "no such evidence in this workspace",
+                    },
+                )
+            return evidence_artifact_response(artifact)
+
+    def _requester(request: Request) -> str:
+        principal = principal_from_request(request)
+        if principal is not None:
+            principal.require("research.launch")
+            return principal.user_id
+        if allow_local_mutations:
+            return "local-development-user"
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "UNAUTHORIZED",
+                "message": "an authenticated session is required for email lookup",
+            },
+        )
+
+    async def _lookup_target(
+        *, workspace_id: str, account_id: uuid.UUID, contact_id: uuid.UUID
+    ) -> EmailLookupTarget:
+        async with conn_factory() as conn:
+            try:
+                profile = await read_contact_profile(
+                    conn,
+                    workspace_id=workspace_id,
+                    account_id=account_id,
+                    contact_id=contact_id,
+                )
+            except AccountNotFound as exc:
+                raise _account_404() from exc
+            except ContactNotFound as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "CONTACT_NOT_FOUND",
+                        "message": "no such contact on this account's committee",
+                    },
+                ) from exc
+            account = await get_account(conn, EntityId(profile.account_id))
+            contact = await get_contact(conn, EntityId(profile.id))
+        if account is None or contact is None or not contact.full_name or not contact.linkedin_url:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "EMAIL_LOOKUP_IDENTITY_INCOMPLETE",
+                    "message": (
+                        "this contact does not have the identity anchors required for lookup"
+                    ),
+                },
+            )
+        return EmailLookupTarget(
+            workspace_id=workspace_id,
+            account_id=uuid.UUID(str(account.id)),
+            contact_id=uuid.UUID(str(contact.id)),
+            full_name=contact.full_name,
+            linkedin_url=contact.linkedin_url,
+            account_name=account.canonical_name,
+            primary_domain=account.primary_domain,
+        )
+
+    @router.post("/accounts/{account_id}/contacts/{contact_id}/email-lookup")
+    async def start_contact_email_lookup(
+        request: Request,
+        workspace_id: WorkspaceDep,
+        account_id: uuid.UUID,
+        contact_id: uuid.UUID,
+    ) -> ContactEmailLookupView:
+        if contact_email_lookup is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "EMAIL_LOOKUP_UNAVAILABLE",
+                    "message": "email enrichment is not configured for this environment",
+                },
+            )
+        target = await _lookup_target(
+            workspace_id=workspace_id, account_id=account_id, contact_id=contact_id
+        )
+        try:
+            return await contact_email_lookup.start(target=target, requested_by=_requester(request))
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "EMAIL_LOOKUP_WITHHELD",
+                    "message": "email lookup is unavailable for this contact",
+                },
+            ) from exc
+
+    @router.post("/accounts/{account_id}/contacts/{contact_id}/email-lookup/{lookup_id}/poll")
+    async def poll_contact_email_lookup(
+        request: Request,
+        workspace_id: WorkspaceDep,
+        account_id: uuid.UUID,
+        contact_id: uuid.UUID,
+        lookup_id: uuid.UUID,
+    ) -> ContactEmailLookupView:
+        if contact_email_lookup is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "EMAIL_LOOKUP_UNAVAILABLE",
+                    "message": "email enrichment is not configured for this environment",
+                },
+            )
+        _requester(request)
+        target = await _lookup_target(
+            workspace_id=workspace_id, account_id=account_id, contact_id=contact_id
+        )
+        try:
+            return await contact_email_lookup.poll(
+                workspace_id=workspace_id,
+                account_id=target.account_id,
+                contact_id=target.contact_id,
+                lookup_id=lookup_id,
+            )
+        except LookupError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "EMAIL_LOOKUP_NOT_FOUND",
+                    "message": "no such email lookup for this contact",
+                },
+            ) from exc

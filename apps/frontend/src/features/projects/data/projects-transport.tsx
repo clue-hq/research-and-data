@@ -17,22 +17,56 @@ import { createChatRepositories, type ChatRepositories } from "./chat-repositori
  */
 const TransportContext = createContext<ChatTransport>(FIXTURE_TRANSPORT);
 
+export interface ChatViewerIdentity {
+  userId: string | null;
+  workspaceId: string | null;
+}
+
+const ViewerIdentityContext = createContext<ChatViewerIdentity>({
+  userId: null,
+  workspaceId: null,
+});
+
 export function ProjectsTransportProvider({
   children,
+  currentUserId = null,
+  currentWorkspaceId = null,
   transport,
 }: {
   children: ReactNode;
+  currentUserId?: string | null;
+  currentWorkspaceId?: string | null;
   transport: ChatTransport;
 }) {
+  const viewerIdentity = useMemo<ChatViewerIdentity>(() => {
+    // Fixture mode has its own explicit principal, just as it has its own
+    // repositories. HTTP mode never guesses an identity: a missing protected
+    // session keeps every human gate non-interactive.
+    if (transport.mode === "fixture") {
+      return {
+        userId: currentUserId ?? "usr_demo",
+        workspaceId: currentWorkspaceId ?? "ws-demo",
+      };
+    }
+    return { userId: currentUserId, workspaceId: currentWorkspaceId };
+  }, [currentUserId, currentWorkspaceId, transport.mode]);
+
   return (
     <TransportContext.Provider value={transport}>
-      {children}
+      <ViewerIdentityContext.Provider value={viewerIdentity}>
+        {children}
+      </ViewerIdentityContext.Provider>
     </TransportContext.Provider>
   );
 }
 
 export function useChatTransport(): ChatTransport {
   return useContext(TransportContext);
+}
+
+/** Authenticated viewer scope used only to validate human-facing authority. */
+export function useChatViewerIdentity(): ChatViewerIdentity {
+  return useContext(ViewerIdentityContext);
 }
 
 /** One repository set per transport, memoised so adapters keep their state. */

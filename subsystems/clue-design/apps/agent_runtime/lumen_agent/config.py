@@ -75,6 +75,25 @@ class AgentRuntimeConfig:
     # None/empty -> no references; every RC step is a no-op and the turn is
     # byte-identical to today.
     reference_assets: dict | None = None
+    # Brand Ad Assets W4: the workspace's ad-DNA card PAYLOAD — {"schema_version": 2,
+    # "prose": str, "style_groups": [{"name", "creative_ids"}]} — resolved by the API from
+    # the ad-assets lane and passed BY VALUE (same rule as brand_kit: the runtime never reads
+    # the API database). It is ADVISORY context: a description of the ads this brand already
+    # published, rendered into the composed frame payload next to the brand card. It is not a
+    # gate, it carries no required structure, and nothing refuses a turn over it (ruling D5).
+    # Already bounded at distillation. None → the lane is off, empty, or undistilled, and the
+    # turn composes byte-identically to a pre-W4 one.
+    ad_dna_card: dict | None = None
+    # W5/R2-D: the pre-generated grounds the ad lane holds for the ACTIVE card, as a bounded
+    # list of {"asset_id", "style_group", "shape"} — resolved by the API from the same lane
+    # read that produced `ad_dna_card` and passed BY VALUE for the same reason.
+    #
+    # This exists because the lane's third artifact kind was invisible. The ids were placeable
+    # and viewable the whole time; they were simply never NAMED anywhere the agent reads, so
+    # the W5 Ramp turn generated its own ground while twelve pre-generated ones sat unused.
+    # Naming them is the entire fix — the list is advisory, nothing requires their use, and
+    # None (no lane, no card, no imagery) composes byte-identically to a pre-W4 turn.
+    ad_pregenerated_assets: list | None = None
     # OpenRouter unified reasoning effort ("low" | "medium" | "high") applied to
     # every deep-agent LLM call via the one gateway constructor (init_model).
     # None → the request carries no reasoning field (provider default, i.e.
@@ -90,6 +109,8 @@ class AgentRuntimeConfig:
     # (disables load-balancing) so the append-only ReAct prefix stays cache-warm.
     # None → no `provider` field on the request (byte-identical to pre-L1).
     agent_provider_sort: str | None = "latency"
+    # P3.2: fallback model id for the governed gateway (None → no fallback).
+    agent_fallback_model: str | None = None
     # L3 (straggler watchdog): per-request timeout in SECONDS threaded into
     # init_model for every deep-agent LLM call (installs `timeout` + `max_retries=2`
     # on the ChatOpenAI client). None → no timeout/retry kwargs (today's behavior).
@@ -123,15 +144,97 @@ class AgentRuntimeConfig:
     # the API worker. The runtime receives methods, not database/store paths;
     # source is projected by value into the run's virtual filesystem while all
     # mutations go through CAS/compile-gated typed tools.
+    # The absolute base URL the agent's OWN in-loop preview render resolves
+    # `<img data-asset=…>` against — `{api origin}/asset-store`, so Playwright
+    # (which renders via `set_content`, with no asset server of its own) can
+    # actually fetch the pixels. Resolved from `settings.asset_base_url`
+    # (LUMEN_API_ORIGIN) in `from_env`.
+    #
+    # THIS FIELD DID NOT EXIST until 2026-08-20, and its absence was the root
+    # cause of "generated web pages never contain imagery": the substrate did
+    # `getattr(config, "asset_base_url", None) or "http://127.0.0.1:8000/…"`,
+    # which — with no such field — ALWAYS took the hardcoded fallback, and
+    # nothing has listened on 8000 since the design API moved to 8010. The agent
+    # placed images, saw them broken in its own screenshots, and stripped them.
+    # None → the substrate's last-resort fallback (see `_FALLBACK_ASSET_BASE_URL`).
+    asset_base_url: str | None = None
     custom_component_registry: Any | None = None
     custom_component_account_id: str | None = None
     custom_component_document_id: str | None = None
+    # F1.3: the cloned-section artifacts this turn's document pins, resolved by the API at
+    # composition and carried BY VALUE — the same rule `asset_library` follows, and for the same
+    # reason: the runtime is fleet work that never reads the API database. Shape is
+    # `lumen_api.fragments.render`'s package: {schema_version, fragments{id:{html,css}}, missing[]}.
+    # None means nothing was resolved for this turn; every fragment node then renders the
+    # engine's placeholder, which is honest rather than empty.
+    fragment_render_package: dict | None = None
+    # F2.3: the WORKSPACE's released cloned sections, as a capability rather than a value.
+    # Discovery and the insert action reach the registry through it —
+    # `lumen_api.agent_cloned_sections.DurableAgentClonedSectionRegistry`, supplied by the API
+    # worker exactly as `custom_component_registry` is. A capability rather than a manifest
+    # because the insert's permission question ("has a human released this section?") must be
+    # answered by the document write's OWN gate, not by a copy of its rules taken at composition
+    # time. None means this turn cannot see the library at all; the tools say so and refuse,
+    # never invent.
+    cloned_section_registry: Any | None = None
+    # F4.3 (ruling R25-1): the G1+G2 bridge, as a capability for the same reason the two above
+    # are — the runtime holds no database handle and must never be given one.
+    # `lumen_api.agent_account_logos.DurableAgentAccountLogoBinder`, supplied by the API worker.
+    # It is what carries a `fetch_logo` result out of the working DOCUMENT and onto the ACCOUNT
+    # (the `design_asset` registry row + `design_account.logo_asset_id`), so the batch derive can
+    # personalize every page with the target's real mark. None means this turn cannot bind; the
+    # tool says so and refuses, and an empty account logo stays CORRECT.
+    account_logo_binder: Any | None = None
     # Brief-clarification headless/eval mode (LUMEN_AGENT_AUTO_DEFAULTS=1). When
     # true, the harness does NOT register `request_clarification` on the
     # orchestrator: it applies the skill's defaults and ledgers each assumption
     # via record_gap. Probes/sweeps run with this ON so results stay comparable;
     # live editor runs leave it OFF so the agent can ask a vague brief.
     auto_defaults: bool = False
+    # --- Fast loop v1 (docs/deepagent-fast-loop-v1-spec.md §5) ----------------
+    # ONE flag selects the whole §5 loop for SCENE turns. False (the default and
+    # every offline/CLI/fixture path that does not opt in) keeps the turn
+    # byte-identical to the pre-fast-loop behaviour, which is the contract the
+    # flag-off tests pin. Web turns never consult it (§3 non-goal).
+    fast_loop: bool = False
+    # R3 kill-switch: re-enable the `lumen-visual-reviewer` subagent on scene
+    # turns WITHOUT leaving the fast loop. Read through
+    # `scene_reviewer_enabled`, never directly — that property is the single
+    # place R3 is expressed.
+    scene_reviewer: bool = False
+    # --- the WEB lane's own fast loop (clone-fidelity F3.3, founder rulings D-F7 / P-6) ------
+    # `fast_loop` above is scene-turn-only (§3 non-goal), so these two mirror its shape for web
+    # turns. Read `web_reviewer_enabled`, never these directly — that property is the single
+    # place the web quarantine rule is expressed, exactly as `scene_reviewer_enabled` is for
+    # scenes. Default OFF, and the default is a decision (see py_lumen_config for why).
+    web_fast_loop: bool = False
+    web_reviewer: bool = False
+    # R4 budgets, re-shaped by ruling D1 (2026-08-26). Only consulted under
+    # `fast_loop`. Two pairs, two jobs:
+    #   * `fast_loop_target_*` — GUIDANCE. Communicated to the orchestrator in
+    #     plain language (prompt + the round-boundary BUDGET LEFT line). Nothing
+    #     stops a run at the target; crossing it is recorded, not enforced.
+    #   * `fast_loop_max_llm_calls` / `fast_loop_wall_clock_s` — the BACKSTOP,
+    #     ~2x the target. The only hard stop, and only for a hung/runaway run;
+    #     it still finalizes checkpointed work gracefully. The agent's prompt
+    #     never names it.
+    fast_loop_target_llm_calls: int = 45
+    fast_loop_target_wall_clock_s: float = 900.0
+    fast_loop_max_llm_calls: int = 90
+    fast_loop_wall_clock_s: float = 1800.0
+    fast_loop_inner_iterations: int = 4
+    # §5.1 pin-list override (comma-separated knowledge_docs-relative paths).
+    # None → `lumen_agent.frame.DEFAULT_PINNED_KNOWLEDGE`.
+    fast_loop_pinned_knowledge: str | None = None
+    # §5.4: planning-pass ceiling for the deterministic autofix loop. Only read
+    # when `fast_loop` is true; 0 disables autofix on its own.
+    autofix_max_passes: int = 2
+
+    @property
+    def autofix_passes(self) -> int:
+        """How many autofix passes THIS run may take — 0 whenever the flag is
+        down, so no caller has to remember to check both."""
+        return self.autofix_max_passes if self.fast_loop else 0
 
     @classmethod
     def from_env(cls, repo_root: Path | None = None) -> "AgentRuntimeConfig":
@@ -152,17 +255,59 @@ class AgentRuntimeConfig:
                 or (root / ".deepagent-workspace")
             ),
             asset_store_root=settings.lumen_agent_asset_store,
+            asset_base_url=settings.asset_base_url,
             agent_base_url=settings.lumen_agent_base_url or "https://openrouter.ai/api/v1",
             agent_api_key=settings.lumen_agent_api_key,
             agent_reasoning=settings.lumen_agent_reasoning,
             agent_max_tokens=settings.lumen_agent_max_tokens,
             agent_provider_sort=settings.lumen_agent_provider_sort,
+            agent_fallback_model=settings.lumen_agent_fallback_model,
             agent_llm_timeout_s=settings.lumen_agent_llm_timeout_s,
             agent_model_orchestrator=settings.lumen_agent_model_orchestrator,
             agent_model_author=settings.lumen_agent_model_author,
             agent_model_reviewer=settings.lumen_agent_model_reviewer,
             auto_defaults=settings.lumen_agent_auto_defaults,
+            fast_loop=settings.lumen_agent_fast_loop,
+            scene_reviewer=settings.lumen_agent_scene_reviewer,
+            web_fast_loop=settings.lumen_agent_web_fast_loop,
+            web_reviewer=settings.lumen_agent_web_reviewer,
+            fast_loop_target_llm_calls=settings.lumen_agent_fast_loop_target_llm_calls,
+            fast_loop_target_wall_clock_s=settings.lumen_agent_fast_loop_target_wall_clock_s,
+            fast_loop_max_llm_calls=settings.lumen_agent_fast_loop_max_llm_calls,
+            fast_loop_wall_clock_s=settings.lumen_agent_fast_loop_wall_clock_s,
+            fast_loop_inner_iterations=settings.lumen_agent_fast_loop_inner_iterations,
+            fast_loop_pinned_knowledge=settings.lumen_agent_fast_loop_pinned_knowledge,
+            autofix_max_passes=settings.lumen_agent_autofix_max_passes,
         )
+
+    @property
+    def scene_reviewer_enabled(self) -> bool:
+        """Whether a SCENE turn dispatches the `lumen-visual-reviewer` subagent.
+
+        Ruling R3 in one expression. Off the fast loop the reviewer is always
+        dispatched (nothing changes). On the fast loop it is quarantined — its
+        prompt, model, schema and web-turn wiring all stay built and reachable,
+        it is simply absent from the scene orchestrator's subagent list, which
+        is tool-absence enforcement exactly as `request_clarification` does it.
+        `LUMEN_AGENT_SCENE_REVIEWER=1` puts it back.
+        """
+        return (not self.fast_loop) or self.scene_reviewer
+
+    @property
+    def web_reviewer_enabled(self) -> bool:
+        """Whether a WEB turn dispatches the `lumen-web-reviewer` subagent (F3.3, D-F7).
+
+        The scene property's twin, one line for one rule. Off the web fast loop the reviewer is
+        always dispatched. On it the reviewer is QUARANTINED — its prompt builder, its model, its
+        `ToolStrategy(VisualCritique)` and its whole subagent dict are still constructed on every
+        turn; it is simply absent from the orchestrator's subagent list, which is tool-absence
+        enforcement rather than a prompt asking nicely.
+
+        What does NOT change with the flag is the rubric: quarantined or not, the review is made
+        against the same shared artifact, because D-F7 says the flag changes who checks and never
+        what is checked. `LUMEN_AGENT_WEB_REVIEWER=1` puts the reviewer back.
+        """
+        return (not self.web_fast_loop) or self.web_reviewer
 
     @property
     def orchestrator_model(self) -> str:

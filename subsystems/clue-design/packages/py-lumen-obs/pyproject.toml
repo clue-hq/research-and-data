@@ -1,0 +1,41 @@
+# Minimal packaging for the design tree's observability shim (design-integration Part II,
+# slice D5 Round B — ruling R-D5-B1).
+#
+# Why this exists NOW: D5 Round B moves design agent turns onto the platform fleet, and a fleet
+# worker imports `lumen_agent.harness` from an INSTALLED environment. `lumen_agent.harness`
+# imports `py_lumen_obs`, which until now was reachable only by putting `subsystems/clue-design`
+# on `PYTHONPATH` (or by `lumen_api.main.ensure_agent_runtime_path`'s sys.path insertion, now
+# deleted). An out-of-process worker can rely on neither. So the shim becomes a real, installed
+# uv workspace member — an EXPLICIT member by exact path, exactly as `apps/api` (D2.1) and
+# `apps/agent_runtime` (D5 Round A) are; the root pyproject's broad
+# `exclude = ["subsystems/clue-design"]` guard is untouched.
+#
+# The package MOVED from `subsystems/clue-design/py_lumen_obs/` into this project directory
+# (content byte-identical). It had to: hatchling refuses a `packages`/`only-include` path that
+# escapes the project root, and the `force-include` workaround produces an "editable" wheel that
+# silently COPIES the sources — a stale snapshot of a live tree, which is worse than the shim it
+# replaces. A package that lives inside its own distribution directory is the honest shape and is
+# what makes `pip install -e` genuinely editable.
+#
+# Scope, deliberately narrow: this is packaging only. The Part-I Step-2 fold of `py_lumen_obs`
+# into the platform's `clue_obs` (and `py_lumen_config` into `clue_config`) is still future work
+# and is explicitly NOT attempted here.
+
+[project]
+name = "py-lumen-obs"
+version = "0.0.0"
+description = "Design subsystem structured-logging shim (merged havana tree) — minimal D5 packaging."
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+# Grepped, not guessed: every non-stdlib import in the package is `structlog`. `pytest` appears
+# only as a lazy in-function import inside `testing.pytest_fixture`, which by construction runs
+# only under a test session that already has pytest — declaring it would drag a test dependency
+# into every deployment.
+dependencies = ["structlog>=24,<26"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["py_lumen_obs"]

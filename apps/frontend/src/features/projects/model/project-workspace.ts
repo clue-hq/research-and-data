@@ -7,6 +7,7 @@ export const ProjectEntitySchema = z.object({
   label: z.string().min(1),
   secondaryLabel: z.string().min(1),
   type: z.enum(["account", "contact"]),
+  version: z.number().int().positive().nullable().optional(),
 });
 
 export const ProjectModelOptionSchema = z.object({
@@ -52,17 +53,58 @@ export const ProjectTableContentSchema = z.object({
   title: z.string().min(1),
 });
 
+// Gallery facet vocabulary (W0.5): adopted verbatim from the chat-shell
+// branch's model so the lifted gallery module consumes the same shapes its
+// filter/sort/group functions were written against. All artifact-level gallery
+// fields are optional — existing parsers and fixtures are unaffected.
+export const GalleryCollateralTypeSchema = z.enum([
+  "account-list",
+  "microsite",
+  "direct-mail",
+  "linkedin-ad",
+  "meta-ad",
+  "report",
+  "presentation",
+]);
+
+export const GallerySizeCategorySchema = z.enum([
+  "responsive",
+  "landscape",
+  "square",
+  "portrait",
+]);
+
+export const ProjectArtifactSizeSchema = z.object({
+  category: GallerySizeCategorySchema,
+  height: z.number().int().positive(),
+  label: z.string().min(1),
+  width: z.number().int().positive(),
+});
+
 export const ProjectArtifactSchema = z.object({
+  accountId: z.string().min(1).optional(),
   accountLogoPath: z.string().startsWith("/").optional(),
+  accountName: z.string().min(1).optional(),
   canvasPagePaths: z.array(z.string().startsWith("/")).optional(),
+  collateralType: GalleryCollateralTypeSchema.optional(),
+  createdAt: z.string().datetime().optional(),
   editedLabel: z.string().min(1),
   id: z.string().min(1),
-  imagePath: z.string().startsWith("/"),
-  originRunId: z.string().min(1),
+  // Design artifacts now carry a versioned BFF thumbnail URL, so this is
+  // populated on the common path. It stays optional because other artifact
+  // sources still omit it, and because a thumbnail that is missing or fails to
+  // load falls back to the empty preview frame (ratified ruling 2). Absent
+  // means absent — consumers render without artwork rather than substituting
+  // placeholder imagery.
+  imagePath: z.string().startsWith("/").optional(),
+  lastViewedAt: z.string().datetime().optional(),
+  originRunId: z.string().min(1).optional(),
   originThreadId: z.string().min(1),
+  size: ProjectArtifactSizeSchema.optional(),
   title: z.string().min(1),
   tableContent: ProjectTableContentSchema.optional(),
   type: z.enum(["table", "website", "canvas", "presentation"]),
+  updatedAt: z.string().datetime().optional(),
   viewerTitle: z.string().min(1).optional(),
   websiteContent: ProjectWebsiteContentSchema.optional(),
 });
@@ -188,6 +230,7 @@ export const ProjectHomeResponseSchema = ProjectHomeWireSchema.transform(({ data
       label: entity.label,
       secondaryLabel: entity.secondary_label,
       type: entity.object_type,
+      version: entity.version,
     })),
     models: data.agent_profiles.map((profile) => ({
       description: profile.description,
@@ -320,6 +363,7 @@ export const ProjectWorkspaceResponseSchema = ProjectWorkspaceWireSchema.transfo
         label: entity.label,
         secondaryLabel: entity.secondary_label,
         type: entity.object_type,
+        version: entity.version,
       })),
       id: data.id,
       models: data.agent_profiles.map((profile) => ({
@@ -359,6 +403,9 @@ export type ProjectModelOption = z.infer<typeof ProjectModelOptionSchema>;
 export type ProjectWebsiteContent = z.infer<typeof ProjectWebsiteContentSchema>;
 export type ProjectTableContent = z.infer<typeof ProjectTableContentSchema>;
 export type ProjectArtifact = z.infer<typeof ProjectArtifactSchema>;
+export type GalleryCollateralType = z.infer<typeof GalleryCollateralTypeSchema>;
+export type GallerySizeCategory = z.infer<typeof GallerySizeCategorySchema>;
+export type ProjectArtifactSize = z.infer<typeof ProjectArtifactSizeSchema>;
 export type ProjectQuestionnaire = z.infer<typeof ProjectQuestionnaireSchema>;
 export type ProjectPlan = z.infer<typeof ProjectPlanSchema>;
 export type ProjectQuestionGroup = z.infer<typeof ProjectQuestionGroupSchema>;

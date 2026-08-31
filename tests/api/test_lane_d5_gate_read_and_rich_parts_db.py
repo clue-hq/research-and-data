@@ -493,6 +493,7 @@ def test_the_gates_route_serves_the_payload_an_approval_card_cannot_be_answered_
             assert served["subject_revision"] == 2
             assert served["expected_subject_sha256"] == DIGEST
             assert served["subject_snapshot"]["account_count"] == 2
+            assert tuple(served["permitted_decisions"]) == DECISIONS
             assert served["currency"] == DEFAULT_GATE_CURRENCY
             assert served["addressee_user_id"] == USER_ID
             assert served["created_at"] == gate.created_at.isoformat()
@@ -527,6 +528,7 @@ def test_the_gates_route_reports_the_answer_and_the_run_that_answer_launched(
                 turn_id=answering_turn_id,
                 action_ref=action_ref,
                 decision="approved",
+                expected_subject_sha256=gate.expected_subject_sha256,
                 answered_by_user_id=USER_ID,
             )
             envelope = await _launch_run(conn, seeded, action_ref=action_ref)
@@ -541,6 +543,9 @@ def test_the_gates_route_reports_the_answer_and_the_run_that_answer_launched(
                 "turn_id": str(answering_turn_id),
                 "action_ref": action_ref,
                 "decision": "approved",
+                "expected_subject_sha256": gate.expected_subject_sha256,
+                "decision_payload": {},
+                "selected_option_ref": None,
                 "answered_by_user_id": USER_ID,
                 "answered_at": served["answer"]["answered_at"],
             }
@@ -668,6 +673,7 @@ def test_an_answered_gate_projects_its_decision_actor_and_time_as_a_completed_pa
                 turn_id=answering_turn_id,
                 action_ref=derive_turn_action_ref(answering_turn_id),
                 decision="revised",
+                expected_subject_sha256=gate.expected_subject_sha256,
                 answered_by_user_id=USER_ID,
             )
             emitter = await _emitter(conn, seeded)

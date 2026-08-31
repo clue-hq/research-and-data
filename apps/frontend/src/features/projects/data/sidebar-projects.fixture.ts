@@ -15,7 +15,7 @@ export const sidebarProjectFixtures: SidebarProject[] = [
       {
         id: "thread-primary",
         title: "Landing page concepts",
-        href: "/projects/10m-landing-page-campaign?thread=thread-primary",
+        href: "/projects/10m-landing-page-campaign/chats/thread-primary",
         pinned: false,
         status: "idle",
         updatedAt: "2026-08-09T12:00:00Z",
@@ -23,7 +23,7 @@ export const sidebarProjectFixtures: SidebarProject[] = [
       {
         id: "thread-iteration",
         title: "Account insight report",
-        href: "/projects/10m-landing-page-campaign/gallery?thread=thread-iteration",
+        href: "/projects/10m-landing-page-campaign/chats/thread-iteration?surface=gallery",
         pinned: true,
         status: "running",
         updatedAt: "2026-08-09T13:00:00Z",
@@ -40,7 +40,7 @@ export const sidebarProjectFixtures: SidebarProject[] = [
       {
         id: "thread-review",
         title: "Pipeline review",
-        href: "/projects/custom-reports?thread=thread-review",
+        href: "/projects/custom-reports/chats/thread-review",
         pinned: false,
         status: "needs-input",
         updatedAt: "2026-08-08T12:00:00Z",
@@ -48,7 +48,7 @@ export const sidebarProjectFixtures: SidebarProject[] = [
       {
         id: "thread-approval",
         title: "Creative variants",
-        href: "/projects/custom-reports?thread=thread-approval",
+        href: "/projects/custom-reports/chats/thread-approval",
         pinned: false,
         status: "approval",
         updatedAt: "2026-08-08T13:00:00Z",
@@ -65,7 +65,7 @@ export const sidebarProjectFixtures: SidebarProject[] = [
       {
         id: "thread-missing-context",
         title: "Missing speaker context",
-        href: "/projects/conference-2026?thread=thread-missing-context",
+        href: "/projects/conference-2026/chats/thread-missing-context",
         pinned: false,
         status: "needs-input",
         updatedAt: "2026-08-07T12:00:00Z",

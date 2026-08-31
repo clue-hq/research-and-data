@@ -11,6 +11,7 @@ import {
 } from "@/components/ai-elements/reasoning";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import type { ChatActivityPart, ChatReasoningPart } from "../model/chat-parts";
+import { activityStepLabel } from "../model/chat-tool-presentation";
 import type { TranscriptTurnState } from "../model/chat-transcript";
 import type { ProjectIconName } from "../config/project-icon-sources";
 import { ProjectIcon } from "./project-icon";
@@ -89,7 +90,7 @@ export function ChatAgentActivity({
               />
             }
             key={step.id}
-            label={step.label}
+            label={activityStepLabel(step.kind, step.label)}
             status={
               step.status === "complete" ||
               (terminal && step.status === "active" && turnState !== "failed" && turnState !== "cancelled")
@@ -98,11 +99,7 @@ export function ChatAgentActivity({
                   ? "active"
                   : "pending"
             }
-          >
-            {step.description ? (
-              <p className={styles.traceDetail}>{step.description}</p>
-            ) : null}
-          </ChainOfThoughtStep>
+          />
         ))}
       </ChainOfThoughtContent>
     </ChainOfThought>
@@ -114,15 +111,13 @@ function reasoningLabel(
   turnState: TranscriptTurnState,
 ): string {
   if (turnState === "cancelled") return "Stopped";
-  if (turnState === "failed") return "Round failed";
+  if (turnState === "failed") return "Step failed";
   if (part.state === "active" && turnState === "running") return "Thinking";
-  if (part.state === "error") return "Round failed";
+  if (part.state === "error") return "Step failed";
   if (part.requestedToolCalls > 0) {
-    return `Planned ${part.requestedToolCalls} tool ${
-      part.requestedToolCalls === 1 ? "call" : "calls"
-    }`;
+    return "Prepared the next step";
   }
-  return "Round complete";
+  return "Thinking complete";
 }
 
 /**

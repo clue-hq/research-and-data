@@ -26,7 +26,7 @@ export const fixtureThreads = [
   {
     id: FIXTURE_THREAD_ID,
     title: "Landing page concepts",
-    href: `/projects/${FIXTURE_PROJECT_ID}?thread=${FIXTURE_THREAD_ID}`,
+    href: `/projects/${FIXTURE_PROJECT_ID}/chats/${FIXTURE_THREAD_ID}`,
     status: "idle",
     pinned: true,
     project_id: FIXTURE_PROJECT_ID,
@@ -36,7 +36,7 @@ export const fixtureThreads = [
   {
     id: FIXTURE_SECOND_THREAD_ID,
     title: null,
-    href: `/projects/${FIXTURE_PROJECT_ID}?thread=${FIXTURE_SECOND_THREAD_ID}`,
+    href: `/projects/${FIXTURE_PROJECT_ID}/chats/${FIXTURE_SECOND_THREAD_ID}`,
     status: "approval",
     pinned: false,
     project_id: FIXTURE_PROJECT_ID,
@@ -115,6 +115,7 @@ export const fixtureGates = [
       account_count: 2,
       accounts: ["OpenAI", "Anthropic"],
     },
+    permitted_decisions: ["approved", "rejected", "revised"],
     max_spend_cents: "24000.0000",
     currency: "USD",
     addressee_user_id: "usr_demo",

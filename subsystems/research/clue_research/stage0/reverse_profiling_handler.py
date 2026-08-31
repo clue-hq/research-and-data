@@ -13,6 +13,11 @@ pipeline deduplicates instead of double-spending), runs
 reference (never claim bodies). A budget graceful-stop returns ``PAUSED`` so the state machine
 holds the run at a durable boundary (raise the cap → resume → the same run id continues), per
 :class:`~clue_core.enums.PhaseStatus`.
+
+Under the FI pilot budget-controls switch (``enforce_budget=False``) that pause does not
+happen: nothing may stop a pre-approved action on budget grounds, so an exhausted envelope
+completes the phase instead of holding the run. What was actually spent and whether the
+envelope ran out are still reported truthfully on the payload — only the *stop* is gated.
 """
 
 from __future__ import annotations
@@ -63,8 +68,18 @@ class ReverseProfilingHandler:
 
     phase = ProjectPhase.REVERSE_PROFILING
 
-    def __init__(self, *, judge: FaithfulnessJudge | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        judge: FaithfulnessJudge | None = None,
+        enforce_budget: bool = True,
+    ) -> None:
         self._judge = judge
+        # FI pilot budget-controls, threaded from ``Settings.budget_controls_enabled`` at the
+        # composition root. The *envelope* that bounds how many client fields one phase
+        # resolves is unchanged in both modes — that is shape, not economics; only the
+        # run-halting consequence of exhausting it is gated.
+        self._enforce_budget = enforce_budget
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
         client_input = _client_input_from_params(ctx.params)
@@ -80,7 +95,8 @@ class ReverseProfilingHandler:
                 judge=self._judge,
             )
 
-        status = PhaseStatus.PAUSED if result.budget_exhausted else PhaseStatus.COMPLETED
+        paused_on_budget = result.budget_exhausted and self._enforce_budget
+        status = PhaseStatus.PAUSED if paused_on_budget else PhaseStatus.COMPLETED
         payload: dict[str, JsonValue] = {
             "client_entity_id": str(result.ref.client_entity_id),
             "client_kb_version": result.ref.client_kb_version,

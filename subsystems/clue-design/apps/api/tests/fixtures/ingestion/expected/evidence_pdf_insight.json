@@ -11,10 +11,11 @@
           ],
           "family": "Ginto",
           "license": {
-            "embeddable": false,
+            "basis": "platform-terms",
+            "embeddable": true,
             "name": "trial-filename",
             "restrictions": [
-              "License not verified at ingestion; do not embed in print exports without confirmation."
+              "Embed permission for this workspace's own brand font comes from the platform Terms of Use, not from a license verified at ingestion: off-platform or print reuse still requires license confirmation, and the license name above is what the source declared."
             ],
             "source_url": null,
             "subsettable": false
@@ -38,7 +39,8 @@
           "allowed_backgrounds": [
             "surface.page",
             "surface.card",
-            "surface.inverse"
+            "surface.inverse",
+            "surface.brand"
           ],
           "clearspace": 24.0,
           "license": null,
@@ -1564,8 +1566,8 @@
         "space.8": {
           "description": null,
           "provenance": {
-            "confidence": 0.6,
-            "source": "derived:spacing-scale"
+            "confidence": 0.8,
+            "source": "pdf:page 8 :: grid"
           },
           "role": "spacing",
           "value": {
@@ -1644,8 +1646,8 @@
         "space.section": {
           "description": null,
           "provenance": {
-            "confidence": 0.6,
-            "source": "derived:spacing-scale"
+            "confidence": 0.8,
+            "source": "pdf:page 8 :: grid"
           },
           "role": "spacing",
           "value": {

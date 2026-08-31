@@ -63,17 +63,24 @@ from uuid import UUID
 from pydantic import Field, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.account_research_fleet import read_latest_account_fleet_for_project_run
 from clue_api.agent_gate_wiring import register_agent_gate_tools
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.auth_tool_context import require_human_authority
 from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
+from clue_api.client_knowledge_tools import (
+    build_client_knowledge_tools,
+    build_client_knowledge_v2_tools,
+)
 from clue_api.composition import build_pre_spend_gate
 from clue_api.contact_content_handoff import ContactContentHandoffService
 from clue_api.coverage_tools import (
     build_research_account_gaps_tool,
     build_research_account_gaps_v2_tool,
 )
-from clue_api.deep.composition import build_high_tier_resolver
+from clue_api.design_leg_tools import build_design_leg_tools
+from clue_api.design_tools import build_design_tools
+from clue_api.discovery_configuration import ConfirmedDiscoveryPreflight
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.dynamic_client_kb import DynamicClientKbMaterializer
 from clue_api.entity_research_launch_tools import (
@@ -81,6 +88,9 @@ from clue_api.entity_research_launch_tools import (
     build_entity_research_launch_tools,
 )
 from clue_api.entity_research_quarantine import quarantine_entity_research_tool
+from clue_api.entity_research_verification_resolver import (
+    build_entity_research_account_resolver,
+)
 from clue_api.exa_targeted_enrichment import (
     DEFAULT_EXA_TARGETED_ENRICHMENT_POLICY,
     ExaTargetedEligibilityError,
@@ -93,6 +103,7 @@ from clue_api.independent_contact_research import IndependentContactResearchRunn
 from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
 from clue_api.locks import lazy_account_lock_factory
 from clue_api.phase_wiring import build_discovery_handler, build_scoring_handler
+from clue_api.product_knowledge_tools import build_product_knowledge_tools
 from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.proposal_tools import (
     DecideFieldProposalTool,
@@ -102,9 +113,14 @@ from clue_api.proposal_tools import (
     ProposeFieldTool,
     ProposeSourceTool,
 )
+from clue_api.prose_synthesis_tools import (
+    ProseSynthesisServices,
+    build_prose_synthesis_tools,
+)
 from clue_api.research_directive_tools import build_research_directive_tools
 from clue_api.research_view_tools import build_research_view_tools
 from clue_api.stage0_inspection_tools import build_stage0_inspection_tools
+from clue_api.stage0_project_tools import stage0_project_tools
 from clue_api.stage0_tools import stage0_tools
 from clue_api.statement_evidence import ArtifactStatementEvidenceReader
 from clue_api.storage_wiring import SnapshotBindingPhaseHandler
@@ -138,9 +154,19 @@ from clue_api.tool_outputs import (
     TargetedEnrichmentOutput,
     TierCheckpointOutput,
 )
+from clue_api.value_narrative_tools import (
+    ValueNarrativeServices,
+    build_value_narrative_tools,
+)
 from clue_api.verification import build_verification_phase_handler
-from clue_config import DEFAULT_STAGE0_POLICY, Settings, load_settings
+from clue_config import (
+    DEFAULT_STAGE0_POLICY,
+    Settings,
+    load_settings,
+    stage0_policy_from_settings,
+)
 from clue_core import (
+    NARRATIVE_EMIT_SKIPPED_KEY,
     AccountEntity,
     ContactContentHandoff,
     ContactResearchSelection,
@@ -168,7 +194,6 @@ from clue_research.discovery_scoring.phases import discovery_run_id
 from clue_research.discovery_scoring.scoring import admitted_account_ids
 from clue_research.discovery_scoring.tiering import DEFAULT_TIERING_CONFIG
 from clue_research.durable import (
-    NARRATIVE_EMIT_SKIPPED_KEY,
     AccountDeepLaunchConflict,
     AccountDeepLaunchInvalid,
     BudgetEngine,
@@ -2204,32 +2229,53 @@ class RunVerificationTool(_CapabilityTool):
                 "icp_version_missing",
                 f"no pinned ICP {run.icp_key!r} v{run.icp_version} for this run",
             )
+        # M8D R11.3, defense in depth: refuse *before* the phase runs when the run has no
+        # account-research fleet run, so an operator gets an actionable refusal rather than the
+        # resolver's exception mid-phase — and never the pre-R11 silent ``accounts_processed=0``
+        # success. The resolver still raises on its own (a run whose fleet vanished between these
+        # two reads is a failure, not an empty success).
+        async with self._conn_factory() as conn:
+            fleet = await read_latest_account_fleet_for_project_run(
+                conn, UUID(str(run.id)), workspace_id=run.workspace_id
+            )
+        if fleet is None or fleet.project_id != run.project_id:
+            return _fail(
+                "entity_research_run_missing",
+                "no M8D account-research fleet run is bound to this project run; launch account "
+                "research through the confirmed launch_account_research@1 action, then verify",
+            )
         return ()
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, RunVerificationInput)
         run = await self._load_run(inputs.project_run_id, ctx)
         assert run is not None
-        spec = await self._load_pinned_spec(run)
-        assert spec is not None
         handler = self._wrap_snapshots(
             build_verification_phase_handler(
                 gateway=self._gateway,
-                account_resolver=build_high_tier_resolver(
-                    spec=spec, session_factory=self._conn_factory
+                # R11.3: the researched-account set comes from the run's latest human-confirmed
+                # fleet run, not the quarantined ``account_deep_launch`` ledger.
+                account_resolver=build_entity_research_account_resolver(
+                    session_factory=self._conn_factory
                 ),
                 session_factory=self._conn_factory,
                 verification_enabled=self._settings.verification_enabled,
             )
         )
         result = await handler.run(self._phase_ctx(run, ProjectPhase.VERIFICATION))
+        # References must match ``PhaseAccountsOutput`` exactly (extras are a contract violation).
+        # This result used to add ``verification_enabled``, which the schema has never carried — an
+        # unreachable bug until R11.3 gave the tool an account set it could actually succeed on.
+        # The toggle state is still recorded on the phase result payload (and on the VERIFICATION
+        # checkpoint when the state machine drives it); surfacing it *here* needs a new pinned
+        # output schema — the reviewed agent profiles pin ``run_verification@1``'s
+        # ``output_schema_sha256`` — which is a governed change, not this slice's.
         return ToolResult(
             tool=self.name,
             version=self.version,
             references={
                 "status": result.status.value,
                 "accounts_processed": result.accounts_processed,
-                "verification_enabled": result.payload.get("verification_enabled", True),
             },
         )
 
@@ -2578,6 +2624,7 @@ def build_toolbelt(
     ) = None,
     stage0_scrape_binder: Callable[[AccountEntity], None] | None = None,
     project_execution_router: ProjectExecutionRouter | None = None,
+    confirmed_discovery_preflight: ConfirmedDiscoveryPreflight | None = None,
     research_view_composer: ResearchViewComposer | None = None,
     research_view_snapshots: ResearchViewSnapshotService | None = None,
     research_view_recheck: ResearchViewRecheckService | None = None,
@@ -2587,6 +2634,8 @@ def build_toolbelt(
     independent_contact_research: IndependentContactResearchRunner | None = None,
     contact_content_handoff: ContactContentHandoffService | None = None,
     entity_research_launches: EntityResearchLaunchServices | None = None,
+    prose_synthesis: ProseSynthesisServices | None = None,
+    value_narrative: ValueNarrativeServices | None = None,
 ) -> ToolRegistry:
     """Construct + register the concrete toolbelt over the existing capabilities (spec §2 slice 2).
 
@@ -2639,6 +2688,9 @@ def build_toolbelt(
             budget_engine=BudgetEngine(store=DbBudgetStore(conn_factory=conn_factory)),
             ledger=DbIdempotencyStore(conn_factory=conn_factory),
             registry=PhaseHandlerRegistry(),
+            # FI pilot budget-controls: the run-control tools' machine follows the same deployment
+            # switch as the driver's, so no surface can graceful-stop a run the other would advance.
+            enforce_budget=resolved_settings.budget_controls_enabled,
         )
     )
     gate = (
@@ -2679,7 +2731,7 @@ def build_toolbelt(
     for tool_type in _TOOL_TYPES:
         # C6 keeps the v1 address for exact historical pins, but the name-only alias must elect
         # the governed v2 implementation.  ToolRegistry deliberately refuses two defaults.
-        make_default = tool_type is not ProfileContactTool
+        make_default = tool_type not in {ProfileContactTool, SynthesizeIcpsTool}
         registry.register(
             quarantine_entity_research_tool(
                 tool_type(
@@ -2708,7 +2760,11 @@ def build_toolbelt(
         ApproveContactResearchSelectionTool(conn_factory=conn_factory),
         make_default=False,
     )
-    for tool in build_entity_research_launch_tools(entity_research_launches):
+    for tool in build_entity_research_launch_tools(
+        entity_research_launches,
+        budget_controls_enabled=resolved_settings.budget_controls_enabled,
+        conn_factory=conn_factory,
+    ):
         registry.register(tool, make_default=True)
     registry.register(
         quarantine_entity_research_tool(
@@ -2787,10 +2843,36 @@ def build_toolbelt(
     register_thread_tools(registry, conn_factory=conn_factory)
     # FI Lane D D4 / §3-P5(a): the durable confirmation gate is opened through a governed tool for
     # the same reason, and from its own wiring module for the same one.
-    register_agent_gate_tools(registry, conn_factory=conn_factory)
+    register_agent_gate_tools(
+        registry,
+        conn_factory=conn_factory,
+        budget_controls_enabled=resolved_settings.budget_controls_enabled,
+    )
+    # FI-4 slice 3: recon field progress commits on its OWN connection so the setup screen sees
+    # motion while the lane runs (the lane's own transaction stays uncommitted until it ends).
+    # That second checkout is only safe against the real pooled factory — an injected
+    # single-connection / lock-guarded factory (every DB test harness) would have the lane wait
+    # on a connection it is itself holding. So the autonomous path is composed only for
+    # `transaction`; anything else falls back to the emitter's lane-connection write, which is
+    # correct everywhere, just post-commit-visible — and post-commit-visible means the
+    # onboarding screen shows nothing for the whole fast lane, so say so out loud rather than
+    # degrading in silence (a future request-scoped/instrumented production factory would
+    # otherwise kill the feature with green tests and green logs).
+    stage0_field_progress_factory = conn_factory if conn_factory is transaction else None
+    if stage0_field_progress_factory is None:
+        log.info(
+            "toolbelt.stage0_field_progress_lane_bound",
+            reason="conn_factory is not clue_db.transaction",
+            effect="recon per-field progress is visible only after the lane commits",
+        )
     for tool in stage0_tools(
         conn_factory=conn_factory,
-        policy=DEFAULT_STAGE0_POLICY,
+        # Founder ruling (FI-4 §9, 2026-08-13): onboarding is budget-unconstrained — an envelope
+        # must never truncate onboarding research. So the composed policy takes its two lane caps
+        # from deployment settings (default 25¢ fast: the whole eleven-field firecrawl walk with
+        # headroom) instead of the library's frozen 5¢, which released the user with the last
+        # checklist groups unreached. `DEFAULT_STAGE0_POLICY` is unchanged for uncomposed callers.
+        policy=stage0_policy_from_settings(resolved_settings),
         pre_spend_gate=gate,
         memory_write=stage0_memory_write,
         memory_write_factory=stage0_memory_write_factory,
@@ -2802,15 +2884,46 @@ def build_toolbelt(
         # value is then refused rather than written unvouched-for — which is exactly the pre-§6c
         # behaviour, so an ungatewayed composition is never *worse* than before.
         entailment_judge=entailment_judge,
+        field_progress_factory=stage0_field_progress_factory,
     ):
-        registry.register(tool, make_default=True)
+        registry.register(
+            tool,
+            # Preserve @1 for historical recipe replay. The trusted project-scoped successors
+            # registered immediately below own the name-only defaults for readiness and confirmed
+            # run start; active resources pin those exact @2 addresses after promotion.
+            make_default=tool.name
+            not in {"evaluate_stage0_readiness", "start_confirmed_project_run"},
+        )
+    for tool in stage0_project_tools(
+        conn_factory=conn_factory,
+        policy=DEFAULT_STAGE0_POLICY,
+        gateway=gateway,
+        synthesis_model=resolved_settings.synthesis_model,
+        statement_evidence=statement_evidence,
+        project_execution_router=project_execution_router,
+        confirmed_discovery_preflight=confirmed_discovery_preflight,
+        budget_controls_enabled=resolved_settings.budget_controls_enabled,
+    ):
+        registry.register(
+            tool,
+            make_default=(
+                (tool.name != "start_confirmed_project_run" or tool.version == "3")
+                and (tool.name != "synthesize_icps" or tool.version == "3")
+            ),
+        )
     for tool in build_research_directive_tools(
         memory_write_factory=(
             research_directive_memory_write_factory or stage0_memory_write_factory
         ),
         conn_factory=conn_factory,
     ):
-        registry.register(tool, make_default=tool.version == "2")
+        registry.register(
+            tool,
+            make_default=(
+                (tool.name != "draft_account_research_directive" or tool.version == "3")
+                and (tool.name != "confirm_account_research_directive" or tool.version == "2")
+            ),
+        )
     # PC-C8 §7: the two bounded, read-only Stage-0 history tools the card's `omissions` cursors
     # resolve. Both are granted to `AgentRole.HEAD_OF_ABM` in `C6_AGENT_TOOL_AUTHORITY` (the
     # deferred grant landed against profile v10) and are *not* withheld by the trial's
@@ -2825,6 +2938,19 @@ def build_toolbelt(
         conn_factory=conn_factory,
     ):
         registry.register(tool, make_default=True)
+    # S4-D: preserve @1 for exact historical replay, but make the strictly artifact-bound @2
+    # contracts the production defaults. Both versions register in every process so profile and
+    # recipe compatibility composition is deterministic. A constitution without S3's paired
+    # Client-KB artifact cannot satisfy @2; the old trial focus-ref fallback remains @1-only.
+    for tool in build_client_knowledge_tools(conn_factory=conn_factory):
+        registry.register(tool, make_default=False)
+    for tool in build_client_knowledge_v2_tools(conn_factory=conn_factory):
+        registry.register(tool, make_default=True)
+    # S5-D: selected-product knowledge is a separate exact-scope read surface.  These tools never
+    # widen the company tools with a model-authored product selector; product authority is restored
+    # only from the immutable turn constitution at execution time.
+    for tool in build_product_knowledge_tools(conn_factory=conn_factory):
+        registry.register(tool, make_default=True)
     for tool in build_research_view_tools(
         composer=research_view_composer,
         snapshots=research_view_snapshots,
@@ -2833,6 +2959,48 @@ def build_toolbelt(
         snapshot_compose_enabled=resolved_settings.c7_snapshot_compose_enabled,
         recheck_enabled=resolved_settings.c7_recheck_enabled,
         admitted_workspace_ids=frozenset(resolved_settings.c7_workspace_canary_ids),
+    ):
+        registry.register(tool, make_default=True)
+    # Lane E E1. The tool registers in EVERY composition — including the gateway-less HTTP process
+    # — so the registered name set (and therefore the C6 authority check) is identical everywhere;
+    # an uncomposed process simply refuses `prose_synthesis_not_composed` / `gateway_required`
+    # rather than being silently absent.
+    for tool in build_prose_synthesis_tools(
+        prose_synthesis,
+        gateway=gateway,
+        conn_factory=conn_factory,
+    ):
+        registry.register(tool, make_default=True)
+    # Lane E E3. Same everywhere-registered posture as the prose surface above, with one extra
+    # gate: the positioning services are composed only when `value_narrative_synthesis_enabled`,
+    # so a flag-off deployment registers the name and refuses `value_narrative_not_composed`.
+    for tool in build_value_narrative_tools(
+        value_narrative,
+        gateway=gateway,
+        conn_factory=conn_factory,
+    ):
+        registry.register(tool, make_default=True)
+    # Part II D6: the design subsystem's governed write path. Registered UNCONDITIONALLY (the C6
+    # authority audit is a strict set equality — a registry whose shape depends on
+    # `design_runtime_enabled` would make flipping that switch an AgentCatalogError), but LIVE
+    # only where a design runtime is composed; elsewhere every design tool refuses
+    # `design_runtime_not_configured` before any write. P3.3 granted the set to
+    # `AgentRole.DESIGN` — see `C6_AGENT_TOOL_AUTHORITY`.
+    for tool in build_design_tools(
+        enabled=resolved_settings.design_runtime_enabled,
+        storage=storage,
+    ):
+        registry.register(tool, make_default=True)
+    # P3.4 (PD-part3 §1-D1/§2.3): the head-of-abm's delegation entry onto the design leg.
+    # Registered unconditionally for the same audit reason, and gated on the SAME runtime
+    # switch as the design_* set (the thread-wedge guard, adversarial-review fix): a leg
+    # opened where no design runtime is composed is a thread nothing can serve, so on such a
+    # deployment both tools refuse `design_leg_runtime_not_configured` before any write;
+    # without a storage backend they refuse `design_leg_storage_not_configured`.
+    for tool in build_design_leg_tools(
+        conn_factory=conn_factory,
+        storage=storage,
+        enabled=resolved_settings.design_runtime_enabled,
     ):
         registry.register(tool, make_default=True)
     return registry

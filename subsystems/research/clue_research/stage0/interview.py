@@ -45,6 +45,11 @@ from clue_research.claimstore import (
 )
 from clue_research.identity import get_account, get_contact
 from clue_research.sources import RegistrySourceManifest, register_source
+from clue_research.stage0.client_kb import (
+    ClientKbWriteTarget,
+    client_kb_write_target_for_materialization,
+)
+from clue_research.stage0.fields import PRODUCT_KNOWLEDGE_FIELDS
 from clue_research.stage0.governed import StatementRoute, record_statement
 
 
@@ -398,6 +403,8 @@ class InterviewRoutingResult(BaseModel):
     project_state_refs: tuple[str, ...]
     proposal_refs: tuple[str, ...]
     unmapped_statement_ids: tuple[VolunteeredStatementId, ...]
+    client_kb_version: int | None = None
+    product_kb_version: int | None = None
 
 
 #: The client's own words, admitted because the value is literally inside the cited span.
@@ -473,6 +480,50 @@ async def route_interview_answer(
         workspace_id=workspace_id,
         entailment_judge=entailment_judge,
     )
+    company_target: ClientKbWriteTarget | None = None
+    product_target: ClientKbWriteTarget | None = None
+    company_fields: set[str] = set()
+    product_fields: set[str] = set()
+    for item in prepared:
+        classified = item.classified
+        if (
+            classified.route is not InterviewRoute.CLAIM
+            or item.entity_id != client_entity_id
+            or classified.field_key is None
+            or not classified.field_key.startswith("client.")
+        ):
+            continue
+        if classified.field_key in PRODUCT_KNOWLEDGE_FIELDS:
+            if product_id is None:
+                raise ValueError(
+                    "product-scoped client claim requires a human-confirmed project product"
+                )
+            product_fields.add(classified.field_key)
+        else:
+            company_fields.add(classified.field_key)
+    # A claim row is not a published Client-KB checkpoint. Allocate the append-only target before
+    # writing any governed client claim, inside this same transaction, so a later production turn
+    # either observes the complete version or nothing. The captured input is the stable replay
+    # identity even for direct callers that do not supply a run id.
+    if company_fields:
+        company_target = await client_kb_write_target_for_materialization(
+            conn,
+            workspace_id=workspace_id,
+            client_entity_id=client_entity_id,
+            product_id=None,
+            operation_key=f"interview:{onboarding_input_id}:company",
+            require_derived_version=True,
+        )
+    if product_fields:
+        assert product_id is not None
+        product_target = await client_kb_write_target_for_materialization(
+            conn,
+            workspace_id=workspace_id,
+            client_entity_id=client_entity_id,
+            product_id=product_id,
+            operation_key=f"interview:{onboarding_input_id}:product:{product_id}",
+            require_derived_version=True,
+        )
     statement_ids: list[VolunteeredStatementId] = []
     claim_refs: list[ClaimId] = []
     memory_refs: list[str] = []
@@ -486,6 +537,13 @@ async def route_interview_answer(
         entity_id = item.entity_id
         if classified.route is InterviewRoute.CLAIM:
             assert entity_id is not None
+            claim_run_id = run
+            if entity_id == client_entity_id and classified.field_key in product_fields:
+                assert product_target is not None
+                claim_run_id = product_target.run_id
+            elif entity_id == client_entity_id and classified.field_key in company_fields:
+                assert company_target is not None
+                claim_run_id = company_target.run_id
             claim_id = await _write_claim(
                 conn,
                 classified=classified,
@@ -496,7 +554,7 @@ async def route_interview_answer(
                 product_id=product_id,
                 artifact_key=artifact_key,
                 onboarding_input_id=onboarding_input_id,
-                run_id=run,
+                run_id=claim_run_id,
                 judged=item.judged,
             )
             route_ref = str(claim_id)
@@ -560,6 +618,8 @@ async def route_interview_answer(
         project_state_refs=tuple(project_refs),
         proposal_refs=tuple(proposal_refs),
         unmapped_statement_ids=tuple(unmapped),
+        client_kb_version=(None if company_target is None else company_target.version),
+        product_kb_version=(None if product_target is None else product_target.version),
     )
 
 
@@ -809,9 +869,9 @@ async def _write_claim(
     # "the client stating a fact about itself", tier 3 is "the client stating a fact about some
     # other resolved entity". Neither is a fallback for an id nobody could resolve.
     source_tier = 1 if entity_id == client_entity_id else 3
-    claim_product_id = product_id if classified.field_key.startswith("client.") else None
-    if classified.field_key.startswith("client.") and claim_product_id is None:
-        raise ValueError("product-scoped client claim requires a confirmed product")
+    claim_product_id = product_id if classified.field_key in PRODUCT_KNOWLEDGE_FIELDS else None
+    if classified.field_key in PRODUCT_KNOWLEDGE_FIELDS and claim_product_id is None:
+        raise ValueError("product-scoped client claim requires a human-confirmed project product")
     claim_id = ClaimId(
         uuid5(
             NAMESPACE_URL,

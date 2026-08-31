@@ -1,0 +1,175 @@
+{
+  "decision_version": "product-knowledge-consumption-s50-v1",
+  "status": "ratified_contract_only",
+  "decisions": [
+    "company_facts_use_account_wide_client_kb",
+    "product_facts_use_independent_product_scoped_kb",
+    "selected_product_uses_bounded_card_and_governed_tools",
+    "product_scope_is_derived_only_from_trusted_turn_pin",
+    "client_knowledge_card_v2_owns_bounded_product_catalog"
+  ],
+  "scope": {
+    "current_historical_policy": "company-account-wide-v1",
+    "target_new_turn_policy": "company-and-selected-product-v2",
+    "company_claim_selector": "product_id_is_null",
+    "product_claim_selector": "product_id_equals_confirmed_project_product",
+    "pin_fields": [
+      "workspace_id",
+      "client_entity_id",
+      "company_client_kb_version",
+      "confirmed_product_id",
+      "product_kb_version",
+      "knowledge_scope_policy_version"
+    ],
+    "snapshot_rule": "one_database_snapshot_before_cards_model_or_tools",
+    "retry_rule": "reuse_exact_company_and_product_pair",
+    "next_turn_rule": "new_turn_may_observe_newer_independent_versions"
+  },
+  "cards": {
+    "account_wide": ["client_knowledge@2"],
+    "selected_product": ["product_profile@1", "product_knowledge@1"],
+    "project_specific": ["project_conversation@2", "stage0_project_state@1"],
+    "client_knowledge_v2_delta": {
+      "adds": "bounded_typed_product_catalog",
+      "minimum_entry_fields": [
+        "product_id",
+        "name",
+        "short_description",
+        "aliases",
+        "status",
+        "catalog_claim_id",
+        "product_knowledge_available"
+      ],
+      "over_cap": ["omitted_count", "cursor"],
+      "forbidden": [
+        "product_capabilities",
+        "product_pricing",
+        "product_integrations",
+        "product_competitors",
+        "product_customer_evidence"
+      ]
+    },
+    "product_profile_owner": ["product_id", "name", "aliases", "status", "brand_id"],
+    "product_knowledge_owner": [
+      "product_kb_version",
+      "bounded_topics",
+      "field_descriptions",
+      "brief_previews",
+      "claim_ids",
+      "open_gaps",
+      "coverage",
+      "omission_cursor"
+    ],
+    "product_knowledge_repeats_product_profile_identity": false
+  },
+  "tools": {
+    "company": ["list_client_knowledge@2", "inspect_client_claim@2"],
+    "product": ["list_product_knowledge@1", "inspect_product_claim@1"],
+    "product_list_model_fields": ["topic", "field_key", "cursor", "limit"],
+    "product_inspect_model_fields": ["claim_id"],
+    "product_trusted_fields": [
+      "workspace_id",
+      "client_entity_id",
+      "product_id",
+      "product_kb_version"
+    ],
+    "model_forbidden_scope_fields": [
+      "workspace_id",
+      "client_entity_id",
+      "product_id",
+      "client_kb_version",
+      "product_kb_version"
+    ],
+    "cross_scope_rule": "company_and_product_tools_refuse_the_other_scope"
+  },
+  "selection": {
+    "catalog_is_descriptive_not_authority": true,
+    "agent_may_present_and_ask": true,
+    "agent_may_confirm": false,
+    "sole_write": "confirm_project_product@1",
+    "human_authority_required": true
+  },
+  "catalog_sync": {
+    "source_field": "client.product_catalog",
+    "source_scope": "account_wide_only",
+    "product_identity_owner": "product_spine",
+    "lineage_required": true,
+    "idempotent_replay": true,
+    "automatic_mutations_forbidden": ["rename", "merge", "archive", "delete"],
+    "cross_workspace_match": "refuse",
+    "cross_brand_match": "refuse"
+  },
+  "delivery": {
+    "s50_includes": ["decision_contract", "fixture", "adversarial_guards", "roadmap_delta"],
+    "s50_excludes": [
+      "database_migration",
+      "catalog_extraction",
+      "catalog_synchronization",
+      "client_knowledge_card_v2_runtime",
+      "product_knowledge_card_runtime",
+      "product_tool_registration",
+      "production_policy_cutover"
+    ]
+  },
+  "context_states": [
+    {
+      "name": "catalog_unselected",
+      "company_client_kb_version": 7,
+      "confirmed_product_id": null,
+      "product_kb_version": null,
+      "cards": ["client_knowledge@2", "project_conversation@2", "stage0_project_state@1"],
+      "model_tools": ["list_client_knowledge@2", "inspect_client_claim@2"]
+    },
+    {
+      "name": "selected_without_product_knowledge",
+      "company_client_kb_version": 7,
+      "confirmed_product_id": "prd_a",
+      "product_kb_version": null,
+      "cards": [
+        "client_knowledge@2",
+        "project_conversation@2",
+        "stage0_project_state@1",
+        "product_profile@1"
+      ],
+      "model_tools": ["list_client_knowledge@2", "inspect_client_claim@2"]
+    },
+    {
+      "name": "selected_with_product_knowledge",
+      "company_client_kb_version": 7,
+      "confirmed_product_id": "prd_a",
+      "product_kb_version": 3,
+      "cards": [
+        "client_knowledge@2",
+        "project_conversation@2",
+        "stage0_project_state@1",
+        "product_profile@1",
+        "product_knowledge@1"
+      ],
+      "model_tools": [
+        "list_client_knowledge@2",
+        "inspect_client_claim@2",
+        "list_product_knowledge@1",
+        "inspect_product_claim@1"
+      ]
+    },
+    {
+      "name": "selected_other_product",
+      "company_client_kb_version": 7,
+      "confirmed_product_id": "prd_b",
+      "product_kb_version": 2,
+      "cards": [
+        "client_knowledge@2",
+        "project_conversation@2",
+        "stage0_project_state@1",
+        "product_profile@1",
+        "product_knowledge@1"
+      ],
+      "model_tools": [
+        "list_client_knowledge@2",
+        "inspect_client_claim@2",
+        "list_product_knowledge@1",
+        "inspect_product_claim@1"
+      ]
+    }
+  ]
+}

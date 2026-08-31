@@ -10,7 +10,9 @@ Parallel Task — proving a tier-4 source can be *named* in a ``tier_plan`` befo
 ``cost_cents`` and ``geo_coverage`` are D7/D8 config placeholders (re-tunable per the Clay note's
 per-field economics). ``auth_ref`` is a credential-store **reference** (an env-var name), never a
 secret. ``yields`` reference field-keys/classes from the M1.3 registry — so seeding must run after
-the relevant pack is loaded (the core pack for the ``core.*``/``account.*`` keys here).
+the relevant packs are loaded: the **core** pack for the ``core.*``/``account.*`` keys, and (since
+slice 3's tier-3 ``exa_search`` entry) the **client-knowledge** pack for the two ``client.*`` keys.
+Seeding before either is a loud ``SourceYieldError``, not a silent partial registry.
 """
 
 from __future__ import annotations
@@ -218,15 +220,21 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
     _entry(
         "sumble_people",
         modality=Modality.STRUCTURED,
-        entity_scope=EntityScope.ACCOUNT,
+        # Committee enumeration is account-scoped; the same exact-person match endpoint can emit a
+        # target-locked Contact email observation, so the manifest truthfully covers both.
+        entity_scope=EntityScope.BOTH,
         tier=1,
-        yields=("contact",),
+        # The same People endpoint also supports an explicitly selected, paid work-email reveal in
+        # exact-person match mode. Committee enumeration remains no-reveal by request contract;
+        # declaring the additional yield does not widen that adapter's select list.
+        yields=("contact", "core.work_email"),
         provider="sumble",
         cost_cents=Decimal(0),
         identity_binding=IdentityBinding.WEAK,
         auth_ref="CLUE_SUMBLE_API_KEY",
         rate_limit={"requests_per_second": 10},
         freshness_profile="daily",
+        version=2,
     ),
     # Authoritative registries — deterministic, tier-1, vertical/jurisdiction-flavored. They yield
     # account-level authoritative facts; finer per-vertical field yields (e.g. healthcare.npi) are
@@ -283,7 +291,23 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         auth_ref="CLUE_CRM_API_KEY",
         freshness_profile="realtime",
     ),
-    # Tier-2 official-source scrape (Firecrawl) — normalized via the M4.3 HTML→markdown adapter.
+    # Provider-neutral owned-site evidence emitted by the durable crawl materializer. Provider
+    # acquisition cost lives on official_site_fetch_attempt; copying it onto each derived claim
+    # would multiply one page cost by the number of fields extracted from it. There is deliberately
+    # no resolver binding here: C7 materializes one immutable corpus checkpoint through the normal
+    # claim-validation path.
+    _entry(
+        "official_site",
+        modality=Modality.TEXT,
+        entity_scope=EntityScope.ACCOUNT,
+        tier=2,
+        yields=("account",),
+        provider="clue",
+        cost_cents=Decimal(0),
+        freshness_profile="livecrawl",
+    ),
+    # Historical tier-2 provider-named sources remain immutable/queryable during additive cutover.
+    # Firecrawl is normalized via the M4.3 HTML→markdown adapter.
     _entry(
         "firecrawl_site",
         modality=Modality.TEXT,
@@ -313,6 +337,29 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         cost_cents=Decimal(0),
         requires_adapter="scrapling_html",
         freshness_profile="livecrawl",
+    ),
+    # Tier-3 open-web search (slice 3) — the ONLY source for the two Client-KB fields the client's
+    # own surfaces cannot honestly answer: who the market compares them against, and who buys.
+    # ``yields`` names the two concrete keys rather than the whole ``client`` namespace because the
+    # resolver answers exactly these two (it has a query for nothing else), and the M4.6 planner
+    # reads ``yields`` to propose sources for a field — a namespace claim would offer this source
+    # for every owned-surface client field it cannot fill. Naming client keys makes the client
+    # knowledge pack a boot-order prerequisite of seeding (``yields`` validate against the field
+    # registry), which is why every ``seed_source_manifests`` caller loads that pack first.
+    # Tier 3 is load-bearing: the Stage-0 fast lane caps at ``max_source_tier=2`` and walks past
+    # this at zero spend, so only the background lane ever pays for it.
+    _entry(
+        "exa_search",
+        modality=Modality.TEXT,
+        entity_scope=EntityScope.ACCOUNT,
+        tier=3,
+        yields=("client.competitor", "client.buyer_profile"),
+        provider="exa",
+        cost_cents=Decimal(1),
+        # An open third-party page is never strong personal identity evidence by source prior alone.
+        identity_binding=IdentityBinding.WEAK,
+        auth_ref="CLUE_EXA_API_KEY",
+        freshness_profile="snapshot",
     ),
     # Tier-4 research-product placeholders — REGISTERED but resolver-ABSENT until M11. Proves a
     # tier-4 source can be named in a tier_plan before its resolver exists (get_resolver raises).
@@ -355,6 +402,7 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
 
 async def seed_source_manifests(conn: AsyncConnection) -> None:
     """Register every seed manifest (idempotent). Run after the referenced fields are registered
-    (e.g. ``load_core_pack``) so the ``yields`` validation resolves."""
+    (``load_core_pack`` **and** ``load_client_knowledge_pack``) so the ``yields`` validation
+    resolves."""
     for entry in SEED_MANIFESTS:
         await register_source(conn, entry)

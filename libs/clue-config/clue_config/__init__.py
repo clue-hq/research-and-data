@@ -91,6 +91,7 @@ from clue_config.stage0 import (
     ReadinessSpec,
     Stage0Policy,
     default_readiness_spec,
+    stage0_policy_from_settings,
 )
 
 __all__ = [
@@ -156,6 +157,7 @@ __all__ = [
     "Stage0Policy",
     "DEFAULT_STAGE0_POLICY",
     "default_readiness_spec",
+    "stage0_policy_from_settings",
     # secrets
     "Secrets",
     "redact",

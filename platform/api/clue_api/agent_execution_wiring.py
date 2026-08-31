@@ -52,6 +52,17 @@ from clue_agents.contracts import (
 from clue_agents.ports import ExecutionProgress, OperationFailure
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.auth_tool_context import tool_context_for_internal_service
+from clue_api.client_context_authority import (
+    client_kb_version_for_input_model,
+    trusted_client_kb_version_fields,
+)
+from clue_api.client_knowledge_privacy import client_knowledge_result_subject_bindings
+from clue_api.context_observability import record_context_tool_outcome
+from clue_api.product_context_authority import (
+    product_scope_for_input_model,
+    trusted_product_scope_fields,
+)
+from clue_api.product_knowledge_privacy import product_knowledge_result_subject_bindings
 from clue_api.stage0_recipe import RecipeStep, StepPinProvider
 from clue_api.turn_action import derive_turn_action_ref
 from clue_api.turn_binding import (
@@ -74,12 +85,14 @@ from clue_execution import (
     ToolNode,
     validate_graph,
 )
+from clue_obs import get_logger
 from clue_toolbelt import (
     PreconditionFailed,
     ToolInvoker,
     ToolRegistry,
     ToolResult,
 )
+from clue_toolbelt.runner import validate_tool_result
 
 __all__ = [
     "AgentExecutionCrashHook",
@@ -94,6 +107,7 @@ __all__ = [
 _PLAN_EVENT_NAMESPACE = UUID("30b976d6-032a-56a4-933a-e02db79f01cb")
 _DELEGATION_EVENT_NAMESPACE = UUID("d273c199-9435-5dc5-b5d2-5b28d41051d7")
 _CHILD_EXECUTION_NAMESPACE = UUID("ce926286-e065-5c98-9d57-c8af598bb87e")
+log = get_logger("clue_api.agent_execution")
 
 
 class AgentExecutionCrashHook(Protocol):
@@ -265,9 +279,22 @@ def _trusted_tool_arguments(
         # Defence in depth: PlanToolStep already refuses these keys.
         raise ValueError(f"plan arguments carry trusted authority: {sorted(supplied)}")
     turn_fields = trusted_turn_fields(input_model)
+    client_kb_version_fields = trusted_client_kb_version_fields(input_model)
+    product_scope_fields = trusted_product_scope_fields(input_model)
     proposed_turn = set(turn_fields) & set(merged)
     if proposed_turn:
         raise ValueError(f"plan arguments carry trusted turn authority: {sorted(proposed_turn)}")
+    proposed_client_kb_version = set(client_kb_version_fields) & set(merged)
+    if proposed_client_kb_version:
+        raise ValueError(
+            "plan arguments carry trusted Client-KB authority: "
+            f"{sorted(proposed_client_kb_version)}"
+        )
+    proposed_product_scope = set(product_scope_fields) & set(merged)
+    if proposed_product_scope:
+        raise ValueError(
+            f"plan arguments carry trusted Product-KB authority: {sorted(proposed_product_scope)}"
+        )
     authority = _trusted_authority(constitution)
     for key in MODEL_FORBIDDEN_AUTHORITY_KEYS & set(input_model.model_fields):
         value = authority.get(key)
@@ -280,6 +307,18 @@ def _trusted_tool_arguments(
                 reason_code="no_binding",
             )
         merged[key] = captured_turn.value_for(key)
+    client_kb_version = client_kb_version_for_input_model(constitution, input_model)
+    if client_kb_version is not None:
+        for key in client_kb_version_fields:
+            merged[key] = client_kb_version
+    product_scope = product_scope_for_input_model(constitution, input_model)
+    if product_scope is not None:
+        product_id, product_kb_version = product_scope
+        for key in product_scope_fields:
+            if key == "product_id":
+                merged[key] = product_id
+            elif key == "product_kb_version":
+                merged[key] = product_kb_version
     return merged
 
 
@@ -1674,8 +1713,41 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                 if isinstance(result, BaseException):
                     failed.add(operation.node_key)
                     failures.append(_operation_failure(operation, result))
+                    if operation.kind == "tool":
+                        log.warning(
+                            "agent_turn.context_tool_outcome",
+                            turn_id=str(self._turn_id),
+                            workspace_id=self._constitution.workspace_id,
+                            project_id=self._constitution.project_id,
+                            tool_address=operation.address,
+                            outcome="failed",
+                            replayed=False,
+                            error_code=type(result).__name__,
+                        )
+                        record_context_tool_outcome(
+                            tool_address=operation.address,
+                            outcome="failed",
+                            replayed=False,
+                        )
                 else:
                     completed.add(operation.node_key)
+                    if operation.kind == "tool":
+                        replayed = bool(result.replayed)
+                        log.info(
+                            "agent_turn.context_tool_outcome",
+                            turn_id=str(self._turn_id),
+                            workspace_id=self._constitution.workspace_id,
+                            project_id=self._constitution.project_id,
+                            tool_address=operation.address,
+                            outcome="completed",
+                            replayed=replayed,
+                            reference_count=len(result.reference_values),
+                        )
+                        record_context_tool_outcome(
+                            tool_address=operation.address,
+                            outcome="completed",
+                            replayed=replayed,
+                        )
             yield ExecutionProgress(
                 execution_id=plan.execution_id,
                 status="failed" if failed else "running",
@@ -1759,15 +1831,32 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             actor_id=self._constitution.actor_id,
             action_ref=self._action_ref,
         )
-        descriptor = self._tools.descriptor(step.tool.name, step.tool.version)
-        validated_output = descriptor.output_model.model_validate(result.references)
-        canonical_result = result.model_copy(
-            update={"references": validated_output.model_dump(mode="json")}
+        # The ToolInvoker result crosses a durable JSON boundary before it reaches this adapter.
+        # Reuse the toolbelt's canonical validator: strict UUID/datetime/Decimal and tuple output
+        # contracts must be decoded in JSON mode, not incorrectly reinterpreted as Python-native
+        # inputs. This also keeps the production C5 path and direct/idempotent tool replay on one
+        # validation rule.
+        canonical_result = validate_tool_result(
+            self._tools.get(step.tool.name, step.tool.version),
+            result,
+        )
+        subject_bindings = tuple(
+            {
+                *client_knowledge_result_subject_bindings(
+                    address=operation.address,
+                    references=canonical_result.references,
+                ),
+                *product_knowledge_result_subject_bindings(
+                    address=operation.address,
+                    references=canonical_result.references,
+                ),
+            }
         )
         result_ref = await self._artifacts.persist_body(
             workspace_id=self._constitution.workspace_id,
             data=_canonical_bytes(canonical_result),
             media_type="application/vnd.clue.agent-tool-result+json",
+            subject_bindings=subject_bindings,
         )
         await self._journal.record_tool_result(
             plan_id=plan.plan_id,

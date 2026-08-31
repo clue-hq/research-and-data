@@ -33,8 +33,12 @@ specifications from becoming competing sources of truth.
   messages, generation runs, attachments, and artifacts.
 - [`api-contracts/session.md`](api-contracts/session.md) — authenticated session,
   workspace selection, and same-origin BFF boundary.
+- [`api-contracts/onboarding.md`](api-contracts/onboarding.md) — onboarding
+  authentication, profile, and workspace-setup handoff.
 - [`figma/projects-chat-flow.md`](figma/projects-chat-flow.md) — approved project
   flow frames, assets, and implemented interaction states.
+- [`figma/onboarding-flow.md`](figma/onboarding-flow.md) — production onboarding
+  Ready for dev nodes, route mapping, scope exclusions, and validation status.
 - [`research/lightfield-chat-reference.md`](research/lightfield-chat-reference.md)
   — Lightfield chat research, observed reference behavior, and the approved
   Clue adaptation direction.

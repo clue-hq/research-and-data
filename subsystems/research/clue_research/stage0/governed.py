@@ -488,7 +488,15 @@ async def transition_recon_lane(
     client_entity_id: EntityId | None = None,
     failure_code: str | None = None,
 ) -> ReconRunRow:
-    """Advance one lane without letting a retry manufacture a second transition."""
+    """Advance one lane without letting a retry manufacture a second transition.
+
+    A FAST-lane failure additionally releases the run's dedupe slot
+    (``dedupe_expires_at = now()``): a run that produced no fast Client-KB is not a live
+    equivalent worth sharing, and releasing the slot is what makes a user-initiated retry
+    able to mint a fresh recon instead of replaying the failure forever (FI-4 slice-2
+    review, BE-B2). The terminal-state latch on the lane itself is untouched — a failed
+    lane never transitions again; retry means a NEW run.
+    """
     if lane not in {"fast", "background"}:
         raise ValueError("lane must be 'fast' or 'background'")
     status_column = f"{lane}_status"
@@ -496,6 +504,7 @@ async def transition_recon_lane(
     started_column = f"{lane}_started_at"
     completed_column = f"{lane}_completed_at"
     kb_column = "fast_client_kb_version" if lane == "fast" else "client_kb_version"
+    release_dedupe = lane == "fast" and status is ReconLaneStatus.FAILED
     await conn.execute(
         text(
             f"""
@@ -505,6 +514,10 @@ async def transition_recon_lane(
                 {kb_column} = COALESCE(:kb_version, {kb_column}),
                 client_entity_id = COALESCE(:client_entity_id, client_entity_id),
                 failure_code = COALESCE(:failure_code, failure_code),
+                dedupe_expires_at = CASE
+                    WHEN :release_dedupe THEN now()
+                    ELSE dedupe_expires_at
+                END,
                 {started_column} = CASE
                     WHEN :status = 'running' THEN COALESCE({started_column}, now())
                     ELSE {started_column}
@@ -528,6 +541,7 @@ async def transition_recon_lane(
             "kb_version": client_kb_version,
             "client_entity_id": client_entity_id,
             "failure_code": failure_code,
+            "release_dedupe": release_dedupe,
         },
     )
     row = await get_recon(conn, recon_run_id, workspace_id=workspace_id)
@@ -719,7 +733,11 @@ async def compile_product_context(
     freshness_snapshot: Mapping[str, JsonValue] | None = None,
     compiler_version: str = "product-context@1",
 ) -> ProductContextRef:
-    """Compile an immutable reference manifest after validating product-scoped claim refs."""
+    """Compile an immutable reference manifest for one product context.
+
+    The manifest may reference account-wide company claims plus claims for this exact product.
+    Claims belonging to another product remain forbidden.
+    """
     unique_claims = tuple(dict.fromkeys(claim_refs))
     if unique_claims:
         count = (
@@ -728,9 +746,9 @@ async def compile_product_context(
                     """
                     SELECT count(*)
                     FROM claim
-                    WHERE id = ANY(CAST(:claim_ids AS uuid[]))
-                      AND workspace_id = :workspace_id
-                      AND product_id = :product_id
+                        WHERE id = ANY(CAST(:claim_ids AS uuid[]))
+                          AND workspace_id = :workspace_id
+                          AND (product_id IS NULL OR product_id = :product_id)
                     """
                 ),
                 {
@@ -934,6 +952,7 @@ async def evaluate_readiness(
     ingestion_refs: Sequence[str] = (),
     agent_sufficiency_status: str = "not_evaluated",
     agent_sufficiency_ref: str | None = None,
+    additional_reason_codes: Sequence[str] = (),
     readiness_decision_id: ReadinessDecisionId | None = None,
 ) -> ReadinessSnapshotRef:
     workspace_policy = await get_workspace_client_kb_readiness_policy(
@@ -963,7 +982,11 @@ async def evaluate_readiness(
             "workspace_required_missing_field_keys": cast(list[JsonValue], workspace_missing),
         }
     )
-    reasons: list[str] = []
+    # Trusted callers may add deterministic scope/configuration failures which are not numeric
+    # floor measurements (for example, no project-bound Client KB).  They are function arguments,
+    # not a key hidden inside ``metrics``, so the v1 model-authored metric map cannot manufacture
+    # or clear them.
+    reasons: list[str] = list(dict.fromkeys(additional_reason_codes))
     if coverage < floor.min_coverage_ratio:
         reasons.append("coverage_below_floor")
     if verified < floor.min_verified_claims:
@@ -979,6 +1002,7 @@ async def evaluate_readiness(
     if missing := sorted(set(floor.required_field_keys) - available_fields):
         reasons.extend(f"missing_field:{key}" for key in missing)
     reasons.extend(f"missing_workspace_field:{key}" for key in workspace_missing)
+    reasons = list(dict.fromkeys(reasons))
     spec_version = await ensure_readiness_spec(conn, workspace_id=workspace_id, spec=spec)
     decision_id = (
         readiness_decision_id if readiness_decision_id is not None else new_readiness_decision_id()

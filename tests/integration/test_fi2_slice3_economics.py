@@ -163,6 +163,7 @@ from clue_research.narrative import (
 from clue_research.profiling.committee import load_committee_pack
 from clue_research.resolvers.exa import exa_field_alias
 from clue_research.sources import seed_source_manifests
+from clue_research.stage0 import load_client_knowledge_pack
 from clue_research.verification import FaithfulnessJudgeImpl
 from clue_spine import Project
 from clue_storage import FsStorage
@@ -408,6 +409,7 @@ async def _seed_two_projects(
     await load_core_pack(conn)
     await load_committee_pack(conn)
     await load_narrative_pack(conn)
+    await load_client_knowledge_pack(conn)
     await seed_source_manifests(conn)
     # The declared-relative field is registry data and rides the fixture's deep ICP, so P2's
     # human-confirmed directive can legitimately ask for it (a directive field must be a

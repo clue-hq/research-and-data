@@ -1,0 +1,25 @@
+{
+  "name": "design-02-navy-background",
+  "kind": "clearly_design",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [
+    {
+      "role": "user",
+      "text": "Make the headline two lines."
+    },
+    {
+      "role": "assistant",
+      "text": "Design turn accepted: proposal 1 ready for review."
+    }
+  ],
+  "message": "Now try the whole thing on a navy background.",
+  "judgment": {
+    "action": "continue",
+    "reason": null
+  },
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": false
+  }
+}

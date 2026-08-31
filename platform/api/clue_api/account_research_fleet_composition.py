@@ -55,6 +55,7 @@ from clue_api.entity_research_tools import (
 from clue_api.entity_research_tools import (
     GovernedEntityResearchToolFactory as GovernedTools,
 )
+from clue_api.prose_synthesis_step import ProseSynthesisStep
 from clue_api.sumble_entity_research_tools import SumbleEntityResearchLineageReader
 from clue_db import ConnFactory, transaction
 from clue_fleet import EntityResearchJobRow, EntityResearchJobWorkHandler
@@ -151,12 +152,18 @@ def build_account_research_fleet_composition(
     model_policy: ModelPolicy,
     conn_factory: ConnFactory = transaction,
     checkpointers: EntityResearchCheckpointerFactory | None = None,
+    prose_step: ProseSynthesisStep | None = None,
+    enforce_budget: bool = True,
 ) -> AccountResearchFleetComposition:
     """Compose one production-capable account fleet without provider branches in the fleet.
 
     The same connection factory is threaded through requests, causation, lineage, agent state,
     finalization, and R2 job transitions.  A result can therefore be exposed to the model only
     after its provider-owned and provider-neutral durability surfaces agree.
+
+    ``enforce_budget`` carries ``Settings.budget_controls_enabled`` down to the shared R9 batch
+    coordinator (FI pilot budget-controls). It is a parameter rather than a settings read so this
+    root stays the only place the deployment switch is consulted for the account fleet.
     """
 
     if isinstance(provider_actions, StaticAccountResearchProviderActions):
@@ -165,6 +172,7 @@ def build_account_research_fleet_composition(
     results = EntityResearchResultStore(
         storage=storage,
         conn_factory=conn_factory,
+        enforce_budget=enforce_budget,
         lineage_readers={
             ExternalResearchResultLineageReader.provider_kind: (
                 ExternalResearchResultLineageReader(conn_factory=conn_factory)
@@ -195,8 +203,12 @@ def build_account_research_fleet_composition(
         model_policy=model_policy,
         conn_factory=conn_factory,
         require_atomic_admission=True,
+        enforce_budget=enforce_budget,
     )
-    batches = DbEntityResearchToolBatchCoordinator(conn_factory=conn_factory)
+    batches = DbEntityResearchToolBatchCoordinator(
+        conn_factory=conn_factory,
+        enforce_budget=enforce_budget,
+    )
     runtime = EntityResearchAgentRuntime(
         factory=EntityResearchAgentFactory(
             models=models,
@@ -218,8 +230,17 @@ def build_account_research_fleet_composition(
     fleets = AccountResearchFleetService(conn_factory=conn_factory)
     return AccountResearchFleetComposition(
         fleets=fleets,
-        launcher=AccountResearchFleetLauncher(fleets=fleets, conn_factory=conn_factory),
-        handler=AccountResearchFleetWorkHandler(inner=inner, fleets=fleets),
+        launcher=AccountResearchFleetLauncher(
+            fleets=fleets,
+            conn_factory=conn_factory,
+            enforce_budget=enforce_budget,
+        ),
+        handler=AccountResearchFleetWorkHandler(
+            inner=inner,
+            fleets=fleets,
+            # Lane E E1: ``None`` (the default) composes the pre-Lane-E handler exactly.
+            prose_step=prose_step,
+        ),
     )
 
 

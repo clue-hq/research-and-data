@@ -69,26 +69,55 @@ def manifest() -> Optional[JsonObject]:
 _spec_cache: dict = {"key": None, "spec": None}
 
 
+def library_workspace_id() -> str:
+    """The tenant whose durable storage holds the curated font faces (D4).
+
+    The font library is deliberately ONE shared set, not per-tenant data: it is curated,
+    openly-licensed Google Fonts, provisioned once per environment by
+    ``scripts/provision_font_library.py`` against a single checked-in manifest. Its faces
+    therefore live in one workspace's storage and are materialized into that workspace's engine
+    cache; the spec's ``store_root`` points there, independently of whichever tenant's scene is
+    being shaped (the helper takes library faces and scene assets from separate roots).
+
+    RESIDUAL for the D4 close-out: this reads the dev-workspace env var, which is right for a
+    single-environment deployment and for tests (each test gets its own workspace, so each test
+    provisions and reads its own copy) but is not a real "platform-shared blob" model. Part IV
+    (auth/tenancy) owns deciding whether the library gets a first-class shared namespace.
+    """
+    from .design_store import default_workspace_id
+
+    return default_workspace_id()
+
+
 def library_font_spec() -> Optional[JsonObject]:
     """The library as a helper font spec, or None when the library is absent.
-    The store root is environment-level (the library is not per-app-instance):
-    LUMEN_ASSET_STORE_ROOT or asset-store beside the configured database.
 
-    Only faces whose bytes EXIST in that store are promised: the manifest is
-    checked in, but the blobs are materialized per environment, so an
-    unprovisioned (or differently-rooted, e.g. test-tmp) store must degrade to
+    D4: the faces live in platform storage; this materializes each one into the LIBRARY
+    workspace's engine cache (see :func:`library_workspace_id`) and points ``store_root`` there.
+    Injected centrally at the ``CoreClient`` gateway, which has no request to take a tenant
+    from — hence the library workspace rather than the caller's.
+
+    Only faces whose bytes are durably present are promised: the manifest is
+    checked in, but the blobs are provisioned per environment, so an
+    unprovisioned store must degrade to
     the pre-library behavior rather than spray LUMS0101 warnings for families
     the design never asked for. A scene that genuinely uses an unprovisioned
     family still fails loudly — the family is unknown to the FontManager and
     raster export reports the LUMS0100 fallback. LUMS0101 stays reserved for
     bytes that vanish between this check and the helper read."""
+    from clue_storage import storage_from_settings
+
+    from .design_store import DesignBlobStore
+
     parsed = manifest()
     if parsed is None:
         return None
-    store_root = Path(settings.effective_asset_store_root)
+    workspace_id = library_workspace_id()
+    store_root = Path(settings.effective_asset_store_root) / workspace_id
     cache_key = (id(parsed), str(store_root))
     if _spec_cache["key"] == cache_key:
         return _spec_cache["spec"]
+    blobs = DesignBlobStore(storage_from_settings(), workspace_id)
     faces = []
     missing: list[str] = []
     for family in parsed["families"]:
@@ -98,7 +127,7 @@ def library_font_spec() -> Optional[JsonObject]:
             if not (isinstance(face, dict) and face.get("digest")):
                 continue
             digest = str(face["digest"])
-            if (store_root / "sha256" / digest[:2] / digest).is_file():
+            if _materialize_face(blobs, store_root, digest):
                 spec_face: JsonObject = {
                     "digest": digest,
                     "family": family.get("family"),
@@ -128,3 +157,20 @@ def library_font_spec() -> Optional[JsonObject]:
     )
     _spec_cache.update(key=cache_key, spec=spec)
     return spec
+
+
+def _materialize_face(blobs: Any, store_root: Path, digest: str) -> bool:
+    """Whether the engine can read this face, materializing it from durable storage on a miss.
+
+    Fail-soft: a digest the environment never provisioned is simply absent, which is exactly the
+    "unprovisioned library" degradation this module has always promised.
+    """
+    from .asset_custody import cache_blob_path, read_asset_bytes, write_cache_blob
+
+    if cache_blob_path(store_root, digest).is_file():
+        return True
+    data = read_asset_bytes(blobs, digest)
+    if data is None:
+        return False
+    write_cache_blob(store_root, digest, data)
+    return True

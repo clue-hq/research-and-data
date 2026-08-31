@@ -20,6 +20,18 @@ from __future__ import annotations
 from lumen_ingestion.pipeline import make_rasterize_svg
 
 
+class _NullBlobStore:
+    """No durable bytes — D4 materialization is fail-soft, so the glue under test still runs
+    (the engine then reports its own miss, which is what these guards are about)."""
+
+    workspace_id = "ws_fake"
+
+    def read(self, sha256: str) -> bytes:
+        from lumen_api.database import NotFoundError
+
+        raise NotFoundError("design_blob", sha256)
+
+
 class _FakeRepo:
     def require_asset_record(self, asset_id: str) -> dict:
         return {"asset": {"id": asset_id, "kind": "vector"}}
@@ -59,7 +71,7 @@ def test_rasterize_creates_a_page_and_reads_bytes(monkeypatch) -> None:
 
     monkeypatch.setattr(core_module, "CoreClient", lambda: core)
 
-    rasterize = make_rasterize_svg(_FakeRepo(), "/tmp/asset-store")
+    rasterize = make_rasterize_svg(_FakeRepo(), _NullBlobStore(), "/tmp/engine-cache")
     out = rasterize("asset_svg")
 
     # The helper no longer declines on new_scene's empty page set: it makes its
@@ -79,5 +91,5 @@ def test_rasterize_returns_none_when_no_artifact_bytes(monkeypatch) -> None:
 
     monkeypatch.setattr(core_module, "CoreClient", lambda: core)
 
-    rasterize = make_rasterize_svg(_FakeRepo(), "/tmp/asset-store")
+    rasterize = make_rasterize_svg(_FakeRepo(), _NullBlobStore(), "/tmp/engine-cache")
     assert rasterize("asset_svg") is None

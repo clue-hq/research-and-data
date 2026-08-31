@@ -36,13 +36,34 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    # v23 (FI Lane D D4): pins ``open_directive_confirmation_gate@1`` and re-pins
-    # account-deep-steering at v3, whose procedure is the Option-B kickoff — gate first, launch only
-    # after the human's own confirming turn.
-    AgentRole.HEAD_OF_ABM: "v23",
+    # v39 (genad2, 2026-08-23): v38 with the delegation entry at ``open_design_leg@4`` and prompt
+    # v7 — the founder's ruling that the platform owns no page geometry. A ``doc_kind='scene'``
+    # open births a ZERO-PAGE document and the design agent authors the page, so the prompt no
+    # longer infers or states a format: it routes, delegates the user's own words in ``brief``,
+    # and says the design session is open.
+    # v38 (genad): v37 with the delegation entry at ``open_design_leg@3`` and prompt v6 — chat ad
+    # creation. The prompt teaches the same handover at a different shape: infer the ad's format
+    # from the ask, STATE the choice so the user can correct it, and do not block on a
+    # confirmation before opening the leg.
+    # v37 (genweb slice 2): v36 with the delegation entry at ``open_design_leg@2`` and prompt v5
+    # — the design-delegation teaching. The tool's own description remains the contract; the
+    # prompt only says WHEN to hand the thread over and what the handover costs (the user's next
+    # message starts a generation that takes minutes).
+    # v36 (part-iii merge): v35 plus ``open_design_leg@1`` — the delegation entry that opens the
+    # design leg (§1-D1's "attach as subagent" wrapper, materialized as a durable act; introduced
+    # as PD-part3 P3.4's v24, re-versioned onto the v35 chain at the integration merge). v35
+    # preserves the frozen v34 surface and gives Account-focused turns the exact pinned
+    # field/source vocabulary needed to launch profiling without model-invented field keys.
+    # v40 (2026-08-27, demo-night model correction): v39 with ``model_id: x-ai/grok-4.6`` —
+    # the founder's 2026-08-23 grok-everywhere directive finally applied to the conversation
+    # profile (gpt-5.6-terra returned plain-text stops under tool_choice=required and killed
+    # turns as ``missing_finalize``).
+    AgentRole.HEAD_OF_ABM: "v40",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
+    # P3.3 (PD-part3): the composite design deepagent's platform-facing profile.
+    AgentRole.DESIGN: "v1",
 }
 
 
@@ -71,7 +92,85 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "confirm_project_product": (),
     "decide_field_proposal": (),
     "decide_source_proposal": (),
+    # Part II D6 (Rounds A + B) registered these ungranted; P3.3 (PD-part3) grants them to
+    # the DESIGN role — the composite design deepagent's platform-facing authority. The audit
+    # question "which durable writes can the platform name?" stays complete and static; what
+    # changed is that exactly one role may now name the design write path.
+    "design_apply_edits": (AgentRole.DESIGN,),
+    "design_apply_operations": (AgentRole.DESIGN,),
+    "design_apply_web_operations": (AgentRole.DESIGN,),
+    "design_attach_brand_kit": (AgentRole.DESIGN,),
+    "design_compile_component": (AgentRole.DESIGN,),
+    "design_create_document": (AgentRole.DESIGN,),
+    "design_create_snapshot": (AgentRole.DESIGN,),
+    "design_create_web_account": (AgentRole.DESIGN,),
+    "design_create_web_template": (AgentRole.DESIGN,),
+    "design_delete_web_account": (AgentRole.DESIGN,),
+    "design_derive_web_document": (AgentRole.DESIGN,),
+    "design_finalize_document": (AgentRole.DESIGN,),
+    "design_persist_preflight": (AgentRole.DESIGN,),
+    "design_publish_web": (AgentRole.DESIGN,),
+    "design_record_diagnostics": (AgentRole.DESIGN,),
+    "design_redo_document": (AgentRole.DESIGN,),
+    "design_redo_web_document": (AgentRole.DESIGN,),
+    "design_replace_scene": (AgentRole.DESIGN,),
+    "design_rollback_web_publish": (AgentRole.DESIGN,),
+    "design_set_agent_instructions": (AgentRole.DESIGN,),
+    "design_set_layout_managed_editing": (AgentRole.DESIGN,),
+    # Clone-fidelity F4.3, FOUNDER RULING R-F1 (2026-08-29): the durable `noindex` stamp on a
+    # published web document. UNGRANTED, and deliberately so, unlike its two neighbours above.
+    # The ruling's whole point is that TAKING the robots meta off an ABM account page is an
+    # explicit human act; a model that held this tool could clear it. The design API's own
+    # route invokes it as `actor="human"`, and the ABM batch stamps it ON through the same
+    # tool — neither is a model surface. Registered regardless, so the audit question "which
+    # durable writes can the platform name?" stays a complete statement (the ad-assets
+    # precedent below). Granting it later is a reviewed profile version bump.
+    "design_set_web_noindex": (),
+    "design_start_agent_turn": (AgentRole.DESIGN,),
+    "design_start_web_turn": (AgentRole.DESIGN,),
+    "design_undo_document": (AgentRole.DESIGN,),
+    "design_undo_web_document": (AgentRole.DESIGN,),
+    "design_unpublish_web": (AgentRole.DESIGN,),
+    "design_update_web_account": (AgentRole.DESIGN,),
+    "design_write_component_source": (AgentRole.DESIGN,),
+    "design_advance_instance_batch": (AgentRole.DESIGN,),
+    "design_advance_web_batch": (AgentRole.DESIGN,),
+    "design_create_brand_compatibility_report": (AgentRole.DESIGN,),
+    "design_create_brand_kit": (AgentRole.DESIGN,),
+    "design_create_instance_batch": (AgentRole.DESIGN,),
+    "design_create_web_batch": (AgentRole.DESIGN,),
+    "design_delete_asset": (AgentRole.DESIGN,),
+    "design_delete_binding_set": (AgentRole.DESIGN,),
+    "design_derive_instance": (AgentRole.DESIGN,),
+    "design_ingest_assets": (AgentRole.DESIGN,),
+    "design_ingest_pdf": (AgentRole.DESIGN,),
+    "design_ingest_website": (AgentRole.DESIGN,),
+    # Brand Ad Assets v1 W2 — the ad-assets lane. UNGRANTED, and deliberately so: the lane is
+    # populated by an onboarding JOB, whose worker invokes these through the design toolbelt
+    # directly (actor="agent"), exactly as the brand-kit ingestion worker does. No model
+    # surface plans a harvest, so handing these to one would be authority nobody asked for.
+    # Registered here regardless, so the audit question "which durable writes can the platform
+    # name?" stays a complete, static statement. Granting them later is a reviewed profile
+    # version bump, which is the review this deliberately does not pre-empt.
+    "design_ingest_ad_assets": (),
+    "design_record_ad_creatives": (),
+    "design_publish_ad_dna_card": (),
+    "design_link_ad_pregenerated_assets": (),
+    "design_publish_brand_kit_version": (AgentRole.DESIGN,),
+    "design_register_asset_record": (AgentRole.DESIGN,),
+    "design_register_captured_assets": (AgentRole.DESIGN,),
+    "design_register_generated_asset": (AgentRole.DESIGN,),
+    "design_register_qr_asset": (AgentRole.DESIGN,),
+    "design_set_asset_description": (AgentRole.DESIGN,),
+    "design_set_asset_status": (AgentRole.DESIGN,),
+    "design_set_brand_kit_approval": (AgentRole.DESIGN,),
+    "design_upsert_binding_set": (AgentRole.DESIGN,),
     "draft_account_research_directive": (AgentRole.HEAD_OF_ABM,),
+    # P3.5 (PD-part3 §2.2): the leg-level exit, granted to the composite design deepagent — the
+    # only path to a closed leg. Turn-level finalization (the design harness's final.json) is a
+    # different authority and stays design-runtime-internal; this is the engine-validated
+    # doorway back to head-of-abm (lock-in summary, out_of_scope re-delivery, journaled).
+    "finish_design_leg": (AgentRole.DESIGN,),
     "confirm_account_research_directive": (),
     "discover_accounts": (),
     "estimate_project": (),
@@ -92,15 +191,28 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # omission kind no installed tool can resolve is the contract
     # `test_c8_omission_resolution_contract.py` now refuses to let ship.
     "inspect_readiness_history": (AgentRole.HEAD_OF_ABM,),
+    "inspect_client_claim": (AgentRole.HEAD_OF_ABM,),
+    "inspect_product_claim": (AgentRole.HEAD_OF_ABM,),
     "inspect_statement_history": (AgentRole.HEAD_OF_ABM,),
+    "list_client_knowledge": (AgentRole.HEAD_OF_ABM,),
+    "list_product_knowledge": (AgentRole.HEAD_OF_ABM,),
     "launch_account_deep": (),
     "launch_account_research": (AgentRole.HEAD_OF_ABM,),
+    "launch_selected_account_research": (AgentRole.HEAD_OF_ABM,),
     "launch_contact_research": (AgentRole.HEAD_OF_ABM,),
+    # P3.4 (PD-part3 §1-D1/§2.3): delegating to Design is the Head of ABM's own act — the tool
+    # validates the D5 pins, freezes the delegation bundle, and opens the durable leg whose
+    # existence IS the routing rule. It spends nothing and dispatches nothing; the user's next
+    # message on the thread is what becomes the first design turn.
+    "open_design_leg": (AgentRole.HEAD_OF_ABM,),
     # FI Lane D D4 / §3-P5(a): asking the human for authority is the Head of ABM's own act, so the
     # gate-opening tool is granted to that role. It writes an immutable gate row and nothing else —
     # it confirms nothing, spends nothing, and cannot address a gate to anybody but the human whose
     # turn it is answering (the addressee is derived from the durable submission, not proposed).
     "open_directive_confirmation_gate": (AgentRole.HEAD_OF_ABM,),
+    "open_discovery_configuration_gate": (AgentRole.HEAD_OF_ABM,),
+    "open_icp_confirmation_gate": (AgentRole.HEAD_OF_ABM,),
+    "open_product_selection_gate": (AgentRole.HEAD_OF_ABM,),
     "override_stage0_readiness": (),
     "pause_run": (),
     "profile_contact": (),
@@ -125,6 +237,14 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "submit_onboarding_input": (AgentRole.HEAD_OF_ABM,),
     "submit_project_checkpoint": (),
     "submit_tier_checkpoint": (),
+    # Lane E E1. Machine-invoked only: the post-finalize fleet step offers a just-terminal research
+    # job to it. It is deliberately absent from every model surface — an agent that could summarize
+    # on demand could spend on prose for a job the research engine never finished.
+    "synthesize_entity_prose": (),
+    # Lane E E3. Machine-invoked only, for the same reason one slice stronger: positioning spends
+    # one completion (and one judge call) *per committee persona*, so an on-demand agent reach for
+    # it is an unbounded spend on research the engine may never have finished.
+    "synthesize_value_narrative": (),
     "synthesize_icps": (AgentRole.HEAD_OF_ABM,),
 }
 
@@ -193,12 +313,20 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
         withheld_tools=frozenset(
             {
                 "launch_account_research",
+                "launch_selected_account_research",
                 "launch_contact_research",
                 # D4 added the gate tool to the role. The trial keeps it withheld with the launch
                 # tools it belongs to: a dev harness that could present a real, durable, addressed
                 # confirmation gate — but never act on the answer — would be inviting a human to
                 # approve spend that no surface here can perform.
                 "open_directive_confirmation_gate",
+                "open_discovery_configuration_gate",
+                "open_product_selection_gate",
+                # P3.4 added the design delegation entry to the role. The trial withholds it for
+                # the same sentence as delegation itself: this surface is a manual conversation,
+                # and a leg opened from a dev CLI would durably reroute a thread no design
+                # runtime here can serve.
+                "open_design_leg",
                 "start_recon",
                 "submit_onboarding_input",
                 "synthesize_icps",
@@ -221,10 +349,11 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
     # D4 widened this surface: `launch_account_research` / `launch_contact_research` are no longer
     # withheld here, because the authority they were waiting for now exists — a durable gate object
     # (`open_directive_confirmation_gate@1`), a structured human answer to it, and the confirming
-    # turn's own `action_ref` threaded into the tool context. The remaining three subtractions are
+    # turn's own `action_ref` threaded into the tool context. The remaining two subtractions are
     # the trial's, for the trial's reasons: this surface still does no external research and still
-    # never captures on the client's behalf. Delegation stays withheld (D4 grants launch authority,
-    # not a specialist fleet).
+    # never captures on the client's behalf. Slice 1 removes ``synthesize_icps`` from this list:
+    # @2 is the governed Stage-0 capability and persists draft specs. Delegation stays withheld
+    # (D4 grants launch authority, not a specialist fleet).
     AgentSurfacePolicy(
         surface=PROJECT_CONVERSATION_SURFACE,
         role=AgentRole.HEAD_OF_ABM,
@@ -232,7 +361,6 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
             {
                 "start_recon",
                 "submit_onboarding_input",
-                "synthesize_icps",
             }
         ),
         withheld_delegation_roles=frozenset(
@@ -245,10 +373,10 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
         withheld_reason_code="project_conversation_no_autonomous_research",
         framing=(
             "This surface is the project conversation: you converse with the client, record what "
-            "they tell you, and can draft research direction, present its confirmation gate, and "
-            "launch the research the client has confirmed. You do not capture on their behalf, "
-            "fetch external sources, or delegate to a specialist — and you never launch anything "
-            "the client's own confirming turn has not just approved."
+            "they tell you, and can draft research direction, present its confirmation gate, or "
+            "launch an exact Account set explicitly commanded and attached by the current human "
+            "turn when the pilot budget gate is disabled. You do not capture on their behalf, "
+            "fetch external sources, delegate to a specialist, or widen the human's selected set."
         ),
     ),
 )
@@ -256,6 +384,10 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
 _HUMAN_ONLY_TOOLS = frozenset(
     {
         "adjust_budget",
+        # R-F1 (clone-fidelity T27): clearing a published account page's robots meta is a
+        # human act by founder ruling — the tool is registered ungranted, and this membership
+        # makes the human-only claim structural rather than a fact about today's grant table.
+        "design_set_web_noindex",
         "confirm_icp",
         "confirm_project_product",
         "confirm_account_research_directive",
@@ -269,6 +401,8 @@ _HUMAN_ONLY_TOOLS = frozenset(
     }
 )
 _RESERVED_REASON: dict[str, str] = {
+    # (P3.3 retired the Part II D6 `design_agent_not_wired_until_part_iii` block: the design
+    # tools are granted to AgentRole.DESIGN now, so they are no longer reserved.)
     "discover_accounts": "post_stage0_not_admitted",
     "estimate_project": "post_stage0_not_admitted",
     "import_accounts": "post_stage0_not_admitted",
@@ -282,10 +416,24 @@ _RESERVED_REASON: dict[str, str] = {
 def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     """Resolve authority by exact address where versions have different safety proofs."""
 
+    if name == "list_client_knowledge":
+        return (AgentRole.HEAD_OF_ABM,) if address == "list_client_knowledge@2" else ()
+    if name == "inspect_client_claim":
+        return (AgentRole.HEAD_OF_ABM,) if address == "inspect_client_claim@2" else ()
+    if name == "list_product_knowledge":
+        return (AgentRole.HEAD_OF_ABM,) if address == "list_product_knowledge@1" else ()
+    if name == "inspect_product_claim":
+        return (AgentRole.HEAD_OF_ABM,) if address == "inspect_product_claim@1" else ()
     if name == "propose_field":
         return (AgentRole.HEAD_OF_ABM,) if address == "propose_field@2" else ()
     if name == "draft_account_research_directive":
-        return (AgentRole.HEAD_OF_ABM,) if address == "draft_account_research_directive@2" else ()
+        return (AgentRole.HEAD_OF_ABM,) if address == "draft_account_research_directive@3" else ()
+    if name == "evaluate_stage0_readiness":
+        return (AgentRole.HEAD_OF_ABM,) if address.endswith("@2") else ()
+    if name == "synthesize_icps":
+        return (AgentRole.HEAD_OF_ABM,) if address.endswith("@3") else ()
+    if name == "start_confirmed_project_run":
+        return (AgentRole.HEAD_OF_ABM,) if address.endswith("@3") else ()
     if name == "research_account_gaps":
         return ()
     if name == "profile_contact":
@@ -307,6 +455,16 @@ def _unavailable_reason(address: str, name: str) -> str | None:
         return "replaced_by_replay_safe_v2"
     if address == "profile_contact@1":
         return "replaced_by_governed_v2"
+    if address in {
+        "evaluate_stage0_readiness@1",
+        "start_confirmed_project_run@1",
+        "synthesize_icps@1",
+    }:
+        return "replaced_by_trusted_stage0_v2"
+    if address == "start_confirmed_project_run@2":
+        return "replaced_by_provider_neutral_discovery_v3"
+    if address == "synthesize_icps@2":
+        return "replaced_by_bounded_icp_presentation_v3"
     return _RESERVED_REASON.get(name)
 
 
@@ -390,12 +548,7 @@ def build_agent_profile_registry(
         ),
         surface_policies=C6_SURFACE_POLICIES,
     )
-    for role in (
-        AgentRole.HEAD_OF_ABM,
-        AgentRole.RESEARCH,
-        AgentRole.CONTENT_DRAFTER,
-        AgentRole.REVIEWER,
-    ):
+    for role in C6_ACTIVE_PROFILE_VERSIONS:
         expected = {
             descriptor.address
             for descriptor in tool_registry.all_descriptors()

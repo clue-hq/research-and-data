@@ -154,12 +154,13 @@ class EntityResearchRuntimeContext(FrozenRuntimeModel):
     job_budget_cap_cents: Decimal = Field(ge=0)
     job_spent_cents: Decimal = Field(ge=0)
     run_budget_remaining_cents: Decimal = Field(ge=0)
+    budget_controls_enabled: bool = True
     facet_scope: EntityFacetScope | None = None
 
     @model_validator(mode="after")
     def _exact_authority(self) -> Self:
         authorization = self.authorization
-        if self.job_spent_cents > self.job_budget_cap_cents:
+        if self.budget_controls_enabled and self.job_spent_cents > self.job_budget_cap_cents:
             raise ValueError("entity agent context spend exceeds the exact job cap")
         if self.agent_execution_id != authorization.attempt_id:
             raise ValueError("entity agent execution must use the authorized attempt id")
@@ -238,6 +239,7 @@ class EntityResearchRuntimeContext(FrozenRuntimeModel):
             "job_budget_cap_cents": str(self.job_budget_cap_cents),
             "job_spent_cents": str(self.job_spent_cents),
             "run_budget_remaining_cents": str(self.run_budget_remaining_cents),
+            "budget_controls_enabled": self.budget_controls_enabled,
             "approval_refs": list(authorization.effective_approval_refs),
             "job_checkpoint_thread_id": authorization.checkpoint_thread_id,
             "checkpoint_thread_id": self.effective_checkpoint_thread_id,

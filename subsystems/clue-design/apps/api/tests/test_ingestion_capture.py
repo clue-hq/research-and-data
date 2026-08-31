@@ -64,6 +64,58 @@ def test_import_pulls_no_heavy_deps() -> None:
     assert "clean" in result.stdout
 
 
+def test_the_rendered_tier_imports_cleanly_in_a_worker_shaped_process() -> None:
+    """The forced-render import chain must resolve in the process shape a FLEET WORKER has.
+
+    The missing case (found live 2026-08-19): `lumen_ingestion.capture.rendered` and its
+    `geometry` probe are imported LAZILY, deep inside `capture_website`, so nothing — not this
+    suite, not process start-up — touched them until a rendered ingestion was already running.
+    A design API whose `lumen_ingestion.evidence` was loaded before the geometry module existed
+    therefore drained a forced-render job off the shared `design_job` queue and died 0.2s in
+    with `ImportError: cannot import name 'GeometryEvidence' from 'lumen_ingestion.evidence'`,
+    while the identical call succeeded in every fresh process. The root cause was a stale
+    sibling process, not a code defect — but NOTHING in the suite executed that import edge, so
+    a genuine circular import or a renamed symbol there would have shipped exactly as far.
+
+    A fresh interpreter is the only honest context: the shared test session has already
+    imported everything, so an in-process import proves nothing. The order mirrors the worker's
+    (`lumen_api.main` first — that is what `fleet_handler._execute` imports — then the capture
+    chain the job reaches later), and the identity assertions are what a half-old module graph
+    fails: `capture.geometry`'s `GeometryEvidence` MUST be the very object
+    `lumen_ingestion.evidence` defines.
+    """
+    import subprocess
+    import sys
+
+    script = (
+        "import sys;"
+        "import lumen_api.main;"  # the worker's entry module, imported first
+        "from lumen_ingestion.pipeline import _default_capture;"
+        "import lumen_ingestion.capture.rendered as rendered;"
+        "import lumen_ingestion.capture.geometry as geometry;"
+        "import lumen_ingestion.evidence as evidence;"
+        "assert geometry.GeometryEvidence is evidence.GeometryEvidence;"
+        "assert rendered.fetch_rendered is not None;"
+        "assert callable(_default_capture);"
+        # Rendering is now unconditional, so importing the rendered tier must stay as cheap as
+        # importing the static one: playwright is still resolved inside `fetch_rendered`.
+        "assert 'playwright' not in sys.modules;"
+        "print('worker-import-ok')"
+    )
+    api_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[3]
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(api_root), str(repo_root)])}
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=str(api_root),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "worker-import-ok" in result.stdout
+
+
 # --------------------------------------------------------------------------- #
 # SSRF guard
 # --------------------------------------------------------------------------- #
@@ -113,32 +165,194 @@ def test_parse_color_value_forms() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# W1.3 — modern CSS color syntax must not sink the ingestion job
+#
+# apollo.io failed LUMI0401 on 4/4 URLs with
+# `ValueError: could not convert string to float: 'var(--tw-text-opacity'`.
+# Tailwind serves `rgb(15 23 42 / var(--tw-text-opacity))`; the tokenizer split
+# on `)`, so the fragment reached a bare float() and killed the whole job.
+# --------------------------------------------------------------------------- #
+
+
+def test_tailwind_slash_alpha_keeps_the_color_instead_of_crashing() -> None:
+    """RED before the fix: this exact apollo.io string raised ValueError."""
+    diagnostics: list[dict] = []
+    # The three channels are numeric and carry apollo.io's real text color;
+    # only the alpha is an unresolved custom property. Keep the color.
+    assert (
+        parse_color_value(
+            "rgb(15 23 42 / var(--tw-text-opacity))", {}, diagnostics=diagnostics
+        )
+        == "#0F172A"
+    )
+    # ...and say out loud that the alpha was read as opaque.
+    assert [d for d in diagnostics if d["code"] == "LUMI0511"]
+    assert "alpha channel unreadable" in diagnostics[0]["message"]
+    # The same shape in hsl(), and in the rgba() spelling Tailwind also emits.
+    assert parse_color_value("rgba(24 24 27 / var(--tw-bg-opacity))", {}) == "#18181B"
+    assert parse_color_value("hsl(0 100% 50% / var(--tw-x))", {}) == "#FF0000"
+
+
+def test_modern_space_separated_rgb_parses_with_numeric_alpha() -> None:
+    """The modern syntax is not just survivable — it is read correctly."""
+    assert parse_color_value("rgb(15 23 42)", {}) == "#0F172A"
+    assert parse_color_value("rgb(15 23 42 / 0.5)", {}) == "#0F172A80"
+    assert parse_color_value("rgb(15 23 42 / 50%)", {}) == "#0F172A80"
+    assert parse_color_value("hsl(0 100% 50%)", {}) == "#FF0000"
+
+
+def test_a_genuinely_unreadable_color_is_skipped_not_raised() -> None:
+    """Fail soft: an unreadable value is one swatch dropped, with a reason."""
+    diagnostics: list[dict] = []
+    # Relative-color syntax — real modern CSS this parser does not implement.
+    assert parse_color_value("rgb(from var(--accent) r g b)", {}, diagnostics=diagnostics) is None
+    assert parse_color_value("rgb(a b c)", {}, diagnostics=diagnostics) is None
+    assert parse_color_value("hsl(nope, bad, worse)", {}, diagnostics=diagnostics) is None
+    assert len(diagnostics) == 3
+    assert all(d["severity"] == "warning" for d in diagnostics)
+
+
+def test_a_cyclic_custom_property_chain_is_skipped_not_a_recursion_error() -> None:
+    """RED before the fix: cursor.com/about's cyclic var() blew the stack."""
+    props = {"--a": "var(--b)", "--b": "var(--a)"}
+    diagnostics: list[dict] = []
+    assert parse_color_value("var(--a)", props, diagnostics=diagnostics) is None
+    assert "did not resolve" in diagnostics[0]["message"]
+    # A long-but-finite chain still resolves.
+    chain = {f"--n{i}": f"var(--n{i + 1})" for i in range(10)}
+    chain["--n10"] = "#12EAB1"
+    assert parse_color_value("var(--n0)", chain) == "#12EAB1"
+
+
+_TAILWIND_CSS = """
+:root { --color-brand: rgb(254 255 0 / var(--tw-bg-opacity)); }
+body { background-color: rgb(255 255 255 / var(--tw-bg-opacity)); color: rgb(15 23 42 / var(--tw-text-opacity)); }
+h1 { color: rgb(15 23 42 / var(--tw-text-opacity)); font-family: 'Source Serif 4'; font-size: 48px; font-weight: 700; }
+p { color: rgb(71 85 105 / var(--tw-text-opacity)); font-family: 'DM Sans'; font-size: 16px; }
+.btn { background-color: rgb(254 255 0 / var(--tw-bg-opacity)); color: rgb(15 23 42 / var(--tw-text-opacity)); }
+"""
+
+
+def _tailwind_snapshot():
+    """The apollo.io shape: a real snapshot whose CSS is modern Tailwind color
+    syntax with unresolved opacity custom properties."""
+    from lumen_ingestion.capture.snapshot import SiteSnapshot, Stylesheet
+
+    base = load("insight_static")
+    return SiteSnapshot(
+        **{
+            **base.model_dump(),
+            "requested_url": "https://apollo.io",
+            "final_url": "https://apollo.io",
+            "stylesheets": [
+                Stylesheet(url="https://apollo.io/assets/app.css", text=_TAILWIND_CSS).model_dump()
+            ],
+            "custom_props": {"--color-brand": "rgb(254 255 0 / var(--tw-bg-opacity))"},
+        }
+    )
+
+
+def test_an_ingestion_job_survives_unparseable_colors_end_to_end(tmp_path) -> None:
+    """RED before the fix: apollo.io failed `LUMI0401` on 4/4 URLs here.
+
+    This is the whole offline job — parse → evidence → normalize — driven
+    through `run_ingestion_job`, the wrapper that turns any escaped exception
+    into the `LUMI0401` failure the pilot hit. It must reach `succeeded`.
+    """
+    from lumen_api.design_store import HybridRepository
+    from lumen_ingestion.jobs import IngestionJobStore, run_ingestion_job
+
+    kit_id = "kit_tailwind_survival"
+    HybridRepository().create_brand_kit(
+        {"id": kit_id, "version": 1, "name": kit_id, "approval_status": "draft"},
+        {"product_ready": False},
+        [],
+        "website",
+    )
+    store = IngestionJobStore()
+    job_id = store.create("website", {"url": "https://apollo.io"})["job_id"]
+
+    outcome = CaptureOutcome(
+        snapshot=_tailwind_snapshot(),
+        tier="static",
+        escalated=False,
+        escalation_reason=None,
+        diagnostics=[],
+    )
+    stub = _StubCore()
+
+    def work(report):
+        report("Taking a closer look…", 0.55)  # the stage apollo.io died at
+        with tempfile.TemporaryDirectory() as asset_store:
+            evidence = build_evidence(
+                outcome, core=stub, store_root=asset_store, reporter=_noop
+            )
+        result = normalize_evidence(
+            evidence, brand_kit_id=kit_id, name="Apollo", created_at="2026-08-26"
+        )
+        assert result.brand_kit["assets"] is not None
+        return (kit_id, 1, None)
+
+    run_ingestion_job(store, job_id, work)
+
+    job = store.require(job_id)
+    assert job["error"] is None, job["error"]
+    assert job["status"] == "succeeded"
+
+    # The colors were not merely survived — the real channels were read.
+    # (Phase-1 overhaul: rule-text colors like the near-black `#0F172A` are no
+    # longer palette evidence; the TOKEN yellow — the modern-syntax survival
+    # this test guards — must still parse through the alpha-var fallback.)
+    hexes = {c.value for c in parse_site(_tailwind_snapshot()).colors}
+    assert "#FEFF00" in hexes  # apollo's brand yellow, from --color-brand
+
+    # ...and the skipped alpha is reported to the human, on the outcome the
+    # pipeline publishes, not swallowed.
+    assert [d for d in outcome.diagnostics if d["code"] == "LUMI0511"]
+
+
+def test_diagnostics_are_deduped_and_bounded() -> None:
+    """A Tailwind site serves thousands of these; the report stays readable."""
+    diagnostics: list[dict] = []
+    for i in range(200):
+        parse_color_value(f"rgb(a{i} b c)", {}, diagnostics=diagnostics)
+    assert 0 < len(diagnostics) <= 8
+    # Repeating one value does not repeat its diagnostic.
+    repeated: list[dict] = []
+    for _ in range(50):
+        parse_color_value("rgb(a b c)", {}, diagnostics=repeated)
+    assert len(repeated) == 1
+
+
+# --------------------------------------------------------------------------- #
 # Parse: role hints, dark scope, var() resolution, rem→px, fonts, logos, images
 # --------------------------------------------------------------------------- #
 
 
-def test_parse_role_hints_and_dark_scope() -> None:
+def test_parse_rule_text_emits_no_light_candidates_but_tokens_and_dark_survive() -> None:
+    """Phase-1 brand-color overhaul (2026-08-30): light rule-text colors are
+    NOT palette evidence any more — the selector-vocabulary weights elected
+    apollo.io's focus ring as its brand. What must survive the retirement:
+    custom-prop token evidence (naming layer) and dark-block rule colors (the
+    dark colorway's only whole-page evidence until dark capture lands)."""
     parsed = parse_site(load("insight_static"))
 
-    def find(value: str, hint: str, theme: str = "light"):
-        return [
-            c
-            for c in parsed.colors
-            if c.value == value and hint in c.role_hints and c.theme == theme
-        ]
+    # No LIGHT color evidence from rule text — the fixture's `body`/`.btn-primary`
+    # rules used to emit weighted, hinted candidates here.
+    light_rule_colors = [
+        c
+        for c in parsed.colors
+        if c.theme == "light" and not any(h.startswith("custom-prop:") for h in c.role_hints)
+    ]
+    assert light_rule_colors == []
 
-    page = find("#F5F5F5", "page-bg")
-    assert page and any(c.weight == 5.0 for c in page)
-
-    button = find("#12EAB1", "button-bg")
-    assert button and any(c.weight == 4.0 for c in button)
-
-    # dark prefers-color-scheme block colors carry theme="dark"
+    # Dark prefers-color-scheme block colors still carry theme="dark", flat and
+    # hintless — evidence for `build_dark_colorway`, never light election.
     dark = [c for c in parsed.colors if c.theme == "dark"]
-    assert dark
-    assert any(c.value == "#0B0B0C" and "page-bg" in c.role_hints for c in dark)
+    assert any(c.value == "#0B0B0C" for c in dark)
+    assert all(c.weight == 1.0 and c.role_hints == [] for c in dark)
 
-    # var() resolved against custom props
+    # var() still resolved against custom props: the naming layer survives.
     assert any(
         c.value == "#12EAB1" and c.role_hints == ["custom-prop:--brand"]
         for c in parsed.colors
@@ -189,19 +403,26 @@ def test_parse_computed_samples_rendered() -> None:
     assert body_bg  # area-weighted body bg exceeds the flat CSS-rule weight
 
 
-def test_image_cap_logic() -> None:
-    snapshot = load("insight_static")
-    # inject 15 tiny images to force the cap of 12
+def test_image_budget_logic() -> None:
+    """The budget holds and announces itself.
+
+    Was a hard cap (12 → 50 by founder order 2026-08-20); replaced by the shared asset budget
+    at clone-fidelity F0.2, whose ``LUMI0514`` names every dropped URL. The exact boundary
+    behaviour is pinned in ``test_ingestion_image_sources.py``.
+    """
+    from lumen_ingestion.capture.budget import MAX_ASSET_COUNT
     from lumen_ingestion.capture.snapshot import SiteSnapshot
 
+    snapshot = load("insight_static")
     extra_imgs = "".join(
-        f'<img src="/img/x{i}.png" width="{100 + i}" height="{100 + i}">' for i in range(15)
+        f'<img src="/img/x{i}.png" width="{100 + i}" height="{100 + i}">'
+        for i in range(MAX_ASSET_COUNT + 5)
     )
     html = snapshot.html.replace("</main>", extra_imgs + "</main>")
     mutated = SiteSnapshot(**{**snapshot.model_dump(), "html": html})
     parsed = parse_site(mutated)
-    assert len(parsed.images) <= 12 + 1  # +1 tolerance for og_image
-    assert any(d["code"] == "LUMI0504" for d in parsed.diagnostics)
+    assert len(parsed.images) <= MAX_ASSET_COUNT + 1  # +1 tolerance for og_image
+    assert any(d["code"] == "LUMI0514" for d in parsed.diagnostics)
 
 
 # --------------------------------------------------------------------------- #
@@ -346,6 +567,57 @@ def test_static_capture_fetches_assets_concurrently() -> None:
     assert overlap["max"] >= 3  # assets overlapped, not serial
 
 
+def test_rendered_stylesheets_follow_one_level_of_import_like_static_does() -> None:
+    """The static tier's ``@import`` contribution survives the always-render ruling.
+
+    Website ingestion now ALWAYS renders (founder, 2026-08-20), so the static tier no longer
+    runs for a well-server-rendered site — and everything it used to contribute has to be
+    present on the rendered tier or it is silently lost. Assets, meta and inline CSS already
+    were (rendered reuses static's collectors on the post-JS DOM); one thing was not: static
+    follows one level of ``@import`` out of a fetched stylesheet, while the rendered tier read
+    ``document.styleSheets``, where an imported sheet appears only as the parent's one-line
+    ``@import`` rule. A brand whose ``@font-face`` block lives behind an import would have
+    stopped being read the day the ruling landed.
+
+    No browser: the harvest ``page.evaluate`` returns is a plain list of dicts, so the
+    stylesheet assembly is driven directly.
+    """
+    from lumen_ingestion.capture.rendered import collect_stylesheets
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/main.css":
+            return httpx.Response(
+                200, text='@import url("fonts.css");\nbody{color:#123456}'
+            )
+        if request.url.path == "/fonts.css":
+            return httpx.Response(
+                200,
+                text="@font-face{font-family:Brand;src:url(brand.woff2) format('woff2')}",
+            )
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+
+    async def run() -> list:
+        async with httpx.AsyncClient(transport=transport) as client:
+            fetcher = BoundedFetcher(client)
+            return await collect_stylesheets(
+                [
+                    {"href": None, "text": ":root{--brand:#123456}"},
+                    {"href": "https://example.com/main.css", "text": None},
+                ],
+                fetcher,
+            )
+
+    sheets, _diagnostics = asyncio.run(asyncio.wait_for(run(), timeout=10.0))
+    urls = [sheet.url for sheet in sheets]
+    assert urls[0] == "inline:0"
+    assert "https://example.com/main.css" in urls
+    assert "https://example.com/fonts.css" in urls, urls
+    imported = next(s for s in sheets if s.url.endswith("fonts.css"))
+    assert "@font-face" in imported.text
+
+
 def test_capture_redirect_reguard_rejects_private() -> None:
     """A redirect to 127.0.0.1 is re-guarded and rejected mid-capture."""
 
@@ -368,6 +640,203 @@ def test_capture_redirect_reguard_rejects_private() -> None:
     with pytest.raises(CaptureError) as excinfo:
         asyncio.run(run())
     assert excinfo.value.code == "LUMI0501"
+
+
+# --------------------------------------------------------------------------- #
+# F0.4 — the multi-page provision
+# --------------------------------------------------------------------------- #
+
+
+_MULTIPAGE_HTML = {
+    "/": "<html><head><title>Home</title></head><body><p>home page words</p></body></html>",
+    "/about": "<html><head><title>About</title></head><body><p>about page words</p></body></html>",
+}
+
+
+def _multipage_transport(broken: set[str] | None = None) -> httpx.MockTransport:
+    broken = broken or set()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path in broken:
+            raise httpx.ConnectError("connection refused", request=request)
+        if path in _MULTIPAGE_HTML:
+            return httpx.Response(200, html=_MULTIPAGE_HTML[path])
+        return httpx.Response(404)
+
+    return httpx.MockTransport(handler)
+
+
+def _capture(url: str, transport: httpx.MockTransport, **kwargs) -> CaptureOutcome:
+    async def run() -> CaptureOutcome:
+        async with httpx.AsyncClient(transport=transport) as client:
+            return await capture_website(
+                url, reporter=_noop, render_available=False, http_client=client, **kwargs
+            )
+
+    return asyncio.run(asyncio.wait_for(run(), timeout=10.0))
+
+
+def test_capture_website_yields_one_snapshot_for_the_entry_page_by_default() -> None:
+    outcome = _capture("https://example.com/", _multipage_transport())
+    assert [s.requested_url for s in outcome.snapshots] == ["https://example.com/"]
+    # `.snapshot` stays the entry page — every pre-F0.4 caller reads it and must not move.
+    assert outcome.snapshots[0] is outcome.snapshot
+
+
+def test_capture_website_captures_every_requested_page_in_order() -> None:
+    outcome = _capture(
+        "https://example.com/",
+        _multipage_transport(),
+        page_urls=["https://example.com/about"],
+    )
+    assert [s.requested_url for s in outcome.snapshots] == [
+        "https://example.com/",
+        "https://example.com/about",
+    ]
+    assert outcome.snapshot is outcome.snapshots[0]
+    assert "about page words" in outcome.snapshots[1].html
+
+
+def test_the_entry_page_is_captured_once_even_when_the_page_list_repeats_it() -> None:
+    outcome = _capture(
+        "https://example.com/",
+        _multipage_transport(),
+        page_urls=["https://example.com/", "https://example.com/about", "https://example.com/"],
+    )
+    assert [s.requested_url for s in outcome.snapshots] == [
+        "https://example.com/",
+        "https://example.com/about",
+    ]
+
+
+def test_a_non_entry_page_failure_is_a_loud_diagnostic_and_the_capture_continues() -> None:
+    outcome = _capture(
+        "https://example.com/",
+        _multipage_transport(broken={"/about"}),
+        page_urls=["https://example.com/about"],
+    )
+    assert [s.requested_url for s in outcome.snapshots] == ["https://example.com/"]
+    failures = [d for d in outcome.diagnostics if d["code"] == "LUMI0513"]
+    assert len(failures) == 1
+    assert "https://example.com/about" in failures[0]["message"]
+    assert failures[0]["severity"] == "warning"
+
+
+def test_an_entry_page_failure_still_fails_the_whole_capture() -> None:
+    with pytest.raises(httpx.ConnectError):
+        _capture(
+            "https://example.com/",
+            _multipage_transport(broken={"/"}),
+            page_urls=["https://example.com/about"],
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Diagnostics are recorded once (F0 fix wave, FIX 2)
+# --------------------------------------------------------------------------- #
+#
+# A failed fetch is reported twice by construction: `net.BoundedFetcher` puts the diagnostic
+# on the per-item `FetchResult` — which `static._collect_assets` folds into the SNAPSHOT —
+# and on its own accumulating list, which `_capture_page` reads as a delta. The acceptance
+# walk against insighthealth.ai turned three distinct failures into six LUMI0503s. These land
+# on the published kit UNCAPPED (`budget.MAX_NAMED_DROPS` bounds the evidence builder's
+# LUMI0515/LUMI0516 lists, not this one), so the doubling is both twice the noise a human
+# reads and a wrong answer to "how much did this capture lose".
+
+
+_DEAD_ASSET_PAGE = (
+    "<html><head><title>Doubled</title>"
+    '<link rel="stylesheet" href="/css/site.css">'
+    "</head><body>"
+    '<img src="/i/one.png"><img src="/i/two.png">'
+    "<p>enough words on the page that the quality gate has something to read</p>"
+    "</body></html>"
+)
+_DEAD_ASSET_CSS = "body{background-image:url(/i/three.png);color:#123456}"
+_DEAD_ASSETS = ("/i/one.png", "/i/two.png", "/i/three.png")
+_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
+def _dead_asset_transport() -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path in _DEAD_ASSETS:
+            return httpx.Response(403)
+        if path == "/css/site.css":
+            return httpx.Response(200, text=_DEAD_ASSET_CSS, headers={"content-type": "text/css"})
+        if path == "/":
+            return httpx.Response(200, html=_DEAD_ASSET_PAGE)
+        if path == "/favicon.ico":
+            # The logo ladder probes this on every page; serving it keeps the three dead
+            # assets the only failures, so the count below means what it says.
+            return httpx.Response(200, content=_PNG, headers={"content-type": "image/png"})
+        return httpx.Response(404)
+
+    return httpx.MockTransport(handler)
+
+
+def test_each_failed_fetch_is_reported_exactly_once_on_the_outcome() -> None:
+    outcome = _capture("https://example.com/", _dead_asset_transport())
+    failures = [d for d in outcome.diagnostics if d["code"] == "LUMI0503"]
+
+    assert sorted(d["url"] for d in failures) == [
+        f"https://example.com{path}" for path in sorted(_DEAD_ASSETS)
+    ], [d["url"] for d in failures]
+    assert len(failures) == len(_DEAD_ASSETS), failures
+
+
+def test_a_fetcher_diagnostic_with_no_snapshot_twin_still_reaches_the_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fetcher delta is still READ, not dropped — the dedupe removes twins, not sources.
+
+    The page fetch itself records onto the fetcher, and a future caller can hand the fetcher
+    work whose result never becomes part of a snapshot; an entry with no twin must survive.
+    """
+    from lumen_ingestion import capture as capture_pkg
+    from lumen_ingestion.capture.snapshot import SiteSnapshot
+
+    twinned = {
+        "code": "LUMI0503",
+        "severity": "warning",
+        "message": "fetch failed for https://example.com/i/twinned.png: HTTP 403",
+        "url": "https://example.com/i/twinned.png",
+        "reason": "HTTP 403",
+    }
+    fetcher_only = {
+        "code": "LUMI0502",
+        "severity": "warning",
+        "message": "resource exceeded its cap and was skipped: https://example.com/",
+        "url": "https://example.com/",
+        "reason": "exceeded the cap for its resource class",
+    }
+
+    async def _fake_static(url, fetcher, reporter, *, fetched_at):
+        fetcher.diagnostics.append(fetcher_only)
+        fetcher.diagnostics.append(twinned)
+        return SiteSnapshot(
+            requested_url=url,
+            final_url=url,
+            fetched_at=fetched_at,
+            tier="static",
+            html="<html><body><p>" + ("word " * 80) + "</p></body></html>",
+            diagnostics=[twinned],
+        )
+
+    monkeypatch.setattr(capture_pkg, "fetch_static", _fake_static)
+
+    async def run() -> CaptureOutcome:
+        return await capture_website(
+            "https://example.com/", reporter=_noop, render_available=False
+        )
+
+    outcome = asyncio.run(asyncio.wait_for(run(), timeout=10.0))
+
+    assert outcome.diagnostics.count(twinned) == 1, outcome.diagnostics
+    assert fetcher_only in outcome.diagnostics, outcome.diagnostics
 
 
 # --------------------------------------------------------------------------- #
@@ -429,6 +898,165 @@ def test_build_evidence_screenshot_listed() -> None:
         )
     assert evidence.screenshots
     assert evidence.screenshots[0].startswith("asset_ing_")
+
+
+# --------------------------------------------------------------------------- #
+# W1.2 — font byte custody
+#
+# Both pilots recorded brand faces by URL with `asset_id: null` (CursorGothic:
+# 4 woff2 URLs, nothing stored), so the renderer had no bytes, emitted
+# LUMS0100, and painted Inter in literally every run. Capture and parse were
+# discovering @font-face URLs two different ways; the evidence builder matches
+# a face to its bytes by exact URL string, so any disagreement meant the bytes
+# were fetched under one key and looked for under another.
+# --------------------------------------------------------------------------- #
+
+
+_WOFF2 = base64.b64decode("d09GMgABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+
+
+def _font_site(css: str, sheet_path: str = "/assets/app.css"):
+    """A site whose only interesting content is one self-hosted @font-face."""
+    page_html = (
+        "<html><head><title>Brand</title>"
+        f'<link rel="stylesheet" href="{sheet_path}">'
+        "</head><body><h1>Brand</h1><p>hello world</p></body></html>"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/":
+            return httpx.Response(200, html=page_html)
+        if path == sheet_path:
+            return httpx.Response(200, text=css, headers={"content-type": "text/css"})
+        if path.endswith(".woff2"):
+            return httpx.Response(
+                200, content=_WOFF2, headers={"content-type": "font/woff2"}
+            )
+        return httpx.Response(404)
+
+    async def run() -> CaptureOutcome:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await capture_website(
+                "https://example.com/",
+                reporter=_noop,
+                render_available=False,
+                http_client=client,
+            )
+
+    return asyncio.run(asyncio.wait_for(run(), timeout=10.0))
+
+
+@pytest.mark.parametrize(
+    "src,label",
+    [
+        ("url('/media/BrandSans-Regular.woff2')", "root-relative"),
+        # RED: resolved against the stylesheet by capture and against the page
+        # by parse — two different absolute URLs for one file.
+        ("url('../media/BrandSans-Regular.woff2')", "stylesheet-relative"),
+        # RED: capture's old regex required the extension to be the last thing
+        # before the paren, so a cache-busted URL was never fetched at all.
+        ("url('/media/BrandSans-Regular.woff2?v=3')", "cache-busted"),
+        (
+            "url('/media/BrandSans-Regular.woff2') format('woff2')",
+            "with-format-hint",
+        ),
+    ],
+)
+def test_a_declared_font_face_ends_up_with_retrievable_bytes(src, label) -> None:
+    """The W1.2 contract: a face the site declares carries an asset_id, and
+    that asset was handed real bytes through the normal custody path."""
+    css = (
+        "@font-face{font-family:'BrandSans';font-weight:400;font-style:normal;"
+        f"src:{src};}}"
+        "h1{font-family:'BrandSans';font-size:48px;font-weight:700}"
+    )
+    outcome = _font_site(css)
+
+    # The bytes were actually downloaded during capture.
+    font_downloads = [d for d in outcome.snapshot.downloads if d.kind == "font"]
+    assert font_downloads, f"{label}: no font bytes were fetched at all"
+
+    stub = _StubCore()
+    with tempfile.TemporaryDirectory() as store:
+        evidence = build_evidence(outcome, core=stub, store_root=store, reporter=_noop)
+
+    assert evidence.fonts, f"{label}: no font evidence"
+    face = evidence.fonts[0].faces[0]
+    assert face.asset_id is not None, f"{label}: face has no asset_id — LUMS0100"
+    assert face.asset_id.startswith("asset_ing_")
+
+    # ...and that asset id was ingested with the real bytes, as a font.
+    ingested = {c["asset_id"]: c for c in stub.calls}
+    assert face.asset_id in ingested, f"{label}: asset_id was never custodied"
+    call = ingested[face.asset_id]
+    assert call["kind"] == "font"
+    assert base64.b64decode(call["bytes_base64"]) == _WOFF2
+    # Nothing was reported as missing.
+    assert not [d for d in outcome.diagnostics if d["code"] == "LUMI0231"]
+
+
+def test_capture_and_parse_agree_on_every_font_url() -> None:
+    """The invariant behind the fix: every URL a face points at is a URL whose
+    bytes capture actually downloaded. This is what `asset_id: null` meant."""
+    css = (
+        "@font-face{font-family:'BrandSans';font-weight:400;"
+        "src:url('../media/BrandSans-Regular.woff2');}"
+        "@font-face{font-family:'BrandSans';font-weight:700;"
+        "src:url('/media/BrandSans-Bold.woff2?v=9');}"
+    )
+    outcome = _font_site(css, sheet_path="/nested/css/app.css")
+    downloaded = {d.url for d in outcome.snapshot.downloads if d.kind == "font"}
+    declared = {
+        face.source_url
+        for font in parse_site(outcome.snapshot).fonts
+        for face in font.faces
+        if face.source_url
+    }
+    assert declared, "no faces parsed"
+    assert declared <= downloaded, f"faces with no bytes: {declared - downloaded}"
+    # The stylesheet-relative URL resolved against the stylesheet, not the page.
+    assert "https://example.com/nested/media/BrandSans-Regular.woff2" in declared
+
+
+def test_a_font_whose_bytes_cannot_be_fetched_is_reported_not_silent() -> None:
+    """Honest failure: when the site's font 404s we cannot custody it, and that
+    must be said out loud rather than surfacing later as a mystery Inter run."""
+    css = (
+        "@font-face{font-family:'BrandSans';font-weight:400;"
+        "src:url('/media/missing.woff2');}"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/":
+            return httpx.Response(
+                200,
+                html='<html><head><title>B</title><link rel="stylesheet" href="/a.css">'
+                "</head><body><p>hello world</p></body></html>",
+            )
+        if path == "/a.css":
+            return httpx.Response(200, text=css, headers={"content-type": "text/css"})
+        return httpx.Response(404)  # the font is gone
+
+    async def run() -> CaptureOutcome:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await capture_website(
+                "https://example.com/",
+                reporter=_noop,
+                render_available=False,
+                http_client=client,
+            )
+
+    outcome = asyncio.run(asyncio.wait_for(run(), timeout=10.0))
+    stub = _StubCore()
+    with tempfile.TemporaryDirectory() as store:
+        evidence = build_evidence(outcome, core=stub, store_root=store, reporter=_noop)
+
+    assert evidence.fonts[0].faces[0].asset_id is None  # honestly empty
+    reported = [d for d in outcome.diagnostics if d["code"] == "LUMI0231"]
+    assert reported, "a byte-less font face was recorded in total silence"
+    assert "BrandSans" in reported[0]["message"]
 
 
 # --------------------------------------------------------------------------- #

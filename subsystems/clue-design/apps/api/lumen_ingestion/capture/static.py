@@ -6,13 +6,20 @@ from __future__ import annotations
 import base64
 import hashlib
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 from selectolax.parser import HTMLParser
 
+from .budget import MAX_ASSET_BYTES, budget_diagnostic
+from .candidates import collect_asset_candidates
 from .net import BoundedFetcher, FetchRequest
 from .snapshot import Download, SiteSnapshot, Stylesheet, HTML_MAX_BYTES
 
+#: Same defect class as the ``url()`` readers ``cssurl`` consolidated — it stops at an
+#: escaped ``)``, never unescapes, and truncates a quoted token at its first space. It is
+#: deliberately NOT routed through ``cssurl``: a bare-string ``@import "sheet.css";`` carries
+#: no ``url()`` and so is invisible to that reader. See ``cssurl``'s docstring for the full
+#: analysis and the residual. Owner: unassigned.
 _IMPORT_RE = re.compile(
     r"@import\s+(?:url\(\s*)?['\"]?([^'\")\s]+)['\"]?", re.IGNORECASE
 )
@@ -102,29 +109,52 @@ async def _collect_stylesheets(
                     )
                 )
 
-    # Scan fetched CSS for @import (one level deep) → concurrent fetch.
+    imported, import_diagnostics = await fetch_imported_sheets(sheets, fetcher)
+    sheets.extend(imported)
+    diagnostics.extend(import_diagnostics)
+
+    return sheets, diagnostics
+
+
+async def fetch_imported_sheets(
+    sheets: list[Stylesheet], fetcher: BoundedFetcher
+) -> tuple[list[Stylesheet], list[dict]]:
+    """Follow ONE level of ``@import`` out of already-collected stylesheets.
+
+    Shared with the rendered tier (``rendered.collect_stylesheets``) since the founder's
+    2026-08-20 always-render ruling: a brand whose palette or ``@font-face`` block arrives
+    through an ``@import`` used to be read by the static tier, and the rendered tier — which
+    reads ``document.styleSheets``, where an import appears only as its own one-line rule text —
+    would otherwise have silently stopped reading it the moment every ingestion started
+    rendering. One level only, and INLINE sheets are skipped, exactly as the static tier has
+    always done: a relative import inside an inline ``<style>`` has no sheet url to resolve
+    against, and deeper chains are unbounded fan-out.
+    """
     import_urls: list[str] = []
-    for sheet in list(sheets):
+    for sheet in sheets:
         if sheet.url.startswith("inline:"):
             continue
         for match in _IMPORT_RE.finditer(sheet.text):
             import_urls.append(urljoin(sheet.url, match.group(1)))
     import_urls = list(dict.fromkeys(import_urls))
-    if import_urls:
-        results = await fetcher.fetch_many(
-            [FetchRequest(url=u, kind="css") for u in import_urls]
-        )
-        for result in results:
-            diagnostics.extend(result.diagnostics)
-            if result.ok and result.body is not None:
-                sheets.append(
-                    Stylesheet(
-                        url=result.url,
-                        text=result.body.decode("utf-8", errors="replace"),
-                    )
-                )
+    if not import_urls:
+        return [], []
 
-    return sheets, diagnostics
+    imported: list[Stylesheet] = []
+    diagnostics: list[dict] = []
+    results = await fetcher.fetch_many(
+        [FetchRequest(url=u, kind="css") for u in import_urls]
+    )
+    for result in results:
+        diagnostics.extend(result.diagnostics)
+        if result.ok and result.body is not None:
+            imported.append(
+                Stylesheet(
+                    url=result.url,
+                    text=result.body.decode("utf-8", errors="replace"),
+                )
+            )
+    return imported, diagnostics
 
 
 async def _collect_assets(
@@ -133,71 +163,72 @@ async def _collect_assets(
     base_url: str,
     stylesheets: list[Stylesheet],
 ) -> tuple[list[Download], list[dict]]:
-    requests: list[FetchRequest] = []
-    kinds: dict[str, str] = {}
+    """Fetch EVERY asset the page references, in one concurrent batch.
 
-    def add(url: str, kind: str) -> None:
-        if url.startswith("data:"):
-            return
-        if url not in kinds:
-            kinds[url] = kind
-            requests.append(FetchRequest(url=url, kind="font" if kind == "font" else ("image")))
+    The enumeration is not done here — it is
+    :func:`lumen_ingestion.capture.candidates.collect_asset_candidates`, the single list that
+    also feeds every scorer, so the scorer can never rank a URL the fetcher never saw (see
+    that module's docstring for the defect this shape exists to close). This function's whole
+    job is: fetch that list, keep what fits the byte budget, and say out loud what it dropped.
+    """
+    harvest = collect_asset_candidates(tree, base_url, stylesheets)
+    diagnostics: list[dict] = list(harvest.diagnostics)
+    if not harvest.candidates:
+        return [], diagnostics
 
-    # Fonts from @font-face src url() in fetched CSS.
-    for sheet in stylesheets:
-        for match in re.finditer(
-            r"url\(\s*['\"]?([^'\")]+\.(?:woff2|woff|ttf|otf))['\"]?\s*\)",
-            sheet.text,
-            re.IGNORECASE,
-        ):
-            base = sheet.url if not sheet.url.startswith("inline:") else base_url
-            add(urljoin(base, match.group(1)), "font")
-
-    # Logos: header/nav/logo imgs, apple-touch-icon.
-    for node in tree.css("header img, nav img, [class*=logo] img, a[href='/'] img"):
-        src = node.attributes.get("src")
-        if src:
-            add(urljoin(base_url, src), "logo")
-    for node in tree.css("link[rel='apple-touch-icon']"):
-        href = node.attributes.get("href")
-        if href:
-            add(urljoin(base_url, href), "logo")
-
-    # og:image + og:logo.
-    for node in tree.css("meta[property='og:image'], meta[property='og:logo']"):
-        content = node.attributes.get("content")
-        if content:
-            add(urljoin(base_url, content), "image")
-
-    # Images.
-    for node in tree.css("img"):
-        src = node.attributes.get("src")
-        if src and not src.startswith("data:"):
-            add(urljoin(base_url, src), "image")
-
-    if not requests:
-        return [], []
-
-    # ONE concurrent batch for all fonts + logos + images.
-    results = await fetcher.fetch_many(requests)
+    # ONE concurrent batch for all fonts + logos + images, bounded by
+    # `net.DEFAULT_CONCURRENCY` with every per-resource byte cap and timeout unchanged.
+    results = await fetcher.fetch_many(
+        [FetchRequest(url=c.url, kind=c.kind) for c in harvest.candidates]
+    )
+    by_url = {candidate.url: candidate for candidate in harvest.candidates}
 
     downloads: list[Download] = []
-    diagnostics: list[dict] = []
+    total_bytes = 0
+    over_budget: list[str] = []
     for result in results:
         diagnostics.extend(result.diagnostics)
         if not result.ok or result.body is None:
             continue
+        # The byte budget can only be spent once the bodies are in hand — nothing tells us an
+        # asset's size before we fetch it — so this bounds what the snapshot CARRIES (and
+        # therefore stores, ingests and replays), not what was requested. Candidate order is
+        # identity-first, so what a full budget costs is the least identity-critical tail.
+        if total_bytes + len(result.body) > MAX_ASSET_BYTES:
+            over_budget.append(result.url)
+            continue
+        total_bytes += len(result.body)
+        candidate = by_url.get(result.url)
         sha = hashlib.sha256(result.body).hexdigest()
         downloads.append(
             Download(
                 url=result.url,
-                kind=kinds.get(result.url, "image"),
+                kind=_download_kind(candidate),
                 content_type=result.content_type,
                 bytes_b64=base64.b64encode(result.body).decode("ascii"),
                 sha256=sha,
+                origin=candidate.origin if candidate else None,
+                dark_scheme=bool(candidate and candidate.dark_scheme),
+            )
+        )
+    if over_budget:
+        diagnostics.append(
+            budget_diagnostic(
+                budget="asset bytes", limit=MAX_ASSET_BYTES, dropped=over_budget
             )
         )
     return downloads, diagnostics
+
+
+def _download_kind(candidate) -> str:
+    """The ``Download.kind`` an origin maps to — the snapshot's own three-way split."""
+    if candidate is None:
+        return "image"
+    if candidate.origin == "font":
+        return "font"
+    if candidate.origin == "logo-rung":
+        return "logo"
+    return "image"
 
 
 def _extract_meta(tree) -> dict:

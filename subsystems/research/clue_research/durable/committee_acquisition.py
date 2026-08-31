@@ -156,7 +156,15 @@ async def reserve_committee_acquisition(
     *,
     operation: CommitteeAcquisitionOperation,
     snapshots: tuple[CommitteeAcquisitionSnapshot, CommitteeAcquisitionSnapshot],
+    enforce_budget: bool = True,
 ) -> tuple[CommitteeAcquisitionOperation, bool]:
+    """Reserve one bounded committee-acquisition operation.
+
+    ``enforce_budget`` is the FI pilot budget-controls switch; it gates only the project-run
+    money check. This operation's own reserved-vs-cap invariants are consistency guards on
+    its immutable plan, not spend-vs-budget stops, so they hold in both modes.
+    """
+
     request = operation.request
     if operation.provider_units_reserved > Decimal(request.provider_credit_cap):
         raise CommitteeAcquisitionBudgetExceeded("committee provider cap exceeded")
@@ -182,6 +190,7 @@ async def reserve_committee_acquisition(
             proposed_cents=operation.cost_cents_reserved,
             allowed_phases=frozenset({ProjectPhase.DEEP}),
             entity_research_job_id=request.entity_research_job_id,
+            enforce_budget=enforce_budget,
         )
     except ProviderSpendGuardError as exc:
         raise CommitteeAcquisitionBudgetExceeded(str(exc)) from exc

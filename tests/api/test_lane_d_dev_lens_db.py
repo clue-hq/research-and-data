@@ -429,7 +429,8 @@ def test_the_gateway_asks_for_reasoning_only_when_the_lens_configures_it() -> No
     """The request is a *config* value, and the per-model baseline survives without it."""
 
     baseline = GatewayConfig()
-    assert _reasoning_request(baseline, model_id="openai/gpt-5.6-terra") == {"effort": "none"}
+    assert _reasoning_request(baseline, model_id="openai/gpt-5.6-terra") == {"effort": "high"}
+    assert _reasoning_request(baseline, model_id="openai/gpt-5.6-sol") == {"effort": "none"}
     assert _reasoning_request(baseline, model_id="anthropic/claude-sonnet-4") is None
 
     lens = GatewayConfig(
@@ -513,6 +514,131 @@ def test_the_inspector_routes_do_not_exist_unless_the_dev_flag_is_on(tmp_path: P
                         path, headers={"X-Workspace-Id": project.workspace_id}
                     )
                     assert response.status_code == 404, path
+
+    run_async(scenario())
+
+
+def test_the_body_free_context_ref_route_is_registered_without_the_dev_lens(tmp_path: Path) -> None:
+    """S6-C is a production read, not a back door into the body-hydrating dev inspector."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path / "operator-refs")
+            project = await _seed_project(conn, "ws-s6-context-refs", label="refs")
+            thread_id = await _thread(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                label="refs",
+            )
+            seeded = await _seed_turn_receipts(
+                conn,
+                project=project,
+                thread_id=thread_id,
+                label="operator-refs",
+                storage=storage,
+            )
+            app = _app(conn, settings=_settings(), storage=storage)
+            path = (
+                f"/api/v1/projects/{project.project_id}/threads/{thread_id}"
+                f"/turns/{seeded.turn_id}/context-refs"
+            )
+            async with _client(app) as client:
+                response = await client.get(
+                    path,
+                    headers={"X-Workspace-Id": project.workspace_id},
+                )
+                inspector = await client.get(
+                    path.removesuffix("context-refs") + "inspector/context",
+                    headers={"X-Workspace-Id": project.workspace_id},
+                )
+            assert response.status_code == 200
+            assert inspector.status_code == 404
+            data = response.json()["data"]
+            assert data["state"] == "available"
+            assert data["context_bundle_id"]
+            assert data["aggregate_sha256"] == "a" * 64
+            included = data["layers"][0]["refs"][0]
+            assert included["artifact_key"] == seeded.context_artifact_key
+            # The schema itself has no hydration field: the sensitive bytes exist in storage but
+            # cannot appear through this route, even when a storage backend is composed.
+            forbidden = {
+                "body",
+                "text",
+                "claim_value",
+                "evidence_span",
+                "source_url",
+                "email",
+                "token",
+                "credential",
+            }
+            encoded = json.dumps(data).casefold()
+            assert all(f'"{field}"' not in encoded for field in forbidden)
+            assert "you are the head of abm." not in encoded
+
+    run_async(scenario())
+
+
+def test_the_body_free_context_ref_route_reports_pending_and_refuses_foreign_scope(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path / "operator-scope")
+            owner = await _seed_project(conn, "ws-s6-owner", label="owner")
+            foreign = await _seed_project(conn, "ws-s6-foreign", label="foreign")
+            owner_thread = await _thread(
+                conn,
+                workspace_id=owner.workspace_id,
+                project_id=owner.project_id,
+                label="owner",
+            )
+            foreign_thread = await _thread(
+                conn,
+                workspace_id=foreign.workspace_id,
+                project_id=foreign.project_id,
+                label="foreign",
+            )
+            seeded = await _seed_turn_receipts(
+                conn,
+                project=owner,
+                thread_id=owner_thread,
+                label="pending",
+                storage=storage,
+                with_context=False,
+            )
+            app = _app(conn, settings=_settings(), storage=storage)
+            owner_path = (
+                f"/api/v1/projects/{owner.project_id}/threads/{owner_thread}"
+                f"/turns/{seeded.turn_id}/context-refs"
+            )
+            foreign_path = (
+                f"/api/v1/projects/{foreign.project_id}/threads/{foreign_thread}"
+                f"/turns/{seeded.turn_id}/context-refs"
+            )
+            async with _client(app) as client:
+                pending = await client.get(
+                    owner_path,
+                    headers={"X-Workspace-Id": owner.workspace_id},
+                )
+                refused = await client.get(
+                    foreign_path,
+                    headers={"X-Workspace-Id": foreign.workspace_id},
+                )
+            assert pending.status_code == 200
+            assert pending.json()["data"] == {
+                "turn_id": str(seeded.turn_id),
+                "state": "pending",
+                "context_bundle_id": None,
+                "schema_version": None,
+                "policy_version": None,
+                "token_counter_version": None,
+                "aggregate_sha256": None,
+                "assembled_at": None,
+                "layers": [],
+            }
+            assert refused.status_code == 404
+            assert refused.json()["error"]["code"] == "TURN_NOT_FOUND"
 
     run_async(scenario())
 

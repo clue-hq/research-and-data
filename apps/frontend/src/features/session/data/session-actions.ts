@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireWorkspaceMembership } from "./session-dal";
 import { WORKSPACE_COOKIE } from "../model/session";
@@ -24,4 +25,11 @@ export async function selectWorkspace(formData: FormData): Promise<void> {
 export async function clearWorkspaceSelection(): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.delete(WORKSPACE_COOKIE);
+}
+
+export async function selectWorkspaceAndContinue(
+  formData: FormData,
+): Promise<void> {
+  await selectWorkspace(formData);
+  redirect("/accounts");
 }

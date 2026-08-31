@@ -20,6 +20,11 @@ import {
   objectPositionFacet,
   paddingXFacet,
   paddingYFacet,
+  radiusBottomLeftFacet,
+  radiusBottomRightFacet,
+  radiusFacet,
+  radiusTopLeftFacet,
+  radiusTopRightFacet,
   setElementDimensionClass,
   setElementSizePixels,
   textAlignFacet,
@@ -218,12 +223,88 @@ describe("expanded inspector facets", () => {
   });
 });
 
+describe("radius facets (all corners + per corner)", () => {
+  it("parses an arbitrary px radius and the named Tailwind scale as the token suffix", () => {
+    expect(radiusFacet.parse("rounded-[8px]")).toBe("[8px]");
+    expect(radiusFacet.parse("p-4 rounded-lg shadow-md")).toBe("lg");
+    expect(radiusFacet.parse("rounded-sm")).toBe("sm");
+    expect(radiusFacet.parse("rounded-2xl")).toBe("2xl");
+    expect(radiusFacet.parse("rounded-full")).toBe("full");
+    expect(radiusFacet.parse("rounded-none")).toBe("none");
+    expect(radiusFacet.parse("flex gap-4")).toBeNull();
+  });
+
+  it("reports no value for the bare `rounded` default but still owns it on set", () => {
+    expect(radiusFacet.parse("rounded shadow-md")).toBeNull();
+    expect(radiusFacet.set("rounded shadow-md", "[8px]")).toBe("shadow-md rounded-[8px]");
+    expect(radiusFacet.set("rounded shadow-md", null)).toBe("shadow-md");
+  });
+
+  it("parses each corner independently", () => {
+    const classes = "rounded-tl-[4px] rounded-tr-lg rounded-bl-[12px] rounded-br-full";
+    expect(radiusTopLeftFacet.parse(classes)).toBe("[4px]");
+    expect(radiusTopRightFacet.parse(classes)).toBe("lg");
+    expect(radiusBottomLeftFacet.parse(classes)).toBe("[12px]");
+    expect(radiusBottomRightFacet.parse(classes)).toBe("full");
+    expect(radiusTopLeftFacet.parse("rounded-tr-[4px]")).toBeNull();
+  });
+
+  it("sets on an empty class string and replaces an existing radius token", () => {
+    expect(radiusFacet.set("", "[8px]")).toBe("rounded-[8px]");
+    expect(radiusFacet.set("rounded-lg", "[12px]")).toBe("rounded-[12px]");
+    expect(radiusTopLeftFacet.set("", "[4px]")).toBe("rounded-tl-[4px]");
+    expect(radiusTopLeftFacet.set("rounded-tl-xl", "[4px]")).toBe("rounded-tl-[4px]");
+  });
+
+  it("preserves unrelated tokens verbatim and in order", () => {
+    expect(radiusFacet.set("flex items-center rounded-lg shadow-md ring-2", "[8px]")).toBe(
+      "flex items-center shadow-md ring-2 rounded-[8px]"
+    );
+  });
+
+  it("never touches a variant-prefixed radius token", () => {
+    const src = "hover:rounded-lg md:rounded-tl-[2px] rounded-sm";
+    expect(radiusFacet.parse(src)).toBe("sm");
+    expect(radiusTopLeftFacet.parse(src)).toBeNull();
+    expect(radiusFacet.set(src, "[8px]")).toBe(
+      "hover:rounded-lg md:rounded-tl-[2px] rounded-[8px]"
+    );
+  });
+
+  it("keeps all-corners and per-corner families disjoint in both directions", () => {
+    const classes = "rounded-lg rounded-tl-[4px]";
+    expect(radiusFacet.parse(classes)).toBe("lg");
+    expect(radiusTopLeftFacet.parse(classes)).toBe("[4px]");
+    expect(radiusFacet.parse("rounded-tl-[4px]")).toBeNull();
+    expect(radiusTopLeftFacet.parse("rounded-full")).toBeNull();
+    expect(radiusFacet.set(classes, "[8px]")).toBe("rounded-tl-[4px] rounded-[8px]");
+    expect(radiusTopLeftFacet.set(classes, "[2px]")).toBe("rounded-lg rounded-tl-[2px]");
+    expect(radiusBottomRightFacet.set(classes, "[6px]")).toBe(
+      "rounded-lg rounded-tl-[4px] rounded-br-[6px]"
+    );
+  });
+
+  it("leaves the side radius utilities it doesn't model verbatim", () => {
+    const src = "rounded-t-lg rounded-s-xl rounded-sm";
+    expect(radiusFacet.parse(src)).toBe("sm");
+    expect(radiusFacet.set(src, "[8px]")).toBe("rounded-t-lg rounded-s-xl rounded-[8px]");
+  });
+
+  it("clears with null and round-trips parse/set", () => {
+    expect(radiusBottomLeftFacet.set("rounded-bl-[4px] flex", null)).toBe("flex");
+    expect(radiusFacet.parse(radiusFacet.set("", "[10px]"))).toBe("[10px]");
+    expect(radiusTopRightFacet.parse(radiusTopRightFacet.set("rounded-tr", "[3px]"))).toBe(
+      "[3px]"
+    );
+  });
+});
+
 describe("survival guarantees", () => {
   it("preserves unrecognized utilities verbatim across any set", () => {
-    const src = "rounded-lg shadow-md ring-2 custom-thing";
+    const src = "tracking-wide shadow-md ring-2 custom-thing";
     for (const facet of Object.values(webClassFacets)) {
       const next = facet.set(src, "x");
-      for (const token of ["rounded-lg", "shadow-md", "ring-2", "custom-thing"]) {
+      for (const token of ["tracking-wide", "shadow-md", "ring-2", "custom-thing"]) {
         expect(next).toContain(token);
       }
     }

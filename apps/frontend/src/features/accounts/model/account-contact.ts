@@ -5,6 +5,8 @@ import {
   PersonaSchema,
   type Persona,
 } from "./vocabulary";
+import { ProseReadSchema } from "./prose";
+import { EvidenceReferenceSchema } from "./evidence";
 
 /**
  * Presentation-only persona tone. It is a frontend display decision (D-5) and
@@ -63,6 +65,42 @@ export const ContactSignalsSchema = z.object({
   typeCount: z.number().int().nonnegative().default(0),
 });
 
+export const EmailLookupStateSchema = z.enum([
+  "pending",
+  "available",
+  "not_found",
+  "withheld",
+  "unavailable",
+  "failed",
+]);
+
+export const ContactEmailLookupSchema = z.object({
+  lookupId: z.string(),
+  state: EmailLookupStateSchema,
+  // Retained machine metadata; the UI does not add verification/corroboration badges.
+  resolution: z.enum([
+    "pending",
+    "matched",
+    "single_source",
+    "conflict",
+    "none",
+    "withheld",
+    "unavailable",
+    "failed",
+  ]),
+  emails: z
+    .array(
+      z.object({
+        value: z.string().email(),
+        sources: z.array(
+          z.object({ key: z.string(), label: z.string() }),
+        ),
+      }),
+    )
+    .default([]),
+  retryable: z.boolean().default(false),
+});
+
 /**
  * One contacts-table row.
  *
@@ -80,22 +118,20 @@ export const AccountContactSummarySchema = z.object({
   linkedinUrl: z.string().nullable().default(null),
   projectIds: z.array(z.string()).default([]),
   signals: ContactSignalsSchema.default({ typeCount: 0 }),
+  emailLookup: ContactEmailLookupSchema.nullable().default(null),
 });
 
 /** A professional fact on the contact profile, with the same redaction marker. */
 export const GovernedFactSchema = z.object({
   fieldKey: z.string(),
+  claimId: z.string().nullable().default(null),
   value: JsonValueSchema.nullable().default(null),
   observedAt: IsoTimestampSchema.nullable().default(null),
   provider: z.string().nullable().default(null),
   restricted: z.boolean().default(false),
 });
 
-/** A non-link evidence chip: provider and time only — evidence URLs stay off this wire (G4). */
-export const ContactEvidenceSchema = z.object({
-  provider: z.string(),
-  observedAt: IsoTimestampSchema.nullable().default(null),
-});
+export const ContactEvidenceSchema = EvidenceReferenceSchema;
 
 /**
  * `GET /frontend/v1/accounts/{accountId}/contacts/{contactId}` — the object
@@ -108,6 +144,11 @@ export const ContactEvidenceSchema = z.object({
 export const AccountContactDetailSchema = AccountContactSummarySchema.extend({
   accountId: z.string(),
   accountName: z.string().nullable().default(null),
+  overview: ProseReadSchema.default({
+    state: "not_composed",
+    paragraphs: [],
+    researchOutcome: null,
+  }),
   professionalFacts: z.array(GovernedFactSchema).default([]),
   evidence: z.array(ContactEvidenceSchema).default([]),
   redirectedFrom: z.string().nullable().default(null),
@@ -123,5 +164,6 @@ export const AccountContactsResponseSchema = z.object({
 export type AccountContactDetail = z.infer<typeof AccountContactDetailSchema>;
 export type AccountContactSummary = z.infer<typeof AccountContactSummarySchema>;
 export type ContactEvidence = z.infer<typeof ContactEvidenceSchema>;
+export type ContactEmailLookup = z.infer<typeof ContactEmailLookupSchema>;
 export type GovernedFact = z.infer<typeof GovernedFactSchema>;
 export type RoleOnCommittee = z.infer<typeof RoleOnCommitteeSchema>;

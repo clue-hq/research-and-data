@@ -65,7 +65,7 @@ export interface QueuedAgentMessage {
    * the user submitted it — reading the live pending set at drain time instead
    * dropped them (wiped by the prior turn's success-clear) or mixed in a later
    * message's attachments. */
-  references?: { assetId: string; label: string; thumbnailUrl: string }[];
+  references?: { assetId: string; label: string; thumbnailUrl: string | null }[];
 }
 
 export interface AgentChatPanelProps {
@@ -371,7 +371,7 @@ export function AgentChatPanel({
                 title={reference.assetId}
               >
                 <img
-                  src={reference.thumbnailUrl}
+                  src={reference.thumbnailUrl ?? undefined}
                   alt={reference.label}
                   width={20}
                   height={20}

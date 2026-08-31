@@ -451,8 +451,14 @@ async def reserve_contact_channel_operation(
     request: ContactChannelAcquisitionRequest,
     input_artifact_key: str,
     csv_artifact_key: str,
+    enforce_budget: bool = True,
 ) -> tuple[ContactChannelOperation, bool]:
-    """Atomically reserve both channel and validator budgets for one exact receipt."""
+    """Atomically reserve both channel and validator budgets for one exact receipt.
+
+    ``enforce_budget`` is the FI pilot budget-controls switch; it gates only the project-run
+    money check. This operation's own reserved-vs-cap invariants are consistency guards on
+    its immutable plan, not spend-vs-budget stops, so they hold in both modes.
+    """
 
     existing = await find_contact_channel_operation(conn, request=request)
     if existing is not None:
@@ -471,6 +477,7 @@ async def reserve_contact_channel_operation(
             proposed_cents=total,
             allowed_phases=frozenset({ProjectPhase.DEEP}),
             entity_research_job_id=request.entity_research_job_id,
+            enforce_budget=enforce_budget,
         )
     except ProviderSpendGuardError as exc:
         raise ContactChannelBudgetExceeded(str(exc)) from exc

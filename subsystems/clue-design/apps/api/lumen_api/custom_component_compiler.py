@@ -12,6 +12,10 @@ from __future__ import annotations
 import json
 import os
 import signal
+
+# D2.5B: kept only for `sqlite3.Error`, the API's constraint-violation exception family (the
+# bridge raises `sqlite3.IntegrityError` for Postgres constraint failures — see design_store.py).
+# There is no SQLite database behind it.
 import sqlite3
 import subprocess
 from pathlib import Path
@@ -23,7 +27,7 @@ from .custom_components import (
     persist_compiled_custom_component_artifact,
     resolve_custom_component_source_snapshot,
 )
-from .database import Repository
+from .design_store import DesignBlobStore, HybridRepository
 
 
 JsonObject = Dict[str, Any]
@@ -200,8 +204,8 @@ def compile_custom_component(
 
 def compile_and_persist_custom_component(
     *,
-    repository: Repository,
-    store_root: Path,
+    repository: HybridRepository,
+    blobs: DesignBlobStore,
     node_binary: str,
     worker_path: Path,
     timeout_seconds: float,
@@ -240,7 +244,7 @@ def compile_and_persist_custom_component(
         raise NotFoundError("custom_component_source", slug)
     _, files = resolve_custom_component_source_snapshot(
         repository,
-        store_root,
+        blobs,
         account_id=account_id,
         revision_id=revision["revision_id"],
     )
@@ -287,7 +291,7 @@ def compile_and_persist_custom_component(
         try:
             artifact = persist_compiled_custom_component_artifact(
                 repository,
-                store_root,
+                blobs,
                 account_id=account_id,
                 slug=slug,
                 source=snapshot_bytes,

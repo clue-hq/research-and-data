@@ -486,6 +486,7 @@ class AccountResearchStateStore:
                 ).scalar_one()
             )
             committee_status, committee_flags = self._committee_coverage_status(
+                committee_requested=bool(authorization.selection.committee_source_keys),
                 result_count=len(state.committee_result_refs),
                 member_count=len(state.committee_member_ids),
                 scope_count=scope_count,
@@ -873,12 +874,15 @@ class AccountResearchStateStore:
     @staticmethod
     def _committee_coverage_status(
         *,
+        committee_requested: bool = True,
         result_count: int,
         member_count: int,
         scope_count: int,
         ambiguous_count: int,
         confirmed_empty_count: int,
     ) -> tuple[str, tuple[str, ...]]:
+        if not committee_requested:
+            return "complete", ()
         if result_count == 0:
             return "needs_review", ("committee_not_researched",)
         if scope_count != result_count:

@@ -27,6 +27,260 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-08-16-part-iii-merge-into-platform-base.md` — merges the design Part-III branch into
+  the platform base: profile-v24/recipe-v7 collisions re-versioned as v36/v16, the D8 run-event
+  move reconciled with the recon constants, merged authority/registry counts (114/129), the
+  a1c5b9842f0e Alembic join, and the two pre-existing reds recorded.
+- `2026-08-16-stage0-icp-presentation-exa-preflight.md` — Slice 5 promotes bounded
+  human-readable ICP synthesis in the normal assistant message alongside the approval gate,
+  preflights confirmed Exa scope before any receipt/run write, repairs the active Recipe #0
+  promotion to v13, and records focused backend/frontend/database verification and scope exclusions.
+- `2026-08-16-stage0-discovery-configuration-v3.md` — implements Slice 4's provider-neutral
+  discovery plan, optional scope-only human confirmation, immutable run receipt, Exa compilation,
+  active v31/v18/v12 resources, and GPT-5.6 Terra high-reasoning baseline; records the live
+  migration, strict-JSON, and restricted-surface defects found and fixed during review.
+- `2026-08-16-stage0-confirmed-run-v2.md` — implements the trusted no-argument
+  `start_confirmed_project_run@2` boundary directly over existing Stage-0 context, promotes the
+  immutable v30/v17/v11 resources, and records the follow-up hardening for exact context bindings,
+  advanced-run replay, mode-specific readiness identity, and guaranteed Recipe #1 attachment.
+- `2026-08-16-stage0-confirmed-discovery-contract-freeze.md` — freezes the active confirmed-run
+  correction: product context is a backend-derived receipt over five existing Stage-0 inputs,
+  `start_confirmed_project_run@2` has no model-authored lineage, disabled budget controls are
+  internal record-only/no-gate authority, and discovery configuration remains a separate contract.
+- `2026-08-16-stage0-pin-and-client-target-fixes.md` — repairs the company-v2/product-v1 ICP
+  synthesis compatibility pin and excludes the workspace's bound client from every FI-2 target
+  account surface, with a green 103-test isolated-database matrix.
+- `2026-08-16-integration-step6-verification.md` — records the complete post-merge verification
+  ladder: static/resource/authority gates, merged functional matrices, fresh migration smoke,
+  frontend release checks, and an exact unchanged 32-node backend quarantine match.
+- `2026-08-16-integration-runtime-frontend-conflict-resolution.md` — completes the dependency-order
+  runtime/frontend merge: unified gate authority, exact company/product Stage-0 scope, strict tool
+  output validation, discriminated frontend decisions, and green backend/frontend verification.
+- `2026-08-16-integration-migration-reconciliation.md` — joins the pilot and onboarding Alembic
+  heads, installs the unified human-gate database authority, and records clean isolated migration
+  and direct-SQL adversarial evidence.
+- `2026-08-16-integration-immutable-resource-history.md` — preserves both resource lineages and
+  promotes the combined Head-of-ABM v29, Stage-0 skill v16, and Recipe #0 v10.
+- `2026-08-15-integration-field-policy.md` — freezes the distinct 9-field ICP, 11-field onboarding,
+  12-field company-knowledge, and product-scoped field policies.
+- `2026-08-15-integration-unified-human-gate-contract.md` — freezes the shared directive/ICP/product
+  gate and answer contract before runtime and frontend conflict resolution.
+- `2026-08-13-fi2-slice9b-selected-records-chat.md` — FI-2 Slice 9B adds capability-gated
+  Account/Contact selection-to-chat handoff, opaque next-message-only composer state, accepted-only
+  clearing, and a server-enforced exact selected-Account launch path under the budget-controls-off
+  pilot contract; terminal verification is green and authenticated browser closeout is recorded as
+  it completes.
+- `2026-08-13-fi2-slice9a-bulk-actions.md` — FI-2 Slice 9A closes LF-ACCOUNT-005
+  with capability-gated current-page selection, durable idempotent Account-to-project and Contact
+  email actions, explicit numbered pagination, matching 40 px shell/footer alignment, and complete
+  terminal plus authenticated-browser acceptance evidence.
+- `2026-08-12-fi2-slice10-contact-email-enrichment.md` — FI-2 Slice 10 replaces the false
+  timer-only Contact email cue with authenticated durable Exa + Sumble acquisition, preserves
+  provider conflict and governance metadata without verified-email promotion, and records focused,
+  migration, full-suite-baseline and authenticated browser acceptance evidence.
+- `2026-08-12-fi2-slice10-sumble-email-probe.md` — disposable live Sumble contract probe proves
+  v9 match-mode email selection, zero-credit async kickoff, terminal-poll charge boundary, and the
+  separate MCP OAuth requirement; the follow-on Slice 10 implementation is recorded above.
+- `2026-08-12-fi2-slice5-evidence.md` — FI-2 Slice 5 maps exact safe source URLs, evidence spans,
+  confidence/freshness and protected artifact actions to display-approved Account/Contact claims;
+  terminal and authenticated-browser closeout are recorded there as they complete.
+- `2026-08-12-fi2-slice4-live-prose-formatting.md` — FI-2 Slice 4 implements typed current
+  Account/Contact prose states, stable frontend enum labels and registry-described dynamic gaps;
+  terminal/database gates plus authenticated browser-to-API-to-Postgres acceptance are complete,
+  including every linked Contact shape and direct reload.
+- `2026-08-12-fi2-slice3-contact-journey.md` — FI-2 Slice 3 closes LF-CONTACT-001 and
+  LF-CONTACT-003 with one shared governed committee/addressability seam, named/withheld/unnamed and
+  merged-link coverage, concise row/link accessibility names, full terminal gates, and an
+  authenticated browser-to-API-to-Postgres acceptance run.
+- `2026-08-12-fi2-slice2-account-recovery.md` — FI-2 Slice 2 closes LF-ACCOUNT-003
+  with five typed recovery states, explicit workspace selection, request-correlated flag-off errors,
+  safe expired-session reauthentication, pagination parity, focused/full gates, and an authenticated
+  browser matrix that verifies every action and excludes runtime/internal error text.
+- `2026-08-11-fi2-slice1-accounts-auth-cutover.md` — FI-2 Slice 1 removes every
+  Accounts/Contacts runtime fixture and legacy workspace-header path, shares one authenticated
+  server/BFF transport, renders the durable zero-account state, records focused/frontend/build/DB
+  evidence, and closes signed-in desktop/mobile browser acceptance on the exact allowed origin.
+- `2026-08-15-stage0-link-expansion-state-machine.md` — decouples durable page publication from
+  recursive link expansion: fetched snapshots publish immediately, independently fenced expansion
+  jobs retry/background-resume without provider refetch, fast wakes respect the DB deadline, the
+  browser keeps polling after its timeout fallback, and a retained isolated 210-test DB gate plus
+  frontend/static/migration verification is green. The later real browser/Scrapling/Luna canary
+  auto-released at roughly 48 seconds and completed 52 snapshots with zero refetch, while exposing
+  an unresolved crawl-run/page lock-order deadlock that inflated background completion to about ten
+  minutes.
+- `2026-08-15-stage0-fast-page-deferral.md` — fixes the 103.759-second eager-recon lease wait:
+  clean unresolved fast pages now freeze out at the DB deadline and continue on the same
+  background frontier, with authoritative v1/v2/replay regressions and a fresh 61-test DB gate;
+  the no-override live Scrapling/browser rerun remains the release proof.
+- `2026-08-15-production-context-s6.md` — S6 composition complete: governed interview/recon
+  publication, OTLP-safe observability, body-free operator refs, real catalog/product selection and
+  exact product-claim use, immutable v1-to-v2 turn pins, stream-race fencing, and an executable
+  32-node broad quarantine; production release remains blocked by the 103.759-second fast phase.
+- `2026-08-15-production-context-s5.md` — S5-A–F complete: separated company/product extraction,
+  conservative catalog lineage, V2/product cards, trusted product reads, immutable company/product
+  turn pins, real-fleet composition, and durable human-only product selection through the frontend.
+- `2026-08-15-production-context-s50.md` — S5.0 decision gate complete: separate company/product
+  knowledge scopes, paired selected-product card/tools, trusted-only product authority,
+  `ClientKnowledgeCard@2` bounded catalog, coherent durable version-pair policy, executable state
+  manifest, and S5-A–F runtime ownership without a premature cutover.
+- `2026-08-15-production-context-s31.md` — S3.1 complete: immutable database-backed per-turn
+  workspace/project/client/company-KB scope receipts, retry-stable vN semantics, frozen
+  company-wide versus product-specific policy, production Stage-0 statement bindings, real
+  AGENT_TURN/S4/checkpoint/finalization/replay/DSAR acceptance, and retained clean evidence.
+- `2026-08-14-production-context-s4e.md` — S4-E and amended S4 complete: exact Client-KB result
+  subject indexing, body-free stream projection, bounded turn/delegation/checkpoint DSAR closure,
+  immutable injection-hardened profile v26/skill v13, no-resurrection replay, and retained clean
+  119-test PostgreSQL acceptance evidence.
+- `2026-08-14-production-context-s4c.md` — S4-C complete: unregistered frozen `@2` Client-KB
+  discovery/inspection tools, paired production-artifact-only authority injection, typed durable
+  JSON output/replay support, exact-version PostgreSQL/adversarial acceptance, and the S4-D
+  production-registration handoff.
+- `2026-08-14-production-context-s4a-s4b.md` — amended S4-A/B complete: marker/run-based exact
+  version readers, retention-safe historical access, deterministic classification/pagination,
+  and immutable provider/DB-free `@2` contract fixtures. S4-C through S4-E remain required.
+- `2026-08-14-production-context-s4.md` — historical preliminary `@1` S4 implementation and
+  production composition record. Reclassified by the amended S4-A–E roadmap; it is compatibility
+  evidence and no longer means S4 as a whole is complete.
+- `2026-08-14-production-context-s3.md` — S3 complete: production AGENT_TURN composition of the
+  real L2 brand/confirmed product, paired account-wide Client-KB and active-project Stage-0 cards,
+  exact per-turn version/receipt pins, pre-composition committed replay, product/account KB scope
+  isolation, privacy-safe logs, and exhaustive isolated-DB/static verification.
+- `2026-08-14-production-context-s2.md` — S2 complete: insert-once canonical workspace-client
+  binding, conservative historical adoption, authoritative/transitional fleet composition,
+  project inheritance, target-substitution refusal, migration/concurrency/tenancy evidence, and
+  the exact S3 production-card composition handoff.
+- `2026-08-14-stage0-crawl-recovery-backoff.md` — closes the C10 Scrapling recovery-wake follow-up:
+  DB-clock delayed fleet requeue, earliest-lease/retry scheduling, bounded exponential fallback,
+  ready-work non-starvation, migration/replay tests, and privacy-safe cadence logs.
+- `2026-08-14-stage0-durable-official-site-crawl-c10.md` — C10 accepted: real Clerk/browser
+  provisioning, sub-40-second Firecrawl/Scrapling authoritative release, same-frontier background,
+  receipt/artifact/claim/replay reconciliation, live-discovered cutover/redirect/progress/category
+  corrections, retained isolated evidence, and explicit provider-cost/recovery follow-ups.
+- `2026-08-14-stage0-durable-official-site-crawl-c9.md` — C9 complete: executable 53-case/nine-
+  crash matrix, recovered-result safety/receipt/provenance hardening, full retention reach, clean
+  200-test isolated-DB gate, migration/frontend/static gates, and fully classified unrelated
+  monolithic-suite baseline failures; C10 live cutover remains.
+- `2026-08-14-stage0-durable-official-site-crawl-c8.md` — C8 complete: stable crawl/extraction
+  events, rows-first setup/operator projection, full §17.4 metrics, privacy-safe logs, actionable
+  fetch/extraction ambiguity reads, fenced recovery CLI/runbook, clean 164-test DB gate, complete
+  frontend/static gates, and retained C7 row-only inspection evidence.
+- `2026-08-14-stage0-durable-official-site-crawl-c7.md` — C7 complete: exact immutable-corpus
+  reading, category-concurrent Luna/Terra extraction, durable response-before-parse operations,
+  snapshot/URL/span grounding, provider-neutral claims, partial success, zero-spend cold replay,
+  retained Insight Health live evidence, and the open C8/C10 lease-latency release gate.
+- `2026-08-14-stage0-durable-official-site-crawl-c6.md` — C6 complete in default-off allowlisted
+  shadow mode: one-run fast/background lifecycle, immutable checkpoints, fleet-owned onboarding
+  recon/crawl work, phase-blocker recovery, reversible task-kind migration, 208-test focused gate,
+  and retained Insight Health Firecrawl evidence with zero-call cold replay.
+- `2026-08-14-stage0-durable-official-site-crawl-c5.md` — C5 complete: PostgreSQL-only bounded
+  worker pool, cross-run global/host capacity, heartbeat/fencing, graceful stop, fast/background
+  fairness, category quotas, replay-safe no-refetch depth expansion, bounded no-spend retries,
+  multiprocess fault tests, and exact C6 production-composition handoff.
+- `2026-08-14-stage0-durable-official-site-crawl-c4.md` — C4 complete: fenced
+  prepared/dispatched/result/persistence attempts, PB-B2 content-addressed artifacts, URL-level
+  provenance snapshots, persistence-only replay, paid-call reconciliation/quarantine, bounded
+  privacy-safe receipts, DSAR reach, expanded crash matrix, and retained Firecrawl/Scrapling
+  canary evidence.
+- `2026-08-14-stage0-durable-official-site-crawl-c2.md` — C2 complete: versioned conservative
+  URL identity, separate observation/edge/alias provenance, bounded sitemap/robots parsing,
+  coordinator-owned SSRF/redirect/MIME/size/link safety, no-refetch shorter-path re-expansion,
+  exhaustive adversarial fixtures, and retained isolated-DB evidence.
+- `2026-08-14-stage0-durable-official-site-crawl-c1.md` — C1 complete: eight-table reversible
+  PostgreSQL frontier/ledger, workspace/run structural isolation, generation-fenced claims and
+  recovery, immutable verified checkpoints, provider-neutral `official_site` source, isolated-DB
+  concurrency/migration evidence, and the exact C2 handoff.
+- `2026-08-14-stage0-durable-official-site-crawl-c0.md` — C0 complete: frozen provider-neutral
+  types/enums/tables/transitions/seams, PostgreSQL dispatch and reconciliation fencing,
+  `official_site` source-key migration ruling, recursive-spike disposition, retained general
+  Stage-0 prerequisites, provider-free fixtures, and the exact C1 handoff.
+- `2026-08-14-stage0-durable-official-site-crawl-plan.md` — founder-approved implementation plan
+  for a new provider-neutral Stage-0 crawler: PostgreSQL-only frontier/ledger, generation-fenced
+  leases, conservative URL identity, provenance-preserving content dedupe, one fast/background
+  run, single-page Firecrawl/Scrapling fetchers, paid-call recovery, C0–C10 gates, and live evidence.
+- `2026-08-10-part2-d7-close.md` — **Part II D7 CLOSED:** one durable stream serves design —
+  run_event/stream_token widened with generic subject_kind/subject_id (a02cbcb6e641),
+  design_run_event dropped (eb9c5b963f40); lease-fenced emitter, self-contained terminals,
+  single-use subject-bound tokens with workspace-from-token; editor on a fetch-stream client,
+  wire contract byte-preserved; suite 548/9/0. D8 backlog inventoried.
+- `2026-08-10-part2-d7a-subject-widening.md` / `…-d7b-stream-unification.md` — D7 round detail.
+- `2026-08-10-part2-d6-close.md` — **Part II D6 CLOSED:** 49 design_* tools (classes in
+  lumen_api/toolbelt/, clue_api lazy-registers; always-present, refusing when runtime off);
+  one ToolInvoker write path for REST + agent over the shared A9/journal tables; no-bypass
+  guard with equality-closed exemptions; scene CAS drop + 8 more correctness debts paid;
+  generation ledger → Postgres (2711924d1e29); suite 543/9/0; registry 97/104.
+- `2026-08-10-part2-d6a-toolbelt-foundation.md` / `…-d6b-documents-domain.md` /
+  `…-d6c-assets-brand-personalization.md` — D6 round detail.
+- `2026-08-09-part2-d5-close.md` — **Part II D5 CLOSED:** design turns + ingestion are leased
+  fleet work (`design_job`, envelope-discriminated); daemon threads + orphan sweep gone;
+  generation-fenced zombie writes; Postgres checkpointer with honest resume-as-restart;
+  stranded-work reaper (re-offer once, then fail); shims + agent_runtime are real uv members
+  (deepagents 0.6.12 treaty); O5 bridge survives by corrected ruling; suite 501/9/0.
+- `2026-08-09-part2-d5a-durable-foundation.md` / `…-d5b-turns-on-the-fleet.md` /
+  `…-d5c-ingestion-reaper.md` — D5 round detail (schema+CAS+envelopes; handler+checkpointer+API
+  switch+kill-and-resume; ingestion+reaper+workspace debts).
+- `2026-08-09-part2-d4-close.md` — **Part II D4 CLOSED:** every design asset byte durably on
+  platform `clue_storage` (`{ws}/design/{sha}` keys, row-before-blob); Rust engine keeps a
+  transient per-ws materialization cache (write-back + read-through); migration `13cd5078d697`
+  (CHECK widened + `content_sha256` index); suite 501/9/0; two founder-ratification flags.
+- `2026-08-09-part2-d4a-design-storage-seam.md` — D4 Round A detail: the `clue_design.storage`
+  seam + `DesignBlobStore`; custom-component blobs + publish assets moved; sidecar dead; the
+  CHECK-collision and shared-row media-type findings.
+- `2026-08-09-part2-d4b-main-asset-store.md` — D4 Round B detail: engine cache demoted,
+  `asset_custody.py` write-back/read-through, staged ingestion on storage keys, public route on
+  the artifact table; the `tests/api` DB-pollution defect bisection; traps for later agents.
+- `2026-08-08-part2-d3-concept-joins.md` — **Part II D3 done:** brand-kit brand_id +
+  design_account account_entity_id stamped via resolve-or-create (clue_design/joins.py,
+  interim scaffolding; Part III owns governed creation + NOT NULL + backfill); suite 490/0.
+- `2026-08-08-part2-d24a-personalization-accounts.md` + `2026-08-08-part2-d24b-publishes-components.md`
+  — **Part II D2.4 done (two Opus rounds):** personalization/accounts/batches (A) and
+  publishes/components + O6b `/w/{ws}/p/…` public routes, bare routes deleted (B); document→
+  account FK re-added; last cross-domain validation seam closed; migration `cf7dd82cf683`
+  (account FK + workspace-local binding/instance/repair ids — founder nod pending); bridge
+  fixed to private-engine-per-call (concurrent calls); design suite 487/0. Remaining: D2.5.
+- `2026-08-08-part2-d23-brand-assets-ingestion.md` — **Part II D2.3 done:** brand kits/compat,
+  asset registry/descriptions, ingestion jobs on Postgres; scene-asset promotion in-transaction
+  (D2.2 seam closed); migration `cf4f80537c8e` (content-derived asset ids + client-supplied
+  snapshot ids → workspace-local PKs). **Incident:** a D2.3 agent ran `git reset` to D2.1
+  despite the no-git rule — orphaned the D2.2 commit + clobbered fixed tests/docs; recovered
+  via reflog + `git checkout acd10f8e --`. Future agent briefs: no git, verify file states in
+  review. (Phase-B detail note: `2026-08-08-part2-d23b-ingestion-descriptions.md`.)
+- `2026-08-08-part2-d22-documents-history-port.md` — **Part II D2.2 done:** documents+history
+  on Postgres behind `HybridRepository` (scene CAS added; legacy asset-metadata 410s per O3);
+  migration `7a9881f9717a` — workspace-local PKs extended to all client-supplied/content-hash
+  id namespaces (**needs founder ratification**), account FK deferred to D2.4; design suite
+  487/0 green after harness adaptation + merge-fallout repairs (fixtures, npm). jsonb does NOT
+  preserve object key order — never select nodes by dict position. Opus-implements/Fable-reviews
+  process now binding.
+- `2026-08-07-part2-d21-dal-foundation.md` — **Part II D2.1 done:** `lumen-api` packaged +
+  explicit uv-workspace member (agent-runtime deps deliberately excluded; dead `pypdf` pin
+  dropped over a real lockfile conflict; py_lumen_* stay PYTHONPATH until Step-2);
+  `clue_design` gains errors + parent-row-lock sequence allocators (O5 one-transaction rule
+  binding); 10/10 design DB tests incl. an observed lock-blocking concurrency proof.
+- `2026-08-07-part2-d1-design-schema.md` — **Part II D1 done:** six `design_*` migrations off
+  `c6d84aa84b79` (head `e79f192828b1`), 11 package-local enums + parity, immutability triggers,
+  structural tenancy; db-smoke + 6/6 design tests green. Env gotcha: localhost:5432 = Homebrew
+  PG17, NOT the docker container. Pre-existing DB-suite failures (waterfall et al.) proven
+  D1-independent by A/B. Next: D2 after O6b ratification.
+- `2026-08-07-part2-o1-o6-ratified.md` — **O1–O6 RATIFIED (founder); D1 unblocked.** Key
+  refinements: `design_brand_kit` promoted to THE platform versioned brand-kit payload (brand
+  studio vision); `asset_descriptions` ported with full behavior; O5 atomicity rule binding;
+  fleet-for-design-deepagent uncertain but concurrent multi-session runs binding; O6 slugs
+  workspace-local with O6b (interim `/p/{slug}` rule) open for D2; append-only design history
+  is a preserved principle — no destructive compaction ever.
+- `2026-08-07-part2-d0-preflight.md` — **Part II slice D0 done:** contract doc
+  `docs/specs/PD-part2-design-substrate.md` (slice map, 22-table `design_*` map, rules, open
+  decisions O1–O6 — **unratified, gate D1**); `subsystems/design/clue_design` scaffold under all
+  gates incl. new Rule-S4 contract; clue-design logging-guard carve-out. Pre-existing red found:
+  23-file ruff-format drift at `origin/main` fails `make lint` — ruling pending.
+- `2026-08-07-alembic-single-head-c6d84aa84b79.md` — **Alembic has ONE head: `c6d84aa84b79`**;
+  all new (incl. Part-II `design_*`) migrations chain off it. A 4-head report was false (it
+  counted Phase-C branch tips already joined by `fc1f3d22a167`). Verify with
+  `uv run alembic heads`, never by eyeballing the versions dir.
+- `2026-08-07-design-subsystem-monorepo-merge.md` — Design-integration **Part I / Step 1** done:
+  `clue-design`/*havana* merged into `subsystems/clue-design/` (full history preserved; on
+  `origin/main` via PR #40; design-only ancestry = 2nd parent of `3ab4a750`), excluded from the
+  uv workspace + ruff pending Step-2 hygiene. Parts II–IV (substrate / agent / surface) not
+  started. Authoritative plan: `docs/specs/design-integration-master-plan.md`.
 - `2026-08-06-m8d-r9-parallel-execution.md` — R9 accepted: exact-wave dependency checks,
   atomic budget/provider admission, concurrent Exa/Sumble execution, partial-result joining,
   callback-race-safe composite waits, cold-resume/crash replay, DSAR, and isolated-DB evidence.
@@ -208,3 +462,5 @@ The central architecture bet is that verification must be modeled at the claim/d
 - `2026-06-26-m134-observability-surface.md` — M13.4 (cost & progress surface) complete: the read-only `ObservabilitySurface`, its api-root wiring, the `cost_estimate` migration, the coverage/verification-health/pre-run-estimate decisions, and the integration follow-ups.
 
 - **2026-08-01 — Stage-0 acceptance run PASSED** (`2026-08-01-stage0-acceptance-run.md`): structured-output repair plan + F6/F7/F8 landed; live Terra interview → grounded confirmed ICP; entailment-strictness product finding; Sumble canary is next.
+
+- **2026-08-10 — Part II D8 CLOSED; Part II COMPLETE (D0–D8)** (`2026-08-10-part2-d8-close.md`): outbox consolidation (one DAL owner + `clue_core.run_event` contract-delta), dead liveness net deleted, retention (token sweep ON / design pruner OFF with in-code floors), Part-II gate machine-checked end to end, DSAR **assessed not wired** (`docs/specs/PD-D8-dsar-assessment.md`); founder items: pruner enablement + the standing D2.2/D4 flags.

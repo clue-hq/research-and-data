@@ -10,6 +10,7 @@ import {
   composeTranscript,
   emptyTranscriptState,
   turnsAwaitingRehydration,
+  type TranscriptMessage,
   type TranscriptState,
 } from "./chat-transcript";
 import type { ChatTextPart } from "./chat-parts";
@@ -702,4 +703,168 @@ test("a reasoning delta with no card to belong to invents nothing", () => {
   const turn = state.turns.get(TURN);
   assert.ok(turn);
   assert.equal(turn.parts.length, 0);
+});
+
+// --- the design leg (genweb slice 3) --------------------------------------
+
+function legFrame(
+  payload: Record<string, unknown>,
+  turnId: string = TURN,
+): ChatStreamEvent {
+  nextEventId += 1;
+  const parsed = parseChatStreamEvent({
+    schema_version: "1",
+    event_id: nextEventId,
+    sequence: nextEventId,
+    project_id: "p1",
+    thread_id: "t1",
+    turn_id: turnId,
+    ...payload,
+  });
+  assert.ok(parsed.ok, `leg frame did not parse: ${parsed.ok ? "" : parsed.reason}`);
+  return parsed.event;
+}
+
+function assistantOf(
+  state: TranscriptState,
+  turnId: string,
+): TranscriptMessage {
+  const composed = composeTranscript({ messages: [], turns: [], stream: state });
+  const message = composed.find(
+    (item) => item.turnId === turnId && item.role === "assistant",
+  );
+  assert.ok(message, `no assistant message for ${turnId}`);
+  return message;
+}
+
+test("the four leg frames parse and carry their leg id", () => {
+  for (const type of [
+    "leg.opened",
+    "leg.awaiting_user",
+    "leg.closed",
+    "leg.reopened",
+  ] as const) {
+    const event = legFrame({ type, leg_id: "leg-9", reason: "locked" });
+    assert.equal(event.type, type);
+    assert.equal(event.legId, "leg-9");
+  }
+});
+
+test("an unrecognized leg frame is dropped without killing the stream", () => {
+  // Forward compatibility: a NEW backend frame must never crash an old build.
+  const parsed = parseChatStreamEvent({
+    schema_version: "1",
+    project_id: "p1",
+    thread_id: "t1",
+    turn_id: TURN,
+    type: "leg.something_new",
+    leg_id: "leg-9",
+  });
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.ok === false && parsed.fatal, false);
+});
+
+test("leg lines land on the turn that performed the transition, in order", () => {
+  const state = apply(emptyTranscriptState(), [
+    legFrame({ type: "leg.opened", leg_id: "leg-9" }, "turn-open"),
+    legFrame({ type: "leg.awaiting_user", leg_id: "leg-9" }, "turn-design"),
+    legFrame(
+      { type: "leg.closed", leg_id: "leg-9", reason: "locked" },
+      "turn-design",
+    ),
+  ]);
+  assert.deepEqual(assistantOf(state, "turn-open").legNotices, [
+    "Design session opened — your next message goes to Design.",
+  ]);
+  assert.deepEqual(assistantOf(state, "turn-design").legNotices, [
+    "Design is ready for your next message.",
+    "Design session closed — the page is locked in.",
+  ]);
+});
+
+test("a replayed leg backlog re-lands the same lines, never a second copy", () => {
+  const opened = legFrame({ type: "leg.opened", leg_id: "leg-9" }, "turn-open");
+  const state = apply(emptyTranscriptState(), [opened, opened, opened]);
+  assert.equal(assistantOf(state, "turn-open").legNotices.length, 1);
+});
+
+test("a leg frame changes no turn state and creates no part", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({ type: "turn.started" }),
+    legFrame({ type: "leg.awaiting_user", leg_id: "leg-9" }),
+  ]);
+  const turn = state.turns.get(TURN);
+  assert.ok(turn);
+  assert.equal(turn.state, "running");
+  assert.equal(turn.parts.length, 0);
+});
+
+test("a turn running inside an open leg is generating; the opener is not", () => {
+  const state = apply(emptyTranscriptState(), [
+    legFrame({ type: "leg.opened", leg_id: "leg-9" }, "turn-open"),
+    legFrame({ type: "turn.started" }, "turn-open"),
+    legFrame({ type: "turn.awaiting_input" }, "turn-open"),
+    legFrame({ type: "turn.started" }, "turn-design"),
+  ]);
+  assert.equal(assistantOf(state, "turn-open").generatingDesign, false);
+  assert.equal(assistantOf(state, "turn-design").generatingDesign, true);
+});
+
+test("nothing is generating once the leg has closed", () => {
+  const state = apply(emptyTranscriptState(), [
+    legFrame({ type: "leg.opened", leg_id: "leg-9" }, "turn-open"),
+    legFrame({ type: "leg.closed", leg_id: "leg-9", reason: "locked" }, "turn-a"),
+    legFrame({ type: "turn.started" }, "turn-b"),
+  ]);
+  assert.equal(state.designLeg.open, false);
+  assert.equal(assistantOf(state, "turn-b").generatingDesign, false);
+});
+
+test("with no leg frame in the backlog nothing claims to be generating", () => {
+  // The honest degradation: an opening frame older than the replayed backlog
+  // means the surface says less, never something untrue.
+  const state = apply(emptyTranscriptState(), [
+    legFrame({ type: "turn.started" }, "turn-design"),
+  ]);
+  assert.equal(assistantOf(state, "turn-design").generatingDesign, false);
+});
+
+test("a reopen names its own delegating turn and reopens the leg", () => {
+  const state = apply(emptyTranscriptState(), [
+    legFrame({ type: "leg.opened", leg_id: "leg-9" }, "turn-open"),
+    legFrame({ type: "leg.closed", leg_id: "leg-9", reason: "locked" }, "turn-a"),
+    legFrame({ type: "leg.reopened", leg_id: "leg-9" }, "turn-reopen"),
+  ]);
+  assert.deepEqual(state.designLeg, {
+    open: true,
+    legId: "leg-9",
+    openedByTurnId: "turn-reopen",
+  });
+  assert.deepEqual(assistantOf(state, "turn-reopen").legNotices, [
+    "Design session reopened — your next message goes to Design.",
+  ]);
+});
+
+test("an awaiting frame keeps the leg open without stealing the opener", () => {
+  const state = apply(emptyTranscriptState(), [
+    legFrame({ type: "leg.opened", leg_id: "leg-9" }, "turn-open"),
+    legFrame({ type: "leg.awaiting_user", leg_id: "leg-9" }, "turn-design"),
+  ]);
+  assert.deepEqual(state.designLeg, {
+    open: true,
+    legId: "leg-9",
+    openedByTurnId: "turn-open",
+  });
+});
+
+test("stream.reset drops parts but keeps the leg lines it cannot re-read", () => {
+  const state = apply(emptyTranscriptState(), [
+    legFrame({ type: "leg.awaiting_user", leg_id: "leg-9" }),
+    frame({ type: "text.start", part_id: "text:a", part_kind: "text" }),
+    frame({ type: "stream.reset", reason: "reconciliation_mismatch" }),
+  ]);
+  const turn = state.turns.get(TURN);
+  assert.ok(turn);
+  assert.equal(turn.parts.length, 0);
+  assert.equal(turn.legNotices.size, 1);
 });

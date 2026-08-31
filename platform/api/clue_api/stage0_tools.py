@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
+from contextlib import asynccontextmanager
 from decimal import Decimal
+from typing import cast
 from uuid import UUID
 
 from pydantic import Field, JsonValue
@@ -13,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.auth_tool_context import require_human_authority
 from clue_api.project_execution_router import ProjectExecutionRouter
+from clue_api.stage0_field_events import ReconFieldProgressEmitter
 from clue_api.tool_outputs import (
     ConfirmedProjectRunOutput,
     InterviewAnswerOutput,
@@ -25,8 +28,10 @@ from clue_api.tool_outputs import (
 from clue_api.turn_binding import TRUSTED_TURN_FIELD
 from clue_config import DEFAULT_STAGE0_POLICY, Stage0Policy
 from clue_core import (
+    RECON_TRANSITION_KIND,
     AccountEntity,
     EntityId,
+    ICPStatus,
     MemoryWriteSeam,
     OnboardingInputId,
     OnboardingInputKind,
@@ -38,18 +43,20 @@ from clue_core import (
     ReadinessGate,
     ReadinessVerdict,
     ReconRunId,
+    RunEventTopic,
     RunId,
 )
 from clue_db import ConnFactory, transaction
+from clue_execution.run_events import emit_run_event
+from clue_obs import get_logger
 from clue_research.durable import (
     ProjectRunStatus,
-    RunEventTopic,
-    emit_run_event,
     ensure_project_run,
     get_project_run,
 )
 from clue_research.icp import get_icp_version
 from clue_research.stage0 import (
+    CLIENT_ONBOARDING_FIELDS,
     ClaimEntailmentJudge,
     ClientInput,
     InterviewClaimEntityRefused,
@@ -87,6 +94,7 @@ from clue_toolbelt import (
 )
 
 MemoryWriteFactory = Callable[[AsyncConnection], MemoryWriteSeam]
+log = get_logger("clue_api.stage0_tools")
 
 
 def _failure(code: str, message: str) -> tuple[PreconditionFailure, ...]:
@@ -107,19 +115,27 @@ async def _emit_recon_transition(
     workspace_id: str,
     lane: str,
     status: ReconLaneStatus,
+    budget_exhausted: bool | None = None,
 ) -> None:
-    """Append exactly one event in the same transaction as one actual lane transition."""
+    """Append exactly one event in the same transaction as one actual lane transition.
+
+    ``budget_exhausted`` rides the terminal COMPLETED event only: a lane that stopped at its
+    cap "completed" with fields it never reached, and the progress surface must be able to say
+    so rather than presenting a truncated run as full coverage."""
+    payload: dict[str, JsonValue] = {
+        "kind": RECON_TRANSITION_KIND,
+        "recon_run_id": str(recon_run_id),
+        "lane": lane,
+        "status": status.value,
+    }
+    if budget_exhausted is not None:
+        payload["budget_exhausted"] = budget_exhausted
     await emit_run_event(
         conn,
         workspace_id=workspace_id,
         run_id=ProjectRunId(recon_run_id),
         topic=RunEventTopic.STEP_PROGRESS.value,
-        payload={
-            "kind": "stage0.recon.transition",
-            "recon_run_id": str(recon_run_id),
-            "lane": lane,
-            "status": status.value,
-        },
+        payload=payload,
     )
 
 
@@ -144,7 +160,8 @@ async def start_confirmed_project_run(
         raise ValueError("project does not carry the requested confirmed product")
     spec = await get_icp_version(conn, workspace_id, icp_key, icp_version)
     if spec is None or (
-        spec.client_entity_id != client_entity_id
+        spec.status is not ICPStatus.ACTIVE
+        or spec.client_entity_id != client_entity_id
         or spec.client_kb_version != client_kb_version
         or spec.product_id != product_id
     ):
@@ -215,8 +232,36 @@ async def start_confirmed_project_run(
         readiness_decision_id=readiness_decision_id,
     )
     run = await get_project_run(conn, project_run_id)
-    if run is None or run.phase is not ProjectPhase.DISCOVERY:
-        raise ValueError("confirmed project run id already belongs to an incompatible run")
+    if run is None:  # pragma: no cover - same-transaction invariant
+        raise ValueError("confirmed project run vanished after insertion")
+    expected_lineage = (
+        project_id,
+        workspace_id,
+        icp_key,
+        icp_version,
+        client_entity_id,
+        client_kb_version,
+        product_id,
+        product_context_version_id,
+        readiness_decision_id,
+        budget_cap_cents,
+    )
+    actual_lineage = (
+        run.project_id,
+        run.workspace_id,
+        run.icp_key,
+        run.icp_version,
+        run.client_entity_id,
+        run.client_kb_version,
+        run.product_id,
+        run.product_context_version_id,
+        run.readiness_decision_id,
+        run.budget_cap_cents,
+    )
+    if actual_lineage != expected_lineage:
+        raise ValueError("confirmed project run id already belongs to different immutable lineage")
+    if tuple(ProjectPhase).index(run.phase) < tuple(ProjectPhase).index(ProjectPhase.DISCOVERY):
+        raise ValueError("confirmed project run has not reached its discovery entry phase")
     return project_run_id
 
 
@@ -545,6 +590,7 @@ class _Stage0Tool(Tool):
         storage: StorageBackend | None = None,
         project_execution_router: ProjectExecutionRouter | None = None,
         entailment_judge: ClaimEntailmentJudge | None = None,
+        field_progress_factory: ConnFactory | None = None,
     ) -> None:
         self._conn_factory = conn_factory
         self._policy = policy
@@ -554,7 +600,31 @@ class _Stage0Tool(Tool):
         self._scrape_binder = scrape_binder
         self._storage = storage
         self._project_execution_router = project_execution_router
+        # Recon field progress commits on its own connection only when a factory is injected
+        # (production: `clue_db.transaction`, so a poller sees motion mid-lane). Default None
+        # keeps the events on the lane's own connection — the only shape that is safe under a
+        # single-connection / lock-guarded test factory, which an autonomous checkout deadlocks.
+        self._field_progress_factory = field_progress_factory
         self._entailment_judge = entailment_judge
+
+    def _gate_for_connection(self, conn: AsyncConnection) -> PreSpendGate:
+        """Bind transaction-aware gates to the lane's caller-owned connection.
+
+        ``reverse_profile`` creates the Stage-0 client identity inside the lane transaction. A
+        production pre-spend gate that opens a second transaction cannot see that uncommitted row
+        and rejects every legitimate source call. Concrete gates expose ``with_conn_factory`` for
+        exactly this atomic-admission case; keep the milestone boundary protocol-only by detecting
+        that optional capability rather than importing the M9 implementation here.
+        """
+        rebind = getattr(self._pre_spend_gate, "with_conn_factory", None)
+        if not callable(rebind):
+            return self._pre_spend_gate
+
+        @asynccontextmanager
+        async def lane_connection() -> AsyncIterator[AsyncConnection]:
+            yield conn
+
+        return cast(PreSpendGate, rebind(lane_connection))
 
     async def _project_audit_snapshot(self, project_id: str, ctx: ToolContext) -> dict[str, object]:
         async with self._conn_factory() as conn:
@@ -724,6 +794,17 @@ class StartReconTool(_Stage0Tool):
             detail={"background_budget_cents": str(self._policy.background_budget_cents)},
         )
 
+    def _field_progress(
+        self, recon_run_id: UUID, ctx: ToolContext, lane: str
+    ) -> ReconFieldProgressEmitter:
+        """One per-lane progress sink; the emitter itself decides autonomous-vs-lane commit."""
+        return ReconFieldProgressEmitter(
+            workspace_id=ctx.workspace_id,
+            recon_run_id=recon_run_id,
+            lane=lane,
+            conn_factory=self._field_progress_factory,
+        )
+
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, StartReconInput)
         input_ids = tuple(OnboardingInputId(UUID(item)) for item in inputs.onboarding_input_ids)
@@ -763,6 +844,7 @@ class StartReconTool(_Stage0Tool):
                     lane="fast",
                     status=ReconLaneStatus.RUNNING,
                 )
+                budget_exhausted: bool | None = None
                 with bind_snapshots(
                     SnapshotSink(workspace_id=ctx.workspace_id),
                     self._storage,
@@ -775,12 +857,23 @@ class StartReconTool(_Stage0Tool):
                                 workspace_id=ctx.workspace_id,
                                 run_id=recon.fast_run_id,
                                 budget_cap_cents=self._policy.fast_budget_cents,
-                                pre_spend_gate=self._pre_spend_gate,
-                                product_id=inputs.product_id,
+                                pre_spend_gate=self._gate_for_connection(conn),
+                                # The fast release boundary is the original eleven-field
+                                # onboarding contract. Company catalog navigation is allowed to
+                                # arrive later and must never delay entry into the application.
+                                company_field_keys=CLIENT_ONBOARDING_FIELDS,
                                 max_source_tier=2,
                                 on_client_resolved=self._scrape_binder,
+                                on_field_progress=self._field_progress(recon.id, ctx, "fast"),
                             )
                     except Exception as exc:  # noqa: BLE001 - persist a durable failed lane
+                        log.exception(
+                            "stage0.recon_lane_failed",
+                            workspace_id=ctx.workspace_id,
+                            recon_run_id=str(recon.id),
+                            lane="fast",
+                            error_type=type(exc).__name__,
+                        )
                         recon = await transition_recon_lane(
                             conn,
                             recon_run_id=recon.id,
@@ -790,6 +883,7 @@ class StartReconTool(_Stage0Tool):
                             failure_code=type(exc).__name__,
                         )
                     else:
+                        budget_exhausted = result.budget_exhausted
                         recon = await transition_recon_lane(
                             conn,
                             recon_run_id=recon.id,
@@ -806,6 +900,7 @@ class StartReconTool(_Stage0Tool):
                     workspace_id=ctx.workspace_id,
                     lane="fast",
                     status=recon.fast_status,
+                    budget_exhausted=budget_exhausted,
                 )
             elif recon.background_status in {
                 ReconLaneStatus.QUEUED,
@@ -826,6 +921,7 @@ class StartReconTool(_Stage0Tool):
                         lane="background",
                         status=ReconLaneStatus.RUNNING,
                     )
+                budget_exhausted = None
                 with bind_snapshots(
                     SnapshotSink(workspace_id=ctx.workspace_id),
                     self._storage,
@@ -838,12 +934,19 @@ class StartReconTool(_Stage0Tool):
                                 workspace_id=ctx.workspace_id,
                                 run_id=recon.background_run_id,
                                 budget_cap_cents=self._policy.background_budget_cents,
-                                pre_spend_gate=self._pre_spend_gate,
-                                product_id=inputs.product_id,
+                                pre_spend_gate=self._gate_for_connection(conn),
                                 max_source_tier=3,
                                 on_client_resolved=self._scrape_binder,
+                                on_field_progress=self._field_progress(recon.id, ctx, "background"),
                             )
                     except Exception as exc:  # noqa: BLE001 - persist a durable failed lane
+                        log.exception(
+                            "stage0.recon_lane_failed",
+                            workspace_id=ctx.workspace_id,
+                            recon_run_id=str(recon.id),
+                            lane="background",
+                            error_type=type(exc).__name__,
+                        )
                         recon = await transition_recon_lane(
                             conn,
                             recon_run_id=recon.id,
@@ -853,6 +956,7 @@ class StartReconTool(_Stage0Tool):
                             failure_code=type(exc).__name__,
                         )
                     else:
+                        budget_exhausted = result.budget_exhausted
                         recon = await transition_recon_lane(
                             conn,
                             recon_run_id=recon.id,
@@ -869,6 +973,7 @@ class StartReconTool(_Stage0Tool):
                     workspace_id=ctx.workspace_id,
                     lane="background",
                     status=recon.background_status,
+                    budget_exhausted=budget_exhausted,
                 )
         return ToolResult(
             tool=self.name,
@@ -1055,6 +1160,11 @@ class ConfirmProjectProductTool(_Stage0Tool):
             return _failure(
                 "project_product_not_found",
                 "project and product do not form a same-workspace brand pair",
+            )
+        if project.product_id is not None and project.product_id != product.product_id:
+            return _failure(
+                "project_product_conflict",
+                "this project already has a different immutable product selection",
             )
         return ()
 
@@ -1348,6 +1458,7 @@ def stage0_tools(
     memory_write_factory: MemoryWriteFactory | None = None,
     project_execution_router: ProjectExecutionRouter | None = None,
     entailment_judge: ClaimEntailmentJudge | None = None,
+    field_progress_factory: ConnFactory | None = None,
 ) -> tuple[Tool, ...]:
     def make(tool_type: type[_Stage0Tool]) -> _Stage0Tool:
         return tool_type(
@@ -1360,6 +1471,7 @@ def stage0_tools(
             storage=storage,
             project_execution_router=project_execution_router,
             entailment_judge=entailment_judge,
+            field_progress_factory=field_progress_factory,
         )
 
     return (

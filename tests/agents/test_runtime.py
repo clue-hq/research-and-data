@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -55,6 +56,19 @@ class _Models:
         return ScriptedAgentChatModel(responses=self._responses)
 
 
+class _NeverRespondingModel(ScriptedAgentChatModel):
+    async def _agenerate(self, *args: Any, **kwargs: Any):
+        del args, kwargs
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+
+class _NeverRespondingModels:
+    def build(self, **kwargs: Any) -> _NeverRespondingModel:
+        del kwargs
+        return _NeverRespondingModel(responses=(AIMessage(content="unreachable"),))
+
+
 class _CaptureModelInput(BaseCallbackHandler):
     def __init__(self) -> None:
         self.messages: list[list[object]] = []
@@ -73,6 +87,7 @@ class _Execution(AgentExecutionAdapter):
     def __init__(self) -> None:
         self.recovered: dict[str, object] = {}
         self.validated_plans: list[AgentPlan] = []
+        self.recover_calls = 0
 
     async def validate_plan(
         self,
@@ -147,7 +162,53 @@ class _Execution(AgentExecutionAdapter):
 
     async def recover(self, *, execution_id: ExecutionId) -> Mapping[str, object]:
         assert execution_id == EXECUTION_ID
+        self.recover_calls += 1
         return self.recovered
+
+
+class _ReadinessResponseExecution(_Execution):
+    """Exact fake receipt + captured finalization for the Stage-0 terminology regression."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.envelope: object | None = None
+
+    async def execute(self, *, plan: ValidatedPlan) -> AsyncIterator[ExecutionProgress]:
+        operation = plan.operations[0]
+        receipt = GovernedOperationReceipt(
+            node_key=operation.node_key,
+            operation_id=operation.operation_id,
+            kind="tool",
+            address=operation.address,
+            status=AgentExecutionStatus.COMPLETED,
+            reference_values={
+                "readiness_decision_id": "00000000-0000-4000-8000-000000000811",
+                "gate": "icp_synthesis",
+                "verdict": "ready",
+                "coverage_ratio": 7 / 9,
+                "verified_claims": 0,
+                "available_field_keys": ["client.product"],
+                "reason_codes": [],
+                "readiness_policy_version": 1,
+            },
+        )
+        self.recovered = {"operation_receipts": (receipt,)}
+        yield ExecutionProgress(
+            execution_id=plan.execution_id,
+            status="completed",
+            completed_node_keys=(operation.node_key,),
+        )
+
+    async def finalize(self, *, envelope: object) -> ArtifactRef:
+        self.envelope = envelope
+        ref = artifact("stage0-terminology-finalization.json")
+        self.recovered.update(
+            {
+                "finalization_status": "completed",
+                "finalization_ref": ref,
+            }
+        )
+        return ref
 
 
 class _DelegationExecution(_Execution):
@@ -333,6 +394,41 @@ def test_real_deepagent_normal_stop_is_failed_without_finalize_authority() -> No
     assert str(system.content).endswith("## End resolved resource and capability map")
 
 
+def test_real_deepagent_timeout_recovers_and_never_manufactures_finalization() -> None:
+    request, resolved = _request()
+    execution = _Execution()
+    runtime = DeepAgentTurnRuntime(
+        models=cast(Any, _NeverRespondingModels()),
+        execution=execution,
+        max_runtime_s=0.01,
+    )
+    factory = GovernedAgentToolFactory(
+        request=request,
+        resolved_profile=resolved,  # type: ignore[arg-type]
+        registry=build_toolbelt(storage=None, gateway=None),
+        execution=cast(Any, execution),
+        lease=cast(Any, object()),
+        artifacts=cast(Any, object()),
+    )
+    outcome = run_async(
+        runtime.run(
+            request=request,
+            resolved_profile=resolved,  # type: ignore[arg-type]
+            context=AssembledAgentContext(
+                manifest=context_manifest(),
+                messages=(HumanMessage(content="Wait indefinitely."),),
+            ),
+            backend=None,
+            governed_tools=factory.build(),
+        )
+    )
+
+    assert outcome.status is AgentExecutionStatus.FAILED
+    assert outcome.failure_code == "agent_timeout"
+    assert outcome.finalization_ref is None
+    assert execution.recover_calls == 1
+
+
 def test_exact_tool_surface_requires_a_tool_call_until_governed_finalize() -> None:
     request, resolved = _request()
     execution = _Execution()
@@ -348,11 +444,15 @@ def test_exact_tool_surface_requires_a_tool_call_until_governed_finalize() -> No
         {"name": name}
         for name in ("edit_file", "glob", "grep", "ls", "read_file", "write_file", "write_todos")
     ]
+    governed_tools = factory.build()
+    effective_names = {tool.name for tool in governed_tools}
+    assert "finalize_turn" in effective_names
+    assert {"list_product_knowledge", "inspect_product_claim"}.isdisjoint(effective_names)
     model_request = ModelRequest(
         model=ScriptedAgentChatModel(responses=(AIMessage(content="unused"),)),
         messages=[HumanMessage(content="Ask the next useful question.")],
         system_message=SystemMessage(content="Base prompt."),
-        tools=[*factory.build(), *framework_tools],
+        tools=[*governed_tools, *framework_tools],
     )
     observed: dict[str, object] = {}
 
@@ -393,10 +493,10 @@ def test_exact_tool_surface_requires_a_tool_call_until_governed_finalize() -> No
         )
 
     run_async(
-        ExactAgentToolSurfaceMiddleware(profile=resolved).awrap_model_call(
-            model_request,
-            handler,
-        )
+        ExactAgentToolSurfaceMiddleware(
+            profile=resolved,
+            effective_governed_tool_names=effective_names,
+        ).awrap_model_call(model_request, handler)
     )
 
     calls = observed["calls"]
@@ -656,11 +756,94 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
     assert outcome.failure_code == "missing_finalize"
     assert len(execution.validated_plans) == 1
     proposed = execution.validated_plans[0].steps[0]
-    assert proposed.tool.address == "synthesize_icps@1"  # type: ignore[union-attr]
-    assert proposed.arguments == {  # type: ignore[union-attr]
-        "kb_version": None,
-        "product_id": None,
-    }
+    assert proposed.tool.address == "synthesize_icps@3"  # type: ignore[union-attr]
+    assert proposed.arguments == {}  # type: ignore[union-attr]
+
+
+def test_stage0_final_response_labels_policy_version_and_does_not_invent_an_icp() -> None:
+    request, resolved = _request()
+    stage0_skill = next(  # type: ignore[union-attr]
+        skill.ref.address
+        for skill in resolved.skills  # type: ignore[union-attr]
+        if skill.ref.name == "stage0-interview"
+    )
+    body = resolved.open_skill(stage0_skill)  # type: ignore[union-attr]
+    assert "readiness-policy version" in body
+    assert "say that no ICP" in body
+
+    execution = _ReadinessResponseExecution()
+    artifacts = _DelegationArtifacts()
+    response = (
+        "The backend readiness check is ready under readiness-policy version 1. "
+        "No ICP exists yet; synthesis must persist a draft icp_spec before one can be reviewed."
+    )
+    runtime = DeepAgentTurnRuntime(
+        models=_Models(
+            (
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "evaluate_stage0_readiness",
+                            "args": {"gate": "icp_synthesis"},
+                            "id": "stage0-readiness-terminology",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "finalize_turn",
+                            "args": {
+                                "status": "completed",
+                                "user_message": response,
+                                "domain_refs": [],
+                                "open_gate_refs": [],
+                                "assumptions": [],
+                                "next_actions": [],
+                                "failure_code": None,
+                            },
+                            "id": "stage0-readiness-finalize",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+            )
+        ),
+        execution=execution,
+        max_runtime_s=5,
+    )
+    factory = GovernedAgentToolFactory(
+        request=request,
+        resolved_profile=resolved,  # type: ignore[arg-type]
+        registry=build_toolbelt(storage=None, gateway=None),
+        execution=execution,
+        lease=cast(Any, SimpleNamespace(backend=_EmptyOutputBackend())),
+        artifacts=artifacts,
+    )
+
+    outcome = run_async(
+        runtime.run(
+            request=request,
+            resolved_profile=resolved,  # type: ignore[arg-type]
+            context=AssembledAgentContext(
+                manifest=context_manifest(),
+                messages=(HumanMessage(content="Are we ready to synthesize an ICP?"),),
+            ),
+            backend=None,
+            governed_tools=factory.build(),
+        )
+    )
+
+    assert outcome.status is AgentExecutionStatus.COMPLETED
+    envelope = cast(Any, execution.envelope)
+    persisted_response = artifacts.data[envelope.user_message_artifact_ref.artifact_key].decode()
+    assert persisted_response == response
+    assert "readiness-policy version 1" in persisted_response
+    assert "synthesized spec version" not in persisted_response
+    assert "No ICP exists yet" in persisted_response
 
 
 def test_c66_delegation_tool_freezes_exact_task_files_and_refs_before_child_wake() -> None:

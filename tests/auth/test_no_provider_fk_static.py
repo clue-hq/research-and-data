@@ -82,7 +82,7 @@ def test_provider_jwt_interpretation_is_confined_to_authenticator_adapter() -> N
     offenders: list[str] = []
     for root in (REPO / "platform", REPO / "subsystems", REPO / "libs"):
         for path in root.rglob("*.py"):
-            if path == adapter or "__pycache__" in path.parts:
+            if path == adapter or "__pycache__" in path.parts or ".venv" in path.parts:
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             for node in ast.walk(tree):

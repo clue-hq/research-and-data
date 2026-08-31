@@ -1,9 +1,10 @@
 import type { AccountContactDetail } from "../model/account-contact";
 import { contactPersonaLabel } from "../model/account-contact";
+import { contactDisplayName } from "../model/contact-accessibility";
+import { contactEvidenceArtifactHref } from "../model/evidence";
 import {
   formatConfidence,
-  formatIsoDate,
-  formatToken,
+  formatSemanticToken,
 } from "../model/formatting";
 import {
   AccountFlowIcon,
@@ -12,6 +13,8 @@ import {
 import { Absent, FactList, Restricted } from "./account-facts";
 import readability from "./account-readability.module.css";
 import { ContactAvatar } from "./contact-avatar";
+import { AccountTextSection } from "./account-detail-primitives";
+import { EvidenceList } from "./evidence-list";
 
 function ProfileRow({
   icon,
@@ -45,11 +48,11 @@ export function ContactProfileContent({
   return (
     <div>
       <div className="flex items-center gap-3">
-        <ContactAvatar name={contact.name} priority size={48} />
+        <ContactAvatar decorative name={contact.name} priority size={48} />
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <h1 className={readability.detailTitle}>
-          {contact.name ?? "Unnamed contact"}
+          {contactDisplayName(contact.name)}
         </h1>
         <span className={`${readability.pillMedium} rounded-xl bg-[#f0f3cf] px-2 py-1 shadow-[var(--clue-shadow-low)]`}>
           {contactPersonaLabel(contact.persona)}
@@ -80,7 +83,7 @@ export function ContactProfileContent({
         </ProfileRow>
         <ProfileRow icon="influence" label="Committee role">
           <span className="flex items-center gap-2">
-            {formatToken(contact.roleOnCommittee.value)}
+            {formatSemanticToken(contact.roleOnCommittee.value)}
             {confidence ? (
               <span className="text-[var(--clue-content-subtle)]">
                 {confidence} confidence
@@ -117,19 +120,14 @@ export function ContactProfileContent({
         </ProfileRow>
       </div>
 
-      <section className="mt-9">
-        <h2 className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}>
-          Overview
-        </h2>
-        {/* D-10: an honest empty state until this contact's deep research
-            completes and a real synthesis step composes prose claims. */}
-        <p
-          className={`${readability.uiRegular} mt-4 text-[var(--clue-content-subtle)]`}
-        >
-          A written overview is composed once this contact&rsquo;s research
-          completes.
-        </p>
-      </section>
+      <div className="mt-9">
+        <AccountTextSection
+          emptyNote="No written contact overview has been composed yet."
+          prose={contact.overview}
+          restrictedNote="The contact overview is unavailable for display."
+          title="Overview"
+        />
+      </div>
 
       <section className="mt-9">
         <h2 className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}>
@@ -144,23 +142,17 @@ export function ContactProfileContent({
         <h2 className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}>
           Evidence
         </h2>
-        {/* Non-link provenance chips: evidence URLs stay off this wire (G4). */}
-        <div className="mt-4 flex flex-wrap gap-2">
-          {contact.evidence.length ? (
-            contact.evidence.map((evidence, index) => (
-              <span
-                className={`${readability.pillMedium} rounded-xl bg-[var(--clue-background-pressed)] px-2 py-1`}
-                key={`${evidence.provider}-${index}`}
-              >
-                {formatToken(evidence.provider)}
-                {formatIsoDate(evidence.observedAt)
-                  ? ` · ${formatIsoDate(evidence.observedAt)}`
-                  : ""}
-              </span>
-            ))
-          ) : (
-            <Absent label="No evidence recorded yet" />
-          )}
+        <div className="mt-4">
+          <EvidenceList
+            artifactHref={(evidence) =>
+              contactEvidenceArtifactHref(
+                contact.accountId,
+                contact.id,
+                evidence.claimId,
+              )
+            }
+            evidence={contact.evidence}
+          />
         </div>
       </section>
     </div>

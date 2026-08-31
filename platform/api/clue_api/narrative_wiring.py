@@ -37,6 +37,7 @@ from clue_research.narrative import (
     HandoffCommitteeReader,
     fact_to_text,
     load_narrative_pack,
+    load_prose_pack,
     rank_by_query_overlap,
 )
 from clue_research.stage0 import read_client_kb_claims
@@ -53,6 +54,10 @@ def register_narrative_wiring() -> None:
     """
     if load_narrative_pack not in RESEARCH_PACK_LOADERS:
         RESEARCH_PACK_LOADERS.append(load_narrative_pack)
+    # Lane E E0: the prose pack (account.summary / contact.overview) rides the same loader list —
+    # both production processes call this, so the SUMMARY route rows exist wherever views compose.
+    if load_prose_pack not in RESEARCH_PACK_LOADERS:
+        RESEARCH_PACK_LOADERS.append(load_prose_pack)
 
 
 class ClientKnowledgeRetrieverStub:

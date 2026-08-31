@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from clue_config.settings import Settings
 from clue_core import CostCents, FieldKey, ReadinessGate
 
 
@@ -43,7 +44,12 @@ def default_readiness_spec() -> ReadinessSpec:
     return ReadinessSpec(
         floors={
             ReadinessGate.ICP_SYNTHESIS: ReadinessFloor(
-                min_coverage_ratio=0.0,
+                # Seven of the nine ICP-synthesis fields is the minimum useful floor. The backend
+                # compiles that explicit gate denominator plus workspace-required extensions, so
+                # onboarding/company-knowledge growth cannot silently move it and an empty
+                # extension policy cannot turn 0/0 model-authored metrics into a success.
+                min_coverage_ratio=0.75,
+                require_product_id=True,
                 max_open_policy_blocks=0,
             ),
             ReadinessGate.DISCOVERY_SPEND: ReadinessFloor(
@@ -75,10 +81,34 @@ class Stage0Policy(BaseModel):
 DEFAULT_STAGE0_POLICY = Stage0Policy()
 
 
+def stage0_policy_from_settings(settings: Settings) -> Stage0Policy:
+    """The **production** Stage-0 policy: the frozen defaults with the two lane envelopes taken
+    from deployment settings.
+
+    Founder ruling (FI-onboarding-contract-gap-review §9, 2026-08-13): onboarding forms the base
+    of everything downstream, so an envelope must never truncate onboarding research — quality
+    before cost. That ruling needs a *mechanism*: this is it, and the composition root
+    (``clue_api.toolbelt_wiring.build_toolbelt``) builds the recon tools' policy through here so
+    a deployment raises a cap with an env var instead of a code change.
+
+    Only the two budgets move. The dedupe TTL and the readiness spec stay the versioned constants
+    they are — they are correctness/governance, not cost. ``DEFAULT_STAGE0_POLICY`` is
+    deliberately left at its 5¢/100¢ library defaults: it is the shape tests and non-composed
+    callers pin, and the *production* default now comes from ``Settings`` (25¢ fast — the full
+    eleven-field firecrawl walk with headroom).
+    """
+
+    return Stage0Policy(
+        fast_budget_cents=settings.stage0_fast_budget_cents,
+        background_budget_cents=settings.stage0_background_budget_cents,
+    )
+
+
 __all__ = [
     "ReadinessFloor",
     "ReadinessSpec",
     "Stage0Policy",
     "DEFAULT_STAGE0_POLICY",
     "default_readiness_spec",
+    "stage0_policy_from_settings",
 ]

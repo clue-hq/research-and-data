@@ -20,7 +20,7 @@ from clue_research.claimstore import load_core_pack
 from clue_research.icp import load_starter_packs
 from clue_research.identity import insert_account_entity
 from clue_research.sources import seed_source_manifests
-from clue_research.stage0 import ensure_readiness_spec
+from clue_research.stage0 import ensure_readiness_spec, load_client_knowledge_pack
 from clue_storage import record_artifact
 from clue_toolbelt import ToolRegistry
 from tests._workspace import seed_workspace
@@ -119,6 +119,7 @@ def test_database_adapters_enforce_retirement_erasure_and_live_memory_switch() -
             )
             await load_core_pack(conn)
             await load_starter_packs(conn)
+            await load_client_knowledge_pack(conn)
             await seed_source_manifests(conn)
             await ensure_readiness_spec(
                 conn,

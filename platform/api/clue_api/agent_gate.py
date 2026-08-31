@@ -26,6 +26,7 @@ has exactly one spelling.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -41,16 +42,21 @@ __all__ = [
     "GATE_KINDS",
     "GATE_OBJECT_TYPE",
     "KIND_DIRECTIVE_CONFIRMATION",
+    "KIND_ICP_CONFIRMATION",
+    "KIND_PRODUCT_SELECTION",
     "AgentGateAnswerRow",
     "AgentGateRow",
+    "AgentGateSubjectBinding",
     "GateAlreadyAnswered",
     "directive_confirmation_gate_id",
+    "product_selection_gate_id",
     "gate_answer_for_turn",
     "get_gate",
     "insert_gate",
     "insert_gate_answer",
     "money_text",
     "open_gates_for_thread",
+    "redact_gate_snapshots_for_subject",
 ]
 
 #: The ``DomainObjectRef.object_type`` flavour a finalization's ``open_gate_refs`` carries. The
@@ -63,7 +69,15 @@ GATE_OBJECT_TYPE = "agent_gate"
 #: The one kind D4 builds. The others exist in the DB CHECK because §3-P5(a) names them; a gate
 #: substrate whose second kind needs a migration was never generic.
 KIND_DIRECTIVE_CONFIRMATION = "directive_confirmation"
-GATE_KINDS = (KIND_DIRECTIVE_CONFIRMATION, "plan_approval", "budget_approval")
+KIND_ICP_CONFIRMATION = "icp_confirmation"
+KIND_PRODUCT_SELECTION = "product_selection"
+GATE_KINDS = (
+    KIND_DIRECTIVE_CONFIRMATION,
+    KIND_ICP_CONFIRMATION,
+    KIND_PRODUCT_SELECTION,
+    "plan_approval",
+    "budget_approval",
+)
 
 #: What a human may answer. ``revised`` is not a soft ``rejected``: it records "I want changes",
 #: which closes this gate and invites the agent to draft again, while ``rejected`` closes the
@@ -75,14 +89,19 @@ DECISIONS = ("approved", "rejected", "revised")
 DEFAULT_GATE_CURRENCY = "USD"
 
 _GATE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:lane-d:d4:directive-confirmation-gate")
+_PRODUCT_SELECTION_GATE_NAMESPACE = uuid5(
+    NAMESPACE_URL, "clue:production-context:s5:product-selection-gate"
+)
 
 _GATE_COLUMNS = (
     "gate_id, workspace_id, project_id, thread_id, turn_id, kind, subject_ref, "
-    "subject_revision, expected_subject_sha256, subject_snapshot, max_spend_cents, currency, "
-    "addressee_user_id, created_at"
+    "subject_revision, expected_subject_sha256, subject_snapshot, permitted_decisions, "
+    "max_spend_cents, currency, addressee_user_id, created_at, snapshot_erased_at, "
+    "snapshot_erasure_reason"
 )
 _ANSWER_COLUMNS = (
-    "gate_id, workspace_id, turn_id, action_ref, decision, answered_by_user_id, answered_at"
+    "gate_id, workspace_id, turn_id, action_ref, decision, expected_subject_sha256, "
+    "decision_payload, selected_option_ref, answered_by_user_id, answered_at"
 )
 
 
@@ -127,10 +146,29 @@ class AgentGateRow(BaseModel):
     subject_revision: int | None
     expected_subject_sha256: str
     subject_snapshot: dict[str, JsonValue]
-    max_spend_cents: Decimal
-    currency: str
+    permitted_decisions: tuple[str, ...]
+    max_spend_cents: Decimal | None
+    currency: str | None
     addressee_user_id: str
     created_at: datetime
+    snapshot_erased_at: datetime | None = None
+    snapshot_erasure_reason: str | None = None
+
+    @property
+    def snapshot_available(self) -> bool:
+        return self.snapshot_erased_at is None
+
+
+@dataclass(frozen=True, slots=True)
+class AgentGateSubjectBinding:
+    """Body-free DSAR reach for one subject copied into a gate snapshot."""
+
+    subject_entity_id: UUID
+    binding_kind: str
+
+    def __post_init__(self) -> None:
+        if not self.binding_kind.strip():
+            raise ValueError("gate subject binding_kind cannot be empty")
 
 
 class AgentGateAnswerRow(BaseModel):
@@ -143,6 +181,9 @@ class AgentGateAnswerRow(BaseModel):
     turn_id: UUID
     action_ref: str
     decision: str
+    expected_subject_sha256: str
+    decision_payload: dict[str, JsonValue]
+    selected_option_ref: str | None
     answered_by_user_id: str
     answered_at: datetime
 
@@ -156,7 +197,7 @@ class GateView:
 
     @property
     def is_open(self) -> bool:
-        return self.answer is None
+        return self.answer is None and self.gate.snapshot_available
 
 
 def directive_confirmation_gate_id(
@@ -181,6 +222,22 @@ def directive_confirmation_gate_id(
     return uuid5(_GATE_NAMESPACE, framed)
 
 
+def product_selection_gate_id(
+    *,
+    workspace_id: str,
+    turn_id: UUID,
+    subject_ref: str,
+    expected_subject_sha256: str,
+) -> UUID:
+    """Derive one immutable selection gate for one pinned catalog presentation."""
+
+    framed = "".join(
+        f"{len(part)}:{part}"
+        for part in (workspace_id, str(turn_id), subject_ref, expected_subject_sha256)
+    )
+    return uuid5(_PRODUCT_SELECTION_GATE_NAMESPACE, framed)
+
+
 async def insert_gate(
     conn: AsyncConnection,
     *,
@@ -194,9 +251,11 @@ async def insert_gate(
     subject_revision: int | None,
     expected_subject_sha256: str,
     subject_snapshot: dict[str, JsonValue],
-    max_spend_cents: Decimal,
-    currency: str,
+    max_spend_cents: Decimal | None,
+    currency: str | None,
     addressee_user_id: str,
+    permitted_decisions: tuple[str, ...] = DECISIONS,
+    subject_bindings: Sequence[AgentGateSubjectBinding] = (),
 ) -> tuple[AgentGateRow, bool]:
     """Present one gate, or replay it. Returns ``(row, created)``.
 
@@ -209,6 +268,13 @@ async def insert_gate(
 
     if kind not in GATE_KINDS:
         raise ValueError(f"unknown gate kind {kind!r}")
+    if not permitted_decisions or len(set(permitted_decisions)) != len(permitted_decisions):
+        raise ValueError("a gate must have a non-empty unique decision vocabulary")
+    unsupported = set(permitted_decisions) - set(DECISIONS)
+    if unsupported:
+        raise ValueError(f"unknown gate decision(s) {sorted(unsupported)!r}")
+    if (max_spend_cents is None) != (currency is None):
+        raise ValueError("gate amount and currency must either both be present or both be absent")
     inserted = (
         (
             await conn.execute(
@@ -216,10 +282,10 @@ async def insert_gate(
                     "INSERT INTO agent_gate "
                     "(gate_id, workspace_id, project_id, thread_id, turn_id, kind, subject_ref, "
                     " subject_revision, expected_subject_sha256, subject_snapshot, "
-                    " max_spend_cents, currency, addressee_user_id) "
+                    " permitted_decisions, max_spend_cents, currency, addressee_user_id) "
                     "VALUES (:gate_id, :workspace_id, :project_id, :thread_id, :turn_id, :kind, "
                     " :subject_ref, :subject_revision, :digest, CAST(:snapshot AS jsonb), "
-                    " :max_spend, :currency, :addressee) "
+                    " CAST(:permitted_decisions AS text[]), :max_spend, :currency, :addressee) "
                     f"ON CONFLICT (gate_id) DO NOTHING RETURNING {_GATE_COLUMNS}"
                 ),
                 {
@@ -233,6 +299,7 @@ async def insert_gate(
                     "subject_revision": subject_revision,
                     "digest": expected_subject_sha256,
                     "snapshot": _dumps(subject_snapshot),
+                    "permitted_decisions": list(permitted_decisions),
                     "max_spend": max_spend_cents,
                     "currency": currency,
                     "addressee": addressee_user_id,
@@ -242,14 +309,31 @@ async def insert_gate(
         .mappings()
         .one_or_none()
     )
-    if inserted is not None:
-        return AgentGateRow.model_validate(_decoded(dict(inserted))), True
-    existing = await _gate_row(conn, workspace_id=workspace_id, gate_id=gate_id)
-    if existing is None:
+    created = inserted is not None
+    row = (
+        AgentGateRow.model_validate(_decoded(dict(inserted)))
+        if inserted is not None
+        else await _gate_row(conn, workspace_id=workspace_id, gate_id=gate_id)
+    )
+    if row is None:
         # Practically unreachable (the id is derived from the workspace), and refusing beats
         # leaking that another tenant holds this id.
         raise ValueError("this gate identity exists outside the requested workspace")
-    return existing, False
+    for binding in subject_bindings:
+        await conn.execute(
+            text(
+                "INSERT INTO agent_gate_subject "
+                "(workspace_id, gate_id, subject_entity_id, binding_kind) "
+                "VALUES (:workspace, :gate, :subject, :kind) ON CONFLICT DO NOTHING"
+            ),
+            {
+                "workspace": workspace_id,
+                "gate": gate_id,
+                "subject": binding.subject_entity_id,
+                "kind": binding.binding_kind,
+            },
+        )
+    return row, created
 
 
 async def get_gate(
@@ -279,7 +363,10 @@ async def insert_gate_answer(
     turn_id: UUID,
     action_ref: str,
     decision: str,
+    expected_subject_sha256: str,
+    decision_payload: dict[str, JsonValue] | None = None,
     answered_by_user_id: str,
+    selected_option_ref: str | None = None,
 ) -> AgentGateAnswerRow:
     """Record the one answer this gate will ever have.
 
@@ -291,13 +378,24 @@ async def insert_gate_answer(
 
     if decision not in DECISIONS:
         raise ValueError(f"unknown gate decision {decision!r}")
+    payload = decision_payload or {}
+    gate = await _gate_row(conn, workspace_id=workspace_id, gate_id=gate_id)
+    if gate is None:
+        raise ValueError("no such gate in the requested workspace")
+    if not gate.snapshot_available:
+        raise ValueError("an erased gate snapshot cannot be answered")
+    if payload and selected_option_ref is not None:
+        raise ValueError("a gate answer cannot carry both decision_payload and selected_option_ref")
     inserted = (
         (
             await conn.execute(
                 text(
                     "INSERT INTO agent_gate_answer "
-                    "(gate_id, workspace_id, turn_id, action_ref, decision, answered_by_user_id) "
-                    "VALUES (:gate_id, :workspace_id, :turn_id, :action_ref, :decision, :user_id) "
+                    "(gate_id, workspace_id, turn_id, action_ref, decision, "
+                    " expected_subject_sha256, decision_payload, selected_option_ref, "
+                    " answered_by_user_id) "
+                    "VALUES (:gate_id, :workspace_id, :turn_id, :action_ref, :decision, "
+                    " :digest, CAST(:payload AS jsonb), :selected_option_ref, :user_id) "
                     f"ON CONFLICT (gate_id) DO NOTHING RETURNING {_ANSWER_COLUMNS}"
                 ),
                 {
@@ -306,6 +404,9 @@ async def insert_gate_answer(
                     "turn_id": turn_id,
                     "action_ref": action_ref,
                     "decision": decision,
+                    "digest": expected_subject_sha256,
+                    "payload": _dumps(payload),
+                    "selected_option_ref": selected_option_ref,
                     "user_id": answered_by_user_id,
                 },
             )
@@ -314,7 +415,7 @@ async def insert_gate_answer(
         .one_or_none()
     )
     if inserted is not None:
-        return AgentGateAnswerRow.model_validate(dict(inserted))
+        return AgentGateAnswerRow.model_validate(_decoded(dict(inserted)))
     existing = await _answer_row(conn, workspace_id=workspace_id, gate_id=gate_id)
     if existing is None:
         raise ValueError("this gate answer exists outside the requested workspace")
@@ -346,7 +447,7 @@ async def gate_answer_for_turn(
         .mappings()
         .one_or_none()
     )
-    return AgentGateAnswerRow.model_validate(dict(row)) if row is not None else None
+    return AgentGateAnswerRow.model_validate(_decoded(dict(row))) if row is not None else None
 
 
 async def open_gates_for_thread(
@@ -370,7 +471,7 @@ async def open_gates_for_thread(
                     "LEFT JOIN agent_gate_answer a "
                     "  ON a.gate_id = g.gate_id AND a.workspace_id = g.workspace_id "
                     "WHERE g.workspace_id = :workspace_id AND g.thread_id = :thread_id "
-                    "  AND a.gate_id IS NULL "
+                    "  AND a.gate_id IS NULL AND g.snapshot_erased_at IS NULL "
                     "ORDER BY g.created_at, g.gate_id"
                 ),
                 {"workspace_id": workspace_id, "thread_id": thread_id},
@@ -380,6 +481,73 @@ async def open_gates_for_thread(
         .all()
     )
     return tuple(AgentGateRow.model_validate(_decoded(dict(row))) for row in rows)
+
+
+async def redact_gate_snapshots_for_subject(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    subject_entity_id: UUID,
+    reason_code: str,
+) -> tuple[UUID, ...]:
+    """Irreversibly blank every gate snapshot bound to ``subject_entity_id``.
+
+    Gate identity, subject reference, digest, version, and answer receipt remain body-free audit
+    facts. The exact snapshot becomes ``{}`` once, and deterministic privacy events make replay
+    idempotent without ever reconstructing the erased value.
+    """
+
+    gate_ids = tuple(
+        (
+            await conn.execute(
+                text(
+                    "SELECT binding.gate_id FROM agent_gate_subject binding "
+                    "WHERE binding.workspace_id=:workspace "
+                    "AND binding.subject_entity_id=:subject ORDER BY binding.gate_id"
+                ),
+                {
+                    "workspace": workspace_id,
+                    "subject": subject_entity_id,
+                },
+            )
+        ).scalars()
+    )
+    if gate_ids:
+        await conn.execute(
+            text(
+                "UPDATE agent_gate SET subject_snapshot='{}'::jsonb, "
+                "snapshot_erased_at=now(), snapshot_erasure_reason=:reason "
+                "WHERE workspace_id=:workspace AND gate_id=ANY(CAST(:gates AS uuid[])) "
+                "AND snapshot_erased_at IS NULL"
+            ),
+            {
+                "workspace": workspace_id,
+                "gates": list(gate_ids),
+                "reason": reason_code,
+            },
+        )
+    for gate_id in gate_ids:
+        await conn.execute(
+            text(
+                "INSERT INTO agent_privacy_event "
+                "(event_id, workspace_id, subject_entity_id, turn_id, action, reason_code) "
+                "SELECT :event, g.workspace_id, :subject, g.turn_id, "
+                "'gate_snapshot_redacted', :reason FROM agent_gate g "
+                "WHERE g.gate_id=:gate AND g.workspace_id=:workspace "
+                "ON CONFLICT (event_id) DO NOTHING"
+            ),
+            {
+                "event": uuid5(
+                    _GATE_NAMESPACE,
+                    f"privacy:{workspace_id}:{subject_entity_id}:{gate_id}",
+                ),
+                "workspace": workspace_id,
+                "subject": subject_entity_id,
+                "gate": gate_id,
+                "reason": reason_code,
+            },
+        )
+    return gate_ids
 
 
 async def _gate_row(
@@ -423,7 +591,7 @@ async def _answer_row(
         .mappings()
         .one_or_none()
     )
-    return AgentGateAnswerRow.model_validate(dict(row)) if row is not None else None
+    return AgentGateAnswerRow.model_validate(_decoded(dict(row))) if row is not None else None
 
 
 def _dumps(value: dict[str, JsonValue]) -> str:
@@ -433,7 +601,8 @@ def _dumps(value: dict[str, JsonValue]) -> str:
 def _decoded(row: dict[str, object]) -> dict[str, object]:
     """Decode the one ``jsonb`` column, which asyncpg may hand back as text or bytes."""
 
-    snapshot = row.get("subject_snapshot")
-    if isinstance(snapshot, bytes | bytearray | str):
-        row["subject_snapshot"] = json.loads(snapshot)
+    for key in ("subject_snapshot", "decision_payload"):
+        value = row.get(key)
+        if isinstance(value, bytes | bytearray | str):
+            row[key] = json.loads(value)
     return row

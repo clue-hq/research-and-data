@@ -53,7 +53,7 @@ a default — reach for it only when it earns the composition:
 - **The two-color headline is THE span move — one accented phrase per headline.**
   Mark the phrase with `[[…]]` and give it a `span(...)`:
   `headline text "Every [[outage]], mapped before it spreads." … span(fill(#e11d48), weight(800))`
-  colors and bolds one phrase against the node's ink — the moda editorial headline.
+  colors and bolds one phrase against the node's ink — the editorial two-color headline.
   Pull the accent from **the kit palette** (`span(fill($accent.primary), weight(800))`)
   when branded, a raw hex otherwise. Rules of restraint: **exactly one accent
   phrase per headline** (two accents = no accent); **never rainbow-span** a line

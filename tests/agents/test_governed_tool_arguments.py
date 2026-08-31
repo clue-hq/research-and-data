@@ -26,10 +26,17 @@ from langgraph.prebuilt.tool_node import ToolNode
 from pydantic import BaseModel, ConfigDict
 from pydantic_core import PydanticSerializationError
 
-from clue_agents import AgentRole, AgentTurnRequest
+from clue_agents import (
+    AgentRole,
+    AgentTurnRequest,
+    DomainObjectRef,
+    ProjectContextArtifact,
+)
 from clue_agents.contracts import MODEL_FORBIDDEN_AUTHORITY_KEYS, PlanToolStep, ToolPin
+from clue_api.agent_execution_wiring import _trusted_tool_arguments
 from clue_api.agent_registry_wiring import C6_ACTIVE_PROFILE_VERSIONS, build_agent_profile_registry
-from clue_api.agent_runtime_wiring import GovernedAgentToolFactory
+from clue_api.agent_runtime_wiring import GovernedAgentToolFactory, _with_trusted_runtime
+from clue_api.client_knowledge_contracts import ListClientKnowledgeV2Input
 from clue_api.stage0_tools import RecordInterviewAnswerInput
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_research.stage0.interview import InterviewRoute, InterviewStatement
@@ -318,6 +325,64 @@ def test_a_model_that_invents_trusted_authority_gets_a_tool_result_not_a_crash()
     assert "project_id: Extra inputs are not permitted" in str(message.content)
     # The model can see and repair it, and nothing was proposed to the governed executor.
     assert execution.validated_plans == []
+
+
+def test_client_kb_version_is_hidden_and_injected_from_the_exact_l3_pin() -> None:
+    """S4: version is trusted context authority, but only for models that opt into the marker."""
+
+    canonical_client_ref = "11111111-1111-4111-8111-111111111111"
+    trusted = constitution(
+        client_entity_id=canonical_client_ref,
+        project_context_artifacts=(
+            ProjectContextArtifact(
+                name="client_knowledge",
+                artifact_ref=artifact("client-knowledge.json"),
+                domain_ref=DomainObjectRef(
+                    workspace_id="ws-1",
+                    object_type="client_knowledge",
+                    object_id=canonical_client_ref,
+                    version=7,
+                ),
+            ),
+            ProjectContextArtifact(
+                name="stage0_project_state",
+                artifact_ref=artifact("stage0-project-state.json"),
+                domain_ref=DomainObjectRef(
+                    workspace_id="ws-1",
+                    object_type="stage0_project_state",
+                    object_id="project-1",
+                    version=None,
+                ),
+            ),
+        ),
+    )
+    model_visible = _with_trusted_runtime(
+        ListClientKnowledgeV2Input,
+        name="ListClientKnowledgeV2InputAgentRuntimeProbe",
+    )
+    assert "project_id" not in model_visible.model_fields
+    assert "client_entity_id" not in model_visible.model_fields
+    assert "client_kb_version" not in model_visible.model_fields
+    assert set(model_visible.model_fields) == {"topic", "field_key", "cursor", "limit", "runtime"}
+
+    merged = _trusted_tool_arguments(
+        arguments={"topic": "product"},
+        input_model=ListClientKnowledgeV2Input,
+        constitution=trusted,
+    )
+    assert merged == {
+        "topic": "product",
+        "client_entity_id": canonical_client_ref,
+        "client_kb_version": 7,
+    }
+    assert ListClientKnowledgeV2Input.model_validate(merged).client_kb_version == 7
+
+    with pytest.raises(ValueError, match="trusted Client-KB authority"):
+        _trusted_tool_arguments(
+            arguments={"client_kb_version": 999},
+            input_model=ListClientKnowledgeV2Input,
+            constitution=trusted,
+        )
 
 
 # --- the type matrix: nested models, nested enums, UUID, Decimal, datetime ------------------

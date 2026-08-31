@@ -23,6 +23,7 @@ Guarantees:
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from decimal import Decimal
 from enum import StrEnum
@@ -386,7 +387,12 @@ async def resolve_field(
             # an explicit argument or as the run's ambient binding.
             try:
                 with bind_snapshots(snapshots, storage):
-                    claims = list(resolver.resolve(entity, field_def))
+                    # Resolver leaves are deliberately synchronous behind the stable Resolver
+                    # protocol, but live HTTP/LLM providers can take minutes. Run that leaf off
+                    # the serving event loop so setup-status polls and unrelated requests remain
+                    # responsive. ``to_thread`` copies contextvars, preserving the run-scoped
+                    # snapshot binding without widening its scope.
+                    claims = list(await asyncio.to_thread(resolver.resolve, entity, field_def))
             except Exception as exc:
                 if observer is not None:
                     await observer.observe(

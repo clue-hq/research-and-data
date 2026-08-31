@@ -1,0 +1,66 @@
+# syntax=docker/dockerfile:1
+
+FROM node:22-bookworm-slim AS dependencies
+
+ENV NEXT_TELEMETRY_DISABLED=1
+WORKDIR /workspace/apps/frontend
+
+# Install from the frontend lockfile. The design-system package manifest is
+# needed because the frontend is an npm workspace rooted here.
+COPY apps/frontend/package.json apps/frontend/package-lock.json ./
+COPY apps/frontend/packages/design-system/package.json ./packages/design-system/package.json
+RUN npm ci
+
+
+FROM node:22-bookworm-slim AS builder
+
+ENV NEXT_TELEMETRY_DISABLED=1
+WORKDIR /workspace
+
+COPY --from=dependencies /workspace/apps/frontend/node_modules ./apps/frontend/node_modules
+COPY apps/frontend ./apps/frontend
+
+# `apps/frontend/scripts/copy-design-vendor.mjs` deliberately consumes these
+# shared design assets during prebuild. Copy only that contract rather than the
+# whole Python/Rust subsystem into the image.
+COPY subsystems/clue-design/fonts ./subsystems/clue-design/fonts
+COPY subsystems/clue-design/scripts/preflight_editor_wasm.mjs ./subsystems/clue-design/scripts/preflight_editor_wasm.mjs
+COPY subsystems/clue-design/scripts/build_wasm_core.sh ./subsystems/clue-design/scripts/build_wasm_core.sh
+COPY subsystems/clue-design/crates/lumen-core ./subsystems/clue-design/crates/lumen-core
+COPY subsystems/clue-design/crates/lumen-wasm ./subsystems/clue-design/crates/lumen-wasm
+COPY subsystems/clue-design/apps/editor/public/wasm ./subsystems/clue-design/apps/editor/public/wasm
+
+# NEXT_PUBLIC_* values are compiled into Next's browser bundle. Railway exposes
+# service variables to Docker builds only when the Dockerfile declares them.
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ARG NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+ARG NEXT_PUBLIC_CLERK_SIGN_UP_URL=/onboarding/sign-up
+ARG NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/session/establish
+ARG NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/session/establish
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} \
+    NEXT_PUBLIC_CLERK_SIGN_IN_URL=${NEXT_PUBLIC_CLERK_SIGN_IN_URL} \
+    NEXT_PUBLIC_CLERK_SIGN_UP_URL=${NEXT_PUBLIC_CLERK_SIGN_UP_URL} \
+    NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=${NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL} \
+    NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=${NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL}
+
+WORKDIR /workspace/apps/frontend
+RUN npm run design-system:build && npm run build
+
+
+FROM node:22-bookworm-slim AS runtime
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    HOSTNAME=0.0.0.0 \
+    PORT=3000
+WORKDIR /workspace/apps/frontend
+
+COPY --from=builder /workspace/apps/frontend/.next/standalone ./
+COPY --from=builder /workspace/apps/frontend/.next/static ./.next/static
+COPY --from=builder /workspace/apps/frontend/public ./public
+
+USER node
+EXPOSE 3000
+
+# The standalone server reads Railway's runtime PORT and HOSTNAME variables.
+CMD ["node", "server.js"]

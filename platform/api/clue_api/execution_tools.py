@@ -28,6 +28,7 @@ from clue_core import (
 )
 from clue_db import ConnFactory
 from clue_execution import (
+    PROJECT_PHASE_EXTERNAL_WAIT_REASON,
     Binding,
     CompatibilityManifest,
     ControlAction,
@@ -46,7 +47,12 @@ from clue_execution import (
     get_cursor,
 )
 from clue_fleet import RunDriver, WorkQueue, reoffer_governed_partial_task
-from clue_research.durable import ProjectRunRow, ProjectRunStatus, get_project_run
+from clue_research.durable import (
+    PhaseCheckpointStatus,
+    ProjectRunRow,
+    ProjectRunStatus,
+    get_project_run,
+)
 from clue_toolbelt import (
     ExternalReplayBoundary,
     JournalParameterPolicy,
@@ -780,6 +786,23 @@ class AdvanceProjectPhaseTool(_ExecutionTool):
             raise RuntimeError(f"project phase {inputs.expected_phase.value} failed")
         if run.phase is inputs.expected_phase and run.status is ProjectRunStatus.PAUSED:
             raise ToolAwaitingInput(f"project_phase_{inputs.expected_phase.value}_awaiting_input")
+        if run.phase is inputs.expected_phase and run.status is ProjectRunStatus.ACTIVE:
+            async with ctx.conn_factory() as conn:
+                checkpoint_status = (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT status
+                            FROM project_phase_checkpoint
+                            WHERE project_run_id = :run_id
+                              AND phase = CAST(:phase AS project_phase)
+                            """
+                        ),
+                        {"run_id": run_id, "phase": inputs.expected_phase.value},
+                    )
+                ).scalar_one_or_none()
+            if checkpoint_status == PhaseCheckpointStatus.WAITING_EXTERNAL.value:
+                raise ToolAwaitingInput(PROJECT_PHASE_EXTERNAL_WAIT_REASON)
         return ToolResult(
             tool=self.name,
             version=self.version,

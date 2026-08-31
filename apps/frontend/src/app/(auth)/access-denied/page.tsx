@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 const MESSAGES: Record<string, string> = {
   IDENTITY_NOT_PROVISIONED:
     "Your signed-in account has not been provisioned in Clue yet.",
@@ -27,4 +29,3 @@ export default async function AccessDeniedPage({
     </main>
   );
 }
-import Link from "next/link";

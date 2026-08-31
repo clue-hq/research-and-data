@@ -55,7 +55,7 @@ from clue_research.icp import get_icp_version
 from clue_research.identity import get_account
 from clue_research.membership import ensure_project_account
 from clue_research.sources.authority import load_effective_source_plan
-from clue_research.sources.registry import get_source
+from clue_research.sources.registry import get_source, sources_for
 from clue_research.sources.source_profile import resolve_allowed_set
 from clue_spine import get_project
 
@@ -155,15 +155,26 @@ async def validate_research_directive_draft(
         if frozen is not None:
             canonical_field_sources.update(item.source_key for item in frozen.sources)
         else:
-            canonical_field_sources.update(
-                item.source_key
-                for item in await resolve_allowed_set(
-                    conn,
-                    icp,
-                    field_key,
-                    entity_scope=EntityScope.ACCOUNT,
-                )
+            profiled = await resolve_allowed_set(
+                conn,
+                icp,
+                field_key,
+                entity_scope=EntityScope.ACCOUNT,
             )
+            if profiled:
+                canonical_field_sources.update(item.source_key for item in profiled)
+            else:
+                # A pinned ICP may deliberately carry no source-profile override. That is not a
+                # ban on research: admit only active registry sources whose declared capability
+                # covers the exact deep field. An existing frozen/profiled plan remains strict.
+                canonical_field_sources.update(
+                    await sources_for(
+                        conn,
+                        field_key,
+                        entity_scope=EntityScope.ACCOUNT,
+                        active=True,
+                    )
+                )
 
     source_keys = set(body.source_policy.allowed_source_keys)
     for override in overrides.values():

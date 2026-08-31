@@ -102,6 +102,7 @@ from clue_fleet import WorkId, acquire_work_lease
 from clue_research.claimstore import WorkspaceScope, claims_for, record_verification
 from clue_research.identity import insert_account_entity
 from clue_research.stage0 import (
+    CLIENT_ICP_SYNTHESIS_FIELDS,
     ClientInput,
     InterviewRoute,
     InterviewStatement,
@@ -414,16 +415,20 @@ def test_the_metric_compilation_means_what_its_names_say() -> None:
     assert 0.0 <= metrics["coverage_ratio"] <= 1.0
 
 
-def test_both_readiness_surfaces_compile_metrics_through_the_one_helper() -> None:
-    """No second compilation may exist: a ledger that tells two stories about one trial is the
-    defect class this helper was extracted to close."""
+def test_readiness_surfaces_use_one_helper_with_gate_specific_field_policy() -> None:
+    """Metric math is shared, while each gate names its own deliberate denominator."""
 
-    for module in (stage0_trial_module, spine_module):
+    expected_policy = {
+        stage0_trial_module: "baseline_field_keys=CLIENT_ICP_SYNTHESIS_FIELDS",
+        spine_module: "baseline_field_keys=CLIENT_BASELINE_FIELDS",
+    }
+    for module, policy_token in expected_policy.items():
         source = Path(module.__file__ or "").read_text(encoding="utf-8")
         name = module.__name__
-        assert "client_kb_readiness_metrics(claims)" in source, (
+        assert "client_kb_readiness_metrics(" in source, (
             f"{name} must compile Client-KB readiness metrics through the shared helper"
         )
+        assert policy_token in source, f"{name} must pin its gate-specific field policy"
         for token in ('"verified_claims"', '"coverage_ratio"', "verification_status"):
             assert token not in source, (
                 f"{name} appears to re-derive {token} instead of using "
@@ -567,7 +572,7 @@ def test_a_material_routed_turn_persists_a_readiness_decision(tmp_path: Any) -> 
             metrics = rows[0]["metrics"]
             assert metrics["verified_claims"] == 1
             assert metrics["available_field_keys"] == [CLIENT_PRODUCT, CLIENT_VALUE_PROP]
-            assert metrics["coverage_ratio"] == 2 / len(CLIENT_KNOWLEDGE_FIELDS)
+            assert metrics["coverage_ratio"] == 2 / len(CLIENT_ICP_SYNTHESIS_FIELDS)
             assert metrics["coverage_ratio"] <= 1.0
             assert metrics["project_state_statements"] == 1
             assert metrics["routed_statements_this_turn"] == 1
@@ -1225,6 +1230,7 @@ def test_the_agent_path_validates_a_governed_stage0_tool_with_per_turn_pins() ->
                 Stage0StepPinProvider(
                     compatibility=compatibility,
                     conn_factory=_nested_conn_factory(conn),
+                    tools=registry,
                 )
             )
             adapter = C5AgentExecutionAdapter(
@@ -1366,6 +1372,7 @@ def test_the_agent_path_still_refuses_unresolvable_and_out_of_slot_pins() -> Non
                     Stage0StepPinProvider(
                         compatibility=compatibility,
                         conn_factory=_nested_conn_factory(conn),
+                        tools=registry,
                     ),
                     key=f"{workspace_id}/{'0' * 64}",
                 ).validate_plan(plan=unknown, constitution=trusted)
@@ -1392,6 +1399,7 @@ def test_the_agent_path_still_refuses_unresolvable_and_out_of_slot_pins() -> Non
                     Stage0StepPinProvider(
                         compatibility=compatibility,
                         conn_factory=_nested_conn_factory(conn),
+                        tools=registry,
                     ),
                     bound=False,
                 ).validate_plan(plan=allowed, constitution=trusted)

@@ -15,17 +15,33 @@ The resolver deliberately separates:
 That distinction is the newer dossier contract: a professional contact may remain visible even
 when a personal hook is restricted, but the restricted hook can never enter positioning or the
 legacy outreach-eligible handoff surface.
+
+**R11.5 — where the committee's claim references come from.** The resolver used to read one source
+only: ``account_run.references_index``, whose sole production writer is the R1-quarantined M8A/C
+orchestrator.  Every real M8D run therefore resolved an empty committee, which starved C7/FI-2's
+committee sections and made Lane E's value narrative refuse ``committee_unavailable`` on live data
+(the ``[LaneE×R11/C7]`` HB-1 gap).  The fix is at the *reference source only* — see
+:class:`ClaimReferenceSource` and :func:`default_claim_reference_source`.  Everything below the
+source (the product-exact filter, contact liveness, survivor redirects, the use-decision gate,
+merge, and the deterministic sort) is shared and unchanged, so the two sources cannot drift into
+two governance regimes.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
+from typing import Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.account_research_coverage import (
+    latest_account_research_run_id,
+    read_account_coverage_in_run,
+)
 from clue_core import (
     CONTACT_PROFESSIONAL_FIELD_KEYS,
     Claim,
@@ -100,6 +116,178 @@ def _all_reference_ids(references_index: dict[str, list[str]]) -> tuple[ClaimId,
     return tuple(sorted(parsed, key=str))
 
 
+#: The prefix the M8D coverage ledger stamps on every claim reference it records.
+_COVERAGE_CLAIM_PREFIX = "claim:"
+
+
+def _coverage_claim_ids(claim_refs: Iterable[str]) -> tuple[ClaimId, ...]:
+    """Parse ``claim:<uuid>`` coverage references, tolerating anything else.
+
+    Deliberately as forgiving as :func:`_all_reference_ids`: the coverage ledger is a reference bag
+    written by the research runtime, and a reference this reader cannot parse is one it must ignore
+    rather than one that may break a committee read.
+    """
+
+    parsed: set[ClaimId] = set()
+    for reference in claim_refs:
+        try:
+            parsed.add(ClaimId(UUID(reference.removeprefix(_COVERAGE_CLAIM_PREFIX))))
+        except (TypeError, ValueError):
+            continue
+    return tuple(sorted(parsed, key=str))
+
+
+class AccountClaimReferences(BaseModel):
+    """The claim references one source holds for an account under a given project run.
+
+    ``committee_member_ids`` is the membership axis, and ``None`` is meaningfully different from
+    ``()``: ``None`` means *this source carries no membership list* (the legacy references index is
+    itself a curated membership bag, so its claim set is self-scoping), while ``()`` means *this
+    run resolved no committee member* and therefore admits nobody.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    claim_ids: tuple[ClaimId, ...] = ()
+    committee_member_ids: tuple[EntityId, ...] | None = None
+
+
+class ClaimReferenceSource(Protocol):
+    """Where a project run's committee claim references are read from (R11.5).
+
+    A source returns ``None`` to mean "I do not apply to this project run" — which is what lets the
+    chain below pick an authority — and an :class:`AccountClaimReferences` (possibly empty) to mean
+    "I am the authority here, and this is the answer".  The distinction matters: an empty answer
+    from the applicable source is an honest empty committee, never an invitation to consult a
+    source the run has superseded.
+    """
+
+    async def read(
+        self,
+        conn: AsyncConnection,
+        *,
+        project_run_id: ProjectRunId,
+        account_entity_id: EntityId,
+        workspace_id: str,
+    ) -> AccountClaimReferences | None: ...
+
+
+class EntityResearchCoverageReferenceSource:
+    """M8D: the latest human-confirmed account-research fleet run's own coverage output.
+
+    Applicability has two conditions, and the second is not pedantry.  The run must exist (R11 §6c
+    latest-wins, workspace-scoped — resolved through the same shared rule the DEEP adapter and the
+    verification selector use), **and** it must have published at least one coverage row.  A run
+    that produced no coverage at all has not yet spoken about a single account, so treating it as
+    the authority would silently blank a committee that a previous, completed pass legitimately
+    resolved.  Once the run *has* published, it is the authority for every account in its
+    selection: an account with no coverage row was not researched by it, and the honest answer is
+    an empty committee rather than a fall-back to a source this run supersedes.
+
+    Both conditions come from one statement (:func:`read_account_coverage_in_run`), and the run is
+    resolved by id rather than as a whole supervised fleet row, so the bridge costs exactly one
+    extra bounded lookup per ``resolve_account`` whichever source ends up answering.  That matters:
+    this runs once per account on a committee surface whose composition path is query-budgeted.
+    """
+
+    async def read(
+        self,
+        conn: AsyncConnection,
+        *,
+        project_run_id: ProjectRunId,
+        account_entity_id: EntityId,
+        workspace_id: str,
+    ) -> AccountClaimReferences | None:
+        research_run_id = await latest_account_research_run_id(
+            conn, UUID(str(project_run_id)), workspace_id=workspace_id
+        )
+        if research_run_id is None:
+            return None
+        lookup = await read_account_coverage_in_run(
+            conn,
+            research_run_id,
+            account_entity_id=UUID(str(account_entity_id)),
+            workspace_id=workspace_id,
+        )
+        if not lookup.run_has_coverage:
+            return None
+        if lookup.coverage is None:
+            return AccountClaimReferences(committee_member_ids=())
+        return AccountClaimReferences(
+            claim_ids=_coverage_claim_ids(lookup.coverage.claim_refs),
+            committee_member_ids=tuple(
+                EntityId(value) for value in lookup.coverage.committee_member_ids
+            ),
+        )
+
+
+class AccountRunReferenceIndexSource:
+    """The legacy source: this project run's single ``account_run`` and its references index.
+
+    Byte-identical to the pre-R11.5 read, including the "exactly one account run or nothing" rule —
+    two account runs for one entity under one project run is an ambiguity this reader refuses to
+    resolve, and zero is simply no research.  Historical and seeded runs keep resolving exactly the
+    committee they did before the bridge existed.
+    """
+
+    async def read(
+        self,
+        conn: AsyncConnection,
+        *,
+        project_run_id: ProjectRunId,
+        account_entity_id: EntityId,
+        workspace_id: str,
+    ) -> AccountClaimReferences | None:
+        account_runs = await find_account_runs_for_entity(
+            conn,
+            project_run_id=project_run_id,
+            entity_id=account_entity_id,
+        )
+        if len(account_runs) != 1:
+            return AccountClaimReferences()
+        return AccountClaimReferences(
+            claim_ids=_all_reference_ids(account_runs[0].references_index)
+        )
+
+
+class ChainedClaimReferenceSource:
+    """The first applicable source wins; no source applying is an empty committee."""
+
+    def __init__(self, sources: Sequence[ClaimReferenceSource]) -> None:
+        self._sources = tuple(sources)
+
+    async def read(
+        self,
+        conn: AsyncConnection,
+        *,
+        project_run_id: ProjectRunId,
+        account_entity_id: EntityId,
+        workspace_id: str,
+    ) -> AccountClaimReferences:
+        for source in self._sources:
+            found = await source.read(
+                conn,
+                project_run_id=project_run_id,
+                account_entity_id=account_entity_id,
+                workspace_id=workspace_id,
+            )
+            if found is not None:
+                return found
+        return AccountClaimReferences()
+
+
+def default_claim_reference_source() -> ClaimReferenceSource:
+    """M8D coverage first, the legacy references index second (R11.5).
+
+    Order is the whole design: a project run that has M8D research output is described by that
+    output, and only a run without it falls back to what the retired orchestrator left behind.
+    """
+
+    return ChainedClaimReferenceSource(
+        (EntityResearchCoverageReferenceSource(), AccountRunReferenceIndexSource())
+    )
+
+
 class GovernedContactClaim(BaseModel):
     """One live product-matching contact claim and its independent use disposition."""
 
@@ -138,11 +326,13 @@ class GovernedCommitteeContact(BaseModel):
 class ContactEligibilityResolver:
     """Resolve an exact run/product's canonical governed committee.
 
-    The durable ``account_run.references_index`` is the product/run membership authority: claims
-    from another project run are never considered even if they are newer current truth for the
-    same contact. Every selected committee/contact claim must also have an exact ``product_id``
-    match (including ``None`` for legacy/product-neutral runs), so product A relevance cannot enter
-    product B's handoff.
+    The project run's own research output is the product/run membership authority: claims from
+    another project run are never considered even if they are newer current truth for the same
+    contact.  Which durable record carries that output is the one thing R11.5 made pluggable
+    (:class:`ClaimReferenceSource`) — M8D fleet coverage for a run that has it, the legacy
+    ``account_run.references_index`` otherwise.  Every selected committee/contact claim must also
+    have an exact ``product_id`` match (including ``None`` for legacy/product-neutral runs), so
+    product A relevance cannot enter product B's handoff.
     """
 
     def __init__(
@@ -151,10 +341,12 @@ class ContactEligibilityResolver:
         project_run_id: ProjectRunId,
         product_id: str | None,
         conn_factory: ConnFactory = transaction,
+        claim_reference_source: ClaimReferenceSource | None = None,
     ) -> None:
         self._project_run_id = project_run_id
         self._product_id = product_id
         self._conn_factory = conn_factory
+        self._references = claim_reference_source or default_claim_reference_source()
 
     @property
     def project_run_id(self) -> ProjectRunId:
@@ -180,18 +372,18 @@ class ContactEligibilityResolver:
             ):
                 return ()
 
-            account_runs = await find_account_runs_for_entity(
+            references = await self._references.read(
                 conn,
                 project_run_id=self._project_run_id,
-                entity_id=account_entity_id,
+                account_entity_id=account_entity_id,
+                workspace_id=workspace_id,
             )
-            if len(account_runs) != 1:
+            if references is None:
                 return ()
-            account_run = account_runs[0]
 
             referenced = await claims_by_ids(
                 conn,
-                _all_reference_ids(account_run.references_index),
+                references.claim_ids,
                 scope=WorkspaceScope.for_workspace(workspace_id),
             )
             product_claims = tuple(
@@ -210,11 +402,23 @@ class ContactEligibilityResolver:
                 return ()
 
             live_contacts = set(await contact_ids_for_account(conn, account_entity_id))
+            # A source that carries a membership list (M8D coverage) additionally scopes the read to
+            # it: a contact claim can be in the run's reference bag without that contact being on
+            # the committee the run resolved. The member ids are redirected in the SAME call as the
+            # claim ids — one query, and more importantly one redirect rule, so a member recorded
+            # before an identity merge still matches the survivor its claims resolve to.
+            members = references.committee_member_ids
+            subjects = {claim.entity_id for claim in product_claims}
             redirects = await surviving_ids(
                 conn,
-                tuple({claim.entity_id for claim in product_claims}),
+                tuple(subjects if members is None else subjects | set(members)),
                 EntityType.CONTACT,
                 workspace_id=workspace_id,
+            )
+            member_scope: set[EntityId] | None = (
+                None
+                if members is None
+                else {redirects[member] for member in members if member in redirects}
             )
             contacts_by_id = await get_contacts(
                 conn, tuple(set(redirects.values()) & live_contacts)
@@ -225,6 +429,8 @@ class ContactEligibilityResolver:
                 if canonical_id is None:
                     continue
                 if canonical_id not in live_contacts:
+                    continue
+                if member_scope is not None and canonical_id not in member_scope:
                     continue
                 contact = contacts_by_id.get(canonical_id)
                 if (
@@ -507,7 +713,12 @@ def build_governed_committee_view_reader(
 
 
 __all__ = [
+    "AccountClaimReferences",
+    "AccountRunReferenceIndexSource",
+    "ChainedClaimReferenceSource",
+    "ClaimReferenceSource",
     "ContactEligibilityResolver",
+    "EntityResearchCoverageReferenceSource",
     "GovernedCommitteeContact",
     "GovernedContactClaim",
     "GovernedCommitteeViewReader",
@@ -515,4 +726,5 @@ __all__ = [
     "build_contact_eligibility_resolver",
     "build_governed_committee_view_reader",
     "build_production_handoff_committee_reader",
+    "default_claim_reference_source",
 ]

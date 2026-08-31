@@ -3,9 +3,9 @@ import { Images, Upload } from "lucide-react";
 
 import type { AssetPlacement, AssetRecord, NodeId, Operation } from "../engine/contracts";
 import {
-  assetThumbnailUrl,
   buildNodePlacementOperations,
   fetchAssets,
+  publicAssetThumbnailUrl,
   uploadAsset
 } from "../engine/assetLibrary";
 
@@ -150,7 +150,7 @@ export function AssetBrowserPanel({
           {assets.map((record) => (
             <li key={record.id} data-testid={`asset-${record.id}`}>
               <img
-                src={assetThumbnailUrl(apiBaseUrl, record.id)}
+                src={publicAssetThumbnailUrl(apiBaseUrl, record) ?? undefined}
                 alt={record.label}
                 width={36}
                 height={36}

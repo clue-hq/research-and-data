@@ -1,21 +1,29 @@
-"use client";
-
-import Image from "next/image";
-import { useAccountArtifactsController } from "../hooks/use-account-artifacts-controller";
+import Link from "next/link";
+import {
+  accountActivityActorLabel,
+  accountActivityEventHref,
+  accountActivityEventLabel,
+  accountActivitySubjectLabel,
+  accountActivitySummaryLabel,
+  type AccountActivity,
+  type AccountActivityKind,
+} from "../model/account-activity";
+import {
+  accountArtifactStateCopy,
+  type AccountArtifactState,
+} from "../model/account-artifacts";
 import type { AccountDetail } from "../model/account-detail";
 import type {
-  AccountArtifact,
   AccountWorkspace,
   WorkspaceInsight,
 } from "../model/account-workspace";
+import { accountEvidenceArtifactHref } from "../model/evidence";
+import { formatIsoDateTime } from "../model/formatting";
+import { EvidenceList } from "./evidence-list";
 import readability from "./account-readability.module.css";
 import { AccountWorkspaceShell } from "./account-workspace-shell";
 
-/**
- * These three tabs have no backend endpoint in slice 1, so against a live
- * workspace they are legitimately empty. Each says so plainly instead of
- * rendering a blank page that reads like a broken screen.
- */
+/** Plain honest absence for workspace-backed reads that returned no records. */
 function WorkspaceTabEmptyState({ children }: { children: React.ReactNode }) {
   return (
     <p
@@ -46,16 +54,20 @@ export function AccountInsightsScreen({
   account: AccountDetail;
   workspace: AccountWorkspace;
 }) {
+  const liveEvidence = [
+    ...account.neutralFacts.map((fact) => fact.evidence),
+    ...account.projectSections.flatMap((section) =>
+      section.insights.map((fact) => fact.evidence),
+    ),
+  ];
   return (
     <AccountWorkspaceShell account={account} activeTab="insights">
       <div className="clue-scrollbar-hidden h-full overflow-y-auto">
         <article className="mx-auto w-full max-w-[720px] px-8 pt-12 pb-16">
           <h1 className={readability.detailTitle}>Insights</h1>
-          {workspace.insights.length ? null : (
+          {workspace.insights.length || liveEvidence.length ? null : (
             <WorkspaceTabEmptyState>
-              No insights are served for this account yet. Account research
-              insights currently arrive on the Overview tab, grouped by the
-              project that produced them.
+              No inspectable account evidence is served yet.
             </WorkspaceTabEmptyState>
           )}
           <div className="mt-6 space-y-7">
@@ -71,157 +83,64 @@ export function AccountInsightsScreen({
                 <div className={`${readability.uiRegular} min-w-0`}>
                   <h2 className={readability.uiMedium}>{insight.title}</h2>
                   <p className="truncate text-[var(--clue-content-subtle)] underline underline-offset-2">
-                    {insight.sourceLabel}
+                    {insight.url}
                   </p>
                   <p className="mt-1">{insight.summary}</p>
                 </div>
               </a>
             ))}
           </div>
+          {liveEvidence.length ? (
+            <section className="mt-8">
+              <h2 className={readability.sectionHeading}>Research evidence</h2>
+              <div className="mt-4">
+                <EvidenceList
+                  artifactHref={(evidence) =>
+                    accountEvidenceArtifactHref(account.id, evidence.claimId)
+                  }
+                  evidence={liveEvidence}
+                />
+              </div>
+            </section>
+          ) : null}
         </article>
       </div>
     </AccountWorkspaceShell>
   );
 }
 
-const artifactIconBackground = {
-  document: "bg-[#e9efff] text-[#1f56d8]",
-  presentation: "bg-[#ffe3df] text-[#e32218]",
-  web: "bg-[#eee6ff] text-[#6b35e8]",
-} as const;
-
-function ArtifactCard({
-  artifact,
-  onOpen,
-}: {
-  artifact: AccountArtifact;
-  onOpen: () => void;
-}) {
-  return (
-    <button
-      className="group min-w-0 text-left"
-      onClick={onOpen}
-      type="button"
-    >
-      <div className="relative aspect-[202/136] overflow-hidden rounded-lg bg-[var(--clue-background-page)]">
-        <Image
-          alt=""
-          className="object-cover transition-transform duration-200 group-hover:scale-[1.015]"
-          fill
-          sizes="220px"
-          src={artifact.thumbnailPath}
-        />
-        <span className="absolute right-2 bottom-2 flex size-9 items-center justify-center rounded-lg border-[0.5px] border-[var(--clue-border-neutral)] bg-white shadow-[var(--clue-shadow-low)]">
-          <Image
-            alt=""
-            height={18}
-            src="/logos/openai-detail.svg"
-            width={18}
-          />
-        </span>
-      </div>
-      <div className="mt-3 flex items-center gap-2">
-        <span className={`flex size-6 items-center justify-center rounded-md text-[11px] font-medium ${artifactIconBackground[artifact.type]}`}>
-          {artifact.type === "presentation"
-            ? "P"
-            : artifact.type === "document"
-              ? "D"
-              : "W"}
-        </span>
-        <span className={`${readability.uiMedium} truncate`}>
-          {artifact.title}
-        </span>
-      </div>
-      <p className={`${readability.fieldLabel} mt-1 pl-8 text-[var(--clue-content-subtle)]`}>
-        {artifact.lastEditedLabel}
-      </p>
-    </button>
-  );
-}
-
 export function AccountArtifactsScreen({
   account,
-  workspace,
+  state,
 }: {
   account: AccountDetail;
-  workspace: AccountWorkspace;
+  state: AccountArtifactState;
 }) {
-  const controller = useAccountArtifactsController(workspace.artifacts);
+  const copy = accountArtifactStateCopy(state);
 
   return (
     <AccountWorkspaceShell account={account} activeTab="artifacts">
       <div className="clue-scrollbar-hidden h-full overflow-y-auto">
         <section className="mx-auto w-full max-w-[720px] px-8 pt-12 pb-16">
           <h1 className={readability.detailTitle}>Artifacts</h1>
-          <div className="mt-7 flex items-center justify-between gap-4">
-            <label className="flex h-8 w-60 items-center gap-2 rounded-lg border-[0.5px] border-[var(--clue-border-input)] bg-[var(--clue-background-hover)] px-2 shadow-[var(--clue-shadow-low)]">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img alt="" className="size-3" src="/icons/search.svg" />
-              <span className="sr-only">Search artifacts</span>
-              <input
-                className={`${readability.uiRegular} min-w-0 flex-1 bg-transparent outline-none`}
-                onChange={(event) => controller.setSearch(event.target.value)}
-                placeholder="Search"
-                value={controller.search}
-              />
-            </label>
-            <div className="flex items-center gap-5">
-              <button className={readability.actionMedium} type="button">
-                Last viewed⌄
-              </button>
-              <div className="flex h-8 items-center rounded-lg bg-[var(--clue-background-page)] p-0.5">
-                <button className="flex size-7 items-center justify-center rounded-md border-[0.5px] border-[var(--clue-border-neutral)] bg-white" type="button">
-                  ⊞
-                </button>
-                <button className="flex size-7 items-center justify-center text-[var(--clue-content-subtle)]" type="button">
-                  ≡
-                </button>
-              </div>
-            </div>
-          </div>
-          {workspace.artifacts.length ? null : (
-            <WorkspaceTabEmptyState>
-              No artifacts are served for this account yet.
-            </WorkspaceTabEmptyState>
-          )}
-          <div className="mt-7 grid grid-cols-1 gap-x-7 gap-y-9 sm:grid-cols-2 md:grid-cols-3">
-            {controller.visibleArtifacts.map((artifact) => (
-              <ArtifactCard
-                artifact={artifact}
-                key={artifact.id}
-                onOpen={() => controller.openArtifact(artifact)}
-              />
-            ))}
-          </div>
+          <section
+            aria-labelledby="account-artifact-state-title"
+            className="mt-7 max-w-xl rounded-xl border border-[var(--clue-border-neutral)] bg-[var(--clue-background-page)] p-5"
+          >
+            <h2
+              className={readability.sectionHeading}
+              id="account-artifact-state-title"
+            >
+              {copy.title}
+            </h2>
+            <p
+              className={`${readability.uiRegular} mt-2 text-[var(--clue-content-subtle)]`}
+            >
+              {copy.description}
+            </p>
+          </section>
         </section>
       </div>
-
-      {controller.selectedArtifact ? (
-        <div
-          aria-label={`${controller.selectedArtifact.title} preview`}
-          aria-modal="true"
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/20 p-6"
-          role="dialog"
-        >
-          <button
-            aria-label="Close artifact preview"
-            className="absolute top-6 right-6 z-10 flex size-11 items-center justify-center rounded-full bg-black/30 text-[28px] font-light text-white"
-            onClick={controller.closeArtifact}
-            type="button"
-          >
-            ×
-          </button>
-          <div className="clue-view-enter relative h-[min(720px,80vh)] w-[min(1080px,82vw)] overflow-hidden rounded-lg bg-white shadow-[0_24px_80px_rgba(0,0,0,0.18)]">
-            <Image
-              alt={`${controller.selectedArtifact.title} preview`}
-              className="object-contain"
-              fill
-              sizes="82vw"
-              src={controller.selectedArtifact.thumbnailPath}
-            />
-          </div>
-        </div>
-      ) : null}
     </AccountWorkspaceShell>
   );
 }
@@ -229,14 +148,14 @@ export function AccountArtifactsScreen({
 function ActivityMark({
   kind,
 }: {
-  kind: AccountWorkspace["activity"][number]["kind"];
+  kind: AccountActivityKind;
 }) {
   const path =
-    kind === "contacts"
-      ? "/icons/detail/contacts.png"
-      : kind === "summary"
-        ? "/icons/artifacts.svg"
-        : "/icons/progress-75.svg";
+    kind === "research_view.recheck_completed"
+      ? "/icons/check.svg"
+      : kind === "research_view.section_stale"
+        ? "/icons/progress-75.svg"
+        : "/icons/research.svg";
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img alt="" aria-hidden="true" className="size-4 object-contain" src={path} />
@@ -245,36 +164,87 @@ function ActivityMark({
 
 export function AccountActivityScreen({
   account,
-  workspace,
+  activity,
 }: {
   account: AccountDetail;
-  workspace: AccountWorkspace;
+  activity: AccountActivity;
 }) {
   return (
     <AccountWorkspaceShell account={account} activeTab="activity">
       <div className="clue-scrollbar-hidden h-full overflow-y-auto">
         <section className="mx-auto w-full max-w-[720px] px-8 pt-12">
           <h1 className={readability.detailTitle}>Activity</h1>
-          {workspace.activity.length ? null : (
+          <p
+            className={`${readability.uiRegular} mt-3 text-[var(--clue-content-subtle)]`}
+          >
+            Current state: {" "}
+            <Link
+              className="text-[var(--clue-content-default)] underline decoration-[var(--clue-border-neutral)] underline-offset-2"
+              href={`/accounts/${account.id}/contacts`}
+            >
+              {activity.state.committeeCount}{" "}
+              {activity.state.committeeCount === 1 ? "contact" : "contacts"}
+            </Link>
+            {" · "}
+            <Link
+              className="text-[var(--clue-content-default)] underline decoration-[var(--clue-border-neutral)] underline-offset-2"
+              href={`/accounts/${account.id}`}
+            >
+              {accountActivitySummaryLabel(activity.state.summary)}
+            </Link>
+          </p>
+          {activity.events.length ? null : (
             <WorkspaceTabEmptyState>
-              No activity feed is served for this account yet.
+              No durable activity exists for this account yet.
             </WorkspaceTabEmptyState>
           )}
           <div className="relative mt-7 space-y-5 before:absolute before:top-2 before:bottom-2 before:left-[7.5px] before:w-px before:bg-[var(--clue-border-neutral)]">
-            {workspace.activity.map((item) => (
-              <div
-                className={`${readability.uiRegular} relative z-10 flex items-center gap-3 bg-white`}
-                key={item.id}
-              >
-                <ActivityMark kind={item.kind} />
-                <p>
-                  {item.text}{" "}
-                  <span className="text-[var(--clue-content-subtle)]">
-                    {item.timeLabel}
-                  </span>
-                </p>
-              </div>
-            ))}
+            {activity.events.map((item) => {
+              const timestamp = formatIsoDateTime(item.occurredAt);
+              return (
+                <div
+                  className={`${readability.uiRegular} relative z-10 grid grid-cols-[16px_minmax(0,1fr)] items-start gap-3 bg-white`}
+                  key={item.id}
+                >
+                  <ActivityMark kind={item.kind} />
+                  <div>
+                    <Link
+                      className="font-medium text-[var(--clue-content-default)] hover:underline"
+                      href={accountActivityEventHref(account.id, item)}
+                    >
+                      {accountActivityEventLabel(item.kind)}
+                    </Link>
+                    <p className="mt-0.5 text-[var(--clue-content-subtle)]">
+                      {accountActivityActorLabel(item.actorCategory)}
+                      {item.subject.type === "contact" ? (
+                        <>
+                          {" · "}
+                          <Link
+                            className="hover:text-[var(--clue-content-default)] hover:underline"
+                            href={accountActivityEventHref(account.id, item)}
+                          >
+                            {accountActivitySubjectLabel(item)}
+                          </Link>
+                        </>
+                      ) : null}
+                      {" · "}
+                      <Link
+                        className="hover:text-[var(--clue-content-default)] hover:underline"
+                        href={`/projects/${encodeURIComponent(item.project.id)}`}
+                      >
+                        {item.project.name}
+                      </Link>
+                      {timestamp ? (
+                        <>
+                          {" · "}
+                          <time dateTime={item.occurredAt}>{timestamp}</time>
+                        </>
+                      ) : null}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </section>
       </div>

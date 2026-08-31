@@ -719,11 +719,14 @@ class ResearchRunLifecycleContract(BaseModel):
                 raise ValueError("account run requires an account selection")
             if ResearchOperationKind.CONTACT_RESEARCH in operation_set:
                 raise ValueError("account research run cannot perform contact deep research")
-            if not {
-                ResearchOperationKind.ACCOUNT_PROFILE,
-                ResearchOperationKind.COMMITTEE_DISCOVERY,
-            }.issubset(operation_set):
-                raise ValueError("account run requires account profile and committee discovery")
+            if ResearchOperationKind.ACCOUNT_PROFILE not in operation_set:
+                raise ValueError("account run requires account profiling")
+            committee_planned = ResearchOperationKind.COMMITTEE_DISCOVERY in operation_set
+            committee_authorized = bool(self.selection.committee_source_keys)
+            if committee_planned != committee_authorized:
+                raise ValueError(
+                    "account run committee operation must match committee source authority"
+                )
         else:
             if self.selection.subject_type is not ResearchSubjectType.CONTACT:
                 raise ValueError("contact run requires a contact selection")

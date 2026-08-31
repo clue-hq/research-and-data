@@ -401,7 +401,11 @@ def test_real_account_view_and_owner_references_compose_from_persisted_authoriti
                 )
             # The production path composes and governs 1/25/100 statements with one bounded query
             # plan. A per-statement governance/connection loop would blow through this ceiling.
-            assert account_query_count <= 30
+            # Raised 30 → 31 by R11.5 (the M8D committee bridge): the committee read now asks which
+            # account-research fleet run describes this project run before it reads references. That
+            # is one bounded lookup for the whole composition, constant in statement count — exactly
+            # what this ceiling exists to distinguish from a per-statement loop.
+            assert account_query_count <= 31
             second = await composer.compose(request)
 
             assert first.source_state_sha256 == second.source_state_sha256

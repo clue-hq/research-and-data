@@ -10,13 +10,10 @@ import pytest
 from sqlalchemy import text
 
 from clue_api.trial.discovery_fixture import (
-    AMBIENT_URL,
-    AURA_ANYWHERE_URL,
     BRAND_ID,
     FIXTURE_COMPILER_VERSION,
     HOME_URL,
     ICP_KEY,
-    NEUROSURGERY_URL,
     PRODUCT_ID,
     PROJECT_ID,
     PROJECT_RUN_ID,
@@ -25,6 +22,7 @@ from clue_api.trial.discovery_fixture import (
     FixtureInputError,
     OfficialSitePage,
     load_firecrawl_search_pages,
+    recorded_insight_health_pages,
     seed_insight_health_discovery_fixture,
 )
 from clue_config import DEFAULT_STAGE0_POLICY
@@ -48,70 +46,7 @@ from tests.stage0.conftest import rollback_conn
 
 
 def _pages() -> dict[str, OfficialSitePage]:
-    return {
-        HOME_URL: OfficialSitePage(
-            url=HOME_URL,
-            title="Insight Health AI",
-            markdown=(
-                "# The AI referral coordinator for specialty practices.\n\n"
-                "MagicDocs reads inbound referrals and routes each to the right EHR work queue "
-                "so nothing stalls on the fax machine.\n\n"
-                "## Pricing\n\n"
-                "Pay by the month or the year, and cancel at any time\n\n"
-                "Free Forever\n\n"
-                "Save 2+ hours every day. The quickest and easiest way to try AuraTM Scribe.\n\n"
-                "Pro\n\n$49.99\n\nPer clinician\n\nEnterprise\n\nCustom\n\n"
-                "Includes Virtual Care Assistant (VCA) + AuraTM AI Scribe."
-            ),
-        ),
-        AMBIENT_URL: OfficialSitePage(
-            url=AMBIENT_URL,
-            title="Aura AI scribe for clinical notes",
-            markdown=(
-                "## Fully Customizable Note Format\n\n"
-                "AuraTM AI Scribe offers unlimited customization beyond APSO, SOAP, and H&P "
-                "formats.\n\n"
-                "## Integrated ICD-10 and CPT Coding\n\n"
-                "AuraTM AI Scribe recommends appropriate ICD-10 diagnosis codes and CPT "
-                "procedure codes.\n\n"
-                "## iOS App and Chrome Extension\n\n"
-                "The Chrome extension stays within the same browser window as your EHR, "
-                "providing an integrated view between your AI scribe notes and web-based EHR "
-                "system without disruptive switching between applications."
-            ),
-        ),
-        AURA_ANYWHERE_URL: OfficialSitePage(
-            url=AURA_ANYWHERE_URL,
-            title="Aura Anywhere",
-            markdown=(
-                "### Ambient Documentation\n\n"
-                "AuraTM listens to patient-provider conversations and generates structured "
-                "clinical notes in real time. Providers focus on the patient while documentation "
-                "happens in the background.\n\n"
-                "### Multi-Tenant Architecture\n\n"
-                "Each organization operates in isolation with their own configurations, "
-                "templates, and data boundaries."
-            ),
-        ),
-        NEUROSURGERY_URL: OfficialSitePage(
-            url=NEUROSURGERY_URL,
-            title="Neurosurgery Referral Management",
-            markdown=(
-                "## Case Study: 15-Provider Neurosurgery Practice\n\n"
-                "Key Challenges\n\n"
-                "High volume of patient referrals (500+/month)\n\n"
-                "Staff spending 20+ hours/week on phone screenings\n\n"
-                "Inappropriate referrals consuming surgeon time\n\n"
-                "20% no-show rate causing scheduling inefficiency\n\n"
-                "Solution Implementation\n\n"
-                "Results\n\n$350k\n\nAnnual Overhead Savings\n\n15 min\n\n"
-                "Saved Per Consultation\n\n12x+\n\nReturn on Investment\n\n"
-                '"For the first time my notes are actually done by the time my clinic is done. '
-                'The Virtual Care Assistant has transformed our referral process."\n\n'
-                "\\- Neurosurgeon, The Oregon Clinic"
-            ),
-        ),
-    }
+    return recorded_insight_health_pages()
 
 
 def _firecrawl_payload(pages: list[OfficialSitePage]) -> dict[str, object]:
@@ -188,7 +123,7 @@ def test_discovery_fixture_is_real_db_backed_provenance_complete_and_replay_safe
                 EntityId(UUID(first.client_entity_id)),
                 workspace_id=WORKSPACE_ID,
                 version=first.client_kb_version,
-                product_id=PRODUCT_ID,
+                product_id=None,
             )
             assert set(claims) == set(first.client_claim_ids)
             for field_key, claim in claims.items():
@@ -230,7 +165,11 @@ def test_discovery_fixture_is_real_db_backed_provenance_complete_and_replay_safe
             )
             assert decision is not None
             assert decision.verdict is ReadinessVerdict.READY
-            assert decision.metrics["coverage_ratio"] == pytest.approx(7 / 9)
+            # 7 of the 12 baseline client fields are filled by this fixture. The denominator grew
+            # 9 → 11 when client.competitor / client.buyer_profile were registered, then S5's
+            # account-wide client.product_catalog made it 12. All three are absent from this
+            # legacy tier-2 fixture, so it leaves them honestly empty.
+            assert decision.metrics["coverage_ratio"] == pytest.approx(7 / 12)
             assert decision.metrics["verified_claims"] == 0
             assert decision.metrics["workspace_readiness_policy_version"] == 0
             assert decision.metrics["workspace_required_field_keys"] == []

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Attachments } from "@/components/ai-elements/attachments";
 import type { ProjectComposerAttachment as ProjectComposerAttachmentData } from "../model/project-composer";
 import type {
@@ -19,6 +19,10 @@ import styles from "./project-flow.module.css";
 const NOOP = () => undefined;
 
 export function ProjectComposer({
+  attachmentAccept,
+  attachmentError,
+  attachmentInputDisabled = false,
+  attachmentLabel = "Attach files",
   attachments = [],
   disabled = false,
   entities = [],
@@ -37,7 +41,12 @@ export function ProjectComposer({
   selectedEntities = [],
   selectedEntityIds = [],
   selectedModel,
+  variant = "default",
 }: {
+  attachmentAccept?: string;
+  attachmentError?: string | null;
+  attachmentInputDisabled?: boolean;
+  attachmentLabel?: string;
   attachments?: ProjectComposerAttachmentData[];
   disabled?: boolean;
   entities?: ProjectEntity[];
@@ -50,20 +59,18 @@ export function ProjectComposer({
   onModelPickerToggle?: () => void;
   onModelSelect?: (modelId: string) => void;
   onPromptChange: (value: string) => void;
-  onSubmit: (value?: string, entityIds?: string[]) => void;
+  onSubmit: (value: string, entityIds: string[]) => boolean | Promise<boolean>;
   prompt: string;
   sendDisabled?: boolean;
   selectedEntities?: ProjectEntity[];
   selectedEntityIds?: string[];
   selectedModel?: ProjectModelOption;
+  // Presentation-only (C-4, from the design's chat-composer): "home" widens
+  // and repositions the pickers for the Home composer card.
+  variant?: "default" | "home";
 }) {
   const editorRef = useRef<ProjectComposerEditorHandle>(null);
-  const sendButtonRef = useRef<HTMLButtonElement>(null);
-  const handleDraftChange = useCallback((hasContent: boolean) => {
-    if (sendButtonRef.current) {
-      sendButtonRef.current.disabled = disabled || sendDisabled || !hasContent;
-    }
-  }, [disabled, sendDisabled]);
+  const [submitting, setSubmitting] = useState(false);
   const handleContextChange = useCallback(
     (entityIds: string[]) => {
       selectedEntityIds
@@ -75,22 +82,40 @@ export function ProjectComposer({
     },
     [onEntityRemove, onEntitySelect, selectedEntityIds],
   );
+  const submitCurrentDraft = useCallback(
+    async (promptOverride?: string) => {
+      if (disabled || sendDisabled || submitting) return;
+      const currentPrompt =
+        promptOverride ?? editorRef.current?.getPrompt() ?? prompt;
+      const currentEntityIds = editorRef.current?.getEntityIds() ?? [];
+      if (!currentPrompt.trim() && !currentEntityIds.length && !attachments.length) {
+        return;
+      }
+
+      setSubmitting(true);
+      try {
+        const accepted = await onSubmit(currentPrompt, currentEntityIds);
+        if (!accepted) return;
+        editorRef.current?.clearSubmittedDraft(currentPrompt, currentEntityIds);
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [attachments.length, disabled, onSubmit, prompt, sendDisabled, submitting],
+  );
 
   return (
     <form
       className={[
         styles.composer,
         attachments.length ? styles.composerWithAttachments : "",
+        variant === "home" ? styles.composerHome : "",
       ]
         .filter(Boolean)
         .join(" ")}
       onSubmit={(event) => {
         event.preventDefault();
-        if (disabled || sendDisabled) return;
-        const currentPrompt = editorRef.current?.getPrompt() ?? prompt;
-        const currentEntityIds = editorRef.current?.getEntityIds() ?? [];
-        if (!currentPrompt.trim() && !currentEntityIds.length) return;
-        onSubmit(currentPrompt, currentEntityIds);
+        void submitCurrentDraft();
       }}
     >
       <div className={styles.composerBody}>
@@ -105,15 +130,18 @@ export function ProjectComposer({
             ))}
           </Attachments>
         ) : null}
+        {attachmentError ? (
+          <p className={styles.composerAttachmentError} role="alert">
+            {attachmentError}
+          </p>
+        ) : null}
         <ProjectComposerEditor
-          disabled={disabled}
+          disabled={disabled || submitting}
           entities={entities}
           onContextChange={handleContextChange}
-          onDraftChange={handleDraftChange}
           onPromptChange={onPromptChange}
           onSubmit={(value) => {
-            if (disabled || sendDisabled) return;
-            onSubmit(value, editorRef.current?.getEntityIds() ?? []);
+            void submitCurrentDraft(value);
           }}
           prompt={prompt}
           ref={editorRef}
@@ -124,10 +152,13 @@ export function ProjectComposer({
       <div className={styles.composerFooter}>
         <div className={styles.composerPickerAnchor}>
           {onAttachmentFiles ? (
-            <label aria-label="Attach files" className={styles.iconButton}>
+            <label aria-label={attachmentLabel} className={styles.iconButton}>
               <input
-                accept=".csv,.doc,.docx,.gif,.jpeg,.jpg,.pdf,.png,.webp,.xls,.xlsx"
-                disabled={disabled}
+                accept={
+                  attachmentAccept ??
+                  ".csv,.doc,.docx,.gif,.jpeg,.jpg,.pdf,.png,.webp,.xls,.xlsx"
+                }
+                disabled={disabled || submitting || attachmentInputDisabled}
                 multiple
                 onChange={(event) => {
                   onAttachmentFiles(Array.from(event.target.files ?? []));
@@ -177,9 +208,11 @@ export function ProjectComposer({
             aria-label="Send"
             className={styles.sendButton}
             disabled={
-              disabled || sendDisabled || (!prompt.trim() && !selectedEntities.length)
+              disabled ||
+              sendDisabled ||
+              submitting ||
+              (!prompt.trim() && !selectedEntities.length && !attachments.length)
             }
-            ref={sendButtonRef}
             type="submit"
           >
             <ProjectIcon name="arrow-up" size={16} />

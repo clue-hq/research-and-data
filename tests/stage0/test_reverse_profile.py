@@ -12,14 +12,19 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config import Secrets
 from clue_core import (
+    ClaimDraft,
     ExtractionMethod,
     ResearchMode,
+    RetryableResolverError,
     ReuseScope,
     account_claim,
     new_run_id,
 )
+from clue_research.adapters import CallableClaimExtractor, span_for
 from clue_research.claimstore import (
     ALL_WORKSPACES,
     ReuseScopeError,
@@ -29,20 +34,28 @@ from clue_research.claimstore import (
     insert_claim,
 )
 from clue_research.identity import stamp_reuse
+from clue_research.resolvers.exa_search import register_exa_search_resolver
+from clue_research.resolvers.http import ProviderResponseError
 from clue_research.sources import bind_resolver
 from clue_research.stage0 import (
+    CLIENT_BASELINE_FIELDS,
     CLIENT_KB_VERSION,
     CLIENT_KNOWLEDGE_FIELDS,
     CLIENT_KNOWLEDGE_REUSE_POLICY,
+    CLIENT_ONBOARDING_FIELDS,
+    CLIENT_PRODUCT_CATALOG,
     ClientInput,
+    FieldProgressStatus,
     SurfaceClass,
     VolunteeredMaterial,
     current_kb_version,
     read_client_kb,
     reverse_profile,
 )
+from clue_research.stage0 import client_kb as client_kb_module
 from clue_research.stage0.client_kb import _judge_tier4_claims
 from clue_research.stage0.fields import (
+    CLIENT_COMPETITOR,
     CLIENT_CUSTOMER,
     CLIENT_DIFFERENTIATOR,
     CLIENT_ICP_EVIDENCE,
@@ -468,6 +481,137 @@ def test_client_customer_is_multi_valued_list() -> None:
     run_async(_run())
 
 
+def test_per_field_progress_events_are_emitted_in_flight() -> None:
+    """D-5 Path B: every field the loop *attempts* announces itself before the lane finishes."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            _bind_firecrawl(_owned_values())
+            seen: list[tuple[str, FieldProgressStatus]] = []
+
+            async def record(
+                progress_conn: AsyncConnection, field_key: str, status: FieldProgressStatus
+            ) -> None:
+                # The callback receives the LANE connection — a factory-less emitter writes
+                # same-transaction on it (and every test conn-factory shape stays deadlock-free).
+                assert progress_conn is conn
+                seen.append((field_key, status))
+
+            await reverse_profile(conn, _input(), workspace_id=_CLIENT, on_field_progress=record)
+
+            starts = [k for k, s in seen if s is FieldProgressStatus.STARTED]
+            assert starts  # the loop attempted fields, and each announced its start
+            assert starts == [k for k in CLIENT_BASELINE_FIELDS if k in starts]  # loop order
+            assert len(starts) == len(set(starts))  # exactly one start per attempted field
+            for key in starts:
+                terminals = [
+                    s for k, s in seen if k == key and s is not FieldProgressStatus.STARTED
+                ]
+                assert len(terminals) == 1
+                assert terminals[0] in (FieldProgressStatus.RESOLVED, FieldProgressStatus.EMPTY)
+
+            # honest statuses: a field the fake scraper answered is RESOLVED, an unwired one EMPTY
+            resolved = {k for k, s in seen if s is FieldProgressStatus.RESOLVED}
+            empty = {k for k, s in seen if s is FieldProgressStatus.EMPTY}
+            assert CLIENT_VALUE_PROP in resolved
+            assert empty  # third-party/review surfaces have no resolver bound
+
+    run_async(_run())
+
+
+def test_fast_onboarding_field_policy_excludes_company_catalog() -> None:
+    """The catalog may enrich later, but cannot enter the eleven-field release/checklist walk."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            _bind_firecrawl(_owned_values())
+            seen: list[tuple[str, FieldProgressStatus]] = []
+
+            async def record(
+                _conn: AsyncConnection, field_key: str, status: FieldProgressStatus
+            ) -> None:
+                seen.append((field_key, status))
+
+            result = await reverse_profile(
+                conn,
+                _input(),
+                workspace_id=_CLIENT,
+                company_field_keys=CLIENT_ONBOARDING_FIELDS,
+                max_source_tier=2,
+                on_field_progress=record,
+            )
+
+            starts = [key for key, status in seen if status is FieldProgressStatus.STARTED]
+            assert starts == list(CLIENT_ONBOARDING_FIELDS)
+            assert CLIENT_PRODUCT_CATALOG not in starts
+            assert CLIENT_PRODUCT_CATALOG not in result.coverage.filled_fields
+            assert CLIENT_PRODUCT_CATALOG not in result.coverage.empty_fields
+
+    run_async(_run())
+
+
+def test_a_raising_resolver_emits_failed_before_propagating(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A blown resolution is announced as FAILED, then still fails the lane (no swallowing)."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            seen: list[tuple[str, FieldProgressStatus]] = []
+
+            async def record(_c: AsyncConnection, field_key: str, s: FieldProgressStatus) -> None:
+                seen.append((field_key, s))
+
+            async def boom(*_args: object, **_kwargs: object) -> None:
+                raise RuntimeError("resolver exploded")
+
+            monkeypatch.setattr(client_kb_module, "resolve_field", boom)
+            with pytest.raises(RuntimeError, match="resolver exploded"):
+                await reverse_profile(
+                    conn, _input(), workspace_id=_CLIENT, on_field_progress=record
+                )
+
+            assert len(seen) == 2  # the first field: started, then failed — nothing after
+            assert seen[0][1] is FieldProgressStatus.STARTED
+            assert seen[1][1] is FieldProgressStatus.FAILED
+            assert seen[0][0] == seen[1][0] == CLIENT_BASELINE_FIELDS[0]
+
+    run_async(_run())
+
+
+def test_unattempted_fields_emit_nothing() -> None:
+    """Honest absence: a material-shortcut field and budget-cut fields announce nothing."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            bind_resolver(
+                "firecrawl_site",
+                FakeResolver(tier=2, values=_owned_values(), cost_cents=Decimal("1.0")),
+            )
+            deck = VolunteeredMaterial(asserted_fields={CLIENT_VALUE_PROP: "from the deck"})
+            seen: list[tuple[str, FieldProgressStatus]] = []
+
+            async def record(_c: AsyncConnection, field_key: str, s: FieldProgressStatus) -> None:
+                seen.append((field_key, s))
+
+            result = await reverse_profile(
+                conn,
+                _input((deck,)),
+                workspace_id=_CLIENT,
+                budget_cap_cents=Decimal("1.5"),
+                on_field_progress=record,
+            )
+
+            assert result.budget_exhausted is True
+            announced = {k for k, _ in seen}
+            # shortcut by the volunteered tier-1 fact — never attempted, so never announced
+            assert CLIENT_VALUE_PROP not in announced
+            # the budget halt left later fields un-attempted; they announce nothing either
+            assert announced < set(CLIENT_BASELINE_FIELDS)
+
+    run_async(_run())
+
+
 def test_reverse_profile_registers_its_run_in_run_lineage() -> None:
     """FI-2 P2: the Client-KB claims back-join to a workspace-level stage-0 run (no project)."""
 
@@ -482,5 +626,230 @@ def test_reverse_profile_registers_its_run_in_run_lineage() -> None:
             )
             # Resuming the same run re-registers harmlessly.
             await reverse_profile(conn, _input(), workspace_id=_CLIENT, run_id=run_id)
+
+    run_async(_run())
+
+
+# --- slice 3: the tier-3 exa_search source is background-lane-only ---------------------------
+
+
+_COMPETITOR_URL = "https://reviews.example/acme-vs-rival"
+_COMPETITOR_TEXT = "Acme Corp and Rival Inc are the two leading CI platforms."
+
+
+class _ExaBinder:
+    """The Stage-0 account-lookup bridge, as the composition roots wire it.
+
+    ``reverse_profile`` only knows the client's account *after* identity resolution, and the
+    resolver seam is sync, so the root passes this as ``on_client_resolved``: it accumulates the
+    resolved record and (re)binds the tier-3 resolver over a lookup on itself.
+    """
+
+    def __init__(self, http: object) -> None:
+        self._accounts: dict[object, object] = {}
+        self._http = http
+
+    def key_for(self, entity_id: object) -> object | None:
+        return self._accounts.get(entity_id)
+
+    def __call__(self, account: object) -> None:
+        self._accounts[account.id] = account  # type: ignore[attr-defined]
+        register_exa_search_resolver(
+            extractor=CallableClaimExtractor(_competitor_drafts),
+            accounts=self,  # type: ignore[arg-type]
+            secrets=Secrets(_env_file=None, exa_api_key="lane-test"),
+            http=self._http,  # type: ignore[arg-type]
+        )
+
+
+class _SearchHttp:
+    """A ``get_json`` double returning one on-entity search record, counting every call."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, url: str, **kwargs: object) -> object:
+        self.calls += 1
+        return {
+            "results": [{"title": "CI platforms", "url": _COMPETITOR_URL, "text": _COMPETITOR_TEXT}]
+        }
+
+
+def _competitor_drafts(normalized: object, entity: object, field: object) -> list[ClaimDraft]:
+    """A canned extractor: one grounded competitor draft, cited to the record it came from."""
+    key = field.field_key  # type: ignore[attr-defined]
+    text = normalized.text  # type: ignore[attr-defined]
+    if key != CLIENT_COMPETITOR or _COMPETITOR_TEXT not in text:
+        return []
+    return [
+        ClaimDraft(
+            field_key=key,
+            value={"name": "Rival Inc"},
+            evidence_span=span_for(text, _COMPETITOR_TEXT),
+            confidence=0.8,
+            source_url=_COMPETITOR_URL,
+        )
+    ]
+
+
+def test_exa_search_is_skipped_by_the_fast_lane_and_paid_only_by_the_background_lane() -> None:
+    """The tier gate is what keeps interactive onboarding free.
+
+    The fast lane caps at ``max_source_tier=2``: the tier-3 source is refused BEFORE a request is
+    issued, so ``client.competitor`` stays honestly empty at zero spend. The background lane
+    (``max_source_tier=3``) is the only one that pays — and then the field fills with a grounded,
+    cited tier-3 claim.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            http = _SearchHttp()
+            binder = _ExaBinder(http)
+
+            fast = await reverse_profile(
+                conn,
+                _input(),
+                workspace_id=_CLIENT,
+                max_source_tier=2,
+                on_client_resolved=binder,
+            )
+            assert http.calls == 0  # gate-skipped before the provider call
+            assert fast.cost_cents == Decimal(0)
+            scope = WorkspaceScope.for_workspace(_CLIENT)
+            assert (
+                await current_value(conn, fast.ref.client_entity_id, CLIENT_COMPETITOR, scope=scope)
+                is None
+            )
+
+            background = await reverse_profile(
+                conn,
+                _input(),
+                workspace_id=_CLIENT,
+                max_source_tier=3,
+                on_client_resolved=binder,
+            )
+            # both tier-3 client fields were researched; only the competitor one yielded a value
+            assert http.calls == 2
+            assert background.cost_cents > Decimal(0)
+            cv = await current_value(
+                conn, background.ref.client_entity_id, CLIENT_COMPETITOR, scope=scope
+            )
+            assert cv is not None
+            assert cv.value_json == {"name": "Rival Inc"}
+            assert cv.provenance.source_tier == 3
+            (claim,) = await claims_for(
+                conn, background.ref.client_entity_id, CLIENT_COMPETITOR, scope=ALL_WORKSPACES
+            )
+            assert claim.source_key == "exa_search"  # engine-stamped
+            assert claim.extraction_method is ExtractionMethod.API
+            assert claim.source_url == _COMPETITOR_URL
+            assert claim.evidence_span == _COMPETITOR_TEXT
+            assert claim.reuse_scope is ReuseScope.TENANT_PRIVATE
+
+    run_async(_run())
+
+
+class _RefusingHttp:
+    """A ``get_json`` double that answers every search with a hard 402 (credits exhausted)."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, url: str, **kwargs: object) -> object:
+        self.calls += 1
+        raise ProviderResponseError(
+            "exa_search: HTTP 402", status_code=402, body_excerpt="out of credits"
+        )
+
+
+def test_a_refusing_exa_search_empties_its_own_fields_and_leaves_the_run_intact() -> None:
+    """The rest of the review-fix invariant, at lane level.
+
+    The composition root refuses to bind this source without a credential — but a key can be
+    revoked or run out of credits *after* boot, and that arrives as a hard 4xx mid-run. A resolver
+    exception is re-raised by the waterfall and again here, so an escaping 402 would destroy an
+    entire onboarding run over one optional open-web enrichment. Instead the two tier-3 fields end
+    empty, every other field is untouched, and the run completes with its version marker.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            _bind_firecrawl(_owned_values())
+            http = _RefusingHttp()
+            result = await reverse_profile(
+                conn,
+                _input(),
+                workspace_id=_CLIENT,
+                max_source_tier=3,
+                on_client_resolved=_ExaBinder(http),
+            )
+
+            assert http.calls == 2  # both tier-3 fields tried, both refused
+            assert result.ref.client_kb_version == 1  # the run COMPLETED
+            scope = WorkspaceScope.for_workspace(_CLIENT)
+            # the refused fields are honestly empty …
+            assert (
+                await current_value(
+                    conn, result.ref.client_entity_id, CLIENT_COMPETITOR, scope=scope
+                )
+                is None
+            )
+            # … and every tier-2 field the same run resolved is unaffected
+            cv = await current_value(
+                conn, result.ref.client_entity_id, CLIENT_VALUE_PROP, scope=scope
+            )
+            assert cv is not None
+            assert cv.value_json == "We help teams ship faster"
+
+    run_async(_run())
+
+
+class _TransientlyFailingHttp:
+    """A ``get_json`` double whose retries are already spent: every call raises 503."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, url: str, **kwargs: object) -> object:
+        self.calls += 1
+        raise RetryableResolverError("exa_search: HTTP 503 from https://api.exa.ai/search")
+
+
+def test_a_transient_exa_search_fault_leaves_the_run_intact() -> None:
+    """The same invariant for the *transient* fault — the case nothing downstream retries.
+
+    ``get_json`` already looped ``retries + 1`` times before re-raising, and this lane has no
+    second driver: ``reverse_profile`` re-raises, the savepoint rolls back every background claim,
+    the lane is marked failed and never re-driven. So one 503 that outlived its transport retries
+    used to lose the entire background research pass permanently. It is a hard miss instead: the
+    tier-3 fields end empty and every tier-2 field the same run resolved is untouched.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            _bind_firecrawl(_owned_values())
+            http = _TransientlyFailingHttp()
+            result = await reverse_profile(
+                conn,
+                _input(),
+                workspace_id=_CLIENT,
+                max_source_tier=3,
+                on_client_resolved=_ExaBinder(http),
+            )
+
+            assert http.calls == 2  # both tier-3 fields tried, both faulted
+            assert result.ref.client_kb_version == 1  # the run COMPLETED
+            scope = WorkspaceScope.for_workspace(_CLIENT)
+            assert (
+                await current_value(
+                    conn, result.ref.client_entity_id, CLIENT_COMPETITOR, scope=scope
+                )
+                is None
+            )
+            cv = await current_value(
+                conn, result.ref.client_entity_id, CLIENT_VALUE_PROP, scope=scope
+            )
+            assert cv is not None
+            assert cv.value_json == "We help teams ship faster"
 
     run_async(_run())

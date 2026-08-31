@@ -17,13 +17,25 @@ __pycache__/
 apps/api/*.sqlite3
 apps/editor/public/canvaskit/
 apps/editor/public/fonts/
-apps/editor/public/wasm/
+# The browser engine is a release input for the Railway-hosted platform
+# frontend. Track its two wasm-pack outputs so a clean remote build can verify
+# the source-content stamp and ship an editable canvas. Other files in the
+# directory remain generated/local-only.
+apps/editor/public/wasm/*
+!apps/editor/public/wasm/.gitignore
+!apps/editor/public/wasm/lumen_wasm.js
+!apps/editor/public/wasm/lumen_wasm_bg.wasm
 reference_docs/*
 !reference_docs/
 !reference_docs/ABM-Design-Engine-Temporary-Spec.md
 !reference_docs/Brilliant-Reverse-Engineering-Report.md
 
 # Local-only heavy artifacts — stripped from history 2026-08-04, never re-commit
+# D4: the ENGINE MATERIALIZATION CACHE (transient, per-workspace; durable design bytes live in
+# platform storage). `apps/api/asset-store/` is kept below for historical working trees.
+.engine-cache/
+# Derived, disposable per-run views written by `scripts/run_view.py` — regenerate, never commit.
+.design-runs/
 apps/api/asset-store/
 apps/agent_runtime/.lumen-runs-A/
 apps/agent_runtime/.lumen-runs-B/
@@ -33,3 +45,4 @@ apps/agent_runtime/.lumen-runs/
 .context/**/*.png
 .playwright-mcp/
 apps/editor/public/vendor/
+.artifacts/

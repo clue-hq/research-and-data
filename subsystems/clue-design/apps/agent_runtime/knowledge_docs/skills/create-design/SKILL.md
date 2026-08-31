@@ -83,7 +83,7 @@ The discipline is the same whatever the image class:
 3. **Never regress to house vocabulary.** The single failure this section exists
    to break: reducing a reference to a couple of hex values and then composing in
    the loop's *default* style — the vertical-poster reflex, the eyebrow pill, the
-   confetti blob. The moda rec-2 case is the canon example: soft-wash references
+   confetti blob. The soft-wash recreation case is the canon example: references
    were reduced to a palette and the output came back as scattered hard-edged
    blobs in the house style ("no problems detected" — because nobody checked
    fidelity). That is ONE instance of a general trap; the trap is *palette-only

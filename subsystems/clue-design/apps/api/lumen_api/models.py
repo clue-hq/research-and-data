@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, StrictInt
+from pydantic import AliasChoices, BaseModel, Field, StrictInt
 
 
 JsonObject = Dict[str, Any]
@@ -247,6 +247,13 @@ class WebBatchRequest(BaseModel):
     account_ids: List[str] = Field(default_factory=list)
     publish: bool = True
     slug_base: Optional[str] = None
+    #: CP2 (clone-fidelity F4.3, D-F5): this is an ABM run over a campaign template. It is sugar
+    #: for ``slug_base="abm"`` — the PERSISTED slug base is the mode, so a resumed batch behaves
+    #: identically — and it brings three things with it: ``abm-<account>`` slugs, ``noindex`` on
+    #: every published account page (these are explicit-URL-only pages), and one derived document
+    #: per (template, account) converged across re-runs. Passing ``slug_base`` as well is REFUSED
+    #: rather than silently overridden.
+    abm: bool = False
 
 
 class WebPublishRequest(BaseModel):
@@ -263,6 +270,18 @@ class SetAgentInstructionsRequest(BaseModel):
 
 class SetLayoutManagedEditingRequest(BaseModel):
     enabled: bool = False
+
+
+class SetWebNoindexRequest(BaseModel):
+    """Stamp or clear a web document's durable ``noindex`` (clone-fidelity F4.3, ruling R-F1).
+
+    ``noindex`` is REQUIRED and has NO default. That is the ruling's "removing it requires an
+    explicit action", made structural: a body that merely omits the field is a 422, so no caller
+    can clear the flag by forgetting to mention it — which is exactly how the publish routes
+    (which carry no such field at all) lost it before this ruling.
+    """
+
+    noindex: bool
 
 
 class FinalizeTemplateRequest(BaseModel):
@@ -397,7 +416,64 @@ class IngestWebsiteRequest(BaseModel):
     url: str
     name: Optional[str] = None
     brand_kit_id: Optional[str] = None
+    #: REDUNDANT since the founder ruling of 2026-08-20, and kept only so existing callers do
+    #: not 422 on a field they still send. Website ingestion now always captures at the rendered
+    #: tier — the pipeline forces it (`lumen_ingestion.pipeline._ingest`), because "geometry
+    #: needs a live page by definition" and a client that forgets a flag must still get
+    #: geometry. Setting it True changes nothing; setting it False does NOT turn rendering off.
     force_render: bool = False
+
+
+class OnboardAdAssetsRequest(BaseModel):
+    """One Brand Ad Assets onboarding job (spec §5 W2), behind ``LUMEN_BRAND_AD_ASSETS``.
+
+    **Own ads only** (ruling D2). The advertiser is identified by the CLIENT's own domain or
+    LinkedIn page id; there is no competitor field, and adding one is a deliberate per-client
+    opt-in that v1 does not build. Exactly one selector is required — the route refuses both
+    and neither, because guessing which one a caller meant would spend a vendor credit on a
+    question nobody asked.
+
+    ``brand_kit_id`` / ``brand_kit_version`` name the kit this harvest is FOR. It is required
+    because the ad-DNA card pins the kit version it was distilled against: a card that cannot
+    say which brand it describes is a card no turn can safely be conditioned on.
+    """
+
+    brand_kit_id: str
+    brand_kit_version: int
+    company_domain: Optional[str] = None
+    #: THE OPERATOR'S EXPLICIT OVERRIDE (W5/R3-A), and the strongest selector there is.
+    #:
+    #: Supplying it SKIPS company-identity resolution entirely — a hand-verified page id is the
+    #: operator saying "I looked, it is this one", so calling a resolver to second-guess them
+    #: would only spend a credit to relitigate a settled question. It is an assertion rather
+    #: than a verification, though, so the job still records `verified: false`, and the
+    #: advertiser-name cross-check still gates custody exactly as it does on every other path.
+    #:
+    #: Accepted under EITHER name. `linkedin_page_id` is the spelling the R3-A design used and
+    #: the one the vendor's own wire format uses; `page_id` is what this request has always
+    #: called it. They are one field rather than two on purpose — a second, independent page
+    #: selector would recreate precisely the "which one did the caller mean" ambiguity the
+    #: route refuses `company_domain` + `page_id` together to avoid.
+    page_id: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("page_id", "linkedin_page_id"),
+        serialization_alias="page_id",
+    )
+    #: Overrides the inferred company name the thought-leader filter compares against. Useful
+    #: when a page's own creatives are outnumbered by promoted personal posts.
+    #:
+    #: R3-A gave it a second job: on the two UNVERIFIED paths (an operator-supplied page id, or
+    #: a fallback to the ad library's own domain resolution) this is the name the advertiser
+    #: cross-check gates custody against, because no independent resolver supplied one. On the
+    #: verified path the resolver's name wins — a caller-supplied name compared against itself
+    #: would verify nothing.
+    advertiser_name: Optional[str] = None
+    #: Bounded spend: ~24–25 ads and ~1 vendor credit per page.
+    max_pages: int = 3
+    max_creatives: int = 15
+    date_filter: Optional[str] = None
+    #: The card lineage to append to. Defaults to one card per brand kit.
+    card_id: Optional[str] = None
 
 
 class SetBrandKitApprovalRequest(BaseModel):

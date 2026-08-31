@@ -34,6 +34,7 @@ export function ProjectHomeView({
             attachments={controller.attachments}
             entities={data.entities}
             disabled={controller.loading}
+            variant="home"
             modelPickerOpen={controller.modelPickerOpen}
             models={data.models}
             onAttachmentFiles={

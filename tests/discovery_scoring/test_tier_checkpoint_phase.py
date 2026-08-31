@@ -385,6 +385,9 @@ def test_resume_approve_completes_and_persists_tiers() -> None:
             assert isinstance(value, dict)
             assert value["tier"] == "high"
             assert value["cutoff_version"] == result.payload["cutoff_version"]
+            assert value["project_id"] == "prj-test"
+            assert value["project_run_id"] == str(project_run_id)
+            assert value["disposition"] == "selected"
             assert "fit_score" in value and "intent_score" in value
             # invisible to a public read (tenant isolation)
             public = await claims_for(conn, eid, TIER_FIELD, scope=WorkspaceScope.public_only())

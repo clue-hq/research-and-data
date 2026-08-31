@@ -4,14 +4,19 @@ import base64
 import copy
 import json
 import logging
+import os
 import shutil
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import make_blob_store, make_client, unique_run_id
+
 from lumen_api import image_provider
+from lumen_api.design_store import DesignBlobStore, HybridRepository
 from lumen_api.main import agent_response_from_trace, create_app
 from py_lumen_config import settings
 from py_lumen_obs import bind_request_id, get_logger, unbind_context
@@ -30,8 +35,22 @@ VALID_STYLES_PATH = (
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    app = create_app(tmp_path / "api.sqlite3")
-    return TestClient(app)
+    app = create_app(tmp_path / "engine-cache")
+    return make_client(app)
+
+
+def _workspace_blobs() -> DesignBlobStore:
+    """This test's byte store on the process-configured backend.
+
+    D5 Round C made ``blobs`` REQUIRED on the by-value turn resolvers (they used to default to
+    ``api_blob_store()``, i.e. the dev workspace, which meant an unthreaded caller silently read
+    another tenant's library). This is exactly what that default resolved to under the autouse
+    isolation fixture, so the tests below still exercise the same rows — they just have to say
+    which tenant they mean now.
+    """
+    from lumen_api.main import api_blob_store
+
+    return api_blob_store(os.environ["LUMEN_DEV_WORKSPACE_ID"])
 
 
 def minimal_scene() -> dict:
@@ -423,7 +442,7 @@ def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
     resolves the full kit JSON from the library (passed by value into the
     runtime config); resolution failures degrade to (None, None) so the turn
     itself can never fail on kit lookup."""
-    from lumen_api.main import resolve_agent_turn_brand_kit
+    from lumen_api.main import api_blob_store, resolve_agent_turn_brand_kit
     from lumen_api.models import AgentTurnPreviewRequest
 
     compiled = client.post(
@@ -437,12 +456,13 @@ def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
     )
     assert compiled.status_code == 200, compiled.text
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
 
     scene = preflightable_scene()
     scene["meta"]["brand_kit"] = {"id": "brand_kit_insight_health", "version": 4}
     kit, source, manifest, brand_fonts = resolve_agent_turn_brand_kit(
-        AgentTurnPreviewRequest(prompt="Restyle the letter", scene=scene)
+        AgentTurnPreviewRequest(prompt="Restyle the letter", scene=scene),
+        _workspace_blobs(),
     )
     assert source == "document"
     assert kit is not None
@@ -456,14 +476,16 @@ def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
 
     # No scene ref → no kit (platform-default behavior unchanged).
     assert resolve_agent_turn_brand_kit(
-        AgentTurnPreviewRequest(prompt="x", scene=preflightable_scene())
+        AgentTurnPreviewRequest(prompt="x", scene=preflightable_scene()),
+        _workspace_blobs(),
     ) == (None, None, None, None)
 
     # Unknown kit id → graceful Nones, never an exception.
     ghost = preflightable_scene()
     ghost["meta"]["brand_kit"] = {"id": "brand_kit_ghost", "version": 1}
     assert resolve_agent_turn_brand_kit(
-        AgentTurnPreviewRequest(prompt="x", scene=ghost)
+        AgentTurnPreviewRequest(prompt="x", scene=ghost),
+        _workspace_blobs(),
     ) == (None, None, None, None)
 
     # K2: a kit WITH a logo asset yields a manifest carrying the library
@@ -511,13 +533,56 @@ def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
         "version": kit_with_logo["version"],
     }
     kit, source, manifest, _ = resolve_agent_turn_brand_kit(
-        AgentTurnPreviewRequest(prompt="Add our logo", scene=logo_scene)
+        AgentTurnPreviewRequest(prompt="Add our logo", scene=logo_scene),
+        _workspace_blobs(),
     )
     assert kit is not None and source == "document"
     entry = manifest[logo_asset_id]
     assert entry["record"]["id"] == logo_asset_id
     assert entry["record"]["media"]["digest"]["algorithm"] == "sha256"
     assert entry["usage"] == "Use on dark or brand-colored fields."
+
+
+def test_zero_face_brand_font_uses_inter_and_reports_the_server_fallback(
+    client: TestClient,
+) -> None:
+    """A pinned kit may name a family without carrying licensed face bytes.
+
+    That is an explicit, deterministic degradation — not permission to fetch
+    an arbitrary system/web font. The server's Skia path must use bundled
+    Inter and report LUMS0100, matching the browser's renderer diagnostic.
+    """
+    compiled = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": valid_styles_source(),
+            "brand_kit_id": "brand_kit_zero_face_fallback",
+            "version": 4,
+            "name": "Zero-face fallback",
+        },
+    )
+    assert compiled.status_code == 200, compiled.text
+
+    scene = preflightable_scene()
+    scene["meta"]["brand_kit"] = {
+        "id": "brand_kit_zero_face_fallback",
+        "version": 4,
+    }
+    scene["nodes"]["node_contact_name"]["kind"]["font_family"] = "Source Sans 3"
+
+    exported = client.post(
+        "/export-preview",
+        json={"scene": scene, "format": "png", "page_ids": ["page_a4"]},
+    )
+    assert exported.status_code == 200, exported.text
+    current = exported.json().get("diagnostics") or []
+    fallback = next(
+        (diagnostic for diagnostic in current if diagnostic.get("code") == "LUMS0100"),
+        None,
+    )
+    assert fallback is not None, current
+    assert "Source Sans 3" in fallback["message"]
+    assert "Inter" in fallback["message"]
 
 
 def test_brand_kit_font_faces_ride_preflight_as_store_digests(
@@ -527,7 +592,7 @@ def test_brand_kit_font_faces_ride_preflight_as_store_digests(
     assets yields a {store_root, digests} spec (via the agent-turn resolver),
     and a real-engine /preflight-preview against that kit stays clean — the
     helper loads the face bytes from the store instead of erroring."""
-    from lumen_api.main import resolve_agent_turn_brand_kit
+    from lumen_api.main import api_blob_store, resolve_agent_turn_brand_kit
     from lumen_api.models import AgentTurnPreviewRequest
 
     compiled = client.post(
@@ -563,14 +628,15 @@ def test_brand_kit_font_faces_ride_preflight_as_store_digests(
     )
     assert created.status_code == 200, created.text
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     scene = preflightable_scene()
     scene["meta"]["brand_kit"] = {
         "id": "brand_kit_insight_with_font",
         "version": kit_with_font["version"],
     }
     kit, source, _, brand_fonts = resolve_agent_turn_brand_kit(
-        AgentTurnPreviewRequest(prompt="Set our type", scene=scene)
+        AgentTurnPreviewRequest(prompt="Set our type", scene=scene),
+        _workspace_blobs(),
     )
     assert kit is not None and source == "document"
     assert brand_fonts is not None
@@ -620,10 +686,10 @@ def test_reference_manifest_matches_config_contract_shape(
     reference_assets contract — record verbatim, the asset's OWN sha256 as
     preview_digest, mime/dims/dominant_colors/order — and dedupes ids
     preserving first-occurrence order."""
-    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.main import api_blob_store, resolve_agent_turn_references
     from lumen_api.models import AgentTurnPreviewRequest
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     uploaded = upload_logo(client)
     assert uploaded.status_code == 200, uploaded.text
     asset = uploaded.json()["asset"]
@@ -636,7 +702,8 @@ def test_reference_manifest_matches_config_contract_shape(
             prompt="Match this",
             scene=minimal_scene(),
             reference_asset_ids=[asset_id, "", asset_id],
-        )
+        ),
+        _workspace_blobs(),
     )
     assert set(manifest.keys()) == {asset_id}
     entry = manifest[asset_id]
@@ -664,13 +731,14 @@ def test_reference_manifest_no_ids_is_none(
 ) -> None:
     """No reference ids → None: the turn is byte-identical to today (and no DB
     connection is opened)."""
-    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.main import api_blob_store, resolve_agent_turn_references
     from lumen_api.models import AgentTurnPreviewRequest
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     assert (
         resolve_agent_turn_references(
-            AgentTurnPreviewRequest(prompt="x", scene=minimal_scene())
+            AgentTurnPreviewRequest(prompt="x", scene=minimal_scene()),
+            _workspace_blobs(),
         )
         is None
     )
@@ -683,10 +751,10 @@ def test_reference_manifest_svg_materializes_raster_preview(
     preview_digest is a PNG that exists in the shared store, NOT the SVG's own
     digest, and mime_type reports the raster."""
     from fastapi import HTTPException  # noqa: F401  (kept for parity w/ 422 tests)
-    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.main import api_blob_store, resolve_agent_turn_references
     from lumen_api.models import AgentTurnPreviewRequest
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     uploaded = upload_reference_svg(client)
     assert uploaded.status_code == 200, uploaded.text
     asset = uploaded.json()["asset"]
@@ -698,15 +766,23 @@ def test_reference_manifest_svg_materializes_raster_preview(
             prompt="Match this",
             scene=minimal_scene(),
             reference_asset_ids=[asset_id],
-        )
+        ),
+        _workspace_blobs(),
     )
     entry = manifest[asset_id]
     preview_digest = entry["preview_digest"]
     assert preview_digest != svg_digest
     assert entry["mime_type"] == "image/png"
-    store_root = tmp_path / "asset-store"
-    blob = store_root / "sha256" / preview_digest[:2] / preview_digest
-    assert blob.is_file(), "rasterized SVG preview must land in the store"
+    # D4: the rasterized preview gets DURABLE custody (it is a real derived artifact) and is
+    # mirrored into the engine cache, which is where the runtime's `view("reference:<n>")`
+    # reads it from. Both halves are the contract; the durable one is the load-bearing half.
+    workspace_id = os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    blobs = make_blob_store(client.app)
+    assert blobs.exists(preview_digest), "rasterized SVG preview must be durably stored"
+    cache_blob = (
+        tmp_path / "engine-cache" / workspace_id / "sha256" / preview_digest[:2] / preview_digest
+    )
+    assert cache_blob.is_file(), "and mirrored into the engine cache the runtime reads"
 
 
 def test_reference_manifest_unknown_id_is_422(
@@ -715,10 +791,10 @@ def test_reference_manifest_unknown_id_is_422(
     """RC (D2): a missing id is EXPLICIT user intent gone wrong — a hard 422
     naming the id, never a silent skip like the kit manifest."""
     from fastapi import HTTPException
-    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.main import api_blob_store, resolve_agent_turn_references
     from lumen_api.models import AgentTurnPreviewRequest
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     # Touch the store so the db/store exist for this run.
     upload_logo(client)
     with pytest.raises(HTTPException) as excinfo:
@@ -727,7 +803,8 @@ def test_reference_manifest_unknown_id_is_422(
                 prompt="x",
                 scene=minimal_scene(),
                 reference_asset_ids=["asset_ghost"],
-            )
+            ),
+            _workspace_blobs(),
         )
     assert excinfo.value.status_code == 422
     assert excinfo.value.detail["code"] == "reference.asset_not_found"
@@ -739,17 +816,18 @@ def test_reference_manifest_too_many_is_422(
 ) -> None:
     """RC (D1): >4 references → 422 reference.too_many (cap enforced API-side)."""
     from fastapi import HTTPException
-    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.main import api_blob_store, resolve_agent_turn_references
     from lumen_api.models import AgentTurnPreviewRequest
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     with pytest.raises(HTTPException) as excinfo:
         resolve_agent_turn_references(
             AgentTurnPreviewRequest(
                 prompt="x",
                 scene=minimal_scene(),
                 reference_asset_ids=[f"asset_{i}" for i in range(5)],
-            )
+            ),
+            _workspace_blobs(),
         )
     assert excinfo.value.status_code == 422
     assert excinfo.value.detail["code"] == "reference.too_many"
@@ -762,7 +840,7 @@ def test_async_agent_turns_route_422s_on_bad_reference_before_creating_a_run(
     (POST /agent/turns) a bad attachment must surface as a REAL 422 from the
     route handler — validated BEFORE the run row exists — never be swallowed
     by the worker's catch-all into a generic agent_runtime.failed run."""
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     response = client.post(
         "/agent/turns",
         json={
@@ -789,7 +867,7 @@ def test_agent_turn_forwards_references_into_config(
     from lumen_api.main import repo_root, run_agent_turn_preview
     from lumen_api.models import AgentTurnPreviewRequest
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     asset_id = upload_logo(client).json()["asset"]["id"]
 
     captured: dict = {}
@@ -813,12 +891,17 @@ def test_agent_turn_forwards_references_into_config(
             reference_asset_ids=[asset_id],
         ),
         repo_root(),
+        workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"],
     )
     config = captured["config"]
     assert config.reference_assets is not None
     assert asset_id in config.reference_assets
     assert config.reference_assets[asset_id]["order"] == 0
-    assert config.asset_store_root == (tmp_path / "asset-store")
+    # D4: the runtime is pinned to the turn workspace's ENGINE MATERIALIZATION CACHE — the
+    # same tree the API's own engine calls use, which is what keeps seeded imagery resolvable.
+    assert config.asset_store_root == (
+        tmp_path / "engine-cache" / os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    )
 
 
 def test_agent_turn_without_references_leaves_config_unset(
@@ -832,7 +915,7 @@ def test_agent_turn_without_references_leaves_config_unset(
     from lumen_api.main import repo_root, run_agent_turn_preview
     from lumen_api.models import AgentTurnPreviewRequest
 
-    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
 
     captured: dict = {}
 
@@ -851,8 +934,150 @@ def test_agent_turn_without_references_leaves_config_unset(
     run_agent_turn_preview(
         AgentTurnPreviewRequest(prompt="Design a poster", scene=minimal_scene()),
         repo_root(),
+        workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"],
     )
     assert captured["config"].reference_assets is None
+
+
+# --- W1.1: the workspace asset library reaches the SCENE turn ---------------
+
+
+def _stub_scene_turn_runtime(monkeypatch: pytest.MonkeyPatch) -> dict:
+    """Capture the config a scene turn hands the runtime, without running one."""
+    import lumen_agent.harness as harness_mod
+    import lumen_agent.llm as llm_mod
+
+    captured: dict = {}
+
+    class _Stop(Exception):
+        pass
+
+    def fake_run(prompt, config, **kwargs):
+        captured["config"] = config
+        raise _Stop()
+
+    monkeypatch.setattr(harness_mod, "run_deepagent_turn", fake_run)
+    monkeypatch.setattr(
+        llm_mod, "assert_model_supports_image_input", lambda *a, **k: None
+    )
+    return captured
+
+
+def test_agent_turn_forwards_the_workspace_asset_library_into_config(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """W1.1 (Brand Ad Assets v1 §5, item 1) — RED before the fix.
+
+    `workspace_asset_library_manifest` had one call site, the WEBSITE turn, so a
+    scene turn's config carried only `brand_kit_assets` + `reference_assets`. A
+    library asset that was neither could not be viewed and could not be placed
+    (Apollo POC 2026-08-26, `.context/ref-ads-pilot-apollo-report.md` §6.1). The
+    manifest must now ride the scene run BY VALUE — and its bytes must be
+    materialized into the turn's engine cache, or a placed asset renders empty.
+    """
+    from lumen_api.asset_custody import cache_blob_path, record_digests
+    from lumen_api.main import repo_root, run_agent_turn_preview
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
+    asset_id = upload_logo(client).json()["asset"]["id"]
+    captured = _stub_scene_turn_runtime(monkeypatch)
+
+    run_agent_turn_preview(
+        AgentTurnPreviewRequest(prompt="Design an ad", scene=minimal_scene()),
+        repo_root(),
+        workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"],
+    )
+    config = captured["config"]
+    assert config.asset_library is not None
+    assert asset_id in config.asset_library
+    entry = config.asset_library[asset_id]
+    assert entry["record"]["id"] == asset_id
+    assert entry["record"]["status"] == "ready"
+
+    # The read-through actually ran: the turn's engine cache holds the bytes at
+    # `sha256/{ab}/{digest}`. That single path is what BOTH readers compute —
+    # `view("asset:…")` via `blob_path_for_digest`, and the ENGINE at render via
+    # `StoreBackedResolver`'s digest fallback (a `clue-storage` location is not
+    # `local-store`, so it resolves through `digest_relative_path`, which is
+    # `cache_relative_path` byte for byte). Without this materialization the
+    # manifest is a promise the render cannot keep: `asset.bytes_missing`, an
+    # empty chip where the image should be.
+    cache_dir = (
+        tmp_path / "engine-cache" / os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    )
+    digests = [digest for digest, _mime in record_digests(entry["record"])]
+    assert digests
+    for digest in digests:
+        assert cache_blob_path(cache_dir, digest).is_file(), digest
+
+
+def test_agent_turn_asset_library_is_bounded_to_the_most_recent(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bound is a real cap on the most-recently-updated rows, not a suggestion:
+    a workspace library can be large, and every entry costs read-through bytes plus
+    prompt-cache surface in `view`'s available-ids text."""
+    from lumen_api import main as main_mod
+    from lumen_api.main import repo_root, run_agent_turn_preview
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
+    older = upload_logo(client, label="Older mark").json()["asset"]["id"]
+    newer = upload_logo(client, label="Newer mark").json()["asset"]["id"]
+    assert older != newer
+    monkeypatch.setattr(main_mod, "SCENE_TURN_ASSET_LIBRARY_MAX", 1)
+    captured = _stub_scene_turn_runtime(monkeypatch)
+
+    run_agent_turn_preview(
+        AgentTurnPreviewRequest(prompt="Design an ad", scene=minimal_scene()),
+        repo_root(),
+        workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"],
+    )
+    library = captured["config"].asset_library
+    assert list(library) == [newer], library
+
+
+def test_scene_turn_asset_library_drops_unplaceable_kinds(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """A font is not placeable in a scene. Shipping one would spend read-through on
+    bytes no image node can bind and would waste a slot in a hard-capped manifest."""
+    from lumen_api.main import api_engine_cache_root, scene_turn_asset_library_manifest
+
+    repo = HybridRepository()
+    font = json.loads(
+        (REPO_ROOT / "crates/lumen-core/fixtures/assets/font_asset.json").read_text()
+    )
+    repo.create_asset_record(font)
+    raster = generated_raster_asset()
+    repo.create_asset_record(raster)
+
+    workspace_id = os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    manifest = scene_turn_asset_library_manifest(
+        repo, _workspace_blobs(), str(api_engine_cache_root(workspace_id))
+    )
+    assert raster["id"] in manifest
+    assert font["id"] not in manifest
+
+
+def test_agent_turn_without_library_assets_leaves_config_unset(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No-op guarantee: a workspace with an empty library runs exactly as it did
+    before W1.1 — `config.asset_library` stays None, not an empty dict."""
+    from lumen_api.main import repo_root, run_agent_turn_preview
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
+    captured = _stub_scene_turn_runtime(monkeypatch)
+
+    run_agent_turn_preview(
+        AgentTurnPreviewRequest(prompt="Design a poster", scene=minimal_scene()),
+        repo_root(),
+        workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"],
+    )
+    assert captured["config"].asset_library is None
 
 
 def test_set_brand_kit_logo_publishes_new_version_with_human_choice(
@@ -1250,11 +1475,14 @@ def _fake_async_runner(status: str = "proposed"):
 
 
 def _wait_for_run_terminal(client: TestClient, run_id: str) -> dict:
+    # D5 Round B: a run is now born `queued` and only becomes `running` once a fleet worker
+    # claims it, so "not running" is no longer the same thing as "terminal". Wait for a genuinely
+    # terminal status instead of the absence of one non-terminal status.
     import time as _time
 
-    for _ in range(200):
+    for _ in range(400):
         snapshot = client.get(f"/agent/runs/{run_id}").json()
-        if snapshot["status"] != "running":
+        if snapshot["status"] in ("succeeded", "failed"):
             return snapshot
         _time.sleep(0.02)
     raise AssertionError(f"run {run_id} never reached a terminal status")
@@ -1277,7 +1505,9 @@ def test_agent_turns_async_persists_result_and_terminal_event(
     )
     assert start.status_code == 200, start.text
     started = start.json()
-    assert started["status"] == "running"
+    # D5 Round B: the route OFFERS the turn to the fleet and returns; `queued` is the honest
+    # status of a run no worker has claimed yet. The editor reads only `run_id` from this body.
+    assert started["status"] == "queued"
     run_id = started["run_id"]
     assert run_id.startswith("run_")
 
@@ -1303,95 +1533,171 @@ def test_agent_run_snapshot_404_for_unknown_run(client: TestClient) -> None:
     assert client.get("/agent/runs/run_missing").status_code == 404
 
 
-def test_startup_sweep_fails_runs_orphaned_by_a_restart(tmp_path: Path) -> None:
-    # Turns run on daemon threads inside the API process, so a restart kills
-    # them silently. The next create_app must fail every leftover 'running'
-    # row (terminal result + error event so SSE settles) and leave finished
-    # runs untouched. Live failure 2026-07-29: two website turns sat
-    # 'running' for hours after an API bounce.
-    from lumen_api.database import Repository, connect
+def test_a_restart_leaves_an_unclaimed_run_recoverable(tmp_path: Path) -> None:
+    # D5 Round B replaces the startup orphan sweep with lease recovery, and this test replaces
+    # `test_startup_sweep_fails_runs_orphaned_by_a_restart` with the INVERSE contract.
+    #
+    # The sweep existed because turns ran on daemon threads inside the API process: a restart
+    # killed them silently, so every leftover `running` row was an orphan by construction and
+    # failing it at boot was the only way the editor's stream could settle. Turns are leased
+    # fleet work now. A run that a dead worker was driving is NOT lost — its lease expires and a
+    # takeover worker re-claims it through the D5 CAS — so a boot-time sweep would destroy
+    # recoverable work. It is gone, and the assertion is that a restart changes nothing.
+    cache_root = tmp_path / "engine-cache"
+    first = make_client(create_app(cache_root))
 
-    database_path = tmp_path / "api.sqlite3"
-    first = TestClient(create_app(database_path))
+    queued_run = unique_run_id("queued")
+    finished_run = unique_run_id("finished")
 
-    connection = connect(database_path)
-    repo = Repository(connection)
-    repo.create_document(
-        {"id": "doc_web_orphan", "title": "Orphan site", "schema_version": 1, "pages": []},
-        doc_kind="web",
+    repo = HybridRepository()
+    repo.create_run(queued_run, None)
+    repo.create_run(finished_run, None)
+    repo.complete_run(
+        finished_run, "succeeded", {"status": "applied"}, "result", {"status": "applied"}
     )
-    repo.create_run("run_orphan_web", "doc_web_orphan")
-    repo.create_run("run_orphan_scene", "doc_untracked")
-    repo.create_run("run_finished", "doc_untracked")
-    repo.set_run_result("run_finished", "succeeded", {"status": "applied"})
-    repo.append_run_event("run_finished", "result", {"status": "applied"})
-    connection.close()
     del first
 
-    # "Restart": a new app over the same database sweeps at construction.
-    restarted = TestClient(create_app(database_path))
+    # "Restart": a new app over the same database. Nothing is swept.
+    restarted = make_client(create_app(cache_root))
 
-    web_snapshot = restarted.get("/agent/runs/run_orphan_web").json()
-    assert web_snapshot["status"] == "failed"
-    assert web_snapshot["result"]["doc_kind"] == "web"
-    assert web_snapshot["result"]["diagnostics"][0]["code"] == "agent_runtime.orphaned"
-    assert any(event["type"] == "error" for event in web_snapshot["events"])
+    queued = restarted.get(f"/agent/runs/{queued_run}").json()
+    assert queued["status"] == "queued"
+    assert queued["result"] is None
+    assert queued["events"] == []
 
-    scene_snapshot = restarted.get("/agent/runs/run_orphan_scene").json()
-    assert scene_snapshot["status"] == "failed"
-    assert "doc_kind" not in scene_snapshot["result"]
-
-    finished = restarted.get("/agent/runs/run_finished").json()
+    finished = restarted.get(f"/agent/runs/{finished_run}").json()
     assert finished["status"] == "succeeded"
     assert finished["result"] == {"status": "applied"}
 
-    # The SSE stream for an orphan closes with `done` immediately.
-    stream = restarted.get("/agent/runs/run_orphan_web/events").text
-    assert "event: done" in stream
-    assert "agent_runtime.orphaned" in stream
+
+def _open_stream(client: TestClient, run_id: str, **kwargs) -> str:
+    """Open the run's SSE stream the way a client must since D7: mint a token, then present it.
+
+    The mint is header-authenticated (the ``client`` fixture sends ``X-Workspace-Id``); the GET
+    carries no workspace at all. That handshake IS the auth change, so every stream test goes
+    through it rather than reaching past it."""
+    token = client.post(f"/agent/runs/{run_id}/stream-token").json()["stream_token"]
+    return client.get(f"/agent/runs/{run_id}/events?stream_token={token}", **kwargs).text
 
 
 def test_agent_run_events_stream_replays_then_done(client: TestClient) -> None:
     # Drive the store directly to assert SSE framing deterministically (no
     # dependence on background-thread timing): a progress event replays, then
-    # the terminal marker closes the stream with the stored result.
-    from lumen_api.database import Repository, connect
+    # the terminal event closes the stream with the run's result.
 
-    connection = connect(client.app.state.database_path)
-    repo = Repository(connection)
-    repo.create_run("run_sse", "doc_sse")
-    repo.append_run_event("run_sse", "dsl_block_produced", {"iteration": 1})
-    repo.set_run_result(
-        "run_sse", "succeeded", {"status": "proposed", "summary": "done"}
+    run_id = unique_run_id("sse")
+    repo = HybridRepository()
+    repo.create_run(run_id, None)
+    seq = repo.emit_run_event(run_id, "dsl_block_produced", {"iteration": 1})
+    repo.complete_run(
+        run_id,
+        "succeeded",
+        {"status": "proposed", "summary": "done"},
+        "result",
+        {"status": "proposed"},
     )
-    repo.append_run_event("run_sse", "result", {"status": "proposed"})
-    connection.close()
 
-    body = client.get("/agent/runs/run_sse/events").text
+    body = _open_stream(client, run_id)
     assert "event: progress" in body
     assert "dsl_block_produced" in body
     assert "event: done" in body
     assert '"summary":"done"' in body or '"summary": "done"' in body
-    # Last-Event-ID replay: subscribing after seq 1 skips the progress event.
-    resumed = client.get(
-        "/agent/runs/run_sse/events", headers={"Last-Event-ID": "1"}
-    ).text
+    # Last-Event-ID replay: subscribing after the progress event's seq skips it. The seq is the
+    # platform outbox's global sequence now, so the cursor comes from the write, not from "1".
+    resumed = _open_stream(client, run_id, headers={"Last-Event-ID": str(seq)})
     assert "event: progress" not in resumed
     assert "event: done" in resumed
+    # A fresh connect with no cursor replays the whole run from the beginning.
+    assert "event: progress" in _open_stream(client, run_id)
+
+
+def test_the_stream_token_is_single_use_and_carries_the_workspace(client: TestClient) -> None:
+    """R-D7-B4: one token, one connect, and no ``?workspace_id=`` anywhere.
+
+    The four refusals — replayed token, unknown token, malformed token, and a token minted for a
+    DIFFERENT run — are one indistinguishable 401, so the refusal cannot be used to probe which
+    runs exist.
+    """
+    run_id = unique_run_id("tok")
+    other_run = unique_run_id("tok2")
+    repo = HybridRepository()
+    repo.create_run(run_id, None)
+    repo.create_run(other_run, None)
+    repo.complete_run(run_id, "succeeded", {"status": "proposed"}, "result", {})
+
+    token = client.post(f"/agent/runs/{run_id}/stream-token").json()["stream_token"]
+    first = client.get(f"/agent/runs/{run_id}/events?stream_token={token}")
+    assert first.status_code == 200 and "event: done" in first.text
+    # Replaying the same token is refused: consumption stamps used_at atomically.
+    assert client.get(f"/agent/runs/{run_id}/events?stream_token={token}").status_code == 401
+    assert (
+        client.get(f"/agent/runs/{run_id}/events?stream_token={uuid4()}").status_code == 401
+    )
+    assert client.get(f"/agent/runs/{run_id}/events?stream_token=not-a-uuid").status_code == 401
+    # A token minted for another run does not open this one.
+    foreign = client.post(f"/agent/runs/{other_run}/stream-token").json()["stream_token"]
+    assert client.get(f"/agent/runs/{run_id}/events?stream_token={foreign}").status_code == 401
+    # And the stream refuses to be opened without a token at all.
+    assert client.get(f"/agent/runs/{run_id}/events").status_code == 422
+
+
+def test_the_done_frame_is_built_from_the_terminal_event_not_the_run_row(
+    client: TestClient,
+) -> None:
+    """R-D7-B2, proved by removal: blank the run row's stored result and the stream still serves it.
+
+    The pre-D7 stream read ``run["result"]`` the moment it saw a terminal marker — a second read,
+    in a second transaction, of a row the marker only *implied* was ready. D7 puts the whole result
+    envelope inside the terminal event, so the serve layer never looks at the run row again. If
+    that were still a lie, this test would stream ``null``.
+    """
+    import asyncio
+
+    from clue_db import create_engine
+    from sqlalchemy import text
+
+    run_id = unique_run_id("selfcontained")
+    repo = HybridRepository()
+    repo.create_run(run_id, None)
+    repo.complete_run(
+        run_id, "succeeded", {"status": "proposed", "summary": "from the event"}, "result", {}
+    )
+
+    async def blank_the_row() -> None:
+        engine = create_engine()
+        try:
+            async with engine.connect() as conn, conn.begin():
+                await conn.execute(
+                    text("UPDATE design_agent_run SET result_json = NULL WHERE run_id = :r"),
+                    {"r": run_id},
+                )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(blank_the_row())
+
+    body = _open_stream(client, run_id)
+    assert "event: done" in body
+    assert "from the event" in body
+
+
+def test_minting_a_token_for_an_unknown_run_is_a_404(client: TestClient) -> None:
+    assert client.post("/agent/runs/run_never_created/stream-token").status_code == 404
 
 
 def test_run_event_enriched_with_operations_round_trips_and_streams(
     client: TestClient,
 ) -> None:
     # Live-design-streaming S0 (D1/D2): the sink stores whatever dict it is
-    # handed (append_run_event → data_json) untouched, so an authoring event
-    # enriched with its applied `operations` list round-trips through the
-    # run_events row AND rides the SSE progress frame the editor consumes.
-    from lumen_api.database import Repository, connect
+    # handed untouched, so an authoring event enriched with its applied
+    # `operations` list round-trips through the durable row AND rides the SSE
+    # progress frame the editor consumes. D7 swapped the row's table; the
+    # payload envelope (`{event_type, data}`) is unwrapped on the way out, so
+    # this contract is byte-identical.
 
-    connection = connect(client.app.state.database_path)
-    repo = Repository(connection)
-    repo.create_run("run_ops", "doc_ops")
+    run_id = unique_run_id("ops")
+    repo = HybridRepository()
+    repo.create_run(run_id, None)
     enriched = {
         "actor": "dsl-author",
         "iteration": 1,
@@ -1403,17 +1709,17 @@ def test_run_event_enriched_with_operations_round_trips_and_streams(
             {"kind": "insert_node", "node_id": "headline", "parent_id": "page_hero"},
         ],
     }
-    repo.append_run_event("run_ops", "dsl_compiled", enriched)
+    repo.emit_run_event(run_id, "dsl_compiled", enriched)
 
     # (e-i) the durable row round-trips the enriched dict verbatim.
-    rows = repo.list_run_events("run_ops", after_seq=0)
+    rows = repo.list_run_events(run_id)
     assert rows[-1]["data"] == enriched
-    repo.set_run_result("run_ops", "succeeded", {"status": "proposed"})
-    repo.append_run_event("run_ops", "result", {"status": "proposed"})
-    connection.close()
+    repo.complete_run(
+        run_id, "succeeded", {"status": "proposed"}, "result", {"status": "proposed"}
+    )
 
     # (e-ii) the SSE progress frame carries the operations to the client.
-    body = client.get("/agent/runs/run_ops/events").text
+    body = _open_stream(client, run_id)
     assert "event: progress" in body
     assert "dsl_compiled" in body
     assert "add_page" in body and "page_hero" in body
@@ -1422,11 +1728,18 @@ def test_run_event_enriched_with_operations_round_trips_and_streams(
 
 def test_run_events_sse_cadence_constants_pinned() -> None:
     # D2: poll fast (250ms) so authoring batches land promptly; keepalive slow
-    # (~1s) so a quiet run does not spam a comment every poll.
+    # (~1s) so a quiet run does not spam a comment every poll. D7 moved these
+    # next to the loop they pace (``run_stream``) and made the override of the
+    # platform's 1.0s default explicit; the values are unchanged, because the
+    # editor's reveal pacing depends on them.
     from lumen_api import main as api_main
+    from lumen_api import run_stream
 
-    assert api_main._RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS == 0.25
-    assert api_main._RUN_EVENTS_SSE_KEEPALIVE_INTERVAL_SECONDS == 1.0
+    assert run_stream.POLL_INTERVAL_SECONDS == 0.25
+    assert run_stream.KEEPALIVE_INTERVAL_SECONDS == 1.0
+    # The polled stream's machinery left main.py with them: one seam, one home.
+    assert not hasattr(api_main, "sse_frame")
+    assert not hasattr(api_main, "_RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS")
 
 
 def write_iteration_compile(trace_dir, index: int, operations: list) -> None:
@@ -1793,13 +2106,13 @@ def test_request_id_from_contextvar_stamps_events() -> None:
 def test_startup_configures_logging_once(tmp_path: Path) -> None:
     root = logging.getLogger()
 
-    create_app(tmp_path / "once_a.sqlite3")
+    create_app(tmp_path / "once_a")
     owned = [h for h in root.handlers if getattr(h, "_lumen_obs_handler", False)]
     assert len(owned) == 1
 
     # A second app build must NOT stack another root handler — configure is
     # idempotent (it removes its own owned handlers first).
-    create_app(tmp_path / "once_b.sqlite3")
+    create_app(tmp_path / "once_b")
     owned_again = [h for h in root.handlers if getattr(h, "_lumen_obs_handler", False)]
     assert len(owned_again) == 1
 
@@ -1988,6 +2301,72 @@ def test_document_export_route_uses_saved_profile_and_persists_preflight(
     assert diagnostics["kind"] == "export"
 
 
+def advisory_only_scene(document_id: str) -> dict:
+    """A scene whose ONLY error-severity diagnostic is the LUMV0820 policy
+    lint: an image-like slot carrying no image policy.
+
+    This is the exact shape that bricked the 2026-08-24 baseline run — a scene
+    that rendered previews perfectly for 43 minutes and then had every export
+    refused on a lint.
+    """
+    scene = preflightable_scene()
+    scene["meta"]["id"] = document_id
+    template = scene["slots"]["slot_contact_name"]
+    scene["slots"]["slot_account_logo"] = {
+        **json.loads(json.dumps(template)),
+        "id": "slot_account_logo",
+        "key": "account.logo",
+        "label": "Account logo",
+        "content_type": "logo",
+        # The defect under test. Left unbound so the scene trips LUMV0820 and
+        # nothing else — an image-like slot bound to a TEXT node would also
+        # raise LUMA0300, which is a genuine blocker and would muddy the case.
+        "image_policy": None,
+        "bound_nodes": [],
+        "required": False,
+        "placeholder": None,
+        "binding_hints": [],
+    }
+    return scene
+
+
+def test_document_export_route_exports_with_warnings_on_advisory_diagnostics(
+    client: TestClient,
+) -> None:
+    """P0.3: an advisory-only scene EXPORTS, and the advisories ride the
+    response for the editor's export menu (ruling R5)."""
+    document = create_document(client, advisory_only_scene("doc_export_advisory"))
+
+    response = client.post(
+        f"/documents/{document['id']}/export",
+        json={"format": "svg", "page_ids": ["page_a4"]},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+
+    # The scene really does carry an error-severity diagnostic...
+    assert payload["preflight"]["has_errors"] is True
+    assert any(
+        diagnostic["code"] == "LUMV0820"
+        for diagnostic in payload["diagnostics"]["current"]
+    )
+
+    # ...and the export succeeded anyway, with real bytes.
+    assert payload["status"] == "ok"
+    artifacts = payload["export"]["artifacts"]
+    assert artifacts, "an advisory-only scene must still produce artifacts"
+    assert artifacts[0]["format"] == "svg"
+
+    # The advisory is surfaced, not swallowed.
+    warnings = payload["warnings"]
+    assert [warning["code"] for warning in warnings] == ["LUMV0820"]
+    assert warnings[0]["severity"] == "advisory"
+    assert warnings[0]["engine_severity"] == "error"
+    assert "image policy" in warnings[0]["message"]
+    assert payload["preflight"]["advisory_warnings"] == 1
+
+
 def test_document_export_route_fails_closed_before_export_on_preflight_errors(
     client: TestClient,
 ) -> None:
@@ -2015,6 +2394,11 @@ def test_document_export_route_fails_closed_before_export_on_preflight_errors(
         diagnostic["severity"] == "error"
         for diagnostic in payload["diagnostics"]["current"]
     )
+    # P0.3: the severity split must not have turned a real blocker advisory.
+    # An unresolved token paint is render-impossible, so it still refuses, and
+    # nothing about it is reported as a mere warning.
+    assert payload["warnings"] == []
+    assert payload["preflight"]["advisory_warnings"] == 0
 
     loaded = client.get(f"/documents/{document['id']}").json()
     assert loaded["current_version"] == document["current_version"]
@@ -2901,7 +3285,7 @@ def test_failed_finalization_persists_diagnostics(client: TestClient) -> None:
     )
 
 
-def test_asset_metadata_round_trip_stores_references_only(client: TestClient) -> None:
+def test_asset_metadata_endpoint_is_gone(client: TestClient) -> None:
     document = create_document(client)
     response = client.post(
         "/asset-metadata",
@@ -2918,34 +3302,16 @@ def test_asset_metadata_round_trip_stores_references_only(client: TestClient) ->
             "licensing": {"usage": "client_owned"},
         },
     )
-    assert response.status_code == 200, response.text
-
-    loaded = client.get("/asset-metadata/asset_logo").json()
-    assert loaded["source_uri"] == "s3://example/logo.svg"
-    assert loaded["provenance"] == {"source": "uploaded"}
+    assert response.status_code == 410, response.text
+    assert response.json()["detail"]["code"] == "asset_metadata.gone"
 
 
 def test_asset_scene_operations_persist_history_snapshot_and_template(
     client: TestClient,
 ) -> None:
+    # O3: the legacy asset_metadata surface is retired (410) — PD contract
+    # docs/specs/PD-part2-design-substrate.md §6; scene assets ride the scene itself.
     document = create_document(client)
-
-    metadata = client.post(
-        "/asset-metadata",
-        json={
-            "asset_id": "asset_generated_hero",
-            "document_id": document["id"],
-            "kind": "raster_image",
-            "filename": "generated-clinic-hero.png",
-            "source_uri": "s3://example/generated-clinic-hero.png",
-            "mime_type": "image/png",
-            "width": 1600,
-            "height": 900,
-            "provenance": {"source": "agent_generated"},
-            "licensing": {"usage": "generated_commercial_use"},
-        },
-    )
-    assert metadata.status_code == 200, metadata.text
 
     response = client.post(
         f"/documents/{document['id']}/operations",
@@ -3002,9 +3368,6 @@ def test_asset_scene_operations_persist_history_snapshot_and_template(
         revision["scene"]["nodes"]["node_hero_image"]["kind"]["asset_id"]
         == "asset_generated_hero"
     )
-
-    metadata_loaded = client.get("/asset-metadata/asset_generated_hero").json()
-    assert metadata_loaded["source_uri"] == "s3://example/generated-clinic-hero.png"
 
 
 def test_agent_read_surfaces_return_slots_geometry_and_summary(client: TestClient) -> None:
@@ -3178,32 +3541,9 @@ def test_base_version_mismatch_rejects_edit_before_mutation(
     assert client.get(f"/documents/{document['id']}/history").json()["envelopes"] == []
 
 
-def test_backfill_wraps_pre_envelope_operation_rows(tmp_path: Path) -> None:
-    import sqlite3
-
-    database_path = tmp_path / "api.sqlite3"
-    app = create_app(database_path)
-    client = TestClient(app)
-    document = create_document(client)
-    client.post(
-        f"/documents/{document['id']}/operations",
-        json={"operations": [title_operation("Legacy Title")]},
-    )
-
-    connection = sqlite3.connect(database_path)
-    connection.execute("UPDATE operation_log SET batch_id = NULL")
-    connection.execute("DELETE FROM edit_envelopes")
-    connection.commit()
-    connection.close()
-
-    restarted = TestClient(create_app(database_path))
-    history = restarted.get(f"/documents/{document['id']}/history").json()
-    envelope = history["envelopes"][0]
-    assert envelope["envelope_version"] == 0
-    assert envelope["batch_id"].startswith("backfill_")
-    assert envelope["intent"] is None
-    assert envelope["inverse_operations"] is None
-    assert envelope["operations"][0]["kind"] == "update_document"
+# D2.5B DELETED `test_backfill_wraps_pre_envelope_operation_rows` (skipped since D1): it drove
+# `backfill_edit_envelopes` by hand-editing the SQLite `operation_log` / `edit_envelopes`
+# tables. The function, the migrations, and those tables are all deleted.
 
 
 def test_strict_scope_violation_rejects_edit_fail_closed(client: TestClient) -> None:
@@ -3361,10 +3701,26 @@ def upload_logo(client: TestClient, **form) -> "object":
 
 
 def store_files(tmp_path: Path) -> list[Path]:
-    store_root = tmp_path / "asset-store"
+    """This test's DURABLE design blobs (D4) — the ``{workspace}/design/{sha256}`` namespace.
+
+    The API-local `asset-store/` tree is gone: bytes live in platform storage, which the
+    conftest fixture roots at `tmp_path/default-storage` for every non-injecting app. Counting
+    the physical blobs there is the same property these assertions always asserted — how many
+    byte objects one logical asset costs, and whether the GC actually destroyed them.
+
+    D6 Round C narrowed the glob to the ``design/`` segment. The same backend now also holds the
+    governed toolbelt's canonical PARAMETER SNAPSHOTS (`{workspace}/{sha256}`, source_key
+    `tool_parameters`), which are journal evidence, not asset bytes — counting them made a
+    second upload look like it had cost two extra byte objects. The narrowing restores exactly
+    the property the docstring describes; it does not weaken it."""
+    store_root = tmp_path / "default-storage"
     if not store_root.exists():
         return []
-    return [path for path in store_root.rglob("*") if path.is_file()]
+    return [
+        path
+        for path in store_root.rglob("*")
+        if path.is_file() and path.parent.name == "design"
+    ]
 
 
 def test_asset_upload_stores_content_addressed_bytes(
@@ -3380,14 +3736,15 @@ def test_asset_upload_stores_content_addressed_bytes(
     assert record["media"]["mime_type"] == "image/png"
     digest = record["media"]["digest"]
     assert digest["algorithm"] == "sha256"
+    # D4/R-D4-4: the persisted record points at PLATFORM STORAGE — the workspace-scoped design
+    # key, never a local path. That re-pointing is what survives a wiped engine cache.
     opaque_ref = record["media"]["location"]["opaque_ref"]
-    assert opaque_ref == f"sha256/{digest['value'][:2]}/{digest['value']}"
-    assert record["media"]["location"]["provider"] == "local-store"
+    workspace_id = os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    assert opaque_ref == f"{workspace_id}/design/{digest['value']}"
+    assert record["media"]["location"]["provider"] == "clue-storage"
     assert payload["deduplicated"] is False
 
-    store_path = tmp_path / "asset-store" / opaque_ref
-    assert store_path.is_file()
-    assert store_path.read_bytes() == LOGO_PNG_PATH.read_bytes()
+    assert make_blob_store(client.app).read(digest["value"]) == LOGO_PNG_PATH.read_bytes()
 
     served = client.get(f"/assets/{record['id']}/bytes")
     assert served.status_code == 200
@@ -3523,10 +3880,19 @@ def test_svg_upload_is_sanitized_before_storage(
     assert "javascript:" not in stored_svg
     assert "<rect" in stored_svg
 
-    # Vector thumbnails are the sanitized SVG itself.
+    # W1.2: a vector's thumbnail is a REAL raster rendered from the sanitized
+    # SVG, not the SVG bytes again. The old self-referential thumbnail was
+    # decodable by nothing — every logo was invisible to `view`, the describe
+    # stage, and the vision APIs, and the viewer failed on it outright.
     thumbnail = client.get(f"/assets/{record['id']}/thumbnail")
     assert thumbnail.status_code == 200
-    assert thumbnail.content == served.content
+    assert thumbnail.headers["content-type"].startswith("image/png")
+    assert thumbnail.content[:8] == b"\x89PNG\r\n\x1a\n"
+    assert thumbnail.content != served.content
+    thumb_block = record["media"]["thumbnail"]
+    assert thumb_block["mime_type"] == "image/png"
+    # 120x60 fits the 256 box, so the short side is lifted to the 512 floor.
+    assert (thumb_block["pixel_width"], thumb_block["pixel_height"]) == (1024, 512)
 
 
 def test_raster_upload_probes_metadata_and_serves_thumbnail(
@@ -3774,6 +4140,12 @@ def test_image_provider_openrouter_chat_completion_shape(
     monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
     monkeypatch.setattr(settings, "image_model_api_key", "test-key")
     monkeypatch.setattr(settings, "image_model_id", "test/image-model")
+    # Pin the TRANSPORT, not just the credentials: .env.example ships
+    # IMAGE_MODEL_API_STYLE=images uncommented, so a dev who follows the
+    # documented copy-.env.example-to-.env workflow flips the ambient default
+    # and every chat-shape assertion below would otherwise go red on a machine
+    # that is configured exactly as the docs say to configure it.
+    monkeypatch.setattr(settings, "image_model_api_style", "chat")
 
     png = _tiny_png(8, 8)
     data_url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
@@ -3814,6 +4186,12 @@ def test_image_provider_surfaces_no_image_response(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
     monkeypatch.setattr(settings, "image_model_api_key", "test-key")
     monkeypatch.setattr(settings, "image_model_id", "test/image-model")
+    # Pin the TRANSPORT, not just the credentials: .env.example ships
+    # IMAGE_MODEL_API_STYLE=images uncommented, so a dev who follows the
+    # documented copy-.env.example-to-.env workflow flips the ambient default
+    # and every chat-shape assertion below would otherwise go red on a machine
+    # that is configured exactly as the docs say to configure it.
+    monkeypatch.setattr(settings, "image_model_api_style", "chat")
 
     class _FakeResponse:
         status_code = 200
@@ -3874,6 +4252,244 @@ def test_image_generation_cache_dedups_identical_requests(
     third = client.post("/assets/generate", json={**body, "prompt": "a wholly different scene"})
     assert third.status_code == 200, third.text
     assert calls["n"] == 2
+
+
+# --- W1.4 / W1.7 (brand-ad-assets v1): model id + generation robustness -----
+
+
+def _image_model_env(monkeypatch: pytest.MonkeyPatch, model_id: str = "test/image-model") -> None:
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", model_id)
+
+
+class _StubResponse:
+    """Minimal httpx-response stand-in for the OpenRouter adapter."""
+
+    headers = {"content-type": "application/json"}
+
+    def __init__(self, payload: dict, status_code: int = 200, text: str = "") -> None:
+        self._payload = payload
+        self.status_code = status_code
+        self.text = text
+
+    def json(self) -> dict:
+        return self._payload
+
+
+def _image_response(png: bytes) -> _StubResponse:
+    import base64
+
+    url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+    return _StubResponse({"choices": [{"message": {"images": [{"image_url": {"url": url}}]}}]})
+
+
+_TEXT_ONLY_RESPONSE = {"choices": [{"message": {"content": "I can't make that image."}}]}
+
+
+def test_w14_blank_or_sentinel_model_id_resolves_to_the_verified_working_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """W1.4: `.env` shipped `openai/gpt-image-2`, which OpenRouter serves ONLY on
+    its dedicated Image API — on the chat-completions image modality this
+    provider uses it 404s. The in-code default must be a model that actually
+    works on THIS path, and the config layer's `"default"` sentinel (what a blank
+    IMAGE_MODEL_ID normalizes to) is not one — it 404s just the same.
+
+    RED before the fix: `configured_model_id()` returned the literal `"default"`."""
+    assert image_provider.DEFAULT_IMAGE_MODEL_ID == "openai/gpt-5.4-image-2"
+
+    monkeypatch.setattr(settings, "image_model_id", "default")
+    assert image_provider.configured_model_id() == "openai/gpt-5.4-image-2"
+
+    monkeypatch.setattr(settings, "image_model_id", "   ")
+    assert image_provider.configured_model_id() == "openai/gpt-5.4-image-2"
+
+    # An explicitly configured id is always honored — no silent override.
+    monkeypatch.setattr(settings, "image_model_id", "google/gemini-2.5-flash-image")
+    assert image_provider.configured_model_id() == "google/gemini-2.5-flash-image"
+
+    # The known Image-API-only ids are named so the 404 can be explained.
+    assert "openai/gpt-image-2" in image_provider._IMAGE_API_ONLY_MODEL_IDS
+
+
+def test_w14_model_not_found_404_logs_the_config_fix_not_just_the_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """W1.4: a wrong IMAGE_MODEL_ID surfaces as a generic 'no endpoints found'
+    404 that reads like a provider outage (it cost the Apollo POC a restart to
+    diagnose). The first failing call must name the actual remedy in the log.
+
+    The typed error still propagates unchanged — this adds a diagnostic, not a
+    behavior change."""
+    _image_model_env(monkeypatch, "openai/gpt-image-2")
+    body = (
+        '{"error":{"message":"No endpoints found that support the requested '
+        'output modalities: image, text"}}'
+    )
+    monkeypatch.setattr(
+        "httpx.post", lambda *a, **k: _StubResponse({}, status_code=404, text=body)
+    )
+
+    with (
+        caplog.at_level(logging.ERROR, logger="lumen_api.image_provider"),
+        pytest.raises(image_provider.ImageGenerationError) as excinfo,
+    ):
+        image_provider.generate(prompt="a holographic yellow wash")
+
+    assert excinfo.value.code == "image_model.http_error"
+    logged = caplog.text
+    assert "openai/gpt-image-2" in logged
+    assert "IMAGE-API" in logged.upper()
+    assert "openai/gpt-5.4-image-2" in logged  # names the fix
+
+
+def test_w17a_text_only_response_is_retried_exactly_once_then_fails_typed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """W1.7(a): the model is non-deterministic about honoring the image modality
+    — 1 of 4 Apollo POC calls came back text-only (`image_model.no_image`) and
+    the POC's manual re-request succeeded. One automatic retry, then typed failure.
+
+    RED before the fix: `_invoke_with_retries` re-raised EVERY ImageGenerationError
+    immediately, so calls == 1 and a one-in-four flake was a hard failure."""
+    _image_model_env(monkeypatch)
+    png = _tiny_png(8, 8)
+
+    # Case 1: text-only, then an image -> the retry rescues the call.
+    calls = {"n": 0}
+
+    def flaky_post(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _StubResponse(_TEXT_ONLY_RESPONSE)
+        return _image_response(png)
+
+    monkeypatch.setattr("httpx.post", flaky_post)
+    result = image_provider.generate(prompt="a holographic yellow wash")
+    assert result.image_bytes == png
+    assert calls["n"] == 2, "a text-only answer must be retried exactly once"
+
+    # Case 2: text-only every time -> exactly ONE retry, then the typed error.
+    # The retry budget must not be unbounded, and must not silently become a
+    # success: a genuinely refusing prompt fails loudly after 2 attempts.
+    always = {"n": 0}
+
+    def always_text(*args, **kwargs):
+        always["n"] += 1
+        return _StubResponse(_TEXT_ONLY_RESPONSE)
+
+    monkeypatch.setattr("httpx.post", always_text)
+    with pytest.raises(image_provider.ImageGenerationError) as excinfo:
+        image_provider.generate(prompt="something it will refuse")
+    assert excinfo.value.code == "image_model.no_image"
+    assert always["n"] == 1 + image_provider.NO_IMAGE_RETRIES == 2
+
+
+def test_w17a_other_typed_errors_are_still_never_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """W1.7(a) boundary: only `no_image` gets the extra attempt. Retrying a 404 or
+    an undecodable response just re-buys the same answer at the same price."""
+    _image_model_env(monkeypatch)
+    calls = {"n": 0}
+
+    def http_error(*args, **kwargs):
+        calls["n"] += 1
+        return _StubResponse({}, status_code=404, text="nope")
+
+    monkeypatch.setattr("httpx.post", http_error)
+    with pytest.raises(image_provider.ImageGenerationError):
+        image_provider.generate(prompt="anything")
+    assert calls["n"] == 1
+
+
+def test_w17b_aspect_ratio_rides_the_request_structurally(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """W1.7(b): the POC asked 16:9 and got 1024x1024 because the ratio never left
+    the prose. OpenRouter's chat-completions body takes a documented
+    `image_config` object; the requested ratio must ride it.
+
+    RED before the fix: the body had no `image_config` key at all."""
+    _image_model_env(monkeypatch)
+    png = _tiny_png(8, 8)
+    captured: dict = {}
+
+    def capture_post(url, json=None, headers=None, timeout=None):
+        captured.update(url=url, json=json)
+        return _image_response(png)
+
+    monkeypatch.setattr("httpx.post", capture_post)
+    image_provider.generate(prompt="a holographic yellow wash", aspect_ratio="16:9")
+    assert captured["json"]["image_config"] == {"aspect_ratio": "16:9"}
+    # Belt and braces: providers clamp to their own subset, so the prompt hint stays.
+    assert "16:9" in captured["json"]["messages"][0]["content"]
+
+    # No ask -> no key at all, so a plain generation's body is unchanged.
+    captured.clear()
+    image_provider.generate(prompt="a holographic yellow wash")
+    assert "image_config" not in captured["json"]
+
+
+def test_w17b_requested_ratios_snap_to_openrouters_allowlist() -> None:
+    """W1.7(b): callers speak in frame geometry ('3x2', '1.78', a raw node
+    ratio); OpenRouter takes a normalized ratio and providers reject values off
+    their supported subset. Every ask must land on a documented value."""
+    snap = image_provider.api_aspect_ratio
+    assert snap("16:9") == "16:9"
+    assert snap("16x9") == "16:9"
+    assert snap("1.78") == "16:9"
+    assert snap("1:1") == "1:1"
+    assert snap("4:5") == "4:5"
+    assert snap("1080:1350") == "4:5"  # a real LinkedIn ad frame
+    assert snap(None) is None
+    assert snap("not-a-ratio") is None
+    assert snap("0:0") is None
+    for value in ("16:9", "3:2", "9:16", "21:9", "2.35", "0.1", "12"):
+        assert snap(value) in image_provider._SUPPORTED_ASPECT_RATIOS
+
+
+def test_w17b_result_reports_actual_dimensions_not_the_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """W1.7(b): the Apollo POC's manifest reported the generated asset as
+    1024x1024 while every surface still said '16:9' — the caller was misled by
+    its own request. The result must carry the MEASURED geometry and admit when
+    the ratio was not honored.
+
+    RED before the fix: ImageGenerationResult had no width/height at all."""
+    _image_model_env(monkeypatch)
+
+    # The exact POC shape: 16:9 asked, a square delivered.
+    monkeypatch.setattr("httpx.post", lambda *a, **k: _image_response(_tiny_png(1024, 8)))
+    ignored = image_provider.generate(prompt="a wash", aspect_ratio="16:9")
+    assert (ignored.width, ignored.height) == (1024, 8)
+    assert ignored.requested_aspect_ratio == "16:9"
+    assert ignored.aspect_ratio_honored is False
+    notes = " ".join(ignored.provenance["notes"])
+    assert "did not honor requested aspect_ratio 16:9" in notes
+    assert "output 1024x8" in notes
+
+    # An honored ratio reports honored, and adds no complaint to provenance.
+    monkeypatch.setattr("httpx.post", lambda *a, **k: _image_response(_tiny_png(32, 18)))
+    honored = image_provider.generate(prompt="a wash", aspect_ratio="16:9")
+    assert (honored.width, honored.height) == (32, 18)
+    assert honored.aspect_ratio_honored is True
+    assert not any("did not honor" in note for note in honored.provenance["notes"])
+
+    # No ask -> the question is unanswerable, not False.
+    monkeypatch.setattr("httpx.post", lambda *a, **k: _image_response(_tiny_png(8, 8)))
+    assert image_provider.generate(prompt="a wash").aspect_ratio_honored is None
+
+
+def test_w17b_sniff_dimensions_reads_real_headers_and_never_raises() -> None:
+    """W1.7(b): header-only, dependency-free, and honest about not knowing."""
+    assert image_provider.sniff_dimensions(_tiny_png(21, 9)) == (21, 9)
+    assert image_provider.sniff_dimensions(b"GIF89a" + b"\x40\x00\x20\x00") == (64, 32)
+    # Unreadable input is "unknown", never an exception.
+    for junk in (b"", b"not an image", b"\x89PNG\r\n\x1a\n", b"\xff\xd8truncated"):
+        assert image_provider.sniff_dimensions(junk) == (None, None)
 
 
 def test_resolve_dimensions_translates_aspect_ratio_and_size_tier() -> None:
@@ -4093,6 +4709,12 @@ def test_image_provider_edit_builds_multimodal_content(
     monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
     monkeypatch.setattr(settings, "image_model_api_key", "test-key")
     monkeypatch.setattr(settings, "image_model_id", "test/image-model")
+    # Pin the TRANSPORT, not just the credentials: .env.example ships
+    # IMAGE_MODEL_API_STYLE=images uncommented, so a dev who follows the
+    # documented copy-.env.example-to-.env workflow flips the ambient default
+    # and every chat-shape assertion below would otherwise go red on a machine
+    # that is configured exactly as the docs say to configure it.
+    monkeypatch.setattr(settings, "image_model_api_style", "chat")
 
     src_png = _tiny_png(8, 8)
     out_png = _tiny_png(8, 8, rgba=(9, 9, 9, 255))
@@ -4141,6 +4763,12 @@ def test_image_provider_generate_builds_reference_conditioned_content(
     monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
     monkeypatch.setattr(settings, "image_model_api_key", "test-key")
     monkeypatch.setattr(settings, "image_model_id", "test/image-model")
+    # Pin the TRANSPORT, not just the credentials: .env.example ships
+    # IMAGE_MODEL_API_STYLE=images uncommented, so a dev who follows the
+    # documented copy-.env.example-to-.env workflow flips the ambient default
+    # and every chat-shape assertion below would otherwise go red on a machine
+    # that is configured exactly as the docs say to configure it.
+    monkeypatch.setattr(settings, "image_model_api_style", "chat")
 
     ref_a = _tiny_png(8, 8, rgba=(200, 40, 40, 255))
     ref_b = _tiny_png(8, 8, rgba=(40, 40, 200, 255))
@@ -4201,6 +4829,12 @@ def test_image_provider_generate_without_references_is_bare_string(
     monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
     monkeypatch.setattr(settings, "image_model_api_key", "test-key")
     monkeypatch.setattr(settings, "image_model_id", "test/image-model")
+    # Pin the TRANSPORT, not just the credentials: .env.example ships
+    # IMAGE_MODEL_API_STYLE=images uncommented, so a dev who follows the
+    # documented copy-.env.example-to-.env workflow flips the ambient default
+    # and every chat-shape assertion below would otherwise go red on a machine
+    # that is configured exactly as the docs say to configure it.
+    monkeypatch.setattr(settings, "image_model_api_style", "chat")
 
     out_png = _tiny_png(8, 8, rgba=(1, 2, 3, 255))
     out_url = "data:image/png;base64," + base64.b64encode(out_png).decode("ascii")
@@ -4222,6 +4856,503 @@ def test_image_provider_generate_without_references_is_bare_string(
     image_provider.generate(prompt="a quiet mountain lake at dawn", aspect_ratio="16:9")
     content = captured["json"]["messages"][0]["content"]
     assert content == "a quiet mountain lake at dawn\n\n(Render with aspect ratio 16:9.)"
+
+
+# --- IMG-API: the gpt-image-2 (OpenRouter Images API) transport --------------
+#
+# `openai/gpt-image-2` does NOT speak the chat-completions image modality; it
+# takes an OpenAI-Images-style body at POST {base_url}/images with a top-level
+# `prompt` and a base64 `data[*].b64_json` response (founder-supplied OpenRouter
+# reference, 2026-08-23). `IMAGE_MODEL_API_STYLE=images` selects that transport;
+# the default `chat` path stays byte-identical for the Gemini-class models.
+
+
+def _images_api_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", "openai/gpt-image-2")
+    monkeypatch.setattr(settings, "image_model_api_style", "images")
+
+
+def _capture_images_api_post(
+    monkeypatch: pytest.MonkeyPatch, out_png: bytes
+) -> dict:
+    """Patch httpx.post with a stub that captures the request and answers in the
+    documented Images-API shape (`data[*].b64_json`)."""
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {
+                "data": [{"b64_json": base64.b64encode(out_png).decode("ascii")}]
+            }
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.update(url=url, json=json, headers=headers, timeout=timeout)
+        return _FakeResponse()
+
+    monkeypatch.setattr("httpx.post", fake_post)
+    return captured
+
+
+def test_image_provider_images_api_generation_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The founder's generation sample, minus `stream` (we are synchronous):
+    # top-level prompt + structured aspect_ratio + quality + background. No
+    # messages, no modalities. FOUNDER RULE 2026-08-23: `background` is ALWAYS
+    # "auto" — the enum is auto|opaque, so it has no "transparent" member at all
+    # and a transparent request can only be a prose hint, best-effort (see
+    # test_image_provider_images_api_transparency_is_prose_only). "auto" is what
+    # both founder sample bodies carry; do not "tidy up" the default away.
+    _images_api_settings(monkeypatch)
+    out_png = _tiny_png(8, 8, rgba=(3, 3, 3, 255))
+    captured = _capture_images_api_post(monkeypatch, out_png)
+
+    result = image_provider.generate(
+        prompt="a calm clinic waiting room",
+        brand_notes=["warm palette"],
+        aspect_ratio="16:9",
+        image_size="2k",
+    )
+    assert result.image_bytes == out_png
+    assert result.mime_type == "image/png"
+    assert result.model == "openai/gpt-image-2"
+
+    assert captured["url"] == "https://openrouter.ai/api/v1/images"
+    assert captured["json"] == {
+        "model": "openai/gpt-image-2",
+        "prompt": "a calm clinic waiting room\n\nBrand/style direction: warm palette",
+        "aspect_ratio": "16:9",
+        "quality": "high",
+        "background": "auto",
+    }
+    assert captured["headers"]["Authorization"] == "Bearer test-key"
+    assert captured["headers"]["Content-Type"] == "application/json"
+
+
+def test_image_provider_images_api_omits_chat_only_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Explicit negative pins: the chat vocabulary and streaming never appear.
+    _images_api_settings(monkeypatch)
+    captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+    image_provider.generate(prompt="a hero band", aspect_ratio="16:9")
+    body = captured["json"]
+    for absent in ("messages", "modalities", "stream", "n", "size", "output_compression"):
+        assert absent not in body, absent
+    # The prose aspect hint belongs to the chat path only — here it is structural.
+    assert "(Render with" not in body["prompt"]
+
+
+def test_image_provider_images_api_snaps_aspect_ratio_to_the_supported_enum(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `aspect_ratio` is a CLOSED enum (1:1, 3:2, 2:3, 4:3, 3:4, 16:9, 9:16, 21:9,
+    # auto). An unsupported caller ratio snaps to the NEAREST supported value
+    # rather than being sent verbatim (which would be a 400 → grey stub).
+    _images_api_settings(monkeypatch)
+    captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+
+    image_provider.generate(prompt="a wide banner", aspect_ratio="5:2")
+    assert captured["json"]["aspect_ratio"] == "21:9"
+
+    image_provider.generate(prompt="a portrait", aspect_ratio="4:5")
+    assert captured["json"]["aspect_ratio"] == "3:4"
+
+    # Exact members survive untouched, including the alternate `16x9` spelling.
+    image_provider.generate(prompt="a hero", aspect_ratio="16x9")
+    assert captured["json"]["aspect_ratio"] == "16:9"
+
+
+def test_image_provider_images_api_derives_aspect_ratio_from_dimensions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # With only width/height the ratio is derived the way resolve_dimensions
+    # reasons, then snapped.
+    _images_api_settings(monkeypatch)
+    captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+    image_provider.generate(prompt="a hero band", width=1024, height=768)
+    assert captured["json"]["aspect_ratio"] == "4:3"
+
+
+def test_image_provider_images_api_transparency_is_prose_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `background` accepts only auto|opaque, so a transparent request CANNOT be
+    # expressed structurally. FOUNDER RULE 2026-08-23: `background` is ALWAYS
+    # "auto" (as in the founder's own sample bodies) — a transparent request
+    # still sends "auto" and asks for transparency in PROSE, best-effort. Never
+    # a fake "transparent" enum value (that is a 400 → grey stub), and never a
+    # silent claim that the request was honored: this model cannot guarantee an
+    # alpha channel and the caller gets whatever it renders.
+    _images_api_settings(monkeypatch)
+    captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+    image_provider.generate(prompt="a cut-out product shot", transparent_background=True)
+    body = captured["json"]
+    assert body["background"] == "auto"
+    assert "transparent background" in body["prompt"]
+
+
+def test_image_provider_images_api_always_sends_background_auto(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The founder's sample bodies carry `"background":"auto"` on BOTH the plain
+    # and the reference-conditioned call, and the rule is explicit: always auto.
+    # Pinned separately from the full-body test so a future "omit the default"
+    # tidy-up has to argue with the founder rule rather than slip through.
+    _images_api_settings(monkeypatch)
+    captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+
+    image_provider.generate(prompt="a hero band", aspect_ratio="16:9")
+    assert captured["json"]["background"] == "auto"
+
+    image_provider.generate(
+        prompt="a hero band",
+        aspect_ratio="3:2",
+        reference_images=[(_tiny_png(8, 8), "image/png")],
+    )
+    assert captured["json"]["background"] == "auto"
+
+    image_provider.edit(
+        prompt="make the sky pink", source_images=[(_tiny_png(8, 8), "image/png")]
+    )
+    assert captured["json"]["background"] == "auto"
+
+
+def test_image_provider_images_api_square_default_is_sent_structurally(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A generation with no framing at all still resolves to a 1024x1024 frame
+    # (resolve_dimensions' documented default), and the body says so: 1:1, not
+    # an omitted field. The rest of the stack already places into that square,
+    # so letting the endpoint's own `auto` pick something else would hand
+    # cover-fit placement a crop it did not ask for.
+    _images_api_settings(monkeypatch)
+    captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+    image_provider.generate(prompt="a plain illustration")
+    assert captured["json"]["aspect_ratio"] == "1:1"
+
+
+def test_image_provider_images_api_input_references_match_the_founder_sample(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Reference-conditioned generation: `input_references` typed dicts in caller
+    # order. The founder's sample used https URLs; we send base64 data: URLs,
+    # which is the one thing the first live call must confirm.
+    _images_api_settings(monkeypatch)
+    ref_a = _tiny_png(8, 8, rgba=(200, 40, 40, 255))
+    ref_b = _tiny_png(8, 8, rgba=(40, 40, 200, 255))
+    captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+
+    image_provider.generate(
+        prompt="a focused surgeon in an operating theatre",
+        aspect_ratio="3:2",
+        reference_images=[(ref_a, "image/png"), (ref_b, "image/png")],
+    )
+    body = captured["json"]
+    assert body["input_references"] == [
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": "data:image/png;base64," + base64.b64encode(ref_a).decode("ascii")
+            },
+        },
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": "data:image/png;base64," + base64.b64encode(ref_b).decode("ascii")
+            },
+        },
+    ]
+    # gpt-image-2 composites reference SUBJECTS by design, so the style-anchor
+    # framing is load-bearing here — and it rides the prompt, not a body field.
+    assert body["prompt"].startswith(image_provider.STYLE_REFERENCE_FRAMING)
+    assert "a focused surgeon" in body["prompt"]
+    assert body["aspect_ratio"] == "3:2"
+
+
+def test_image_provider_images_api_edit_sends_source_as_input_references(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An edit's source image rides the same `input_references` channel, WITHOUT
+    # the style-anchor framing (an edit really does mean "use this image").
+    _images_api_settings(monkeypatch)
+    src = _tiny_png(8, 8, rgba=(7, 7, 7, 255))
+    captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+
+    image_provider.edit(prompt="make the sky pink", source_images=[(src, "image/png")])
+    body = captured["json"]
+    assert body["input_references"] == [
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": "data:image/png;base64," + base64.b64encode(src).decode("ascii")
+            },
+        }
+    ]
+    assert image_provider.STYLE_REFERENCE_FRAMING not in body["prompt"]
+    # No dimensions on an edit → no aspect ratio asserted.
+    assert "aspect_ratio" not in body
+
+
+def test_image_provider_images_api_refuses_more_references_than_the_endpoint_takes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `input_references` is documented 0-16. Our upstream cap is far lower, so
+    # this can only fire on a caller bug — it must fail loudly, not silently
+    # truncate the anchors the user attached.
+    _images_api_settings(monkeypatch)
+    _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
+    too_many = [(_tiny_png(8, 8), "image/png")] * (
+        image_provider.IMAGES_API_MAX_INPUT_REFERENCES + 1
+    )
+    with pytest.raises(image_provider.ImageGenerationError) as excinfo:
+        image_provider.generate(prompt="a hero", reference_images=too_many)
+    assert excinfo.value.code == "image_model.too_many_references"
+
+
+def test_image_provider_images_api_decodes_b64_then_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Documented shape first: data[*].b64_json. A `data:` URL in data[0].url
+    # reuses the existing decoder; a plain https URL is fetched (the minimal
+    # slice of the W4.1 fetch the images path needs to function).
+    _images_api_settings(monkeypatch)
+    png = _tiny_png(8, 8, rgba=(5, 6, 7, 255))
+    payloads: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return payloads["body"]
+
+    monkeypatch.setattr("httpx.post", lambda *a, **k: _FakeResponse())
+
+    payloads["body"] = {"data": [{"b64_json": base64.b64encode(png).decode("ascii")}]}
+    assert image_provider.generate(prompt="x").image_bytes == png
+
+    payloads["body"] = {
+        "data": [
+            {"url": "data:image/png;base64," + base64.b64encode(png).decode("ascii")}
+        ]
+    }
+    assert image_provider.generate(prompt="x").image_bytes == png
+
+    fetched: dict = {}
+
+    class _FakeGetResponse:
+        status_code = 200
+        headers = {"content-type": "image/png"}
+        content = png
+
+    def fake_get(url, timeout=None, **kwargs):
+        fetched.update(url=url, timeout=timeout)
+        return _FakeGetResponse()
+
+    monkeypatch.setattr("httpx.get", fake_get)
+    payloads["body"] = {"data": [{"url": "https://cdn.example/out-0.png"}]}
+    result = image_provider.generate(prompt="x")
+    assert result.image_bytes == png
+    assert result.mime_type == "image/png"
+    assert fetched["url"] == "https://cdn.example/out-0.png"
+    assert fetched["timeout"] == settings.image_model_timeout_s
+
+
+def test_image_provider_images_api_url_fetch_follows_redirects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A by-reference result is typically a SIGNED CDN URL, and those redirect.
+    # httpx defaults follow_redirects=False, which hands back a 302 whose body is
+    # empty — zero bytes that would sail through as a "successful" generation and
+    # land an empty image in the document. The fetch must follow the redirect.
+    _images_api_settings(monkeypatch)
+    png = _tiny_png(8, 8, rgba=(4, 5, 6, 255))
+
+    class _FakePostResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"data": [{"url": "https://cdn.example/signed/out-0.png"}]}
+
+    fetched: dict = {}
+
+    class _FakeGetResponse:
+        status_code = 200
+        headers = {"content-type": "image/png"}
+        content = png
+
+    def fake_get(url, timeout=None, **kwargs):
+        fetched.update(url=url, timeout=timeout, **kwargs)
+        return _FakeGetResponse()
+
+    monkeypatch.setattr("httpx.post", lambda *a, **k: _FakePostResponse())
+    monkeypatch.setattr("httpx.get", fake_get)
+
+    result = image_provider.generate(prompt="a signed-url result")
+    assert result.image_bytes == png
+    assert fetched["follow_redirects"] is True
+
+
+def test_image_provider_images_api_url_fetch_rejects_a_non_image(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An expired signed URL, an error page, or a login interstitial answers 200
+    # with text/html. Those bytes are not an image, and ingesting them would put
+    # a corrupt asset in the document under a "generated" provenance stamp —
+    # worse than failing, because it looks like it worked. Fail typed instead.
+    _images_api_settings(monkeypatch)
+
+    class _FakePostResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"data": [{"url": "https://cdn.example/expired"}]}
+
+    class _FakeGetResponse:
+        status_code = 200
+        headers = {"content-type": "text/html; charset=utf-8"}
+        content = b"<html><body>Access denied</body></html>"
+
+    monkeypatch.setattr("httpx.post", lambda *a, **k: _FakePostResponse())
+    monkeypatch.setattr("httpx.get", lambda *a, **k: _FakeGetResponse())
+
+    with pytest.raises(image_provider.ImageGenerationError) as excinfo:
+        image_provider.generate(prompt="an expired signed url")
+    assert excinfo.value.code == "image_model.bad_response"
+
+
+def test_image_provider_images_api_garbage_response_is_bad_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _images_api_settings(monkeypatch)
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"error": {"message": "model unavailable"}}
+
+    monkeypatch.setattr("httpx.post", lambda *a, **k: _FakeResponse())
+    with pytest.raises(image_provider.ImageGenerationError) as excinfo:
+        image_provider.generate(prompt="anything")
+    assert excinfo.value.code == "image_model.bad_response"
+
+
+def test_image_provider_chat_style_request_bodies_are_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # REGRESSION: with the default `chat` style the request bodies are exactly
+    # what they were before the images transport existed — the Gemini-class
+    # models still ride this path and must not shift by one byte.
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", "test/image-model")
+    monkeypatch.setattr(settings, "image_model_api_style", "chat")
+
+    out_png = _tiny_png(8, 8, rgba=(9, 9, 9, 255))
+    out_url = "data:image/png;base64," + base64.b64encode(out_png).decode("ascii")
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"images": [{"image_url": {"url": out_url}}]}}]}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.update(url=url, json=json, headers=headers)
+        return _FakeResponse()
+
+    monkeypatch.setattr("httpx.post", fake_post)
+
+    # (1) plain generation — bare-string content, prose hints, image modality.
+    image_provider.generate(
+        prompt="a calm clinic waiting room",
+        brand_notes=["warm palette"],
+        aspect_ratio="16:9",
+        image_size="2k",
+        transparent_background=True,
+    )
+    assert captured["url"] == "https://openrouter.ai/api/v1/chat/completions"
+    assert captured["json"] == {
+        "model": "test/image-model",
+        "messages": [
+            {
+                "role": "user",
+                "content": (
+                    "a calm clinic waiting room\n\nBrand/style direction: warm palette"
+                    "\n\n(Render with aspect ratio 16:9, 2k resolution, "
+                    "transparent background.)"
+                ),
+            }
+        ],
+        "modalities": ["image", "text"],
+        # W1.7(b) (merged after this test was written on the v2 lane): a
+        # REQUESTED ratio rides the chat body structurally; a no-ratio body
+        # stays byte-identical (pinned by the W1.7 tests).
+        "image_config": {"aspect_ratio": "16:9"},
+    }
+
+    # (2) reference-conditioned generation — multimodal parts, framing first.
+    ref = _tiny_png(8, 8, rgba=(200, 40, 40, 255))
+    image_provider.generate(
+        prompt="a focused surgeon",
+        aspect_ratio="3:2",
+        reference_images=[(ref, "image/png")],
+    )
+    assert captured["json"] == {
+        "model": "test/image-model",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/png;base64,"
+                            + base64.b64encode(ref).decode("ascii")
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": (
+                            image_provider.STYLE_REFERENCE_FRAMING
+                            + "\n\na focused surgeon\n\n(Render with aspect ratio 3:2.)"
+                        ),
+                    },
+                ],
+            }
+        ],
+        "modalities": ["image", "text"],
+        # W1.7(b): the requested ratio rides structurally here too.
+        "image_config": {"aspect_ratio": "3:2"},
+    }
+
+
+def test_image_model_api_style_rejects_a_typo(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A typo'd transport must fail at startup, not silently send the wrong body
+    # shape to a paid endpoint for the rest of the deployment's life.
+    from py_lumen_config.config import Settings
+
+    monkeypatch.setenv("IMAGE_MODEL_API_STYLE", "imagess")
+    with pytest.raises(Exception) as excinfo:
+        Settings()
+    assert "IMAGE_MODEL_API_STYLE" in str(excinfo.value)
+
+    monkeypatch.setenv("IMAGE_MODEL_API_STYLE", "images")
+    assert Settings().image_model_api_style == "images"
+    monkeypatch.setenv("IMAGE_MODEL_API_STYLE", "")
+    assert Settings().image_model_api_style == "chat"
 
 
 def test_generation_key_reference_digests(client: TestClient) -> None:
@@ -4747,32 +5878,25 @@ def test_instance_batch_processes_chunks_with_resumable_cursor(
     ), "the overflow is surfaced, never silent"
 
     # Resume seam: simulate an interrupted batch (cursor persisted after
-    # chunk one, manifest truncated to the committed work).
-    import sqlite3 as _sqlite3
+    # chunk one, manifest truncated to the committed work). Batches live on
+    # Postgres since D2.4, so this rewinds through the store surface rather
+    # than the old direct SQLite UPDATE.
+    from lumen_api.design_store import HybridRepository as _HybridRepository
 
-    connection = _sqlite3.connect(str(client.app.state.database_path))
-    connection.execute(
-        """
-        UPDATE instance_batches
-        SET cursor = 1, status = 'running',
-            manifest_json = ?, counts_json = ?
-        WHERE batch_id = ?
-        """,
-        (
-            json.dumps([batch["manifest"][0]]),
-            json.dumps(
-                {
-                    "total": 3,
-                    "derived": 1,
-                    "failed": 0,
-                    "fit": {"fits": 1, "fits_with_policy": 0, "overflow": 0},
-                }
-            ),
-            batch["batch_id"],
-        ),
+    store = _HybridRepository()
+    store.update_batch_progress(
+        batch["batch_id"],
+        1,
+        "running",
+        {
+            "total": 3,
+            "derived": 1,
+            "failed": 0,
+            "fit": {"fits": 1, "fits_with_policy": 0, "overflow": 0},
+        },
+        [batch["manifest"][0]],
+        store.require_batch(batch["batch_id"])["diagnostics"],
     )
-    connection.commit()
-    connection.close()
 
     resumed = client.post(f"/batches/{batch['batch_id']}/resume")
     assert resumed.status_code == 200, resumed.text
@@ -4870,8 +5994,10 @@ def test_instance_derivation_with_saved_print_profile(client: TestClient) -> Non
     assert pdf.get("error") is None, pdf
     assert pdf["print_ready"]["status"] != "fail"
 
-    store_root = str(client.app.state.asset_store_root)
-    pdf_bytes = (Path(store_root) / pdf["relative_path"]).read_bytes()
+    # D4: the derive artifact is written into this workspace's engine cache (and registered
+    # durably at the same moment — see the cache-wipe rehydration test).
+    cache_dir = Path(client.app.state.engine_cache_root) / os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    pdf_bytes = (cache_dir / pdf["relative_path"]).read_bytes()
     assert pdf_bytes.startswith(b"%PDF-")
     assert b"/TrimBox" in pdf_bytes, "print finalize expected"
     assert b"FontFile2" in pdf_bytes, "embedded subset fonts expected"

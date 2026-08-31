@@ -157,6 +157,7 @@ async def _recipe_runner(
     binder: Stage0ScrapeBinder,
     gate: _PassGate,
     project_id: str,
+    recipe_version: int = STAGE0_RECIPE_VERSION,
     crash_hook: Any | None = None,
 ) -> tuple[ToolbeltRecipeRunner, RecipeExecutor, int, object]:
     factory = _factory(conn)
@@ -180,19 +181,19 @@ async def _recipe_runner(
     definitions = tuple(
         definition
         for definition in load_system_recipe_definitions()
-        if definition.recipe_key == "recipe0-stage0"
+        if definition.recipe_key == "recipe0-stage0" and definition.version <= recipe_version
     )
     revisions = await seed_system_recipes(
         repository=repository,
         lifecycle=lifecycle,
         definitions=definitions,
     )
-    # The pinned promoted revision, read from the trial's own constant: only a currently
-    # promoted revision may start, and seeding supersedes every older one.
+    # Most tests start the promoted revision from the trial's own constant. Historical parity
+    # tests may explicitly start an immutable older revision to prove exact replay still works.
     promoted_recipe0 = next(
         revision
         for definition, revision in zip(definitions, revisions, strict=True)
-        if definition.recipe_key == "recipe0-stage0" and definition.version == STAGE0_RECIPE_VERSION
+        if definition.recipe_key == "recipe0-stage0" and definition.version == recipe_version
     )
     artifact_store = StorageParameterArtifactStore(
         storage=storage,
@@ -254,6 +255,7 @@ async def _recipe_runner(
             pin_provider=Stage0StepPinProvider(
                 compatibility=compatibility,
                 conn_factory=factory,
+                tools=registry,
             ),
         ),
         executor,
@@ -350,6 +352,9 @@ async def _url_recon_fingerprint(
             binder=binder,
             gate=gate,
             project_id=project.project_id,
+            # This fixture exercises the pre-Slice-1 discovery-readiness contract. Keep it on
+            # immutable v6; promoted v7's trusted v2 path has separate acceptance coverage.
+            recipe_version=6,
             crash_hook=crash,
         )
 
@@ -795,6 +800,74 @@ def test_recipe0_pins_disabled_optional_memory_without_reenabling_it() -> None:
     run_async(scenario())
 
 
+def test_promoted_recipe0_runs_only_the_trusted_stage0_readiness_contract() -> None:
+    """Promoted v7 admits @2, derives project pins, and leaves @1 to historical revisions."""
+
+    async def scenario() -> None:
+        workspace_id = "recipe0-trusted-readiness"
+        async with rollback_conn(workspace_id=workspace_id) as conn:
+            storage = _MemoryStorage()
+            brand = await create_brand(conn, workspace_id=workspace_id, name="Readiness brand")
+            project = await create_project(
+                conn,
+                workspace_id=workspace_id,
+                brand_id=brand.brand_id,
+                name="Trusted readiness",
+            )
+            runner, executor, _generation, execution_id = await _recipe_runner(
+                conn,
+                workspace_id=workspace_id,
+                storage=storage,
+                binder=build_stage0_scrape_binder(
+                    extractor=CallableClaimExtractor(_extract),
+                    scraper=_ReconScraper(),
+                ),
+                gate=_PassGate(),
+                project_id=project.project_id,
+            )
+
+            slot = await executor.inspect_interaction_slot(
+                execution_id=execution_id,
+                workspace_id=workspace_id,
+                slot_key="stage0_interactions",
+            )
+            assert "evaluate_stage0_readiness@2" in slot.tool_allowlist
+            assert "evaluate_stage0_readiness@1" not in slot.tool_allowlist
+
+            result = await runner.run_step(
+                RecipeStep(
+                    step_id="trusted_readiness",
+                    tool_name="evaluate_stage0_readiness",
+                    tool_version="2",
+                    input_refs={"gate": "icp_synthesis"},
+                ),
+                ctx=ToolContext(
+                    workspace_id=workspace_id,
+                    actor="agent",
+                    conn_factory=_factory(conn),
+                    operation_id=new_operation_id(),
+                    execution_id=execution_id,
+                ),
+            )
+            assert result.references["verdict"] == "not_ready"
+            assert result.references["coverage_ratio"] == 0.0
+            assert result.references["available_field_keys"] == []
+            assert "product_not_confirmed" in result.references["reason_codes"]
+
+            pin_kinds = {
+                str(row[0])
+                for row in (
+                    await conn.execute(
+                        text("SELECT kind FROM execution_pin WHERE execution_id = :execution_id"),
+                        {"execution_id": execution_id},
+                    )
+                ).all()
+            }
+            assert {"project", "brand", "readiness_policy", "tool"} <= pin_kinds
+
+    run_async(scenario())
+
+
 def test_recipe0_slot_runs_the_c8_inspection_tools_under_the_pinned_revision() -> None:
     """PC-C8 §7: a granted inspection tool is only callable if the pinned revision allows it.
 
@@ -842,6 +915,8 @@ def test_recipe0_slot_runs_the_c8_inspection_tools_under_the_pinned_revision() -
             )
             assert "inspect_readiness_history@1" in slot.tool_allowlist
             assert "inspect_statement_history@1" in slot.tool_allowlist
+            assert "list_client_knowledge@2" in slot.tool_allowlist
+            assert "inspect_client_claim@2" in slot.tool_allowlist
 
             result = await runner.run_step(
                 RecipeStep(

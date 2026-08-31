@@ -16,9 +16,14 @@ phase-handler registry so ``ProjectRun.advance()`` dispatches ``VERIFICATION`` i
 ``verification`` / ``compliance`` / ``identity`` / ``claimstore`` packages directly (nothing imports
 ``api`` — Rule 5).
 
-**Account set:** pass the SAME ``account_resolver`` the DEEP composition built
-(:func:`clue_api.deep.composition.build_high_tier_resolver`), so verification runs over
-exactly the accounts DEEP processed — one source of the high-tier set.
+**Account set:** pass the M8D R11.3 resolver
+(:func:`clue_api.entity_research_verification_resolver.build_entity_research_account_resolver`), so
+verification runs over exactly the accounts the run's account-research fleet actually researched —
+one source of the researched set, shared with the HANDOFF retention sweep. It **raises** rather than
+returning an empty set when the run has no fleet run, which is why this handler's empty-set no-op
+can no longer be reached by a run that simply never launched research. (It superseded
+:func:`clue_api.deep.composition.build_high_tier_resolver`, whose ``account_deep_launch`` read has
+had no live writer since the R1 quarantine.)
 
 **Contacts + use-gate (M10.3):** with ``govern_contacts=True`` (the default), each account's
 committee contacts are verified alongside it and every ``contact.facet.*`` claim is run through the
@@ -69,7 +74,8 @@ def build_verification_phase_handler(
 ) -> VerificationPhaseHandler:
     """Construct the ``ProjectPhase.VERIFICATION`` handler with the concrete M9/M10 seams.
 
-    ``account_resolver`` is the high-tier resolver shared with DEEP. The corroborator and judge each
+    ``account_resolver`` is the R11.3 researched-account resolver (shared with the HANDOFF retention
+    sweep, which needs the same set). The corroborator and judge each
     manage their own committed transaction per call (``session_factory``); the live-claims loader
     reads all live fields for an entity in one tenant-scoped read. With ``govern_contacts`` set, the
     committee-contact resolver and the per-client use-gate provider are wired so personal hooks are

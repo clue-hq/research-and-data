@@ -39,6 +39,14 @@ export const ChatStreamEventTypeSchema = z.enum([
   "text.start",
   "text.delta",
   "text.end",
+  // P3.7 delta 8: the design-leg lifecycle rides this same turn stream. Each
+  // frame is emitted in the transaction that performs the durable transition it
+  // announces, carries `leg_id`, and `leg.closed` also carries the exit
+  // `reason`. Genweb slice 3 renders them as transcript system lines.
+  "leg.opened",
+  "leg.awaiting_user",
+  "leg.closed",
+  "leg.reopened",
   "stream.hello",
   "stream.reset",
 ]);
@@ -74,6 +82,8 @@ const EnvelopeSchema = z.looseObject({
   part_kind: z.string().optional(),
   run_id: z.string().optional(),
   delta_index: z.number().int().optional(),
+  /** Present on every `leg.*` frame — the design leg the transition belongs to. */
+  leg_id: z.string().optional(),
   type: ChatStreamEventTypeSchema,
 });
 
@@ -98,6 +108,8 @@ export interface ChatStreamEvent {
   partKind: string | null;
   runId: string | null;
   deltaIndex: number | null;
+  /** Present on the four `leg.*` lifecycle frames; null everywhere else. */
+  legId: string | null;
   type: ChatStreamEventType;
   /** Present on `part.created|updated|completed|failed`. */
   part: ChatPart | null;
@@ -205,6 +217,7 @@ export function parseChatStreamEvent(
       partKind: envelope.data.part_kind ?? null,
       runId: envelope.data.run_id ?? null,
       deltaIndex: envelope.data.delta_index ?? null,
+      legId: envelope.data.leg_id ?? null,
       type: envelope.data.type,
       part,
       delta: typeof raw.delta === "string" ? raw.delta : null,

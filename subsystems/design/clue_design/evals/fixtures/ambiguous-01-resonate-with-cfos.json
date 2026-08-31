@@ -1,0 +1,17 @@
+{
+  "name": "ambiguous-01-resonate-with-cfos",
+  "kind": "ambiguous",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [],
+  "message": "Will this ad resonate with CFOs?",
+  "judgment": {
+    "action": "continue",
+    "reason": null
+  },
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": false
+  },
+  "why": "The master plan's own example. Ratified: a question about THIS artifact's audience fit is design-iteration feedback answered with the canvas in hand; a wrong stay costs one exchange, a wrong exit tears the user out of the session."
+}

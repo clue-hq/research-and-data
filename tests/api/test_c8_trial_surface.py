@@ -47,11 +47,20 @@ from tests.api.test_agent_registry_wiring import CATALOG_ROOT
 # to withhold) and put the promoted separately confirmed launches behind the same trial withhold.
 # FI Lane D D4 added `open_directive_confirmation_gate` to the same set, for the same sentence: a
 # dev harness that could present a real, addressed, durable confirmation gate — but could never act
-# on the answer — would be inviting a human to approve spend no surface here can perform.
+# on the answer — would be inviting a human to approve spend no surface here can perform. S5-F
+# applies the same fail-closed rule to the product-selection gate: the shared skill may explain the
+# procedure, but this trial cannot present a control whose answer it cannot compose.
 _WITHHELD = {
     "launch_account_research",
+    "launch_selected_account_research",
     "launch_contact_research",
+    "open_discovery_configuration_gate",
+    # P3.4: the design delegation entry is withheld on the trial for the same sentence as
+    # delegation itself — a leg opened from a dev CLI would durably reroute a thread no
+    # design runtime here can serve.
+    "open_design_leg",
     "open_directive_confirmation_gate",
+    "open_product_selection_gate",
     "start_recon",
     "submit_onboarding_input",
     "synthesize_icps",
@@ -59,12 +68,11 @@ _WITHHELD = {
 
 # The production conversation's own subtraction, which D4 made genuinely different from the trial's:
 # it keeps the drafting, gate, and launch tools (that flow is the whole point of the surface) and
-# withholds only the three the trial withholds for reasons that still hold here — this surface does
-# no external research and never captures on the client's behalf.
+# withholds only the two trial restrictions that still hold here — this surface does no external
+# research and never captures on the client's behalf. Trusted durable ICP synthesis is now present.
 _PROJECT_WITHHELD = {
     "start_recon",
     "submit_onboarding_input",
-    "synthesize_icps",
 }
 
 
@@ -121,10 +129,15 @@ def test_the_capability_map_names_the_surface_and_its_withheld_tools_honestly(
     generated = trial.generated_resource_map
 
     for name in sorted(_WITHHELD):
-        disclosure = by_address[f"{name}@1"]
+        # genweb slice 2 promoted the design delegation entry to @2 (web document birth at
+        # leg-open), genad promoted it again to @3 (ad document birth) and genad2 to @4
+        # (zero-page scene birth); the trial withholds it at whatever version the belt carries.
+        _promoted = {"synthesize_icps": "2", "open_design_leg": "4"}
+        address = f"{name}@{_promoted.get(name, '1')}"
+        disclosure = by_address[address]
         assert disclosure.status is AgentCapabilityStatus.PROFILE_UNAVAILABLE
         assert disclosure.reason_code == "trial_manual_conversation_only"
-        assert f"- {name}@1 effect=" not in generated
+        assert f"- {address} effect=" not in generated
 
     assert "manual-conversation-only" in generated
     assert f"surface={STAGE0_CONVERSATION_TRIAL_SURFACE}" in generated
@@ -243,10 +256,10 @@ def test_the_stage0_skill_survives_the_narrowed_surface(
     trial = registry.resolve(AgentRole.HEAD_OF_ABM, surface=STAGE0_CONVERSATION_TRIAL_SURFACE)
     disclosures = trial.skill_disclosures()
 
-    assert [item.resource.address for item in disclosures] == ["skill:stage0-interview@v10"]
+    assert [item.resource.address for item in disclosures] == ["skill:stage0-interview@v20"]
     required = {address.partition("@")[0] for address in disclosures[0].required_tool_addresses}
     assert required & _WITHHELD == set()
-    body = trial.open_skill("skill:stage0-interview@v10")
+    body = trial.open_skill("skill:stage0-interview@v20")
     assert "Ask one compact question" in body
     # The trial's framing lives on the surface policy, never in the shared skill.
     assert "manual-conversation-only" not in body

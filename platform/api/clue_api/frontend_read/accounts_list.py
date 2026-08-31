@@ -3,8 +3,8 @@
 The workspace-scoped, Band-2 read the frontend `/accounts` table binds to. It composes five
 untouched mechanism surfaces and owns no research logic of its own:
 
-1. **the account spine** — a workspace ``account_entity`` scan (merge losers excluded: a merged
-   account is not a row, it is a redirect — Task 3 serves that);
+1. **the account spine** — a workspace ``account_entity`` scan (the workspace's own client binding
+   and merge losers are excluded: neither is a target-account row; Task 3 serves loser redirects);
 2. **neutral facts** — ONE :func:`~clue_research.claimstore.current_values` batch over the
    list-row neutral field set, under ``WorkspaceScope.for_workspace``. These fields are
    ``project_neutral``, so they serve from the canonical merge in *every* lens and are
@@ -33,9 +33,10 @@ Two disciplines are load-bearing here and are enforced, not merely intended:
   ids, and ``null`` wherever the backend genuinely knows nothing. No display strings, no labels, no
   formatting — the frontend owns presentation (FI-1 Band-1/Band-2 split).
 
-The scan is **paginated by construction** (keyset over ``(created_at, id)`` descending, newest
-account first) so a workspace list can never become an unbounded query. The cursor is opaque by
-contract; its encoding is an implementation detail callers must not parse.
+The scan is **paginated by construction** over ``(created_at, id)`` descending, newest account
+first, so a workspace list can never become an unbounded query. Existing internal consumers retain
+opaque keyset cursors; the browser uses a mutually-exclusive numbered-page mode over the same total
+order so it can navigate backwards and jump to a page without pretending it selected unseen rows.
 """
 
 from __future__ import annotations
@@ -50,7 +51,7 @@ from enum import StrEnum
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 from sqlalchemy import bindparam, text
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
@@ -211,10 +212,18 @@ class AccountListRow(WireModel):
 
 
 class AccountListMeta(WireModel):
-    """Pagination metadata. ``total`` counts the whole filtered set, not the page."""
+    """Pagination metadata. ``total`` counts the whole filtered set, not the page.
+
+    ``page``/``pageSize``/``totalPages`` are present for the numbered browser table. The opaque
+    cursor remains available for internal consumers and backwards compatibility; the two modes
+    are mutually exclusive on one request.
+    """
 
     total: int
     next_cursor: str | None = None
+    page: int | None = Field(default=None, exclude_if=lambda value: value is None)
+    page_size: int | None = Field(default=None, exclude_if=lambda value: value is None)
+    total_pages: int | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class AccountListResponse(WireModel):
@@ -254,11 +263,19 @@ def decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
 
 # --- SQL --------------------------------------------------------------------------------------
 
-# Workspace-scoped, merge-losers excluded. ``merged_into IS NULL`` and ``status <> 'merged'`` are
-# equivalent by the ``account_entity_merged_iff_target`` CHECK; the null test is the indexable one.
+# Workspace-scoped, with the customer identity and merge losers excluded. ``merged_into IS NULL``
+# and ``status <> 'merged'`` are equivalent by the ``account_entity_merged_iff_target`` CHECK; the
+# null test is the indexable one. ``workspace_client_binding`` is the authority for which account
+# represents the customer itself, so it must not leak into any target-account lens.
 _ACCOUNT_FILTER = """
     a.workspace_id = :workspace_id
     AND a.merged_into IS NULL
+    AND NOT EXISTS (
+        SELECT 1
+        FROM workspace_client_binding wcb
+        WHERE wcb.workspace_id = a.workspace_id
+          AND wcb.client_entity_id = a.id
+    )
     AND (
         CAST(:project_id AS text) IS NULL
         OR EXISTS (
@@ -286,6 +303,16 @@ _PAGE_ACCOUNTS = text(
       )
     ORDER BY a.created_at DESC, a.id DESC
     LIMIT :row_limit
+    """
+)
+
+_NUMBERED_PAGE_ACCOUNTS = text(
+    f"""
+    SELECT a.id, a.canonical_name, a.primary_domain, a.created_at, a.updated_at
+    FROM account_entity a
+    WHERE {_ACCOUNT_FILTER}
+    ORDER BY a.created_at DESC, a.id DESC
+    LIMIT :row_limit OFFSET :row_offset
     """
 )
 
@@ -584,6 +611,7 @@ async def list_accounts(
     project_id: str | None = None,
     limit: int = DEFAULT_LIMIT,
     cursor: str | None = None,
+    page_number: int | None = None,
 ) -> AccountListResponse:
     """One page of the workspace's accounts, fully composed.
 
@@ -592,30 +620,55 @@ async def list_accounts(
     true answer and a 404 would claim the project does not exist — which this endpoint has no
     authority to say.
 
-    Raises :class:`InvalidCursorError` for a cursor this endpoint did not mint.
+    Raises :class:`InvalidCursorError` for a cursor this endpoint did not mint. Numbered pages and
+    cursors cannot be combined: silently preferring one would make selection and page labels lie.
     """
+    if page_number is not None and cursor is not None:
+        raise ValueError("page and cursor are mutually exclusive")
     cursor_created_at, cursor_id = (None, None) if cursor is None else decode_cursor(cursor)
     filter_params: dict[str, Any] = {"workspace_id": workspace_id, "project_id": project_id}
 
     total = int((await conn.execute(_COUNT_ACCOUNTS, filter_params)).scalar_one())
-    # One extra row is the has-more probe; it is never served.
-    rows = (
-        await conn.execute(
-            _PAGE_ACCOUNTS,
-            {
-                **filter_params,
-                "cursor_created_at": cursor_created_at,
-                "cursor_id": None if cursor_id is None else str(cursor_id),
-                "row_limit": limit + 1,
-            },
-        )
-    ).all()
-    has_more = len(rows) > limit
-    page = rows[:limit]
-    if not page:
-        return AccountListResponse(data=(), meta=AccountListMeta(total=total, next_cursor=None))
+    total_pages = max(1, (total + limit - 1) // limit)
+    if page_number is None:
+        # One extra row is the has-more probe; it is never served.
+        rows = (
+            await conn.execute(
+                _PAGE_ACCOUNTS,
+                {
+                    **filter_params,
+                    "cursor_created_at": cursor_created_at,
+                    "cursor_id": None if cursor_id is None else str(cursor_id),
+                    "row_limit": limit + 1,
+                },
+            )
+        ).all()
+        has_more = len(rows) > limit
+        page_rows = rows[:limit]
+    else:
+        page_rows = (
+            await conn.execute(
+                _NUMBERED_PAGE_ACCOUNTS,
+                {
+                    **filter_params,
+                    "row_limit": limit,
+                    "row_offset": (page_number - 1) * limit,
+                },
+            )
+        ).all()
+        has_more = False
 
-    account_ids = [uuid.UUID(str(row[0])) for row in page]
+    meta = AccountListMeta(
+        total=total,
+        next_cursor=None,
+        page=page_number,
+        page_size=limit if page_number is not None else None,
+        total_pages=total_pages if page_number is not None else None,
+    )
+    if not page_rows:
+        return AccountListResponse(data=(), meta=meta)
+
+    account_ids = [uuid.UUID(str(row[0])) for row in page_rows]
     neutral = await current_values(
         conn,
         [EntityId(account_id) for account_id in account_ids],
@@ -639,7 +692,7 @@ async def list_accounts(
 
     data: list[AccountListRow] = []
     for account_id, (_id, canonical_name, primary_domain, _created_at, updated_at) in zip(
-        account_ids, page, strict=True
+        account_ids, page_rows, strict=True
     ):
         entity_id = EntityId(account_id)
         employee_count = neutral.get((entity_id, "core.employee_count"))
@@ -677,10 +730,14 @@ async def list_accounts(
             )
         )
 
-    last_id, _name, _domain, last_created_at, _updated = page[-1]
-    next_cursor = encode_cursor(last_created_at, uuid.UUID(str(last_id))) if has_more else None
+    last_id, _name, _domain, last_created_at, _updated = page_rows[-1]
+    next_cursor = (
+        encode_cursor(last_created_at, uuid.UUID(str(last_id)))
+        if page_number is None and has_more
+        else None
+    )
     return AccountListResponse(
-        data=tuple(data), meta=AccountListMeta(total=total, next_cursor=next_cursor)
+        data=tuple(data), meta=meta.model_copy(update={"next_cursor": next_cursor})
     )
 
 
@@ -696,6 +753,7 @@ def register_accounts_list_routes(router: APIRouter, *, conn_factory: ConnFactor
         project_id: Annotated[str | None, Query(alias="projectId")] = None,
         limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
         cursor: Annotated[str | None, Query()] = None,
+        page: Annotated[int | None, Query(ge=1)] = None,
     ) -> AccountListResponse:
         async with conn_factory() as conn:
             try:
@@ -705,9 +763,17 @@ def register_accounts_list_routes(router: APIRouter, *, conn_factory: ConnFactor
                     project_id=project_id,
                     limit=limit,
                     cursor=cursor,
+                    page_number=page,
                 )
-            except InvalidCursorError as exc:
+            except (InvalidCursorError, ValueError) as exc:
                 raise HTTPException(
                     status_code=400,
-                    detail={"code": "INVALID_CURSOR", "message": str(exc)},
+                    detail={
+                        "code": (
+                            "INVALID_CURSOR"
+                            if isinstance(exc, InvalidCursorError)
+                            else "INVALID_PAGINATION"
+                        ),
+                        "message": str(exc),
+                    },
                 ) from exc

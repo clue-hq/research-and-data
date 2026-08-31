@@ -7,6 +7,7 @@ import {
   type AgentRunEvent,
   type EventSourceLike
 } from "../agentRunner";
+import type { RunStreamTarget } from "../runEventStream";
 import type { Operation } from "../contracts";
 import { agentChecklist, agentEventLabel } from "../agentChecklist";
 
@@ -14,15 +15,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** A scriptable EventSource: the test drives frames with emit(). */
+/** A scriptable stream: the test drives frames with emit().
+ *
+ * D7 changed only the factory's INPUT (the run's address, since the client owns the token
+ * handshake); the listener/close/onerror surface a fake has to implement is untouched. */
 class FakeEventSource implements EventSourceLike {
   onerror: ((event: unknown) => void) | null = null;
   closed = false;
-  readonly url: string;
+  readonly runId: string;
   private listeners = new Map<string, (event: { data: string }) => void>();
 
-  constructor(url: string) {
-    this.url = url;
+  constructor(target: RunStreamTarget | string = "") {
+    this.runId = typeof target === "string" ? target : target.runId;
   }
 
   addEventListener(type: string, listener: (event: { data: string }) => void): void {
@@ -48,8 +52,8 @@ describe("streaming agent runner", () => {
     let source: FakeEventSource | null = null;
     const runner = createStreamingAgentRunner({
       apiBaseUrl: "http://api.test",
-      eventSourceFactory: (url) => {
-        source = new FakeEventSource(url);
+      eventSourceFactory: (target) => {
+        source = new FakeEventSource(target);
         return source;
       }
     });
@@ -71,7 +75,7 @@ describe("streaming agent runner", () => {
     // RC: the async-turn POST carries the turn's reference asset ids.
     const [, requestInit] = fetchMock.mock.calls[0] as unknown as [URL, RequestInit];
     expect(JSON.parse(requestInit.body as string).reference_asset_ids).toEqual(["asset_ref_a"]);
-    expect(source!.url).toContain("/agent/runs/run_stream_1/events");
+    expect(source!.runId).toBe("run_stream_1");
     // The synthetic run_started frame carries the run id for reload-resume.
     expect(events.find((event) => event.type === "run_started")?.data.run_id).toBe("run_stream_1");
 

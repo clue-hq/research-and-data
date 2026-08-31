@@ -86,7 +86,58 @@ class DraftAccountResearchDirectiveInput(ToolInput):
         account_ids = tuple(item.account_id for item in self.account_overrides)
         if len(account_ids) != len(set(account_ids)):
             raise ValueError("account research directive overrides must be unique by account")
-        if len(self.user_instruction.encode("utf-8")) > USER_RESEARCH_INSTRUCTION_MAX_BYTES:
+        # The agent-facing runtime model deliberately removes trusted turn fields from its
+        # schema.  It still inherits this validator, so validate the byte ceiling only when the
+        # full tool input is being materialized after trusted-turn injection.  Accessing the
+        # removed field directly made a valid browser tool call crash before it could reach the
+        # governed execution seam.
+        user_instruction = getattr(self, "user_instruction", None)
+        if (
+            user_instruction is not None
+            and len(user_instruction.encode("utf-8")) > USER_RESEARCH_INSTRUCTION_MAX_BYTES
+        ):
+            raise ValueError(
+                "user research instruction exceeds its "
+                f"{USER_RESEARCH_INSTRUCTION_MAX_BYTES}-byte context contract"
+            )
+        return self
+
+
+class DraftAccountResearchDirectiveInputV3(ToolInput):
+    """Agent-plan-safe directive input; v2's frozen ``body`` field remains replayable."""
+
+    project_id: str = Field(
+        min_length=1,
+        max_length=255,
+        description="Trusted current project; supplied by the platform.",
+    )
+    product_id: str = Field(min_length=1, max_length=255)
+    icp_key: str = Field(min_length=1, max_length=255)
+    icp_version: int = Field(ge=1)
+    directive: ResearchDirectiveBody
+    account_overrides: tuple[ResearchDirectiveOverrideInput, ...] = Field(
+        default=(), max_length=500
+    )
+    predecessor_id: ResearchDirectiveId | None = None
+    user_instruction: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=8_000),
+    ] = Field(json_schema_extra={TRUSTED_TURN_FIELD: True})
+    source_turn_ref: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=1_000),
+    ] = Field(json_schema_extra={TRUSTED_TURN_FIELD: True})
+
+    @model_validator(mode="after")
+    def overrides_are_unique(self) -> DraftAccountResearchDirectiveInputV3:
+        account_ids = tuple(item.account_id for item in self.account_overrides)
+        if len(account_ids) != len(set(account_ids)):
+            raise ValueError("account research directive overrides must be unique by account")
+        user_instruction = getattr(self, "user_instruction", None)
+        if (
+            user_instruction is not None
+            and len(user_instruction.encode("utf-8")) > USER_RESEARCH_INSTRUCTION_MAX_BYTES
+        ):
             raise ValueError(
                 "user research instruction exceeds its "
                 f"{USER_RESEARCH_INSTRUCTION_MAX_BYTES}-byte context contract"
@@ -349,6 +400,36 @@ class DraftAccountResearchDirectiveToolV2(DraftAccountResearchDirectiveTool):
         )
 
 
+class DraftAccountResearchDirectiveToolV3(DraftAccountResearchDirectiveToolV2):
+    """Plan-safe field spelling while preserving v2's durable directive semantics."""
+
+    version = "3"
+    input_model = DraftAccountResearchDirectiveInputV3
+
+    @staticmethod
+    def _v2_input(inputs: ToolInput) -> DraftAccountResearchDirectiveInput:
+        assert isinstance(inputs, DraftAccountResearchDirectiveInputV3)
+        return DraftAccountResearchDirectiveInput(
+            project_id=inputs.project_id,
+            product_id=inputs.product_id,
+            icp_key=inputs.icp_key,
+            icp_version=inputs.icp_version,
+            body=inputs.directive,
+            account_overrides=inputs.account_overrides,
+            predecessor_id=inputs.predecessor_id,
+            user_instruction=inputs.user_instruction,
+            source_turn_ref=inputs.source_turn_ref,
+        )
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        return await super().preconditions(self._v2_input(inputs), ctx)
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        return await super().invoke(self._v2_input(inputs), ctx)
+
+
 class ConfirmAccountResearchDirectiveTool(Tool):
     name = "confirm_account_research_directive"
     version = "1"
@@ -608,6 +689,10 @@ def build_research_directive_tools(
             memory_write_factory=memory_write_factory,
             conn_factory=conn_factory,
         ),
+        DraftAccountResearchDirectiveToolV3(
+            memory_write_factory=memory_write_factory,
+            conn_factory=conn_factory,
+        ),
         ConfirmAccountResearchDirectiveToolV2(conn_factory=conn_factory),
     )
 
@@ -620,10 +705,12 @@ __all__ = [
     "ConfirmAccountResearchDirectiveTool",
     "ConfirmAccountResearchDirectiveToolV2",
     "DraftAccountResearchDirectiveInput",
+    "DraftAccountResearchDirectiveInputV3",
     "DraftAccountResearchDirectiveOutput",
     "DraftAccountResearchDirectiveOutputV2",
     "DraftAccountResearchDirectiveTool",
     "DraftAccountResearchDirectiveToolV2",
+    "DraftAccountResearchDirectiveToolV3",
     "ResearchDirectiveOverrideInput",
     "build_research_directive_tools",
 ]

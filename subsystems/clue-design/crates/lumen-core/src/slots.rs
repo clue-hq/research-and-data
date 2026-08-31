@@ -169,6 +169,34 @@ pub struct ImagePolicy {
     pub aspect_ratio: Option<f64>,
 }
 
+impl Default for ImagePolicy {
+    /// The neutral, render-safe image policy every image-like slot may be born
+    /// with. `fit: Cover` is the convention the authoring docs already state
+    /// (`knowledge/lumen-dsl/grammar.md`: "The default is `fit:cover` + a
+    /// sensible focal point"), and `preserve_transparency: true` is the only
+    /// choice that cannot damage a logo — flattening is a deliberate act, never
+    /// a default. Everything else stays `None` so this policy asserts nothing
+    /// the author did not ask for: no forced aspect ratio, no print DPI floor,
+    /// and no focal point (the renderer centers, which is what `Cover` without
+    /// a stated subject means).
+    ///
+    /// This exists because `LUMV0820` ("image-like slot needs an image policy")
+    /// used to be unavoidable: the DSL's only slot constructor is
+    /// `Slot::text_short`, so every `image … slot(key)` line produced an Image
+    /// slot with `image_policy: None` and an instant preflight error the author
+    /// had no operation to clear. Slots are now born with this default; the
+    /// author overrides it with `#slot:key image_policy(...)`.
+    fn default() -> Self {
+        Self {
+            fit: ImageFitMode::Cover,
+            focal_point: None,
+            min_dpi: None,
+            preserve_transparency: true,
+            aspect_ratio: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ImageFitMode {

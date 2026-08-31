@@ -5,11 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Protocol
+from typing import Annotated, Protocol
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, StringConstraints
 
+from clue_api.account_research_estimate import compute_account_research_estimate
 from clue_api.account_research_fleet import (
     AccountResearchFleetProjection,
     AccountResearchFleetService,
@@ -18,6 +19,7 @@ from clue_api.account_research_fleet_launch import (
     AccountResearchFleetLauncher,
     AccountResearchFleetLaunchRequest,
 )
+from clue_api.agent_turn_submission import submission_context_refs
 from clue_api.auth_tool_context import require_human_authority
 from clue_api.contact_research_fleet import ContactResearchFleetService
 from clue_api.contact_research_fleet_launch import (
@@ -26,6 +28,18 @@ from clue_api.contact_research_fleet_launch import (
     ContactResearchSelectionApprovalRequest,
     ContactResearchSelectionApprover,
 )
+from clue_api.turn_action import load_turn_identity, parse_turn_action_ref
+from clue_api.turn_binding import TRUSTED_TURN_FIELD
+from clue_auth import get_membership, role_has_permission
+from clue_core import EntityId, ProjectRunId, ResearchDirectiveId, ResearchDirectiveStatus
+from clue_db import ConnFactory, transaction
+from clue_research.directives import (
+    confirm_research_directive,
+    get_latest_research_directive,
+    get_research_directive,
+    research_directive_account_ids,
+)
+from clue_research.durable import get_project_run
 from clue_toolbelt import (
     ExternalReplayBoundary,
     JournalParameterPolicy,
@@ -77,6 +91,301 @@ class LaunchAccountResearchOutput(ToolOutput):
     selected_accounts: int
     budget_cap_cents: str
     contact_research_started: bool
+
+
+class LaunchSelectedAccountResearchInput(ToolInput):
+    """A direct launch whose subject is the captured turn's exact Account references."""
+
+    project_run_id: str
+    research_directive_id: str
+    account_entity_ids: tuple[str, ...] = Field(min_length=1, max_length=100)
+    concurrency_limit: int = Field(default=16, ge=1, le=64)
+    source_turn_ref: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=1_000),
+    ] = Field(json_schema_extra={TRUSTED_TURN_FIELD: True})
+
+
+@dataclass(frozen=True, slots=True)
+class _SelectedAccountLaunch:
+    project_run_id: ProjectRunId
+    directive_id: ResearchDirectiveId
+    account_ids: tuple[EntityId, ...]
+    estimated_cost_cents: Decimal
+    submitted_by_user_id: str
+    source_turn_ref: str
+    directive_sha256: str
+    directive_status: ResearchDirectiveStatus
+
+
+class _SelectedAccountLaunchRefused(ValueError):
+    def __init__(self, reason_code: str, message: str) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+
+
+class LaunchSelectedAccountResearchTool(Tool):
+    """Confirm and launch one exact Account set from an explicit captured user command.
+
+    This is the no-extra-confirmation path ratified for the FI pilot. It is deliberately a new
+    tool rather than a relaxation of ``launch_account_research@1``: deployments with budget
+    controls enabled retain the durable gate unchanged, and historical profiles keep their exact
+    semantics. The model proposes ids for legibility, but the durable turn references are the
+    authority and equality is enforced server-side before confirmation or spend.
+    """
+
+    name = "launch_selected_account_research"
+    version = "1"
+    model_description = (
+        "Confirm and launch account research directly from the current human message only when "
+        "that message explicitly commands research and carries the exact Account references. "
+        "The server requires your proposed account ids to equal those durable references, refuses "
+        "Contact or widened sets, derives the human receipt from the captured turn, computes the "
+        "estimate itself, and is unavailable when budget controls require the normal gate."
+    )
+    input_model = LaunchSelectedAccountResearchInput
+    output_model = LaunchAccountResearchOutput
+    effect_class = ToolEffectClass.SPEND
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="captured command + exact turn Account set + directive revision",
+        external_boundary=ExternalReplayBoundary.NONE,
+    )
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=(
+            "project_run_id",
+            "research_directive_id",
+            "account_entity_ids",
+        )
+    )
+    pin_requirements = ("project_run", "research_directive", "account_research_selection")
+
+    def __init__(
+        self,
+        service: AccountResearchLaunchService | None,
+        *,
+        budget_controls_enabled: bool,
+        conn_factory: ConnFactory = transaction,
+    ) -> None:
+        self._service = service
+        self._budget_controls_enabled = budget_controls_enabled
+        self._conn_factory = conn_factory
+
+    async def _resolve(
+        self,
+        inputs: LaunchSelectedAccountResearchInput,
+        ctx: ToolContext,
+    ) -> _SelectedAccountLaunch:
+        if self._service is None:
+            raise _SelectedAccountLaunchRefused(
+                "entity_research_agent_not_composed",
+                "the R10 entity-research launch services are not composed",
+            )
+        if self._budget_controls_enabled:
+            raise _SelectedAccountLaunchRefused(
+                "direct_launch_requires_budget_controls_disabled",
+                "this deployment requires the normal research confirmation gate",
+            )
+        if ctx.action_ref != inputs.source_turn_ref:
+            raise _SelectedAccountLaunchRefused(
+                "selected_launch_turn_mismatch",
+                "the selected Account launch must cite the current captured user message",
+            )
+        try:
+            turn_id = parse_turn_action_ref(inputs.source_turn_ref)
+            project_run_id = ProjectRunId(UUID(inputs.project_run_id))
+            directive_id = ResearchDirectiveId(UUID(inputs.research_directive_id))
+            proposed_ids = tuple(EntityId(UUID(value)) for value in inputs.account_entity_ids)
+        except ValueError as exc:
+            raise _SelectedAccountLaunchRefused(
+                "selected_launch_identifier_invalid",
+                "selected Account launch identifiers must be canonical UUIDs",
+            ) from exc
+        if len(proposed_ids) != len(set(proposed_ids)):
+            raise _SelectedAccountLaunchRefused(
+                "selected_launch_scope_mismatch",
+                "the selected Account launch set must not contain duplicates",
+            )
+
+        async with self._conn_factory() as conn:
+            turn = await load_turn_identity(
+                conn,
+                workspace_id=ctx.workspace_id,
+                turn_id=turn_id,
+            )
+            if (
+                turn is None
+                or turn.submitted_by_user_id is None
+                or turn.submitted_via_membership_id is None
+            ):
+                raise _SelectedAccountLaunchRefused(
+                    "selected_launch_human_turn_required",
+                    "direct research launch requires one attributable captured human message",
+                )
+            membership = await get_membership(
+                conn,
+                workspace_id=ctx.workspace_id,
+                membership_id=turn.submitted_via_membership_id,
+            )
+            if (
+                membership is None
+                or membership.status != "active"
+                or membership.user_id != turn.submitted_by_user_id
+                or not role_has_permission(membership.role_key, "research.launch")
+            ):
+                raise _SelectedAccountLaunchRefused(
+                    "selected_launch_permission_denied",
+                    "the submitting membership may not launch account research",
+                )
+            refs = await submission_context_refs(
+                conn,
+                workspace_id=ctx.workspace_id,
+                turn_id=turn_id,
+            )
+            if not refs or any(ref.object_type != "account" for ref in refs):
+                raise _SelectedAccountLaunchRefused(
+                    "selected_launch_accounts_required",
+                    "direct account research requires only Account references on this message",
+                )
+            captured_ids = tuple(EntityId(UUID(ref.object_id)) for ref in refs)
+            if proposed_ids != captured_ids:
+                raise _SelectedAccountLaunchRefused(
+                    "selected_launch_scope_mismatch",
+                    "research targets must exactly equal the current message's ordered Accounts",
+                )
+
+            project_run = await get_project_run(conn, project_run_id)
+            if (
+                project_run is None
+                or project_run.workspace_id != ctx.workspace_id
+                or project_run.project_id != turn.project_id
+                or project_run.product_id is None
+            ):
+                raise _SelectedAccountLaunchRefused(
+                    "selected_launch_project_run_mismatch",
+                    "the research run must belong to the captured message's project",
+                )
+            directive = await get_research_directive(
+                conn,
+                directive_id,
+                workspace_id=ctx.workspace_id,
+            )
+            latest = await get_latest_research_directive(
+                conn,
+                workspace_id=ctx.workspace_id,
+                project_id=project_run.project_id,
+                product_id=project_run.product_id,
+                icp_key=project_run.icp_key,
+                icp_version=project_run.icp_version,
+            )
+            if directive is None or latest is None or latest.directive_id != directive.directive_id:
+                raise _SelectedAccountLaunchRefused(
+                    "selected_launch_directive_stale",
+                    "direct research launch requires the latest project research directive",
+                )
+            directive_ids = await research_directive_account_ids(
+                conn,
+                workspace_id=ctx.workspace_id,
+                directive_id=directive.directive_id,
+            )
+            if set(directive_ids) != set(captured_ids) or len(directive_ids) != len(captured_ids):
+                raise _SelectedAccountLaunchRefused(
+                    "selected_launch_scope_mismatch",
+                    "the directive's Account scope differs from the current message",
+                )
+            if directive.status is ResearchDirectiveStatus.CONFIRMED:
+                # The directive confirmation and the launch command are distinct durable acts.
+                # A prior launch attempt may fail after confirmation but before fleet state is
+                # written. A later attributable human turn may retry that same latest directive
+                # and exact Account set; the frozen selection records both approval references.
+                allow_draft = False
+            elif directive.status is not ResearchDirectiveStatus.DRAFT:
+                raise _SelectedAccountLaunchRefused(
+                    "selected_launch_directive_not_draft",
+                    "only the current draft can be directly confirmed and launched",
+                )
+            else:
+                allow_draft = True
+            estimate = await compute_account_research_estimate(
+                conn,
+                workspace_id=ctx.workspace_id,
+                project_run_id=project_run_id,
+                directive_id=directive.directive_id,
+                account_ids=captured_ids,
+                allow_draft=allow_draft,
+            )
+        return _SelectedAccountLaunch(
+            project_run_id=project_run_id,
+            directive_id=directive_id,
+            account_ids=captured_ids,
+            estimated_cost_cents=estimate.total_cents,
+            submitted_by_user_id=turn.submitted_by_user_id,
+            source_turn_ref=inputs.source_turn_ref,
+            directive_sha256=directive.canonical_json_sha256,
+            directive_status=directive.status,
+        )
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> tuple[PreconditionFailure, ...]:
+        assert isinstance(inputs, LaunchSelectedAccountResearchInput)
+        try:
+            await self._resolve(inputs, ctx)
+        except _SelectedAccountLaunchRefused as exc:
+            return (PreconditionFailure(reason_code=exc.reason_code, message=str(exc)),)
+        except Exception as exc:
+            return (
+                PreconditionFailure(
+                    reason_code="selected_launch_not_admissible",
+                    message=str(exc),
+                ),
+            )
+        return ()
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        del inputs
+        return ToolEstimate.free()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, LaunchSelectedAccountResearchInput)
+        assert self._service is not None
+        resolved = await self._resolve(inputs, ctx)
+        if resolved.directive_status is ResearchDirectiveStatus.DRAFT:
+            async with self._conn_factory() as conn:
+                await confirm_research_directive(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    directive_id=resolved.directive_id,
+                    expected_sha256=resolved.directive_sha256,
+                    confirmed_by=resolved.submitted_by_user_id,
+                    confirming_turn_ref=resolved.source_turn_ref,
+                    operation_id=ctx.operation_id,
+                )
+        projection = await self._service.launch(
+            AccountResearchFleetLaunchRequest(
+                workspace_id=ctx.workspace_id,
+                project_run_id=UUID(str(resolved.project_run_id)),
+                research_directive_id=UUID(str(resolved.directive_id)),
+                account_entity_ids=tuple(UUID(str(value)) for value in resolved.account_ids),
+                approved_budget_cap_cents=resolved.estimated_cost_cents,
+                expected_estimated_cost_cents=resolved.estimated_cost_cents,
+                concurrency_limit=inputs.concurrency_limit,
+            ),
+            actor=resolved.submitted_by_user_id,
+            source_action_ref=resolved.source_turn_ref,
+            source_operation_id=ctx.operation_id,
+        )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "research_run_id": str(projection.research_run_id),
+                "fleet_state": projection.fleet_state.value,
+                "selected_accounts": projection.selected_accounts,
+                "budget_cap_cents": str(projection.budget_cap_cents),
+                "contact_research_started": projection.contact_research_started,
+            },
+        )
 
 
 class ReadEntityResearchRunInput(ToolInput):
@@ -430,9 +739,17 @@ class ReadContactResearchRunTool(Tool):
 
 def build_entity_research_launch_tools(
     services: EntityResearchLaunchServices | None,
+    *,
+    budget_controls_enabled: bool = True,
+    conn_factory: ConnFactory = transaction,
 ) -> tuple[Tool, ...]:
     return (
         LaunchAccountResearchTool(services.account_launcher if services is not None else None),
+        LaunchSelectedAccountResearchTool(
+            services.account_launcher if services is not None else None,
+            budget_controls_enabled=budget_controls_enabled,
+            conn_factory=conn_factory,
+        ),
         ReadAccountResearchRunTool(services.account_fleets if services is not None else None),
         ApproveEntityContactResearchSelectionTool(
             services.contact_approver if services is not None else None
@@ -449,6 +766,8 @@ __all__ = [
     "EntityResearchRunOutput",
     "LaunchAccountResearchInput",
     "LaunchAccountResearchOutput",
+    "LaunchSelectedAccountResearchInput",
+    "LaunchSelectedAccountResearchTool",
     "LaunchContactResearchInput",
     "LaunchContactResearchOutput",
     "ReadEntityResearchRunInput",

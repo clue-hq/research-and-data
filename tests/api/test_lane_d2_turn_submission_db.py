@@ -44,19 +44,26 @@ from clue_agents import (
     AgentTurnRequest,
     FinalizeStatus,
 )
-from clue_agents.contracts import AgentConstitution, DomainObjectRef, ExecutionId
+from clue_agents.contracts import (
+    AgentConstitution,
+    DomainObjectRef,
+    ExecutionId,
+    ProjectContextArtifact,
+)
 from clue_api.agent_registry_wiring import (
     PROJECT_CONVERSATION_SURFACE,
     build_agent_profile_registry,
 )
 from clue_api.agent_turn_fleet_wiring import (
     AgentTurnWorkHandler,
+    ProjectConversationTurnRunner,
     RequiredTurnArtifactMissing,
 )
 from clue_api.agent_turn_submission import (
     agent_turn_dedup_key,
     dispatch_next_thread_turn,
     get_submission,
+    submission_context_refs,
     thread_work_id,
     turn_id_for_submission,
 )
@@ -66,12 +73,15 @@ from clue_api.agent_turn_wiring import (
     DurableAgentArtifactStore,
 )
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
+from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
 from clue_api.conversation_turns import ConversationTurnEngine
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.projections_app import create_projections_app
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Settings, load_settings
-from clue_core import AccountStatus, ProjectRunId
+from clue_core import AccountStatus, ProjectRunId, operation_id_from_key
+from clue_design import legs as design_legs
+from clue_design.documents import create_document
 from clue_fleet import (
     FleetTaskKind,
     FleetTaskStatus,
@@ -289,7 +299,7 @@ def test_a_submitted_turn_is_durable_and_queued_before_anything_runs(tmp_path: P
             assert submission.submitted_by_user_id == USER_ID
             assert submission.submitted_via_membership_id.startswith(MEMBERSHIP_ID)
             assert submission.thread_id == thread_id
-            assert submission.agent_profile_id == "head-of-abm@v23"
+            assert submission.agent_profile_id == PROJECT_CONVERSATION_AGENT_PROFILE_ID
 
             # Capture-before-spend: the human's words and their `actor='human'` record exist.
             capture = (
@@ -366,7 +376,7 @@ def test_message_submission_persists_ordered_context_and_the_real_terra_profile(
                     {"object_type": "account", "object_id": str(first_account)},
                 ],
                 "attachment_refs": [],
-                "agent_profile_id": "head-of-abm@v23",
+                "agent_profile_id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
             }
             headers = {
                 "X-Workspace-Id": project.workspace_id,
@@ -408,7 +418,7 @@ def test_message_submission_persists_ordered_context_and_the_real_terra_profile(
                 turn_id=turn_id,
             )
             assert submission is not None
-            assert submission.agent_profile_id == "head-of-abm@v23"
+            assert submission.agent_profile_id == PROJECT_CONVERSATION_AGENT_PROFILE_ID
             rows = (
                 (
                     await conn.execute(
@@ -436,6 +446,136 @@ def test_message_submission_persists_ordered_context_and_the_real_terra_profile(
                 409,
                 "CAPABILITY_UNAVAILABLE",
             )
+
+    run_async(scenario())
+
+
+def test_design_targets_are_validated_snapshotted_and_replay_after_the_scene_advances(
+    tmp_path: Path,
+) -> None:
+    """The HTTP receipt freezes exact scene targets before the design worker sees them."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-edit-targets", name="Edit target chips")
+            thread_id = await _thread(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                label="edit-targets",
+            )
+            document = await create_document(
+                conn,
+                workspace_id=project.workspace_id,
+                scene={
+                    "schema_version": 1,
+                    "meta": {"id": "doc_edit_targets", "title": "Launch banner"},
+                    "pages": {
+                        "page_ad": {"id": "page_ad", "children": ["frame"]},
+                    },
+                    "nodes": {
+                        "frame": {"id": "frame", "children": ["headline"]},
+                        "headline": {"id": "headline", "children": []},
+                    },
+                    "slots": {},
+                    "assets": {},
+                    "export_profiles": [],
+                },
+            )
+            await conn.execute(
+                text(
+                    "UPDATE design_document SET current_version = 4 "
+                    "WHERE id = :document AND workspace_id = :workspace"
+                ),
+                {"document": document["id"], "workspace": project.workspace_id},
+            )
+            parent_execution_id = uuid4()
+            await conn.execute(
+                text(
+                    "INSERT INTO execution "
+                    "(id, workspace_id, project_id, started_by, parameter_manifest_hash, "
+                    " pin_manifest_hash) "
+                    "VALUES (:id, :workspace, :project, 'human', :hash, :hash)"
+                ),
+                {
+                    "id": parent_execution_id,
+                    "workspace": project.workspace_id,
+                    "project": project.project_id,
+                    "hash": "0" * 64,
+                },
+            )
+            await design_legs.open_leg(
+                conn,
+                workspace_id=project.workspace_id,
+                thread_id=thread_id,
+                parent_execution_id=parent_execution_id,
+                document_id=document["id"],
+                document_version_guard=4,
+            )
+            refs = [
+                {
+                    "object_type": "design_document",
+                    "object_id": document["id"],
+                    "version": 4,
+                },
+                {
+                    "object_type": "design_node",
+                    "object_id": "headline",
+                    "version": 4,
+                },
+            ]
+            request = {
+                "message": "Make this bolder.",
+                "context_refs": refs,
+            }
+            headers = {
+                "X-Workspace-Id": project.workspace_id,
+                "Idempotency-Key": "edit-target-headline",
+            }
+            app = _app(conn, settings=_settings(), storage=FsStorage(tmp_path / "artifacts"))
+            async with _client(app) as client:
+                accepted = await client.post(
+                    f"/api/v1/projects/{project.project_id}/threads/{thread_id}/turns",
+                    json=request,
+                    headers=headers,
+                )
+                assert accepted.status_code == 202, accepted.text
+                assert accepted.json()["data"]["routed_to"] == "design"
+
+                turn_id = UUID(accepted.json()["data"]["turn_id"])
+                durable = await submission_context_refs(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    turn_id=turn_id,
+                )
+                assert [(ref.object_type, ref.object_id, ref.version) for ref in durable] == [
+                    ("design_document", document["id"], 4),
+                    ("design_node", "headline", 4),
+                ]
+
+                # A later canvas edit cannot invalidate the immutable receipt on retry.
+                await conn.execute(
+                    text(
+                        "UPDATE design_document SET current_version = 5 "
+                        "WHERE id = :document AND workspace_id = :workspace"
+                    ),
+                    {"document": document["id"], "workspace": project.workspace_id},
+                )
+                replay = await client.post(
+                    f"/api/v1/projects/{project.project_id}/threads/{thread_id}/turns",
+                    json=request,
+                    headers=headers,
+                )
+                stale_new_turn = await client.post(
+                    f"/api/v1/projects/{project.project_id}/threads/{thread_id}/turns",
+                    json=request,
+                    headers={**headers, "Idempotency-Key": "edit-target-stale"},
+                )
+
+            assert replay.status_code == 202, replay.text
+            assert replay.json()["data"]["replayed"] is True
+            assert stale_new_turn.status_code == 409, stale_new_turn.text
+            assert stale_new_turn.json()["error"]["code"] == "CONTEXT_REF_STALE"
 
     run_async(scenario())
 
@@ -1064,6 +1204,82 @@ class _RuntimeThatMustNotRun:
         raise AssertionError("a committed turn must never be executed a second time")
 
 
+class _ReplayBeforeCompositionEngine:
+    def __init__(self) -> None:
+        self.calls: list[tuple[UUID, str, str]] = []
+
+    async def replay_committed(self, **kwargs: Any) -> Any:
+        self.calls.append(
+            (
+                kwargs["turn_id"],
+                kwargs["workspace_id"],
+                kwargs["thread_id"],
+            )
+        )
+        return SimpleNamespace(
+            outcome=SimpleNamespace(status=AgentExecutionStatus.COMPLETED),
+            assistant_message="Committed answer",
+            replayed=True,
+        )
+
+
+class _ReplayBeforeCompositionRunner(ProjectConversationTurnRunner):
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.completed: list[ExecutionId] = []
+
+    async def _load_scope(self, *args: Any, **kwargs: Any) -> Any:
+        del args, kwargs
+        raise AssertionError("committed replay must happen before current scope/card composition")
+
+    async def _complete_recipe(self, execution_id: ExecutionId) -> None:
+        self.completed.append(execution_id)
+
+
+def test_worker_replays_before_recipe_or_current_context_composition(tmp_path: Path) -> None:
+    """A current vN+1 can never be composed into a committed vN turn retry."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-d2-early-replay", name="D2 early replay")
+            thread_id = await _thread(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                label="early-replay",
+            )
+            storage = FsStorage(tmp_path / "artifacts")
+            app = _app(conn, settings=_settings(), storage=storage)
+            async with _client(app) as client:
+                accepted = await _submit(
+                    client,
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
+                    thread_id=thread_id,
+                    message="Replay the already committed answer.",
+                    key="early-replay",
+                )
+            turn_id = UUID(accepted.json()["data"]["turn_id"])
+            engine = _ReplayBeforeCompositionEngine()
+            runner = _ReplayBeforeCompositionRunner(
+                engine=engine,
+                executor=None,
+                recipes=None,
+                starter=None,
+                parameters=None,
+                conn_factory=conn_session_factory(conn),
+                streaming=False,
+            )
+            result = await runner.run(turn_id=turn_id, workspace_id=project.workspace_id)
+            assert result.replayed is True
+            assert engine.calls == [(turn_id, project.workspace_id, thread_id)]
+            assert runner.completed == [
+                ExecutionId(operation_id_from_key(str(turn_id), "project-conversation@1"))
+            ]
+
+    run_async(scenario())
+
+
 def test_a_committed_turn_is_replayed_never_re_executed(tmp_path: Path) -> None:
     """The convergence guarantee, over real durable rows.
 
@@ -1138,6 +1354,29 @@ def test_a_committed_turn_is_replayed_never_re_executed(tmp_path: Path) -> None:
                         version=None,
                     ),
                 ),
+                project_context_artifacts=(
+                    ProjectContextArtifact(
+                        name="client_knowledge",
+                        artifact_ref=manifest_ref,
+                        domain_ref=DomainObjectRef(
+                            workspace_id=project.workspace_id,
+                            object_type="client_knowledge",
+                            object_id="client-replay",
+                            version=1,
+                        ),
+                    ),
+                    ProjectContextArtifact(
+                        name="stage0_project_state",
+                        artifact_ref=manifest_ref,
+                        domain_ref=DomainObjectRef(
+                            workspace_id=project.workspace_id,
+                            object_type="stage0_project_state",
+                            object_id=project.project_id,
+                            version=None,
+                        ),
+                    ),
+                ),
+                client_entity_id="client-replay",
             )
             request = AgentTurnRequest(
                 turn_id=turn_id,
@@ -1153,6 +1392,19 @@ def test_a_committed_turn_is_replayed_never_re_executed(tmp_path: Path) -> None:
                 submitted_by_user_id=USER_ID,
                 submitted_via_membership_id=f"{MEMBERSHIP_ID}-{project.workspace_id}",
             )
+            context_refs = int(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT count(*) FROM agent_artifact_ref "
+                            "WHERE turn_id=:turn_id AND owner_kind='context' "
+                            "AND owner_id=:turn_id AND ref_role='context_materialization'"
+                        ),
+                        {"turn_id": turn_id},
+                    )
+                ).scalar_one()
+            )
+            assert context_refs == len(constitution.project_context_artifacts)
 
             # The committed outcome of the *first* attempt: an envelope artifact, its finalization,
             # and the immutable commit that makes it authoritative.
@@ -1204,6 +1456,17 @@ def test_a_committed_turn_is_replayed_never_re_executed(tmp_path: Path) -> None:
                 plans=None,  # type: ignore[arg-type]
                 conn_factory=cf,
             )
+            early = await engine.replay_committed(
+                turn_id=turn_id,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                thread_id=thread_id,
+                actor_id=USER_ID,
+                user_message_artifact_ref=message_ref,
+            )
+            assert early is not None
+            assert early.replayed is True
+            assert early.assistant_message == "Here is the answer."
             result = await engine.execute(
                 request=request,
                 lease=None,  # type: ignore[arg-type]

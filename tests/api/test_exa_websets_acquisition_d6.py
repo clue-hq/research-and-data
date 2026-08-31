@@ -145,7 +145,7 @@ def test_contact_opt_in_is_explicit_and_reserves_full_maximum() -> None:
 @pytest.mark.parametrize(
     ("strategy", "match"),
     [
-        (_strategy(count=3), "exceeds policy maximum"),
+        (_strategy(count=51), "exceeds policy maximum"),
         (_strategy(entity="person"), "company rows only"),
         ({**_strategy(), "channels": ["other"]}, "does not enable Exa"),
     ],

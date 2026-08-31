@@ -11,13 +11,13 @@ Semantics, all decided at the database (no read-then-write races):
 * **enqueue** is idempotent on ``(kind, project_run_id, dedup_key)`` (``ON CONFLICT DO
   NOTHING``) — re-entering a drive re-offers the same work without duplicating rows.
 * **claim-next** is one atomic ``UPDATE … FROM (SELECT … ORDER BY priority, enqueue_seq LIMIT 1
-  FOR UPDATE SKIP LOCKED)`` — the best runnable row in ``(priority, enqueue_seq)`` order, where
-  ``enqueue_seq`` is a monotonic insertion sequence (a ``GENERATED ALWAYS AS IDENTITY`` column):
-  timestamps alone cannot provide FIFO because ``now()`` is transaction-stable, so same-priority
-  rows enqueued in one transaction share ``enqueued_at`` and tie with no final key. Concurrent
-  claimants never receive the same row. A ``CLAIMED`` row whose ``claimed_at`` has passed the
-  staleness window is re-owned (its holder is presumed killed) — the M7.4 ledger's recovery
-  shape.
+  FOR UPDATE SKIP LOCKED)`` — the best runnable row in ``(priority, enqueue_seq)`` order after its
+  DB-clock ``available_at`` boundary. ``enqueue_seq`` is a monotonic insertion sequence (a
+  ``GENERATED ALWAYS AS IDENTITY`` column): timestamps alone cannot provide FIFO because
+  ``now()`` is transaction-stable, so same-priority rows enqueued in one transaction share
+  ``enqueued_at`` and tie with no final key. Concurrent claimants never receive the same row. A
+  ``CLAIMED`` row whose ``claimed_at`` has passed the staleness window is re-owned (its holder is
+  presumed killed) — the M7.4 ledger's recovery shape.
 * **finish / requeue** are holder-guarded (``WHERE claimed_by = :me AND status = 'claimed'``): a
   fenced-out zombie's write matches zero rows.
 * **requeue_failed** is the explicit retry gate — a fresh drive re-entering the work re-offers
@@ -30,6 +30,7 @@ swappable — Temporal-native queues later — conventions §2).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import timedelta
 from typing import Protocol, runtime_checkable
 from uuid import UUID, uuid4
@@ -49,6 +50,60 @@ from clue_fleet.lease import WorkId
 DEFAULT_TASK_STALE_AFTER = timedelta(seconds=60)
 
 
+class TaskCapability(BaseModel):
+    """One claim-time capability constraint a worker applies to a kind's payloads (R3-B).
+
+    Reads: *if this task's payload carries* ``field``, *its value must be one this worker*
+    ``supported``. A payload that does not carry the field is unconstrained, so one fleet kind
+    can carry several payload shapes and only the constrained shape is filtered.
+
+    It exists because a :class:`~clue_fleet.enums.FleetTaskKind` is not always fine-grained
+    enough to answer "can this process run this task?". ``design_job`` is the proven case: ONE
+    fleet kind carries agent turns and brand-kit ingestions, and an ingestion's runnability
+    depends on its ``ingestion_kind`` — a lane the worker's build may not know about at all, or
+    may know about behind a deployment flag that is off. The W5 acceptance walk caught the
+    consequence: a two-day-old detached worker claimed an ``ad_assets`` ingestion it could not
+    execute, failed it in half a second, and the winner of the claim race decided at random
+    whether lane onboarding worked.
+
+    The constraint is applied **inside the claim statement**, not after the claim, which is the
+    whole point: an unsupported task must be left ``queued`` for a capable worker rather than
+    claimed-and-failed. ``supported`` is what this process CAN run, never a blacklist of what it
+    cannot — a worker whose code predates a payload value cannot enumerate it, but it also
+    cannot list it as supported, so it is excluded for free.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    #: A top-level key of ``payload_json``.
+    field: str
+    #: The values of that key this worker can execute. Empty means "none" — the field's mere
+    #: presence disqualifies the task.
+    supported: frozenset[str]
+
+    def as_json(self) -> dict[str, JsonValue]:
+        """The jsonb shape the claim statement's capability predicate iterates (sorted, so the
+        bound parameter is stable and diffable in a query log)."""
+        # Widened by construction rather than by a cast: ``list`` is invariant, so a
+        # ``list[str]`` is not a ``list[JsonValue]`` however obviously every element is one.
+        supported: list[JsonValue] = []
+        supported.extend(sorted(self.supported))
+        return {"field": self.field, "supported": supported}
+
+    def permits(self, payload: Mapping[str, JsonValue]) -> bool:
+        """Whether this constraint admits ``payload`` — the Python mirror of the SQL predicate.
+
+        Production claims in SQL; the in-memory fakes the loop tests drive claim through this.
+        One definition, two evaluators, so a fake cannot quietly hand a worker work the database
+        would have withheld. A non-string or ``null`` value is admitted by neither, which is the
+        fail-closed direction: a payload whose discriminant is not a value this worker listed is
+        not this worker's to run.
+        """
+        if self.field not in payload:
+            return True
+        return payload[self.field] in self.supported
+
+
 class FleetTaskRow(BaseModel):
     """One ``fleet_task`` row (PB-B1) — a claimable unit of fleet work."""
 
@@ -65,6 +120,7 @@ class FleetTaskRow(BaseModel):
     result_ref: dict[str, JsonValue]
     claimed_by: str | None
     claimed_at: UtcDatetime | None
+    available_at: UtcDatetime
     enqueued_at: UtcDatetime
     enqueue_seq: int
     updated_at: UtcDatetime
@@ -86,6 +142,7 @@ class WorkTaskRow(BaseModel):
     result_ref: dict[str, JsonValue]
     claimed_by: str | None
     claimed_at: UtcDatetime | None
+    available_at: UtcDatetime
     enqueued_at: UtcDatetime
     enqueue_seq: int
     updated_at: UtcDatetime
@@ -102,7 +159,8 @@ def _to_work_task(row: FleetTaskRow) -> WorkTaskRow:
 
 _COLUMNS = (
     "task_id, kind, work_id AS project_run_id, dedup_key, priority, status, attempts, "
-    "payload_json, result_ref_json, claimed_by, claimed_at, enqueued_at, enqueue_seq, updated_at"
+    "payload_json, result_ref_json, claimed_by, claimed_at, available_at, enqueued_at, "
+    "enqueue_seq, updated_at"
 )
 
 # The claim-next RETURNING joins ``fleet_task`` with the ``candidate`` subquery, which also
@@ -138,6 +196,7 @@ _ENQUEUE_REOPEN_SQL = text(
         SET status = 'queued',
             claimed_by = NULL,
             claimed_at = NULL,
+            available_at = now(),
             result_ref_json = '{}'::jsonb,
             priority = :priority,
             updated_at = now()
@@ -153,6 +212,15 @@ _ENQUEUE_REOPEN_SQL = text(
 # ``enqueued_at``) is the FIFO key — the transaction-stable ``now()`` cannot break same-priority
 # ties. ``:project_run_id`` narrows to one run's tasks (the deep drain) or, when NULL, spans all
 # runs (the worker's drive-task drain).
+#
+# THE CAPABILITY PREDICATE (R3-B). ``:capabilities`` is a jsonb array of
+# :class:`TaskCapability`-shaped objects — ``[]`` for a worker that can run every payload of the
+# kind, which makes the ``NOT EXISTS`` vacuously true and the statement byte-for-byte equivalent
+# to the pre-R3-B one. A capability disqualifies a row only when the row's payload actually
+# CARRIES the named field and its value is outside the supported set, so a kind that mixes
+# payload shapes (``design_job``: turns and ingestions) filters only the shape that declares the
+# discriminant. This is a SELECT-side predicate, so an unsupported task is never claimed at all —
+# it stays ``queued``, with its position intact, for a worker that can run it.
 _CLAIM_NEXT_SQL = text(
     f"""
     UPDATE fleet_task
@@ -167,8 +235,16 @@ _CLAIM_NEXT_SQL = text(
         WHERE kind = CAST(:kind AS fleet_task_kind)
           AND (CAST(:project_run_id AS uuid) IS NULL OR work_id = :project_run_id)
           AND (
-                status = 'queued'
+                (status = 'queued' AND available_at <= now())
                 OR (status = 'claimed' AND claimed_at <= now() - CAST(:stale AS interval))
+              )
+          AND NOT EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements(CAST(:capabilities AS jsonb)) AS cap
+                WHERE payload_json ? (cap->>'field')
+                  AND NOT cap->'supported' @> jsonb_build_array(
+                        payload_json->(cap->>'field')
+                      )
               )
         ORDER BY priority, enqueue_seq
         LIMIT 1
@@ -205,7 +281,8 @@ _TOUCH_SQL = text(
 _REQUEUE_SQL = text(
     """
     UPDATE fleet_task
-    SET status = 'queued', claimed_by = NULL, claimed_at = NULL, updated_at = now()
+    SET status = 'queued', claimed_by = NULL, claimed_at = NULL,
+        available_at = now() + make_interval(secs => :delay_seconds), updated_at = now()
     WHERE task_id = :task_id AND claimed_by = :worker_id AND status = 'claimed'
     RETURNING task_id
     """
@@ -214,7 +291,8 @@ _REQUEUE_SQL = text(
 _REQUEUE_FAILED_SQL = text(
     """
     UPDATE fleet_task
-    SET status = 'queued', claimed_by = NULL, claimed_at = NULL, updated_at = now()
+    SET status = 'queued', claimed_by = NULL, claimed_at = NULL,
+        available_at = now(), updated_at = now()
     WHERE kind = CAST(:kind AS fleet_task_kind)
       AND work_id = :project_run_id
       AND status = 'failed'
@@ -244,6 +322,7 @@ _REOFFER_GOVERNED_PARTIAL_SQL = text(
     SET status = 'queued',
         claimed_by = NULL,
         claimed_at = NULL,
+        available_at = now(),
         result_ref_json = '{}'::jsonb,
         updated_at = now()
     WHERE kind = 'account_job'
@@ -264,6 +343,13 @@ _LIST_SQL = text(
     ORDER BY priority, enqueue_seq
     """
 )
+
+
+def payload_is_claimable(
+    capabilities: tuple[TaskCapability, ...], payload: Mapping[str, JsonValue]
+) -> bool:
+    """Whether every declared capability admits ``payload``. Empty capabilities admit anything."""
+    return all(capability.permits(payload) for capability in capabilities)
 
 
 def _decode_object(raw: object) -> dict[str, JsonValue]:
@@ -287,6 +373,7 @@ def _row_to_task(row: dict[str, object]) -> FleetTaskRow:
             "result_ref": _decode_object(row["result_ref_json"]),
             "claimed_by": row["claimed_by"],
             "claimed_at": row["claimed_at"],
+            "available_at": row["available_at"],
             "enqueued_at": row["enqueued_at"],
             "enqueue_seq": row["enqueue_seq"],
             "updated_at": row["updated_at"],
@@ -338,10 +425,15 @@ async def claim_next_task(
     worker_id: str,
     project_run_id: ProjectRunId | None = None,
     stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
+    capabilities: tuple[TaskCapability, ...] = (),
 ) -> FleetTaskRow | None:
     """Atomically claim the best runnable task (priority, then FIFO), or ``None`` when nothing is
     claimable. Re-owns a stale ``CLAIMED`` row (killed holder); skips rows locked by concurrent
-    claimants (``SKIP LOCKED``)."""
+    claimants (``SKIP LOCKED``).
+
+    ``capabilities`` narrows the claim to payloads this worker can actually execute (see
+    :class:`TaskCapability`). The default — none — is the historical behaviour exactly.
+    """
     row = (
         (
             await conn.execute(
@@ -351,6 +443,9 @@ async def claim_next_task(
                     "worker_id": worker_id,
                     "project_run_id": project_run_id,
                     "stale": stale_after,
+                    "capabilities": serialize_value_json(
+                        [capability.as_json() for capability in capabilities]
+                    ),
                 },
             )
         )
@@ -395,10 +490,33 @@ async def touch_task(conn: AsyncConnection, *, task_id: UUID, worker_id: str) ->
     return row is not None
 
 
-async def requeue_task(conn: AsyncConnection, *, task_id: UUID, worker_id: str) -> bool:
+async def requeue_task(
+    conn: AsyncConnection,
+    *,
+    task_id: UUID,
+    worker_id: str,
+    delay: timedelta | None = None,
+) -> bool:
     """Hand a claimed task back to ``QUEUED`` (the graceful-stop path). Holder-guarded like
-    :func:`finish_task`."""
-    row = (await conn.execute(_REQUEUE_SQL, {"task_id": task_id, "worker_id": worker_id})).first()
+    :func:`finish_task`.
+
+    ``delay`` persists a DB-clock eligibility boundary rather than sleeping in one worker process.
+    This lets the worker drain unrelated work while recovery waits and survives process restarts.
+    """
+
+    delay_seconds = 0.0 if delay is None else delay.total_seconds()
+    if delay_seconds < 0:
+        raise ValueError("requeue delay cannot be negative")
+    row = (
+        await conn.execute(
+            _REQUEUE_SQL,
+            {
+                "task_id": task_id,
+                "worker_id": worker_id,
+                "delay_seconds": delay_seconds,
+            },
+        )
+    ).first()
     return row is not None
 
 
@@ -500,6 +618,7 @@ class TaskQueue(Protocol):
         worker_id: str,
         project_run_id: ProjectRunId | None = None,
         stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
+        capabilities: tuple[TaskCapability, ...] = (),
     ) -> FleetTaskRow | None: ...
 
     async def finish(
@@ -513,7 +632,9 @@ class TaskQueue(Protocol):
 
     async def touch(self, *, task_id: UUID, worker_id: str) -> bool: ...
 
-    async def requeue(self, *, task_id: UUID, worker_id: str) -> bool: ...
+    async def requeue(
+        self, *, task_id: UUID, worker_id: str, delay: timedelta | None = None
+    ) -> bool: ...
 
     async def requeue_failed(self, *, kind: FleetTaskKind, project_run_id: ProjectRunId) -> int: ...
 
@@ -555,6 +676,7 @@ class DbTaskQueue:
         worker_id: str,
         project_run_id: ProjectRunId | None = None,
         stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
+        capabilities: tuple[TaskCapability, ...] = (),
     ) -> FleetTaskRow | None:
         async with transaction() as conn:
             return await claim_next_task(
@@ -563,6 +685,7 @@ class DbTaskQueue:
                 worker_id=worker_id,
                 project_run_id=project_run_id,
                 stale_after=stale_after,
+                capabilities=capabilities,
             )
 
     async def finish(
@@ -582,9 +705,11 @@ class DbTaskQueue:
         async with transaction() as conn:
             return await touch_task(conn, task_id=task_id, worker_id=worker_id)
 
-    async def requeue(self, *, task_id: UUID, worker_id: str) -> bool:
+    async def requeue(
+        self, *, task_id: UUID, worker_id: str, delay: timedelta | None = None
+    ) -> bool:
         async with transaction() as conn:
-            return await requeue_task(conn, task_id=task_id, worker_id=worker_id)
+            return await requeue_task(conn, task_id=task_id, worker_id=worker_id, delay=delay)
 
     async def requeue_failed(self, *, kind: FleetTaskKind, project_run_id: ProjectRunId) -> int:
         async with transaction() as conn:
@@ -619,6 +744,7 @@ class WorkQueue(Protocol):
         worker_id: str,
         work_id: WorkId | None = None,
         stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
+        capabilities: tuple[TaskCapability, ...] = (),
     ) -> WorkTaskRow | None: ...
 
     async def finish(
@@ -632,7 +758,9 @@ class WorkQueue(Protocol):
 
     async def touch(self, *, task_id: UUID, worker_id: str) -> bool: ...
 
-    async def requeue(self, *, task_id: UUID, worker_id: str) -> bool: ...
+    async def requeue(
+        self, *, task_id: UUID, worker_id: str, delay: timedelta | None = None
+    ) -> bool: ...
 
 
 class DbWorkQueue:
@@ -667,12 +795,14 @@ class DbWorkQueue:
         worker_id: str,
         work_id: WorkId | None = None,
         stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
+        capabilities: tuple[TaskCapability, ...] = (),
     ) -> WorkTaskRow | None:
         row = await self._queue.claim_next(
             kind=kind,
             worker_id=worker_id,
             project_run_id=ProjectRunId(work_id) if work_id is not None else None,
             stale_after=stale_after,
+            capabilities=capabilities,
         )
         return _to_work_task(row) if row is not None else None
 
@@ -694,8 +824,10 @@ class DbWorkQueue:
     async def touch(self, *, task_id: UUID, worker_id: str) -> bool:
         return await self._queue.touch(task_id=task_id, worker_id=worker_id)
 
-    async def requeue(self, *, task_id: UUID, worker_id: str) -> bool:
-        return await self._queue.requeue(task_id=task_id, worker_id=worker_id)
+    async def requeue(
+        self, *, task_id: UUID, worker_id: str, delay: timedelta | None = None
+    ) -> bool:
+        return await self._queue.requeue(task_id=task_id, worker_id=worker_id, delay=delay)
 
 
 __all__ = [
@@ -703,6 +835,7 @@ __all__ = [
     "DbTaskQueue",
     "DbWorkQueue",
     "FleetTaskRow",
+    "TaskCapability",
     "TaskQueue",
     "WorkQueue",
     "WorkTaskRow",
@@ -712,6 +845,7 @@ __all__ = [
     "finish_task",
     "get_task",
     "list_tasks",
+    "payload_is_claimable",
     "requeue_failed_tasks",
     "reoffer_governed_partial_task",
     "requeue_task",

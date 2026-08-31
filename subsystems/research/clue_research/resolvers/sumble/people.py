@@ -32,6 +32,14 @@ PEOPLE_NO_REVEAL_ATTRIBUTES: Final[tuple[str, ...]] = (
 )
 _CONTACT_ATTRIBUTES: Final[frozenset[str]] = frozenset({"email", "phone"})
 _FREE_SELECTED_ATTRIBUTES: Final[frozenset[str]] = frozenset({"name"})
+PEOPLE_EMAIL_ATTRIBUTES: Final[tuple[str, ...]] = (
+    "name",
+    "email",
+    "linkedin_url",
+    "job_title",
+    "current_employer",
+)
+PEOPLE_EMAIL_REVEAL_MAX_CREDITS: Final = 10
 
 
 class SumblePeopleStatus(StrEnum):
@@ -103,6 +111,22 @@ class SumbleCurrentEmployer(BaseModel):
     sumble_url: str | None = None
 
 
+class SumblePersonInput(BaseModel):
+    """The identity Sumble matched in list mode.
+
+    The provider may echo only a subset, so the exact-target check also accepts the returned
+    LinkedIn attribute. At least one of those two locations must match the requested profile before
+    an email is usable.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    person_id: int | None = Field(default=None, ge=1)
+    linkedin_url: str | None = None
+    email: str | None = None
+    name: str | None = None
+
+
 class SumblePersonAttributes(BaseModel):
     """Tolerant provider shape; contact fields exist only so S2 can reject their presence."""
 
@@ -125,6 +149,7 @@ class SumblePersonRow(BaseModel):
 
     person_id: int | None = Field(default=None, ge=1)
     sumble_url: str | None = None
+    input: SumblePersonInput | None = None
     attributes: SumblePersonAttributes | None = None
 
 
@@ -234,6 +259,62 @@ def people_poll_request(request_id: str) -> dict[str, str]:
     return {"request_id": normalized}
 
 
+def people_email_match_request(linkedin_url: str) -> tuple[dict[str, Any], int]:
+    """Build the one-person v9 match request used by interactive email acquisition.
+
+    Email is deliberately explicit because Sumble's ``attributes='all'`` excludes contact
+    attributes. The documented first successful reveal costs 10 credits; repeat active reveals may
+    be free, but the caller always reserves/records against the 10-credit upper bound.
+    """
+
+    normalized = linkedin_url.strip().rstrip("/")
+    if not normalized.startswith(("https://www.linkedin.com/in/", "https://linkedin.com/in/")):
+        raise ValueError("Sumble email matching requires a LinkedIn profile URL")
+    return (
+        {
+            "people": [{"linkedin_url": normalized}],
+            "select": {"attributes": list(PEOPLE_EMAIL_ATTRIBUTES)},
+        },
+        PEOPLE_EMAIL_REVEAL_MAX_CREDITS,
+    )
+
+
+def extract_matched_work_email(
+    response: SumblePeopleResponse, *, expected_linkedin_url: str
+) -> tuple[str | None, SumblePersonRow | None]:
+    """Return one exact-person email, refusing cross-person or malformed provider output."""
+
+    if response.status is not SumblePeopleStatus.SUCCEEDED:
+        raise SumbleContractError("sumble_people: email response is not terminal")
+    rows = tuple(response.people or ())
+    if not rows or response.matched_count == 0:
+        return None, None
+    if len(rows) != 1:
+        raise SumbleSchemaDrift("sumble_people: email match returned more than one person")
+    row = rows[0]
+    expected = expected_linkedin_url.strip().rstrip("/").lower()
+    returned = (
+        (
+            (row.input.linkedin_url if row.input is not None else None)
+            or (row.attributes.linkedin_url if row.attributes is not None else None)
+            or ""
+        )
+        .strip()
+        .rstrip("/")
+        .lower()
+    )
+    if returned != expected:
+        raise SumbleSchemaDrift("sumble_people: email result crossed the requested profile")
+    value = None if row.attributes is None else row.attributes.email
+    if value is None or not value.strip():
+        return None, row
+    normalized = value.strip().lower()
+    local, separator, host = normalized.partition("@")
+    if not local or separator != "@" or not host or "." not in host or " " in normalized:
+        raise SumbleSchemaDrift("sumble_people: email result is malformed")
+    return normalized, row
+
+
 def parse_people_response(payload: Mapping[str, Any]) -> SumblePeopleResponse:
     try:
         return SumblePeopleResponse.model_validate(payload)
@@ -302,6 +383,8 @@ def normalize_people(
 
 
 __all__ = [
+    "PEOPLE_EMAIL_ATTRIBUTES",
+    "PEOPLE_EMAIL_REVEAL_MAX_CREDITS",
     "PEOPLE_NO_REVEAL_ATTRIBUTES",
     "PEOPLE_SOURCE_KEY",
     "SumbleAdvancedQuery",
@@ -310,11 +393,14 @@ __all__ = [
     "SumblePeopleResponse",
     "SumblePeopleStatus",
     "SumblePersonAttributes",
+    "SumblePersonInput",
     "SumblePersonRecord",
     "SumblePersonRow",
     "assert_no_contact_reveals",
+    "extract_matched_work_email",
     "normalize_people",
     "parse_people_response",
     "people_poll_request",
+    "people_email_match_request",
     "people_search_request",
 ]

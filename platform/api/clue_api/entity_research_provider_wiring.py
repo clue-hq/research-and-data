@@ -51,6 +51,7 @@ from clue_api.exa_entity_research_tools import (
     ExaContactSemanticResearchAction,
     ExaEntityResearchProjectionBuilder,
 )
+from clue_api.prose_synthesis_step import ProseSynthesisStep
 from clue_api.sumble_account_gaps import build_production_sumble_account_gap_starter
 from clue_api.sumble_committee_acquisition import SumbleCommitteeAcquisitionCoordinator
 from clue_api.sumble_committee_inputs import DurableSumbleCommitteeInputResolver
@@ -236,6 +237,7 @@ class ProductionAccountResearchProviderActions:
                 CommitteeEnumerationSource(source_key=PEOPLE_SOURCE_KEY, source_tier=SourceTier(1)),
             ),
             conn_factory=conn_factory,
+            enforce_budget=settings.budget_controls_enabled,
         )
 
     async def resolve(self, job: EntityResearchJobRow) -> dict[str, ProviderActionBinding]:
@@ -293,6 +295,7 @@ class ProductionAccountResearchProviderActions:
                     ),
                     storage=self._storage,
                     conn_factory=self._conn_factory,
+                    enforce_budget=self._settings.budget_controls_enabled,
                 ),
                 snapshots=ExaDeepSnapshotResolverProvider(
                     storage=self._storage,
@@ -376,6 +379,7 @@ class ProductionAccountResearchProviderActions:
                 cents_per_credit=self._settings.sumble_cents_per_credit,
                 conn_factory=self._conn_factory,
                 poll_after_seconds=self._settings.sumble_committee_poll_after_s,
+                enforce_budget=self._settings.budget_controls_enabled,
             ),
             storage=self._storage,
             conn_factory=self._conn_factory,
@@ -472,6 +476,7 @@ class ProductionContactResearchProviderActions:
                 transport=ExaDeepHttpAcquisitionTransport(config=config, secrets=self._secrets),
                 storage=self._storage,
                 conn_factory=self._conn_factory,
+                enforce_budget=self._settings.budget_controls_enabled,
             )
             action = ExaContactSemanticResearchAction(
                 intent=intent,
@@ -596,6 +601,7 @@ def build_production_entity_research_fleet(
     pre_spend_gate: PreSpendGate,
     channel_coordinator: ExaContactChannelCoordinator | None = None,
     conn_factory: ConnFactory = transaction,
+    prose_step: ProseSynthesisStep | None = None,
 ) -> EntityResearchFleetComposition | None:
     """Promote one shared entity fleet only under its independent R10 deployment switch."""
 
@@ -640,6 +646,11 @@ def build_production_entity_research_fleet(
             temperature=0,
         ),
         conn_factory=conn_factory,
+        # Lane E E1: the fleet process is the only one with a real gateway, so it is the only
+        # process that composes a step at all.
+        prose_step=prose_step,
+        # FI pilot budget-controls: the one place the deployment switch enters the fleets.
+        enforce_budget=settings.budget_controls_enabled,
     )
 
 

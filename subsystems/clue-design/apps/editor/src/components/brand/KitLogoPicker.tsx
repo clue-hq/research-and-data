@@ -2,8 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 
+import { publicAssetBytesUrl } from "@/engine/assetLibrary";
 import { fetchLibraryAssets } from "@/engine/brandLibrary";
-import { assetBytesUrl } from "@/engine/brandHub";
 import type { AssetRecord } from "@/engine/contracts";
 
 /** Image-bearing kinds a human may promote into a logo slot — fonts and
@@ -69,7 +69,10 @@ export function KitLogoPicker({
             onClick={() => onSelect(asset.id)}
           >
             <div className="asset-thumb">
-              <img src={assetBytesUrl(apiBaseUrl, asset.id)} alt={asset.label ?? asset.id} />
+              <img
+                src={publicAssetBytesUrl(apiBaseUrl, asset) ?? undefined}
+                alt={asset.label ?? asset.id}
+              />
             </div>
             <span className="caption">{asset.label ?? asset.id}</span>
           </button>

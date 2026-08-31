@@ -80,6 +80,8 @@ lets a pure-prose block "succeed" empty.
 | `LUMV0907` | a text node combines rich-text spans with `paragraph_spacing` — the paragraph gap is **not** applied to spanned text in v1 (warning) | split the stanzas into separate text nodes, or drop the spans/`para_spacing` combination |
 | `LUMV0810` | slot fixture overflows its text node | same box fixes, or set the slot overflow policy to `shrink_font`/`wrap` |
 | `LUMV0509` | text slot has no fit-validation fixtures (warning) | add `sample`/`worst_case` so fit is tested against real-length data |
+| `LUMV0820` | image-like slot (`image`/`logo` content type) has no image policy | **one line: `#slot:<key> image_policy(cover)`** — see `grammar.md`. Do NOT delete the slot, and do not reach for `asset(action="place")`: node placement is not the slot's policy. Slots you create with `image … slot(key)` are born with a policy, so this only appears on documents authored before that behavior |
+| `LUMD0276` | malformed `image_policy(...)` — unknown fit mode/field, a focal point outside `0..1`, a lone `focal_x`/`focal_y`, or a non-positive `aspect` | fix the value; `fit` ∈ `cover`/`contain`/`crop`, focal axes go together and sit in `0..1` |
 | `LUMV09xx page/artboard bounds` | node exceeds or starts outside the artboard | use a bounded `layout_cluster` repair on the diagnosed artboard/root/parent cluster |
 | `LUMV09xx parent containment` | child exceeds a bounded parent or uses a different scale | resize/relayout the parent and affected descendants together |
 | `LUMV09xx background-like rect` | top-level rect/frame mostly covers the artboard | convert it to page/artboard background fill when the diagnostic targets that cluster |

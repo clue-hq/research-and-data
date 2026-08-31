@@ -487,14 +487,79 @@ def has_error_diagnostics(diagnostics: List[JsonObject]) -> bool:
     return any(diagnostic.get("severity") == "error" for diagnostic in diagnostics)
 
 
+def ingestion_job_website_url(job: JsonObject) -> Optional[str]:
+    """The website a ``kind == "website"`` job was submitted for — the ONE request field the
+    public view names (brand-kit slice 4).
+
+    Why it is safe to surface: it is the workspace's own submitted URL, and every ingestion
+    route is workspace-scoped, so this tells a workspace something it already told us. Why it is
+    needed: a workspace whose first-time auto-ingestion FAILED has no kit to re-extract from, so
+    its failed job is the only record of which site to retry — the Brand-context page's manual
+    Re-extract has nothing to send without it. Non-website kinds carry no URL and answer None
+    (a PDF/asset job's request holds filenames and staged digests, which stay unpublished).
+    """
+    if job.get("kind") != "website":
+        return None
+    url = (job.get("request") or {}).get("url")
+    return url if isinstance(url, str) and url else None
+
+
+def ingestion_job_outcome(job: JsonObject) -> JsonObject | None:
+    """The job's bounded top-level outcome summary, or ``None`` when it has none.
+
+    W5/R2-C. The evidence BODY stays private — it holds staged digests and, for the ad-assets
+    lane, an entire harvest report — but a caller polling this job the documented way still has
+    to be able to tell a working lane from an inert one. `succeeded` alone could not: an empty
+    harvest, a distillation skipped for a missing key, and a fully populated lane all landed on
+    the same green row, with the difference buried under `evidence.steps`.
+
+    So exactly one bounded, machine-readable member is lifted out — never the body. Only the
+    ad-assets lane composes one today (see `ad_library.onboarding._outcome`); the three older
+    kinds carry no `outcome` key and this stays ``None`` for them, so their DTO gains a field
+    and loses nothing.
+    """
+    evidence = job.get("evidence")
+    if not isinstance(evidence, dict):
+        return None
+    outcome = evidence.get("outcome")
+    return outcome if isinstance(outcome, dict) else None
+
+
+def ingestion_job_resolution(job: JsonObject) -> JsonObject | None:
+    """The job's bounded advertiser-resolution provenance, or ``None`` when it has none.
+
+    W5/R3-A. The acceptance report's minimum ask, in as many words: "surface the resolved
+    `page_id` + `advertiser_name` in the job DTO". Before this, an operator polling the
+    documented endpoint could not see WHICH LinkedIn page had been harvested — so a job that
+    fetched a stranger's page (apollo.io resolving to 107285417 instead of 18511550) was
+    indistinguishable from a brand that simply has no ads, and stayed that way for two rounds
+    of testing.
+
+    Bounded and machine-readable, lifted out of the evidence exactly as
+    :func:`ingestion_job_outcome` is, and never the evidence body itself. Only the ad-assets
+    lane composes one; the three older kinds carry no `resolution` key and this stays ``None``.
+    """
+    evidence = job.get("evidence")
+    if not isinstance(evidence, dict):
+        return None
+    resolution = evidence.get("resolution")
+    return resolution if isinstance(resolution, dict) else None
+
+
 def ingestion_job_dto(job: JsonObject) -> JsonObject:
-    """Public view of an ingestion job row (no request/evidence bodies)."""
+    """Public view of an ingestion job row (no request/evidence bodies — one named URL, one
+    bounded outcome summary and one bounded resolution block apart, see
+    :func:`ingestion_job_website_url`, :func:`ingestion_job_outcome` and
+    :func:`ingestion_job_resolution`)."""
     return {
         "job_id": job["job_id"],
         "kind": job["kind"],
         "status": job["status"],
         "stage": job.get("stage"),
         "progress": job.get("progress"),
+        "outcome": ingestion_job_outcome(job),
+        "resolution": ingestion_job_resolution(job),
+        "website_url": ingestion_job_website_url(job),
         "brand_kit_id": job.get("brand_kit_id"),
         "brand_kit_version": job.get("brand_kit_version"),
         "error": job.get("error"),

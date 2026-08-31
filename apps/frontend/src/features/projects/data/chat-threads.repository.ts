@@ -25,7 +25,11 @@ export interface ChatThreadsRepository {
     limit?: number;
     cursor?: string;
   }): Promise<ChatThreadPage>;
-  create(input: { projectId: string; title?: string | null }): Promise<ChatThread>;
+  create(input: {
+    idempotencyKey?: string;
+    projectId: string;
+    title?: string | null;
+  }): Promise<ChatThread>;
   update(input: {
     projectId: string;
     threadId: string;
@@ -50,10 +54,11 @@ export function createHttpChatThreadsRepository(
         }),
       );
     },
-    async create({ projectId, title }) {
+    async create({ idempotencyKey, projectId, title }) {
       return ChatThreadResponseSchema.parse(
         await chatRequest(transport, threadPath(projectId), {
           method: "POST",
+          idempotencyKey,
           // `title` is optional on create (as-built item 7): an unnamed thread
           // is `title: null`, and a blank string is refused by the backend.
           body: { title: title?.trim() ? title.trim() : null },
@@ -129,7 +134,7 @@ export function createFixtureChatThreadsRepository(): ChatThreadsRepository {
       return put({
         id,
         title: title?.trim() ? title.trim() : null,
-        href: `/projects/${projectId}?thread=${id}`,
+        href: `/projects/${projectId}/chats/${id}`,
         status: "idle",
         pinned: false,
         projectId,

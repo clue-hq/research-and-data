@@ -143,6 +143,69 @@ class ImageEvidence(BaseModel):
         return [_normalize_hex(item) for item in value]
 
 
+class DeclaredRoleEvidence(BaseModel):
+    """A role the site DECLARED, in its own stylesheet, via a named custom property.
+
+    Clone-fidelity F0.3. ``--base-color-brand--green: #30d8a7`` is not a swatch to be
+    clustered with everything else on the page — it is the site stating what its brand color
+    is. The normalizer applies these as direct role assignments (basis ``declared``) that
+    outrank the clustered candidate; the name→role table and its refusals live in
+    ``capture/declared_roles.py``.
+
+    Additive and optional: ``schema_version`` stays 1 and pre-F0.3 evidence deserializes
+    unchanged (the list defaults empty, which is also what every non-website capture emits).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: One of the four anchors `normalizer.roles.assign_light_roles` derives the kit from.
+    role: Literal["surface.page", "text.primary", "surface.brand", "surface.accent"]
+    #: The custom property that stated it, `--` prefix included.
+    property_name: str
+    value: str
+    pointer: EvidencePointer
+
+    @field_validator("value")
+    @classmethod
+    def _hex(cls, value: str) -> str:
+        return _normalize_hex(value)
+
+
+class StateStyle(BaseModel):
+    """One interaction state, read off the site's own CSS rule (clone-fidelity F0.3).
+
+    A clone that renders a site's buttons in the right color but does nothing on hover is
+    visibly not the site. These are the site's *declared* states — ``.btn:hover { … }`` — not
+    a guess derived from the resting style, and only the properties the rule actually sets
+    are recorded (everything else stays ``None``, never a fabricated default).
+
+    Evidence only: F0.3 deliberately mints no kit tokens from these. The design-brief agent
+    and the F2 fragment harvest are the consumers.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: The selector verbatim, e.g. ``.btn:hover`` — F2 matches harvested markup against it.
+    selector: str
+    state: Literal["hover", "focus", "focus-visible", "active", "disabled"]
+    #: ``dark`` when the rule sits inside ``@media (prefers-color-scheme: dark)``.
+    scheme: Literal["light", "dark"] = "light"
+    background: str | None = None
+    color: str | None = None
+    border_color: str | None = None
+    #: Kept as the declared CSS text: a shadow is a composite value the kit models
+    #: separately, and re-serializing it here would lose more than it gained.
+    box_shadow: str | None = None
+    opacity: float | None = None
+    text_decoration: str | None = None
+    pointer: EvidencePointer
+
+    @field_validator("background", "color", "border_color")
+    @classmethod
+    def _colors(cls, value: str | None) -> str | None:
+        return _normalize_hex(value) if value else value
+
+
 class NumberSample(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -168,6 +231,77 @@ class ShadowSample(BaseModel):
     @classmethod
     def _color(cls, value: str) -> str:
         return _normalize_hex(value)
+
+
+class SurfaceShape(BaseModel):
+    """One measured visual variant of a brand surface (design-brief slice 2).
+
+    The kit's number tokens carry the brand's *scale*; this carries the brand's
+    *components* — the exact shape of the buttons, cards and inputs the site
+    actually draws, in the terms the design-brief agent needs to write component
+    recipes (slice 3). Structural only: ``fill`` is read from what is painted
+    (a background, a border, or neither), never guessed from a class name.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    surface: Literal[
+        "button", "card", "input", "chip", "nav", "divider", "image", "focus_ring"
+    ]
+    variant: str
+    count: int = 1
+    fill: Literal["solid", "outline", "ghost"] = "solid"
+    radius_px: list[float] = []
+    pill: bool = False
+    padding_px: list[float] = []
+    border_width_px: list[float] = []
+    border_style: str | None = None
+    border_color: str | None = None
+    shadow: str | None = None
+    background: str | None = None
+    text_color: str | None = None
+    font: str | None = None
+    pointer: EvidencePointer
+
+    @field_validator("border_color", "background", "text_color")
+    @classmethod
+    def _colors(cls, value: str | None) -> str | None:
+        return _normalize_hex(value) if value else value
+
+
+class SectionBackground(BaseModel):
+    """One band of the page's background rhythm, in DOM order (slice 2).
+
+    Not a token — the *sequence* is the finding ("brand, then white, then near-
+    black"), and slice 3's brief renders it as ``background_rhythm``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    index: int
+    background: str | None = None
+    gradient: bool = False
+    has_image: bool = False
+    height_px: float = 0.0
+    pointer: EvidencePointer
+
+    @field_validator("background")
+    @classmethod
+    def _bg(cls, value: str | None) -> str | None:
+        return _normalize_hex(value) if value else value
+
+
+class GeometryEvidence(BaseModel):
+    """Structured shape evidence retained for the design-brief agent.
+
+    Additive and optional; ``schema_version`` stays 1 and pre-slice-2 evidence
+    deserializes unchanged (both lists default empty).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    surfaces: list[SurfaceShape] = []
+    background_sequence: list[SectionBackground] = []
 
 
 class RuleEvidence(BaseModel):
@@ -206,6 +340,69 @@ class NarrativeEvidence(BaseModel):
         return value[:4000]
 
 
+class _HexEntry(BaseModel):
+    """Base for render-truth entries: a normalized hex color plus per-kind fields."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    hex: str
+
+    @field_validator("hex")
+    @classmethod
+    def _hex_normalized(cls, value: str) -> str:
+        return _normalize_hex(value)
+
+
+class CensusCluster(_HexEntry):
+    """One perceptually-merged color family from the rendered-page pixel census."""
+
+    share: float  # fraction of unmasked chrome pixels
+
+
+class RegionColorFamily(_HexEntry):
+    """Modal rendered color of a role region (e.g. buttons), with how many regions agree."""
+
+    count: int
+
+
+class AccentTextFamily(_HexEntry):
+    """A chromatic text color (links/eyebrows/tabs) that differs from the body text."""
+
+    count: int
+
+
+class GradientStopFamily(_HexEntry):
+    """A computed gradient-stop color, weighted by the page-area fraction it paints."""
+
+    area_fraction: float
+
+
+class RenderTruth(BaseModel):
+    """What the rendered page actually showed — the election authority for colors.
+
+    Produced by :mod:`lumen_ingestion.census` from the rendered tier's screenshot
+    plus the render probe. ``None``/absent on every pre-probe bundle and every
+    non-website capture, in which case the normalizer keeps the evidence-cluster
+    election. Stylesheet mentions can NAME colors; only this can elect them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    page_clusters: list[CensusCluster] = []
+    fold_clusters: list[CensusCluster] = []
+    button_families: list[RegionColorFamily] = []
+    accent_text: list[AccentTextFamily] = []
+    gradient_stops: list[GradientStopFamily] = []
+    body_bg: str | None = None
+    body_text: str | None = None
+    resolved_tokens: dict[str, str] = {}
+    masked_fraction: float = 0.0
+    #: Fraction of the first viewport covered by <canvas> — a large value plus a
+    #: near-monochrome census means a WebGL hero likely did not paint headless,
+    #: and the kit must say so instead of pretending the page is white.
+    canvas_viewport_fraction: float = 0.0
+
+
 class BrandEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -218,6 +415,15 @@ class BrandEvidence(BaseModel):
     images: list[ImageEvidence] = []
     numbers: list[NumberSample] = []
     shadows: list[ShadowSample] = []
+    # Source-truth styling (clone-fidelity F0.3). Both additive and both empty for every
+    # pre-F0.3 bundle and every non-website capture, so `schema_version` stays 1.
+    declared_roles: list[DeclaredRoleEvidence] = []
+    state_styles: list[StateStyle] = []
+    # Rendered-pixel election authority (Phase-1 brand-color overhaul). Additive
+    # and None for every pre-probe bundle and every non-website capture, so
+    # `schema_version` stays 1 and old bundles keep the cluster election.
+    render_truth: RenderTruth | None = None
+    geometry: GeometryEvidence = GeometryEvidence()
     rules: list[RuleEvidence] = []
     screenshots: list[str] = []
     narrative: NarrativeEvidence = NarrativeEvidence()

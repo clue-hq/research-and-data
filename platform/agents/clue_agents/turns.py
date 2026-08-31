@@ -92,6 +92,11 @@ class AgentModelCallReceipt(TurnValue):
     cost_millicredits: int = Field(ge=0)
     latency_ms: float = Field(ge=0)
     error_code: str | None = None
+    # P3.2: the agent-role attribution of THIS call — from the governed model's per-call
+    # clue_role metadata when the instance is role-labelled (the design trio runs three
+    # roles inside one turn), else the turn's constitution role. None only on receipts
+    # replayed from pre-attribution rows.
+    role: AgentRole | None = None
     started_at: AwareDatetime
     completed_at: AwareDatetime
 
@@ -135,6 +140,7 @@ class PrivacyEraseResult(TurnValue):
     workspace_id: str
     subject_entity_id: UUID
     tombstoned_artifact_keys: tuple[str, ...] = ()
+    redacted_gate_ids: tuple[UUID, ...] = ()
     affected_turn_ids: tuple[UUID, ...] = ()
     purged_workspace_root_ids: tuple[str, ...] = ()
 

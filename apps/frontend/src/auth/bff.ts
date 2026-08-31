@@ -9,7 +9,10 @@ const FORWARDED_REQUEST_HEADERS = [
 const FORWARDED_RESPONSE_HEADERS = [
   "content-type",
   "cache-control",
+  "content-disposition",
+  "content-security-policy",
   "x-request-id",
+  "x-content-type-options",
   "x-projections-schema-version",
 ] as const;
 
@@ -46,13 +49,13 @@ export function browserResponseHeaders(incoming: Headers): Headers {
   return outgoing;
 }
 
-export function hasAllowedOrigin(request: Request): boolean {
+export function hasAllowedOrigin(request: Request, expectedOrigin?: string): boolean {
   const method = request.method.toUpperCase();
   if (method === "GET" || method === "HEAD") return true;
   const origin = request.headers.get("origin");
   if (!origin) return false;
   try {
-    return new URL(origin).origin === new URL(request.url).origin;
+    return new URL(origin).origin === (expectedOrigin ?? new URL(request.url).origin);
   } catch {
     return false;
   }
