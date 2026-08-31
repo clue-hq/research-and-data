@@ -1861,6 +1861,31 @@ class HybridRepository:
             )
         )
 
+    def request_run_cancellation(self, run_id: str) -> JsonObject:
+        """Ask this run to stop (A3, defect R3-D). Idempotent; raises on an unknown/foreign run.
+
+        The route's whole implementation. No fleet call, no signal, no status write — one stamp on
+        the run row, which the driving worker reads at its next model-call boundary. See
+        ``clue_design.runs.request_run_cancellation`` for the three honest outcomes."""
+        return self._bridge._run(
+            lambda conn: design_runs.request_run_cancellation(
+                conn, workspace_id=self.workspace_id, run_id=run_id
+            )
+        )
+
+    def cancellation_requested(self, run_id: str) -> bool:
+        """Has this run been asked to stop? The worker-side probe (A3, defect R3-D).
+
+        Called once per model call from inside the synchronous turn body, so it is deliberately
+        the narrowest read in this class."""
+        return bool(
+            self._bridge._run(
+                lambda conn: design_runs.cancellation_requested(
+                    conn, workspace_id=self.workspace_id, run_id=run_id
+                )
+            )
+        )
+
     def complete_run(
         self,
         run_id: str,

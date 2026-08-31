@@ -29,10 +29,12 @@ __all__ = [
     "DEFAULT_MAX_PAGES",
     "CreativeSelection",
     "HarvestedCreative",
+    "ads_considered",
     "creative_id_for",
     "custody_creatives",
     "download_creative_bytes",
     "fetch_pages",
+    "normalize_name",
     "select_creatives",
 ]
 
@@ -145,6 +147,18 @@ def fetch_pages(
 # --------------------------------------------------------------------------------------
 
 
+def ads_considered(pages: Sequence[AdLibraryPage]) -> int:
+    """How many raw ads a fetch put in front of the filter — before any rule ran.
+
+    One line, and it has a name because W-B3 gave it a SECOND caller. It is the number
+    :attr:`CreativeSelection.considered` reports, and it is also the number the onboarding
+    lane's domain-retry decides on ("the resolved page held nothing at all", as opposed to
+    "the page held ads and the filter dropped them all"). Those two questions must never be
+    answered by two subtly different counts, so they are answered by this one.
+    """
+    return sum(len(page.ads) for page in pages)
+
+
 def select_creatives(
     pages: Sequence[AdLibraryPage],
     *,
@@ -201,7 +215,7 @@ def select_creatives(
         kept=tuple(kept),
         dropped=tuple(dropped),
         advertiser_name=resolved_name,
-        considered=len(ads),
+        considered=ads_considered(pages),
     )
 
 
@@ -241,10 +255,25 @@ def _drop_reason(ad: AdLibraryAd, company_name: str | None) -> str | None:
     return None
 
 
-def _normalize_name(name: str | None) -> str | None:
+def normalize_name(name: str | None) -> str | None:
+    """The subsystem's base company-name fold: whitespace collapsed, casefolded.
+
+    Public since W5/R3-A because it now has a SECOND consumer. The advertiser cross-check
+    (:func:`~.company_identity.company_name_key`) needs a stronger fold — punctuation and
+    legal-form suffixes go too — and builds it on top of this one rather than beside it, so the
+    filter below and the custody gate can never drift into disagreeing about what a name is.
+
+    Deliberately left exactly as strict as it was. The thought-leader rule compares a person's
+    name against a company's, where a fold that tried harder would start matching "Ramp" to a
+    "Ramp" employee, and the extra folding therefore lives in the caller that wants it.
+    """
     if name is None:
         return None
     return " ".join(name.split()).casefold() or None
+
+
+#: The pre-R3-A spelling, kept so nothing in this module had to change to gain a public name.
+_normalize_name = normalize_name
 
 
 # --------------------------------------------------------------------------------------

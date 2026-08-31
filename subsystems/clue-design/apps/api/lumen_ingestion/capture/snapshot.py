@@ -59,6 +59,12 @@ class SiteSnapshot(BaseModel):
     # so every pre-slice-2 snapshot fixture still loads, and ``None`` on the
     # static tier, which has no live page to measure.
     geometry: dict | None = None
+    # The render probe (Phase-1 brand-color overhaul): probe-resolved custom
+    # properties, visibility-filtered element samples with absolute boxes, media
+    # boxes, computed gradient stops, viewport width. Optional for the same
+    # back-compat reason as ``geometry``; ``None`` on the static tier. Consumed
+    # by ``lumen_ingestion.census`` together with the screenshot download.
+    render_probe: dict | None = None
     downloads: list[Download] = []
     meta: dict = {}
     diagnostics: list[dict] = []

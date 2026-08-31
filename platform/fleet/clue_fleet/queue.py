@@ -30,6 +30,7 @@ swappable — Temporal-native queues later — conventions §2).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import timedelta
 from typing import Protocol, runtime_checkable
 from uuid import UUID, uuid4
@@ -47,6 +48,60 @@ from clue_fleet.lease import WorkId
 # the next claimant. Sized to outlive the driver lease TTL (takeover is lease-gated first; the
 # task follows), tunable via ``Settings.fleet_task_stale_after_s``.
 DEFAULT_TASK_STALE_AFTER = timedelta(seconds=60)
+
+
+class TaskCapability(BaseModel):
+    """One claim-time capability constraint a worker applies to a kind's payloads (R3-B).
+
+    Reads: *if this task's payload carries* ``field``, *its value must be one this worker*
+    ``supported``. A payload that does not carry the field is unconstrained, so one fleet kind
+    can carry several payload shapes and only the constrained shape is filtered.
+
+    It exists because a :class:`~clue_fleet.enums.FleetTaskKind` is not always fine-grained
+    enough to answer "can this process run this task?". ``design_job`` is the proven case: ONE
+    fleet kind carries agent turns and brand-kit ingestions, and an ingestion's runnability
+    depends on its ``ingestion_kind`` — a lane the worker's build may not know about at all, or
+    may know about behind a deployment flag that is off. The W5 acceptance walk caught the
+    consequence: a two-day-old detached worker claimed an ``ad_assets`` ingestion it could not
+    execute, failed it in half a second, and the winner of the claim race decided at random
+    whether lane onboarding worked.
+
+    The constraint is applied **inside the claim statement**, not after the claim, which is the
+    whole point: an unsupported task must be left ``queued`` for a capable worker rather than
+    claimed-and-failed. ``supported`` is what this process CAN run, never a blacklist of what it
+    cannot — a worker whose code predates a payload value cannot enumerate it, but it also
+    cannot list it as supported, so it is excluded for free.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    #: A top-level key of ``payload_json``.
+    field: str
+    #: The values of that key this worker can execute. Empty means "none" — the field's mere
+    #: presence disqualifies the task.
+    supported: frozenset[str]
+
+    def as_json(self) -> dict[str, JsonValue]:
+        """The jsonb shape the claim statement's capability predicate iterates (sorted, so the
+        bound parameter is stable and diffable in a query log)."""
+        # Widened by construction rather than by a cast: ``list`` is invariant, so a
+        # ``list[str]`` is not a ``list[JsonValue]`` however obviously every element is one.
+        supported: list[JsonValue] = []
+        supported.extend(sorted(self.supported))
+        return {"field": self.field, "supported": supported}
+
+    def permits(self, payload: Mapping[str, JsonValue]) -> bool:
+        """Whether this constraint admits ``payload`` — the Python mirror of the SQL predicate.
+
+        Production claims in SQL; the in-memory fakes the loop tests drive claim through this.
+        One definition, two evaluators, so a fake cannot quietly hand a worker work the database
+        would have withheld. A non-string or ``null`` value is admitted by neither, which is the
+        fail-closed direction: a payload whose discriminant is not a value this worker listed is
+        not this worker's to run.
+        """
+        if self.field not in payload:
+            return True
+        return payload[self.field] in self.supported
 
 
 class FleetTaskRow(BaseModel):
@@ -157,6 +212,15 @@ _ENQUEUE_REOPEN_SQL = text(
 # ``enqueued_at``) is the FIFO key — the transaction-stable ``now()`` cannot break same-priority
 # ties. ``:project_run_id`` narrows to one run's tasks (the deep drain) or, when NULL, spans all
 # runs (the worker's drive-task drain).
+#
+# THE CAPABILITY PREDICATE (R3-B). ``:capabilities`` is a jsonb array of
+# :class:`TaskCapability`-shaped objects — ``[]`` for a worker that can run every payload of the
+# kind, which makes the ``NOT EXISTS`` vacuously true and the statement byte-for-byte equivalent
+# to the pre-R3-B one. A capability disqualifies a row only when the row's payload actually
+# CARRIES the named field and its value is outside the supported set, so a kind that mixes
+# payload shapes (``design_job``: turns and ingestions) filters only the shape that declares the
+# discriminant. This is a SELECT-side predicate, so an unsupported task is never claimed at all —
+# it stays ``queued``, with its position intact, for a worker that can run it.
 _CLAIM_NEXT_SQL = text(
     f"""
     UPDATE fleet_task
@@ -173,6 +237,14 @@ _CLAIM_NEXT_SQL = text(
           AND (
                 (status = 'queued' AND available_at <= now())
                 OR (status = 'claimed' AND claimed_at <= now() - CAST(:stale AS interval))
+              )
+          AND NOT EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements(CAST(:capabilities AS jsonb)) AS cap
+                WHERE payload_json ? (cap->>'field')
+                  AND NOT cap->'supported' @> jsonb_build_array(
+                        payload_json->(cap->>'field')
+                      )
               )
         ORDER BY priority, enqueue_seq
         LIMIT 1
@@ -273,6 +345,13 @@ _LIST_SQL = text(
 )
 
 
+def payload_is_claimable(
+    capabilities: tuple[TaskCapability, ...], payload: Mapping[str, JsonValue]
+) -> bool:
+    """Whether every declared capability admits ``payload``. Empty capabilities admit anything."""
+    return all(capability.permits(payload) for capability in capabilities)
+
+
 def _decode_object(raw: object) -> dict[str, JsonValue]:
     """Decode a JSONB object column (asyncpg returns it decoded; bytes are parsed via the one
     ``core`` path — the ``durable/idempotency.py`` shape)."""
@@ -346,10 +425,15 @@ async def claim_next_task(
     worker_id: str,
     project_run_id: ProjectRunId | None = None,
     stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
+    capabilities: tuple[TaskCapability, ...] = (),
 ) -> FleetTaskRow | None:
     """Atomically claim the best runnable task (priority, then FIFO), or ``None`` when nothing is
     claimable. Re-owns a stale ``CLAIMED`` row (killed holder); skips rows locked by concurrent
-    claimants (``SKIP LOCKED``)."""
+    claimants (``SKIP LOCKED``).
+
+    ``capabilities`` narrows the claim to payloads this worker can actually execute (see
+    :class:`TaskCapability`). The default — none — is the historical behaviour exactly.
+    """
     row = (
         (
             await conn.execute(
@@ -359,6 +443,9 @@ async def claim_next_task(
                     "worker_id": worker_id,
                     "project_run_id": project_run_id,
                     "stale": stale_after,
+                    "capabilities": serialize_value_json(
+                        [capability.as_json() for capability in capabilities]
+                    ),
                 },
             )
         )
@@ -531,6 +618,7 @@ class TaskQueue(Protocol):
         worker_id: str,
         project_run_id: ProjectRunId | None = None,
         stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
+        capabilities: tuple[TaskCapability, ...] = (),
     ) -> FleetTaskRow | None: ...
 
     async def finish(
@@ -588,6 +676,7 @@ class DbTaskQueue:
         worker_id: str,
         project_run_id: ProjectRunId | None = None,
         stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
+        capabilities: tuple[TaskCapability, ...] = (),
     ) -> FleetTaskRow | None:
         async with transaction() as conn:
             return await claim_next_task(
@@ -596,6 +685,7 @@ class DbTaskQueue:
                 worker_id=worker_id,
                 project_run_id=project_run_id,
                 stale_after=stale_after,
+                capabilities=capabilities,
             )
 
     async def finish(
@@ -654,6 +744,7 @@ class WorkQueue(Protocol):
         worker_id: str,
         work_id: WorkId | None = None,
         stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
+        capabilities: tuple[TaskCapability, ...] = (),
     ) -> WorkTaskRow | None: ...
 
     async def finish(
@@ -704,12 +795,14 @@ class DbWorkQueue:
         worker_id: str,
         work_id: WorkId | None = None,
         stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
+        capabilities: tuple[TaskCapability, ...] = (),
     ) -> WorkTaskRow | None:
         row = await self._queue.claim_next(
             kind=kind,
             worker_id=worker_id,
             project_run_id=ProjectRunId(work_id) if work_id is not None else None,
             stale_after=stale_after,
+            capabilities=capabilities,
         )
         return _to_work_task(row) if row is not None else None
 
@@ -742,6 +835,7 @@ __all__ = [
     "DbTaskQueue",
     "DbWorkQueue",
     "FleetTaskRow",
+    "TaskCapability",
     "TaskQueue",
     "WorkQueue",
     "WorkTaskRow",
@@ -751,6 +845,7 @@ __all__ = [
     "finish_task",
     "get_task",
     "list_tasks",
+    "payload_is_claimable",
     "requeue_failed_tasks",
     "reoffer_governed_partial_task",
     "requeue_task",

@@ -25,6 +25,7 @@ from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 from py_lumen_obs import configure, get_logger
 
+from .cancellation import CANCELLED_EVENT, CANCELLED_STOP_REASON, TurnCancelled
 from .checkpoint import invoke_turn_graph
 from .config import AgentRuntimeConfig
 from .harness import _filesystem_permissions, _instrument
@@ -195,9 +196,18 @@ def create_web_deepagent(
     event_sink=None,
     *,
     checkpointer: Any = None,
+    cancel_requested=None,
 ) -> tuple[Any, LumenWebTools]:
     """Build the website-mode deepagent + substrate. Mirrors
-    create_design_deepagent's shape, `checkpointer` included (D5 Round B)."""
+    create_design_deepagent's shape, `checkpointer` included (D5 Round B).
+
+    `cancel_requested` (A3, defect R3-D) is the run's cancellation probe, wired
+    on the same seam and to all three roles for the same reasons the scene
+    harness wires it — see `cancellation.py`. What it CANNOT mirror is the scene
+    path's "keep the accepted rounds": website mode has no mid-run checkpointing
+    (a web turn authors the page and persists once, at the end), so a cancelled
+    web turn has no partial work to keep and honestly ends `failed` with nothing
+    applied. `None` keeps every existing caller byte-identical."""
     try:
         from deepagents import create_deep_agent
 
@@ -232,11 +242,19 @@ def create_web_deepagent(
     assert_all_role_models_support_image_input(runtime_config)
 
     # THREE role instances (never deduped) through the shared constructor.
+    # A3: the probe is passed only when there IS one, so an uncancellable web turn calls
+    # `_instrument` with the exact pre-A3 argument list (that seam is monkeypatched by shipped
+    # suites — see the scene harness's note).
+    cancel_kwargs = {} if cancel_requested is None else {"cancel_probe": cancel_requested}
     orchestrator_model = _instrument(
-        runtime_config, tools, runtime_config.orchestrator_model, "orchestrator"
+        runtime_config, tools, runtime_config.orchestrator_model, "orchestrator", **cancel_kwargs
     )
-    author_model = _instrument(runtime_config, tools, runtime_config.author_model, "author")
-    reviewer_model = _instrument(runtime_config, tools, runtime_config.reviewer_model, "reviewer")
+    author_model = _instrument(
+        runtime_config, tools, runtime_config.author_model, "author", **cancel_kwargs
+    )
+    reviewer_model = _instrument(
+        runtime_config, tools, runtime_config.reviewer_model, "reviewer", **cancel_kwargs
+    )
 
     # Two view variants over the same substrate state: identical except the
     # stale/no-preview refusal text. The subagent variant never instructs a
@@ -432,6 +450,7 @@ def run_deepagent_web_turn(
     *,
     checkpointer: Any = None,
     thread_id: str | None = None,
+    cancel_requested=None,
 ) -> dict:
     """Create + invoke + guarantee an honest finalize.
 
@@ -443,13 +462,19 @@ def run_deepagent_web_turn(
     `checkpointer` / `thread_id` (D5 Round B): the durable-execution seam, supplied together by
     the fleet handler. `thread_id` is the DESIGN RUN ID (the D5 ruling); absent it, the turn
     threads on `tools.run_id` exactly as before. See checkpoint.py for the honest resume
-    semantics that shipped (resume-as-restart, and why)."""
+    semantics that shipped (resume-as-restart, and why).
+
+    `cancel_requested` (A3, defect R3-D): the run's cancellation probe. A cancelled web turn ends
+    `failed` with nothing applied and a summary that says a human stopped it — which is the whole
+    truth here, because website mode persists once at the end and so a stopped turn has nothing
+    partial to keep. See `create_web_deepagent`."""
     agent, tools = create_web_deepagent(
         prompt,
         config=config,
         initial_web_doc=initial_web_doc or {},
         event_sink=event_sink,
         checkpointer=checkpointer,
+        cancel_requested=cancel_requested,
     )
 
     run_log_path = tools.trace_dir / "logs" / "run.jsonl"
@@ -471,12 +496,31 @@ def run_deepagent_web_turn(
 
     exception_text: Optional[str] = None
     try:
+        # A3: the boundary BEFORE the first model call, so a turn cancelled while it sat queued
+        # pays for nothing. No-op when no probe was supplied.
+        if cancel_requested is not None and cancel_requested():
+            raise TurnCancelled()
         invoke_turn_graph(
             agent,
             initial_state,
             invoke_config=invoke_config,
             checkpointer=checkpointer,
             thread_id=thread_id,
+        )
+    except TurnCancelled as error:
+        # A3 (defect R3-D). Caught above the generic handler purely so the finalize below says
+        # "a human stopped this" instead of the generic "orchestrator ended without finalize" —
+        # the honest-failure PATH is unchanged and deliberately reused, only its reason is
+        # truthful. There is no `completed_with_warnings` branch here and there should not be:
+        # website mode persists once at the end, so a cancelled turn applied nothing, and
+        # claiming partial success would be the fabrication this whole envelope guards against.
+        exception_text = str(error)
+        tools.record(
+            "coordinator",
+            CANCELLED_EVENT,
+            output_summary=exception_text[:500],
+            payload={"stop_reason": CANCELLED_STOP_REASON},
+            sink_extra={"stop_reason": CANCELLED_STOP_REASON},
         )
     except Exception as error:  # noqa: BLE001 - honest failure, recorded verbatim
         exception_text = f"{type(error).__name__}: {error}"

@@ -60,7 +60,7 @@ def normalize_evidence(
     # the site's own naming of a color outranks anything we can infer from how often that
     # color appears. Empty for every non-website capture and every pre-F0.3 bundle, in
     # which case `assign_light_roles` behaves exactly as it always has.
-    light = assign_light_roles(clusters, evidence.declared_roles)
+    light = assign_light_roles(clusters, evidence.declared_roles, evidence.render_truth)
     diagnostics.extend(light.diagnostics)
 
     page_hex = light.assignments["surface.page"].hex

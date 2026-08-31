@@ -22,6 +22,7 @@ from clue_fleet.lease import (
 from clue_fleet.queue import (
     DEFAULT_TASK_STALE_AFTER,
     DbWorkQueue,
+    TaskCapability,
     WorkQueue,
     WorkTaskRow,
 )
@@ -67,6 +68,32 @@ class WorkHandler(Protocol):
     def kind(self) -> FleetTaskKind: ...
 
     async def handle(self, context: WorkContext) -> WorkResult: ...
+
+
+@runtime_checkable
+class CapabilityGated(Protocol):
+    """Opt-in extension of :class:`WorkHandler` for a kind whose payloads are NOT all runnable
+    by every worker (R3-B).
+
+    Most handlers own their whole kind: registering one is a complete statement that this
+    process can run every task of it, and they do not implement this. A handler implements it
+    when runnability varies *within* the kind — because the payload names a lane this build may
+    not contain, or one gated behind a deployment flag. ``design_job`` is the shipped case: one
+    fleet kind carries agent turns and brand-kit ingestions of four different
+    ``ingestion_kind``s, and ``ad_assets`` needs ``LUMEN_BRAND_AD_ASSETS``.
+
+    The declaration is read **per claim attempt**, not cached at construction, so a capability
+    that depends on live configuration reflects the configuration the worker would actually
+    execute under.
+
+    A separate protocol rather than an optional member on :class:`WorkHandler` because it is a
+    genuinely optional property with a meaningful default ("I can run everything of my kind"),
+    and :class:`LeasedWorkWorker` can then establish it with one ``isinstance`` at construction
+    instead of every handler restating an empty tuple.
+    """
+
+    @property
+    def task_capabilities(self) -> tuple[TaskCapability, ...]: ...
 
 
 class LeasedWorkWorker:
@@ -123,15 +150,40 @@ class LeasedWorkWorker:
                 await self._sleep(self._poll_interval)
         log.info("worker.stop", worker_id=self.worker_id)
 
+    def _capabilities(self, kind: FleetTaskKind) -> tuple[TaskCapability, ...]:
+        """What this worker can run within ``kind`` — empty means "the whole kind" (R3-B).
+
+        Read fresh on every claim attempt: a capability gated on a deployment flag must answer
+        for the configuration the worker would execute under right now, not the one it booted
+        with. A handler that raises while declaring its capabilities has no claim to make, so
+        the failure is loud and the kind is skipped for this pass rather than claimed blind —
+        claiming work whose runnability could not be established is exactly the defect this
+        mechanism exists to prevent.
+        """
+        handler = self._handlers[kind]
+        if not isinstance(handler, CapabilityGated):
+            return ()
+        return tuple(handler.task_capabilities)
+
     async def drain_once(self) -> bool:
         """Fair round-robin claim across registered top-level task kinds."""
         for offset in range(len(self._kind_order)):
             index = (self._next_kind + offset) % len(self._kind_order)
             kind = self._kind_order[index]
+            try:
+                capabilities = self._capabilities(kind)
+            except Exception:
+                log.exception(
+                    "worker.capabilities_error",
+                    worker_id=self.worker_id,
+                    kind=kind.value,
+                )
+                continue
             task = await self._queue.claim_next(
                 kind=kind,
                 worker_id=self.worker_id,
                 stale_after=self._task_stale_after,
+                capabilities=capabilities,
             )
             if task is not None:
                 self._next_kind = (index + 1) % len(self._kind_order)
@@ -331,6 +383,7 @@ async def enqueue_work(
 
 
 __all__ = [
+    "CapabilityGated",
     "LeasedWorkWorker",
     "WorkContext",
     "WorkHandler",

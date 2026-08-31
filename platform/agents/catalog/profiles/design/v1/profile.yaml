@@ -73,6 +73,8 @@ tools:
     output_schema_sha256: e59e0d1d465266a26ad286dd7e8840333b8a8c53f6e91c45ff248f96b6078851
   - name: design_create_web_template
     version: "1"
+    # input digest re-pinned at the 2026-08-29 website-editor merge: the design API's
+    # descriptor gained the clone-fidelity fields; output schema unchanged.
     input_schema_sha256: cb640a4deeafdcba7c35ae69336a8e0ec158312b889313d0d151e67d10c2ae39
     output_schema_sha256: d0d994ed0675485bbb2a2185c0500e82800c0c60aa9b7400cfaca3b9b5c03a6d
   - name: design_delete_asset

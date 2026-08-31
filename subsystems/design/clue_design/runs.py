@@ -30,6 +30,14 @@ The D5 additions, in one place:
   terminalizes it after. Design rows only: whether the row is genuinely stranded needs the fleet
   task's state and the live lease, which are read at the composition root and passed in (S4).
 
+A3 (defect R3-D) adds the run's one human control:
+
+* :func:`request_run_cancellation` — stamp ``cancel_requested_at`` on a live run, write-once and
+  idempotent, and :func:`cancellation_requested` — the boolean the driving worker polls at its
+  model-call boundaries. The request is durable precisely because the asker and the driver share
+  nothing but this row; see migration ``518a3784f3a4`` for why an in-memory signal cannot work.
+  Neither function touches ``status``: the request is not the outcome.
+
 What the port changes, and why:
 
 * **Fail-closed tenancy.** Every read and write is keyed ``(run_id, workspace_id)``, so a run
@@ -57,7 +65,7 @@ import re
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_design._codec import JsonObject, dump_json, dump_json_opt, iso, load_json, load_json_opt
@@ -376,6 +384,100 @@ async def set_run_result(
         raise DesignRunFencedError(run_id, expected_generation, current)
 
 
+# --- the cancellation request (A3, defect R3-D) ------------------------------------------------
+
+
+async def request_run_cancellation(
+    conn: AsyncConnection, *, workspace_id: str, run_id: str
+) -> JsonObject:
+    """Ask a non-terminal run to stop, durably. Returns the run's DTO plus the outcome of the ask.
+
+    IDEMPOTENT AND WRITE-ONCE. ``cancel_requested_at`` is stamped only when it is still NULL and
+    the run has not finished, so asking twice returns the FIRST request's timestamp rather than
+    moving it — "when was this cancelled" must keep answering the same thing however many times
+    the button is pressed.
+
+    THE THREE HONEST ANSWERS, in the ``outcome`` key:
+
+    * ``requested`` — the ask landed on a live run; a worker will honour it at its next model-call
+      boundary.
+    * ``already_requested`` — someone asked before. Nothing changed; the standing request stands.
+    * ``already_terminal`` — the run had already finished (or was never claimed and then failed).
+      Deliberately NOT an error: a human racing a run that ended a second ago has done nothing
+      wrong, and a refusal would only invite a retry loop against a row that will never move.
+
+    Fail-closed tenancy like every other read here: a run of another workspace is
+    :class:`DesignNotFoundError`, indistinguishable from one that does not exist.
+
+    The status column is deliberately untouched. The request is not the outcome — what the run
+    ends up as is the driving worker's terminal write, which is the only writer of that column
+    while a lease is live. Stamping a terminal status here would race the worker and could
+    overwrite a real result with a guess.
+    """
+    row = (
+        await conn.execute(
+            text(
+                "UPDATE design_agent_run SET cancel_requested_at = now(), updated_at = now()"
+                " WHERE run_id = :r AND workspace_id = :w"
+                "   AND cancel_requested_at IS NULL"
+                "   AND status NOT IN :terminal"
+                " RETURNING *"
+            ).bindparams(bindparam("terminal", expanding=True)),
+            {"r": run_id, "w": workspace_id, "terminal": list(TERMINAL_RUN_STATUSES)},
+        )
+    ).first()
+    if row is not None:
+        return {
+            **_agent_run_from_row(row),
+            "outcome": "requested",
+            "cancel_requested_at": iso(row.cancel_requested_at),
+        }
+    # The UPDATE matched nothing: either the run is gone/foreign (raise), or one of the two
+    # no-op cases below. One read decides which, so the answer is never guessed.
+    current = (
+        await conn.execute(
+            text(
+                "SELECT * FROM design_agent_run WHERE run_id = :r AND workspace_id = :w"
+            ),
+            {"r": run_id, "w": workspace_id},
+        )
+    ).first()
+    if current is None:
+        raise DesignNotFoundError("agent_run", run_id)
+    outcome = (
+        "already_requested"
+        if current.cancel_requested_at is not None
+        else "already_terminal"
+    )
+    return {
+        **_agent_run_from_row(current),
+        "outcome": outcome,
+        "cancel_requested_at": iso(current.cancel_requested_at),
+    }
+
+
+async def cancellation_requested(
+    conn: AsyncConnection, *, workspace_id: str, run_id: str
+) -> bool:
+    """Has this run been asked to stop? The probe the driving worker polls at call boundaries.
+
+    Deliberately narrow — one boolean off one indexed key lookup, not the whole row — because it
+    is read once per model call for the life of the run. A run that has vanished answers ``False``
+    rather than raising: this probe is consulted from inside a synchronous turn body, where an
+    exception would become the run's cause of death instead of its stop signal.
+    """
+    row = (
+        await conn.execute(
+            text(
+                "SELECT cancel_requested_at FROM design_agent_run"
+                " WHERE run_id = :r AND workspace_id = :w"
+            ),
+            {"r": run_id, "w": workspace_id},
+        )
+    ).first()
+    return row is not None and row.cancel_requested_at is not None
+
+
 async def list_running_runs(conn: AsyncConnection, *, workspace_id: str) -> list[JsonObject]:
     """Runs still 'running' in this workspace, each with its document's ``doc_kind`` (NULL when
     the run has no document) — the ported LEFT JOIN, now a real join in one query."""
@@ -471,6 +573,84 @@ async def reoffer_stranded_run(
                 " RETURNING *"
             ),
             {"work_id": work_id, "max": max_reoffers},
+        )
+    ).first()
+    return None if row is None else _agent_run_job_from_row(row)
+
+
+async def list_dispatched_queued_runs(conn: AsyncConnection) -> list[JsonObject]:
+    """Every run still ``queued`` with its lease facts — the reaper's orphan input (R3-B).
+
+    The twin of :func:`list_dispatched_running_runs`, for the same reason its ingestion
+    counterpart exists: a worker that fails *before* the claim CAS leaves the run exactly where
+    the route left it, ``queued``, while its fleet task ends terminally FAILED — a state neither
+    the ``running`` sweep nor any re-offer path can see. Every D5 run has a ``work_id``
+    (``NOT NULL``), so there is no never-dispatched shape to exclude here either.
+    """
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT run_id, workspace_id, kind, work_id, document_id, leased_by,"
+                "       lease_generation, leased_at, reoffer_count, updated_at"
+                " FROM design_agent_run WHERE status = 'queued'"
+                " ORDER BY updated_at ASC, run_id ASC"
+            )
+        )
+    ).fetchall()
+    return [
+        {
+            "run_id": row.run_id,
+            "workspace_id": row.workspace_id,
+            "kind": row.kind,
+            "work_id": str(row.work_id),
+            "document_id": row.document_id,
+            "leased_by": row.leased_by,
+            "lease_generation": row.lease_generation,
+            "leased_at": iso(row.leased_at),
+            "reoffer_count": row.reoffer_count,
+            "updated_at": iso(row.updated_at),
+        }
+        for row in rows
+    ]
+
+
+async def fail_dispatched_run(
+    conn: AsyncConnection,
+    *,
+    work_id: UUID,
+    result: JsonObject,
+    lease_generation: int | None = None,
+) -> JsonObject | None:
+    """Terminalize a dispatched run ``failed`` from the FLEET plane, keyed on work id (R3-B).
+
+    The run twin of :func:`clue_design.ingestion.fail_dispatched_job` — see it for the full
+    rationale. It accepts a ``queued`` row as well as a ``running`` one because the defect it
+    repairs is a run whose worker died before the claim CAS could move it.
+
+    ``None`` means refused: the row is already terminal, or a NEWER lease generation owns it
+    (the claim CAS's own fence predicate). As with :func:`fail_stranded_run`, the terminal
+    marker event is NOT emitted here — the caller lands it in the same transaction through
+    ``lumen_api.run_stream.fenced_emit``, which keeps the stream's terminal contract intact.
+    """
+    fence = (
+        ""
+        if lease_generation is None
+        else " AND (lease_generation IS NULL OR lease_generation <= :gen)"
+    )
+    params: dict[str, Any] = {"work_id": work_id, "result": dump_json(result)}
+    if lease_generation is not None:
+        params["gen"] = lease_generation
+    row = (
+        await conn.execute(
+            text(
+                "UPDATE design_agent_run"
+                " SET status = CAST('failed' AS design_run_status),"
+                "     result_json = CAST(:result AS jsonb), updated_at = now()"
+                " WHERE work_id = :work_id AND status IN ('queued', 'running')"
+                + fence
+                + " RETURNING *"
+            ),
+            params,
         )
     ).first()
     return None if row is None else _agent_run_job_from_row(row)

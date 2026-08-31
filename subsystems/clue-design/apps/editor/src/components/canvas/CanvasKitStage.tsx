@@ -85,6 +85,9 @@ export function CanvasKitStage({ artboards, viewport, resolveAssetUrl }: CanvasK
     canvas.clear(workspaceCanvasColor(ck));
     canvas.translate(current.viewport.pan.x, current.viewport.pan.y);
     canvas.scale(current.viewport.zoom, current.viewport.zoom);
+    // SVG crispness: the cache re-rasterizes vectors when zoom×dpr outgrows
+    // the raster it is serving (a no-op for raster assets and unchanged zoom).
+    imagesRef.current?.setViewScale(current.viewport.zoom * dpr);
     for (const artboard of current.artboards) {
       drawArtboard(ck, canvas, artboard, fontRef.current, imagesRef.current);
     }

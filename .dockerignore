@@ -1,0 +1,33 @@
+# Railway builds the platform frontend from the repository root so its build can
+# consume the design subsystem's fonts and browser engine. Keep local state,
+# credentials, caches, and heavyweight build outputs out of that build context.
+.git
+.context
+.firecrawl
+.artifacts
+.venv
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.playwright-mcp
+.gstack
+.superpowers
+**/.env
+**/.env.*
+!**/.env.example
+
+**/.DS_Store
+**/__pycache__
+**/*.py[cod]
+**/node_modules
+**/.next
+**/target
+**/.engine-cache
+**/.design-runs
+**/.lumen-runs*
+**/asset-store
+
+# Local demo/review material is never part of the deployable application.
+docs/specs/**/*.mov
+docs/specs/**/*.png
+subsystems/clue-design/apps/editor-openai-demo

@@ -340,6 +340,69 @@ class NarrativeEvidence(BaseModel):
         return value[:4000]
 
 
+class _HexEntry(BaseModel):
+    """Base for render-truth entries: a normalized hex color plus per-kind fields."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    hex: str
+
+    @field_validator("hex")
+    @classmethod
+    def _hex_normalized(cls, value: str) -> str:
+        return _normalize_hex(value)
+
+
+class CensusCluster(_HexEntry):
+    """One perceptually-merged color family from the rendered-page pixel census."""
+
+    share: float  # fraction of unmasked chrome pixels
+
+
+class RegionColorFamily(_HexEntry):
+    """Modal rendered color of a role region (e.g. buttons), with how many regions agree."""
+
+    count: int
+
+
+class AccentTextFamily(_HexEntry):
+    """A chromatic text color (links/eyebrows/tabs) that differs from the body text."""
+
+    count: int
+
+
+class GradientStopFamily(_HexEntry):
+    """A computed gradient-stop color, weighted by the page-area fraction it paints."""
+
+    area_fraction: float
+
+
+class RenderTruth(BaseModel):
+    """What the rendered page actually showed — the election authority for colors.
+
+    Produced by :mod:`lumen_ingestion.census` from the rendered tier's screenshot
+    plus the render probe. ``None``/absent on every pre-probe bundle and every
+    non-website capture, in which case the normalizer keeps the evidence-cluster
+    election. Stylesheet mentions can NAME colors; only this can elect them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    page_clusters: list[CensusCluster] = []
+    fold_clusters: list[CensusCluster] = []
+    button_families: list[RegionColorFamily] = []
+    accent_text: list[AccentTextFamily] = []
+    gradient_stops: list[GradientStopFamily] = []
+    body_bg: str | None = None
+    body_text: str | None = None
+    resolved_tokens: dict[str, str] = {}
+    masked_fraction: float = 0.0
+    #: Fraction of the first viewport covered by <canvas> — a large value plus a
+    #: near-monochrome census means a WebGL hero likely did not paint headless,
+    #: and the kit must say so instead of pretending the page is white.
+    canvas_viewport_fraction: float = 0.0
+
+
 class BrandEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -356,6 +419,10 @@ class BrandEvidence(BaseModel):
     # pre-F0.3 bundle and every non-website capture, so `schema_version` stays 1.
     declared_roles: list[DeclaredRoleEvidence] = []
     state_styles: list[StateStyle] = []
+    # Rendered-pixel election authority (Phase-1 brand-color overhaul). Additive
+    # and None for every pre-probe bundle and every non-website capture, so
+    # `schema_version` stays 1 and old bundles keep the cluster election.
+    render_truth: RenderTruth | None = None
     geometry: GeometryEvidence = GeometryEvidence()
     rules: list[RuleEvidence] = []
     screenshots: list[str] = []

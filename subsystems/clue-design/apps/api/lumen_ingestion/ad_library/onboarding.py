@@ -26,6 +26,7 @@ why, and what it could not do. It is the thing an operator reads when a harvest 
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, Callable, Optional
 
@@ -35,10 +36,22 @@ from py_lumen_config import settings
 from py_lumen_obs import get_logger
 
 from ..jobs import IngestionJobStore, StageReporter, run_ingestion_job
-from .distill import AdDnaCard, previews_for, resolve_distiller
+from .company_identity import (
+    RESOLVER_AD_LIBRARY_DOMAIN,
+    RESOLVER_EXPLICIT,
+    RESOLVER_PDL,
+    RESOLVER_PDL_THEN_AD_LIBRARY_DOMAIN,
+    AdvertiserResolution,
+    CompanyIdentityError,
+    check_advertiser_names,
+    resolve_company_identity_resolver,
+)
+from .distill import AdDnaCard, bounded_card, previews_for, resolve_distiller
+from .store import AdAssetsStore
 from .harvest import (
     DEFAULT_MAX_CREATIVES,
     DEFAULT_MAX_PAGES,
+    ads_considered,
     creative_provenance,
     custody_creatives,
     fetch_pages,
@@ -72,6 +85,7 @@ def run_ad_assets_onboarding(
     storage: Optional[StorageBackend] = None,
     expected_generation: Optional[int] = None,
     provider: Any = None,
+    identity_resolver: Any = None,
     distiller: Any = None,
     generate: Optional[Callable[..., Any]] = None,
     fetch_creative: Optional[Callable[[str], "tuple[bytes, str]"]] = None,
@@ -79,14 +93,15 @@ def run_ad_assets_onboarding(
 ) -> None:
     """Run one ad-assets onboarding job to a terminal state. Never raises.
 
-    The injectable seams (``provider`` / ``distiller`` / ``generate`` / ``fetch_creative`` /
-    ``now``) exist for the same reason the ingestion pipeline's ``capture`` / ``analyze`` /
-    ``describer`` seams do: the suites drive the whole job with none of the external systems
-    present, and the production defaults are resolved at call time.
+    The injectable seams (``provider`` / ``identity_resolver`` / ``distiller`` / ``generate`` /
+    ``fetch_creative`` / ``now``) exist for the same reason the ingestion pipeline's ``capture``
+    / ``analyze`` / ``describer`` seams do: the suites drive the whole job with none of the
+    external systems present, and the production defaults are resolved at call time.
 
-    There are FOUR of them and not three because there are four external systems here: the ad
-    library, the CDN the creatives live on, the vision model and the image model. A suite that
-    stubbed three of the four would still be making real requests for creative bytes.
+    There are FIVE of them and not four because R3-A added a fifth external system: the
+    company-identity resolver that now answers "which LinkedIn page is this domain" BEFORE the
+    ad library is asked anything. A suite that stubbed four of the five would still be spending
+    a real enrichment credit per test.
     """
     store = IngestionJobStore(
         workspace_id=workspace_id, expected_generation=expected_generation
@@ -105,6 +120,7 @@ def run_ad_assets_onboarding(
             job_id=job_id,
             reporter=reporter,
             provider=provider,
+            identity_resolver=identity_resolver,
             distiller=distiller,
             generate=generate,
             fetch_creative=fetch_creative,
@@ -124,6 +140,7 @@ def _onboard(
     job_id: str,
     reporter: StageReporter,
     provider: Any,
+    identity_resolver: Any,
     distiller: Any,
     generate: Optional[Callable[..., Any]],
     fetch_creative: Optional[Callable[[str], "tuple[bytes, str]"]],
@@ -158,18 +175,50 @@ def _onboard(
     }
     fetched_at = now().isoformat()
 
+    # --- step 0: resolve WHO the advertiser is, before asking the ad library anything --------
+    #
+    # R3-A. This step exists because the vendor's own domain resolution is not evidence: for
+    # apollo.io it answered a real page with zero ads while the brand's true page had 135, and
+    # the lane had no way to notice. Resolution now happens first, against a source that is not
+    # the ad library, and the harvest is addressed by the id it produced.
+    reporter("Confirming who you are on LinkedIn…", 0.05)
+    resolution = _resolve_advertiser(
+        company_domain=company_domain,
+        page_id=page_id,
+        advertiser_name=advertiser_name,
+        resolver=identity_resolver,
+    )
+    # KNOWN GAP, recorded rather than papered over: if the ad library then raises (bad
+    # credentials, an outage), this job ends `failed` with an `error_json` and NO evidence at
+    # all — `run_ingestion_job` only persists evidence on the success path — so the page it was
+    # about to read is lost, which is the R3-A question at its least answerable. Fixing it means
+    # teaching `store.fail` to carry partial evidence, which is machinery shared by all four
+    # ingestion kinds and is not this change's to alter. Stamping the block early here would
+    # look like a fix and would not be one, so it is deliberately not done.
+
     # --- step 1: harvest, filter, dedupe, custody -------------------------------------------
     reporter("Reading your published ads…", 0.1)
     resolved_provider = provider or resolve_provider()
-    pages = fetch_pages(
+    pages, resolution = _harvest_pages(
         resolved_provider,
+        resolution=resolution,
         company_domain=company_domain,
-        page_id=page_id,
         max_pages=max_pages,
         date_filter=request.get("date_filter"),
     )
+    observed_page_id = resolution.observed_page_id
+    evidence["resolution"] = resolution.to_json()
+
     selection = select_creatives(
         pages, advertiser_name=advertiser_name, max_creatives=max_creatives
+    )
+    # THE UNIVERSAL GUARD. It runs on all three resolution paths — verified, fallback and
+    # operator-asserted — because harvesting a stranger's creatives into a brand's reference
+    # library is worse than an empty lane on every one of them.
+    advertiser_check = check_advertiser_names(
+        [ad.advertiser_name for ad in selection.kept],
+        expected=resolution.resolved_name,
+        resolution=resolution,
     )
     evidence["steps"]["harvest"] = {
         "status": "ok",
@@ -178,7 +227,15 @@ def _onboard(
         "kept": len(selection.kept),
         "dropped": selection.drop_counts(),
         "advertiser_name": selection.advertiser_name,
+        "advertiser_check": advertiser_check.to_json(),
     }
+    if advertiser_check.blocks_custody:
+        # KEEP NOTHING. Not "keep the ones that matched" — a page serving two advertisers is a
+        # page whose majority answer cannot be trusted, and a half-right reference library is
+        # the kind of wrong that only shows up later, in an ad.
+        evidence["steps"]["harvest"]["status"] = "advertiser_mismatch"
+        evidence["steps"]["harvest"]["kept"] = 0
+        return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
     if not selection.kept:
         # An honest empty is a correct outcome, not a failure: a brand with no static company
         # ads has nothing to harvest, and saying so is more useful than a red job row.
@@ -192,7 +249,7 @@ def _onboard(
         cache_dir=cache_dir,
         fetched_at=fetched_at,
         provider_name=getattr(resolved_provider, "name", "unknown"),
-        advertiser_page_id=(pages[0].page_id if pages else None) or page_id,
+        advertiser_page_id=observed_page_id,
         fetch=fetch_creative,
         max_bytes=settings.lumen_asset_max_bytes,
     )
@@ -208,7 +265,7 @@ def _onboard(
     # point at them — a creative row whose asset does not exist yet would fail its foreign key.
     _register_captured_assets(tools, repo.workspace_id, custody.asset_records)
     provider_name = getattr(resolved_provider, "name", "unknown")
-    advertiser_page_id = (pages[0].page_id if pages else None) or page_id
+    advertiser_page_id = observed_page_id
     creative_rows = [
         {
             "creative_id": creative.creative_id,
@@ -247,32 +304,59 @@ def _onboard(
 
     # --- step 2: distil the ad-DNA card ------------------------------------------------------
     reporter("Learning your ad style…", 0.55)
-    card = _distil(custody.creatives, distiller=distiller, evidence=evidence)
-    if card is None:
-        return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
+    # W-B1 re-drive guard (Wave-C fix #2), the step-resume half: a re-driven execution of
+    # THIS job (a reaper re-offering work whose holder it presumed dead, a second embedded
+    # worker over the shared queue) finds the card its first execution already published and
+    # resumes from it — no second vision-model spend, and no twin version to orphan the
+    # pre-generated imagery (the substrate's convergent mint is the backstop even if this
+    # probe misses). A DELIBERATE re-run is a new job with a new id and finds nothing here.
+    prior_card = None
+    try:
+        prior_card = AdAssetsStore(workspace_id=repo.workspace_id).card_for_job(
+            harvest_job_id=job_id
+        )
+    except Exception:  # noqa: BLE001 - a probe failure is not a job failure
+        prior_card = None
+    if prior_card is not None:
+        card = bounded_card(prior_card.get("card"), model=prior_card.get("model"))
+        published = {"card_id": prior_card["card_id"], "version": prior_card["version"]}
+        evidence["steps"]["distill"] = {
+            "status": "converged",
+            "card_id": prior_card["card_id"],
+            "version": prior_card["version"],
+            "reason": "this job already published a card; re-driven execution resumed",
+        }
+        if card is None:
+            # The stored payload no longer revives as a card (schema drift): the durable
+            # version stands, and there is nothing more this execution can safely add.
+            return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
+    else:
+        card = _distil(custody.creatives, distiller=distiller, evidence=evidence)
+        if card is None:
+            return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
 
-    card_id = request.get("card_id") or f"adna_{brand_kit_id}"
-    published = tools.invoke(
-        "design_publish_ad_dna_card",
-        {
-            "card_id": card_id,
-            "brand_kit_id": brand_kit_id,
-            "brand_kit_version": brand_kit_version,
-            "card": card.to_json(),
-            "source_creative_ids": [c.creative_id for c in custody.creatives],
-            "harvest_job_id": job_id,
+        card_id = request.get("card_id") or f"adna_{brand_kit_id}"
+        published = tools.invoke(
+            "design_publish_ad_dna_card",
+            {
+                "card_id": card_id,
+                "brand_kit_id": brand_kit_id,
+                "brand_kit_version": brand_kit_version,
+                "card": card.to_json(),
+                "source_creative_ids": [c.creative_id for c in custody.creatives],
+                "harvest_job_id": job_id,
+                "model": card.model,
+            },
+            workspace_id=repo.workspace_id,
+            actor="agent",
+        ).references
+        evidence["steps"]["distill"] = {
+            "status": "ok",
+            "card_id": published["card_id"],
+            "version": published["version"],
+            "style_groups": published["style_group_count"],
             "model": card.model,
-        },
-        workspace_id=repo.workspace_id,
-        actor="agent",
-    ).references
-    evidence["steps"]["distill"] = {
-        "status": "ok",
-        "card_id": published["card_id"],
-        "version": published["version"],
-        "style_groups": published["style_group_count"],
-        "model": card.model,
-    }
+        }
 
     # --- step 3: pre-generate imagery per style group -----------------------------------------
     reporter("Creating brand imagery…", 0.8)
@@ -292,6 +376,203 @@ def _onboard(
 
     reporter("Finishing up…", 0.95)
     return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
+
+
+def _resolve_advertiser(
+    *,
+    company_domain: str | None,
+    page_id: str | None,
+    advertiser_name: str | None,
+    resolver: Any,
+) -> AdvertiserResolution:
+    """Decide which LinkedIn page this harvest will address, and how well that is known.
+
+    Three paths, and the point of the whole function is that they stay TOLD APART rather than
+    collapsing into one green "resolved":
+
+    * **explicit** — the operator supplied the page id. No resolver is called, because the id
+      IS the assertion; it is not verification, though, so ``verified`` stays false and the
+      advertiser-name check is what actually tests it.
+    * **pdl** — an independent resolver named the page from the domain. The only path that
+      earns ``verified``.
+    * **ad_library_domain** — nothing could resolve the domain, so the ad library resolves it
+      itself. Exactly the pre-R3-A behaviour, kept deliberately, and now labelled.
+
+    NOTHING here raises. Every way identity resolution can go wrong — no key, unknown domain, a
+    vendor outage, a resolver that answered without a page id — degrades to the fallback with a
+    recorded note, because a harvest that could still work must not be lost to an enrichment
+    call that did not.
+    """
+    explicit = (page_id or "").strip()
+    if explicit:
+        return AdvertiserResolution(
+            resolver_used=RESOLVER_EXPLICIT,
+            linkedin_page_id=explicit,
+            resolved_name=advertiser_name,
+            verified=False,
+            note=(
+                "the LinkedIn page id was supplied by the operator, so no identity resolver was "
+                "called — an assertion rather than a verification, tested by the advertiser-name "
+                "check"
+            ),
+        )
+
+    domain = (company_domain or "").strip()
+
+    def fallback(note: str) -> AdvertiserResolution:
+        return AdvertiserResolution(
+            resolver_used=RESOLVER_AD_LIBRARY_DOMAIN,
+            linkedin_page_id=None,
+            resolved_name=advertiser_name,
+            verified=False,
+            note=note,
+        )
+
+    try:
+        engine = resolver if resolver is not None else resolve_company_identity_resolver()
+        identity = engine.resolve(domain)
+    except CompanyIdentityError as error:
+        return fallback(
+            f"the company-identity resolver could not answer ({error.code}); the ad library "
+            "resolved the domain itself and NOTHING verified which page was harvested"
+        )
+    except Exception as error:  # noqa: BLE001 - an injected resolver may raise anything
+        return fallback(
+            f"the company-identity resolver failed ({type(error).__name__}); the ad library "
+            "resolved the domain itself and NOTHING verified which page was harvested"
+        )
+
+    if identity is None:
+        return fallback(
+            f"the company-identity resolver has no record of {domain!r}; the ad library "
+            "resolved the domain itself and NOTHING verified which page was harvested"
+        )
+    if not identity.addresses_a_page:
+        # A named company with no LinkedIn page is a real record, and its NAME is still worth
+        # keeping: it cannot address the harvest, but it can still gate custody.
+        return replace(
+            fallback(
+                f"{identity.provider} knows {domain!r} as {identity.name!r} but lists no "
+                "LinkedIn page, so the ad library resolved the domain itself"
+            ),
+            resolved_name=identity.name or advertiser_name,
+        )
+
+    return AdvertiserResolution(
+        resolver_used=RESOLVER_PDL,
+        linkedin_page_id=identity.linkedin_id,
+        linkedin_url=identity.linkedin_url,
+        # The RESOLVER's name, not the request's: the whole point is to compare the harvested
+        # ads against an independently-sourced identity. A request-supplied name compared
+        # against itself would verify nothing.
+        resolved_name=identity.name or advertiser_name,
+        verified=True,
+    )
+
+
+def _harvest_pages(
+    provider: Any,
+    *,
+    resolution: AdvertiserResolution,
+    company_domain: str | None,
+    max_pages: int,
+    date_filter: str | None,
+) -> "tuple[list[Any], AdvertiserResolution]":
+    """Fetch the advertiser's library, with ONE domain retry when a resolved page holds no ads.
+
+    A resolved id ALWAYS wins the selector, exactly as before: the domain is sent only when
+    nothing could be resolved from it. What W-B3 adds is the case where resolution succeeded
+    and was still not enough.
+
+    **The defect.** The identity resolver answered ``cursor.com`` with page ``105610681`` — a
+    real page, correctly belonging to the company, carrying zero ads — while the page Cursor
+    actually advertises from holds 4489. Enrichment records name the LEGAL ENTITY; a company
+    can advertise from a different page, and when it does, every check this lane has says the
+    harvest went fine. The job reads ``empty``, which is a sentence reserved for "this brand
+    has no static ads" and here is simply false.
+
+    **The retry, and its three deliberate limits.**
+
+    * It fires only when the page came back with **NO ADS AT ALL** — ``ads_considered == 0``,
+      not "nothing was kept". A page holding 40 video ads that the filter dropped is the RIGHT
+      page and the lane has already learned what it needed to; retrying it would spend a fetch
+      to be told the same thing by a worse-attested source.
+    * It fires only on the ``pdl`` path. An **explicit** page id is the operator asserting
+      which page to read, and second-guessing an assertion is not a fallback, it is an
+      override. The ``ad_library_domain`` path is already the thing being fallen back TO.
+    * It runs **once**, against one alternative. Scoring a candidate set of pages is a
+      different and unapproved design; this is the cheap version, and its whole cost is one
+      extra vendor page fetch on a harvest that had otherwise found nothing.
+
+    The retry's result is adopted only if it actually found ads. When BOTH come back empty the
+    primary resolution stands — the verified page really is the best answer anyone has, and
+    downgrading it to ``unverified`` on the strength of a second empty page would trade a true
+    statement for a false one. Either way both attempts are recorded.
+    """
+    asked = resolution.linkedin_page_id
+    pages = fetch_pages(
+        provider,
+        company_domain=None if asked else company_domain,
+        page_id=asked,
+        max_pages=max_pages,
+        date_filter=date_filter,
+    )
+    # The page the library ACTUALLY answered with, stamped alongside the one that was asked
+    # for. On the fallback paths those two differ, and comparing them is how R3-A was found.
+    observed = (pages[0].page_id if pages else None) or asked
+    considered = ads_considered(pages)
+    attempts = [_attempt(resolution.resolver_used, asked, observed, considered)]
+
+    domain = (company_domain or "").strip()
+    if not (resolution.resolver_used == RESOLVER_PDL and considered == 0 and domain):
+        return pages, replace(resolution, observed_page_id=observed, attempts=tuple(attempts))
+
+    retry = fetch_pages(
+        provider,
+        company_domain=domain,
+        page_id=None,
+        max_pages=max_pages,
+        date_filter=date_filter,
+    )
+    retry_observed = retry[0].page_id if retry else None
+    retry_considered = ads_considered(retry)
+    attempts.append(
+        _attempt(RESOLVER_AD_LIBRARY_DOMAIN, None, retry_observed, retry_considered)
+    )
+
+    if retry_considered == 0:
+        return pages, replace(resolution, observed_page_id=observed, attempts=tuple(attempts))
+
+    # The retry harvested. `linkedin_page_id` deliberately KEEPS the resolver's empty page —
+    # it is what the identity source said, it is half the diagnosis, and `observed_page_id` is
+    # already the field that means "the page the library answered with". `resolved_name` keeps
+    # the independently-sourced name too, because it is what gates custody, and the whole
+    # reason the cross-check is worth anything on this path is that the name did NOT come from
+    # the page being checked.
+    return retry, replace(
+        resolution,
+        resolver_used=RESOLVER_PDL_THEN_AD_LIBRARY_DOMAIN,
+        verified=False,
+        observed_page_id=retry_observed,
+        attempts=tuple(attempts),
+        note=(
+            f"the identity resolver named LinkedIn page {asked}, which carried no ads at all, "
+            f"so the harvest was retried once against the ad library's own resolution of "
+            f"{domain!r}; the creatives came from that page and NOTHING independent verified it"
+        ),
+    )
+
+
+def _attempt(
+    resolver_used: str, asked: str | None, answered: str | None, considered: int
+) -> JsonObject:
+    """One harvest attempt, as four scalars an operator can read without the evidence body."""
+    return {
+        "resolver_used": resolver_used,
+        "page_id_asked": asked,
+        "page_id_answered": answered,
+        "ads_considered": considered,
+    }
 
 
 def _distil(creatives: list[Any], *, distiller: Any, evidence: JsonObject) -> AdDnaCard | None:
@@ -339,6 +620,24 @@ def _pregenerate(
     evidence: JsonObject,
 ) -> None:
     """Generate and link imagery per style group. Its own outcome; never raises past here."""
+    # W-B1 re-drive guard: a card version that already carries its grounds needs nothing —
+    # the first execution's paid imagery stands, and re-linking the same version is what the
+    # convergent mint upstream exists to make possible. Tolerant: a probe that will not
+    # answer falls through to generation, where the per-image ledger still dedupes the spend.
+    try:
+        already = AdAssetsStore(workspace_id=repo.workspace_id).list_pregenerated(
+            card_id=card_id, card_version=card_version
+        )
+    except Exception:  # noqa: BLE001 - a probe failure is not a job failure
+        already = []
+    if already:
+        evidence["steps"]["pregenerate"] = {
+            "status": "converged",
+            "linked": len(already),
+            "reason": "this card version already carries pre-generated grounds; re-driven execution resumed",
+        }
+        return
+
     if generate is None:
         from lumen_api import image_provider
 
@@ -465,12 +764,24 @@ def _outcome(evidence: JsonObject) -> JsonObject:
     `status` is the summary's own word, not the job row's: `empty` when the lane holds nothing,
     `partial` when it holds creatives but is missing the card or the imagery, `ok` when every
     step ran and produced something.
+
+    W5/R3-A adds a FOURTH status, `advertiser_mismatch`, and it is deliberately not folded into
+    `empty`. Both leave the lane with nothing, but they mean opposite things: `empty` says the
+    brand has no static ads, while `advertiser_mismatch` says ads were found and REFUSED because
+    they belong to somebody else. Reading the second as the first is exactly the mistake the
+    whole R3-A investigation made, for two rounds.
     """
     steps = evidence.get("steps") or {}
+    resolution = evidence.get("resolution")
+    resolution = resolution if isinstance(resolution, dict) else {}
 
     def _step(name: str) -> JsonObject:
         value = steps.get(name)
         return value if isinstance(value, dict) else {}
+
+    check = _step("harvest").get("advertiser_check")
+    check = check if isinstance(check, dict) else {}
+    mismatch = _step("harvest").get("status") == "advertiser_mismatch"
 
     kept = int(_step("harvest").get("kept") or 0)
     custodied = int(_step("custody").get("custodied") or 0)
@@ -489,14 +800,25 @@ def _outcome(evidence: JsonObject) -> JsonObject:
         if _step(name).get("reason")
     }
 
-    if custodied == 0:
+    if mismatch:
+        status = "advertiser_mismatch"
+    elif custodied == 0:
         status = "empty"
     elif skipped or failed or not_reached or not card_written or generated == 0:
         status = "partial"
     else:
         status = "ok"
 
-    sentences = [f"{kept} ad(s) kept, {custodied} custodied."]
+    sentences: list[str] = []
+    # The advertiser sentence leads, because "whose ads are these" is the question every other
+    # number in this summary is conditional on. W-B3's retry sentence follows it immediately,
+    # for the same reason: a harvest that took two pages to find is a harvest whose page number
+    # an operator will otherwise mistrust, and the fix for that is to say what happened.
+    sentences.append(_resolution_sentence(resolution))
+    sentences.append(_attempts_sentence(resolution))
+    if mismatch:
+        sentences.append(str(check.get("conflict") or "The advertiser names did not agree."))
+    sentences.append(f"{kept} ad(s) kept, {custodied} custodied.")
     if card_written:
         sentences.append("An ad-DNA card was written.")
     else:
@@ -510,7 +832,7 @@ def _outcome(evidence: JsonObject) -> JsonObject:
 
     return {
         "status": status,
-        "summary": " ".join(sentences),
+        "summary": " ".join(s for s in sentences if s),
         "creatives_kept": kept,
         "creatives_custodied": custodied,
         "card_written": card_written,
@@ -519,7 +841,71 @@ def _outcome(evidence: JsonObject) -> JsonObject:
         "steps_failed": failed,
         "steps_not_reached": not_reached,
         "reasons": reasons,
+        # R3-A: the four facts an operator needed and could not get — which resolver decided
+        # the advertiser, which page was harvested, whether anything independent verified it,
+        # and the conflict sentence when the names disagreed.
+        "resolver_used": resolution.get("resolver_used"),
+        "linkedin_page_id": resolution.get("observed_page_id")
+        or resolution.get("linkedin_page_id"),
+        "advertiser_verified": bool(resolution.get("verified")),
+        "advertiser_conflict": check.get("conflict") if mismatch else None,
     }
+
+
+def _resolution_sentence(resolution: JsonObject) -> str:
+    """One plain sentence naming who the advertiser was taken to be, and on whose word.
+
+    A job whose evidence predates R3-A carries no resolution block at all; it gets no sentence
+    rather than a fabricated one, so replaying an old row cannot make it claim a provenance it
+    never had.
+    """
+    if not resolution:
+        return ""
+    used = resolution.get("resolver_used")
+    page = resolution.get("observed_page_id") or resolution.get("linkedin_page_id")
+    name = resolution.get("resolved_name")
+    who = f"{name!r} " if name else ""
+    where = f"LinkedIn page {page}" if page else "a page the ad library chose from the domain"
+    if used == RESOLVER_PDL:
+        return f"Harvested {who}from {where}, verified by an independent identity resolver."
+    if used == RESOLVER_EXPLICIT:
+        return f"Harvested {who}from {where}, an operator-supplied page id (unverified)."
+    return (
+        f"Harvested {who}from {where} — resolved by the ad library itself and "
+        "UNVERIFIED by an independent identity resolver."
+    )
+
+
+def _attempts_sentence(resolution: JsonObject) -> str:
+    """W-B3: name the retry in plain language, or say nothing at all.
+
+    A one-attempt harvest — every harvest before W-B3, and the overwhelming majority after —
+    gets NO sentence. There is nothing to explain, and a summary that announced "1 attempt" on
+    every job would be noise that trains an operator to skip the line that matters.
+    """
+    attempts = resolution.get("attempts")
+    if not isinstance(attempts, list) or len(attempts) < 2:
+        return ""
+
+    first, second = attempts[0], attempts[-1]
+    if not isinstance(first, dict) or not isinstance(second, dict):
+        return ""
+
+    named = first.get("page_id_answered") or first.get("page_id_asked")
+    found = second.get("ads_considered")
+    landed = second.get("page_id_answered")
+    where = f"page {landed}" if landed else "a page it chose from the domain"
+    if not found:
+        # Both empty. The retry did not rescue the harvest, and pretending the second number
+        # is better than the first would be the R3-A mistake wearing a new hat.
+        return (
+            f"The identity resolver's page {named} had no ads; the ad library's own domain "
+            f"resolution ({where}) had none either."
+        )
+    return (
+        f"The identity resolver's page {named} had no ads; fell back to the ad library's own "
+        f"domain resolution → {where}, with {found} ad(s)."
+    )
 
 
 def _complete(

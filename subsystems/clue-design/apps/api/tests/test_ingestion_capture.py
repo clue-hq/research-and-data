@@ -300,9 +300,11 @@ def test_an_ingestion_job_survives_unparseable_colors_end_to_end(tmp_path) -> No
     assert job["status"] == "succeeded"
 
     # The colors were not merely survived — the real channels were read.
+    # (Phase-1 overhaul: rule-text colors like the near-black `#0F172A` are no
+    # longer palette evidence; the TOKEN yellow — the modern-syntax survival
+    # this test guards — must still parse through the alpha-var fallback.)
     hexes = {c.value for c in parse_site(_tailwind_snapshot()).colors}
-    assert "#0F172A" in hexes  # apollo's near-black text
-    assert "#FEFF00" in hexes  # apollo's brand yellow
+    assert "#FEFF00" in hexes  # apollo's brand yellow, from --color-brand
 
     # ...and the skipped alpha is reported to the human, on the outcome the
     # pipeline publishes, not swallowed.
@@ -327,28 +329,30 @@ def test_diagnostics_are_deduped_and_bounded() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_parse_role_hints_and_dark_scope() -> None:
+def test_parse_rule_text_emits_no_light_candidates_but_tokens_and_dark_survive() -> None:
+    """Phase-1 brand-color overhaul (2026-08-30): light rule-text colors are
+    NOT palette evidence any more — the selector-vocabulary weights elected
+    apollo.io's focus ring as its brand. What must survive the retirement:
+    custom-prop token evidence (naming layer) and dark-block rule colors (the
+    dark colorway's only whole-page evidence until dark capture lands)."""
     parsed = parse_site(load("insight_static"))
 
-    def find(value: str, hint: str, theme: str = "light"):
-        return [
-            c
-            for c in parsed.colors
-            if c.value == value and hint in c.role_hints and c.theme == theme
-        ]
+    # No LIGHT color evidence from rule text — the fixture's `body`/`.btn-primary`
+    # rules used to emit weighted, hinted candidates here.
+    light_rule_colors = [
+        c
+        for c in parsed.colors
+        if c.theme == "light" and not any(h.startswith("custom-prop:") for h in c.role_hints)
+    ]
+    assert light_rule_colors == []
 
-    page = find("#F5F5F5", "page-bg")
-    assert page and any(c.weight == 5.0 for c in page)
-
-    button = find("#12EAB1", "button-bg")
-    assert button and any(c.weight == 4.0 for c in button)
-
-    # dark prefers-color-scheme block colors carry theme="dark"
+    # Dark prefers-color-scheme block colors still carry theme="dark", flat and
+    # hintless — evidence for `build_dark_colorway`, never light election.
     dark = [c for c in parsed.colors if c.theme == "dark"]
-    assert dark
-    assert any(c.value == "#0B0B0C" and "page-bg" in c.role_hints for c in dark)
+    assert any(c.value == "#0B0B0C" for c in dark)
+    assert all(c.weight == 1.0 and c.role_hints == [] for c in dark)
 
-    # var() resolved against custom props
+    # var() still resolved against custom props: the naming layer survives.
     assert any(
         c.value == "#12EAB1" and c.role_hints == ["custom-prop:--brand"]
         for c in parsed.colors

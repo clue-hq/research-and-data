@@ -48,6 +48,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
+from clue_design.ad_assets import (
+    CREATIVE_SCAN,
+    PREGENERATED_CONTEXT_MAX,
+    reduce_card_payload,
+    reduce_creative_assets,
+    reduce_pregenerated,
+)
 from py_lumen_config import settings
 from py_lumen_obs import get_logger
 
@@ -58,12 +65,17 @@ logger = get_logger("lumen_api.ad_runtime")
 __all__ = [
     "AUTO_REFERENCE_MAX",
     "CREATIVE_SCAN",
+    "FROZEN_LANE_ABSENT",
     "PREGENERATED_CONTEXT_MAX",
     "AdLane",
     "choose_style_group",
     "context_card",
     "context_pregenerated",
+    "frozen_lane_payload",
+    "lane_from_frozen",
+    "lane_to_frozen",
     "read_ad_lane",
+    "resolve_turn_ad_lane",
     "select_reference_asset_ids",
 ]
 
@@ -73,9 +85,10 @@ __all__ = [
 #: rather than imported because ``main`` imports THIS module, not the other way round.
 AUTO_REFERENCE_MAX = 4
 
-#: How many creative rows the selector reads. A harvest is tens of rows, not thousands, and
-#: the read exists to resolve creative ids to asset ids — it is a lookup, not a scan.
-CREATIVE_SCAN = 200
+# ``CREATIVE_SCAN`` and ``PREGENERATED_CONTEXT_MAX`` now live in
+# ``clue_design.ad_assets`` (the W4 offer-time-freeze home) and are re-exported
+# above so every existing importer keeps working; the reductions they bound are
+# the shared ones both offerers and this module call.
 
 #: The selection call's output bound. The answer is one group name.
 SELECT_MAX_TOKENS = 32
@@ -83,20 +96,6 @@ SELECT_TIMEOUT_S = 20.0
 #: How much of the brief the selection call sees. It is choosing between a handful of short
 #: names; the first paragraph of the ask is more than enough to do that.
 SELECT_BRIEF_CHARS = 1200
-
-
-#: How many pre-generated grounds one turn's opening context names. Pre-generation writes
-#: ``ASSETS_PER_SYSTEM`` (2) per style group and a card carries at most ``MAX_STYLE_GROUPS``
-#: (6), so twelve is the whole of a well-formed lane rather than an arbitrary slice. The bound
-#: exists because pre-generation has no cap of its own — a brand with more looks writes more
-#: rows — and this list is prompt-cache surface on every ad turn the brand ever runs.
-PREGENERATED_CONTEXT_MAX = 12
-
-#: ``aspect_ratio`` → the words pre-generation itself used for that shape
-#: (``pregenerate.ASSET_SHAPES``). Mirrored rather than imported to keep this turn-time module
-#: free of an ingestion-side import; a ratio with no entry renders as the bare ratio, which is
-#: still true.
-_SHAPE_WORDS = {"16:9": "wide ground", "1:1": "square ground", "4:5": "portrait ground"}
 
 
 @dataclass(frozen=True)
@@ -145,11 +144,7 @@ def read_ad_lane(workspace_id: str, *, store: Any = None) -> Optional[AdLane]:
     except Exception:  # noqa: BLE001 - the lane is advisory; it may never fail a turn
         logger.warning("ad_lane_unreadable", workspace_id=workspace_id)
         return None
-    creative_assets = {
-        str(row["creative_id"]): str(row["asset_id"])
-        for row in creatives
-        if row.get("creative_id") and row.get("asset_id")
-    }
+    creative_assets = reduce_creative_assets(creatives)
     if not creative_assets:
         return None
     try:
@@ -157,9 +152,8 @@ def read_ad_lane(workspace_id: str, *, store: Any = None) -> Optional[AdLane]:
     except Exception:  # noqa: BLE001 - a card read failure still leaves usable creatives
         logger.warning("ad_dna_card_unreadable", workspace_id=workspace_id)
         row = None
-    card = (row or {}).get("card") if isinstance(row, dict) else None
     return AdLane(
-        card=card if isinstance(card, dict) else None,
+        card=reduce_card_payload(row),
         creative_assets=creative_assets,
         pregenerated=_read_pregenerated(store, row, workspace_id=workspace_id),
     )
@@ -195,23 +189,109 @@ def _read_pregenerated(
         logger.warning("ad_pregenerated_unreadable", workspace_id=workspace_id)
         return ()
 
-    listed: list[JsonObject] = []
-    for row in rows or ():
-        if len(listed) >= PREGENERATED_CONTEXT_MAX:
-            break
-        asset_id = str((row or {}).get("asset_id") or "").strip()
-        if not asset_id:
-            continue
-        generation = row.get("generation")
-        ratio = str((generation or {}).get("aspect_ratio") or "").strip()
-        listed.append(
-            {
-                "asset_id": asset_id,
-                "style_group": str(row.get("visual_system") or "").strip(),
-                "shape": _SHAPE_WORDS.get(ratio, ratio),
-            }
+    return tuple(reduce_pregenerated(rows))
+
+
+# --- the W4 offer-time freeze (Wave-C fix #1) ---------------------------------------------
+#
+# The lane used to be composed at CLAIM time by whichever worker process won the
+# ``design_job`` row, so per-process env divergence silently changed what a turn saw (Wave B:
+# flag-off audit APIs drained the shared queue; turns lost their references with zero log —
+# the path was silent when it declined, by design). The offerer now freezes the lane into the
+# envelope's ``config["ad_lane"]`` and the claiming process consumes it verbatim: the offer
+# is the truth, and a claiming process's flags cannot change what the turn sees.
+
+#: Sentinel distinguishing "the envelope carries no ``ad_lane`` key" (a LEGACY envelope,
+#: posted before offer-time freezing — fall back to claim-time composition) from a frozen
+#: ``None`` (= the offerer decided: no lane for this turn). Same pattern as
+#: ``main._REFERENCES_UNRESOLVED``.
+FROZEN_LANE_ABSENT = object()
+
+
+def lane_to_frozen(lane: Optional[AdLane]) -> Optional[JsonObject]:
+    """The lane serialized for an envelope, or ``None`` — always JSON-safe."""
+    if lane is None:
+        return None
+    return {
+        "card": dict(lane.card) if isinstance(lane.card, dict) else None,
+        "creative_assets": dict(lane.creative_assets),
+        "pregenerated": [dict(entry) for entry in lane.pregenerated],
+    }
+
+
+def frozen_lane_payload(workspace_id: str, *, store: Any = None) -> Optional[JsonObject]:
+    """What an OFFERER writes into ``config["ad_lane"]``: the lane by value, or ``None``.
+
+    ``None`` both when the flag is off in the offering process and when the workspace simply
+    holds no creatives — either way the offer is decided, and the claiming process will not
+    re-litigate it. Rides :func:`read_ad_lane`, so it inherits the flag gate and the
+    tolerant-by-construction posture: a lane that cannot be read is a turn without the lane,
+    never a failed offer.
+    """
+    return lane_to_frozen(read_ad_lane(workspace_id, store=store))
+
+
+def lane_from_frozen(value: Any) -> Optional[AdLane]:
+    """An :class:`AdLane` from a frozen envelope value; tolerant of foreign shapes.
+
+    A malformed frozen value yields ``None`` with a warning rather than a failed turn — the
+    same asymmetry-against-the-manual-path rule as everything else in this module: nothing
+    the human did not explicitly ask for may fail their turn.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        logger.warning("ad_lane_frozen_malformed", value_type=type(value).__name__)
+        return None
+    raw_assets = value.get("creative_assets")
+    creative_assets = (
+        {str(k): str(v) for k, v in raw_assets.items() if k and v}
+        if isinstance(raw_assets, dict)
+        else {}
+    )
+    if not creative_assets:
+        return None
+    card = value.get("card")
+    raw_pregenerated = value.get("pregenerated")
+    pregenerated = tuple(
+        dict(entry) for entry in raw_pregenerated if isinstance(entry, dict)
+    ) if isinstance(raw_pregenerated, list) else ()
+    return AdLane(
+        card=card if isinstance(card, dict) else None,
+        creative_assets=creative_assets,
+        pregenerated=pregenerated,
+    )
+
+
+def resolve_turn_ad_lane(
+    frozen: Any = FROZEN_LANE_ABSENT, *, workspace_id: str, store: Any = None
+) -> Optional[AdLane]:
+    """The lane a CLAIMED turn runs with — frozen truth first, legacy compose second.
+
+    A frozen value (including a frozen ``None``) is consumed verbatim: no flag check, no
+    database read — the offering process already decided, and this is exactly what makes the
+    turn's behaviour independent of which worker claimed it.
+
+    Only a LEGACY envelope (no ``ad_lane`` key) falls back to claim-time composition, and
+    that fallback is no longer allowed to be silent: a flag-off claiming process now says
+    LOUDLY that it cannot see the lane — the Wave-B failure shape (flag-off temp workers
+    silently stripping references from turns queued by a flag-on deployment) can never again
+    present as "nothing happened".
+    """
+    if frozen is not FROZEN_LANE_ABSENT:
+        return lane_from_frozen(frozen)
+    if not settings.lumen_brand_ad_assets:
+        logger.warning(
+            "ad_lane_flag_off_in_claiming_process",
+            workspace_id=workspace_id,
+            detail=(
+                "legacy envelope carries no frozen ad_lane and this process's "
+                "LUMEN_BRAND_AD_ASSETS is off; if the offering deployment had the lane on, "
+                "this turn's auto-references were just silently lost (Wave-B W-B2 shape)"
+            ),
         )
-    return tuple(listed)
+        return None
+    return read_ad_lane(workspace_id, store=store)
 
 
 def context_pregenerated(lane: Optional[AdLane]) -> Optional[list[JsonObject]]:

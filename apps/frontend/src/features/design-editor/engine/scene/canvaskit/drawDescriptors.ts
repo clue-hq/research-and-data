@@ -192,13 +192,16 @@ function drawImage(
   if (!info || !images || info.assetStatus !== "ready") {
     return false;
   }
-  const image = images.get(info.assetId);
-  if (!image) {
-    return false;
-  }
   const boxWidth = d.width;
   const boxHeight = d.height;
   if (boxWidth <= 0 || boxHeight <= 0) {
+    return false;
+  }
+  // Report the painted box BEFORE the lookup: an SVG placed larger than its
+  // intrinsic size needs the cache to rasterize proportionally more pixels.
+  images.noteDrawSize?.(info.assetId, boxWidth, boxHeight);
+  const image = images.get(info.assetId);
+  if (!image) {
     return false;
   }
 

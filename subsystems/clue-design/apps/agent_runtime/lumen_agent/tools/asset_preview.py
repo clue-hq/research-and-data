@@ -29,6 +29,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from clue_design.storage import location_digest
+from py_lumen_obs import get_logger
+
+logger = get_logger("lumen_agent.tools.asset_preview")
 
 # Raster mime types the vision APIs accept as a direct preview when no derived
 # thumbnail exists (an SVG has no raster preview → it is skipped, never a broken path).
@@ -137,11 +140,21 @@ def _raster_page() -> Dict[str, Any]:
 
 
 def _raster_image_node(asset_id: str) -> Dict[str, Any]:
+    # Mirrors lumen_ingestion.pipeline._raster_image_node — the engine's Node
+    # schema has NO serde defaults for most fields, so an omitted key is a hard
+    # apply_operations refusal, not a soft fallback. `corner` was exactly such
+    # an omission: this builder shipped without it and every SVG view died as
+    # CoreError("missing field `corner`") inside the old blanket swallow
+    # (Wave-C D3 forensic). The real-engine schema test now pins acceptance.
     return {
         "id": "svg_raster_image",
         "name": "svg raster image",
         "kind": {"kind": "image", "asset_id": asset_id, "alt": None},
         "children": [], "fills": [], "strokes": [],
+        "corner": {
+            "top_left": 0.0, "top_right": 0.0,
+            "bottom_left": 0.0, "bottom_right": 0.0,
+        },
         "opacity": 1.0, "clip": False, "locked": False,
         "layout": None, "computed": None,
         "position_mode": "absolute",
@@ -195,6 +208,18 @@ def rasterize_vector_preview(
     cached = rasterized_vector_path(store_root, digest)
     if cached.exists():
         return cached
+    # The engine rasterizes from ITS content-addressed cache; materializing
+    # durable bytes into that cache is the API read-throughs' job (the kit and
+    # library manifests already do it before a turn starts). If the bytes are
+    # absent the engine does NOT fail — it paints a BLANK plate and only
+    # *warns* (LUME0210; proven live, Wave-C D3 probe D) — and a blank cached
+    # under this digest would be served as the artwork forever. So absence is
+    # checked here, before the round trip, and answered as honestly unviewable.
+    if not blob_path_for_digest(store_root, digest).exists():
+        logger.warning(
+            "svg_raster_bytes_not_materialized", asset_id=asset_id, digest=digest
+        )
+        return None
     try:
         scene = core.new_scene("doc_svg_raster", "svg raster")
         scene["pages"] = {_RASTER_PAGE_ID: _raster_page()}
@@ -215,6 +240,18 @@ def rasterize_vector_preview(
             raise_on_error=False,
             asset_store_root=str(store_root),
         )
+        # Defense in depth behind the byte precheck (races, partial writes):
+        # a diagnostic naming this asset or node means the pixels are painted
+        # AROUND a problem, not the artwork — never cache such a plate.
+        for diagnostic in export.get("diagnostics") or []:
+            subject_id = (diagnostic.get("subject") or {}).get("id")
+            if subject_id in (asset_id, "svg_raster_image"):
+                logger.warning(
+                    "svg_raster_refused_diagnostic",
+                    asset_id=asset_id,
+                    code=diagnostic.get("code"),
+                )
+                return None
         for artifact in (export.get("export") or {}).get("artifacts") or []:
             # The engine emits raw pixel bytes under `bytes` (a list of ints),
             # never `bytes_base64` — reading the wrong key silently drops every
@@ -224,6 +261,10 @@ def rasterize_vector_preview(
                 cached.parent.mkdir(parents=True, exist_ok=True)
                 cached.write_bytes(bytes(raw))
                 return cached
-    except Exception:  # noqa: BLE001 - an unviewable asset is the caller's honest answer
+        logger.warning("svg_raster_no_artifact", asset_id=asset_id)
+    except Exception:  # noqa: BLE001 - an unviewable asset is the caller's honest answer…
+        # …but never a SILENT one: the old bare swallow hid an engine schema
+        # refusal for the fix's whole shipped life (Wave-C D3 forensic).
+        logger.warning("svg_raster_failed", asset_id=asset_id, exc_info=True)
         return None
     return None

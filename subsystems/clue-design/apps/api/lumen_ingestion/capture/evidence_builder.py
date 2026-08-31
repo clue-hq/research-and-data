@@ -30,7 +30,7 @@ from ..evidence import (
 )
 from .budget import MAX_NAMED_DROPS, short_url
 from .geometry import parse_geometry
-from .parse import ParsedSite, parse_site
+from .parse import ParsedSite, parse_color_value, parse_site
 
 INGEST_CONCURRENCY = 4
 
@@ -412,6 +412,26 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
         for state in parsed.state_styles
     ]
 
+    # Rendered-pixel election authority (Phase-1 brand-color overhaul). Fail-soft
+    # to None — the normalizer then keeps the evidence-cluster election — but
+    # never silently: a probe that was taken and could not be censused is said.
+    render_truth = None
+    try:
+        from ..census import build_render_truth  # lazy: the one PIL consumer here
+
+        render_truth = build_render_truth(
+            snapshot, lambda value: parse_color_value(value, {}, diagnostics=None)
+        )
+    except Exception as error:  # noqa: BLE001 — election falls back, loudly
+        if isinstance(outcome_diagnostics, list):
+            outcome_diagnostics.append(
+                {
+                    "code": "LUMI0533",
+                    "severity": "warning",
+                    "message": f"pixel census failed; palette election falls back to evidence clusters: {error}",
+                }
+            )
+
     return BrandEvidence(
         source=source,
         colors=colors,
@@ -423,6 +443,7 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
         shadows=geometry.shadows,
         declared_roles=declared,
         state_styles=state_styles,
+        render_truth=render_truth,
         geometry=geometry.evidence(),
         screenshots=screenshots,
         narrative=narrative,

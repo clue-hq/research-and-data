@@ -3290,6 +3290,12 @@ def create_app(
             config={
                 "request": payload.model_dump(mode="json"),
                 "reference_assets": resolved_reference_assets,
+                # W4 offer-time freeze (Wave-C fix #1): the ad lane rides the envelope BY
+                # VALUE, decided by THIS process's flag and database — the claiming worker
+                # consumes it verbatim, so a flag-off claimant can no longer silently strip
+                # the turn's auto-references (the Wave-B W-B2 failure). A frozen None is a
+                # decision too: "this turn has no lane".
+                "ad_lane": ad_runtime.frozen_lane_payload(repo.workspace_id),
             },
         ).model_dump(mode="json")
         # D6 Round B: the ENQUEUE is the durable mutation, so it is the tool. Everything above
@@ -3335,6 +3341,60 @@ def create_app(
             "status": run["status"],
             "events": repo.list_run_events(run_id),
             "result": run["result"],
+        }
+
+    @app.post("/agent/runs/{run_id}/cancel")
+    def cancel_agent_run(
+        run_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """Ask an in-flight design run to stop (A3, defect R3-D).
+
+        WHAT THIS DOES: stamps a durable cancellation request on the run row and returns. It does
+        NOT stop anything itself. The run is driven by a fleet worker in another process, and the
+        only thing this process and that one share is Postgres — so the request is a row, and the
+        worker honours it.
+
+        **THE V1 BOUNDARY, STATED PLAINLY: cancellation takes effect at the next model-call
+        boundary. A call already in flight is not killed.** Python cannot interrupt the thread a
+        synchronous turn body runs on (the fleet handler has said the same about its own
+        cooperative stop since D5), so the honest promise is "no further model calls will be
+        paid for", not "this stops right now". Worst-case latency is one model call, bounded by
+        ``agent_llm_timeout_s``. If a run must die faster than that, the lever is the lease, not
+        this route.
+
+        WHAT SURVIVES: everything already durable. P0.4 commits each accepted authoring round to
+        the document as it happens, so a cancelled run keeps every round it finished and loses
+        only the round in flight. The worker then takes the SAME graceful-finalize path the
+        budget backstop uses and lands an honest terminal result whose ``stop_reason`` is
+        ``cancelled_by_request``.
+
+        IDEMPOTENT, three honest answers, all HTTP 200 — see ``cancellation`` in the body:
+        ``requested`` (the ask landed), ``already_requested`` (someone asked first; the original
+        timestamp is returned unchanged), ``already_terminal`` (the run had already finished —
+        not an error, just a race a human lost). A refusal here would only invite a retry loop
+        against a row that will never move again.
+
+        404 on an unknown or cross-tenant run, indistinguishable — the same fail-closed posture
+        as the run snapshot and the stream-token mint above.
+        """
+        outcome = repo.request_run_cancellation(run_id)
+        log_event(
+            api_logger,
+            logging.INFO,
+            "agent_run_cancel_requested",
+            run_id=run_id,
+            outcome=outcome["outcome"],
+            run_status=outcome["status"],
+        )
+        return {
+            "schema_version": 1,
+            "run_id": run_id,
+            # The run's status as it stands RIGHT NOW, not what it will become. The worker owns
+            # the terminal write; announcing an outcome here would be a guess, and a guess that
+            # races the only writer entitled to make it.
+            "status": outcome["status"],
+            "cancellation": outcome["outcome"],
+            "cancel_requested_at": outcome["cancel_requested_at"],
         }
 
     @app.post("/agent/runs/{run_id}/stream-token")
@@ -8370,6 +8430,7 @@ def run_agent_turn_preview(
     root: Path,
     event_sink=None,
     resolved_reference_assets=_REFERENCES_UNRESOLVED,
+    frozen_ad_lane=ad_runtime.FROZEN_LANE_ABSENT,
     *,
     workspace_id: str,
     blobs: Optional[DesignBlobStore] = None,
@@ -8378,6 +8439,7 @@ def run_agent_turn_preview(
     thread_id: Optional[str] = None,
     resolved_brand_kit: Any = _BRAND_KIT_UNRESOLVED,
     scene_checkpoint: Any = None,
+    cancel_requested: Any = None,
 ) -> JsonObject:
     # D4: the turn's tenant. It decides which engine materialization cache the runtime reads and
     # writes — and the accept seam that gives those bytes durable custody looks in that same
@@ -8419,15 +8481,15 @@ def run_agent_turn_preview(
     else:
         reference_assets = resolved_reference_assets
 
-    # W4 (Brand Ad Assets v1 §5): read the ad-assets lane ONCE, here, for both of the things a
-    # turn takes out of it — the auto-attached references below and the described card that
-    # rides the frame payload further down. Off unless the lane's flag is on, so a flag-off
-    # process does not even open a connection. This is the ONE hook both entry paths share:
-    # the standalone `/agent/turns` route resolves manual references in its handler and hands
-    # them in (a resolved None still lands here as "no references"), and a platform design-leg
-    # envelope carries no manifest key at all, so it takes the in-worker branch above. Neither
-    # can miss this line.
-    ad_lane = ad_runtime.read_ad_lane(turn_workspace_id)
+    # W4 (Brand Ad Assets v1 §5): the lane the turn runs with, resolved ONCE, here, for both
+    # of the things a turn takes out of it — the auto-attached references below and the
+    # described card that rides the frame payload further down. Since the Wave-C offer-time
+    # freeze, a fleet-claimed turn arrives with the lane FROZEN in its envelope and this line
+    # consumes it verbatim (no flag check, no database read — the offering process decided);
+    # only a legacy envelope, or a direct in-process caller like the sync preview route,
+    # composes at claim time — and a flag-off process doing that now says so loudly instead
+    # of silently declining (the Wave-B W-B2 failure shape).
+    ad_lane = ad_runtime.resolve_turn_ad_lane(frozen_ad_lane, workspace_id=turn_workspace_id)
     if ad_lane is not None and not reference_assets:
         # MANUAL REFERENCES ALWAYS WIN. The platform suggests; the human decides (the
         # minimum-input / client-has-the-wheel rule). A turn that already carries attachments
@@ -8569,6 +8631,11 @@ def run_agent_turn_preview(
             # P0.4: the checkpoint-commit sink. Supplied only by a leg turn (the one turn kind
             # that owns a persist), so every other caller keeps save-on-finalize-only.
             scene_checkpoint=scene_checkpoint,
+            # A3 (defect R3-D): the run's durable cancel probe. Supplied only by the fleet
+            # executor, which is the only caller whose turn has a run row to be cancelled
+            # THROUGH — the synchronous preview route holds the request open and has no id a
+            # second caller could name.
+            cancel_requested=cancel_requested,
         )
     except Exception as error:
         return failed_agent_turn_response(
@@ -8665,6 +8732,7 @@ def run_web_agent_turn(
     engine_cache_root: Optional[Path] = None,
     checkpointer: Any = None,
     thread_id: Optional[str] = None,
+    cancel_requested: Any = None,
 ) -> JsonObject:
     """Run one website-mode turn against a WebDoc document. Mirrors
     run_agent_turn_preview's config assembly (env config + model override +
@@ -8860,6 +8928,10 @@ def run_web_agent_turn(
             # D5 Round B: see run_agent_turn_preview.
             checkpointer=checkpointer,
             thread_id=thread_id,
+            # A3 (defect R3-D): see run_agent_turn_preview. A web turn's cancelled outcome is
+            # `failed` with nothing applied — website mode persists once at the end, so there
+            # is no partial work a stop could keep.
+            cancel_requested=cancel_requested,
         )
     except Exception as error:
         return failed_agent_turn_response(
@@ -9137,6 +9209,11 @@ def execute_agent_turn_job(
     # missing manifest must take the normal in-worker resolution path. Using ``.get`` without the
     # sentinel made every accepted platform reference silently inert.
     reference_assets = envelope.config.get("reference_assets", _REFERENCES_UNRESOLVED)
+    # W4 offer-time freeze: same missing-key-vs-null discipline as the reference manifest
+    # above. A missing key is a LEGACY envelope (claim-time compose, now loud when this
+    # process's flag is off); a present key — even null — is the offerer's decision, consumed
+    # verbatim so the claiming process's env cannot change what the turn sees.
+    frozen_ad_lane = envelope.config.get("ad_lane", ad_runtime.FROZEN_LANE_ABSENT)
 
     # --- P3.7: consume the platform leg envelope's frozen context ------------------------------
     # A design-leg turn (PD-part3 §2.3/§2.4) carries the delegation bundle, the leg history,
@@ -9260,6 +9337,7 @@ def execute_agent_turn_job(
                 root,
                 event_sink=event_sink,
                 resolved_reference_assets=reference_assets,
+                frozen_ad_lane=frozen_ad_lane,
                 workspace_id=envelope.workspace_id,
                 # D5 Round C: the dispatching app's byte backend + engine-cache tree, so an
                 # injected backend cannot stage bytes in one place and read them from another.
@@ -9271,6 +9349,10 @@ def execute_agent_turn_job(
                 # P0.4: only a LEG turn owns a persist, so only a leg turn checkpoints. A direct
                 # editor turn passes None and stays save-nothing, exactly as before.
                 scene_checkpoint=_checkpoint_sink(committer),
+                # A3 (defect R3-D): every fleet-driven turn is cancellable, leg or not — the
+                # doomed W5 run was a plain editor turn, and "you can only stop it if it came
+                # from chat" would be an arbitrary line to draw through a paid run.
+                cancel_requested=_run_cancel_probe(store, envelope.run_id),
             )
         operations = response.get("operations")
         if committer is not None and doc is not None and response.get("status") == "proposed":
@@ -9531,6 +9613,24 @@ def _checkpoint_sink(committer: Optional["_LegSceneCommitter"]):
     return None if committer is None else committer.checkpoint
 
 
+def _run_cancel_probe(store: HybridRepository, run_id: str):
+    """This run's cancellation probe (A3, defect R3-D): the runtime's read of a durable stamp.
+
+    The whole cross-process seam in one closure. The human's cancel arrives on a web process; the
+    turn is driven by a fleet worker that shares nothing with it but Postgres, so the ONLY way
+    the two can meet is a row the asker writes and the driver reads. This is the driver's half.
+
+    Wrapped in :class:`~lumen_agent.cancellation.CancellationProbe`, which makes it sticky (a
+    cancel never un-cancels), throttled on the negative answer (one read per model call would be
+    fine; one per retry storm is wasteful), and FAIL-OPEN — a database blip reads as "not
+    cancelled" rather than becoming the run's cause of death. Durability is what makes this
+    survive a worker restart or a lease takeover: the redrive re-reads the same stamp.
+    """
+    from lumen_agent.cancellation import CancellationProbe
+
+    return CancellationProbe(lambda: store.cancellation_requested(run_id))
+
+
 def _call_turn_override(override: Any, payload: Any, root: Path, *, scene_checkpoint: Any):
     """Call the injected turn-runner test seam, handing it the checkpoint sink only if it wants it.
 
@@ -9765,6 +9865,9 @@ def execute_web_turn_job(
                 engine_cache_root=_host_engine_cache_root(host, workspace_id),
                 checkpointer=checkpointer,
                 thread_id=envelope.checkpoint_thread_id,
+                # A3 (defect R3-D): the same durable probe the scene executor builds, so ONE
+                # route can honestly stop either kind of design run.
+                cancel_requested=_run_cancel_probe(store, envelope.run_id),
             )
         if response.get("status") == "applied":
             operations = response.get("operations")

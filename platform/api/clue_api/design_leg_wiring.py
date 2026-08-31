@@ -75,6 +75,7 @@ from clue_api.turn_action import derive_turn_action_ref
 from clue_core import ExecutionId, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_design import accounts as design_accounts
+from clue_design import ad_assets as design_ad_assets
 from clue_design import legs as design_legs
 from clue_design import runs as design_runs
 from clue_design.documents import get_document, is_finalized_document
@@ -1419,6 +1420,17 @@ class DesignLegTurnRunner:
             # un-personalized turn's envelope carries no such key at all (the design route's
             # own shape, and the executor treats a missing card exactly as it treats a null).
             config["account_card"] = account_card
+        if kind == "agent_turn":
+            # W4 offer-time freeze (Wave-C fix #1): the brand ad-assets lane rides the
+            # envelope BY VALUE, decided by THIS offering process — the claiming design
+            # worker consumes it verbatim, so its per-process flag can no longer silently
+            # strip a turn's auto-references (the Wave-B W-B2 failure: flag-off temp workers
+            # drained the shared queue and turns lost their lane with zero log). Unlike
+            # ``account_card``, the key is ALWAYS present on a new envelope — a frozen null
+            # is the decision "this turn has no lane", and only a legacy envelope with no key
+            # at all takes the claim-time fallback. Scene turns only: the web executor never
+            # consumes the lane.
+            config["ad_lane"] = await self._frozen_ad_lane(workspace_id)
         return DesignTurnEnvelope(
             kind=kind,
             work_id=design_runs.work_id_for_run(run_id),
@@ -1430,6 +1442,35 @@ class DesignLegTurnRunner:
         )
 
     # -- helpers -------------------------------------------------------------------------------
+
+    async def _frozen_ad_lane(self, workspace_id: str) -> dict[str, Any] | None:
+        """The ad lane serialized for the envelope, or ``None`` — never a failed offer.
+
+        The flag read is the OFFERING process's ``LUMEN_BRAND_AD_ASSETS`` (the same
+        environment switch the design API's settings read; a platform deployment that wants
+        leg turns to carry the lane sets it here too — that is the point of offer-time
+        freezing: the validating process's environment is the truth). Read directly from the
+        environment because this is platform code and the lumen settings object lives on the
+        design side of the seam; the shared REDUCTION is `clue_design.ad_assets.frozen_ad_lane`,
+        the same one the design route and the legacy claim path use, so the two offerers
+        cannot drift. Tolerant like the lane always was: a database that will not answer
+        freezes ``None`` with a warning, never a failed turn.
+        """
+        import os
+
+        if os.environ.get("LUMEN_BRAND_AD_ASSETS", "").strip().lower() not in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        ):
+            return None
+        try:
+            async with self._conn_factory() as conn:
+                return await design_ad_assets.frozen_ad_lane(conn, workspace_id=workspace_id)
+        except Exception:  # noqa: BLE001 — the lane is advisory; it may never fail an offer
+            log.warning("design_leg_ad_lane_freeze_failed", workspace_id=workspace_id)
+            return None
 
     async def _bundle_ref(
         self,
