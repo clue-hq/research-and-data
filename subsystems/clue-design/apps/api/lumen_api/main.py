@@ -44,7 +44,7 @@ from fastapi.responses import (
     StreamingResponse,
 )
 
-from . import ad_runtime, image_cache, image_provider, web_export
+from . import ad_runtime, document_thumbnails, image_cache, image_provider, web_export
 from .asset_custody import (
     ensure_materialized,
     materialize_scene_assets,
@@ -3630,6 +3630,104 @@ def create_app(
             "html": response.get("html"),
             "diagnostics": diagnostics,
         }
+
+    @app.get("/documents/{document_id}/thumbnail")
+    def get_document_thumbnail(
+        document_id: str,
+        request: Request,
+        v: Optional[str] = None,
+        repo: HybridRepository = Depends(repository),
+    ) -> Response:
+        # Gallery-card preview (2026-08-31 ruling): PNG for both kinds, built
+        # LAZILY here on first read — never in the write path — and cached by
+        # (document, version) in the blob store. Sync route => threadpool, so the
+        # Playwright capture blocks a worker thread, not the event loop (NOT the
+        # [slice3xstage0] class of bug).
+        document = require_document(repo, document_id)
+        version = int(document["current_version"])
+        blobs = blob_store(repo)
+
+        cached = repo.get_document_thumbnail(document_id, version)
+        data: Optional[bytes] = None
+        if cached is not None:
+            try:
+                _media, data = blobs.read_blob(cached["sha256"])
+            except NotFoundError:
+                data = None  # dangling index row — regenerate below
+
+        if data is None:
+            # The KIND decides the generator, never the shape of the payload: a
+            # scene's pages are a map and a web doc's are a list, and the scene
+            # page picker answers None on a list QUIETLY, so shape-sniffing would
+            # mis-route without ever erroring. Same default as the two
+            # `require_*_document` gates.
+            kind = document.get("doc_kind", "scene")
+            try:
+                if kind == "web":
+                    # Called in-process so the composed HTML carries THIS request's
+                    # origin for its asset URLs — the capture page fetches them.
+                    rendered = render_web_document(
+                        document_id,
+                        request,
+                        mode="editor",
+                        runtime_src=None,
+                        bridge=0,
+                        nonce=None,
+                        repo=repo,
+                    )
+                    data = document_thumbnails.web_thumbnail_png(str(rendered["html"]))
+                else:
+                    scene = document["scene"]
+                    cache_dir = request_cache_dir(repo)
+                    materialize_scene_assets(blobs, cache_dir, [scene])
+                    result = app.state.core.export_preview(
+                        scene,
+                        "png",
+                        document_thumbnails.first_page_ids(scene),
+                        default_export_profile("png"),
+                        raise_on_error=False,
+                        asset_store_root=cache_dir,
+                        brand_fonts=scene_brand_fonts(repo, scene, blobs, cache_dir),
+                    )
+                    data = document_thumbnails.downscale_png(
+                        document_thumbnails.png_from_export_result(result)
+                    )
+            except document_thumbnails.ThumbnailUnavailable as error:
+                raise HTTPException(
+                    status_code=502,
+                    detail={"code": error.code, "message": str(error)},
+                ) from error
+            sha256 = hashlib.sha256(data).hexdigest()
+            # `register` returns the workspace-scoped STORAGE KEY; the index row and
+            # `read_blob` both speak the bare digest, which registration is addressed
+            # by, so the local one is the authoritative spelling.
+            blobs.register(data, media_type="image/png", source_key="document_thumbnail")
+            repo.record_document_thumbnail(
+                document_id, version, sha256=sha256, media_type="image/png"
+            )
+            log_event(
+                api_logger,
+                logging.INFO,
+                "document_thumbnail_generated",
+                document_id=document_id,
+                version=version,
+                kind=kind,
+                byte_count=len(data),
+            )
+
+        # A caller that named the version it wants may cache the answer forever —
+        # the key changes on the next edit. Anyone else gets the current bytes and
+        # no permission to keep them under a key that does not identify them.
+        fresh = v == str(version)
+        return Response(
+            content=data,
+            media_type="image/png",
+            headers={
+                "Cache-Control": (
+                    "private, max-age=31536000, immutable" if fresh else "no-store"
+                )
+            },
+        )
 
     @app.post("/documents/{document_id}/web/operations")
     def apply_web_operations(

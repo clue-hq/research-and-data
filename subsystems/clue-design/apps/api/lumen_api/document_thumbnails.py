@@ -161,31 +161,56 @@ def png_from_export_result(result: JsonObject) -> bytes:
 
     The engine returns artifact bytes as a list of ints, decoded the way
     ``main.compact_export_artifact`` decodes them.
+
+    Every failure leaves as :class:`ThumbnailUnavailable`, including the ones the
+    shape checks below do not anticipate (a non-numeric entry makes ``int()``
+    raise): the route answers this module through ONE typed channel, so an
+    unwrapped ``ValueError`` from malformed engine bytes would 500 where a 502
+    belongs.
     """
 
-    export = result.get("export") or {}
-    artifacts = [a for a in (export.get("artifacts") or []) if isinstance(a, dict)]
-    if not result.get("ok", False) or not artifacts:
+    try:
+        export = result.get("export") or {}
+        artifacts = [a for a in (export.get("artifacts") or []) if isinstance(a, dict)]
+        if not result.get("ok", False) or not artifacts:
+            raise ThumbnailUnavailable(
+                "thumbnail.export_failed", "engine PNG export produced no artifact"
+            )
+        raw = artifacts[0].get("bytes", [])
+        if not isinstance(raw, list) or not raw:
+            raise ThumbnailUnavailable(
+                "thumbnail.export_failed", "engine PNG artifact carried no bytes"
+            )
+        return bytes(int(value) & 0xFF for value in raw)
+    except ThumbnailUnavailable:
+        raise
+    except Exception as error:
         raise ThumbnailUnavailable(
-            "thumbnail.export_failed", "engine PNG export produced no artifact"
-        )
-    raw = artifacts[0].get("bytes", [])
-    if not isinstance(raw, list) or not raw:
-        raise ThumbnailUnavailable(
-            "thumbnail.export_failed", "engine PNG artifact carried no bytes"
-        )
-    return bytes(int(value) & 0xFF for value in raw)
+            "thumbnail.export_failed", f"engine PNG artifact could not be read: {error}"
+        ) from error
 
 
 def downscale_png(data: bytes, *, max_edge: int = 724) -> bytes:
-    """Cap the long edge at `max_edge`, preserving aspect. Never upscales."""
+    """Cap the long edge at `max_edge`, preserving aspect. Never upscales.
 
-    image = Image.open(io.BytesIO(data))
-    if max(image.size) > max_edge:
-        image.thumbnail((max_edge, max_edge), Image.LANCZOS)
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    return buffer.getvalue()
+    Same one-channel rule as :func:`png_from_export_result`: PIL raises
+    ``UnidentifiedImageError`` on bytes that are not an image, and that is a
+    thumbnail refusal, not a server fault.
+    """
+
+    try:
+        image = Image.open(io.BytesIO(data))
+        if max(image.size) > max_edge:
+            image.thumbnail((max_edge, max_edge), Image.LANCZOS)
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
+    except ThumbnailUnavailable:
+        raise
+    except Exception as error:
+        raise ThumbnailUnavailable(
+            "thumbnail.export_failed", f"the exported PNG could not be decoded: {error}"
+        ) from error
 
 
 def first_page_ids(scene: JsonObject) -> Optional[List[str]]:
