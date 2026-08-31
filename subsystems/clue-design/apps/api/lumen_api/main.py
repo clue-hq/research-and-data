@@ -3631,7 +3631,7 @@ def create_app(
             "diagnostics": diagnostics,
         }
 
-    @app.get("/documents/{document_id}/thumbnail")
+    @app.get("/documents/{document_id}/thumbnail", response_class=Response)
     def get_document_thumbnail(
         document_id: str,
         request: Request,
@@ -3715,7 +3715,14 @@ def create_app(
                 raise HTTPException(
                     status_code=502,
                     detail={
-                        "code": "thumbnail.export_failed",
+                        # Kind-aware: only the scene branch exports. A CoreError from
+                        # the web branch escaped a RENDER, so labelling it
+                        # `export_failed` would name a step that never ran.
+                        "code": (
+                            "thumbnail.render_failed"
+                            if kind == "web"
+                            else "thumbnail.export_failed"
+                        ),
                         "message": str(error),
                     },
                 ) from error

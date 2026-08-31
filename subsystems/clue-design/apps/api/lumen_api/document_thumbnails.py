@@ -107,14 +107,26 @@ def inline_tailwind(html: str, runtime: bytes) -> str:
     """Splice the runtime into `html` so it compiles the theme block at load time.
 
     The splice is web_substrate's (`web_substrate.py:8879-8882`) — before the first
-    ``</head>`` when there is one, otherwise PREPENDED to the whole document. The
-    runtime must load before the theme block it scans, so "prepend" is the correct
-    degenerate answer; appending it at the end of the body is not.
+    ``</head>`` when there is one. The runtime must load before the theme block it
+    scans, so with no ``</head>`` the front of the document is the right place.
+
+    The head-less branch is a DELIBERATE, documented divergence from
+    web_substrate's degenerate fallback (which prepends unconditionally), per the
+    controller ruling: our input set includes head-less documents that still open
+    with a doctype, and a script in front of the doctype puts Chromium in QUIRKS
+    MODE — the capture would then be a distorted picture of a page nobody ships.
+    So a leading doctype is stepped over and the script goes right after it;
+    everything else still prepends.
     """
 
     script = f"<script>{runtime.decode('utf-8')}</script>"
     if "</head>" in html:
         return html.replace("</head>", script + "\n</head>", 1)
+    leading = len(html) - len(html.lstrip())
+    if html[leading : leading + 9].lower() == "<!doctype":
+        end = html.find(">", leading)
+        if end != -1:
+            return html[: end + 1] + script + html[end + 1 :]
     return script + html
 
 
@@ -136,7 +148,17 @@ def web_thumbnail_png(
             "or npm install in an editor/frontend app)",
         )
 
-    from playwright.sync_api import Error as PlaywrightError, sync_playwright
+    # The import is inside the function AND inside a refusal: an API process
+    # without playwright installed must answer this route's ONE typed channel, not
+    # crash the request with an untyped ImportError. Only the import is guarded
+    # here — a blanket `except Exception` around the capture would swallow the
+    # programming errors the block below is supposed to surface.
+    try:
+        from playwright.sync_api import Error as PlaywrightError, sync_playwright
+    except ImportError as error:
+        raise ThumbnailUnavailable(
+            "thumbnail.capture_failed", "playwright is not installed"
+        ) from error
 
     try:
         with sync_playwright() as pw:
@@ -220,6 +242,12 @@ def first_page_ids(scene: JsonObject) -> Optional[List[str]]:
     ``BTreeMap<PageId, Page>``; confirmed against a stored ``doc_kind='scene'``
     document), and the key is the id every other reader here uses — `page_summary`
     and `parent_map` in main.py both take it from the key.
+
+    "First" means FIRST AS SERIALIZED, never client-side re-sorted. The engine
+    writes that ``BTreeMap`` in key order, and this reader takes ``next(iter(...))``
+    over the parsed object exactly as the editor takes ``Object.keys(...)[0]`` —
+    both read document order. Sorting here would make the thumbnail show a
+    different page from the one the editor opens on.
 
     Returns None — meaning "export every page, let the engine pick" — for any
     other shape, including a WEB document's page LIST. Guessing a key on an

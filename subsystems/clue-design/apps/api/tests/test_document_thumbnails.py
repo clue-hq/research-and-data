@@ -14,6 +14,7 @@ a fake response would prove none of them.
 
 from __future__ import annotations
 
+import functools
 import io
 import json
 from pathlib import Path
@@ -53,6 +54,16 @@ def test_inline_tailwind_without_head_prepends():
     # so it still loads before the theme block it has to compile.
     assert out.startswith("<script>RUNTIME_JS</script>")
     assert html in out
+
+
+def test_inline_tailwind_without_head_stays_behind_the_doctype():
+    html = "<!DOCTYPE html>\n<html><body><p>hi</p></body></html>"
+    out = thumbs.inline_tailwind(html, b"RUNTIME_JS")
+    # A script in FRONT of the doctype puts Chromium in quirks mode, and the
+    # thumbnail would then picture a layout nobody ships.
+    assert out.startswith("<!DOCTYPE html>")
+    assert out.startswith("<!DOCTYPE html><script>RUNTIME_JS</script>")
+    assert out.endswith("\n<html><body><p>hi</p></body></html>")
 
 
 def test_downscale_caps_the_long_edge_and_keeps_aspect():
@@ -105,11 +116,17 @@ def test_downscale_png_wraps_undecodable_bytes():
     assert raised.value.code == "thumbnail.export_failed"
 
 
-def test_first_page_ids_takes_the_first_page_only():
+def test_first_page_ids_takes_the_first_page_as_serialized():
     # A scene's pages are a MAP keyed by page id (engine `BTreeMap<PageId, Page>`),
     # not a list — confirmed against a stored `doc_kind='scene'` document.
-    scene = {"pages": {"page_a4": {"id": "page_a4"}, "page_b": {"id": "page_b"}}}
-    assert thumbs.first_page_ids(scene) == ["page_a4"]
+    #
+    # The keys here are seeded in NON-sorted order on purpose. The contract is
+    # "first key AS SERIALIZED", not "client-side re-sort": the engine serializes
+    # its BTreeMap in key order, and both `next(iter(...))` here and the editor's
+    # `Object.keys(...)` read the document's own order. A re-sorting reader would
+    # answer "page_a" and thumbnail a page the editor does not open on.
+    scene = {"pages": {"page_z": {"id": "page_z"}, "page_a": {"id": "page_a"}}}
+    assert thumbs.first_page_ids(scene) == ["page_z"]
 
 
 def test_first_page_ids_none_when_shape_unknown():
@@ -138,7 +155,30 @@ def test_web_thumbnail_png_refuses_without_a_runtime(monkeypatch, tmp_path):
     assert raised.value.code == "thumbnail.tailwind_runtime_missing"
 
 
+def test_web_thumbnail_png_wraps_a_playwright_failure(monkeypatch):
+    # A browser that will not start (no chromium downloaded, a sandbox refusal) is a
+    # thumbnail refusal, not a server fault — and the route only understands
+    # ThumbnailUnavailable. The runtime is made resolvable first, or the refusal
+    # above would fire and prove nothing about the capture.
+    import playwright.sync_api
+
+    monkeypatch.setattr(thumbs, "resolve_tailwind_runtime", lambda: b"x")
+
+    def explode():
+        raise playwright.sync_api.Error("Executable doesn't exist")
+
+    # Patched on `playwright.sync_api` itself: the generator imports the name at
+    # call time, so this is the real `except PlaywrightError` clause being taken.
+    monkeypatch.setattr(playwright.sync_api, "sync_playwright", explode)
+    with pytest.raises(thumbs.ThumbnailUnavailable) as raised:
+        thumbs.web_thumbnail_png("<html><body></body></html>")
+    assert raised.value.code == "thumbnail.capture_failed"
+    assert "Executable doesn't exist" in str(raised.value)
+
+
+@functools.lru_cache(maxsize=None)
 def _chromium_available() -> bool:
+    # Cached: the probe LAUNCHES a browser, so a session that asks twice must pay once.
     try:
         from playwright.sync_api import sync_playwright
 
@@ -149,11 +189,14 @@ def _chromium_available() -> bool:
         return False
 
 
-@pytest.mark.skipif(
-    not (_chromium_available() and thumbs.resolve_tailwind_runtime() is not None),
-    reason="playwright chromium or the Tailwind browser runtime is not installed",
-)
 def test_web_thumbnail_png_captures_styled_html(monkeypatch):
+    # The skips are IN THE BODY, not a `skipif` condition: a marker expression is
+    # evaluated at COLLECTION time, so this probe used to launch a real Chromium
+    # (and read the filesystem) merely to list the tests in this file.
+    if not _chromium_available():
+        pytest.skip("playwright chromium not installed")
+    if thumbs.resolve_tailwind_runtime() is None:
+        pytest.skip("no tailwind runtime on this machine")
     # A page that is red only if arbitrary-value Tailwind classes compiled.
     monkeypatch.delenv(thumbs._TAILWIND_RUNTIME_ENV, raising=False)
     html = (
@@ -282,6 +325,27 @@ def test_scene_thumbnail_goes_through_the_engine_export(
     # And the bytes are cached under this document's version like the web ones.
     version = client.get(f"/documents/{seeded_scene_document}").json()["current_version"]
     assert HybridRepository().get_document_thumbnail(seeded_scene_document, version)
+
+
+def test_scene_thumbnail_generates_once_then_serves_from_cache(
+    client: TestClient, seeded_scene_document: str, monkeypatch
+) -> None:
+    # The web path's cache-hit proof, for the other generator: the engine export is
+    # the expensive half of a scene thumbnail, so a second read must not pay it.
+    real_export = client.app.state.core.export_preview
+    calls = []
+
+    def counting_export(*args, **kwargs):
+        calls.append(args)
+        return real_export(*args, **kwargs)
+
+    monkeypatch.setattr(client.app.state.core, "export_preview", counting_export)
+    first = client.get(f"/documents/{seeded_scene_document}/thumbnail")
+    assert first.status_code == 200, first.text
+    second = client.get(f"/documents/{seeded_scene_document}/thumbnail")
+    assert second.status_code == 200, second.text
+    assert len(calls) == 1  # the second hit came from the blob cache
+    assert second.content == first.content
 
 
 def test_generated_thumbnail_bytes_land_in_the_blob_store(

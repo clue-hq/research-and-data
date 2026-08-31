@@ -3,8 +3,8 @@
 1. **Round-trip** — a miss is ``None`` (never an error: a gallery card with no cached PNG yet is
    the normal first read), and after one record the digest and its media type come back.
 2. **Idempotent upsert** — recording again for the same ``(document, version)`` REPLACES the
-   digest instead of raising. Two workers may render the same card concurrently, and a
-   re-render after an evicted blob must be able to re-claim the slot.
+   digest AND its media type instead of raising. Two workers may render the same card
+   concurrently, and a re-render after an evicted blob must be able to re-claim the slot.
 3. **Workspace scoping** — the key is ``(workspace, document, version)``, so one tenant's cached
    thumbnail is invisible to another even for an identical document id.
 
@@ -98,21 +98,25 @@ def test_record_is_an_idempotent_upsert(require_design_db: None) -> None:
                     sha256=_PNG_DIGEST,
                     media_type="image/png",
                 )
+                # A different media type on the re-record, so the upsert's
+                # `media_type = excluded.media_type` is exercised too: without it the
+                # slot would keep naming the FIRST render's type for the second
+                # render's bytes.
                 replaced = await thumbnails.record_document_thumbnail(
                     conn,
                     workspace_id=workspace_id,
                     document_id="doc_1",
                     version=3,
                     sha256=_OTHER_DIGEST,
-                    media_type="image/png",
+                    media_type="image/webp",
                 )
-                assert replaced == {"sha256": _OTHER_DIGEST, "media_type": "image/png"}
+                assert replaced == {"sha256": _OTHER_DIGEST, "media_type": "image/webp"}
 
                 # One slot, not two — and the latest render is what it names.
                 assert await _row_count(conn, workspace_id) == 1
                 assert await thumbnails.get_document_thumbnail(
                     conn, workspace_id=workspace_id, document_id="doc_1", version=3
-                ) == {"sha256": _OTHER_DIGEST, "media_type": "image/png"}
+                ) == {"sha256": _OTHER_DIGEST, "media_type": "image/webp"}
             finally:
                 await transaction.rollback()
 

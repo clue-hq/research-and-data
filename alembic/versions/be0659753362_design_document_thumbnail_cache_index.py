@@ -4,27 +4,30 @@ Revision ID: be0659753362
 Revises: 4c02d8eac29a
 Create Date: 2026-08-30 21:14:03.394175+00:00
 
-One row per ``(workspace, document, version)`` naming the blob-store digest that holds the
-rendered PNG a gallery card shows. **Deliberately FK-free, both ways.** No FK to the ``artifact``
-row, because a design blob is content-addressed per workspace and a dangling digest is repaired
-by regenerating the thumbnail at read time — a constraint would turn a self-healing miss into a
-write failure. No FK to ``design_document`` either: this is a pure cache, and a cache must never
-be the thing that blocks a document delete.
+One table, ``design_document_thumbnail``: one row per ``(workspace, document, version)`` naming
+the blob-store digest that holds the rendered PNG a gallery card shows. The bytes themselves live
+where every other design blob lives — platform storage under ``{workspace_id}/design/{sha256}`` —
+so this table holds no image data, only the pointer that saves a re-render.
 
-Conventions every migration must honour (docs/specs/M00-foundations-and-shared-contracts.md §M0.3;
-see src/clue_research/db/README.md "Migration conventions checklist"):
-- Append-only: claim history supersedes via ``superseded_by``; never UPDATE a value column in place.
-- UTC ``timestamptz`` for time columns (e.g. ``observed_at`` / ``collected_at``).
-- JSONB ``value_json`` payloads, with real indexed columns on the hot query keys (``entity_id`` …).
-- Everything keys on a resolved ``entity_id`` — never a free-text name.
-- Forward + reverse: ``downgrade()`` must cleanly reverse ``upgrade()`` (CI runs up → down → up).
+**Deliberately FK-free, both ways.** No FK to the ``artifact`` row, because a design blob is
+content-addressed per workspace and a dangling digest is repaired by regenerating the thumbnail at
+read time — a constraint would turn a self-healing miss into a write failure. No FK to
+``design_document`` either: this is a pure cache, and a cache must never be the thing that blocks
+a document delete.
+
+**Tenancy is structural**, the way every design table added since the D1 port keys itself: the
+primary key leads with ``workspace_id``, so one tenant's cached thumbnail is neither readable nor
+overwritable from another workspace even for an identical document id. Rows for superseded
+versions are simply kept — pruning is future work, not something a read path should be doing.
+
+Hand-written and reversible: ``downgrade()`` drops the table (CI runs up -> down -> up). No data
+migration is owed — the cache is born empty and fills itself on the first gallery read.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
-import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -35,27 +38,31 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "design_document_thumbnail",
-        sa.Column("workspace_id", sa.Text(), nullable=False),
-        sa.Column("document_id", sa.Text(), nullable=False),
-        sa.Column("version", sa.Integer(), nullable=False),
-        sa.Column("sha256", sa.Text(), nullable=False),
-        sa.Column("media_type", sa.Text(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.TIMESTAMP(timezone=True),
-            nullable=False,
-            server_default=sa.text("now()"),
-        ),
-        sa.PrimaryKeyConstraint(
-            "workspace_id",
-            "document_id",
-            "version",
-            name="pk_design_document_thumbnail",
-        ),
+    op.execute(
+        """
+        CREATE TABLE design_document_thumbnail (
+            workspace_id text NOT NULL,
+            document_id  text NOT NULL,
+            version      integer NOT NULL,
+            sha256       text NOT NULL,
+            media_type   text NOT NULL,
+            created_at   timestamptz NOT NULL DEFAULT now(),
+
+            -- Workspace-first, so a tenant's slot is its own. See the docstring.
+            CONSTRAINT pk_design_document_thumbnail
+                PRIMARY KEY (workspace_id, document_id, version)
+        )
+        """
+    )
+    op.execute(
+        "COMMENT ON TABLE design_document_thumbnail IS 'Gallery-card thumbnail cache: one row "
+        "per (workspace, document, version) naming the design-blob digest that holds the "
+        "rendered PNG. Pointer rows only — the bytes live in platform storage under "
+        "{workspace_id}/design/{sha256}. No foreign keys by design, in either direction: a "
+        "dangling digest is repaired by regenerating the thumbnail on the next read, and a pure "
+        "cache must never block a document delete.'"
     )
 
 
 def downgrade() -> None:
-    op.drop_table("design_document_thumbnail")
+    op.execute("DROP TABLE design_document_thumbnail")
