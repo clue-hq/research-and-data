@@ -21,6 +21,7 @@ Ledger: `.superpowers/sdd/2026-09-02-vendor-first-logo-family/progress.md`. Proc
 - Task 4 — DONE (`abe5d9d4f`, `417da50b4`) — live-verified
 - Task 5 — DONE (`50908e087`)
 - Task 6 — DONE (`08de3c8e2`, `ab6b477a4`)
+- Task 8 — DONE (`753e1e9d7`) — ran before Task 7
 
 ## Deferred items ledger (founder rule 2026-09-02: every deferral lives HERE and belongs to a task)
 
@@ -1932,6 +1933,8 @@ gate; no TTL — force_refresh is the eviction affordance."
 
 ### Task 8: Widen the bind gate to vendor provenance
 
+**Status: DONE 2026-09-02 — commit `753e1e9d7` (executed before Task 7 to close the vendor-logos-unbindable window); controller first-hand review clean.**
+
 **Files:**
 - Modify: `subsystems/clue-design/apps/api/lumen_api/agent_account_logos.py` (the `LADDER_PROVENANCE` block + `is_ladder_fetched`)
 - Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/web_substrate.py` (the `is_ladder_fetched` import + the `account_logo.not_a_fetched_logo` refusal text)
@@ -1941,7 +1944,7 @@ gate; no TTL — force_refresh is the eviction affordance."
 - Consumes: Task 6's provenance stamping (`created_by` ∈ `{"logo_ladder", "brandfetch"}`).
 - Produces: `FETCHED_LOGO_PROVENANCES = frozenset({"logo_ladder", "brandfetch"})`; `is_fetched_logo(record) -> bool` (new name; `is_ladder_fetched` kept as a deprecated alias = same function object, so nothing silently breaks); `__all__` updated.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_vendor_fetched_records_pass_the_bind_gate_and_generated_ones_do_not():
@@ -1957,10 +1960,10 @@ def test_vendor_fetched_records_pass_the_bind_gate_and_generated_ones_do_not():
     assert is_ladder_fetched is is_fetched_logo
 ```
 
-- [ ] **Step 2: Run to verify FAIL** (`ImportError: is_fetched_logo`):
+- [x] **Step 2: Run to verify FAIL** (`ImportError: is_fetched_logo`):
 `... -m pytest apps/agent_runtime/tests/test_web_account_logo_bind.py -v -k vendor_fetched`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `agent_account_logos.py` replace the `LADDER_PROVENANCE`/`is_ladder_fetched` block:
 
@@ -1992,10 +1995,10 @@ is_ladder_fetched = is_fetched_logo
 
 Update `__all__` to add `"FETCHED_LOGO_PROVENANCES"`, `"VENDOR_PROVENANCE"`, `"is_fetched_logo"`. **Carry-over (Task 6 review):** the `LADDER_PROVENANCE` comment block in this file still names `lumen_agent.tools.logo_fetch._prepare`; Task 6 renamed it `_assemble` — update the mention while rewriting that block. In `web_substrate.py`, switch the import to `is_fetched_logo` and adjust the `account_logo.not_a_fetched_logo` message's first sentence to: `f"'{asset}' was not fetched from that company's own website or logo vendor, so it cannot become their logo."` (rest of the message unchanged).
 
-- [ ] **Step 4: Run to verify PASS**, plus the file's existing tests still green:
+- [x] **Step 4: Run to verify PASS**, plus the file's existing tests still green:
 `... -m pytest apps/agent_runtime/tests/test_web_account_logo_bind.py -v`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add subsystems/clue-design/apps/api/lumen_api/agent_account_logos.py subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/web_substrate.py subsystems/clue-design/apps/agent_runtime/tests/test_web_account_logo_bind.py
