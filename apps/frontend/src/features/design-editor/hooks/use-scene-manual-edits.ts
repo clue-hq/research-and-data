@@ -152,26 +152,43 @@ export function sceneManualWriteGate({
 }
 
 /**
- * The lock-engage transition: flush, THEN latch. Returns the new latch value.
+ * The lock transition: flush, announce, latch — or withdraw. Returns the new
+ * latch value.
  *
- * Pure but for the callback it is handed, which is the point — the ordering is
+ * Pure but for the callbacks it is handed, which is the point — the ORDER is
  * the thing worth pinning, and pinning it needs nothing but a spy.
  *
- * `flush` commits any open caret session through the ordinary write path, so it
- * must run while that path is still open; returning the latch (rather than
- * setting it) is what makes "before" structural instead of a comment.
+ * On the ENGAGE edge:
+ *  1. `flush` commits any open caret session through the ordinary write path,
+ *     so it must run while that path is still open — returning the latch rather
+ *     than setting it is what makes "before" structural instead of a comment;
+ *  2. `announce` puts the lock's reason on screen. Task 4 fix round 1 (I4): it
+ *     is PROACTIVE. Before this the reason appeared only once the human tried
+ *     something and was refused, so a locked editor sat inert with nothing
+ *     saying why. It runs after the flush so a commit's own messages cannot
+ *     overwrite it.
+ *
+ * On the RELEASE edge, `withdraw` takes the reason back down — the run is over
+ * and a stale "the design agent is working" would be a lie.
  */
 export function engageSceneWriteLock({
+  announce,
   flush,
   locked,
   previous,
+  withdraw,
 }: {
+  announce: () => void;
   flush: () => void;
   locked: boolean;
   previous: boolean;
+  withdraw: () => void;
 }): boolean {
   if (locked && !previous) {
     flush();
+    announce();
+  } else if (!locked && previous) {
+    withdraw();
   }
   return locked;
 }
@@ -222,6 +239,17 @@ export interface SceneManualEdits {
    * to apply. Asked up front, the refusal costs nothing and strands nothing.
    */
   canApply: () => boolean;
+  /**
+   * Task 4 fix round 1 (I3): the SAME question `canApply` asks, with the answer
+   * intact — allowed, plus why not and what to say about it.
+   *
+   * `canApply` collapses that to a boolean, which is fine for a caller that only
+   * disables a control and wrong for one that reports a reason: the pre-spend
+   * callers (Replace image, the AI image suite) were saying "the write path is
+   * not armed" about a perfectly armed editor whose only problem was that the
+   * design agent was working. Those callers read this instead.
+   */
+  writeGate: () => SceneWriteGate;
   /**
    * AD4.B step 4 (§1.5): one DOCUMENT-LEVEL STRUCTURED EDIT — today, group and
    * ungroup.
@@ -381,6 +409,13 @@ export function useSceneManualEdits(
   const lockedRef = useRef(locked);
   useEffect(() => {
     lockedRef.current = engageSceneWriteLock({
+      // Task 4 fix round 1 (I4): the reason goes up the moment the lock does,
+      // rather than waiting for the human to try something and be refused.
+      // AFTER the flush, so the commit's own messages cannot overwrite it.
+      announce: () => {
+        const note = lockNoteRef.current;
+        if (note !== null) setNote(note);
+      },
       // The founder default: a lock closing over an open, dirty caret session
       // COMMITS it first — same transactional posture as a blur — so typed work
       // is never silently lost. The canvas owns the session (its draft lives in
@@ -388,6 +423,13 @@ export function useSceneManualEdits(
       flush: () => controlsRef.current?.flushTextEdit(),
       locked,
       previous: lockedRef.current,
+      // Take the reason back down — but only if it is still OURS. A reconcile
+      // note or a refusal the user is reading was put there by something else
+      // and is still true.
+      withdraw: () =>
+        setNote((current) =>
+          current !== null && current === lockNoteRef.current ? null : current,
+        ),
     });
   }, [controlsRef, locked]);
 
@@ -589,15 +631,17 @@ export function useSceneManualEdits(
    * that spend before they write (Replace image, the AI image suite), and they
    * report the refusal themselves through the slot they already own.
    */
-  const canApply = useCallback(() => {
+  const writeGate = useCallback((): SceneWriteGate => {
     const controls = controlsHolderRef.current.current;
     return sceneManualWriteGate({
       armed: Boolean(documentIdRef.current && controls),
       engineReady: Boolean(controls?.canApply()),
       lockNote: lockNoteRef.current,
       locked: lockedRef.current,
-    }).allowed;
+    });
   }, []);
+
+  const canApply = useCallback(() => writeGate().allowed, [writeGate]);
 
   const applyOps = useCallback(
     (operations: Operation[]) => {
@@ -929,6 +973,7 @@ export function useSceneManualEdits(
     reportNote,
     undo,
     undoDisabled: locked || depths.undo === 0,
+    writeGate,
   };
 }
 

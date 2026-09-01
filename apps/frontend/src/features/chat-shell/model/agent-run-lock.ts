@@ -20,9 +20,10 @@
  *
  * Three postures, all deliberate:
  *
- *  • **no design leg on the thread → unlocked.** A strategy turn is not the
- *    design agent at work, and interleaved manual edits BETWEEN design turns are
- *    the ratified genweb feature this must not touch.
+ *  • **the platform positively says there is no design leg → unlocked.** A
+ *    strategy turn is not the design agent at work, and interleaved manual edits
+ *    BETWEEN design turns are the ratified genweb feature this must not touch.
+ *    An UNKNOWN leg is not this case — see {@link DesignLegFact}.
  *  • **a sibling thread's document → unlocked.** This thread's run cannot be
  *    writing a document another thread gave birth to.
  *  • **a document whose thread cannot be resolved → LOCKED.** Fail-safe: when
@@ -38,6 +39,62 @@
  * head-of-ABM turn is still running, and the release matrix says the lock lifts
  * there; without the latch the lagging `threadBusy` would hold it shut.
  */
+
+/**
+ * What is known about the thread's design leg — three answers, not two.
+ *
+ * The third is the whole point (fix round 1, finding I1). The stream's leg
+ * state is seeded CLOSED and moved only by `leg.*` frames, and rehydration
+ * replays only the last few turns — so "no leg frame in the backlog" is
+ * `unknown`, NOT `none`. Collapsing the two unlocked the editor mid-run on
+ * every cold load into a leg opened further back than the replay reaches.
+ *
+ * `running` comes from the durable thread wire (`ThreadSpeakerWire.design_leg_state`)
+ * and is an ENGAGED FLOOR: it is the platform saying, at load time, that a
+ * design run is in flight right now.
+ */
+export type DesignLegFact =
+  | { kind: "unknown" }
+  | { kind: "none" }
+  | { kind: "open"; running: boolean };
+
+export const UNKNOWN_DESIGN_LEG: DesignLegFact = { kind: "unknown" };
+
+const NO_DESIGN_LEG: DesignLegFact = { kind: "none" };
+
+/** The durable thread wire's leg projection, as `chat-thread` parses it. */
+export interface ThreadDesignLegWire {
+  legId: string | null;
+  /** `null` means the platform says this thread holds no leg. */
+  state: "open_awaiting_user" | "running" | null;
+}
+
+/**
+ * Compose the leg fact from the two sources that can answer it.
+ *
+ * Precedence: the STREAM wins whenever it has actually observed something —
+ * it is live, and the wire is a snapshot taken when the thread list was read.
+ * The wire answers only for what the stream has not seen, which is exactly the
+ * cold-load window I1 is about. `running` is read from the wire either way: it
+ * is a fact no frame carries, and the selector below is what makes it expire
+ * (an observed terminal frame drops the floor).
+ */
+export function designLegFactFor({
+  leg,
+  wire,
+}: {
+  /** The stream's own leg state (`chat-transcript`'s `designLeg`). `known` is
+   * false until either a leg frame or the durable seed has moved it. */
+  leg: { known: boolean; open: boolean };
+  /** The active thread's durable leg projection, or `null` when the read did
+   * not derive one (the platform sends `speaker: null` on such reads). */
+  wire: ThreadDesignLegWire | null;
+}): DesignLegFact {
+  const open = leg.known ? leg.open : wire ? wire.state !== null : null;
+  if (open === null) return UNKNOWN_DESIGN_LEG;
+  if (!open) return NO_DESIGN_LEG;
+  return { kind: "open", running: wire?.state === "running" };
+}
 
 /** The lock's view of one turn-stream frame. */
 export interface AgentRunLockFrame {
@@ -130,12 +187,26 @@ export function applyAgentRunLockEvent(
       };
     }
     case "leg.awaiting_user":
-    case "leg.closed":
+    case "leg.closed": {
+      // Fix round 1, finding I2: release ONLY the turn this frame names.
+      //
+      // Clearing every active turn here was the second dangerous-direction
+      // defect: per-turn backlog attaches have no cross-turn ordering and every
+      // design turn ends with `leg.awaiting_user`, so a previous turn's
+      // late-replayed hand-back unlocked the editor under the run in flight.
+      // The leg frames are emitted under the SUBMITTING turn's id
+      // (`design_leg_wiring.py`), so a turn still releases itself.
+      const active = new Set(base.activeTurnIds);
+      active.delete(event.turnId);
       return {
         threadId: event.threadId,
-        activeTurnIds: NO_TURNS,
-        released: true,
+        activeTurnIds: active,
+        // Nothing left running: this is also what lifts the durable
+        // `threadBusy` floor at a cold-loaded hand-back, where the turn was
+        // never seen to start.
+        released: active.size === 0,
       };
+    }
     case "stream.reset":
       return {
         threadId: event.threadId,
@@ -177,17 +248,22 @@ const LOCKED: AgentRunLock = { locked: true, note: AGENT_RUN_LOCK_NOTE };
  */
 export function agentRunLockForThread({
   activeThreadId,
-  designLegOpen,
+  designLeg,
   documentId,
   documentThreadId,
   state,
   threadBusy,
 }: {
   activeThreadId: string | null;
-  /** The transcript's own leg fact (`stream.designLeg.open`) — a leg is open
-   * between `leg.opened`/`leg.reopened` and its `leg.closed`. Read rather than
-   * re-derived here so the two surfaces cannot disagree about the leg. */
-  designLegOpen: boolean;
+  /**
+   * What is known about the thread's leg — `designLegFactFor`'s answer.
+   *
+   * Only a POSITIVE `none` (the platform's durable wire saying this thread
+   * holds no leg, or the stream having watched one close) unlocks by itself.
+   * `unknown` does not: absence of evidence is not evidence of absence, and
+   * erring the other way is what unlocked a live run (fix round 1, I1).
+   */
+  designLeg: DesignLegFact;
   /** The design document open in the editor, or `null`. */
   documentId: string | null;
   /** The thread the open document was born in (its gallery card's
@@ -198,8 +274,9 @@ export function agentRunLockForThread({
   threadBusy: boolean;
 }): AgentRunLock {
   if (activeThreadId === null) return UNLOCKED;
-  // The ratified unlocked-by-default state: no design leg, nothing designing.
-  if (!designLegOpen) return UNLOCKED;
+  // The ratified unlocked-by-default state, and the ONLY one: the platform
+  // positively says this thread has no design leg, so nothing is designing.
+  if (designLeg.kind === "none") return UNLOCKED;
   // Nothing open is nothing to lock.
   if (documentId === null) return UNLOCKED;
   // A document another thread gave birth to; this thread's run is not it.
@@ -208,7 +285,14 @@ export function agentRunLockForThread({
     return UNLOCKED;
   }
   const observed = state.threadId === activeThreadId ? state : NO_AGENT_RUN;
+  // Three engaging facts, one expiry. The two FLOORS — the wire's "a design run
+  // is in flight" and the durable turn queue's "a turn is queued or running" —
+  // hold only until the stream has actually observed the run settle; after that
+  // the frames are the newer truth and a stale snapshot must not hold the
+  // editor shut. An observed active turn needs no floor: it IS the observation.
+  const floor =
+    (designLeg.kind === "open" && designLeg.running) || threadBusy;
   const runActive =
-    observed.activeTurnIds.size > 0 || (!observed.released && threadBusy);
+    observed.activeTurnIds.size > 0 || (!observed.released && floor);
   return runActive ? LOCKED : UNLOCKED;
 }

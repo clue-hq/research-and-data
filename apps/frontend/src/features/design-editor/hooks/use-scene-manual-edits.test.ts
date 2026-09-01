@@ -71,44 +71,57 @@ test("a lock with no copy still refuses; it just has nothing to say", () => {
   );
 });
 
-test("engaging the lock flushes the open text session exactly once, first", () => {
+/** A transition recorder: what the lock edge did, and in what order. */
+function transitionSpy() {
   const calls: string[] = [];
-  // The latch the imperative write path reads. The flush asserts against it,
-  // which is the ordering contract: the session's own commit rides the SAME
-  // `applyOps` the inspector uses, so it must still be allowed when it runs.
   let latch = false;
-  const flush = () => {
-    calls.push("flush");
-    assert.equal(latch, false, "the flush must run BEFORE the latch closes");
+  return {
+    calls,
+    latch: () => latch,
+    run(locked: boolean) {
+      latch = engageSceneWriteLock({
+        announce: () => calls.push("announce"),
+        flush: () => {
+          calls.push("flush");
+          // The ordering contract: the session's own commit rides the SAME
+          // `applyOps` the inspector uses, so it must still be allowed when it
+          // runs.
+          assert.equal(latch, false, "the flush must run BEFORE the latch closes");
+        },
+        locked,
+        previous: latch,
+        withdraw: () => calls.push("withdraw"),
+      });
+      return latch;
+    },
   };
+}
 
-  latch = engageSceneWriteLock({ flush, locked: true, previous: false });
-  assert.deepEqual(calls, ["flush"]);
-  assert.equal(latch, true);
+test("engaging the lock flushes the open text session first, then announces", () => {
+  // Task 4 fix round 1 (I4): the reason is PROACTIVE. It used to appear only
+  // once the human tried something and was refused, so a locked editor sat
+  // there inert with nothing on screen explaining it.
+  const spy = transitionSpy();
 
-  // Still locked on the next render: nothing to flush, nothing flushed.
-  latch = engageSceneWriteLock({ flush, locked: true, previous: latch });
-  assert.deepEqual(calls, ["flush"]);
-  assert.equal(latch, true);
+  assert.equal(spy.run(true), true);
+  assert.deepEqual(spy.calls, ["flush", "announce"]);
+
+  // Still locked on the next render: no edge, so nothing fires again.
+  assert.equal(spy.run(true), true);
+  assert.deepEqual(spy.calls, ["flush", "announce"]);
 });
 
-test("releasing the lock flushes nothing", () => {
-  const calls: string[] = [];
-  const latch = engageSceneWriteLock({
-    flush: () => calls.push("flush"),
-    locked: false,
-    previous: true,
-  });
-  assert.deepEqual(calls, []);
-  assert.equal(latch, false);
+test("releasing the lock withdraws the reason and flushes nothing", () => {
+  const spy = transitionSpy();
+  spy.run(true);
+  spy.calls.length = 0;
+
+  assert.equal(spy.run(false), false);
+  assert.deepEqual(spy.calls, ["withdraw"]);
 });
 
-test("staying unlocked flushes nothing", () => {
-  const calls: string[] = [];
-  engageSceneWriteLock({
-    flush: () => calls.push("flush"),
-    locked: false,
-    previous: false,
-  });
-  assert.deepEqual(calls, []);
+test("staying unlocked is a complete non-event", () => {
+  const spy = transitionSpy();
+  assert.equal(spy.run(false), false);
+  assert.deepEqual(spy.calls, []);
 });

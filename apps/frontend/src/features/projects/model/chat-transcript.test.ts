@@ -9,6 +9,7 @@ import {
   applyChatStreamEvent,
   composeTranscript,
   emptyTranscriptState,
+  seedDesignLeg,
   turnsAwaitingRehydration,
   type TranscriptMessage,
   type TranscriptState,
@@ -836,6 +837,7 @@ test("a reopen names its own delegating turn and reopens the leg", () => {
     legFrame({ type: "leg.reopened", leg_id: "leg-9" }, "turn-reopen"),
   ]);
   assert.deepEqual(state.designLeg, {
+    known: true,
     open: true,
     legId: "leg-9",
     openedByTurnId: "turn-reopen",
@@ -851,10 +853,80 @@ test("an awaiting frame keeps the leg open without stealing the opener", () => {
     legFrame({ type: "leg.awaiting_user", leg_id: "leg-9" }, "turn-design"),
   ]);
   assert.deepEqual(state.designLeg, {
+    known: true,
     open: true,
     legId: "leg-9",
     openedByTurnId: "turn-open",
   });
+});
+
+/* --------------------------------------------------------------------------
+ * The durable seed (task 4 fix round 1, finding I1)
+ *
+ * The frame backlog reaches back only a few turns, so a leg opened before it
+ * is invisible to the stream. The thread wire's speaker projection knows, and
+ * seeding from it is what stops "no frame said so" reading as "there is no
+ * leg".
+ * ----------------------------------------------------------------------- */
+
+test("the durable seed answers a leg no frame in the backlog mentions", () => {
+  const state = seedDesignLeg(emptyTranscriptState(), {
+    legId: "leg-9",
+    open: true,
+  });
+  assert.deepEqual(state.designLeg, {
+    known: true,
+    open: true,
+    legId: "leg-9",
+    // No frame named the delegating turn, and the wire does not carry one.
+    openedByTurnId: null,
+  });
+});
+
+test("a seed that says there is no leg is still KNOWLEDGE", () => {
+  const state = seedDesignLeg(emptyTranscriptState(), {
+    legId: null,
+    open: false,
+  });
+  assert.equal(state.designLeg.known, true);
+  assert.equal(state.designLeg.open, false);
+});
+
+test("nothing observed and nothing seeded is UNKNOWN, not closed", () => {
+  assert.equal(emptyTranscriptState().designLeg.known, false);
+  assert.equal(emptyTranscriptState().designLeg.open, false);
+});
+
+test("a seed never overwrites what the stream has already observed", () => {
+  // The wire is a snapshot taken when the thread list was read; the frames are
+  // live. A leg the stream watched close must stay closed.
+  const observed = apply(emptyTranscriptState(), [
+    legFrame({ type: "leg.opened", leg_id: "leg-9" }, "turn-open"),
+    legFrame({ type: "leg.closed", leg_id: "leg-9", reason: "locked" }, "turn-a"),
+  ]);
+  const seeded = seedDesignLeg(observed, { legId: "leg-9", open: true });
+  assert.equal(seeded, observed);
+  assert.equal(seeded.designLeg.open, false);
+});
+
+test("a frame still outranks a seed that landed first", () => {
+  const seeded = seedDesignLeg(emptyTranscriptState(), {
+    legId: "leg-9",
+    open: true,
+  });
+  const state = apply(seeded, [
+    legFrame({ type: "leg.closed", leg_id: "leg-9", reason: "locked" }, "turn-a"),
+  ]);
+  assert.equal(state.designLeg.open, false);
+  assert.equal(state.designLeg.known, true);
+});
+
+test("seeding twice is idempotent and allocates nothing", () => {
+  const once = seedDesignLeg(emptyTranscriptState(), {
+    legId: "leg-9",
+    open: true,
+  });
+  assert.equal(seedDesignLeg(once, { legId: "leg-9", open: true }), once);
 });
 
 test("stream.reset drops parts but keeps the leg lines it cannot re-read", () => {

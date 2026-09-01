@@ -5,7 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   NO_AGENT_RUN,
   applyAgentRunLockEvent,
+  designLegFactFor,
   type AgentRunLockState,
+  type DesignLegFact,
 } from "@/features/chat-shell/model/agent-run-lock";
 import {
   ClueChatApiError,
@@ -36,6 +38,7 @@ import {
   applyChatStreamEvent,
   composeTranscript,
   emptyTranscriptState,
+  seedDesignLeg,
   type OptimisticTurn,
   type TranscriptMessage,
   type TranscriptState,
@@ -122,8 +125,15 @@ export interface ProjectChatController {
    * refresh, a canvas reload nonce) belongs to whoever renders them.
    */
   designRefresh: DesignRefreshCounters;
-  /** True only when the current stream has observed an open design leg. */
+  /** True when the thread is known to hold an open design leg — observed on the
+   * stream, or seeded from the durable thread read. */
   designLegOpen: boolean;
+  /**
+   * Task 4 fix round 1: the same leg, as a THREE-valued fact — open / none /
+   * not-yet-known. The editor lock reads this one, because for it the third
+   * value is not the same answer as the second (see `agent-run-lock`).
+   */
+  designLeg: DesignLegFact;
   /**
    * Task 4 (scene live-streaming rung A): what this stream has observed about
    * the thread's design run, folded frame by frame.
@@ -316,8 +326,28 @@ export function useProjectChatController({
     const page = await repositories.threads.list({ projectId });
     if (!mounted.current) return page.threads;
     setThreads(page.threads);
+    // Task 4 fix round 1 (I1): seed the transcript's leg from the DURABLE read.
+    //
+    // The turn-stream backlog replays only the last few turns, so a leg opened
+    // before that is invisible to the frames — and the editor lock read that
+    // silence as "this thread has no design leg" and unlocked the scene editor
+    // mid-run. `ThreadSpeakerWire` knows; this is where its answer lands. It is
+    // a floor only: `seedDesignLeg` refuses to overwrite anything the stream has
+    // already observed.
+    const activeLeg = activeThreadId
+      ? (page.threads.find((thread) => thread.id === activeThreadId)?.designLeg ??
+        null)
+      : null;
+    if (activeLeg) {
+      setStream((current) =>
+        seedDesignLeg(current, {
+          legId: activeLeg.legId,
+          open: activeLeg.state !== null,
+        }),
+      );
+    }
     return page.threads;
-  }, [projectId, repositories]);
+  }, [activeThreadId, projectId, repositories]);
 
   const loadGates = useCallback(
     async (threadId: string) => {
@@ -927,6 +957,22 @@ export function useProjectChatController({
     [activeThreadId, threads],
   );
 
+  // Task 4 fix round 1: the leg fact the editor lock consults. The stream wins
+  // once it has observed anything; the durable read answers the cold-load
+  // window it cannot reach, and is the only source of "a design run is in
+  // flight right now".
+  const designLeg = useMemo(
+    () =>
+      designLegFactFor({
+        leg: {
+          known: stream.designLeg.known,
+          open: stream.designLeg.open,
+        },
+        wire: activeThread?.designLeg ?? null,
+      }),
+    [activeThread, stream.designLeg.known, stream.designLeg.open],
+  );
+
   return {
     threads,
     activeThread,
@@ -941,6 +987,7 @@ export function useProjectChatController({
     queuedTurns: queue.queuedTurns,
     designRefresh,
     designLegOpen: stream.designLeg.open,
+    designLeg,
     agentRunLock,
     submitting,
     gateFor,

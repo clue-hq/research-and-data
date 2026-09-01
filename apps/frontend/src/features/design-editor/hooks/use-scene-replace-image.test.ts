@@ -13,6 +13,8 @@ import type {
   Operation,
   Scene,
 } from "../engine/scene/contracts";
+import { AGENT_RUN_LOCK_NOTE } from "@/features/chat-shell/model/agent-run-lock";
+import { sceneManualWriteGate } from "./use-scene-manual-edits";
 import { createSceneReplaceImageHandler } from "./use-scene-replace-image";
 
 /**
@@ -66,16 +68,20 @@ function pngFile(name = "hero-v2.png"): File {
 function harness({
   accepted = true,
   armed = true,
+  locked = false,
   node = adImage() as Node | null,
   upload = async () => RECORD,
 }: {
   accepted?: boolean;
   armed?: boolean;
+  /** Task 4 fix round 1 (I3): a design turn is running on this document. */
+  locked?: boolean;
   node?: Node | null;
   upload?: (file: File) => Promise<AssetRecord>;
 } = {}) {
   const applied: { intent?: string; operations: Operation[] }[] = [];
   const errors: string[] = [];
+  const notes: string[] = [];
   const uploads: File[] = [];
   let cleared = 0;
   const deps = {
@@ -83,7 +89,13 @@ function harness({
       applied.push({ intent, operations });
       return accepted;
     },
-    canApply: () => armed,
+    writeGate: () =>
+      sceneManualWriteGate({
+        armed,
+        engineReady: armed,
+        lockNote: AGENT_RUN_LOCK_NOTE,
+        locked,
+      }),
     clearMessages: () => {
       cleared += 1;
       errors.length = 0;
@@ -91,6 +103,7 @@ function harness({
     documentId: AD_DOCUMENT_ID as string | null,
     node,
     onError: (message: string) => errors.push(message),
+    onNote: (message: string) => notes.push(message),
     upload: (candidate: File) => {
       uploads.push(candidate);
       return upload(candidate);
@@ -103,6 +116,7 @@ function harness({
     deps,
     errors,
     handler,
+    notes,
     uploads,
   };
 }
@@ -305,6 +319,23 @@ test("FIX 1: a write path that is NOT ARMED refuses before the transport", async
   assert.equal(applied.length, 0);
   // Silent, like the lock: the canvas's own read-only banner already explains
   // this state and a second message would be new failure UI.
+  assert.deepEqual(errors, []);
+});
+
+test("task 4 (I3): a pick refused by the agent-run lock says SO, and spends nothing", async () => {
+  // The defect: the lock reached this flow through `canApply(): boolean`, which
+  // threw away the gate's reason — so a pick made while the design agent was
+  // working reported "the write path is not armed", a false statement about a
+  // perfectly armed editor.
+  const { applied, errors, handler, notes, uploads } = harness({ locked: true });
+
+  await assert.rejects(handler(pngFile()));
+
+  assert.equal(uploads.length, 0, "no asset is minted while the agent works");
+  assert.equal(applied.length, 0);
+  assert.deepEqual(notes, [AGENT_RUN_LOCK_NOTE]);
+  // The NOTE line, never the error line: a locked editor is a state to wait
+  // out, not a failure.
   assert.deepEqual(errors, []);
 });
 

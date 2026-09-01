@@ -7,6 +7,7 @@ import {
 } from "../adapter/scene-apply";
 import { uploadWebAsset } from "../data/assets";
 import type { AssetRecord, Node, Operation } from "../engine/scene/contracts";
+import type { SceneWriteGate } from "./use-scene-manual-edits";
 
 /**
  * AD4.A step 2 (§1.3 row 1): the ad lane's Replace-image flow — the ad-side
@@ -69,9 +70,11 @@ export interface SceneReplaceImageDeps {
    * REJECTION the controller has already put the engine's words in the error
    * slot, and the two branches that say nothing are pre-empted by `canApply`. */
   applyOps: (operations: Operation[], intent?: string) => boolean;
-  /** FIX 1: is the write path armed and the engine live? Asked BEFORE the
-   * upload, because a refusal after it strands a minted asset. */
-  canApply: () => boolean;
+  /** FIX 1: may a write land — armed, engine live, and (task 4) not locked
+   * behind a running design turn? Asked BEFORE the upload, because a refusal
+   * after it strands a minted asset. The whole gate rather than a boolean, so
+   * the ONE refusal that has words can use them (fix round 1, I3). */
+  writeGate: () => SceneWriteGate;
   /** Clears both inline slots. A new pick supersedes what the last one said. */
   clearMessages: () => void;
   /** The document the pick was aimed at. Compared after the upload beside the
@@ -85,6 +88,10 @@ export interface SceneReplaceImageDeps {
   node: Node | null;
   /** Sets the inspector's existing inline error line. */
   onError: (message: string) => void;
+  /** Task 4 (I3): sets the inspector's existing inline NOTE line — the slot a
+   * refusal that is a STATE (the agent-run lock) belongs in, never the error
+   * line. Same slot every other note on this lane uses; no new UI. */
+  onNote: (message: string) => void;
   upload: (file: File) => Promise<AssetRecord>;
 }
 
@@ -135,8 +142,15 @@ export function createSceneReplaceImageHandler(
     // asset behind an empty error slot. Reachable: CanvasKit fails to activate,
     // the scene still loads and the layer tree still selects, so the button is
     // live over an engine that can apply nothing.
-    if (!before.canApply()) {
-      throw new SceneReplaceImageRefused("the write path is not armed");
+    const gate = before.writeGate();
+    if (!gate.allowed) {
+      // Task 4 (I3): the ONE refusal with words says them. The other two stay
+      // silent exactly as they were — the canvas's G-D banner already explains
+      // a dead engine, and "not armed" is a state no user can see.
+      if (gate.note !== null) {
+        before.onNote(gate.note);
+      }
+      throw new SceneReplaceImageRefused(gate.refusal ?? "the write path is not armed");
     }
     // A new attempt supersedes what the last one said — a refusal about a file
     // the user has already replaced is no longer true. Cleared HERE rather than
@@ -185,44 +199,48 @@ export function createSceneReplaceImageHandler(
 
 export function useSceneReplaceImage(options: {
   applyOps: (operations: Operation[], intent?: string) => boolean;
-  canApply: () => boolean;
   clearMessages: () => void;
   documentId: string | null;
   node: Node | null;
   onError: (message: string) => void;
+  onNote: (message: string) => void;
   /** Injectable for tests; the platform's BFF upload by default. */
   upload?: (file: File) => Promise<AssetRecord>;
+  writeGate: () => SceneWriteGate;
 }): (file: File) => Promise<void> {
   const {
     applyOps,
-    canApply,
     clearMessages,
     documentId,
     node,
     onError,
+    onNote,
     upload = uploadWebAsset,
+    writeGate,
   } = options;
   // Latest-value ref so the handler keeps one identity while always reading
   // current props (written in a passive effect, per this repo's react-hooks
   // rules — the same adaptation every other hook on this lane made).
   const depsRef = useRef<SceneReplaceImageDeps>({
     applyOps,
-    canApply,
     clearMessages,
     documentId,
     node,
     onError,
+    onNote,
     upload,
+    writeGate,
   });
   useEffect(() => {
     depsRef.current = {
       applyOps,
-      canApply,
       clearMessages,
       documentId,
       node,
       onError,
+      onNote,
       upload,
+      writeGate,
     };
   });
 

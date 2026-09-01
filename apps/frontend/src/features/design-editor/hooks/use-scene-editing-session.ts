@@ -534,11 +534,14 @@ export function useSceneEditingSession({
   // write on this lane uses (`reportError`), never new failure UI.
   const onReplaceImage = useSceneReplaceImage({
     applyOps: writes.applyOps,
-    canApply: writes.canApply,
     clearMessages: writes.clearMessages,
     documentId: activeDocumentId,
     node: primaryNode ?? null,
     onError: writes.reportError,
+    // Task 4 (I3): the gate, not a boolean — a pick refused because the design
+    // agent is working must say THAT, never "the write path is not armed".
+    onNote: writes.reportNote,
+    writeGate: writes.writeGate,
   });
 
   // AD4.A step 3 (§1.3 row 2): the AI image suite — generate / edit / remove
@@ -553,12 +556,13 @@ export function useSceneEditingSession({
   // into another ad.
   const imageAiBinding = useSceneImageAi({
     applyOps: writes.applyOps,
-    canApply: writes.canApply,
     clearMessages: writes.clearMessages,
     documentId: activeDocumentId,
     node: primaryNode ?? null,
     onError: writes.reportError,
+    onNote: writes.reportNote,
     scene,
+    writeGate: writes.writeGate,
   });
   // AD4.A step 3 review: the rows are OFFERED only when there is a real
   // document to write to. Both ad call sites pass this unconditionally and the
@@ -584,11 +588,12 @@ export function useSceneEditingSession({
   const arrangeBinding = useSceneArrange({
     applyEdit: writes.applyEdit,
     applyOps: writes.applyOps,
-    canApply: writes.canApply,
     clearMessages: writes.clearMessages,
     documentId: activeDocumentId,
+    onNote: writes.reportNote,
     scene,
     selectedIds,
+    writeGate: writes.writeGate,
   });
   // OFFERED only when there is a real document to arrange — `imageAi`'s gate
   // above, for its reason exactly: the hook always returns a binding, and

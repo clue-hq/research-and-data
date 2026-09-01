@@ -128,7 +128,10 @@ export function ChatSurface({
     : null;
   const agentRunLock = agentRunLockForThread({
     activeThreadId: chat.activeThreadId,
-    designLegOpen: chat.designLegOpen,
+    // The THREE-valued leg fact, not the boolean beside it: "no frame has
+    // mentioned a leg" is not "this thread has no leg", and treating it as one
+    // unlocked the editor on every cold load into a run (fix round 1, I1).
+    designLeg: chat.designLeg,
     documentId: shell.activeArtifactId
       ? (documentIds?.[shell.activeArtifactId] ?? null)
       : null,
