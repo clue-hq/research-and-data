@@ -63,7 +63,7 @@ class VendorLookupFailed(Exception):
     Distinct from a 404, which IS an answer (empty family)."""
 
     def __init__(self, code: str, message: str) -> None:
-        self.code = code  # "quota" | "timeout" | "http" | "malformed"
+        self.code = code  # "quota" | "auth" | "timeout" | "http" | "malformed"
         self.message = message
         super().__init__(f"{code}: {message}")
 
@@ -140,8 +140,9 @@ def _classify_null_theme(body: bytes, fmt: str) -> tuple[str, str]:
 
 def map_vendor_assets_to_cells(assets, download):
     """Vendor assets -> 2x2 cells. Filters (icon/other/photographic), inverts
-    theme, classifies theme=None from the bytes, gates SVGs on renderability.
-    First asset wins per cell. Returns (cells, notes)."""
+    theme, classifies theme=None from the bytes, gates SVGs on renderability
+    and rasters on decodability. First asset wins per cell.
+    Returns (cells, notes)."""
     from .logo_family import SOURCE_BRANDFETCH, FamilyCell, cell_name
     from .logo_ladder import svg_is_renderable
 
@@ -225,3 +226,110 @@ def _raster_decodes(body: bytes) -> bool:
         return True
     except Exception:  # noqa: BLE001 - undecodable is the answer, not an error
         return False
+
+
+#: the Brand API path; the base-url normalizer strips it if the operator's
+#: BRANDFETCH_API_BASE_URL already carries it (the PDL _normalize_base_url lesson).
+BRAND_PATH_PREFIX = "/v2/brands/domain/"
+_MAX_ASSET_BYTES = 15 * 1024 * 1024  # mirrors capture.net's logo cap
+#: D6 — the only hosts an asset `src` may point at. Brandfetch serves logo files from its own
+#: asset CDN; anything else in a `formats[].src` is not fetched, whatever the API said.
+_ASSET_HOST_SUFFIXES = ("brandfetch.io",)
+#: cdn.brandfetch.io answers 302 `x-bf-error=user_agent_required` to a request carrying NO
+#: User-Agent (verified live 2026-09-02). httpx's default header happens to satisfy it, but a
+#: library default is not a contract — we send our own, on the lookup AND every asset download.
+_USER_AGENT = "clue-design-logo-vendor/1 (+httpx)"
+
+
+from urllib.parse import urlsplit  # module-level: `download` and `_bare_domain` both need it
+
+
+def _bare_domain(value: str) -> str:
+    text = (value or "").strip()
+    if not text:
+        return ""
+    candidate = text if "//" in text else f"//{text}"
+    host = (urlsplit(candidate).hostname or text).strip().lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def fetch_vendor_family(domain, *, api_key=None, base_url=None, timeout_s=None, client=None):
+    """One Brand API lookup + asset downloads -> (cells, notes). The one impure
+    entry point of this module. See the module docstring for the contract."""
+    import httpx
+    from py_lumen_config import settings
+
+    key = (api_key if api_key is not None else settings.brandfetch_api_key).strip()
+    if not key:
+        raise VendorCredentialsMissing()
+    base = (base_url if base_url is not None else settings.brandfetch_api_base_url)
+    base = base.strip().rstrip("/")
+    if base.lower().endswith(BRAND_PATH_PREFIX.rstrip("/")):
+        base = base[: -len(BRAND_PATH_PREFIX.rstrip("/"))].rstrip("/")
+    timeout = timeout_s if timeout_s is not None else settings.brandfetch_timeout_s
+    host = _bare_domain(domain)
+    if not host:
+        raise VendorLookupFailed("http", f"could not read a host out of {domain!r}")
+
+    def run(http: "httpx.Client"):
+        try:
+            resp = http.get(
+                f"{base}{BRAND_PATH_PREFIX}{host}",
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "Accept": "application/json",
+                    "User-Agent": _USER_AGENT,
+                },
+                timeout=timeout,
+            )
+        except httpx.TimeoutException as error:
+            raise VendorLookupFailed("timeout", f"brand lookup timed out: {error}") from error
+        except httpx.HTTPError as error:
+            raise VendorLookupFailed("http", f"brand lookup failed: {error}") from error
+        if resp.status_code == 404:
+            return {}, [f"brandfetch has no record of {host} — an answer, not an error"]
+        if resp.status_code == 429:
+            raise VendorLookupFailed(
+                "quota", "brandfetch quota or throughput limit reached (HTTP 429)"
+            )
+        if resp.status_code in (401, 403):
+            raise VendorLookupFailed(
+                "auth",
+                f"brandfetch rejected the API key (HTTP {resp.status_code}); "
+                "check BRANDFETCH_API_KEY",
+            )
+        if resp.status_code != 200:
+            raise VendorLookupFailed("http", f"brand lookup returned HTTP {resp.status_code}")
+        try:
+            payload = resp.json()
+        except ValueError as error:
+            raise VendorLookupFailed("malformed", "brand response was not JSON") from error
+
+        driver_notes: list[str] = []
+
+        def download(src: str):
+            host = (urlsplit(src).hostname or "").lower()
+            if not (host == _ASSET_HOST_SUFFIXES[0] or any(
+                host.endswith("." + suffix) for suffix in _ASSET_HOST_SUFFIXES
+            )):
+                driver_notes.append(
+                    f"asset host {host or '?'} is not on the vendor allowlist; not fetched: {src}"
+                )
+                return None
+            try:
+                got = http.get(src, timeout=timeout, headers={"User-Agent": _USER_AGENT})
+            except httpx.HTTPError:
+                return None
+            if got.status_code != 200 or not got.content:
+                return None
+            if len(got.content) > _MAX_ASSET_BYTES:
+                return None
+            return got.content, got.headers.get("content-type")
+
+        cells, notes = map_vendor_assets_to_cells(parse_brand_payload(payload), download)
+        return cells, driver_notes + notes
+
+    if client is not None:
+        return run(client)
+    with httpx.Client() as owned:
+        return run(owned)

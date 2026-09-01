@@ -234,3 +234,90 @@ def test_map_vendor_assets_refuses_undecodable_raster():
     )
     assert cells == {}
     assert any("cannot be decoded" in n for n in notes)
+
+
+def _vendor_transport(handler):
+    import httpx
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_fetch_vendor_family_happy_path_builds_cells():
+    import httpx
+
+    from lumen_ingestion.logo_vendor import fetch_vendor_family
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        # cdn.brandfetch.io answers 302 x-bf-error=user_agent_required to a
+        # UA-less request; httpx's default happens to pass, but that is a
+        # library default, not our contract. Pinned on BOTH request kinds.
+        assert request.headers.get("User-Agent") == "clue-design-logo-vendor/1 (+httpx)"
+        if request.url.path == "/v2/brands/domain/acme.com":
+            assert request.headers["Authorization"] == "Bearer bf_test_key"
+            return httpx.Response(200, json=BRAND_PAYLOAD)
+        if request.url.path.endswith("lockup-dark.svg"):
+            return httpx.Response(200, content=_mini_svg("#101820"),
+                                  headers={"content-type": "image/svg+xml"})
+        if request.url.path.endswith("symbol-light.png"):
+            return httpx.Response(200, content=_mini_png(),
+                                  headers={"content-type": "image/png"})
+        return httpx.Response(404)
+
+    with _vendor_transport(handler) as client:
+        cells, notes = fetch_vendor_family(
+            "https://www.acme.com/pricing", api_key="bf_test_key", client=client
+        )
+    assert set(cells) == {"light_lockup", "dark_mark"}
+
+
+def test_fetch_vendor_family_404_is_an_answer_and_429_is_typed():
+    import httpx
+    import pytest as _pytest
+
+    from lumen_ingestion.logo_vendor import VendorLookupFailed, fetch_vendor_family
+
+    with _vendor_transport(lambda r: httpx.Response(404)) as client:
+        cells, notes = fetch_vendor_family("acme.com", api_key="k", client=client)
+    assert cells == {} and any("no record" in n for n in notes)
+
+    with _vendor_transport(lambda r: httpx.Response(429)) as client:
+        with _pytest.raises(VendorLookupFailed) as err:
+            fetch_vendor_family("acme.com", api_key="k", client=client)
+    assert err.value.code == "quota"
+
+    with _vendor_transport(lambda r: httpx.Response(401)) as client:
+        with _pytest.raises(VendorLookupFailed) as err:
+            fetch_vendor_family("acme.com", api_key="bad", client=client)
+    assert err.value.code == "auth" and "BRANDFETCH_API_KEY" in err.value.message
+
+
+def test_fetch_vendor_family_blank_key_raises_credentials_missing():
+    import pytest as _pytest
+
+    from lumen_ingestion.logo_vendor import VendorCredentialsMissing, fetch_vendor_family
+
+    with _pytest.raises(VendorCredentialsMissing):
+        fetch_vendor_family("acme.com", api_key="")
+
+
+def test_fetch_vendor_family_never_fetches_off_allowlist_hosts():
+    import httpx
+
+    from lumen_ingestion.logo_vendor import fetch_vendor_family
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        if request.url.path.startswith("/v2/brands/domain/"):
+            return httpx.Response(200, json={"logos": [
+                {"theme": "dark", "type": "logo", "tags": [], "formats": [
+                    {"src": "https://evil.example/lockup.svg", "format": "svg",
+                     "width": 100, "height": 40, "size": 1, "background": None}]}]})
+        return httpx.Response(200, content=_mini_svg(), headers={"content-type": "image/svg+xml"})
+
+    with _vendor_transport(handler) as client:
+        cells, notes = fetch_vendor_family("acme.com", api_key="k", client=client)
+    assert cells == {}
+    assert "evil.example" not in seen
+    assert any("allowlist" in n for n in notes)
