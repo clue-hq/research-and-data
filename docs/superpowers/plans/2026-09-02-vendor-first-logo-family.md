@@ -20,6 +20,7 @@ Ledger: `.superpowers/sdd/2026-09-02-vendor-first-logo-family/progress.md`. Proc
 - Task 3b — DONE (`9387f9b7f`)
 - Task 4 — DONE (`abe5d9d4f`, `417da50b4`) — live-verified
 - Task 5 — DONE (`50908e087`)
+- Task 6 — DONE (`08de3c8e2`, `ab6b477a4`)
 
 ## Deferred items ledger (founder rule 2026-09-02: every deferral lives HERE and belongs to a task)
 
@@ -1201,6 +1202,8 @@ materialized-adaptive provenance survives as its own source label."
 
 ### Task 6: The two-rung dispatch (rewrite `logo_fetch.fetch_logo_family`)
 
+**Status: DONE 2026-09-02 — commits `08de3c8e2` + fix `ab6b477a4`; controller first-hand review clean. Errata vs the plan text: `status` is `ok` only when a vendor cell exists or the ladder RESOLVED (a hesitant ladder-only family stays `needs_review` with its cells prepared, as before), and `cache.put` runs only on `ok`; `PreparedLogo.slot` survives as a deprecated alias until Task 10; one strict xfail (`test_web_fetch_logo_registers_with_the_record_op_key`) awaits Task 10.**
+
 **Files:**
 - Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/logo_fetch.py` (the `fetch_logo_family`, `_prepare`, `LogoFetchOutcome`, `PreparedLogo`, `review_payload` block)
 - Test: `subsystems/clue-design/apps/agent_runtime/tests/test_fetch_logo_tool.py` (extend). **Controller rulings (2026-09-02):** (a) the two HELPER-level tests (`test_the_helper_shapes_one_ingest_per_resolved_slot`, `test_the_helper_reports_review_without_preparing_anything`) test `logo_fetch` itself, which this task rewrites — UPDATE them to the cell vocabulary here (`p.cell`, `{"light_lockup", "dark_lockup"} <= cells`, `kwargs["provenance"]["created_by"] == "logo_ladder"`, `kwargs["source"]["kind"] == "website"` unchanged); (b) the TOOL-level payload tests (`test_web_fetch_logo_registers_with_the_record_op_key` and any scene equivalent asserting `entry["slot"] == "light"`) are Task 10's — mark them `@pytest.mark.xfail(strict=True, reason="cells payload lands in task 10")` and nothing else; (c) **LIVE-CALL SAFETY:** the existing `_fake_site` tests fake only the ladder driver, and the repo-root `.env` now carries a REAL Brandfetch key — so this task adds, at the top of the file, an autouse fixture that disables the vendor rung for every test unless a test overrides it:
@@ -1229,7 +1232,7 @@ The dispatch tests below override it per-test with their own `monkeypatch.setatt
   - Dispatch order: cache (unless `force_refresh`) → vendor → ladder for empty cells only → assemble. Ladder is NOT run when all four cells are vendor-filled. Ladder identity failure with zero vendor cells → `needs_review` exactly as today. Vendor cells survive even when the ladder's backfill run comes back `needs_review` (the vendor already answered identity for its own cells — keyed retrieval).
   - `review_payload` unchanged in shape but its `reason` mentions the vendor when the vendor was tried (`vendor_notes` threaded in).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 class _RecordingCache:
@@ -1361,11 +1364,11 @@ def test_dispatch_cache_hit_skips_both_rungs_and_force_refresh_overwrites(monkey
     assert third.cache_hit is False and list(third.cells) == ["light_lockup"]
 ```
 
-- [ ] **Step 2: Run to verify FAIL**
+- [x] **Step 2: Run to verify FAIL**
 `... -m pytest apps/agent_runtime/tests/test_fetch_logo_tool.py -v -k dispatch`
 Expected: FAIL — `AttributeError: module ... has no attribute '_vendor_rung'`.
 
-- [ ] **Step 3: Rewrite the prep layer**
+- [x] **Step 3: Rewrite the prep layer**
 
 In `logo_fetch.py`: keep `LOGO_TAGS`; replace `SLOT_NAMES` with a re-export `from lumen_ingestion.logo_family import CELL_NAMES` (delete `SLOT_NAMES` — Task 10 updates the two tool call sites; nothing else imports it, verify with `grep -rn "SLOT_NAMES" subsystems/clue-design --include='*.py'`).
 
@@ -1557,9 +1560,9 @@ def _assemble(cells, resolution, site, company_name, notes, vendor_notes) -> Log
 
 `review_payload` gets one line added — after `"notes": outcome.notes[:4],` insert `"vendor_notes": outcome.vendor_notes[:3],`.
 
-- [ ] **Step 4: Run the new tests** (`-k dispatch`) — PASS. Then run the whole file; the PRE-EXISTING tool tests (scene/web payload assertions on `slot`) will fail — that is expected and honest; fix them NOW as part of this task if they only touch `PreparedLogo.slot` renames, or mark each `@pytest.mark.xfail(strict=True, reason="cells payload lands in task 10")` when they assert the tool JSON payload shape (Task 10 removes every xfail; the plan's final gate re-runs the file and requires zero xfail marks left).
+- [x] **Step 4: Run the new tests** (`-k dispatch`) — PASS. Then run the whole file; the PRE-EXISTING tool tests (scene/web payload assertions on `slot`) will fail — that is expected and honest; fix them NOW as part of this task if they only touch `PreparedLogo.slot` renames, or mark each `@pytest.mark.xfail(strict=True, reason="cells payload lands in task 10")` when they assert the tool JSON payload shape (Task 10 removes every xfail; the plan's final gate re-runs the file and requires zero xfail marks left).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/logo_fetch.py subsystems/clue-design/apps/agent_runtime/tests/test_fetch_logo_tool.py
