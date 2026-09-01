@@ -328,6 +328,71 @@ function isMinimalNode(value: unknown): value is Node {
   return typeof record.size === "object" && record.size !== null;
 }
 
+// ── Task 3: subtree re-mint ────────────────────────────────────────────────
+
+/**
+ * Give a validated payload's subtree a fresh identity inside the target
+ * scene: every node gets a new `node-XXXXXXXX` id (the `mintGroupId`
+ * precedent generalized — wrapped `crypto.randomUUID`, collision-retried
+ * against BOTH the scene's `existingIds` and the ids minted earlier in this
+ * batch), every `children` array is rewritten through the old→new map, and
+ * the ROOT's name is suffixed `_2`-style against `siblingNames` until free
+ * (descendants keep their names — they collide with nothing at their level).
+ *
+ * The payload is read, never mutated: paste twice and the second paste
+ * re-mints from the same untouched payload.
+ */
+export function remintSubtree(
+  payload: SceneClipboardPayloadV1,
+  existingIds: ReadonlySet<string>,
+  siblingNames: ReadonlySet<string>,
+): { nodes: Node[]; rootId: NodeId } {
+  const minted = new Set<string>();
+  const idMap = new Map<NodeId, NodeId>();
+  for (const node of payload.nodes) {
+    const fresh = mintNodeId((candidate) => existingIds.has(candidate) || minted.has(candidate));
+    minted.add(fresh);
+    idMap.set(node.id, fresh);
+  }
+  const nodes = payload.nodes.map((node, index) => {
+    const copy = structuredClone(node);
+    copy.id = idMap.get(node.id)!;
+    // Validation guarantees the graph is self-contained, so every child
+    // resolves; the fallback keeps a hand-built payload's dangling ref from
+    // silently becoming an id the scene might actually contain.
+    copy.children = node.children.map((child) => idMap.get(child) ?? child);
+    if (index === 0) {
+      copy.name = collisionFreeName(node.name, siblingNames);
+    }
+    return copy;
+  });
+  return { nodes, rootId: nodes[0].id };
+}
+
+function mintNodeId(taken: (candidate: string) => boolean): NodeId {
+  let candidate = `node-${crypto.randomUUID().slice(0, 8)}`;
+  while (taken(candidate)) {
+    candidate = `node-${crypto.randomUUID().slice(0, 8)}`;
+  }
+  return candidate;
+}
+
+/** `headline` → `headline_2`, `_3`, … against the sibling names; a null name
+ * stays null (nothing to collide). The base is opaque — no suffix parsing. */
+function collisionFreeName(
+  name: string | null,
+  siblingNames: ReadonlySet<string>,
+): string | null {
+  if (name === null || !siblingNames.has(name)) {
+    return name;
+  }
+  let counter = 2;
+  while (siblingNames.has(`${name}_${counter}`)) {
+    counter += 1;
+  }
+  return `${name}_${counter}`;
+}
+
 // Base64 over UTF-8, both directions, browser- and Node-safe: btoa/atob are
 // latin1-only, so the text goes through TextEncoder/TextDecoder and the
 // binary string is built in chunks (a 1 MiB single spread would blow the

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { it } from "node:test";
+import { it, mock } from "node:test";
 import { JSDOM } from "jsdom";
 import type { Scene, TextSpan } from "../engine/scene/contracts";
 import { minimalScene } from "../engine/scene/__tests__/__fixtures__/minimalScene";
@@ -11,6 +11,7 @@ import {
   decodeClipboardHtml,
   encodeClipboardHtml,
   extractReadableText,
+  remintSubtree,
   serializeSubtree,
   validateClipboardPayload,
 } from "./scene-clipboard";
@@ -293,6 +294,115 @@ it("refuses to encode an oversized payload — copy must not silently truncate",
     readableText: "x".repeat(CLIPBOARD_ENVELOPE_MAX_BYTES + 1),
   };
   assert.equal(encodeClipboardHtml(oversized), null);
+});
+
+// ── Task 3: subtree re-mint ────────────────────────────────────────────────
+
+it("re-mints every node with a fresh node-XXXXXXXX id absent from existingIds", () => {
+  const payload = groupPayload();
+  const existingIds = new Set(Object.keys(HARVESTED_AD_PAGE.nodes));
+  const { nodes, rootId } = remintSubtree(payload, existingIds, new Set());
+  assert.equal(nodes.length, payload.nodes.length);
+  const freshIds = nodes.map((node) => node.id);
+  for (const id of freshIds) {
+    assert.match(id, /^node-[0-9a-f]{8}$/);
+    assert.ok(!existingIds.has(id), `minted id ${id} already exists in the scene`);
+  }
+  assert.equal(new Set(freshIds).size, freshIds.length, "minted ids must be batch-unique");
+  assert.equal(rootId, freshIds[0]);
+});
+
+it("rewrites children arrays through the old→new map — no old id survives", () => {
+  const payload = groupPayload();
+  const { nodes } = remintSubtree(payload, new Set(), new Set());
+  const [root, childA, childB] = nodes;
+  assert.deepEqual(root.children, [childA.id, childB.id]);
+  const oldIds = new Set(payload.nodes.map((node) => node.id));
+  for (const node of nodes) {
+    for (const child of node.children) {
+      assert.ok(!oldIds.has(child), `child ref ${child} still points at a payload id`);
+    }
+  }
+});
+
+it("preserves structure deterministically — same shape and content, new ids only", () => {
+  const payload = groupPayload();
+  const { nodes } = remintSubtree(payload, new Set(), new Set());
+  assert.deepEqual(
+    nodes.map((node) => node.kind.kind),
+    payload.nodes.map((node) => node.kind.kind),
+  );
+  // Everything except id/children (and the root's collision-suffixed name)
+  // is carried verbatim — transform, size, fills, text content, spans.
+  nodes.forEach((node, index) => {
+    const source = payload.nodes[index];
+    assert.deepEqual(node.transform, source.transform);
+    assert.deepEqual(node.size, source.size);
+    assert.deepEqual(node.kind, source.kind);
+  });
+  // And the input payload was not mutated.
+  assert.deepEqual(
+    payload.nodes.map((node) => node.id),
+    ["group_proof", "ellipse_proof_dot", "text_proof_stat"],
+  );
+});
+
+it("suffixes the root name against sibling names — descendants keep theirs", () => {
+  const payload = groupPayload();
+  assert.equal(payload.nodes[0].name, "Proof point");
+
+  const noCollision = remintSubtree(payload, new Set(), new Set(["Other"]));
+  assert.equal(noCollision.nodes[0].name, "Proof point");
+
+  const collision = remintSubtree(payload, new Set(), new Set(["Proof point"]));
+  assert.equal(collision.nodes[0].name, "Proof point_2");
+
+  const chained = remintSubtree(
+    payload,
+    new Set(),
+    new Set(["Proof point", "Proof point_2"]),
+  );
+  assert.equal(chained.nodes[0].name, "Proof point_3");
+
+  // Descendants keep their names verbatim even when THEY collide.
+  const childCollision = remintSubtree(payload, new Set(), new Set(["Proof stat"]));
+  assert.equal(childCollision.nodes[2].name, "Proof stat");
+});
+
+it("keeps a null root name null — nothing to suffix", () => {
+  const payload = groupPayload();
+  const anonymous = structuredClone(payload);
+  anonymous.nodes[0].name = null;
+  const { nodes } = remintSubtree(anonymous, new Set(), new Set(["Proof point"]));
+  assert.equal(nodes[0].name, null);
+});
+
+it("retries on id collision — with existing ids and within the batch", () => {
+  const payload = groupPayload();
+  // Colliding-first fake randomUUID (the structuredEdits-test pattern): the
+  // first draw collides with an existing id, the second repeats itself (a
+  // batch self-collision), later draws are fresh.
+  const draws = [
+    "deadbeef-0000-0000-0000-000000000000", // collides with existingIds
+    "aaaaaaaa-0000-0000-0000-000000000000",
+    "aaaaaaaa-1111-1111-1111-111111111111", // slice repeats aaaaaaaa → retry
+    "bbbbbbbb-0000-0000-0000-000000000000",
+    "cccccccc-0000-0000-0000-000000000000",
+  ];
+  const fake = mock.method(crypto, "randomUUID", () => {
+    const next = draws.shift();
+    assert.ok(next, "ran out of scripted uuids");
+    return next as `${string}-${string}-${string}-${string}-${string}`;
+  });
+  try {
+    const { nodes } = remintSubtree(payload, new Set(["node-deadbeef"]), new Set());
+    assert.deepEqual(
+      nodes.map((node) => node.id),
+      ["node-aaaaaaaa", "node-bbbbbbbb", "node-cccccccc"],
+    );
+  } finally {
+    fake.mock.restore();
+  }
 });
 
 it("measures the cap in UTF-8 bytes, not UTF-16 code units", () => {
