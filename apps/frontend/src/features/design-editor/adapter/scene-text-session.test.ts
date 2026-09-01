@@ -8,6 +8,7 @@ import type {
   TextNode,
   TextSpan,
 } from "../engine/scene/contracts";
+import { spanValidationIssues } from "../engine/scene/textSpans";
 import { HARVESTED_AD_PAGE } from "./__fixtures__/scene-nodes";
 import {
   textEditByteRange,
@@ -25,6 +26,7 @@ import {
   textEditSessionReseedSelection,
   textEditSessionSeed,
   textEditStyledSpans,
+  type TextEditSelection,
   type TextEditSession,
 } from "./scene-text-session";
 
@@ -683,4 +685,99 @@ test("a refused FORMATTING commit reverts the session's working spans", () => {
   const after = session({ spans: [BOLD_FASTER], spansDirty: true });
   assert.equal(textEditSessionAfterStyleCommit(before, after, false), before);
   assert.equal(textEditSessionAfterStyleCommit(before, after, true), after);
+});
+
+/* -------------------------------------------------------------------------
+ * Task 11 (scene clipboard, R37 a–c): a PASTE INSIDE the open session.
+ *
+ * The clipboard lane never built a text-session paste path, because there is
+ * nothing to build: a paste into the overlay's textarea arrives as an ordinary
+ * `beforeinput`, and `insertFromPaste` sits in the same `DATA_INSERTS` table as
+ * `insertText`. So the contract to PIN is an EQUIVALENCE — a paste of some
+ * string is the same transition as typing that string — plus the span algebra's
+ * own invariants over the result. These are pins, not new behaviour: they fail
+ * only if the table, the placement, or the reconciliation moves under them.
+ * ---------------------------------------------------------------------- */
+
+/** One `beforeinput` driven end to end — placed by {@link textEditReplacement},
+ * then applied by the tracked transition. Exactly the pair the overlay runs
+ * (`components/scene-artifact-canvas.tsx`), so the two `inputType`s are
+ * compared over the WHOLE path rather than over the table alone. */
+function afterBeforeInput(
+  before: TextEditSession,
+  inputType: string,
+  data: string,
+  selection: TextEditSelection,
+): TextEditSession {
+  const replacement = textEditReplacement({
+    content: before.content,
+    data,
+    inputType,
+    selection,
+    targetRange: null,
+  });
+  assert.ok(replacement, `${inputType} must place a replacement`);
+  return textEditSessionAfterReplacement(before, replacement);
+}
+
+/** `triage` in italic — the second span the cross-span paste case needs. */
+const ITALIC_TRIAGE: TextSpan = { start: 12, end: 18, italic: true };
+
+test("R37a: a PASTE inside a styled run grows it exactly as typing the same text does", () => {
+  const before = session({ spans: [BOLD_FASTER] });
+  const caret = { start: 8, end: 8 };
+  const pasted = afterBeforeInput(before, "insertFromPaste", "quickly ", caret);
+  const typed = afterBeforeInput(before, "insertText", "quickly ", caret);
+
+  // The equivalence itself: same content, same spans, same dirty channels.
+  assert.deepEqual(pasted, typed);
+  // …and it is not vacuously equal — the run really did absorb the paste.
+  assert.equal(pasted.content, "3.4x fasquickly ter triage");
+  assert.deepEqual(pasted.spans, [{ start: 5, end: 19, font_weight: 700 }]);
+  assert.equal(pasted.contentDirty, true);
+  assert.equal(pasted.spansDirty, false);
+});
+
+test("R37b: a paste REPLACING a cross-span selection normalizes per the span algebra", () => {
+  // The selection runs from inside bold `faster` (8) to inside italic `triage`
+  // (15), so BOTH spans are cut and neither may absorb the pasted text.
+  const before = session({ spans: [BOLD_FASTER, ITALIC_TRIAGE] });
+  const across = { start: 8, end: 15 };
+  const pasted = afterBeforeInput(before, "insertFromPaste", "NEW", across);
+
+  assert.deepEqual(pasted, afterBeforeInput(before, "insertText", "NEW", across));
+  assert.equal(pasted.content, "3.4x fasNEWage");
+  // Each span keeps only the side of the cut that survived: bold's head, and
+  // italic's tail shifted by the -4 byte delta. The pasted text takes the
+  // node's own style, which is the algebra's no-guess rule.
+  assert.deepEqual(pasted.spans, [
+    { start: 5, end: 8, font_weight: 700 },
+    { start: 11, end: 14, italic: true },
+  ]);
+  // The engine's own five rules (the client twin of `span_validation_errors`),
+  // and the normalized order they are emitted in.
+  assert.deepEqual(spanValidationIssues(pasted.content, pasted.spans), []);
+  for (let index = 1; index < pasted.spans.length; index += 1) {
+    assert.ok(
+      pasted.spans[index - 1].end <= pasted.spans[index].start,
+      "spans come back sorted and non-overlapping",
+    );
+  }
+});
+
+test("R37c: a MULTI-LINE paste is the same transition as typing that same string", () => {
+  // A pasted newline is ordinary data on this path — it is NOT routed through
+  // the `NEWLINE_INSERTS` table, which only serves an Enter key that carries no
+  // data at all. Multiline content is real here (the overlay's plain-Enter
+  // contract), so the newline must land verbatim.
+  const before = session({ spans: [BOLD_FASTER] });
+  const caret = { start: 18, end: 18 };
+  const text = "\nTrusted by 400 clinics\nsince 2019";
+  const pasted = afterBeforeInput(before, "insertFromPaste", text, caret);
+
+  assert.deepEqual(pasted, afterBeforeInput(before, "insertText", text, caret));
+  assert.equal(pasted.content, `${TEXT.content}${text}`);
+  // Appended past every span, so the vector is byte-identical.
+  assert.deepEqual(pasted.spans, [BOLD_FASTER]);
+  assert.deepEqual(spanValidationIssues(pasted.content, pasted.spans), []);
 });

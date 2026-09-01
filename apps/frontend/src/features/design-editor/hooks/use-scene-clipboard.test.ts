@@ -1438,3 +1438,78 @@ it("a throwing writer still lets a CUT delete — the copy half cannot abort it"
   );
   assert.ok(clipboard.written.has(SCENE_CLIPBOARD_MIME));
 });
+
+// ── Task 11: the open text session keeps its own clipboard (R37d) ──────────
+//
+// The rich-text caret session's overlay IS a `<textarea>`
+// (`components/scene-artifact-canvas.tsx`), so while it is open every clipboard
+// event is aimed at a typing target and `ownedSession` returns null for all
+// three handlers. That is the whole guard — there is no session-aware branch
+// anywhere in this file, and there must not be one: a paste inside the session
+// is an ordinary `beforeinput` the span algebra already handles
+// (`adapter/scene-text-session.test.ts`, R37a–c).
+
+const SESSION_TEXTAREA_TARGET = { isContentEditable: false, tagName: "TEXTAREA" };
+
+it("copy, cut and paste aimed at the session's TEXTAREA do nothing at all", () => {
+  const seeds: Record<string, string>[] = [
+    { [SCENE_CLIPBOARD_MIME]: JSON.stringify(GROUP_PAYLOAD) },
+    { "text/plain": PASTED_TEXT },
+  ];
+  for (const seed of seeds) {
+    for (const handler of [
+      handleSceneClipboardCopy,
+      handleSceneClipboardCut,
+      handleSceneClipboardPaste,
+    ]) {
+      const { applyEdit, applyOps, deps, reportError } = harness();
+      const clipboard = stubClipboardData(seed);
+      const event = clipboardEvent(clipboard.data);
+
+      handler(deps, event, SESSION_TEXTAREA_TARGET);
+
+      // Not claimed, nothing written to the clipboard, nothing written to the
+      // document, and not a word said about it.
+      assert.equal(event.prevented(), 0);
+      assert.equal(clipboard.written.size, 0);
+      assert.equal(applyOps.mock.callCount(), 0);
+      assert.equal(applyEdit.mock.callCount(), 0);
+      assert.equal(reportError.mock.callCount(), 0);
+    }
+  }
+});
+
+it("…and the very same events DO act when the canvas is the target", () => {
+  // The control for the guard above: without it every one of those events was
+  // live, so the zero-counts are the TARGET's doing and not a dead fixture.
+  const copy = harness();
+  const copied = stubClipboardData();
+  handleSceneClipboardCopy(copy.deps, clipboardEvent(copied.data), CANVAS_TARGET);
+  assert.equal(copied.written.size, 3);
+
+  const cut = harness();
+  handleSceneClipboardCut(
+    cut.deps,
+    clipboardEvent(stubClipboardData().data),
+    CANVAS_TARGET,
+  );
+  assert.equal(cut.applyEdit.mock.callCount(), 1);
+
+  const internal = harness();
+  const internalEvent = clipboardEvent(
+    stubClipboardData({
+      [SCENE_CLIPBOARD_MIME]: JSON.stringify(GROUP_PAYLOAD),
+    }).data,
+  );
+  handleSceneClipboardPaste(internal.deps, internalEvent, CANVAS_TARGET);
+  assert.equal(internalEvent.prevented(), 1);
+  assert.equal(internal.applyOps.mock.callCount(), 1);
+
+  const plain = harness({ selectedNodeId: "text_headline" });
+  const plainEvent = clipboardEvent(
+    stubClipboardData({ "text/plain": PASTED_TEXT }).data,
+  );
+  handleSceneClipboardPaste(plain.deps, plainEvent, CANVAS_TARGET);
+  assert.equal(plainEvent.prevented(), 1);
+  assert.equal(plain.applyOps.mock.callCount(), 1);
+});
