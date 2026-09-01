@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  NO_AGENT_RUN,
+  applyAgentRunLockEvent,
+  type AgentRunLockState,
+} from "@/features/chat-shell/model/agent-run-lock";
+import {
   ClueChatApiError,
   isAccessError,
   newIdempotencyKey,
@@ -119,6 +124,17 @@ export interface ProjectChatController {
   designRefresh: DesignRefreshCounters;
   /** True only when the current stream has observed an open design leg. */
   designLegOpen: boolean;
+  /**
+   * Task 4 (scene live-streaming rung A): what this stream has observed about
+   * the thread's design run, folded frame by frame.
+   *
+   * Deliberately the raw observation and not a verdict: whether the EDITOR is
+   * locked also depends on which document is open and which thread it was born
+   * in, and the controller can see neither. The decision is
+   * `chat-shell/model/agent-run-lock.agentRunLockForThread`, taken by the
+   * surface that holds all three facts.
+   */
+  agentRunLock: AgentRunLockState;
   submitting: boolean;
   gateFor(part: ChatGatePart): GateCardModel | null;
   gateAnswerForTurn(turnId: string): GateAnswerDisplay | null;
@@ -193,6 +209,11 @@ export function useProjectChatController({
     feedRevision: 0,
     canvasRevision: 0,
   });
+  // Task 4: the editor lock's observations. The reducer returns the SAME object
+  // for every frame it does not act on (checkpoints, deltas, part frames), so a
+  // busy stream costs no extra renders here.
+  const [agentRunLock, setAgentRunLock] =
+    useState<AgentRunLockState>(NO_AGENT_RUN);
   const [optimistic, setOptimistic] = useState<OptimisticTurn[]>([]);
   const [access, setAccess] = useState<ChatAccessState | null>(null);
   const [route, setRoute] = useState<ChatRouteState | null>(null);
@@ -443,6 +464,18 @@ export function useProjectChatController({
         onEvent(event) {
           if (!mounted.current) return;
           setStream((current) => applyChatStreamEvent(current, event));
+          // Task 4 (founder ruling: no mid-run manual editing, ever): the
+          // editor lock's own fold over the same frames. Kept beside the
+          // transcript rather than derived from it because the release matrix
+          // is not the transcript's — a terminal LEG frame releases the lock
+          // while the delegating turn is still running.
+          setAgentRunLock((current) =>
+            applyAgentRunLockEvent(current, {
+              threadId: event.threadId,
+              turnId: event.turnId,
+              type: event.type,
+            }),
+          );
           // Genweb slice 3 (founder requirements 1 + 6): the gallery and any
           // open canvas refresh exactly when a durable design-leg transition
           // says the document moved — the frame IS the signal, so there is no
@@ -908,6 +941,7 @@ export function useProjectChatController({
     queuedTurns: queue.queuedTurns,
     designRefresh,
     designLegOpen: stream.designLeg.open,
+    agentRunLock,
     submitting,
     gateFor,
     gateAnswerForTurn,

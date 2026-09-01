@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { InspectorEventAddressing } from "@/features/chat-shell/hooks/use-inspector-controller";
+import { AGENT_RUN_LOCK_NOTE } from "@/features/chat-shell/model/agent-run-lock";
 import {
   hydrateSceneSelectionState,
   rootFrameId,
@@ -84,11 +85,24 @@ interface LoadedScene {
 
 export function useSceneEditingSession({
   activeArtifactId,
+  agentRunLocked = false,
   documentIds,
   enabled = true,
 }: {
   /** The caller's OWN shell controller's active artifact tab. */
   activeArtifactId: string | null;
+  /**
+   * Task 4 (scene live-streaming rung A): a design turn is queued or running on
+   * the open document, so this session is VIEW-ONLY — founder ruling, no mid-run
+   * manual editing, ever.
+   *
+   * The decision is the caller's (`chat-shell/model/agent-run-lock`, which is
+   * the only place that can see the turn stream AND the open document's thread);
+   * this session only transports it into the write controller and hands the
+   * canvas a way to report a refusal. Defaults to false, which is what the
+   * artifact route — no live turn stream to read — leaves it at.
+   */
+  agentRunLocked?: boolean;
   /** Artifact id → design-document id, from the page's read-seam fetch. */
   documentIds: Record<string, string> | undefined;
   /**
@@ -464,6 +478,10 @@ export function useSceneEditingSession({
     canvasControls,
     documentId: activeDocumentId,
     loadGeneration: liveHistory?.loadGeneration ?? 0,
+    // Task 4: the lock, and the one sentence it says. The copy is imported
+    // rather than passed down so there is exactly one string in the codebase.
+    lockNote: AGENT_RUN_LOCK_NOTE,
+    locked: agentRunLocked,
     onReload: onWriteReload,
     pageId,
     palette,
@@ -619,6 +637,19 @@ export function useSceneEditingSession({
     [activeArtifactId, primaryNodeId],
   );
 
+  /**
+   * Task 4: the canvas refused a gesture or a caret because the lock holds.
+   *
+   * It lands in the SAME inline note line the D10 quiet reload uses — no new
+   * failure UI — which is also why this is not a piece of state of its own: the
+   * next real write, reload or selection clears it exactly as it clears every
+   * other note on this lane.
+   */
+  const reportNote = writes.reportNote;
+  const onLockedEdit = useCallback(() => {
+    reportNote(AGENT_RUN_LOCK_NOTE);
+  }, [reportNote]);
+
   return {
     activeDocumentId,
     addressing,
@@ -656,6 +687,9 @@ export function useSceneEditingSession({
     note: writes.note,
     /** AD3.3: receives the canvas's loaded undo/redo depths. */
     onHistoryChange,
+    /** Task 4: the canvas reporting a gesture or caret it refused because the
+     * agent-run lock holds — routed to the lane's one inline note line. */
+    onLockedEdit,
     /** §1.3 row 1: the inspector's Replace-image handler — the file the user
      * picked becomes an asset and lands in the selected image node. */
     onReplaceImage,

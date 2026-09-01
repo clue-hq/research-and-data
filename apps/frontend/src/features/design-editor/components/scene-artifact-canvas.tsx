@@ -271,6 +271,22 @@ export interface SceneCanvasControls {
    * instead of stranding an orphan asset behind a silent no-op.
    */
   canApply(): boolean;
+  /**
+   * Task 4 (scene live-streaming rung A): commit any OPEN caret session right
+   * now, exactly as a blur would.
+   *
+   * The founder default for the agent-run lock: a lock closing over a session
+   * with typed changes force-commits it, so the human's paragraph lands instead
+   * of being stranded behind a write path that has just gone inert. The draft
+   * lives inside the overlay component, so the flush has to be imperative — a
+   * prop could only ask the overlay to unmount, which is precisely the silent
+   * loss this prevents.
+   *
+   * A no-op with no session open, and it must be called BEFORE the caller's own
+   * lock latch closes: the commit rides the same `onOperations` write path every
+   * other edit does (`engageSceneWriteLock` owns that ordering).
+   */
+  flushTextEdit(): void;
   /** Point→node hit-test in absolute PAGE space (scene units), straight from
    * the engine. Null when the engine is unavailable — a disabled engine
    * refuses to answer rather than guessing from descriptors (AD2.5 consumes
@@ -299,12 +315,24 @@ export interface SceneArtifactCanvasProps {
    * selected in it — is not changing it, which is the whole of what G-H forbids
    * ("we cannot let humans change any value when the agents are at work").
    *
-   * The chats route passes `chat.threadBusy`, the same source the inspector's
+   * The chats route passes the agent-run lock (task 4,
+   * `chat-shell/model/agent-run-lock`), the same source the inspector's
    * `inspectorDisabled` reads. The artifact route deliberately passes nothing —
    * it has no live turn stream to read, and its net stays the D10 CAS
    * reconciliation (see the comment at that call site).
    */
   gestureDisabled?: boolean;
+  /**
+   * Task 4: this press or double-click WOULD have edited the document, and was
+   * refused only because `gestureDisabled` holds.
+   *
+   * The canvas owns no message state, so it reports the refusal instead of
+   * inventing somewhere to put it; the shell routes it to the one inline note
+   * line every other refusal on this lane already uses. Never fired for a press
+   * that changes nothing anyway (a plain selection, a press on empty
+   * workspace) — an unasked-for note is noise, not honesty.
+   */
+  onLockedEdit?: () => void;
   /**
    * AD4.C / Ruling C-3: a committed canvas gesture's operations, handed to the
    * shell's write path — `use-scene-manual-edits.ts`'s `applyOps`, the SAME one
@@ -473,6 +501,7 @@ function SceneDocumentCanvas({
   onFitZoom,
   onGestureZoom,
   onHistoryChange,
+  onLockedEdit,
   onOperations,
   onSceneChange,
   onSelect,
@@ -556,6 +585,13 @@ function SceneDocumentCanvas({
    * canvas on every keystroke.
    * ------------------------------------------------------------------ */
   const [editingNodeId, setEditingNodeId] = useState<NodeId | null>(null);
+  /**
+   * Task 4: the open session's own "commit now", published by the overlay while
+   * it is mounted and read by `controls.flushTextEdit` — the agent-run lock's
+   * force-commit seam. Null whenever no session is open, which is exactly what
+   * makes the flush a no-op then.
+   */
+  const textEditSettleRef = useRef<(() => void) | null>(null);
 
   // The descriptor tree the draw loop walks. `tokenGeneration` is a real dep:
   // descriptors read the renderAdapter's module-level kit maps, which arrive
@@ -761,6 +797,9 @@ function SceneDocumentCanvas({
       // The same condition `applyOperations` refuses on, asked without
       // applying anything.
       canApply: () => Boolean(engine),
+      // Task 4: no session open is a no-op, by construction — the ref is only
+      // ever populated by a MOUNTED overlay.
+      flushTextEdit: () => textEditSettleRef.current?.(),
       documentVersion: () => currentVersion,
       hitTest: (x, y) =>
         engine && pageId ? engine.hitTest(pageId, x, y) : null,
@@ -1450,13 +1489,32 @@ function SceneDocumentCanvas({
     // `HitResult.stack` is bottom-to-top and its last member IS `hit` (the
     // engine's `hit_test` is literally `hit_stack(..).pop()`), so the stack
     // alone is the complete answer.
+    const hitNodeId = representableHit(result.stack, scene, pageId);
     const press = scenePressNodeTarget({
       artboard,
       gesturesEnabled: !gestureDisabled,
-      nodeId: representableHit(result.stack, scene, pageId),
+      nodeId: hitNodeId,
       pageId,
       scene,
     });
+    // Task 4: a press the agent-run lock, and ONLY the lock, refused to arm.
+    // Asked by re-running the same pure decision with the gate open, so the
+    // answer is the adapter's and not a second copy of its rule here; the extra
+    // derivation is paid only while the editor is actually locked, and only for
+    // a press that would otherwise have started a drag (a plain selection, a
+    // press on nothing, or a node that could never drag says nothing).
+    if (gestureDisabled && !press.armed) {
+      const wouldArm = scenePressNodeTarget({
+        artboard,
+        gesturesEnabled: true,
+        nodeId: hitNodeId,
+        pageId,
+        scene,
+      }).armed;
+      if (wouldArm) {
+        onLockedEdit?.();
+      }
+    }
     // `press.armed` was resolved against the PRE-freeze scene, which is right
     // for the ordinary case (the freeze is zero-motion, so the box is the same
     // either side of it) and one case short: a node the freeze could not
@@ -1522,6 +1580,12 @@ function SceneDocumentCanvas({
       case "select":
         commitSelection(effect.nodeId);
         break;
+      case "locked":
+        // Task 4: the caret this document would have opened, refused by the
+        // agent-run lock. The shell puts the lock's sentence in the note slot;
+        // the selection the preceding pointer-down made is left alone.
+        onLockedEdit?.();
+        break;
       case "none":
         break;
     }
@@ -1583,6 +1647,9 @@ function SceneDocumentCanvas({
           onCommit={commitTextEdit}
           onStyleCommit={commitTextEditStyle}
           palette={palette}
+          // Task 4: the session publishes its own "commit now" here, so the
+          // agent-run lock can force-commit it on the way in.
+          settleRef={textEditSettleRef}
           stage={stageBounds}
         />
       ) : null}
@@ -1880,6 +1947,7 @@ function SceneTextEditOverlay({
   onCommit,
   onStyleCommit,
   palette,
+  settleRef,
   stage,
 }: {
   model: SceneTextEditModel;
@@ -1890,6 +1958,10 @@ function SceneTextEditOverlay({
   /** Answers whether the formatting write LANDED (F4/P3-4). */
   onStyleCommit: (session: TextEditSession) => boolean;
   palette: ScenePalette | null;
+  /** Task 4: where this session publishes its own commit, so the host's
+   * agent-run lock can force it before the write path goes inert. Populated
+   * while mounted and cleared on unmount, so a closed session flushes nothing. */
+  settleRef: RefObject<(() => void) | null>;
   /** D3a: `topInset` is the occupied band at the stage's top (the G-D banners),
    * which the toolbar places itself clear of. */
   stage: { width: number; height: number; topInset?: number };
@@ -2092,6 +2164,22 @@ function SceneTextEditOverlay({
     },
     [onCancel, onCommit],
   );
+
+  /**
+   * Task 4: publish this session's commit while it is mounted.
+   *
+   * The host's agent-run lock calls it on the engaging edge, which is the
+   * founder default — typed work is committed, never silently dropped — and it
+   * is deliberately the SAME `settle("commit")` a blur takes, so the transaction
+   * (write first, close only if the write landed, F4) is identical. Cleared on
+   * unmount, so a closed session cannot be flushed.
+   */
+  useEffect(() => {
+    settleRef.current = () => settle("commit");
+    return () => {
+      settleRef.current = null;
+    };
+  }, [settle, settleRef]);
 
   /**
    * The one case a blur cannot cover: focus moved INTO the toolbar (the hex

@@ -86,6 +86,16 @@ export const MIN_TEXT_EDIT_SIZE_PX = 8;
 export type SceneDoubleClickEffect =
   | { kind: "edit"; nodeId: NodeId }
   | { kind: "select"; nodeId: NodeId }
+  /**
+   * Task 4 (scene live-streaming rung A): a caret this document would happily
+   * have opened, refused because a design turn is running on it.
+   *
+   * Its own kind rather than `none` so the host can SAY so. `none` is "nothing
+   * to do here" — a double-click on empty workspace, a node already at the top
+   * of its chain — and a refusal that renders as nothing-to-do is exactly the
+   * silence the founder's lock exists to replace.
+   */
+  | { kind: "locked" }
   | { kind: "none" };
 
 /**
@@ -103,10 +113,17 @@ export type SceneDoubleClickEffect =
  *  • **LOCKED** — §1.0/§4's "lock gates every write path". The write side
  *    (`scene-apply.ts`) refuses a locked node anyway, so opening a caret over
  *    one would be a session that can only end in a silent no-op.
- *  • **`gestureDisabled`** — Gate G-H: while an agent turn is in flight the
- *    human's direct manipulation is off. Only OPENING is gated; a session
- *    already open is not force-killed by a turn start (D10 CAS is the net),
- *    the same posture an in-flight gesture takes.
+ *  • **`gestureDisabled`** — Gate G-H, now the founder's agent-run lock (task 4):
+ *    while a design turn is running on this document the human's direct
+ *    manipulation is off. It answers `locked` rather than `none`, so the host
+ *    can put the lock's own sentence in front of the user instead of leaving a
+ *    caret that mysteriously never appears.
+ *
+ *    Only OPENING is gated here. A session already open is not killed by this
+ *    function — but it is no longer merely left to the D10 CAS net either: the
+ *    founder default is that the lock ENGAGING force-COMMITS an open session
+ *    first (`engageSceneWriteLock` in `hooks/use-scene-manual-edits.ts`), so
+ *    typed work lands rather than being stranded behind a closed gate.
  *
  * Neither refusal falls through to the drill-out: the pointer-down that
  * preceded this double-click already selected the node, so there is nothing
@@ -146,8 +163,14 @@ export function sceneDoubleClickEffect({
   }
   const node = getNode(scene, nodeId);
   if (node?.kind.kind === "text") {
-    if (gestureDisabled || node.locked) {
+    // The NODE's own lock is asked first and answers `none`: it is a document
+    // fact that outlives the run, so "editing unlocks when it finishes" would
+    // be a promise this node is not going to keep.
+    if (node.locked) {
       return { kind: "none" };
+    }
+    if (gestureDisabled) {
+      return { kind: "locked" };
     }
     return { kind: "edit", nodeId: node.id };
   }

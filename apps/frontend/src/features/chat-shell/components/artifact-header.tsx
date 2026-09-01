@@ -43,6 +43,8 @@ const PREVIEW_DEVICE_ICONS = {
 const ZOOM_LEVELS = Array.from({ length: 29 }, (_, index) => `${10 + index * 5}%`);
 
 export function ArtifactHeader({
+  editDisabled = false,
+  editDisabledReason = null,
   editing,
   exportPreview,
   exportStatus,
@@ -56,6 +58,20 @@ export function ArtifactHeader({
   undoDisabled,
   zoom,
 }: {
+  /**
+   * Task 4 (scene live-streaming rung A): the agent-run lock refuses ENTRY into
+   * edit mode while a design turn is running on the open document — offering a
+   * pressed Edit that reveals an entirely inert inspector would be a promise the
+   * platform cannot keep, and the backend would 409 every write behind it.
+   *
+   * Leaving edit mode is deliberately never refused (the caller decides), so a
+   * lock engaging mid-edit cannot trap the user in a dock they cannot close.
+   */
+  editDisabled?: boolean;
+  /** Task 4: the lock's own ratified sentence, on the pill itself. No new
+   * chrome is invented for it — the button already has a hover/AT surface, and
+   * the same sentence is in the inspector's note line beside it. */
+  editDisabledReason?: string | null;
   editing: boolean;
   /** AD4.D step 3: the ad session's render for the export menu's designed
    * preview region, with the element that hosts it. Absent on every other
@@ -281,7 +297,13 @@ export function ArtifactHeader({
         <button
           aria-pressed={editing}
           className={`${styles.artifactActionButton} ${editing ? styles.artifactActionButtonActive : ""}`}
+          disabled={editDisabled}
           onClick={onEdit}
+          // The reason rides the pill itself rather than a new badge: this
+          // repo's presentation-truth rule forbids inventing chrome for data
+          // with no designed slot, and the same sentence is already on screen
+          // in the inspector's note line.
+          title={editDisabled ? (editDisabledReason ?? undefined) : undefined}
           type="button"
         >
           <ChatShellIcon name={editing ? "pencil-ruler-knockout" : "pencil-ruler"} size={14} />

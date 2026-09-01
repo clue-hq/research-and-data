@@ -73,7 +73,108 @@ import {
  * mechanical adaptations this lane needs: the queue's cached `base_version` is
  * re-based on the version the step returned (it is stale the moment the server
  * writes without us), and the depth bookkeeping below records the step.
+ *
+ * ── THE AGENT-RUN LOCK (scene live-streaming rung A, task 4) ───────────────
+ * Founder ruling: no mid-run manual editing, ever. While a design turn is
+ * queued or running on THIS document the whole lane is view-only — `canApply`
+ * says no, `applyOps` writes nothing, and both history steps are inert — and
+ * the refusal SAYS so, because unlike the lane's two existing silent refusals
+ * this one is a state the human can simply wait out.
+ *
+ * The decision itself is `sceneManualWriteGate` below (pure, so the matrix is
+ * provable without a DOM); who computes `locked` is not this file's business —
+ * the chat surface derives it from the turn stream
+ * (`chat-shell/model/agent-run-lock`) and hands it down.
+ *
+ * The one subtlety is the ENGAGE TRANSITION, and it is a founder default: a
+ * lock closing over an OPEN caret session force-commits that session first,
+ * exactly as a blur would, so typed work is never silently lost. That ordering
+ * is `engageSceneWriteLock` + the effect that runs it — the flush rides the
+ * SAME `applyOps` every other write does, so it has to run while the latch this
+ * lane reads is still open. The latch is therefore a ref written by that one
+ * effect and by nothing else; the render-time disables read the prop directly.
  */
+
+/** Why a manual write was refused; `null` when it was not. */
+export type SceneWriteRefusal =
+  | "agent_run"
+  | "engine_unavailable"
+  | "not_armed";
+
+export interface SceneWriteGate {
+  allowed: boolean;
+  /** The line to put in the inspector's note slot, or `null` for a refusal that
+   * is deliberately silent. */
+  note: string | null;
+  refusal: SceneWriteRefusal | null;
+}
+
+const WRITE_ALLOWED: SceneWriteGate = {
+  allowed: true,
+  note: null,
+  refusal: null,
+};
+
+/**
+ * May a manual write land right now, and does the refusal say anything?
+ *
+ * Order is the contract. The LOCK is asked first and outranks both of the
+ * lane's older refusals, because it is the only one with words: "not armed" and
+ * "the engine is unavailable" are silent on purpose (the canvas's own G-D
+ * banner already explains the second, and the first is a state no user can
+ * see), whereas a locked editor that refuses in silence is exactly the defect
+ * this task exists to close.
+ */
+export function sceneManualWriteGate({
+  armed,
+  engineReady,
+  lockNote,
+  locked,
+}: {
+  /** A document is open AND a canvas is mounted to apply through. */
+  armed: boolean;
+  /** The live wasm engine accepts operations (false is D9 read-only). */
+  engineReady: boolean;
+  /** The lock's own copy, or `null` when the caller has none to show. */
+  lockNote: string | null;
+  locked: boolean;
+}): SceneWriteGate {
+  if (locked) {
+    return { allowed: false, note: lockNote, refusal: "agent_run" };
+  }
+  if (!armed) {
+    return { allowed: false, note: null, refusal: "not_armed" };
+  }
+  if (!engineReady) {
+    return { allowed: false, note: null, refusal: "engine_unavailable" };
+  }
+  return WRITE_ALLOWED;
+}
+
+/**
+ * The lock-engage transition: flush, THEN latch. Returns the new latch value.
+ *
+ * Pure but for the callback it is handed, which is the point — the ordering is
+ * the thing worth pinning, and pinning it needs nothing but a spy.
+ *
+ * `flush` commits any open caret session through the ordinary write path, so it
+ * must run while that path is still open; returning the latch (rather than
+ * setting it) is what makes "before" structural instead of a comment.
+ */
+export function engageSceneWriteLock({
+  flush,
+  locked,
+  previous,
+}: {
+  flush: () => void;
+  locked: boolean;
+  previous: boolean;
+}): boolean {
+  if (locked && !previous) {
+    flush();
+  }
+  return locked;
+}
 
 export interface SceneManualEdits {
   /** Apply a batch locally and persist it. No-op on an empty batch, on a
@@ -179,11 +280,25 @@ export interface SceneManualEdits {
    * any operation exists. State only: the inspector already renders this slot
    * (`ImageInspector`'s `error` prop) and no new failure UI is authorized. */
   reportError: (message: string) => void;
+  /**
+   * Task 4: the same for the NOTE slot — used by the surfaces that refuse a
+   * gesture or a caret session because the agent-run lock is engaged. Those
+   * refusals happen on the canvas, which owns no message state, so the one
+   * inline note line every other refusal on this lane uses is where they land
+   * too. State only; no new UI. */
+  reportNote: (message: string) => void;
 }
 
 export interface UseSceneManualEditsOptions {
   /** The active design document, or null when nothing is armed. */
   documentId: string | null;
+  /**
+   * Task 4: a design turn is queued or running on THIS document, so the lane is
+   * view-only. Defaults to false, which is what the artifact route (no live
+   * turn stream to read) leaves it at. */
+  locked?: boolean;
+  /** The copy a locked refusal shows. Absent → the refusal is silent. */
+  lockNote?: string | null;
   /** The mounted canvas's imperative seam — the live engine and its scene. */
   controlsRef: RefObject<SceneCanvasControls | null>;
   /** The session's reload nonce bump: refetch the authoritative document. */
@@ -212,6 +327,8 @@ export function useSceneManualEdits(
     controlsRef,
     documentId,
     loadGeneration = 0,
+    lockNote = null,
+    locked = false,
     onReload,
     redoDepth = 0,
     undoDepth = 0,
@@ -242,13 +359,37 @@ export function useSceneManualEdits(
   const configRef = useRef(config);
   const controlsHolderRef = useRef(controlsRef);
   const documentIdRef = useRef(documentId);
+  const lockNoteRef = useRef(lockNote);
   const onReloadRef = useRef(onReload);
   useEffect(() => {
     configRef.current = config;
     controlsHolderRef.current = controlsRef;
     documentIdRef.current = documentId;
+    lockNoteRef.current = lockNote;
     onReloadRef.current = onReload;
   });
+
+  /**
+   * Task 4: the latch the IMPERATIVE write paths read. Deliberately NOT written
+   * in the passive effect above with its siblings — it is closed by the one
+   * effect below, and only after that effect has flushed an open caret session
+   * through this very write path (`engageSceneWriteLock`'s whole reason to
+   * exist). Render-time answers (`undoDisabled`, `redoDisabled`) read the
+   * `locked` PROP instead, so the controls dim on the same frame the lock
+   * engages while the in-flight commit still lands.
+   */
+  const lockedRef = useRef(locked);
+  useEffect(() => {
+    lockedRef.current = engageSceneWriteLock({
+      // The founder default: a lock closing over an open, dirty caret session
+      // COMMITS it first — same transactional posture as a blur — so typed work
+      // is never silently lost. The canvas owns the session (its draft lives in
+      // the overlay), so the flush is an imperative seam, not a prop.
+      flush: () => controlsRef.current?.flushTextEdit(),
+      locked,
+      previous: lockedRef.current,
+    });
+  }, [controlsRef, locked]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -304,6 +445,15 @@ export function useSceneManualEdits(
     }
     setNote(null);
     setError(message);
+  }, []);
+
+  /** Task 4: the note slot, for the canvas's own lock refusals. The error line
+   * is deliberately left alone — a locked editor is a state, not a failure. */
+  const reportNote = useCallback((message: string) => {
+    if (!mountedRef.current) {
+      return;
+    }
+    setNote(message);
   }, []);
 
   /** `busy` reports BOTH kinds of in-flight work through one flag, because the
@@ -431,10 +581,22 @@ export function useSceneManualEdits(
     [ensureQueue, syncBusy],
   );
 
-  /** The two silent refusals of `applyOps` below, asked without applying. */
+  /**
+   * The refusals of `applyOps` below, asked without applying — the two silent
+   * ones, plus (task 4) the agent-run lock, which is the one that speaks.
+   *
+   * Note it does NOT set the note here: this is a QUESTION, asked by callers
+   * that spend before they write (Replace image, the AI image suite), and they
+   * report the refusal themselves through the slot they already own.
+   */
   const canApply = useCallback(() => {
     const controls = controlsHolderRef.current.current;
-    return Boolean(documentIdRef.current && controls?.canApply());
+    return sceneManualWriteGate({
+      armed: Boolean(documentIdRef.current && controls),
+      engineReady: Boolean(controls?.canApply()),
+      lockNote: lockNoteRef.current,
+      locked: lockedRef.current,
+    }).allowed;
   }, []);
 
   const applyOps = useCallback(
@@ -444,15 +606,36 @@ export function useSceneManualEdits(
       }
       const forDocumentId = documentIdRef.current;
       const controls = controlsHolderRef.current.current;
-      // Not armed: no document, or no mounted canvas to apply through.
+      // The ONE gate — the same decision `canApply` answers, so the two can
+      // never disagree about whether this lane may write. Task 4's lock is
+      // inside it and is asked FIRST: a write refused here never reaches the
+      // local engine, so the optimistic scene cannot run ahead of a document the
+      // server is going to refuse anyway (task 1's 409). Only that refusal
+      // speaks; "not armed" and "the engine is unavailable" stay silent, the
+      // latter because the canvas's own G-D banner already explains it and a
+      // second message about it would be new failure UI.
+      const gate = sceneManualWriteGate({
+        armed: Boolean(forDocumentId && controls),
+        engineReady: Boolean(controls?.canApply()),
+        lockNote: lockNoteRef.current,
+        locked: lockedRef.current,
+      });
+      if (!gate.allowed) {
+        if (gate.note !== null) {
+          setError(null);
+          setNote(gate.note);
+        }
+        return false;
+      }
+      // Narrowing only: `armed` above is exactly this pair, and the gate has
+      // already refused when either is missing.
       if (!forDocumentId || !controls) {
         return false;
       }
       const outcome = controls.applyOperations(operations);
-      // The engine is unavailable (D9 read-only). Nothing was applied, so
-      // nothing may be persisted — and nothing is SAID here either: the
-      // canvas's own G-D banner already explains the read-only state, and a
-      // second message about it would be new failure UI.
+      // Nothing was applied, so nothing may be persisted. Unreachable through
+      // the gate above (`engineReady` asks the identical question) and kept as
+      // the local narrowing that lets `outcome.scene` be read below.
       if (!outcome) {
         return false;
       }
@@ -495,6 +678,13 @@ export function useSceneManualEdits(
       }
       const forDocumentId = documentIdRef.current;
       if (!forDocumentId) {
+        return false;
+      }
+      // Task 4: unreachable while the lock holds — its one caller is the
+      // canvas's freeze-on-grab, and no gesture arms mid-run — and refused
+      // anyway, in silence, because a freeze is a consequence of a grab the user
+      // has already been told about rather than a write they asked for.
+      if (lockedRef.current) {
         return false;
       }
       enqueueApplied(forDocumentId, operations, scene);
@@ -593,6 +783,17 @@ export function useSceneManualEdits(
       // Single-flight: a second step while one is in flight would race the
       // first onto a stack the server has not finished moving.
       if (historyRef.current) {
+        return;
+      }
+      // Task 4: a history step is a document WRITE (the server rewrites the
+      // envelope), so the lock covers it exactly as it covers an edit — and
+      // says so, because ⌘Z is a keyboard path with no disabled control in
+      // front of it to explain the silence.
+      if (lockedRef.current) {
+        if (lockNoteRef.current !== null) {
+          setError(null);
+          setNote(lockNoteRef.current);
+        }
         return;
       }
       const forDocumentId = documentIdRef.current;
@@ -721,10 +922,13 @@ export function useSceneManualEdits(
     persistAppliedOps,
     persistedVersion,
     redo,
-    redoDisabled: depths.redo === 0,
+    // Task 4: the lock dims both rows on the SAME frame it engages (the prop,
+    // not the latch above), so the menu never offers a step it would refuse.
+    redoDisabled: locked || depths.redo === 0,
     reportError,
+    reportNote,
     undo,
-    undoDisabled: depths.undo === 0,
+    undoDisabled: locked || depths.undo === 0,
   };
 }
 

@@ -81,6 +81,14 @@ export function EditorSurface({
   });
   const sceneSession = useSceneEditingSession({
     activeArtifactId: controller.activeArtifactId,
+    // Task 4 (scene live-streaming rung A): `agentRunLocked` is deliberately
+    // NOT passed, for the same reason `inspectorDisabled` and
+    // `sceneGestureDisabled` are not below — the lock is derived from a live
+    // turn stream, and this route has none. The default (false) keeps this
+    // route behaving exactly as it does today; its net stays the D10 CAS
+    // reconciliation plus task 1's server-side 409, and the recorded follow-up
+    // (a DOCUMENT-scoped agent-busy signal off the run_event SSE, which this
+    // route already has a reason to watch) is what would close the gap.
     documentIds,
     enabled: controller.artifactKind === "ad",
   });

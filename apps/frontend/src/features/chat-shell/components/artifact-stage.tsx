@@ -56,6 +56,8 @@ export function ArtifactStage({
   canvasReloadToken,
   artifactMaximized,
   artifactTitle,
+  editDisabled,
+  editDisabledReason,
   editing,
   exportPreview,
   exportStatus,
@@ -75,6 +77,7 @@ export function ArtifactStage({
   onSceneChange,
   onSceneEngineStatusChange,
   onSceneFitZoom,
+  onSceneLockedEdit,
   onSceneHistoryChange,
   onSceneGestureZoom,
   onSceneAppliedOperations,
@@ -114,6 +117,11 @@ export function ArtifactStage({
   artifactKind: ChatShellArtifactKind | null;
   artifactMaximized: boolean;
   artifactTitle: string;
+  /** Task 4: the agent-run lock refuses ENTRY into edit mode (never the exit).
+   * Absent leaves the header's Edit button exactly as it is today. */
+  editDisabled?: boolean;
+  /** Task 4: why, in the lock's own ratified words. */
+  editDisabledReason?: string | null;
   editing: boolean;
   /** AD4.D step 3 (§1.11): the ad editing session's render for the export
    * menu's designed preview region, with the element that hosts it. Absent
@@ -160,6 +168,10 @@ export function ArtifactStage({
   /** AD2.3: the ad canvas's fit-on-open zoom, as one of the header menu's own
    * 5% steps (§1.10) — AD2.8 shows it in the menu until the user chooses. */
   onSceneFitZoom?: (zoom: string) => void;
+  /** Task 4: the ad canvas refused a gesture or a caret because the agent-run
+   * lock holds, and is asking the shell to say so. Absent → nothing is said,
+   * which is the artifact route's own (lockless) posture. */
+  onSceneLockedEdit?: () => void;
   /** AD3.3: the loaded ad document's undo/redo stack depths, mirrored up so the
    * header's two history rows disable off the server's real stacks. The
    * committed version rides along so the session can stamp edit-target
@@ -249,6 +261,8 @@ export function ArtifactStage({
       {showingArtifact ? (
         <>
           <ArtifactHeader
+            editDisabled={editDisabled}
+            editDisabledReason={editDisabledReason}
             editing={editing}
             exportPreview={exportPreview}
             exportStatus={exportStatus}
@@ -297,6 +311,7 @@ export function ArtifactStage({
                   controlsRef={sceneCanvasControlsRef}
                   documentId={activeDocumentId}
                   gestureDisabled={sceneGestureDisabled}
+                  onLockedEdit={onSceneLockedEdit}
                   onEngineStatusChange={onSceneEngineStatusChange}
                   onFitZoom={onSceneFitZoom}
                   onGestureZoom={onSceneGestureZoom}

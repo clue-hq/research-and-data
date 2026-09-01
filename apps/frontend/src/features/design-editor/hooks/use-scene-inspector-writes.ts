@@ -220,6 +220,8 @@ export function useSceneInspectorWrites({
   canvasControls,
   documentId,
   loadGeneration,
+  lockNote,
+  locked,
   onReload,
   pageId,
   palette,
@@ -239,6 +241,11 @@ export function useSceneInspectorWrites({
   /** AD3.3: the loaded document's history, mirrored up by the canvas — the
    * base the controller's step count is added to. */
   loadGeneration?: number;
+  /** Task 4: the copy a lock refusal shows, or null when there is none. */
+  lockNote?: string | null;
+  /** Task 4: a design turn is running on this document — the lane is view-only.
+   * Passed straight through; the whole policy lives in the write controller. */
+  locked?: boolean;
   /** The session's reload nonce bump. */
   onReload: () => void;
   /** AD4.0: the page the canvas is rendering (§5: one artboard), the very one
@@ -261,6 +268,8 @@ export function useSceneInspectorWrites({
     controlsRef: canvasControls,
     documentId,
     loadGeneration,
+    lockNote,
+    locked,
     onReload,
     redoDepth,
     undoDepth,

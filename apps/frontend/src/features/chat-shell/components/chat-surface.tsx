@@ -18,6 +18,7 @@ import type {
 import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene-editing-session";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import { useEditorShellController } from "../hooks/use-editor-shell-controller";
+import { agentRunLockForThread } from "../model/agent-run-lock";
 import { artifactToAutoOpen } from "../model/artifact-auto-open";
 import {
   chatDockContent,
@@ -102,6 +103,47 @@ export function ChatSurface({
     projectId,
     surface: urlState.surface,
   });
+  // Task 4 (scene live-streaming rung A) — THE EDITOR LOCK.
+  //
+  // Founder ruling: no mid-run manual editing, ever. Task 1 put the 409
+  // (`document.agent_run_active`) on the six manual write routes, which is the
+  // enforcement; this is the honest UX in front of it, so a control the platform
+  // is going to refuse never looks live.
+  //
+  // It is derived HERE and nowhere else, because this is the only place that can
+  // see all three facts the decision needs: the thread's turn stream (the chat
+  // controller), the document the editor has open, and the thread that document
+  // was born in. The rule itself is pure (`../model/agent-run-lock`) — this
+  // component only transports it, exactly as it does the refresh counters and
+  // the auto-open decision.
+  //
+  // Computed BEFORE the editing sessions, off the shell's active tab and the
+  // page's id map rather than off `session.activeDocumentId`: the scene session
+  // consumes the lock, so taking the document id back out of it would be a cycle.
+  const feedArtifacts = artifacts ?? NO_ARTIFACTS;
+  const activeArtifact = shell.activeArtifactId
+    ? (feedArtifacts.find(
+        (artifact) => artifact.id === shell.activeArtifactId,
+      ) ?? null)
+    : null;
+  const agentRunLock = agentRunLockForThread({
+    activeThreadId: chat.activeThreadId,
+    designLegOpen: chat.designLegOpen,
+    documentId: shell.activeArtifactId
+      ? (documentIds?.[shell.activeArtifactId] ?? null)
+      : null,
+    // The gallery card's own origin thread — the SAME binding `artifact-auto-open`
+    // trusts to decide that a born document belongs to this conversation. Null
+    // (a tab whose card is not in this feed) is fail-safe LOCKED, by the rule.
+    documentThreadId: activeArtifact?.originThreadId ?? null,
+    state: chat.agentRunLock,
+    threadBusy: chat.threadBusy,
+  });
+  // Consumed on the AD lane only. The website lane has the same exposure and no
+  // scene editor, so widening the lock to it is a separate decision with its own
+  // surfaces — not something to acquire by accident here.
+  const sceneLocked = agentRunLock.locked && shell.artifactKind === "ad";
+
   // Chat-flow slice 3: the SAME editing session the artifact route mounts
   // (documents/selection/writes/rich-text/theme), keyed only on this mount's
   // own active tab and the page's id map — the hook never sees a shell
@@ -118,6 +160,7 @@ export function ChatSurface({
   });
   const sceneSession = useSceneEditingSession({
     activeArtifactId: shell.activeArtifactId,
+    agentRunLocked: sceneLocked,
     documentIds,
     enabled: shell.artifactKind === "ad",
   });
@@ -252,7 +295,6 @@ export function ChatSurface({
   // auto-open.
   const knownArtifactIds = useRef<Set<string> | null>(null);
   const openArtifact = shell.openArtifact;
-  const feedArtifacts = artifacts ?? NO_ARTIFACTS;
   useEffect(() => {
     const known = knownArtifactIds.current;
     if (known === null) {
@@ -381,19 +423,23 @@ export function ChatSurface({
                 // operate the inspector — "we cannot let humans change any
                 // value when the agents are at work with designing".
                 //
-                // `chat.threadBusy` is the controller's own already-public fact
-                // (`selectTurnQueueState`: a running turn, or one queued behind
-                // it), the same one the conversation view reads for its busy
-                // affordance. Nothing new is derived and nothing is written
-                // back: this is a READ of the chat controller, so no chat-side
-                // behaviour — composer, sending, gates, queueing, mid-turn
-                // steering — can move because of this line, in either
-                // direction (the founder's chat-status-quo addendum).
+                // TASK 4 (scene live-streaming rung A) narrows the source from
+                // the bare `chat.threadBusy` to the agent-run lock above, which
+                // is the SAME fact with the ruling's own two qualifications
+                // finally applied: "with designing" (a design leg is open) and
+                // on THIS document (its card was born in this thread). A
+                // strategy turn in a thread whose design leg has closed no
+                // longer freezes an unrelated ad — which is the ratified genweb
+                // behaviour of interleaved edits BETWEEN design turns, not a
+                // relaxation of the gate. `threadBusy` still floors it (see the
+                // derivation), so a cold load into a live run is still locked.
                 //
-                // The gate is a TURN in flight, not an open design leg: a leg
-                // stays open across turns, and interleaved manual edits BETWEEN
-                // turns are the ratified genweb feature this must not touch.
-                inspectorDisabled={chat.threadBusy}
+                // Nothing is written back: this is a READ of the chat
+                // controller, so no chat-side behaviour — composer, sending,
+                // gates, queueing, mid-turn steering — can move because of this
+                // line, in either direction (the founder's chat-status-quo
+                // addendum).
+                inspectorDisabled={sceneLocked}
                 layers={sceneSession.layerRows}
                 note={sceneSession.note}
                 onReplaceImage={sceneSession.onReplaceImage}
@@ -588,11 +634,16 @@ export function ChatSurface({
         onSceneZoomChange={sceneSession.onZoomChange}
         sceneCanvasControlsRef={sceneSession.canvasControls}
         // AD4.C / Ruling C-4 — GATE G-H, the canvas half of the same ruling
-        // `inspectorDisabled` above implements, off the same already-public
-        // fact: while a turn is in flight on THIS thread the human may not
-        // change values, so drag and resize are off and the handles go with
-        // them. Selection stays live — looking is not changing.
-        sceneGestureDisabled={chat.threadBusy}
+        // `inspectorDisabled` above implements, off the same fact: while the
+        // design agent is at work on this document the human may not change
+        // values, so drag and resize are off, the handles go with them, and no
+        // caret opens. Task 4 adds the words: a press or double-click that WOULD
+        // have edited reports back, and the note says why.
+        //
+        // View, zoom, pan and selection stay live throughout — looking is not
+        // changing, which is the whole of what the ruling forbids.
+        sceneGestureDisabled={sceneLocked}
+        onSceneLockedEdit={sceneSession.onLockedEdit}
         // Rung C / §1.6: one document, one brand palette — the caret
         // session's colour control offers exactly what the inspector's do.
         scenePalette={sceneSession.palette}
@@ -625,6 +676,12 @@ export function ChatSurface({
         onToggleMaximized={shell.toggleArtifactMaximized}
         onTogglePanel={shell.toggleArtifactPanel}
         onToggleEditing={() => shell.setEditing(!shell.editing)}
+        // Task 4: the Edit affordance itself. Entering edit mode is refused
+        // while the lock holds — an editor whose every control is inert is not
+        // an editor — but LEAVING it never is, or a lock engaging mid-edit would
+        // trap the user in a dock they cannot close.
+        editDisabled={sceneLocked && !shell.editing}
+        editDisabledReason={agentRunLock.note}
         openArtifacts={shell.openArtifacts}
         projectTitle={workspace.title}
         // AD3.3: the header carries ONE pair of history-row disables, and the

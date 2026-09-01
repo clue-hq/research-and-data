@@ -103,7 +103,11 @@ test("a LOCKED text node opens no session — the lock gates every write path", 
   );
 });
 
-test("Gate G-H: no session opens while an agent turn is in flight", () => {
+test("Gate G-H: no session opens while an agent turn is in flight, and it SAYS so", () => {
+  // Task 4 (scene live-streaming rung A): the refusal used to be `none`, i.e.
+  // indistinguishable from a double-click on nothing, so the host had no way to
+  // tell the human why the caret never appeared. It is now its own kind, which
+  // is what carries the lock's note to the inspector's note slot.
   assert.deepEqual(
     sceneDoubleClickEffect({
       gestureDisabled: true,
@@ -111,7 +115,46 @@ test("Gate G-H: no session opens while an agent turn is in flight", () => {
       scene: HARVESTED_AD_PAGE,
       selectedNodeId: "text_headline",
     }),
+    { kind: "locked" },
+  );
+});
+
+test("a LOCKED node under an agent run still reports the node lock, not the run", () => {
+  // The node's own lock is a document fact and outranks the transient run: the
+  // caret would not open even after the agent finishes, so promising otherwise
+  // would be the wrong sentence.
+  const scene = clone(HARVESTED_AD_PAGE);
+  scene.nodes.text_headline.locked = true;
+  assert.deepEqual(
+    sceneDoubleClickEffect({
+      gestureDisabled: true,
+      nodeId: "text_headline",
+      scene,
+      selectedNodeId: "text_headline",
+    }),
     { kind: "none" },
+  );
+});
+
+test("selection-for-inspection survives the lock: the drill-out still works", () => {
+  // The whole of what the lock forbids is CHANGING the document. Looking at it
+  // — including double-clicking through to a container to inspect it — stays
+  // live, so this must resolve exactly as it does with the lock off.
+  const unlocked = sceneDoubleClickEffect({
+    gestureDisabled: false,
+    nodeId: "ellipse_proof_dot",
+    scene: HARVESTED_AD_PAGE,
+    selectedNodeId: "ellipse_proof_dot",
+  });
+  assert.equal(unlocked.kind, "select");
+  assert.deepEqual(
+    sceneDoubleClickEffect({
+      gestureDisabled: true,
+      nodeId: "ellipse_proof_dot",
+      scene: HARVESTED_AD_PAGE,
+      selectedNodeId: "ellipse_proof_dot",
+    }),
+    unlocked,
   );
 });
 
