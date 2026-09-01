@@ -5,13 +5,19 @@ editing of that document is forbidden. The frontend half (a disabled canvas) is 
 file pins the BACKEND half, which is the one that has to be true even when the frontend is stale,
 mid-deploy, or simply a second tab nobody remembered was open.
 
-The four manual scene-write routes refuse with **409 `document.agent_run_active`**, naming the run
-that holds the document so the caller can say which run to watch (or cancel):
+The manual scene-write routes refuse with **409 `document.agent_run_active`**, naming the run that
+holds the document so the caller can say which run to watch (or cancel):
 
 * ``PUT  /documents/{id}/scene``
 * ``POST /documents/{id}/operations``
 * ``POST /documents/{id}/undo``
 * ``POST /documents/{id}/redo``
+* ``POST /documents/{id}/edits`` — the inspector's structured edit
+* ``POST /documents/{id}/revert`` — N composed undos back to a checkpoint
+
+The last two arrived one round later (controller ruling, 2026-09-02): the platform editor posts to
+both (`structuredEdits.ts`, `documentStore.ts`), so leaving them open would have left the rule
+true of four doors and false of two.
 
 And the line the lock must NOT cross: the agent's OWN writes. A leg turn commits through the
 internal governed tool path (``_LegSceneCommitter`` → ``design_apply_operations``), never through
@@ -32,6 +38,8 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from py_lumen_config import settings
+
 from clue_design import runs as design_runs
 from clue_design.envelopes import DesignTurnEnvelope
 
@@ -45,6 +53,19 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 MINIMAL_SCENE_PATH = REPO_ROOT / "crates/lumen-core/fixtures/minimal_scene.json"
 
 LEG_BRIEF = "Build the Harbor & Sage launch ad: bold headline, product shot, booking CTA."
+
+
+@pytest.fixture(autouse=True)
+def _no_embedded_fleet_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    """This module seeds its run rows directly; it never offers work to the queue.
+
+    The app's embedded worker leases by KIND from a SHARED queue table, so it drains whatever
+    ``design_job`` rows happen to be sitting in the database — including a developer stack's real,
+    minutes-long design turns, which then run inside this test process and stall it (observed:
+    21 queued jobs on the dev database). Nothing here wants a worker, so nothing here starts one.
+    Same fixture, same reason, as ``test_ad_assets_advertiser_resolution._no_embedded_worker``.
+    """
+    monkeypatch.setattr(settings, "lumen_embedded_fleet_worker", False, raising=False)
 
 
 @pytest.fixture()
@@ -162,6 +183,45 @@ def build_undo_and_redo_history(client: TestClient, document_id: str) -> None:
     assert undone.status_code == 200, undone.text
 
 
+#: The checkpoint label ``build_revertible_history`` anchors, and ``/revert`` composes back to.
+REVERT_CHECKPOINT = "good state"
+
+
+def build_revertible_history(client: TestClient, document_id: str) -> None:
+    """A labelled checkpoint with a later batch on top of it — what ``/revert`` needs to compose.
+
+    Without the batch above the anchor there is nothing to undo back to it, and a locked revert
+    would be indistinguishable from a revert that had no work.
+    """
+    anchored = client.post(
+        f"/documents/{document_id}/operations",
+        json={
+            "operations": [title_operation("Anchored")],
+            "checkpoint": REVERT_CHECKPOINT,
+        },
+    )
+    assert anchored.status_code == 200, anchored.text
+    drift = client.post(
+        f"/documents/{document_id}/operations",
+        json={"operations": [title_operation("Drift")]},
+    )
+    assert drift.status_code == 200, drift.text
+
+
+def structured_edit_request() -> dict:
+    """The inspector's own shape: one node's text, set through the structured-edit route."""
+    return {
+        "edit": {
+            "kind": "modify",
+            "target": {"kind": "node", "id": "node_contact_name"},
+            "patch": {
+                "kind": "node",
+                "value": {"text": {"content": {"kind": "set", "value": "Human repair"}}},
+            },
+        }
+    }
+
+
 # --- the lock ---------------------------------------------------------------------------------
 
 
@@ -221,11 +281,71 @@ def test_redo_is_refused_while_a_design_run_holds_the_document(client: TestClien
     assert store.require_document(document["id"])["current_version"] == version_before
 
 
+def test_a_structured_edit_is_refused_while_a_design_run_holds_the_document(
+    client: TestClient,
+) -> None:
+    """The inspector's write path. It is the one a human reaches for WITHOUT thinking of it as
+    an edit batch — rename a layer, retype a headline — so leaving it open would have left the
+    rule true of the canvas and false of the panel beside it."""
+
+    document = create_document(client)
+    store = HybridRepository()
+    run_id = start_leg_run(store, document["id"])
+
+    assert_locked(
+        client.post(f"/documents/{document['id']}/edits", json=structured_edit_request()),
+        run_id,
+    )
+    assert store.require_document(document["id"])["current_version"] == 0
+
+    finish_run(store, run_id)
+
+    edited = client.post(
+        f"/documents/{document['id']}/edits", json=structured_edit_request()
+    )
+    assert edited.status_code == 200, edited.text
+
+
+def test_reverting_to_a_checkpoint_is_refused_while_a_design_run_holds_the_document(
+    client: TestClient,
+) -> None:
+    """Revert is N undos composed, so it rewinds the agent's own committed checkpoints too —
+    the most destructive of the manual paths, and the last one that was still open."""
+
+    document = create_document(client)
+    build_revertible_history(client, document["id"])
+    store = HybridRepository()
+    run_id = start_leg_run(store, document["id"])
+    version_before = store.require_document(document["id"])["current_version"]
+
+    assert_locked(
+        client.post(
+            f"/documents/{document['id']}/revert",
+            params={"checkpoint": REVERT_CHECKPOINT},
+        ),
+        run_id,
+    )
+    assert store.require_document(document["id"])["current_version"] == version_before
+    assert store.require_document(document["id"])["title"] == "Drift"
+
+    finish_run(store, run_id)
+
+    reverted = client.post(
+        f"/documents/{document['id']}/revert", params={"checkpoint": REVERT_CHECKPOINT}
+    )
+    assert reverted.status_code == 200, reverted.text
+    assert store.require_document(document["id"])["title"] == "Anchored"
+
+
 # --- the lock LIFTS ---------------------------------------------------------------------------
 
 
-def test_all_four_writes_succeed_again_once_the_run_is_terminal(client: TestClient) -> None:
-    """The lock is a state, not a scar: a finished run leaves the document editable."""
+def test_writes_succeed_again_once_the_run_is_terminal(client: TestClient) -> None:
+    """The lock is a state, not a scar: a finished run leaves the document editable.
+
+    The four canvas/history routes in one place; ``/edits`` and ``/revert`` assert their own lift
+    beside their own refusal, because each needs a history the others do not.
+    """
 
     document = create_document(client)
     build_undo_and_redo_history(client, document["id"])

@@ -2819,10 +2819,11 @@ def create_app(
     def undo_document(
         document_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
-        # On the ROUTE rather than inside `perform_undo_step`, which `/revert` also drives: the
-        # write lock guards the four manual scene-write routes, and widening it to revert is a
-        # decision nobody has made. The document gates therefore run one step later here than in
-        # the neighbouring routes (they live inside the step).
+        # On the ROUTE rather than inside `perform_undo_step`, which `/revert` also drives: each
+        # guarded route states its own lock, so no route inherits one by accident from a shared
+        # helper (`/revert` states its own, right after its draft gate). The document gates
+        # therefore run one step later here than in the neighbouring routes — they live inside
+        # the step.
         _refuse_if_agent_running(document_id, repo)
         reverted = perform_undo_step(repo, document_id)
         document = require_document(repo, document_id)
@@ -2913,6 +2914,7 @@ def create_app(
         document = require_document(repo, document_id)
         require_scene_document(document)
         require_draft_document(document, "revert")
+        _refuse_if_agent_running(document_id, repo)
         envelopes = repo.list_envelopes(document_id, newest_first=False)
         anchor = next(
             (
@@ -2996,6 +2998,8 @@ def create_app(
         document = require_document(repo, document_id)
         require_scene_document(document)
         require_draft_document(document, "apply structured edit")
+        # Before the base-version check, for the reason stated at the /operations call site.
+        _refuse_if_agent_running(document_id, repo)
         require_base_version(document, payload.base_version)
         try:
             result = app.state.core.apply_structured_edit(
@@ -7579,9 +7583,14 @@ def _refuse_if_agent_running(document_id: str, store: HybridRepository) -> None:
 
     The 409 names the run, which is the only thing the caller can act on: watch it, or cancel it.
 
-    It guards the four MANUAL write routes only. The agent's own writes go through the governed
-    ``design_apply_operations`` tool (``_LegSceneCommitter``), never through these routes — a lock
-    that reached the tool would deadlock every run against itself.
+    It guards the SIX manual scene-write routes — ``PUT /scene``, ``POST /operations``, ``/undo``,
+    ``/redo``, ``/edits`` (the inspector's structured edit) and ``/revert`` (N composed undos).
+    The rule is about authorship, not about any one route's shape: every path a human can move a
+    scene through is closed while the agent is moving it.
+
+    The agent's own writes go through the governed ``design_apply_operations`` tool
+    (``_LegSceneCommitter``), never through these routes — a lock that reached the tool would
+    deadlock every run against itself.
     """
     run_id = store.active_design_run_for_document(document_id)
     if run_id is not None:
