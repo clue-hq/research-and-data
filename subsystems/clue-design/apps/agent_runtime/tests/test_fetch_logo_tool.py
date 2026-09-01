@@ -501,3 +501,34 @@ def test_dispatch_cache_hit_skips_both_rungs_and_force_refresh_overwrites(monkey
     monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: ladder)
     third = logo_fetch.fetch_logo_family("acme.com", cache=cache, force_refresh=True)
     assert third.cache_hit is False and list(third.cells) == ["light_lockup"]
+
+
+def test_dispatch_hesitant_ladder_only_family_is_needs_review_and_not_cached(monkeypatch):
+    from lumen_agent.tools import logo_fetch
+
+    cache = _RecordingCache()
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", lambda site, company: ({}, []))
+    hesitant = _resolution({"light": _slot(_svg(), lockup="full_lockup", variant="light")})
+    hesitant.status = "needs_review"   # e.g. alternate lockups: a human call, not a scoring call
+    hesitant.identity = {"passed": True}
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: hesitant)
+    outcome = logo_fetch.fetch_logo_family("acme.com", cache=cache)
+    assert outcome.prepared and outcome.cells == {"light_lockup": "ladder"}
+    assert outcome.status == "needs_review"
+    assert cache.stored == {}
+
+
+def test_dispatch_a_vendor_cell_makes_a_mixed_family_ok(monkeypatch):
+    from lumen_agent.tools import logo_fetch
+
+    cache = _RecordingCache()
+    monkeypatch.setattr(
+        logo_fetch, "_vendor_rung", lambda site, company: (_vendor_cells("light_lockup"), [])
+    )
+    hesitant = _resolution({"dark": _slot(_svg("#fff"), lockup="full_lockup", variant="dark")})
+    hesitant.status = "needs_review"
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: hesitant)
+    outcome = logo_fetch.fetch_logo_family("acme.com", cache=cache)
+    assert outcome.status == "ok"
+    assert outcome.cells == {"light_lockup": "brandfetch", "dark_lockup": "ladder"}
+    assert "https://acme.com/" in cache.stored

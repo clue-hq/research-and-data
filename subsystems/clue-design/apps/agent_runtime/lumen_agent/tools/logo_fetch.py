@@ -150,7 +150,7 @@ def fetch_logo_family(
                 cells[name] = cell
 
     outcome = _assemble(cells, resolution, site, company_name, notes, vendor_notes)
-    if cache is not None and outcome.prepared:
+    if cache is not None and outcome.status == "ok":
         cache.put(site, outcome)
     return outcome
 
@@ -205,8 +205,17 @@ def _assemble(cells, resolution, site, company_name, notes, vendor_notes) -> Log
             "synthesized), so nothing was ingested"
         )
 
+    # "ok" means at least one rung stood behind what it returned: a vendor cell is keyed
+    # retrieval (identity answered by the vendor), and a RESOLVED ladder stood behind its
+    # own. A ladder that hesitated (alternate lockups, a non-auto-accept rung) still
+    # prepares its cells — the agent may place them — but the status carries the caveat,
+    # exactly as it did before the vendor rung existed.
+    vendor_backed = any(p.source == "brandfetch" for p in prepared)
+    ladder_resolved = resolution is not None and resolution.status == "resolved"
+    status = "ok" if prepared and (vendor_backed or ladder_resolved) else "needs_review"
+
     return LogoFetchOutcome(
-        status="ok" if prepared else "needs_review",
+        status=status,
         site=site,
         company=company_name,
         prepared=prepared,
