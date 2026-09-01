@@ -464,6 +464,32 @@ it("A16/§1.4: a GRADIENT stroke states its first stop — it used to read `none
 
 // ── §1.2 Typography ────────────────────────────────────────────────────────
 
+it("rung A: the Text row reads TextNode.content verbatim — newlines included", () => {
+  assert.equal(
+    hydrateSceneInspectorState(adPlainText(), SCENE).content,
+    "3.4x faster triage",
+  );
+  assert.equal(
+    hydrateSceneInspectorState(adTokenText(), SCENE).content,
+    "Every inbound fax, routed to the right EHR queue.",
+  );
+  // The STORED content, not the painted one: `text_transform` is a paint-time
+  // concern, so an uppercasing node still states what it will be edited as.
+  const multiline = clone(SCENE);
+  const node = multiline.nodes.text_proof_stat;
+  if (node.kind.kind === "text") node.kind.content = "3.4x\nfaster triage";
+  assert.equal(
+    hydrateSceneInspectorState(node, multiline).content,
+    "3.4x\nfaster triage",
+  );
+});
+
+it("rung A: a NON-text node states no content at all — the row is text-only", () => {
+  for (const node of [adRect(), adImage(), adAutoLayout(), adGroup()]) {
+    assert.equal(hydrateSceneInspectorState(node, SCENE).content, undefined, node.id);
+  }
+});
+
 it("§1.2: the font family reads TextNode.font_family", () => {
   assert.equal(hydrateSceneInspectorState(adPlainText(), SCENE).fontFamily, "Inter");
 });

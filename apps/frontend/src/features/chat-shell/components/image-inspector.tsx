@@ -28,6 +28,7 @@ import {
   InspectorLayerRow,
   InspectorSection,
   InspectorSelect,
+  InspectorTextArea,
   RadiusControls,
 } from "./inspector-primitives";
 import styles from "./chat-shell.module.css";
@@ -377,6 +378,24 @@ function AdTextInspector({
   return (
     <>
       <Section id="typography" label="Typography" open={state.openSections.typography} toggle={() => toggleSection("typography")}>
+        {/* Rung A (rich-text plan, 2026-08-24): what the node SAYS, first —
+            every other row on this panel styles text the user could not edit.
+            It COMMITS ON BLUR/⌘-Enter (`InspectorTextArea`), never per
+            keystroke: a per-keystroke content field would persist one document
+            version and one undo step per letter.
+
+            The guard shape is the Alt-text row's, verbatim: `inspectorDisabled`
+            rides as its OWN line so the locked half stays the literal
+            `if (!locked)` the A29 pin reads. The field is natively disabled, so
+            this is the programmatic-blur backstop. */}
+        <InspectorField label="Text">
+          <InspectorTextArea
+            ariaLabel="Text content"
+            disabled={inert}
+            onCommitValue={(value) => { if (inspectorDisabled) return; if (!locked) setValue("content", value); }}
+            value={state.content}
+          />
+        </InspectorField>
         <InspectorField label="Color"><ColorControl color={colorRow.color} disabled={inert} fixtureFallback={false} onColorChange={colorRow.onColorChange} onTokenChange={colorRow.onTokenChange} options={paletteOptions} /></InspectorField>
         <InspectorField label="Font"><InspectorSelect disabled={inert} label="Font family" onChange={(value) => setValue("fontFamily", value)} options={fontOptions} value={state.fontFamily} /></InspectorField>
         <div className={styles.fieldGrid}>

@@ -530,11 +530,20 @@ export interface ScenePreview {
  * same reason it is upstream — the draw loop then needs no gesture awareness at
  * all, and the previewed node is drawn by exactly the code that draws every
  * other node.
+ *
+ * Rung B (rich-text plan, 2026-08-24) rides the SAME mechanism for the one
+ * other render-time override the canvas needs: `editingNodeId` drops that
+ * node's text payload, so a node under an open caret session paints its fills,
+ * strokes and box as always and its glyphs not at all — the DOM overlay is the
+ * only copy of the string on screen, and the draw loop needs no session
+ * awareness either. A stale id (the node left the scene mid-session) matches
+ * nothing and suppresses nothing.
  */
 export function sceneArtboardModel(
   scene: Scene,
   pageId: PageId | null,
   preview: ScenePreview | null = null,
+  editingNodeId: NodeId | null = null,
 ): SceneArtboardModel | null {
   const page = pageId ? scene.pages[pageId] : null;
   if (!page) {
@@ -543,14 +552,16 @@ export function sceneArtboardModel(
   const descriptor = pageDescriptor(page);
   const inFlow = page.children
     .filter((nodeId) => !isNodePinned(scene, nodeId))
-    .map((nodeId) => buildDrawNode(scene, page, nodeId, null, preview))
+    .map((nodeId) =>
+      buildDrawNode(scene, page, nodeId, null, preview, editingNodeId),
+    )
     .filter((node): node is DrawNode => node !== null);
   return {
     page: descriptor,
     // Pinned nodes are skipped inline and hoisted here, painted last (above
     // in-flow content) from their page-space computed box — the engine's own
     // `pinned_paint_pass` order.
-    nodes: [...inFlow, ...pinnedDrawNodes(scene, page, preview)],
+    nodes: [...inFlow, ...pinnedDrawNodes(scene, page, preview, editingNodeId)],
     rect: { x: 0, y: 0, width: descriptor.width, height: descriptor.height },
   };
 }
@@ -561,12 +572,19 @@ function buildDrawNode(
   nodeId: NodeId,
   parentComputedOrigin: { x: number; y: number } | null,
   preview: ScenePreview | null,
+  editingNodeId: NodeId | null,
 ): DrawNode | null {
   const node = scene.nodes[nodeId];
   if (!node) {
     return null;
   }
   const descriptor = nodeDescriptor(scene, node, page, parentComputedOrigin);
+  if (editingNodeId === nodeId) {
+    // `drawDescriptors` skips the whole text leg on a missing payload, so
+    // dropping it is the complete suppression — no empty-string special case
+    // reaches the painter, and every other descriptor field stays honest.
+    descriptor.text = undefined;
+  }
   if (preview && preview.nodeId === nodeId) {
     // The preview box is page-ABSOLUTE descriptor px; a descriptor's x/y are
     // PARENT-relative (`nodeDescriptor` subtracts the parent's computed
@@ -589,7 +607,9 @@ function buildDrawNode(
     descriptor,
     children: node.children
       .filter((childId) => !isNodePinned(scene, childId))
-      .map((childId) => buildDrawNode(scene, page, childId, childOrigin, preview))
+      .map((childId) =>
+        buildDrawNode(scene, page, childId, childOrigin, preview, editingNodeId),
+      )
       .filter((child): child is DrawNode => child !== null),
   };
 }
@@ -598,6 +618,7 @@ function pinnedDrawNodes(
   scene: Scene,
   page: Page,
   preview: ScenePreview | null,
+  editingNodeId: NodeId | null,
 ): DrawNode[] {
   const out: DrawNode[] = [];
   const walk = (nodeId: NodeId) => {
@@ -606,7 +627,7 @@ function pinnedDrawNodes(
       return;
     }
     if (isNodePinned(scene, nodeId)) {
-      const built = buildDrawNode(scene, page, nodeId, null, preview);
+      const built = buildDrawNode(scene, page, nodeId, null, preview, editingNodeId);
       if (built) {
         out.push(built);
       }

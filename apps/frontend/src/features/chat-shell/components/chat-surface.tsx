@@ -593,6 +593,9 @@ export function ChatSurface({
         // change values, so drag and resize are off and the handles go with
         // them. Selection stays live — looking is not changing.
         sceneGestureDisabled={chat.threadBusy}
+        // Rung C / §1.6: one document, one brand palette — the caret
+        // session's colour control offers exactly what the inspector's do.
+        scenePalette={sceneSession.palette}
         sceneSelectedNodeId={sceneSession.primaryNodeId}
         sceneZoomLabel={sceneSession.zoom}
         sceneZoomOverride={sceneSession.zoomOverride}

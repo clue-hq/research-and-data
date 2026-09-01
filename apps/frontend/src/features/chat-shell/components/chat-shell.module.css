@@ -2067,6 +2067,7 @@
 }
 
 .inspectorInputControl input,
+.inspectorInputControl textarea,
 .opacityValue input {
   width: 100%;
   min-width: 0;
@@ -2076,6 +2077,20 @@
   background: transparent;
   color: inherit;
   font: inherit;
+}
+
+/* Rung A: the MULTILINE field. It wears the same chrome as every other input
+ * control (`.inspectorControl` + `.inspectorInputControl` above — border,
+ * radius, background, focus-within) and relaxes only what a single line implies:
+ * the fixed 34px height becomes the textarea's own, and the vertically centred
+ * line becomes a stretched block. No new visual vocabulary is introduced. */
+.inspectorTextAreaControl {
+  align-items: stretch;
+  height: auto;
+}
+
+.inspectorTextAreaControl textarea {
+  resize: vertical;
 }
 
 .inspectorSelectControl {

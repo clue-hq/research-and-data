@@ -63,6 +63,7 @@ const eslintConfig = defineConfig([
       "src/features/design-editor/engine/scene/__tests__/wasm-artifact.test.ts",
       "src/features/design-editor/engine/scene/__tests__/wasmEngine.artifact.test.ts",
       "src/features/design-editor/engine/scene/__tests__/wasmHandshake.test.ts",
+      "src/features/design-editor/engine/scene/__tests__/wasmTextSpans.artifact.test.ts",
     ],
     rules: {
       "@next/next/no-assign-module-variable": "off",

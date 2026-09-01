@@ -1,16 +1,20 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
 import type { CanvasKit, Surface, TypefaceFontProvider } from "canvaskit-wasm";
 import { AlertTriangleIcon } from "lucide-react";
+import { textareaCommitKey } from "@/features/chat-shell/components/inspector-field-draft";
 import { sceneEngineBanners } from "../adapter/scene-engine-banners";
 import { scenePagelessNotice } from "../adapter/scene-pageless";
 import {
@@ -52,6 +56,39 @@ import {
   representableHit,
   sceneHitPoint,
 } from "../adapter/scene-selection";
+import type { ScenePalette } from "../adapter/scene-palette";
+import {
+  SCENE_TEXT_EDIT_INTENT,
+  SCENE_TEXT_STYLE_INTENT,
+  sceneDoubleClickEffect,
+  sceneTextEditModel,
+  type SceneTextEditModel,
+} from "../adapter/scene-text-edit";
+import {
+  textEditFormatState,
+  textEditReplacement,
+  textEditSessionAfterInput,
+  textEditSessionAfterReplacement,
+  textEditSessionAfterStyle,
+  textEditSessionAfterStyleCommit,
+  textEditSessionEnds,
+  textEditSessionOperations,
+  textEditSessionReseed,
+  textEditSessionReseedSelection,
+  textEditSessionSeed,
+  textEditStyledSpans,
+  type TextEditSelection,
+  type TextEditSession,
+} from "../adapter/scene-text-session";
+import type { StylePatch } from "../engine/scene/textSpans";
+import { SceneTextToolbar } from "./scene-text-toolbar";
+import {
+  sceneTextFillPatch,
+  sceneTextMarkPatch,
+  sceneTextStyleChord,
+  type SceneTextFillChoice,
+  type SceneTextMarkChannel,
+} from "./scene-text-toolbar.logic";
 import {
   gestureReducer,
   initialGestureState,
@@ -64,6 +101,8 @@ import {
   drawDescriptorTree,
   parseColor,
 } from "../engine/scene/canvaskit/drawDescriptors";
+import { valignOffset } from "../engine/scene/renderAdapter";
+import { getNode } from "../engine/scene/sceneQueries";
 import { CanvasKitImageCache } from "../engine/scene/canvaskit/imageCache";
 import {
   loadCanvasKit,
@@ -156,9 +195,13 @@ import styles from "./scene-artifact-canvas.module.css";
  * stays on the canvas as the machine-readable assertion (AD2.5 finding 4,
  * founder-confirmed).
  *
- * AD4.C also adds the write half of the pointer (§1.9's v1 scope exactly:
- * drag-to-move and CORNER resize, no rotate, no marquee, no nudge, no
- * double-click text). The decisions are pure and live in
+ * AD4.C also adds the write half of the pointer (§1.9's v1 scope: drag-to-move
+ * and CORNER resize, no rotate, no marquee, no nudge). Double-click text was on
+ * that exclusion list until the founder took it off (2026-08-24); it is now the
+ * caret session below — `SceneTextEditOverlay` over
+ * `adapter/scene-text-edit.ts`, per
+ * `docs/superpowers/plans/2026-08-24-rich-text-editing.md` rung B. The gesture
+ * decisions are pure and live in
  * `adapter/scene-gestures.ts`, over the design subsystem's own shared
  * machinery — `gestureReducer`, the transformer math, and the existing
  * operation builders — so the geometry rules are ported, never re-derived.
@@ -298,6 +341,17 @@ export interface SceneArtifactCanvasProps {
   onAppliedOperations?: (operations: Operation[], scene: Scene) => boolean;
   /** Receives the canvas's imperative controls while mounted. */
   controlsRef?: RefObject<SceneCanvasControls | null>;
+  /**
+   * Rung C / §1.6: the document's brand-kit colour vocabulary, for the caret
+   * session's formatting toolbar — the SAME palette every inspector colour
+   * picker is handed (`sceneSession.palette`), so the two surfaces cannot
+   * disagree about which tokens exist.
+   *
+   * Absent or null means this document has no resolvable brand vocabulary: the
+   * toolbar then offers no swatches at all (never the dummy's fixture palette,
+   * which would write tokens no kit can resolve) and custom hex still applies.
+   */
+  palette?: ScenePalette | null;
   /** Bump to refetch the document into the same mounted canvas (the website
    * lane's quiet-swap discipline: no keyed remount, no flash). */
   reloadToken?: number;
@@ -422,12 +476,18 @@ function SceneDocumentCanvas({
   onOperations,
   onSceneChange,
   onSelect,
+  palette = null,
   reloadToken = 0,
   selectedNodeId,
   zoom = null,
 }: SceneArtifactCanvasProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
+  // D3a: how much of the stage's TOP the G-D banner band is occupying, in
+  // stage px — 0 whenever no banner is up. Measured rather than assumed: a
+  // banner wraps to two lines on a narrow stage, and a fixed guess would put
+  // the caret toolbar back under it exactly then.
+  const [bannerInset, setBannerInset] = useState(0);
   const [ownSelectedNodeId, setOwnSelectedNodeId] = useState<NodeId | null>(
     null,
   );
@@ -480,6 +540,23 @@ function SceneDocumentCanvas({
   const gestureArmedRef = useRef(false);
   const [preview, setPreview] = useState<ScenePreview | null>(null);
 
+  /* ---------------------------------------------------------------------
+   * Rung B — the inline text-edit session (rich-text plan, 2026-08-24).
+   *
+   * ONE piece of state: WHICH node has a caret in it. Everything else the
+   * session needs — its box, its style, the string it is editing — is DERIVED
+   * per render (`textEdit` below), for the same reason the selection outline
+   * is: a stored geometry could go stale against a zoom, a pan or a relayout,
+   * and the caret would sit where the text is not.
+   *
+   * The DRAFT deliberately lives inside the overlay component, not here. It is
+   * the AD4.R state model applied to a canvas surface: the engine's scene owns
+   * the document's value, the edit surface self-drafts, and one commit reaches
+   * the write path. Keeping it here would push a render through the whole
+   * canvas on every keystroke.
+   * ------------------------------------------------------------------ */
+  const [editingNodeId, setEditingNodeId] = useState<NodeId | null>(null);
+
   // The descriptor tree the draw loop walks. `tokenGeneration` is a real dep:
   // descriptors read the renderAdapter's module-level kit maps, which arrive
   // after the first paint. AD4.C adds `preview`: a gesture in flight rebuilds
@@ -489,10 +566,15 @@ function SceneDocumentCanvas({
   // never a state that could survive the turn that authors the first page.
   const pagelessNotice = scenePagelessNotice(scene, pageId);
 
+  // Rung B adds `editingNodeId`: the node under an open caret paints no glyphs,
+  // because the DOM overlay is drawing them. The STATE is passed, not the
+  // derived model — the model is built FROM this artboard, so feeding it back
+  // in would be circular; a stale id matches no node and suppresses nothing.
   const artboard = useMemo(
-    () => (scene ? sceneArtboardModel(scene, pageId, preview) : null),
+    () =>
+      scene ? sceneArtboardModel(scene, pageId, preview, editingNodeId) : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tokenGeneration
-    [scene, pageId, preview, tokenGeneration],
+    [scene, pageId, preview, editingNodeId, tokenGeneration],
   );
 
   // Fit-on-open (§1.10) is a pure function of the card's size and the page
@@ -603,6 +685,24 @@ function SceneDocumentCanvas({
     });
     observer.observe(element);
     return () => observer.disconnect();
+  }, []);
+
+  // D3a: the stage the caret toolbar is placed against — its size plus the
+  // band at its top that is already spoken for. Memoized because the toolbar
+  // re-runs its measure-and-place layout effect whenever this identity
+  // changes, and a fresh object per render would re-place it every keystroke.
+  const stageBounds = useMemo(
+    () => ({
+      height: stageSize.height,
+      topInset: bannerInset,
+      width: stageSize.width,
+    }),
+    [bannerInset, stageSize.height, stageSize.width],
+  );
+  // Stable, so the banner layer's own measuring effect is not torn down and
+  // rebuilt on every parent render.
+  const reportBannerInset = useCallback((inset: number) => {
+    setBannerInset(inset);
   }, []);
 
   // The latch for the scene-change callback below — a ref so neither caller
@@ -739,6 +839,114 @@ function SceneDocumentCanvas({
     setOwnSelectedNodeId(nodeId);
     onSelectRef.current?.(nodeId);
   };
+
+  /**
+   * Rung B: the open session's overlay, derived from the same box model the
+   * selection chrome reads and the same render descriptor the painter reads —
+   * so the caret sits exactly where the glyphs were, at every zoom and pan.
+   *
+   * Null is the SESSION-CLOSED signal as well as the no-session one: the
+   * derivation answers null when the edited node has left the scene or stopped
+   * being text (a D10 reload, an agent turn regenerating the document), so
+   * every interlock below reads THIS rather than `editingNodeId` and no stale
+   * id can leave the chrome suppressed. The state itself is cleared by the
+   * effect after it, which is what discards the draft.
+   */
+  const textEdit = useMemo(
+    () =>
+      sceneTextEditModel({
+        artboard,
+        editingNodeId,
+        pageId,
+        scene,
+        viewport,
+      }),
+    [artboard, editingNodeId, pageId, scene, viewport],
+  );
+  // React's own adjust-state-on-change pattern (the same one the viewport reset
+  // above uses), not an effect: an effect would paint one frame with the
+  // session's interlocks still holding on a node that is no longer there.
+  if (editingNodeId && !textEdit) {
+    setEditingNodeId(null);
+  }
+
+  /**
+   * Commit the session: ONE operation batch, so a whole editing session is one
+   * atomic edit and one undo frame — the write path every canvas gesture and
+   * every inspector row already commits through.
+   *
+   * The node is re-read from the CURRENT scene rather than captured when the
+   * session opened, so a commit against a document that moved underneath is
+   * either honest or refused (the batch builder returns null for a node that is
+   * gone, locked, or no longer text). A session that changed neither the text
+   * nor its styling writes nothing at all: a blur that typed nothing is not an
+   * edit.
+   *
+   * Rung C: BOTH channels ride this one batch. The session always maintains a
+   * spans vector (seeded from the node's own), so it is always authoritative
+   * here — which is also what lets a formatting action that changed no
+   * characters be a real commit.
+   *
+   * ── THE ORDER IS THE CONTRACT (F4, review 2026-08-24) ──────────────────
+   * The write runs BEFORE the session closes, and its answer decides whether
+   * the session closes at all. It used to be the other way round — close, then
+   * write, then discard the boolean — so a refused write (a read-only engine,
+   * an engine refusal) threw away the typed paragraph while the error slot
+   * pointed at nothing left to fix. Returning false here keeps the session and
+   * its text alive; the overlay re-arms and the human can retry or Escape.
+   *
+   * An absent `onOperations` is not a refusal: that canvas has no write path at
+   * all (the standalone read path), so the preview simply drops, exactly as it
+   * does for a gesture there.
+   */
+  const commitTextEdit = useCallback(
+    (session: TextEditSession): boolean => {
+      const node = scene ? getNode(scene, editingNodeId) : null;
+      const operations = textEditSessionOperations(node, session);
+      const accepted = operations
+        ? (onOperations?.(operations, SCENE_TEXT_EDIT_INTENT) ?? true)
+        : false;
+      const ends = textEditSessionEnds(operations, accepted);
+      if (ends) {
+        setEditingNodeId(null);
+      }
+      return ends;
+    },
+    [editingNodeId, onOperations, scene],
+  );
+
+  /**
+   * Rung C: a FORMATTING action, committed immediately and on its own.
+   *
+   * Founder-visible item 5 — each formatting action is its own undo frame — so
+   * this is the same builder and the same write path as the session commit,
+   * with two differences that are the whole point: the session stays OPEN (the
+   * caret and its selection are untouched, so the next toggle acts on the same
+   * range), and the intent names the styling surface rather than the edit.
+   *
+   * The dirty draft rides along when there is one: span offsets index the
+   * string they were computed in, and committing them against a stale stored
+   * content would point them at other text.
+   *
+   * F4/P3-4: it ANSWERS, like the session commit. A refused formatting write
+   * leaves the session holding a vector the document rejected — the toolbar
+   * would say "bold" over text that is not, and the next commit would carry the
+   * refusal back in — so the overlay reverts its working spans on false.
+   */
+  const commitTextEditStyle = useCallback(
+    (session: TextEditSession): boolean => {
+      const node = scene ? getNode(scene, editingNodeId) : null;
+      const operations = textEditSessionOperations(node, session);
+      if (!operations) {
+        // Nothing to write is not a refusal: keep the session as it is.
+        return true;
+      }
+      return onOperations?.(operations, SCENE_TEXT_STYLE_INTENT) ?? true;
+    },
+    [editingNodeId, onOperations, scene],
+  );
+
+  const cancelTextEdit = useCallback(() => setEditingNodeId(null), []);
 
   /* ---------------------------------------------------------------------
    * AD2.10 — the workspace gestures.
@@ -1163,6 +1371,13 @@ function SceneDocumentCanvas({
    * in `sceneHitPoint`, where they are unit-tested against a non-identity unit.
    */
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    // Rung B: while a caret session is open the textarea owns the pointer, and
+    // this press is the one that closes it — the blur commits. It arms nothing
+    // and selects nothing (upstream's own `CanvasKitCanvas.tsx:990-993`), so a
+    // press cannot start a drag on a document the commit is about to change.
+    if (textEdit) {
+      return;
+    }
     // AD2.10: a held space or the middle button starts a PAN; a plain primary
     // press still selects. Panning and selecting share the surface, so the
     // discriminator is checked before anything else — and the pan needs no
@@ -1250,6 +1465,68 @@ function SceneDocumentCanvas({
     beginPress(event, point, press.target, press.armed && freed);
   };
 
+  /**
+   * Rung B (rich-text plan, 2026-08-24 — this SUPERSEDES §1.9/§7's "no
+   * double-click text"): a double-click opens a caret on a text node, and
+   * drills the selection out to its top-level container on anything else.
+   *
+   * The coordinate chain is `handlePointerDown`'s, unchanged and reused whole —
+   * the same hit test answers both, so a double-click can never resolve to a
+   * node a single click would not have selected. What differs is only what the
+   * resolved node MEANS, and that decision is pure
+   * (`adapter/scene-text-edit.ts`).
+   *
+   * F5 (review 2026-08-24) — what C-9 actually does here. This used to claim
+   * the freeze-on-grab "does NOT fire" for a double-click. It does: the first
+   * pointer-down of that double-click went through `handlePointerDown`, which
+   * calls `freezeLayoutForPress` for every press on a freezable node, so by the
+   * time this handler runs a layout-managed text node has ALREADY had the
+   * document's auto-layout baked to free placement — exactly as a plain
+   * selection click on it would (ratified AD4.C-3, ruling C-10; not this lane's
+   * to change, and deliberately unchanged). What is true is that THIS handler
+   * adds no freeze of its own, and the session's own commit is an ordinary
+   * content/spans write that lets the solver re-solve around the new text.
+   *
+   * Deferring the freeze to a drag threshold — so pure clicks and double-clicks
+   * stop freezing — is a live founder question recorded on the plan.
+   */
+  const handleDoubleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const element = stageRef.current;
+    // Same refusal as a press: with no engine there is no hit test, and a
+    // descriptor-space guess would open a caret the engine never agreed to.
+    if (!element || !artboard || !scene || engineStatus.engineDisabled) {
+      return;
+    }
+    const bounds = element.getBoundingClientRect();
+    const workspacePoint = screenToWorkspace(
+      { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+      viewport,
+    );
+    const scenePoint = sceneHitPoint(workspacePoint, artboard);
+    const result = scenePoint
+      ? controls.hitTest(scenePoint.x, scenePoint.y)
+      : null;
+    const effect = sceneDoubleClickEffect({
+      gestureDisabled,
+      nodeId: result ? representableHit(result.stack, scene, pageId) : null,
+      scene,
+      selectedNodeId: activeSelectedNodeId,
+    });
+    switch (effect.kind) {
+      case "edit":
+        // Selected AND opened, in that order: a caret in a node the inspector
+        // is not showing would be two surfaces disagreeing about the subject.
+        commitSelection(effect.nodeId);
+        setEditingNodeId(effect.nodeId);
+        break;
+      case "select":
+        commitSelection(effect.nodeId);
+        break;
+      case "none":
+        break;
+    }
+  };
+
   return (
     <div
       className={[
@@ -1259,6 +1536,7 @@ function SceneDocumentCanvas({
       ]
         .filter(Boolean)
         .join(" ")}
+      onDoubleClick={handleDoubleClick}
       onPointerCancel={handlePointerCancel}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -1280,8 +1558,34 @@ function SceneDocumentCanvas({
       {/* The selection overlay: an absolutely-positioned sibling of the canvas
           (never a canvas draw), so selection never triggers a wasm redraw.
           AD4.C turns G-A's four corner handles on — the one thing Lane C was
-          asked to pass, and nothing else about the overlay changes. */}
-      <SelectionChrome handles={selectionHandles} outline={selectionOutline} />
+          asked to pass, and nothing else about the overlay changes.
+
+          Rung B: an open caret session takes the chrome down entirely (outline
+          included — upstream's own `selectionBox && !editingNodeId`). Inside a
+          session the subject is a RANGE OF TEXT, not a box, and a resize handle
+          straddling the textarea's edge would grab a gesture the session has
+          already refused. */}
+      <SelectionChrome
+        handles={selectionHandles && !textEdit}
+        outline={textEdit ? null : selectionOutline}
+      />
+      {/* Rung B: the caret. CanvasKit cannot host one, so the session is a DOM
+          textarea over the node — the design subsystem's own answer, ported. */}
+      {textEdit ? (
+        <SceneTextEditOverlay
+          key={textEdit.nodeId}
+          // Rung C: keyed on the NODE, never on its content — a formatting
+          // action commits mid-session and the model's content and spans come
+          // straight back changed, and a remount there would throw away the
+          // live draft, the caret and the selection the next toggle acts on.
+          model={textEdit}
+          onCancel={cancelTextEdit}
+          onCommit={commitTextEdit}
+          onStyleCommit={commitTextEditStyle}
+          palette={palette}
+          stage={stageBounds}
+        />
+      ) : null}
       {/* genad2 Task 5: the zero-page window, said out loud.
        *
        * `open_design_leg@4` births a chat-born ad as a document with `pages:
@@ -1315,6 +1619,7 @@ function SceneDocumentCanvas({
         engineStatus={engineStatus}
         fontDiagnostics={fontDiagnostics}
         measurementStatus={measurementStatus}
+        onInsetChange={reportBannerInset}
       />
     </div>
   );
@@ -1343,28 +1648,62 @@ function SceneDocumentCanvas({
  *
  * The third G-D state — the CAS conflict — is deliberately NOT here: it stays
  * the inspector's existing note line ("Document moved on — reloaded.", D10).
+ *
+ * D3a: it also REPORTS the band it occupies, so the caret toolbar can place
+ * itself clear of it. The band is measured off the mounted layer (bottom edge
+ * relative to the stage, which is the layer's offset parent) rather than
+ * assumed from a banner count — one banner wraps to two lines on a narrow
+ * stage, and that is precisely when a fixed guess would be wrong.
  */
 function SceneEngineBanners({
   engineStatus,
   fontDiagnostics,
   measurementStatus,
+  onInsetChange,
 }: {
   engineStatus: SceneEngineStatus;
   fontDiagnostics: Diagnostic[];
   measurementStatus: string;
+  /** The bottom edge of the banner band in stage px, or 0 for no banners. */
+  onInsetChange: (inset: number) => void;
 }) {
+  const layerRef = useRef<HTMLDivElement | null>(null);
   const banners = sceneEngineBanners(
     engineStatus,
     measurementStatus,
     fontDiagnostics,
   );
+  const bannerCount = banners.length;
+  useEffect(() => {
+    const element = layerRef.current;
+    if (bannerCount === 0 || !element) {
+      onInsetChange(0);
+      return;
+    }
+    const report = () =>
+      onInsetChange(element.offsetTop + element.offsetHeight);
+    report();
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+    // A banner reflows with the stage's width, so the band is re-reported
+    // rather than measured once at mount.
+    const observer = new ResizeObserver(report);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      // The band is gone the moment this layer is: leaving a stale inset
+      // behind would push the toolbar down past a banner that is not there.
+      onInsetChange(0);
+    };
+  }, [bannerCount, onInsetChange]);
   // Nothing wrong → no element at all, so a healthy canvas holds no space and
   // no assistive technology announces an empty alert region.
-  if (banners.length === 0) {
+  if (bannerCount === 0) {
     return null;
   }
   return (
-    <div className={styles.bannerLayer}>
+    <div className={styles.bannerLayer} ref={layerRef}>
       {banners.map((banner) => (
         <div
           className={styles.banner}
@@ -1471,6 +1810,501 @@ function SelectionChrome({
           : null}
       </g>
     </svg>
+  );
+}
+
+/**
+ * Rung B: the caret surface — the design subsystem's `TextEditOverlay`
+ * (`subsystems/clue-design/apps/editor/src/components/canvas/TextEditOverlay.tsx`)
+ * ported, presentation and all.
+ *
+ * CanvasKit cannot host a live caret, so the session is a DOM `<textarea>`
+ * positioned over the node and styled to match the painted glyphs. It edits the
+ * STORED content (`text_transform` applies to painted text only).
+ *
+ * Commit on blur or ⌘/Ctrl+Enter, Escape cancels — and the settle flag exists
+ * because Escape blurs too, so without it a cancel would commit on the way out.
+ * Every key event stops here: an unqualified Enter is a newline, and the
+ * canvas's own window listeners (space-pan, AD4.C's Escape) are already inert
+ * over a typing target.
+ *
+ * Two things are NOT ported, because the platform has the real thing: the
+ * clamped valign formula is `renderAdapter`'s own `valignOffset` (the single
+ * source both editor legs and the engine share), and everything that is not
+ * data-driven — the border, the surface, the reset — is a CSS module rule
+ * rather than an inline literal.
+ *
+ * ── RUNG C: THE SESSION IS NOW A PAIR ────────────────────────────────────
+ * The session holds the draft AND a working spans vector, maintained across
+ * every keystroke so range styling stays attached to the text it was applied
+ * to. The transitions are pure (`adapter/scene-text-session.ts`); what is here
+ * is the DOM half of them:
+ *
+ *  • `beforeinput` is read through a NATIVE listener, because it is where the
+ *    replacement can still be placed against the string that is about to
+ *    change. The prediction it produces is only ever used if the `input` event
+ *    that follows proves it right — otherwise the diff remap recovers it, so an
+ *    IME or an autofill can never silently misplace styling.
+ *  • the selection is tracked on the standard trio (`select`/`keyup`/`mouseup`)
+ *    because the toolbar's state, its enablement and every write it makes are
+ *    all functions of it.
+ *  • the overlay shows the draft as PLAIN text (upstream parity, and the plan's
+ *    recorded honesty cost): the styling appears on the canvas the moment a
+ *    formatting action commits, which is immediately.
+ *
+ * Escape still cancels the UNCOMMITTED tail only. Formatting actions have
+ * already landed as their own undo frames by then (founder-visible item 5) and
+ * stay landed. F7/P3-3 correction (review 2026-08-24): ⌘Z does NOT take them
+ * back one at a time WHILE THE SESSION IS OPEN — document undo skips typing
+ * targets (`scene-arrange.ts::isTypingTarget`, the ⌘Z listener's own rule) and
+ * this textarea swallows every key anyway, so inside a session ⌘Z is the
+ * browser's native textarea undo over the draft. The landed formatting frames
+ * become reachable one at a time once the session closes, which is what "its
+ * own undo frame" buys.
+ *
+ * ── THE SESSION FOLLOWS THE DOCUMENT UNTIL IT IS TOUCHED (F3/G1) ─────────
+ * The session state carries TWO dirty flags, one per channel. While a channel
+ * is clear the session RE-SEEDS it from the live model on every render, so an
+ * untouched caret sitting open across a D10 reload or an agent turn shows what
+ * the document now says instead of writing its opening snapshot back over it.
+ * The human's first keystroke claims the CONTENT channel; a formatting action
+ * claims only the SPANS one, so a Bold-only session still follows the
+ * document's text (G1 — with one flag it did not, and its blur reverted the
+ * concurrent write). A re-seed that adopts new content also resets the
+ * selection to select-all (G2), because the offsets it had were measured in the
+ * text that is no longer there.
+ */
+function SceneTextEditOverlay({
+  model,
+  onCancel,
+  onCommit,
+  onStyleCommit,
+  palette,
+  stage,
+}: {
+  model: SceneTextEditModel;
+  onCancel: () => void;
+  /** Answers whether the session ENDED: false is a refused write, whose typed
+   * text must survive (F4). */
+  onCommit: (session: TextEditSession) => boolean;
+  /** Answers whether the formatting write LANDED (F4/P3-4). */
+  onStyleCommit: (session: TextEditSession) => boolean;
+  palette: ScenePalette | null;
+  /** D3a: `topInset` is the occupied band at the stage's top (the G-D banners),
+   * which the toolbar places itself clear of. */
+  stage: { width: number; height: number; topInset?: number };
+}) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  const [session, setSession] = useState<TextEditSession>(() =>
+    textEditSessionSeed(model.content, model.text.spans ?? []),
+  );
+  // The mount effect below focuses and SELECTS ALL, so that is where the
+  // selection starts — stated here rather than waiting for the first `select`
+  // event, so the toolbar is never briefly wrong about it.
+  const [selection, setSelection] = useState<TextEditSelection>(() => ({
+    start: 0,
+    end: model.content.length,
+  }));
+  // The content a re-seed last ADOPTED. State rather than a ref because it is
+  // what the G2 selection push below is keyed on — it must move exactly when a
+  // re-seed rewrites the textarea's value, and never when typing does.
+  const [seededContent, setSeededContent] = useState(model.content);
+  // F3/G1: an untouched channel follows the document. React's own
+  // adjust-state-on-change pattern (the host uses it for the session id), not
+  // an effect — an effect would paint one frame of the stale snapshot first,
+  // and the reseeded value is what the rest of this render must read.
+  const live = textEditSessionReseed(
+    session,
+    model.content,
+    model.text.spans ?? [],
+  );
+  if (live !== session) {
+    setSession(live);
+    // G2: the live selection's offsets were measured in the text the re-seed
+    // just replaced, so an adopted CONTENT change resets them to the posture a
+    // session opens in. A spans-only adoption returns the same object and
+    // leaves the human's range alone.
+    const reseeded = textEditSessionReseedSelection(session, live, selection);
+    if (reseeded !== selection) {
+      setSelection(reseeded);
+      setSeededContent(live.content);
+    }
+  }
+  // Event handlers bound to the DOM (and the window listener below) must read
+  // the CURRENT session and selection, not the ones captured when they were
+  // created — the same ref-mirror the canvas's gesture inputs use.
+  const sessionRef = useRef(live);
+  const selectionRef = useRef(selection);
+  useEffect(() => {
+    sessionRef.current = live;
+    selectionRef.current = selection;
+  });
+  /** The tracked `beforeinput` prediction awaiting its `input` event. */
+  const predictionRef = useRef<TextEditSession | null>(null);
+  /** Focus is inside the toolbar: a blur is NOT the end of the session. */
+  const interactingRef = useRef(false);
+  // A settled session must not settle twice: Escape blurs on its way out, and
+  // the outside-pointer listener can race the blur that follows it.
+  const settledRef = useRef(false);
+
+  // A7a: match the painted vertical position with a computed top padding. The
+  // content height is a LIVE DOM measurement — the only part of the geometry a
+  // pure model cannot answer — so it is recomputed as the text grows and
+  // shrinks, keeping the caret aligned mid-session.
+  //
+  // Written STRAIGHT TO THE ELEMENT rather than held in state (upstream holds
+  // it in a `useState`): it is a measurement of the DOM feeding a style of the
+  // same DOM node, so a render round-trip buys nothing and costs one per
+  // keystroke. `paddingTop` is deliberately absent from the `style` prop below,
+  // which is what keeps React from overwriting it on the next render.
+  const recomputePadding = useCallback(() => {
+    const element = ref.current;
+    if (!element) {
+      return;
+    }
+    if (model.style.valign === "top") {
+      element.style.paddingTop = "0px";
+      return;
+    }
+    // `scrollHeight` floors at `clientHeight` (so content shorter than the box
+    // reads back AS the box) and counts whatever padding is already applied —
+    // both are zeroed for the read and the height is restored before paint.
+    const previousHeight = element.style.height;
+    element.style.paddingTop = "0px";
+    element.style.height = "0px";
+    const contentHeight = element.scrollHeight;
+    element.style.height = previousHeight;
+    element.style.paddingTop = `${valignOffset(
+      model.height,
+      contentHeight,
+      model.style.valign,
+    )}px`;
+  }, [model.height, model.style.valign]);
+
+  // MOUNT ONLY: focus the caret and select the node's text, upstream's own
+  // opening gesture. Rung C splits this out of the padding effect deliberately
+  // — that one re-runs whenever the box or the valign changes, which a
+  // formatting commit can do, and re-running `select()` there would silently
+  // reset the user's range after every toggle.
+  useEffect(() => {
+    const element = ref.current;
+    if (element) {
+      element.focus();
+      element.select();
+    }
+  }, []);
+
+  // G2: push the re-seeded selection at the DOM, which holds its own and would
+  // otherwise keep the offsets it had in the text the re-seed replaced. Keyed
+  // on the ADOPTED content, so it fires for a re-seed and never for typing;
+  // LAYOUT, so the range is right in the same frame the new value paints. It
+  // does not touch focus — a re-seed while the toolbar's hex field has it must
+  // not yank the caret back.
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (element) {
+      element.setSelectionRange(0, seededContent.length);
+    }
+  }, [seededContent]);
+
+  // `live.content` is a dependency because F3's re-seed changes the text with no
+  // input event to recompute from: a valigned overlay would otherwise keep the
+  // padding of the content it no longer shows.
+  useEffect(() => {
+    recomputePadding();
+  }, [live.content, recomputePadding]);
+
+  /**
+   * The tracked half of rung C's typing path.
+   *
+   * A NATIVE listener, not React's `onBeforeInput`: only the native event
+   * carries `inputType` and `getTargetRanges()`, and this is the one moment the
+   * change can still be placed against the string it is changing.
+   *
+   * `getTargetRanges()` is consulted where it is USABLE — for a `<textarea>` it
+   * is empty in every shipping engine (the edited text lives in a shadow tree
+   * the ranges cannot address), so the reported selection is the authority
+   * here. The pure derivation takes both, so the contentEditable upgrade path
+   * the plan records needs no new decision.
+   */
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) {
+      return;
+    }
+    const handleBeforeInput = (event: Event) => {
+      const input = event as InputEvent;
+      const ranges = input.getTargetRanges?.() ?? [];
+      const range = ranges[0];
+      const addressable =
+        range !== undefined &&
+        range.startContainer === element.firstChild &&
+        range.endContainer === element.firstChild;
+      const replacement = textEditReplacement({
+        content: sessionRef.current.content,
+        data: input.data,
+        inputType: input.inputType,
+        selection: {
+          start: element.selectionStart ?? 0,
+          end: element.selectionEnd ?? 0,
+        },
+        targetRange: addressable
+          ? { start: range.startOffset, end: range.endOffset }
+          : null,
+      });
+      predictionRef.current = replacement
+        ? textEditSessionAfterReplacement(sessionRef.current, replacement)
+        : null;
+    };
+    element.addEventListener("beforeinput", handleBeforeInput);
+    return () => element.removeEventListener("beforeinput", handleBeforeInput);
+  }, []);
+
+  /**
+   * End the session exactly once — unless the write is REFUSED (F4), in which
+   * case the session did not end at all: the latch is re-armed so the next blur
+   * or ⌘Enter can try again, and the caret is taken back (the blur that
+   * triggered this already moved focus away, and a session nobody can focus is
+   * a paragraph nobody can rescue).
+   */
+  const settle = useCallback(
+    (kind: "commit" | "cancel") => {
+      if (settledRef.current) {
+        return;
+      }
+      settledRef.current = true;
+      if (kind === "cancel") {
+        onCancel();
+        return;
+      }
+      if (onCommit(sessionRef.current)) {
+        return;
+      }
+      settledRef.current = false;
+      const element = ref.current;
+      if (element) {
+        element.focus();
+        element.setSelectionRange(
+          selectionRef.current.start,
+          selectionRef.current.end,
+        );
+      }
+    },
+    [onCancel, onCommit],
+  );
+
+  /**
+   * The one case a blur cannot cover: focus moved INTO the toolbar (the hex
+   * field), so the session was deliberately held open — and then the user
+   * pressed somewhere else entirely. Without this the session would have no
+   * blur left to close it.
+   */
+  useEffect(() => {
+    const handleOutsidePointer = (event: PointerEvent) => {
+      if (!interactingRef.current) {
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest("[data-scene-text-edit],[data-scene-text-toolbar]")
+      ) {
+        return;
+      }
+      settle("commit");
+    };
+    window.document.addEventListener("pointerdown", handleOutsidePointer, true);
+    return () =>
+      window.document.removeEventListener(
+        "pointerdown",
+        handleOutsidePointer,
+        true,
+      );
+  }, [settle]);
+
+  const trackSelection = (element: HTMLTextAreaElement) => {
+    setSelection({
+      start: element.selectionStart ?? 0,
+      end: element.selectionEnd ?? 0,
+    });
+  };
+
+  /**
+   * One formatting action: compute the new vector over the LIVE draft, adopt
+   * it, and commit immediately as its own batch (founder-visible item 5). The
+   * session stays open and the selection stays exactly where it is, so the next
+   * toggle acts on the same range.
+   *
+   * `sessionRef` is written straight through as well as through state: two
+   * actions inside one tick (a chord repeat) must not both compute from the
+   * pre-first-action vector.
+   */
+  const applyStyle = (patch: StylePatch) => {
+    const current = sessionRef.current;
+    // G1: the SPANS channel only. A formatting action says nothing about the
+    // text, so it must not claim the draft — claiming it is what let a
+    // Bold-only session commit its opening snapshot over a concurrent write.
+    const next = textEditSessionAfterStyle(
+      current,
+      textEditStyledSpans(model.text, current, selectionRef.current, patch),
+    );
+    sessionRef.current = next;
+    setSession(next);
+    // F4/P3-4: a refused write puts the pre-action vector straight back, so the
+    // toolbar never states styling the document rejected. The error slot is
+    // populated by the write path itself.
+    const settled = textEditSessionAfterStyleCommit(
+      current,
+      next,
+      onStyleCommit(next),
+    );
+    if (settled !== next) {
+      sessionRef.current = settled;
+      setSession(settled);
+    }
+  };
+
+  const applyMark = (channel: SceneTextMarkChannel) => {
+    const format = textEditFormatState(
+      model.text,
+      sessionRef.current,
+      selectionRef.current,
+    );
+    applyStyle(sceneTextMarkPatch(channel, format[channel]));
+  };
+
+  const applyFill = (choice: SceneTextFillChoice) => {
+    const patch = sceneTextFillPatch(palette, choice);
+    // Null is a refused colour (an unresolvable token, an unusable hex) — the
+    // §1.6 null contract, which writes nothing rather than guessing one.
+    if (patch) {
+      applyStyle(patch);
+    }
+  };
+
+  /** Put the caret back where the toolbar borrowed focus from. */
+  const restoreFocus = () => {
+    interactingRef.current = false;
+    const element = ref.current;
+    if (!element) {
+      return;
+    }
+    element.focus();
+    element.setSelectionRange(
+      selectionRef.current.start,
+      selectionRef.current.end,
+    );
+  };
+
+  const collapsed = selection.start === selection.end;
+  const format = textEditFormatState(model.text, live, selection);
+  // The toolbar measures itself against this box, so it must not be a fresh
+  // object on every keystroke — that would re-run its placement effect (and its
+  // `setPosition`) for every character typed.
+  const toolbarBox = useMemo(
+    () => ({
+      height: model.height,
+      left: model.left,
+      top: model.top,
+      width: model.width,
+    }),
+    [model.height, model.left, model.top, model.width],
+  );
+
+  return (
+    <>
+      <textarea
+        aria-label="Edit text"
+        className={styles.textEditOverlay}
+        data-scene-text-edit={model.nodeId}
+        onBlur={() => {
+          // Focus inside the toolbar is still inside the session.
+          if (!interactingRef.current) {
+            settle("commit");
+          }
+        }}
+        onChange={(event) => {
+          const prediction = predictionRef.current;
+          predictionRef.current = null;
+          setSession(
+            textEditSessionAfterInput(
+              sessionRef.current,
+              prediction,
+              event.target.value,
+            ),
+          );
+          trackSelection(event.target);
+          recomputePadding();
+        }}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          const chord = sceneTextStyleChord(event);
+          if (chord) {
+            // Always swallowed, applied only when there is a range to apply it
+            // to: ⌘/Ctrl+U is the browser's own view-source in some engines, and
+            // a chord that sometimes reaches it would be worse than one that
+            // never does.
+            event.preventDefault();
+            if (!collapsed) {
+              applyMark(chord);
+            }
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            settle("cancel");
+          } else if (textareaCommitKey(event)) {
+            // Otherwise the chord also types the newline it is committing past.
+            event.preventDefault();
+            settle("commit");
+          }
+          event.stopPropagation();
+        }}
+        onKeyUp={(event) => trackSelection(event.currentTarget)}
+        onMouseUp={(event) => trackSelection(event.currentTarget)}
+        onPointerDown={(event) => event.stopPropagation()}
+        onSelect={(event) => trackSelection(event.currentTarget)}
+        ref={ref}
+        style={{
+          color: model.style.color,
+          fontFamily: model.style.fontFamily,
+          fontSize: model.style.fontSize,
+          fontStyle: model.style.fontStyle,
+          fontWeight: model.style.fontWeight,
+          height: model.height,
+          left: model.left,
+          letterSpacing: `${model.style.letterSpacing}px`,
+          lineHeight: String(model.style.lineHeight),
+          textAlign: model.style.textAlign,
+          top: model.top,
+          transform: model.rotation
+            ? `rotate(${model.rotation}deg)`
+            : undefined,
+          width: model.width,
+        }}
+        value={live.content}
+      />
+      {/* Rung C: the range toolbar. A sibling of the caret, not a child of it —
+          a `<textarea>` can hold no elements — positioned in the same stage px.
+          `inert` is deliberately false: Gate G-H stops a session from OPENING
+          while a turn is in flight, and an open one is not force-killed by a
+          turn start (the same posture an in-flight gesture takes; D10 CAS is
+          the net). A locked node can never have a session at all. */}
+      <SceneTextToolbar
+        box={toolbarBox}
+        collapsed={collapsed}
+        format={format}
+        inert={false}
+        nodeColor={model.style.color}
+        nodeId={model.nodeId}
+        onFill={applyFill}
+        onInteractionEnd={restoreFocus}
+        onInteractionStart={() => {
+          interactingRef.current = true;
+        }}
+        onMark={applyMark}
+        palette={palette}
+        stage={stage}
+      />
+    </>
   );
 }
 

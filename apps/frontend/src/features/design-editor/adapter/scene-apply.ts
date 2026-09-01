@@ -43,6 +43,11 @@ import {
 } from "../engine/scene/operations";
 import { normalizePageSize } from "../engine/scene/pageGeometry";
 import {
+  remapSpansByDiff,
+  spanValidationIssues,
+  spansVectorForContentEdit,
+} from "../engine/scene/textSpans";
+import {
   getPage,
   isNodeDirectGeometryEditable,
   isNodePinned,
@@ -793,6 +798,70 @@ export function sceneChangeToOperation(
         return null;
       }
       return backgroundFillsOperation(node, paint);
+    }
+
+    // ── Rung A: Text — what the node SAYS (rich-text plan, 2026-08-24) ───────
+    //
+    // The empty string is a LEGAL commit here, unlike every other text row: an
+    // emptied text node is a node that says nothing, which is a real edit and a
+    // node that survives — so no `trim() === ""` refusal, and none of the
+    // string coercion above needs relaxing (a non-string never reaches the
+    // switch).
+    //
+    // D4, and rung C's answer to it (founder-visible item 6). The engine CLEARS
+    // a spanned node's spans when the content changes and the spans arrive
+    // byte-identical (`operations.rs:620-631`) — right for a caller who forgot
+    // them, wrong for one that can still place them. So a spanned node's edit
+    // now carries a REMAPPED vector: the conservative prefix/suffix diff
+    // (`remapSpansByDiff`, the same one the caret session's untracked path
+    // uses), which keeps styling inside the unchanged prefix and suffix and
+    // trims or drops what touched the changed middle. It never guesses — this
+    // row sees only the before and after strings, so a bolded word the user
+    // retyped in the middle comes back unstyled rather than mis-styled.
+    //
+    // `spansVectorForContentEdit` runs LAST, immediately before the write, and
+    // its output is never re-normalized: its whole job is to make a vector the
+    // engine cannot mistake for a stale carry-forward, and normalizing would
+    // merge that deliberate split back together.
+    //
+    // A node with no spans writes the content channel alone, exactly as rung A
+    // did — there is nothing to remap and nothing for the engine to clear.
+    //
+    // RECORDED, NOT FIXED (review 2026-08-24, P3-5): a content commit whose
+    // value equals the stored content still writes, and its spans channel then
+    // carries the NORMALIZED stored vector — so a no-op "edit" could mint a
+    // document version whose only change is a span merge. It is unreachable
+    // from the shipped UI: every inspector row commits through `fieldCommit`,
+    // which suppresses a re-type of the live value before it ever reaches this
+    // switch. Left as it is rather than adding a guard nothing can trip.
+    case "content": {
+      if (!text) {
+        return null;
+      }
+      const stored = text.spans ?? [];
+      if (stored.length === 0) {
+        return updateTextNode(node, { content: value });
+      }
+      const remapped = remapSpansByDiff(text.content, value, stored);
+      const vector = spansVectorForContentEdit(text, value, remapped);
+      // The pre-send gate, the caret session's own
+      // (`scene-text-edit.ts::textEditCommitOperations`) repeated here rather
+      // than assumed: the engine validates spans at LAYOUT, not at apply, so an
+      // invalid vector applies clean and then drops the node out of measurement
+      // (LUMV0906) with nothing refused. Unreachable by construction — every
+      // `textSpans.ts` exit normalizes onto the five rules — and load-bearing
+      // anyway. Loud in dev/test; in production the spans channel is dropped
+      // and the content edit still lands, which is the honest degradation.
+      const issues = spanValidationIssues(value, vector);
+      if (issues.length > 0) {
+        if (process.env.NODE_ENV !== "production") {
+          throw new Error(
+            `refusing to write an invalid spans vector: ${issues.join("; ")}`,
+          );
+        }
+        return updateTextNode(node, { content: value });
+      }
+      return updateTextNode(node, { content: value, spans: vector });
     }
 
     // ── §1.2 row 2: Font family (§2 delta row 3 — the real vocabulary) ───────
