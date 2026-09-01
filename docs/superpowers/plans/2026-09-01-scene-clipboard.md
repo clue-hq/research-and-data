@@ -219,10 +219,11 @@ cascade generations. Event wiring gets jsdom ClipboardEvent/DataTransfer tests w
 allows, pure-intent tests elsewhere (the scene-arrange precedent). The live walk (Task 12) covers
 what jsdom cannot: real OS clipboard, real cross-tab, real drops, Figma-interop spot-check.
 
-## Founder-visible defaults chosen here (all reversible)
+## Founder-visible defaults — ALL RATIFIED by founder 2026-09-01 (second pass)
 
 1. New-text-node-on-plain-paste when nothing suitable is selected (vs. refusing).
-2. Pasted-image sizing: fit within 60% of the page's short side at intrinsic aspect.
+2. Pasted-image sizing: fit within 60% of the page's short side at intrinsic aspect —
+   DOWNSCALE-ONLY: an image already smaller than that box pastes at natural size, never upscaled.
 3. Envelope cap 1 MiB / external file cap mirrors the server's `asset_max_bytes`.
    (WebP admitted to the inbound allowlist by founder ruling 2026-09-01 — second pass; outbound
    external-app copies still convert to PNG via `rasterToPngBlob`, so WebP needs no outbound work.)
@@ -405,13 +406,13 @@ later — WebKit/Firefox support is not there yet, per the research note).
 - Produces: `ingestExternalImages(files: File[], placement: PastePlacement, deps) →
   Promise<{inserted: number; refusals: string[]}>`; `svgMarkupToFile(svg: string): File`;
   `pastedImageNodeSize(media: {width:number;height:number}, page: {width:number;height:number})`
-  (fit-within-60%-short-side rule).
+  (fit-within-60%-short-side rule, downscale-only).
 
 - [ ] **Step 1: failing tests** — png file → upload called once, one insertNode ImageNode with
   returned `asset_id` and `alt` = filename; `status:"pending"` record → refusal naming the label,
   NO insert; disallowed mime → refusal naming the allowlist, upload NOT called; svg markup →
   synthesized File with `image/svg+xml` routed down the same path; sizing rule: 4000×2000 image on a 1080×1080
-  page → 648-wide fit; multi-file paste inserts with per-file cascade; upload rejection surfaces
+  page → 648-wide fit; a 200×100 image pastes at 200×100 (downscale-only, never upscaled); multi-file paste inserts with per-file cascade; upload rejection surfaces
   the server detail verbatim.
 - [ ] **Steps 2–4** — **Step 5: commit** `feat(design-editor): external image paste/drop ingestion`
 
