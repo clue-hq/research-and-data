@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { it, mock } from "node:test";
 import { JSDOM } from "jsdom";
-import type { Scene, TextSpan } from "../engine/scene/contracts";
+import type { NodeId, Operation, Scene, TextSpan } from "../engine/scene/contracts";
 import { minimalScene } from "../engine/scene/__tests__/__fixtures__/minimalScene";
 import { AD_PAGE_ID, HARVESTED_AD_PAGE } from "./__fixtures__/scene-nodes";
+import type { PastePlacement } from "./scene-clipboard-placement";
+import type { ClipboardMaterialization } from "./scene-clipboard";
 import {
   CLIPBOARD_ENVELOPE_MAX_BYTES,
   SCENE_CLIPBOARD_KIND,
@@ -11,6 +13,7 @@ import {
   decodeClipboardHtml,
   encodeClipboardHtml,
   extractReadableText,
+  materializeClipboardPayload,
   remintSubtree,
   serializeSubtree,
   validateClipboardPayload,
@@ -412,4 +415,301 @@ it("measures the cap in UTF-8 bytes, not UTF-16 code units", () => {
   const emojiCount = Math.floor(CLIPBOARD_ENVELOPE_MAX_BYTES / 4);
   const nearCap = { ...payload, readableText: "🚑".repeat(emojiCount) };
   assert.equal(encodeClipboardHtml(nearCap), null);
+});
+
+// ── Task 5: materialization ────────────────────────────────────────────────
+
+/** A freehand placement onto the harvested page (origin (0,0), so the
+ * transform IS the page-space target). */
+function freehandOntoPage(x = 200, y = 300): PastePlacement {
+  return {
+    kind: "freehand",
+    parent: { kind: "page", id: AD_PAGE_ID },
+    transform: { x, y, rotation: 0, skew_x: 0, skew_y: 0, flip_x: false, flip_y: false },
+  };
+}
+
+function intoCopyRow(index = 2): PastePlacement {
+  return { kind: "into-layout", parent: { kind: "node", id: "auto_row_copy" }, index };
+}
+
+function expectOps(result: ClipboardMaterialization): { ops: Operation[]; rootId: NodeId } {
+  if ("refusal" in result) {
+    assert.fail(`expected an op batch, got refusal: ${result.refusal}`);
+  }
+  return result;
+}
+
+function expectRefusal(result: ClipboardMaterialization): string {
+  if (!("refusal" in result)) {
+    assert.fail(`expected a refusal, got ${result.ops.length} ops`);
+  }
+  return result.refusal;
+}
+
+/** The batch, narrowed — a materialization that emits anything but
+ * `insert_node` has already broken its contract. */
+function insertOps(ops: readonly Operation[]): Array<Extract<Operation, { kind: "insert_node" }>> {
+  return ops.map((op) => {
+    if (op.kind !== "insert_node") {
+      assert.fail(`expected insert_node, got ${op.kind}`);
+    }
+    return op;
+  });
+}
+
+it("materializes a subtree as one insertNode op per node, parents before children", () => {
+  const payload = groupPayload();
+  const result = expectOps(
+    materializeClipboardPayload(HARVESTED_AD_PAGE, payload, freehandOntoPage(), new Set()),
+  );
+  const ops = insertOps(result.ops);
+  assert.equal(ops.length, 3);
+
+  // The root lands in the placement's parent; each descendant lands under its
+  // own re-minted parent, at its position in that parent's children array.
+  assert.deepEqual(ops[0].parent, { kind: "page", id: AD_PAGE_ID });
+  assert.equal(ops[0].node.id, result.rootId);
+  assert.deepEqual(ops[1].parent, { kind: "node", id: result.rootId });
+  assert.equal(ops[1].index, 0);
+  assert.deepEqual(ops[2].parent, { kind: "node", id: result.rootId });
+  assert.equal(ops[2].index, 1);
+  assert.deepEqual(ops[0].node.children, [ops[1].node.id, ops[2].node.id]);
+
+  // Parents-before-children as a rule, not a coincidence: an op that names a
+  // node parent must find it already inserted by an earlier op.
+  const inserted = new Set<string>();
+  for (const op of ops) {
+    if (op.parent.kind === "node") {
+      assert.ok(inserted.has(op.parent.id), `${op.parent.id} inserted after its child`);
+    }
+    inserted.add(op.node.id);
+  }
+});
+
+it("re-mints against the target scene's ids — no pasted id collides", () => {
+  const payload = groupPayload();
+  const { ops, rootId } = expectOps(
+    materializeClipboardPayload(HARVESTED_AD_PAGE, payload, freehandOntoPage(), new Set()),
+  );
+  const inserts = insertOps(ops);
+  for (const op of inserts) {
+    assert.match(op.node.id, /^node-[0-9a-f]{8}$/);
+    assert.ok(!(op.node.id in HARVESTED_AD_PAGE.nodes), `${op.node.id} already in the scene`);
+  }
+  assert.equal(inserts[0].node.id, rootId);
+});
+
+it("appends a freehand root at the end of its parent's children", () => {
+  const payload = groupPayload();
+  const ontoPage = expectOps(
+    materializeClipboardPayload(HARVESTED_AD_PAGE, payload, freehandOntoPage(), new Set()),
+  );
+  assert.equal(
+    insertOps(ontoPage.ops)[0].index,
+    HARVESTED_AD_PAGE.pages[AD_PAGE_ID].children.length,
+  );
+
+  const intoFrame = expectOps(
+    materializeClipboardPayload(
+      HARVESTED_AD_PAGE,
+      payload,
+      {
+        kind: "freehand",
+        parent: { kind: "node", id: "frame_ad_root" },
+        transform: { x: 10, y: 20, rotation: 0, skew_x: 0, skew_y: 0, flip_x: false, flip_y: false },
+      },
+      new Set(),
+    ),
+  );
+  const frameOps = insertOps(intoFrame.ops);
+  assert.deepEqual(frameOps[0].parent, { kind: "node", id: "frame_ad_root" });
+  assert.equal(frameOps[0].index, HARVESTED_AD_PAGE.nodes["frame_ad_root"].children.length);
+});
+
+it("overrides the root's POSITION only — a paste never restyles the content (R7)", () => {
+  const payload = structuredClone(groupPayload());
+  payload.nodes[0].transform = {
+    x: 40,
+    y: 60,
+    rotation: 15,
+    skew_x: 2,
+    skew_y: 3,
+    flip_x: true,
+    flip_y: false,
+  };
+  const { ops } = expectOps(
+    materializeClipboardPayload(HARVESTED_AD_PAGE, payload, freehandOntoPage(200, 300), new Set()),
+  );
+  const inserts = insertOps(ops);
+  assert.deepEqual(inserts[0].node.transform, {
+    x: 200,
+    y: 300,
+    rotation: 15,
+    skew_x: 2,
+    skew_y: 3,
+    flip_x: true,
+    flip_y: false,
+  });
+  // Descendants are parent-relative: their transforms ride along untouched.
+  assert.deepEqual(inserts[1].node.transform, payload.nodes[1].transform);
+});
+
+it("an into-layout root names the container and index and authors NO transform", () => {
+  const payload = groupPayload();
+  const { ops } = expectOps(
+    materializeClipboardPayload(HARVESTED_AD_PAGE, payload, intoCopyRow(2), new Set()),
+  );
+  const root = insertOps(ops)[0];
+  assert.deepEqual(root.parent, { kind: "node", id: "auto_row_copy" });
+  assert.equal(root.index, 2);
+  // The solver owns a managed child's position, so the paste writes no
+  // geometry it would immediately overwrite.
+  assert.deepEqual(root.node.transform, payload.nodes[0].transform);
+});
+
+it("suffixes the root name against the placement parent's existing children", () => {
+  const payload = groupPayload();
+  // auto_row_copy already holds "Proof point" — the very node being pasted
+  // back beside itself.
+  const intoRow = expectOps(
+    materializeClipboardPayload(HARVESTED_AD_PAGE, payload, intoCopyRow(2), new Set()),
+  );
+  assert.equal(insertOps(intoRow.ops)[0].node.name, "Proof point_2");
+
+  // The page's only child is "Ad artboard", so a page paste collides with
+  // nothing — the sibling set is the PARENT's children, not the scene's.
+  const ontoPage = expectOps(
+    materializeClipboardPayload(HARVESTED_AD_PAGE, payload, freehandOntoPage(), new Set()),
+  );
+  assert.equal(insertOps(ontoPage.ops)[0].node.name, "Proof point");
+});
+
+it("inserts every node with computed: null — stale solved geometry never rides along (R8)", () => {
+  const payload = structuredClone(groupPayload());
+  for (const node of payload.nodes) {
+    node.computed = {
+      layout_bounds: { x: 1, y: 2, width: 3, height: 4 },
+      render_bounds: { x: 1, y: 2, width: 3, height: 4 },
+    };
+  }
+  const { ops } = expectOps(
+    materializeClipboardPayload(HARVESTED_AD_PAGE, payload, freehandOntoPage(), new Set()),
+  );
+  for (const op of insertOps(ops)) {
+    assert.equal(op.node.computed, null);
+  }
+});
+
+it("shifts every absolute_box by the freehand paste delta (R8)", () => {
+  const payload = structuredClone(groupPayload());
+  payload.nodes[0].transform.x = 40;
+  payload.nodes[0].transform.y = 60;
+  payload.nodes[0].absolute_box = { x: 40, y: 60, width: 100, height: 20 };
+  payload.nodes[1].absolute_box = { x: 50, y: 70, width: 10, height: 10 };
+  const { ops } = expectOps(
+    materializeClipboardPayload(HARVESTED_AD_PAGE, payload, freehandOntoPage(200, 300), new Set()),
+  );
+  const inserts = insertOps(ops);
+  // delta = (200 − 40, 300 − 60) = (160, 240).
+  assert.deepEqual(inserts[0].node.absolute_box, { x: 200, y: 300, width: 100, height: 20 });
+  assert.deepEqual(inserts[1].node.absolute_box, { x: 210, y: 310, width: 10, height: 10 });
+  assert.equal(inserts[2].node.absolute_box, undefined);
+});
+
+it("leaves absolute_box untouched for an into-layout paste (R8)", () => {
+  const payload = structuredClone(groupPayload());
+  payload.nodes[0].absolute_box = { x: 40, y: 60, width: 100, height: 20 };
+  const { ops } = expectOps(
+    materializeClipboardPayload(HARVESTED_AD_PAGE, payload, intoCopyRow(2), new Set()),
+  );
+  // The solver re-places managed children; shifting here would be a guess.
+  assert.deepEqual(insertOps(ops)[0].node.absolute_box, { x: 40, y: 60, width: 100, height: 20 });
+});
+
+it("refuses when a clipboard image is unknown to this workspace — naming the count", () => {
+  const imagePayload = serializeSubtree(HARVESTED_AD_PAGE, AD_PAGE_ID, "image_hero");
+  assert.ok(imagePayload);
+  assert.equal(
+    expectRefusal(
+      materializeClipboardPayload(HARVESTED_AD_PAGE, imagePayload, freehandOntoPage(), new Set()),
+    ),
+    "1 image in this clipboard isn't available in this workspace",
+  );
+  // …and the same paste goes through once the workspace has the asset.
+  const allowed = materializeClipboardPayload(
+    HARVESTED_AD_PAGE,
+    imagePayload,
+    freehandOntoPage(),
+    new Set(imagePayload.assetIds),
+  );
+  assert.equal(expectOps(allowed).ops.length, 1);
+});
+
+it("pluralizes the missing-image refusal", () => {
+  const payload = structuredClone(groupPayload());
+  payload.assetIds = ["asset_one", "asset_two"];
+  assert.equal(
+    expectRefusal(
+      materializeClipboardPayload(HARVESTED_AD_PAGE, payload, freehandOntoPage(), new Set()),
+    ),
+    "2 images in this clipboard aren't available in this workspace",
+  );
+  assert.equal(
+    expectRefusal(
+      materializeClipboardPayload(
+        HARVESTED_AD_PAGE,
+        payload,
+        freehandOntoPage(),
+        new Set(["asset_one"]),
+      ),
+    ),
+    "1 image in this clipboard isn't available in this workspace",
+  );
+});
+
+it("refuses an empty or malformed payload", () => {
+  const payload = groupPayload();
+  assert.match(
+    expectRefusal(
+      materializeClipboardPayload(
+        HARVESTED_AD_PAGE,
+        { ...payload, nodes: [] },
+        freehandOntoPage(),
+        new Set(),
+      ),
+    ),
+    /empty/i,
+  );
+  assert.ok(
+    expectRefusal(
+      materializeClipboardPayload(
+        HARVESTED_AD_PAGE,
+        { ...payload, roots: [] },
+        freehandOntoPage(),
+        new Set(),
+      ),
+    ).length > 0,
+  );
+  // A payload whose nodes are not ONE tree (here: an orphaned text node no
+  // parent claims) has no honest insert order — refuse rather than guess one.
+  const orphaned = structuredClone(payload);
+  orphaned.nodes[0].children = ["ellipse_proof_dot"];
+  assert.ok(
+    expectRefusal(
+      materializeClipboardPayload(HARVESTED_AD_PAGE, orphaned, freehandOntoPage(), new Set()),
+    ).length > 0,
+  );
+});
+
+it("mutates neither the payload, the placement, nor the target scene", () => {
+  const payload = groupPayload();
+  const placement = freehandOntoPage();
+  const payloadBefore = JSON.stringify(payload);
+  const placementBefore = JSON.stringify(placement);
+  const sceneBefore = JSON.stringify(HARVESTED_AD_PAGE);
+  expectOps(materializeClipboardPayload(HARVESTED_AD_PAGE, payload, placement, new Set()));
+  assert.equal(JSON.stringify(payload), payloadBefore);
+  assert.equal(JSON.stringify(placement), placementBefore);
+  assert.equal(JSON.stringify(HARVESTED_AD_PAGE), sceneBefore);
 });

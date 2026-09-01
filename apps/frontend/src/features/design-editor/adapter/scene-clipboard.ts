@@ -2,15 +2,19 @@ import type {
   AssetId,
   Node,
   NodeId,
+  Operation,
   PageId,
+  ParentRef,
   Rect,
   Scene,
 } from "../engine/scene/contracts";
+import { insertNode } from "../engine/scene/operations";
 import {
   nodePageSpaceBox,
   pageIdForNode,
   parentComputedOrigin,
 } from "../engine/scene/sceneQueries";
+import type { PastePlacement } from "./scene-clipboard-placement";
 
 /**
  * Scene clipboard Task 1 — the versioned DTO and the subtree serializer.
@@ -391,6 +395,144 @@ function collisionFreeName(
     counter += 1;
   }
   return `${name}_${counter}`;
+}
+
+// ── Task 5: materialization ────────────────────────────────────────────────
+
+/** Either a batch the caller can apply whole, or a reason it cannot — never
+ * both, and never a partial batch. */
+export type ClipboardMaterialization =
+  | { ops: Operation[]; rootId: NodeId }
+  | { refusal: string };
+
+const EMPTY_CLIPBOARD_REFUSAL = "This clipboard is empty — there is nothing to paste";
+const MALFORMED_CLIPBOARD_REFUSAL =
+  "This clipboard is malformed — there is nothing safe to paste";
+
+/**
+ * Turn a validated payload plus a {@link PastePlacement} into ONE parents-first
+ * `insert_node` batch against `scene`, or refuse.
+ *
+ * Every refusal is decided before the first op is built, so a refusal enqueues
+ * nothing — atomicity by construction rather than by rollback. The unknown-asset
+ * refusal is the cross-workspace gate that actually bites: `workspaceHint` is
+ * display-only, but an image whose asset the pasting workspace does not hold
+ * would paste as a broken frame, so the whole paste is refused by count.
+ *
+ * The scene and the payload are read, never written: `remintSubtree` clones,
+ * and only its output is edited. Paste twice from the same payload and the
+ * second paste re-mints from the same untouched bytes.
+ */
+export function materializeClipboardPayload(
+  scene: Scene,
+  payload: SceneClipboardPayloadV1,
+  placement: PastePlacement,
+  knownAssetIds: ReadonlySet<string>,
+): ClipboardMaterialization {
+  if (payload.nodes.length === 0 || payload.roots.length !== 1) {
+    return { refusal: EMPTY_CLIPBOARD_REFUSAL };
+  }
+  const missing = payload.assetIds.filter((id) => !knownAssetIds.has(id)).length;
+  if (missing > 0) {
+    return {
+      refusal:
+        `${missing} image${missing === 1 ? "" : "s"} in this clipboard ` +
+        `${missing === 1 ? "isn't" : "aren't"} available in this workspace`,
+    };
+  }
+
+  // Names collide per PARENT, not per scene: the sibling set is exactly the
+  // placement parent's existing children.
+  const parentChildren = childIdsOf(scene, placement.parent);
+  const siblingNames = new Set<string>();
+  for (const childId of parentChildren) {
+    const name = scene.nodes[childId]?.name;
+    if (name !== null && name !== undefined) {
+      siblingNames.add(name);
+    }
+  }
+  const { nodes, rootId } = remintSubtree(
+    payload,
+    new Set(Object.keys(scene.nodes)),
+    siblingNames,
+  );
+
+  // Ruling R7: freehand overrides POSITION only. Rotation, skew and flips are
+  // what the copied content LOOKS like; a paste moves it, it does not restyle
+  // it. The delta this produces is also what R8 shifts stale boxes by.
+  const rootBefore = nodes[0].transform;
+  const delta =
+    placement.kind === "freehand"
+      ? { x: placement.transform.x - rootBefore.x, y: placement.transform.y - rootBefore.y }
+      : null;
+  if (placement.kind === "freehand") {
+    nodes[0].transform = {
+      ...rootBefore,
+      x: placement.transform.x,
+      y: placement.transform.y,
+    };
+  }
+
+  for (const node of nodes) {
+    // Ruling R8: `computed` is solved geometry from the OLD scene — derived
+    // state that would be a lie here until the engine re-solves.
+    node.computed = null;
+    // A pinned node's `absolute_box` is authoritative geometry, so it travels
+    // with the paste delta. Into-layout pastes leave it alone: the solver
+    // re-places managed children, and shifting would be a guess with a
+    // different answer.
+    if (delta && node.absolute_box) {
+      node.absolute_box = {
+        ...node.absolute_box,
+        x: node.absolute_box.x + delta.x,
+        y: node.absolute_box.y + delta.y,
+      };
+    }
+  }
+
+  // Where each descendant sits: under the re-minted parent that names it, at
+  // its position in that parent's children array.
+  const seats = new Map<NodeId, { parent: ParentRef; index: number }>();
+  let claimedTwice = false;
+  for (const node of nodes) {
+    node.children.forEach((childId, index) => {
+      if (seats.has(childId)) {
+        claimedTwice = true;
+      }
+      seats.set(childId, { parent: { kind: "node", id: node.id }, index });
+    });
+  }
+  // `validateClipboardPayload` proves the graph is self-contained; it does not
+  // prove it is ONE tree. An orphan, a second claim on a child, or a root
+  // claimed as somebody's child leaves the seat lookup below with no honest
+  // answer — refuse rather than invent a parent.
+  if (
+    claimedTwice ||
+    seats.has(rootId) ||
+    nodes.some((node, index) => index > 0 && !seats.has(node.id))
+  ) {
+    return { refusal: MALFORMED_CLIPBOARD_REFUSAL };
+  }
+
+  // The re-minted array is DFS preorder, so emitting in order IS parents-first.
+  const rootIndex =
+    placement.kind === "into-layout" ? placement.index : parentChildren.length;
+  const ops = nodes.map((node, index) => {
+    if (index === 0) {
+      return insertNode(placement.parent, rootIndex, node);
+    }
+    const seat = seats.get(node.id)!;
+    return insertNode(seat.parent, seat.index, node);
+  });
+  return { ops, rootId };
+}
+
+/** The children a parent already holds — the page's or the node's. A parent
+ * the scene does not know holds nothing, so an append lands at index 0. */
+function childIdsOf(scene: Scene, parent: ParentRef): readonly NodeId[] {
+  const container =
+    parent.kind === "page" ? scene.pages[parent.id] : scene.nodes[parent.id];
+  return container?.children ?? [];
 }
 
 // Base64 over UTF-8, both directions, browser- and Node-safe: btoa/atob are
