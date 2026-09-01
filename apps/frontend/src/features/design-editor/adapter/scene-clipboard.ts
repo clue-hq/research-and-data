@@ -1,5 +1,6 @@
 import type {
   AssetId,
+  AssetRecord,
   Node,
   NodeId,
   Operation,
@@ -48,6 +49,17 @@ export interface SceneClipboardPayloadV1 {
   nodes: Node[];
   /** Workspace-scoped refs for every ImageNode in `nodes`, deduplicated. */
   assetIds: AssetId[];
+  /** W2: the RECORD behind every id in {@link assetIds}, copied verbatim from
+   * the source document's registry.
+   *
+   * `scene.assets` is a PER-DOCUMENT map while assets themselves are
+   * workspace-scoped, so a same-workspace paste into ANOTHER document finds
+   * the id unregistered there — the live walk's defect. Carrying the records
+   * lets the paste register what it references (`upsert_asset`) instead of
+   * refusing a picture the workspace genuinely owns. It is NOT an auth claim:
+   * the server's own tenancy gate is what proves the pasting workspace may
+   * have these bytes (see `use-scene-clipboard.ts`'s probe). */
+  assets: AssetRecord[];
   /** The root's page-space box — what placement planning offsets from. */
   bounds: { x: number; y: number; width: number; height: number };
   /** Pre-extracted text-node contents for the `text/plain` representation
@@ -99,6 +111,20 @@ export function serializeSubtree(
     }
   }
 
+  // The records behind those ids, cloned like the nodes — a payload is a
+  // snapshot, so a later edit to the live registry must not reach into it. An
+  // id the source document does not describe contributes nothing: a missing
+  // record is a scene-invariant violation, not the copier's to invent, and the
+  // validator refuses such a payload loudly at the paste boundary rather than
+  // letting it paste a picture nothing can resolve.
+  const assets: AssetRecord[] = [];
+  for (const id of assetIds) {
+    const record = scene.assets?.[id];
+    if (record) {
+      assets.push(structuredClone(record));
+    }
+  }
+
   return {
     kind: SCENE_CLIPBOARD_KIND,
     version: 1,
@@ -106,6 +132,7 @@ export function serializeSubtree(
     roots: [rootId],
     nodes,
     assetIds,
+    assets,
     bounds: rootPageSpaceBounds(scene, root),
     readableText: extractReadableText(nodes),
   };
@@ -212,6 +239,7 @@ const PAYLOAD_KEYS = [
   "roots",
   "nodes",
   "assetIds",
+  "assets",
   "bounds",
   "readableText",
 ] as const;
@@ -259,6 +287,27 @@ export function validateClipboardPayload(value: unknown): SceneClipboardPayloadV
   }
   const assetIds = record.assetIds;
   if (!Array.isArray(assetIds) || !assetIds.every((id) => typeof id === "string")) {
+    return null;
+  }
+  const assets = record.assets;
+  if (!Array.isArray(assets)) {
+    return null;
+  }
+  const describedAssets = new Set<string>();
+  for (const asset of assets) {
+    if (typeof asset !== "object" || asset === null || Array.isArray(asset)) {
+      return null;
+    }
+    const id = (asset as { id?: unknown }).id;
+    if (typeof id !== "string" || id.length === 0) {
+      return null;
+    }
+    describedAssets.add(id);
+  }
+  // A payload that NAMES an asset it cannot describe is malformed: the target
+  // document has nothing to register, so the picture could only paste as a
+  // blank box. Refuse the payload rather than paste half of it.
+  if (!assetIds.every((id) => describedAssets.has(id))) {
     return null;
   }
   if (!isValidBounds(record.bounds)) {
@@ -343,6 +392,16 @@ function isMinimalNode(value: unknown): value is Node {
  * the ROOT's name is suffixed `_2`-style against `siblingNames` until free
  * (descendants keep their names — they collide with nothing at their level).
  *
+ * W1 — A NULL NAME INHERITS THE SOURCE ID. The layer tree labels a node
+ * `node.name ?? `${kind} ${id}`` (`sceneQueries.ts::nodeDisplayName`), and
+ * agent-authored nodes carry `name: null` with a readable id ("headline",
+ * "main"). Keeping the null through a re-mint therefore renamed the copy to
+ * "text node-a345153a" — the fresh id is machine identity, never a label a
+ * human chose. So a null-named copy takes the SOURCE NODE'S ID as its name:
+ * the identity the user already sees in the tree, carried over rather than
+ * invented. `siblingNames` is a set of DISPLAY identities for the same reason
+ * (`materializeClipboardPayload` builds it from `name ?? id`).
+ *
  * The payload is read, never mutated: paste twice and the second paste
  * re-mints from the same untouched payload.
  */
@@ -365,9 +424,10 @@ export function remintSubtree(
     // resolves; the fallback keeps a hand-built payload's dangling ref from
     // silently becoming an id the scene might actually contain.
     copy.children = node.children.map((child) => idMap.get(child) ?? child);
-    if (index === 0) {
-      copy.name = collisionFreeName(node.name, siblingNames);
-    }
+    // W1: the label the user already reads for this node — its name, or, for
+    // an agent-authored node, its readable source id.
+    const displayName = node.name ?? node.id;
+    copy.name = index === 0 ? collisionFreeName(displayName, siblingNames) : displayName;
     return copy;
   });
   return { nodes, rootId: nodes[0].id };
@@ -384,13 +444,13 @@ export function mintNodeId(taken: (candidate: string) => boolean): NodeId {
   return candidate;
 }
 
-/** `headline` → `headline_2`, `_3`, … against the sibling names; a null name
- * stays null (nothing to collide). The base is opaque — no suffix parsing. */
+/** `headline` → `headline_2`, `_3`, … against the siblings' DISPLAY
+ * identities. The base is opaque — no suffix parsing. */
 function collisionFreeName(
-  name: string | null,
+  name: string,
   siblingNames: ReadonlySet<string>,
-): string | null {
-  if (name === null || !siblingNames.has(name)) {
+): string {
+  if (!siblingNames.has(name)) {
     return name;
   }
   let counter = 2;
@@ -419,10 +479,18 @@ const MALFORMED_CLIPBOARD_REFUSAL =
  * `children` array — see the batch-building comment below for why.
  *
  * Every refusal is decided before the first op is built, so a refusal enqueues
- * nothing — atomicity by construction rather than by rollback. The unknown-asset
- * refusal is the cross-workspace gate that actually bites: `workspaceHint` is
- * display-only, but an image whose asset the pasting workspace does not hold
- * would paste as a broken frame, so the whole paste is refused by count.
+ * nothing — atomicity by construction rather than by rollback.
+ *
+ * W2 — ASSETS ARE CARRIED, NOT DEMANDED. `scene.assets` is a PER-DOCUMENT
+ * registry, so gating on it refused a picture the SAME workspace owns merely
+ * because this document had never seen it. The payload now carries each
+ * referenced record, and a record missing from `knownAssetIds` is REGISTERED
+ * by an `upsert_asset` at the head of the batch instead. The count-naming
+ * refusal survives for the one case nothing can repair — an `assetIds` entry
+ * with no record at all (which `validateClipboardPayload` already refuses, so
+ * this is defence in depth). Whether the pasting workspace may hold those
+ * bytes is the SERVER's tenancy gate to answer, not a client-side map lookup;
+ * the hook probes it before it ever reaches here.
  *
  * The scene and the payload are read, never written: `remintSubtree` clones,
  * and only its output is edited. Paste twice from the same payload and the
@@ -437,23 +505,31 @@ export function materializeClipboardPayload(
   if (payload.nodes.length === 0 || payload.roots.length !== 1) {
     return { refusal: EMPTY_CLIPBOARD_REFUSAL };
   }
-  const missing = payload.assetIds.filter((id) => !knownAssetIds.has(id)).length;
+  // W2: a record the payload carries is registered here (`upsert_asset`
+  // below), so only an id the payload can neither describe NOR find already
+  // registered is genuinely out of reach — another workspace's asset.
+  const describedAssets = new Set(payload.assets.map((record) => record.id));
+  const missing = payload.assetIds.filter(
+    (id) => !knownAssetIds.has(id) && !describedAssets.has(id),
+  ).length;
   if (missing > 0) {
     return {
       refusal:
         `${missing} image${missing === 1 ? "" : "s"} in this clipboard ` +
-        `${missing === 1 ? "isn't" : "aren't"} available in this workspace`,
+        `${missing === 1 ? "belongs" : "belong"} to another workspace`,
     };
   }
 
   // Names collide per PARENT, not per scene: the sibling set is exactly the
-  // placement parent's existing children.
+  // placement parent's existing children — as DISPLAY identities (W1: a
+  // null-named sibling shows its id, and a pasted copy that inherited that
+  // same id must still be suffixed clear of it).
   const parentChildren = childIdsOf(scene, placement.parent);
   const siblingNames = new Set<string>();
   for (const childId of parentChildren) {
-    const name = scene.nodes[childId]?.name;
-    if (name !== null && name !== undefined) {
-      siblingNames.add(name);
+    const sibling = scene.nodes[childId];
+    if (sibling) {
+      siblingNames.add(sibling.name ?? sibling.id);
     }
   }
   const { nodes, rootId } = remintSubtree(
@@ -531,7 +607,7 @@ export function materializeClipboardPayload(
   // index in bounds, so the tree that results is identical.
   const rootIndex =
     placement.kind === "into-layout" ? placement.index : parentChildren.length;
-  const ops = nodes.map((node, index) => {
+  const inserts = nodes.map((node, index) => {
     const childless = { ...node, children: [] };
     if (index === 0) {
       return insertNode(placement.parent, rootIndex, childless);
@@ -539,7 +615,20 @@ export function materializeClipboardPayload(
     const seat = seats.get(node.id)!;
     return insertNode(seat.parent, seat.index, childless);
   });
-  return { ops, rootId };
+
+  // REGISTER, THEN INSERT — the canonical pair (`use-scene-image-paste.ts`'s
+  // Task-8 ingestion, `assetLibrary.ts::buildNodePlacementOperations`, and the
+  // shipped Replace-image / Generate paths all lead with the record). A node
+  // whose `asset_id` names a record this document does not hold resolves to no
+  // bytes at all and fails the engine's strict asset validation, so the order
+  // is load-bearing. Both halves ride the ONE batch the caller applies, so a
+  // cross-document paste is still exactly one undo frame. A record the
+  // document already holds is left alone — re-upserting it would be a write
+  // the paste never needed.
+  const upserts: Operation[] = payload.assets
+    .filter((record) => !knownAssetIds.has(record.id))
+    .map((record) => ({ kind: "upsert_asset", asset: structuredClone(record) }));
+  return { ops: [...upserts, ...inserts], rootId };
 }
 
 /** The children a parent already holds — the page's or the node's. A parent

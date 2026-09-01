@@ -20,7 +20,9 @@ import {
   planPastePlacement,
   type PastePlacementMode,
 } from "../adapter/scene-clipboard-placement";
+import { DESIGN_API_BFF_PREFIX } from "../data/design-bff";
 import type {
+  AssetRecord,
   Node,
   NodeId,
   PageId,
@@ -109,6 +111,16 @@ export interface SceneClipboardDeps {
   /** Task 8's seam for pasted svg markup. */
   onSvgMarkup?: (svg: string) => void;
   pageId: PageId | null;
+  /** W2 / founder ruling 3: does THIS workspace hold the asset behind `assetId`?
+   *
+   * A clipboard payload carries the asset RECORDS it references, so a paste
+   * into another document of the same workspace can register what it needs.
+   * A record is not an authorization, though — the payload came off an OS
+   * clipboard and could have crossed workspaces. The honest gate is the
+   * SERVER's own tenancy check, which is what this asks; the default hits the
+   * design BFF (see {@link probeAssetInWorkspace}) and a test injects instead
+   * of reaching the network. */
+  probeAsset?: (assetId: string) => Promise<boolean>;
   /** R35: the Blob→png rasterizer. Defaults to the adapter's
    * {@link rasterToPngBlob}; jsdom can decode no image, so a test injects a
    * recorder instead. */
@@ -349,6 +361,92 @@ function cascadeAndApply(
   }
 }
 
+// ── W2: cross-document assets and the server's tenancy gate ───────────────
+
+/** The refusal a failed tenancy probe speaks — the materializer's own sentence
+ * for the same fact, so the user hears one answer however the paste was
+ * refused. */
+function foreignWorkspaceRefusal(count: number): string {
+  return (
+    `${count} image${count === 1 ? "" : "s"} in this clipboard ` +
+    `${count === 1 ? "belongs" : "belong"} to another workspace`
+  );
+}
+
+/** The payload's asset records this DOCUMENT does not already hold.
+ *
+ * `scene.assets` is per-document while assets are workspace-scoped, so this is
+ * "what would have to be registered here", NEVER "what this workspace is
+ * missing" — the live walk's defect was reading the first as the second. */
+function foreignAssetRecords(
+  scene: Scene,
+  payload: SceneClipboardPayloadV1,
+): AssetRecord[] {
+  return payload.assets.filter((record) => !(record.id in scene.assets));
+}
+
+/**
+ * The one asynchronous paste path (founder ruling 3), and the Task-8 ingestion
+ * hook's shape verbatim: ask first, re-gate after, then ONE batch.
+ *
+ * WHY ASK AT ALL. The payload carries records, and a record is a description,
+ * not a permission — the clipboard it rode may have come from another
+ * workspace's tab entirely. `workspaceHint` cannot answer that (it is
+ * display-only, and forgeable), and neither can the target document's asset
+ * map. The server's tenancy gate can, so it is asked, once per foreign record.
+ *
+ * FAIL CLOSED. A probe that answers false OR REJECTS (offline, a 500, a
+ * cancelled request) counts as a no: an unverified asset must not be
+ * registered into this workspace's document. All-or-nothing, too — a paste
+ * that dropped the refused half would silently mutilate the copied subtree.
+ *
+ * RE-READ, THEN RE-GATE. The scene can change while the probes travel (the
+ * deps object is the hook's latest-value ref), so the paste is planned against
+ * the CURRENT session and the write gate is asked again — the same re-gate
+ * `ingestExternalImages` does after its uploads.
+ */
+async function pasteWithForeignAssets(
+  deps: SceneClipboardDeps,
+  payload: SceneClipboardPayloadV1,
+  foreign: readonly AssetRecord[],
+): Promise<void> {
+  const probe = deps.probeAsset ?? probeAssetInWorkspace;
+  const verdicts = await Promise.all(
+    foreign.map(async (record) => {
+      try {
+        return await probe(record.id);
+      } catch {
+        return false;
+      }
+    }),
+  );
+  const refused = verdicts.filter((held) => !held).length;
+  if (refused > 0) {
+    deps.writes.reportError(foreignWorkspaceRefusal(refused));
+    return;
+  }
+  const session = armSession(deps);
+  if (!session) {
+    // The document closed while we asked. Nothing to paste into, and nothing
+    // to say about a gesture whose surface is gone.
+    return;
+  }
+  if (!deps.writes.canApply()) {
+    deps.writes.reportError(NOT_ACCEPTING_EDITS);
+    return;
+  }
+  cascadeAndApply(deps, session, payload, payload.roots[0], PASTE_INTENT);
+}
+
+/** The production probe: the design BFF's own asset read, whose 404/403 IS the
+ * workspace boundary. Only `ok` is read — the body is the server's business. */
+async function probeAssetInWorkspace(assetId: string): Promise<boolean> {
+  const response = await fetch(
+    `${DESIGN_API_BFF_PREFIX}/assets/${encodeURIComponent(assetId)}`,
+  );
+  return response.ok;
+}
+
 // ── Task 9: plain text ─────────────────────────────────────────────────────
 
 /**
@@ -452,6 +550,9 @@ function pastedTextPayload(
     roots: [PASTED_TEXT_ID],
     nodes: [pastedTextNode(text, width)],
     assetIds: [],
+    // A minted text node references no picture, so there is nothing to carry
+    // and nothing to register.
+    assets: [],
     bounds: {
       x: 0,
       y: 0,
@@ -790,6 +891,13 @@ export function handleSceneClipboardCut(
  * EMPTY clipboard stays the complete non-event both rulings ask for (intent
  * `none` → nothing, no `preventDefault`) instead of producing a read-only
  * complaint about a paste that was never going to write anything.
+ *
+ * EXACTLY ONE BRANCH EVER WAITS (W2): an internal payload carrying asset
+ * records this document does not hold, which the server's tenancy gate must
+ * answer for before anything is applied. Everything the event itself owns —
+ * the snapshot, the classification, `preventDefault` — has already happened by
+ * then, so that branch is fire-and-forget from the listener's point of view;
+ * every other paste, including every same-document one, stays synchronous.
  */
 export function handleSceneClipboardPaste(
   deps: SceneClipboardDeps,
@@ -835,14 +943,26 @@ export function handleSceneClipboardPaste(
   }
 
   if (intent.kind === "internal") {
+    // Ours, decided synchronously — `preventDefault` may never wait on a
+    // network answer, and the DataTransfer is already snapshotted above.
     event.preventDefault();
-    cascadeAndApply(
-      deps,
-      session,
-      intent.payload,
-      intent.payload.roots[0],
-      PASTE_INTENT,
-    );
+    const foreign = foreignAssetRecords(session.scene, intent.payload);
+    if (foreign.length === 0) {
+      // The whole shipped fast path, unchanged: same-document pastes, ⌘D's
+      // twin, and every asset-free subtree stay fully SYNCHRONOUS — no probe,
+      // no await, one batch inside the event's own turn.
+      cascadeAndApply(
+        deps,
+        session,
+        intent.payload,
+        intent.payload.roots[0],
+        PASTE_INTENT,
+      );
+      return;
+    }
+    // W2: the payload wants to register records this document has never seen.
+    // The server decides whether this workspace may have them.
+    void pasteWithForeignAssets(deps, intent.payload, foreign);
     return;
   }
   if (refusedFiles) {

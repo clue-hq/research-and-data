@@ -373,12 +373,45 @@ it("suffixes the root name against sibling names — descendants keep theirs", (
   assert.equal(childCollision.nodes[2].name, "Proof stat");
 });
 
-it("keeps a null root name null — nothing to suffix", () => {
+// ── W1: a pasted node keeps a readable layer label ─────────────────────────
+//
+// The Task-3 case this replaces asserted that a null name STAYS null. That was
+// the defect the live walk found: the layer tree labels a node
+// `node.name ?? `${kind} ${id}`` (`sceneQueries.ts::nodeDisplayName`), and
+// agent-authored nodes carry `name: null` with a READABLE id ("headline"), so a
+// copy that kept the null re-minted to `node-a345153a` and the layer read
+// "text node-a345153a". W1's ruling: a null-named copy inherits the SOURCE
+// NODE'S ID — the identity the user already sees in the tree.
+
+it("gives a null-named root the source node's id as its name (W1)", () => {
   const payload = groupPayload();
   const anonymous = structuredClone(payload);
   anonymous.nodes[0].name = null;
   const { nodes } = remintSubtree(anonymous, new Set(), new Set(["Proof point"]));
-  assert.equal(nodes[0].name, null);
+  assert.equal(nodes[0].name, "group_proof");
+});
+
+it("suffixes the inherited id when a sibling already shows it (W1)", () => {
+  const payload = groupPayload();
+  const anonymous = structuredClone(payload);
+  anonymous.nodes[0].name = null;
+  // The sibling set is DISPLAY identities, so a sibling whose own label is
+  // `group_proof` — by name or by id — collides with the inherited one.
+  const { nodes } = remintSubtree(anonymous, new Set(), new Set(["group_proof"]));
+  assert.equal(nodes[0].name, "group_proof_2");
+});
+
+it("gives a null-named DESCENDANT the source id too — never node-XXXXXXXX (W1)", () => {
+  const payload = groupPayload();
+  const anonymous = structuredClone(payload);
+  anonymous.nodes[1].name = null;
+  anonymous.nodes[2].name = null;
+  const { nodes } = remintSubtree(anonymous, new Set(), new Set());
+  assert.equal(nodes[1].name, "ellipse_proof_dot");
+  assert.equal(nodes[2].name, "text_proof_stat");
+  // …and the id it inherited is NOT the minted one: the label is the source
+  // identity, the id is fresh.
+  assert.notEqual(nodes[1].name, nodes[1].id);
 });
 
 it("retries on id collision — with existing ids and within the batch", () => {
@@ -457,6 +490,24 @@ function insertOps(ops: readonly Operation[]): Array<Extract<Operation, { kind: 
     }
     return op;
   });
+}
+
+/** The batch's FIRST `insert_node` — W2 may lead with `upsert_asset` ops, so
+ * the root's insert is no longer always `ops[0]`. */
+function firstInsert(ops: readonly Operation[]): Extract<Operation, { kind: "insert_node" }> {
+  const insert = ops.find((op) => op.kind === "insert_node");
+  if (!insert || insert.kind !== "insert_node") {
+    assert.fail("expected at least one insert_node op");
+  }
+  return insert;
+}
+
+/** The one-image payload — the W2 cases' subject: an image node plus the
+ * record that describes its asset. */
+function imagePayload() {
+  const payload = serializeSubtree(HARVESTED_AD_PAGE, AD_PAGE_ID, "image_hero");
+  assert.ok(payload);
+  return payload;
 }
 
 it("materializes a subtree as one insertNode op per node, parents before children", () => {
@@ -645,33 +696,133 @@ it("leaves absolute_box untouched for an into-layout paste (R8)", () => {
   assert.deepEqual(insertOps(ops)[0].node.absolute_box, { x: 40, y: 60, width: 100, height: 20 });
 });
 
-it("refuses when a clipboard image is unknown to this workspace — naming the count", () => {
-  const imagePayload = serializeSubtree(HARVESTED_AD_PAGE, AD_PAGE_ID, "image_hero");
-  assert.ok(imagePayload);
+// ── W1 + W2 at the materializer ────────────────────────────────────────────
+
+it("collides the pasted root against sibling DISPLAY identities, not names (W1)", () => {
+  // The page's one child is `frame_ad_root`; nulling its name makes its layer
+  // label its ID. A null-named paste of the same subtree inherits that same id
+  // as its label, so the two collide and the copy must be suffixed. Reading
+  // `name` only (the pre-W1 sibling set) sees an EMPTY set here and suffixes
+  // nothing — two layers both reading "frame_ad_root".
+  const scene = clone(HARVESTED_AD_PAGE);
+  scene.nodes["frame_ad_root"].name = null;
+  const payload = serializeSubtree(scene, AD_PAGE_ID, "frame_ad_root");
+  assert.ok(payload);
+  const { ops } = expectOps(
+    materializeClipboardPayload(scene, payload, freehandOntoPage(), new Set()),
+  );
+  assert.equal(firstInsert(ops).node.name, "frame_ad_root_2");
+});
+
+it("carries the referenced asset records verbatim — and only them (W2)", () => {
+  const payload = serializeSubtree(HARVESTED_AD_PAGE, AD_PAGE_ID, "image_hero");
+  assert.ok(payload);
+  assert.deepEqual(
+    payload.assets.map((record) => record.id),
+    ["asset_ing_2b0928ca4f3a3c70"],
+  );
+  // Verbatim: the whole record, not a summary — the target document upserts
+  // exactly what the source document held.
+  assert.deepEqual(
+    payload.assets[0],
+    HARVESTED_AD_PAGE.assets["asset_ing_2b0928ca4f3a3c70"],
+  );
+  // A snapshot, like the nodes: a later edit to the live registry must not
+  // reach into an already-captured payload.
+  const scene = clone(HARVESTED_AD_PAGE);
+  const live = serializeSubtree(scene, AD_PAGE_ID, "image_hero");
+  assert.ok(live);
+  scene.assets["asset_ing_2b0928ca4f3a3c70"].label = "renamed after copy";
+  assert.equal(live.assets[0].label, "payment-bento-background.jpg");
+  // A subtree with no image carries no records at all.
+  const group = serializeSubtree(HARVESTED_AD_PAGE, AD_PAGE_ID, "group_proof");
+  assert.ok(group);
+  assert.deepEqual(group.assets, []);
+});
+
+it("refuses a payload whose assets key is missing, wrong, or incomplete (W2)", () => {
+  const payload = imagePayload();
+  const missingKey: Record<string, unknown> = { ...payload };
+  delete missingKey.assets;
+  assert.equal(validateClipboardPayload(missingKey), null);
+  assert.equal(validateClipboardPayload({ ...payload, assets: {} }), null);
+  assert.equal(validateClipboardPayload({ ...payload, assets: "asset_one" }), null);
+  assert.equal(validateClipboardPayload({ ...payload, assets: [null] }), null);
+  assert.equal(validateClipboardPayload({ ...payload, assets: [{ label: "no id" }] }), null);
+  assert.equal(validateClipboardPayload({ ...payload, assets: [{ id: "" }] }), null);
+  // A payload that NAMES an asset it cannot describe is malformed: the target
+  // document would have nothing to upsert and would paint a blank box.
+  assert.equal(validateClipboardPayload({ ...payload, assets: [] }), null);
+  // …and its own serializer's payload still passes verbatim.
+  assert.deepEqual(validateClipboardPayload(structuredClone(payload)), payload);
+});
+
+it("upserts a foreign document's asset record BEFORE the inserts, in one batch (W2)", () => {
+  // The live-walk defect: `scene.assets` is PER-DOCUMENT, so a same-workspace
+  // cross-document paste found the id unknown and refused. The payload now
+  // carries the record, so the batch registers it and then inserts.
+  const payload = imagePayload();
+  const { ops } = expectOps(
+    materializeClipboardPayload(HARVESTED_AD_PAGE, payload, freehandOntoPage(), new Set()),
+  );
+  assert.deepEqual(
+    ops.map((op) => op.kind),
+    ["upsert_asset", "insert_node"],
+  );
+  assert.deepEqual(
+    (ops[0] as Extract<Operation, { kind: "upsert_asset" }>).asset,
+    payload.assets[0],
+  );
+});
+
+it("upserts NOTHING for a record the target document already holds (W2)", () => {
+  const payload = imagePayload();
+  const { ops } = expectOps(
+    materializeClipboardPayload(
+      HARVESTED_AD_PAGE,
+      payload,
+      freehandOntoPage(),
+      new Set(payload.assetIds),
+    ),
+  );
+  assert.deepEqual(
+    ops.map((op) => op.kind),
+    ["insert_node"],
+  );
+});
+
+it("refuses an assetIds entry the payload cannot describe — naming the count (W2)", () => {
+  // DEFENSIVE ONLY after W2: `validateClipboardPayload` already refuses a
+  // payload that names an asset it carries no record for, so this fires just
+  // for a hand-built one. The SENTENCE changed with the meaning — an id with
+  // no record and no local registration is another workspace's asset, not a
+  // gap in this one.
+  const payload = structuredClone(imagePayload());
+  payload.assets = [];
   assert.equal(
     expectRefusal(
-      materializeClipboardPayload(HARVESTED_AD_PAGE, imagePayload, freehandOntoPage(), new Set()),
+      materializeClipboardPayload(HARVESTED_AD_PAGE, payload, freehandOntoPage(), new Set()),
     ),
-    "1 image in this clipboard isn't available in this workspace",
+    "1 image in this clipboard belongs to another workspace",
   );
-  // …and the same paste goes through once the workspace has the asset.
+  // …and the same paste goes through once the target document holds the asset.
   const allowed = materializeClipboardPayload(
     HARVESTED_AD_PAGE,
-    imagePayload,
+    payload,
     freehandOntoPage(),
-    new Set(imagePayload.assetIds),
+    new Set(payload.assetIds),
   );
   assert.equal(expectOps(allowed).ops.length, 1);
 });
 
-it("pluralizes the missing-image refusal", () => {
+it("pluralizes the foreign-workspace refusal (W2)", () => {
   const payload = structuredClone(groupPayload());
   payload.assetIds = ["asset_one", "asset_two"];
   assert.equal(
     expectRefusal(
       materializeClipboardPayload(HARVESTED_AD_PAGE, payload, freehandOntoPage(), new Set()),
     ),
-    "2 images in this clipboard aren't available in this workspace",
+    "2 images in this clipboard belong to another workspace",
   );
   assert.equal(
     expectRefusal(
@@ -682,7 +833,7 @@ it("pluralizes the missing-image refusal", () => {
         new Set(["asset_one"]),
       ),
     ),
-    "1 image in this clipboard isn't available in this workspace",
+    "1 image in this clipboard belongs to another workspace",
   );
 });
 

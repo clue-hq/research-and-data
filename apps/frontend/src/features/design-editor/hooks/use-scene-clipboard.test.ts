@@ -12,6 +12,7 @@ import {
   serializeSubtree,
   type SceneClipboardPayloadV1,
 } from "../adapter/scene-clipboard";
+import { DESIGN_API_BFF_PREFIX } from "../data/design-bff";
 import type {
   Node,
   Operation,
@@ -534,27 +535,254 @@ it("a refused batch does NOT advance the cascade — the next paste retries at 1
   assert.deepEqual(second, first);
 });
 
-it("a materialization refusal reports the reason and writes nothing", () => {
-  // The hero image's asset is not in THIS scene's registry — the cross-workspace
-  // gate that actually bites.
+// ── W2: a cross-DOCUMENT image paste, and the server's tenancy gate ────────
+//
+// The live-walk defect: `scene.assets` is a PER-DOCUMENT map, so pasting an
+// image copied from ANOTHER document of the SAME workspace found the id
+// unregistered here and refused — wrong outcome and wrong sentence. The
+// payload now carries the record, and whether this workspace may hold those
+// bytes is the SERVER's question: the hook probes each foreign record before
+// it applies anything (founder ruling 3).
+
+/** The one-asset image payload, and a target document whose registry is empty
+ * — the cross-document shape verbatim. */
+const HERO_PAYLOAD = serializeSubtree(HARVESTED_AD_PAGE, AD_PAGE_ID, "image_hero")!;
+
+function emptyAssetScene(): Scene {
   const scene = clone(HARVESTED_AD_PAGE);
   scene.assets = {};
-  const heroPayload = serializeSubtree(HARVESTED_AD_PAGE, AD_PAGE_ID, "image_hero")!;
-  const { applyOps, deps, reportError } = harness({ scene, selectedNodeId: null });
-  const clipboard = stubClipboardData({
-    [SCENE_CLIPBOARD_MIME]: JSON.stringify(heroPayload),
+  return scene;
+}
+
+/** Let every already-scheduled microtask AND macrotask run. The probe path is
+ * async by ruling, so a case that asserts its outcome must wait for it — and a
+ * case that asserts the SYNC path asserts before calling this. */
+async function flush(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function internalPasteEvent(payload: SceneClipboardPayloadV1) {
+  return clipboardEvent(
+    stubClipboardData({ [SCENE_CLIPBOARD_MIME]: JSON.stringify(payload) }).data,
+  );
+}
+
+it("probes each foreign asset, then upserts it at the head of ONE batch (W2)", async () => {
+  const probeAsset = mock.fn<(assetId: string) => Promise<boolean>>(async () => true);
+  const { applyOps, deps } = harness({
+    probeAsset,
+    scene: emptyAssetScene(),
+    selectedNodeId: null,
   });
-  const event = clipboardEvent(clipboard.data);
+  const event = internalPasteEvent(HERO_PAYLOAD);
 
   handleSceneClipboardPaste(deps, event, CANVAS_TARGET);
 
+  // The event is ours before the await — `preventDefault` can never wait.
   assert.equal(event.prevented(), 1);
-  assert.equal(applyOps.mock.callCount(), 0);
-  assert.equal(reportError.mock.callCount(), 1);
-  assert.match(
-    reportError.mock.calls[0].arguments[0],
-    /image in this clipboard isn't available in this workspace/,
+  assert.equal(applyOps.mock.callCount(), 0, "the write must wait for the probe");
+  await flush();
+
+  assert.deepEqual(
+    probeAsset.mock.calls.map((call) => call.arguments[0]),
+    ["asset_ing_2b0928ca4f3a3c70"],
   );
+  assert.equal(applyOps.mock.callCount(), 1);
+  const [operations, intent] = applyOps.mock.calls[0].arguments;
+  assert.equal(intent, "clipboard.paste");
+  assert.deepEqual(
+    operations.map((operation) => (operation as { kind: string }).kind),
+    ["upsert_asset", "insert_node"],
+  );
+  assert.deepEqual(
+    (operations[0] as unknown as { asset: { id: string } }).asset,
+    HERO_PAYLOAD.assets[0],
+  );
+});
+
+it("a probe that says no refuses by count and applies NOTHING (W2)", async () => {
+  const probeAsset = mock.fn<(assetId: string) => Promise<boolean>>(async () => false);
+  const { applyOps, deps, reportError } = harness({
+    probeAsset,
+    scene: emptyAssetScene(),
+    selectedNodeId: null,
+  });
+
+  handleSceneClipboardPaste(deps, internalPasteEvent(HERO_PAYLOAD), CANVAS_TARGET);
+  await flush();
+
+  assert.equal(applyOps.mock.callCount(), 0);
+  assert.deepEqual(reportError.mock.calls.map((call) => call.arguments[0]), [
+    "1 image in this clipboard belongs to another workspace",
+  ]);
+});
+
+it("the refusal counts the FAILED probes, and pluralizes (W2)", async () => {
+  // Two foreign records, both refused by the server's gate.
+  const payload = structuredClone(HERO_PAYLOAD);
+  const second = structuredClone(payload.assets[0]);
+  second.id = "asset_ing_second";
+  payload.assets.push(second);
+  payload.assetIds.push(second.id);
+  const probeAsset = mock.fn<(assetId: string) => Promise<boolean>>(async () => false);
+  const { applyOps, deps, reportError } = harness({
+    probeAsset,
+    scene: emptyAssetScene(),
+    selectedNodeId: null,
+  });
+
+  handleSceneClipboardPaste(deps, internalPasteEvent(payload), CANVAS_TARGET);
+  await flush();
+
+  assert.equal(probeAsset.mock.callCount(), 2);
+  assert.equal(applyOps.mock.callCount(), 0);
+  assert.deepEqual(reportError.mock.calls.map((call) => call.arguments[0]), [
+    "2 images in this clipboard belong to another workspace",
+  ]);
+});
+
+it("one refused probe among several refuses the WHOLE paste (W2)", async () => {
+  const payload = structuredClone(HERO_PAYLOAD);
+  const second = structuredClone(payload.assets[0]);
+  second.id = "asset_ing_second";
+  payload.assets.push(second);
+  payload.assetIds.push(second.id);
+  const probeAsset = mock.fn<(assetId: string) => Promise<boolean>>(
+    async (assetId) => assetId !== "asset_ing_second",
+  );
+  const { applyOps, deps, reportError } = harness({
+    probeAsset,
+    scene: emptyAssetScene(),
+    selectedNodeId: null,
+  });
+
+  handleSceneClipboardPaste(deps, internalPasteEvent(payload), CANVAS_TARGET);
+  await flush();
+
+  assert.equal(applyOps.mock.callCount(), 0);
+  assert.deepEqual(reportError.mock.calls.map((call) => call.arguments[0]), [
+    "1 image in this clipboard belongs to another workspace",
+  ]);
+});
+
+it("a probe that REJECTS is a no — the gate fails closed (W2)", async () => {
+  const probeAsset = mock.fn<(assetId: string) => Promise<boolean>>(async () => {
+    throw new Error("network down");
+  });
+  const { applyOps, deps, reportError } = harness({
+    probeAsset,
+    scene: emptyAssetScene(),
+    selectedNodeId: null,
+  });
+
+  handleSceneClipboardPaste(deps, internalPasteEvent(HERO_PAYLOAD), CANVAS_TARGET);
+  await flush();
+
+  assert.equal(applyOps.mock.callCount(), 0);
+  assert.deepEqual(reportError.mock.calls.map((call) => call.arguments[0]), [
+    "1 image in this clipboard belongs to another workspace",
+  ]);
+});
+
+it("re-checks the write gate AFTER the probe — spend-first (W2)", async () => {
+  // The Task-8 ingestion precedent: the lock can be turned on, or the engine
+  // can go read-only, while the probe travels.
+  const probeAsset = mock.fn<(assetId: string) => Promise<boolean>>(async () => true);
+  const { applyOps, canApply, deps, reportError } = harness({
+    probeAsset,
+    scene: emptyAssetScene(),
+    selectedNodeId: null,
+  });
+  handleSceneClipboardPaste(deps, internalPasteEvent(HERO_PAYLOAD), CANVAS_TARGET);
+  canApply.mock.mockImplementation(() => false);
+  await flush();
+
+  assert.equal(applyOps.mock.callCount(), 0);
+  assert.deepEqual(reportError.mock.calls.map((call) => call.arguments[0]), [
+    "This document isn't accepting edits right now.",
+  ]);
+});
+
+it("plans against the CURRENT scene, not the one the probe started on (W2)", async () => {
+  // `deps` is the live latest-value object the hook re-writes each render, so
+  // the document can gain the asset (or change outright) while the probe is in
+  // flight. Re-reading it means the paste registers only what is STILL missing.
+  const probeAsset = mock.fn<(assetId: string) => Promise<boolean>>(async () => true);
+  const { applyOps, deps } = harness({
+    probeAsset,
+    scene: emptyAssetScene(),
+    selectedNodeId: null,
+  });
+
+  handleSceneClipboardPaste(deps, internalPasteEvent(HERO_PAYLOAD), CANVAS_TARGET);
+  deps.scene = HARVESTED_AD_PAGE;
+  await flush();
+
+  assert.equal(applyOps.mock.callCount(), 1);
+  assert.deepEqual(
+    applyOps.mock.calls[0].arguments[0].map(
+      (operation) => (operation as { kind: string }).kind,
+    ),
+    ["insert_node"],
+  );
+});
+
+it("never probes when the document already holds every record — and stays SYNC (W2)", () => {
+  const probeAsset = mock.fn<(assetId: string) => Promise<boolean>>(async () => true);
+  const { applyOps, deps } = harness({ probeAsset, selectedNodeId: null });
+
+  handleSceneClipboardPaste(deps, internalPasteEvent(HERO_PAYLOAD), CANVAS_TARGET);
+
+  // Asserted with NO await at all: a paste that needs no registration must
+  // still reach the write path inside the event's own turn.
+  assert.equal(applyOps.mock.callCount(), 1);
+  assert.equal(probeAsset.mock.callCount(), 0);
+});
+
+it("an asset-free paste never probes either — and stays SYNC (W2)", () => {
+  const probeAsset = mock.fn<(assetId: string) => Promise<boolean>>(async () => true);
+  const { applyOps, deps } = harness({ probeAsset });
+
+  handleSceneClipboardPaste(deps, internalPasteEvent(HEADLINE_PAYLOAD), CANVAS_TARGET);
+
+  assert.equal(applyOps.mock.callCount(), 1);
+  assert.equal(probeAsset.mock.callCount(), 0);
+});
+
+it("⌘D never probes — same document, every asset already present (W2)", () => {
+  const probeAsset = mock.fn<(assetId: string) => Promise<boolean>>(async () => true);
+  const { applyOps, deps } = harness({ probeAsset, selectedNodeId: "image_hero" });
+
+  handleSceneClipboardDuplicate(deps, duplicateEvent(), CANVAS_TARGET);
+
+  assert.equal(applyOps.mock.callCount(), 1);
+  assert.equal(probeAsset.mock.callCount(), 0);
+});
+
+it("the DEFAULT probe asks the design BFF for the asset (W2)", async () => {
+  const responses: Array<{ ok: boolean }> = [{ ok: true }];
+  const fetchSpy = mock.fn<(input: string) => Promise<{ ok: boolean }>>(
+    async () => responses.shift() ?? { ok: false },
+  );
+  const original = (globalThis as { fetch?: unknown }).fetch;
+  (globalThis as { fetch?: unknown }).fetch = fetchSpy;
+  try {
+    // No `probeAsset` injected: this is the production default.
+    const { applyOps, deps } = harness({
+      scene: emptyAssetScene(),
+      selectedNodeId: null,
+    });
+    handleSceneClipboardPaste(deps, internalPasteEvent(HERO_PAYLOAD), CANVAS_TARGET);
+    await flush();
+
+    assert.deepEqual(
+      fetchSpy.mock.calls.map((call) => call.arguments[0]),
+      [`${DESIGN_API_BFF_PREFIX}/assets/asset_ing_2b0928ca4f3a3c70`],
+    );
+    assert.equal(applyOps.mock.callCount(), 1);
+  } finally {
+    (globalThis as { fetch?: unknown }).fetch = original;
+  }
 });
 
 it("R11: an off-page selection never drags the paste onto its page", () => {
