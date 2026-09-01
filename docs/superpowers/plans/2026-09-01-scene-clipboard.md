@@ -370,11 +370,14 @@ later — WebKit/Firefox support is not there yet, per the research note).
   {kind:"svg-markup"; svg: string} | {kind:"plain-text"; text: string} | {kind:"none"}`,
   `ALLOWED_IMAGE_MIMES = ["image/png","image/jpeg","image/webp","image/svg+xml"]`.
 
-- [ ] **Step 1: failing tests** — priority matrix: internal mime beats envelope beats files beats
+- [x] **Step 1: failing tests** — priority matrix: internal mime beats envelope beats files beats
   svg-text beats plain; envelope decode failure falls THROUGH to the next class (never dead-ends);
   file list filtered to allowlist (a .gif among a .png → only the png, refusal note for later);
   `<?xml…?><svg` and BOM-prefixed `<svg` both classify as svg-markup; whitespace-only text → none.
-- [ ] **Steps 2–4** — **Step 5: commit** `feat(design-editor): paste classifier with fall-through priority`
+- [x] **Steps 2–4** — **Step 5: commit** `feat(design-editor): paste classifier with fall-through priority`
+  (`cbfeb38f7` + fix round `08ba8471c` pinning envelope-beats-files, mutation-verified. 27/27.
+  Intent extended with `rejected: string[]` per orchestrator ruling so Task 7 refuses dropped
+  files loudly.)
 
 ### Task 7: Copy/cut/paste/duplicate wiring (`use-scene-clipboard`)
 
@@ -394,7 +397,7 @@ later — WebKit/Firefox support is not there yet, per the research note).
   §7); exports pure helpers `shouldOwnClipboardEvent(target, editing, armed)` and
   `buildCopyRepresentations(payload) → {internal, html, plain}` for testing.
 
-- [ ] **Step 1: failing tests** — pure halves: `shouldOwnClipboardEvent` false for typing targets
+- [x] **Step 1: failing tests** — pure halves: `shouldOwnClipboardEvent` false for typing targets
   /ungated docs/view mode; `buildCopyRepresentations` emits all three with readable plain text;
   cut composes copy + `deleteEdit(root)` only when `canApply()`; ⌘D produces a cascade-placement
   materialization WITHOUT touching any clipboard API (spy); paste with internal intent produces
@@ -402,7 +405,13 @@ later — WebKit/Firefox support is not there yet, per the research note).
   messages from §Error handling; jsdom ClipboardEvent round-trip for copy→paste where jsdom
   permits (skip-with-comment where its DataTransfer is incomplete — the web-toolbar tests set the
   precedent).
-- [ ] **Steps 2–4** — **Step 5: commit** `feat(design-editor): scene clipboard events — copy/cut/paste/duplicate`
+- [x] **Steps 2–4** — **Step 5: commit** `feat(design-editor): scene clipboard events — copy/cut/paste/duplicate`
+  (`097350bf4` + fix round `c935cb814`. SEAM DRIFT RECORDED (SDD ruling R16): the hook is composed
+  in `use-scene-editing-session.ts` beside `useSceneArrange` — NOT `scene-artifact-canvas.tsx` —
+  per the AD4.A precedent (sessions compose handler hooks; arrange registers its own window
+  listeners). Fix round closed the files-only R9 hole, pinned read-only-vs-allowlist precedence,
+  and made copy/cut yield to a live DOM text selection. Suite 39 (38+1 jsdom skip); full
+  frontend `npm test` 2396/2395/0.)
 
 ### Task 8: External image ingestion (paste-files + drop + SVG markup)
 
