@@ -1,3 +1,5 @@
+"use client";
+
 import type {
   ChatShellArtifactKind,
   ChatShellOpenArtifact,
@@ -31,11 +33,12 @@ import type {
   RichTextDocument,
   WebTheme,
 } from "@/features/design-editor/engine/webDocuments";
-import type { RefObject } from "react";
+import { useState, type RefObject } from "react";
 import { ProjectGallery } from "@/features/gallery/components/project-gallery";
 import type { GalleryArtifact } from "@/features/gallery/model/project-gallery";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import type { EditorShellSurface } from "../hooks/use-editor-shell-controller";
+import type { ArtifactPreviewDevice } from "../hooks/use-artifact-toolbar-controller";
 import { ArtifactHeader } from "./artifact-header";
 import { ArtifactTabs } from "./artifact-tabs";
 import styles from "./chat-shell.module.css";
@@ -219,6 +222,21 @@ export function ArtifactStage({
   undoDisabled?: boolean;
 }) {
   const showingArtifact = surface === "artifact" && artifactKind !== null;
+  // The header's device menu, made real (ported from the source dev shell's
+  // width chips, WebEditorApp.tsx `WidthMode`): the choice pins the web
+  // canvas to one of the engine's canonical viewport layers, so the page's
+  // actual md:/lg: breakpoints kick in. Owned HERE — the stage renders both
+  // the menu (header) and the viewport it drives — and per-stage-session
+  // only: presentation state, nothing persisted.
+  const [previewDevice, setPreviewDevice] =
+    useState<ArtifactPreviewDevice>("Desktop");
+  const webCanvasClass = [
+    styles.webCanvas,
+    previewDevice === "Tablet" ? styles.webCanvasTablet : "",
+    previewDevice === "Mobile" ? styles.webCanvasMobile : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   // AD2.10: a mounted ad canvas owns the whole stage as its viewport; the
   // designed empty state keeps the centred card.
   const adStageClass = activeDocumentId
@@ -243,10 +261,12 @@ export function ArtifactStage({
       {showingArtifact ? (
         <>
           <ArtifactHeader
+            device={previewDevice}
             editing={editing}
             exportPreview={exportPreview}
             exportStatus={exportStatus}
             kind={artifactKind}
+            onDeviceChange={setPreviewDevice}
             onEdit={onToggleEditing}
             onRename={onRenameArtifact}
             onRequestExportPreview={onRequestExportPreview}
@@ -262,7 +282,7 @@ export function ArtifactStage({
                 aria-label={
                   activeDocumentId ? "Web output canvas" : "Empty web output canvas"
                 }
-                className={styles.webCanvas}
+                className={webCanvasClass}
               >
                 {activeDocumentId ? (
                   <WebArtifactCanvas

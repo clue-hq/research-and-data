@@ -1748,6 +1748,34 @@
 }
 
 /*
+ * The header's device menu, made real (ported from the source dev shell's
+ * width chips — web.css `.web-preview-holder`): Tablet/Mobile pin the canvas
+ * to the engine's canonical viewport layers (768px is md:, 375px is the base
+ * layer — lumen-web LUMW0203); Desktop keeps the fluid full-bleed above.
+ * Auto side-margins center the pinned canvas when there is room and collapse
+ * to 0 (left-align + scroll) when it overflows the stage, which already
+ * scrolls (`.outputStage`). The px↔px width change animates; entering/leaving
+ * the fluid (percentage) desktop leg snaps, which is fine.
+ */
+.webCanvasTablet,
+.webCanvasMobile {
+  margin: 0 auto;
+  overflow: hidden;
+  border: 0.5px solid var(--chat-shell-subtle-border);
+  border-radius: 2px;
+  box-shadow: var(--clue-ds-shadow-card-subtle);
+  transition: width 200ms ease;
+}
+
+.webCanvasTablet {
+  width: 768px;
+}
+
+.webCanvasMobile {
+  width: 375px;
+}
+
+/*
  * AD2.10 (founder ruling, 2026-08-20): a MOUNTED ad canvas is an infinite
  * workspace, so its stage is the viewport — no centring frame, no padding
  * inset, and no scrollbars (the canvas pans itself). `.imageOutputStage` above
