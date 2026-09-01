@@ -10,7 +10,7 @@ from py_lumen_obs import get_logger, log_span
 
 from ..paths import to_virtual
 from ..workspace import workspace_root
-from .substrate import LumenDesignTools
+from .substrate import LumenDesignTools, checkpoint_acceptance
 from .view import _latest_preview_png
 
 logger = get_logger("lumen_agent.tools.render")
@@ -109,11 +109,11 @@ def _render_preview_text(
         lines.append(unchanged)
     # P0.4 checkpoint commit. THIS is the round-acceptance seam. The
     # ORCHESTRATOR runs render_preview exactly once per round at its step-5
-    # verification — so a render that produced a validated raster with no
-    # validation errors is the one moment Python can observe "an authoring round
-    # finished and its scene is real". The export itself already refuses a scene
-    # whose token paints are unresolved, so reaching here also means preflight
-    # ran after the last mutation. Best-effort by construction:
+    # verification — so a render that produced a validated raster is the one
+    # moment Python can observe "an authoring round finished and its scene is
+    # real". The export itself already refuses a scene whose token paints are
+    # unresolved, so reaching here also means preflight ran after the last
+    # mutation. Best-effort by construction:
     # `checkpoint_scene` swallows and records everything, so the render summary
     # the model reads is unchanged whether or not the document moved.
     #
@@ -137,7 +137,19 @@ def _render_preview_text(
     #   follows the author's report. The author's renders are pure looking —
     #   they write their PNG into the round directory as always (custody
     #   unchanged) and touch nothing durable.
-    if checkpoint and status == "ok" and not validation_errors and png_path is not None:
+    #
+    # TASK 4b (controller ruling 2026-09-02) — the predicate is `accepted`, not
+    # `reviewer.status == "ok"`. The reviewer verdict folds the canonical SVG in,
+    # and that export refuses to embed WOFF2 brand faces every single round while
+    # the critic PNG renders clean; keying on it meant ~71% of stored brand fonts
+    # never checkpointed at all. `checkpoint_acceptance` reads the two summaries
+    # directly and excuses exactly that one export-format refusal. The reviewer
+    # lines above are untouched — the model still reads status=error and both
+    # errors verbatim, because the SVG really did fail.
+    acceptance = checkpoint_acceptance(
+        payload.get("canonical") or {}, payload.get("critic") or {}
+    )
+    if checkpoint and acceptance.accepted and png_path is not None:
         tools.checkpoint_scene("render_preview")
 
     # The round-boundary headroom report. Last line, because it is what the

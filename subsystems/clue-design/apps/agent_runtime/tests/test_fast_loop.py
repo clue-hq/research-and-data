@@ -290,13 +290,31 @@ def test_author_render_tool_does_not_checkpoint_but_the_orchestrators_does(
     monkeypatch.setattr(
         tools,
         "export_preview_bundle",
+        # The full bundle shape: since task 4b the checkpoint predicate reads the
+        # canonical/critic summaries, not the folded reviewer verdict.
         lambda **_: json.dumps(
             {
+                "canonical": {
+                    "status": "ok",
+                    "artifacts": [{"format": "svg", "validation_errors": []}],
+                    "validation_errors": [],
+                },
+                "critic": {
+                    "status": "ok",
+                    "artifacts": [
+                        {
+                            "format": "png",
+                            "path": str(png),
+                            "validation_errors": [],
+                        }
+                    ],
+                    "validation_errors": [],
+                },
                 "reviewer": {
                     "status": "ok",
                     "validation_errors": [],
                     "artifacts": [{"format": "png", "path": str(png)}],
-                }
+                },
             }
         ),
     )

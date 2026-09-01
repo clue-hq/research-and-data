@@ -7,6 +7,7 @@ import inspect
 import io
 import json
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -5053,24 +5054,103 @@ def combined_preview_artifacts(
     return canonical_artifacts + list(critic_summary.get("artifacts", []))
 
 
+def _summary_status_error(label: str, summary: JsonObject) -> Optional[str]:
+    """The one error a summary's STATUS contributes, or None when it is ok.
+
+    Split out of `bundle_validation_errors` so `checkpoint_acceptance` can tell a
+    summary's status restatement apart from the errors that actually name a
+    fault; the reviewer's error list is unchanged (status line first, then the
+    named errors, canonical before critic)."""
+    if summary.get("status") != ToolStatus.ok.value:
+        return f"{label} preview status is {summary.get('status')}"
+    return None
+
+
+def _summary_named_errors(label: str, summary: JsonObject) -> list[str]:
+    """Every error a summary NAMES — its own, then its artifacts'."""
+    errors: list[str] = [
+        f"{label}: {error}" for error in summary.get("validation_errors", [])
+    ]
+    for artifact in summary.get("artifacts", []):
+        errors.extend(
+            f"{label} {artifact.get('format')}: {error}"
+            for error in artifact.get("validation_errors", [])
+        )
+    return errors
+
+
 def bundle_validation_errors(
     canonical_summary: JsonObject,
     critic_summary: JsonObject,
 ) -> list[str]:
     errors: list[str] = []
     for label, summary in (("canonical", canonical_summary), ("critic", critic_summary)):
-        if summary.get("status") != ToolStatus.ok.value:
-            errors.append(f"{label} preview status is {summary.get('status')}")
-        errors.extend(
-            f"{label}: {error}"
-            for error in summary.get("validation_errors", [])
-        )
-        for artifact in summary.get("artifacts", []):
-            errors.extend(
-                f"{label} {artifact.get('format')}: {error}"
-                for error in artifact.get("validation_errors", [])
-            )
+        status_error = _summary_status_error(label, summary)
+        if status_error is not None:
+            errors.append(status_error)
+        errors.extend(_summary_named_errors(label, summary))
     return errors
+
+
+# The lumen-export refusal (crates/lumen-export/src/svg.rs) raised when a brand
+# face cannot be license-checked for embedding — WOFF2 containers, which are 367
+# of the 517 stored brand faces. It arrives as an `ExportError` whose structured
+# `code` the Python export summary does not carry (`export_preview` records only
+# `CoreError.message`), so this leading marker — the constant half of the
+# formatted message, before the page id — is the stable key.
+SVG_FONT_EMBEDDING_REFUSAL_MARKER = "SVG font embedding failed"
+
+
+@dataclass(frozen=True)
+class CheckpointAcceptance:
+    """Was this round ACCEPTED — i.e. is its scene worth making durable?"""
+
+    accepted: bool
+    blocking_errors: list[str]
+
+
+def checkpoint_acceptance(
+    canonical_summary: JsonObject,
+    critic_summary: JsonObject,
+) -> CheckpointAcceptance:
+    """The P0.4 checkpoint predicate: round acceptance, not export perfection.
+
+    Deliberately NOT `reviewer.status == "ok"` (controller ruling 2026-09-02).
+    The reviewer verdict folds BOTH exports together, and the canonical SVG
+    export refuses to embed a font container whose fsType it cannot read — every
+    round, for every WOFF2 brand — while the critic PNG renders clean. That is an
+    export-FORMAT limitation, not a rejected design, and gating checkpoints on it
+    meant no WOFF2-brand run ever persisted a mid-run version.
+
+    So the RASTER is the acceptance proof: the critic summary must be clean, and
+    a canonical failure is excused only when every error it names is that font-
+    embedding refusal. Any other canonical error — an unparseable SVG root, an
+    empty artifact, a failure that names nothing at all — still blocks, and says
+    so in `blocking_errors`.
+
+    `reviewer.status` / `reviewer.validation_errors` are untouched by this: the
+    agent loop reads them, and a round whose SVG did not embed its fonts should
+    still tell the orchestrator so."""
+    blocking: list[str] = []
+
+    critic_status_error = _summary_status_error("critic", critic_summary)
+    if critic_status_error is not None:
+        blocking.append(critic_status_error)
+    blocking.extend(_summary_named_errors("critic", critic_summary))
+
+    canonical_errors = _summary_named_errors("canonical", canonical_summary)
+    blocking.extend(
+        error
+        for error in canonical_errors
+        if SVG_FONT_EMBEDDING_REFUSAL_MARKER not in error
+    )
+    canonical_status_error = _summary_status_error("canonical", canonical_summary)
+    if canonical_status_error is not None and not canonical_errors:
+        # A canonical failure that names nothing cannot be classified as the
+        # embedding refusal, so it is not excused.
+        blocking.append(canonical_status_error)
+
+    return CheckpointAcceptance(accepted=not blocking, blocking_errors=blocking)
 
 
 def reviewer_bundle_status(
