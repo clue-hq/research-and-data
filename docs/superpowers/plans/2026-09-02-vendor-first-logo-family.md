@@ -16,6 +16,7 @@ Ledger: `.superpowers/sdd/2026-09-02-vendor-first-logo-family/progress.md`. Proc
 
 - Task 1 — DONE (`0cf64d654`)
 - Task 2 — DONE (`5a6e05d78`)
+- Task 3 — DONE (`e8a5efe63`)
 
 ## Global Constraints
 
@@ -507,6 +508,8 @@ format pick. Theme inversion table declared (mapping lands next)."
 
 ### Task 3: Vendor asset → cell mapping (the inversion, the filters, the renderability gate)
 
+**Status: DONE 2026-09-02 — commit `e8a5efe63`; controller first-hand review clean (raster null-theme path probed through Pillow both directions). Deferred note: undecodable rasters fill their cell and are caught at `core.ingest_asset`, not here — final review to triage.**
+
 **Files:**
 - Modify: `subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py`
 - Test: `subsystems/clue-design/apps/api/tests/test_logo_vendor.py` (extend)
@@ -523,7 +526,7 @@ Mapping rules (all pinned by tests):
 5. A failed download → note, cell stays empty (the ladder may backfill later).
 6. SVG bytes failing `svg_is_renderable` → note, cell stays empty. Raster `content_type` falls back from the format's `format` field via `_FORMAT_MIME`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 def _mini_svg(fill: str = "#111111") -> bytes:
@@ -603,11 +606,11 @@ def test_map_vendor_assets_first_asset_wins_per_cell():
     assert cells["light_lockup"].origin_url == "one"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Expected: FAIL — `ImportError: cannot import name 'map_vendor_assets_to_cells'`.
 
-- [ ] **Step 3: Implement `map_vendor_assets_to_cells`**
+- [x] **Step 3: Implement `map_vendor_assets_to_cells`**
 
 Append to `logo_vendor.py`:
 
@@ -696,11 +699,11 @@ def map_vendor_assets_to_cells(assets, download):
     return cells, notes
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Expected: all PASS. If `_classify_null_theme` misbehaves, check that `LadderCandidate(url="", fmt="svg", body=...)` satisfies `analyze_appearance` (it reads only `fmt` and `body` for SVGs — see `logo_ladder.py:1377-1412`).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py subsystems/clue-design/apps/api/tests/test_logo_vendor.py
