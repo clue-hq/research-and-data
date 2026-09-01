@@ -254,15 +254,16 @@ later — WebKit/Firefox support is not there yet, per the research note).
   (null when the root id resolves to no node), `extractReadableText(nodes: Node[]): string`
   (text-node contents, document order, newline-joined).
 
-- [ ] **Step 1: failing tests** — root+descendants closure (a group with two children serializes 3
+- [x] **Step 1: failing tests** — root+descendants closure (a group with two children serializes 3
   nodes, `roots:[groupId]`); an ImageNode contributes its `asset_id` to `assetIds` exactly once;
   a TextNode with spans serializes spans byte-identically; `readableText` joins two text nodes in
   document order; unknown root → null; bounds equal the root's page-space box (use the fixture
   `engine/scene/__tests__/__fixtures__/minimal_scene.json` the rich-text tests already use).
-- [ ] **Step 2: run — expect FAIL** (`npx vitest run src/features/design-editor/adapter/scene-clipboard.test.ts`)
-- [ ] **Step 3: implement** (pure functions; closure via iterative stack over `children`)
-- [ ] **Step 4: run — expect PASS**
-- [ ] **Step 5: commit** `feat(design-editor): scene clipboard DTO + subtree serializer`
+- [x] **Step 2: run — expect FAIL** (ran `npx tsx --test …/scene-clipboard.test.ts` — the app's real
+  runner per `package.json` "test"; the vitest name here was a plan drift. FAILED as expected.)
+- [x] **Step 3: implement** (pure functions; closure via iterative stack over `children`)
+- [x] **Step 4: run — expect PASS** (12/12 green; eslint clean)
+- [x] **Step 5: commit** `feat(design-editor): scene clipboard DTO + subtree serializer` (`e60891231`)
 
 ### Task 2: Envelope codec (`encodeClipboardHtml` / `decodeClipboardHtml`)
 
