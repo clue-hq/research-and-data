@@ -184,3 +184,11 @@ def test_put_with_nothing_prepared_writes_nothing(design_blob_store: DesignBlobS
     empty.cells = {}
     cache.put("https://acme.com/", empty)
     assert cache.get("https://acme.com/") is None
+
+
+def test_agent_runtime_config_carries_the_cache_and_client_id_fields():
+    from lumen_agent.config import AgentRuntimeConfig
+    import dataclasses
+
+    names = {f.name for f in dataclasses.fields(AgentRuntimeConfig)}
+    assert "logo_family_cache" in names and "brandfetch_client_id" in names

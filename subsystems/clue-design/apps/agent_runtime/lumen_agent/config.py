@@ -185,6 +185,14 @@ class AgentRuntimeConfig:
     # personalize every page with the target's real mark. None means this turn cannot bind; the
     # tool says so and refuses, and an empty account logo stays CORRECT.
     account_logo_binder: Any | None = None
+    # The durable target-logo family cache (founder decision #4, 2026-08-31):
+    # `lumen_api.agent_logo_family_cache.DurableLogoFamilyCache`, supplied by the
+    # API worker at turn composition like `account_logo_binder`. None -> fetch_logo
+    # simply runs the two rungs every call (correct, just slower/costlier).
+    logo_family_cache: Any | None = None
+    # The PUBLIC Brandfetch Logo-API client id, for the web lane's hotlink prompt
+    # guidance (decorative third-party logos). None/blank -> guidance omitted.
+    brandfetch_client_id: str | None = None
     # Brief-clarification headless/eval mode (LUMEN_AGENT_AUTO_DEFAULTS=1). When
     # true, the harness does NOT register `request_clarification` on the
     # orchestrator: it applies the skill's defaults and ledgers each assumption
@@ -266,6 +274,7 @@ class AgentRuntimeConfig:
             agent_model_orchestrator=settings.lumen_agent_model_orchestrator,
             agent_model_author=settings.lumen_agent_model_author,
             agent_model_reviewer=settings.lumen_agent_model_reviewer,
+            brandfetch_client_id=(settings.brandfetch_client_id.strip() or None),
             auto_defaults=settings.lumen_agent_auto_defaults,
             fast_loop=settings.lumen_agent_fast_loop,
             scene_reviewer=settings.lumen_agent_scene_reviewer,
