@@ -504,14 +504,13 @@ later — WebKit/Firefox support is not there yet, per the research note).
   `components/scene-artifact-canvas.tsx`'s existing rung-C coverage (same suites the rich-text
   lane used — `adapter/scene-text-edit.test.ts` and the session tests).
 
-- [ ] **Step 1: write the pinning tests** — `insertFromPaste` beforeinput inside a styled range
+- [x] **Step 1: write the pinning tests** — `insertFromPaste` beforeinput inside a styled range
   grows/remaps spans exactly as `insertText` does (the session transition treats them
   identically); paste replacing a cross-span selection normalizes per the span algebra; a paste
   while the session is open never reaches the canvas clipboard handler (guard test).
-- [ ] **Step 2: run** — expected PASS (machinery shipped in the rich-text lane). If any FAILS,
-  STOP: that is a real rich-text defect — fix it in `adapter/scene-text-session.ts` under its own
-  red-green cycle before proceeding, and record it in the close-out.
-- [ ] **Step 3: commit** `test(design-editor): pin text-session paste span remap`
+- [x] **Step 2: run** — expected PASS (machinery shipped in the rich-text lane). PASSED on first run
+  (4 pins + 1 positive control; each mutation-verified to be falsifiable). No rich-text defect.
+- [x] **Step 3: commit** `test(design-editor): pin text-session paste span remap` (`a043dded4`)
 
 ### Task 12: Rung close — frontend gate + live walk
 
