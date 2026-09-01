@@ -14,6 +14,7 @@ import {
   encodeClipboardHtml,
   extractReadableText,
   materializeClipboardPayload,
+  rasterToPngBlob,
   remintSubtree,
   serializeSubtree,
   validateClipboardPayload,
@@ -729,4 +730,37 @@ it("mutates neither the payload, the placement, nor the target scene", () => {
   assert.equal(JSON.stringify(payload), payloadBefore);
   assert.equal(JSON.stringify(placement), placementBefore);
   assert.equal(JSON.stringify(HARVESTED_AD_PAGE), sceneBefore);
+});
+
+// ── Task 10: rasterToPngBlob ───────────────────────────────────────────────
+
+/**
+ * The export rasterizer — the only new impure function on this lane, and the
+ * reason it is here rather than in the hook: it is a pure Blob→Blob transform
+ * that the copy path injects, so a browser that cannot do it fails ONE
+ * representation instead of the copy.
+ *
+ * WHAT THIS RUNNER CAN AND CANNOT PIN. `tsx --test` has no canvas and no image
+ * decoder — jsdom's `<img>` never loads bytes and its `<canvas>` has no 2D
+ * context — so the jpeg/webp/svg branches (decode → drawImage → toBlob) have
+ * no honest offline case at all. What IS pinned is every branch that decides
+ * WITHOUT decoding: the png passthrough (which must not even look for a DOM,
+ * because a png needs no rasterizing) and the no-DOM refusal (which must
+ * REJECT rather than resolve some placeholder). The decode branches are
+ * verified in a browser — the web-toolbar precedent for a DOM-only path.
+ */
+
+it("rasterToPngBlob passes a png through untouched — no decode, no DOM", async () => {
+  const png = new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" });
+  // Deliberately asserted with `document` absent from this runner: a png that
+  // needed a canvas would fail in exactly the environment that has none.
+  assert.equal(typeof (globalThis as { document?: unknown }).document, "undefined");
+  assert.equal(await rasterToPngBlob(png, "image/png"), png);
+});
+
+it("rasterToPngBlob REJECTS without a DOM instead of resolving a placeholder", async () => {
+  const jpeg = new Blob([new Uint8Array([255, 216, 255])], { type: "image/jpeg" });
+  for (const mime of ["image/jpeg", "image/webp", "image/svg+xml"]) {
+    await assert.rejects(rasterToPngBlob(jpeg, mime));
+  }
 });

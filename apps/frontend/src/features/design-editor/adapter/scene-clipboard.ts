@@ -578,3 +578,137 @@ function base64ToUtf8(encoded: string): string | null {
     return null;
   }
 }
+
+// ── Task 10: outbound png for image-node copies ────────────────────────────
+
+/**
+ * The side an SVG with no declared size is rasterized at — the image cache's
+ * own fallback (`imageCache.ts::DEFAULT_SVG_SIDE`), restated rather than
+ * imported so this export path never reaches into the CanvasKit layer.
+ */
+const EXPORT_SVG_FALLBACK_SIDE = 512;
+
+/**
+ * Asset bytes → an `image/png` blob, for the ONE representation an OS
+ * clipboard understands as a picture (ruling 4 / R32).
+ *
+ * Three routes, and no fourth answer:
+ *   `image/png` — the bytes ARE the representation; resolved as-is, without
+ *   so much as looking for a DOM.
+ *   raster (`image/jpeg`, `image/webp`, anything else the browser can decode)
+ *   — `createImageBitmap` where it exists, else an `<img>`, then a 2D canvas
+ *   at the decoded size and `toBlob("image/png")`.
+ *   `image/svg+xml` — the image cache's Image-element route verbatim (object
+ *   URL → `<img>` → natural size, {@link EXPORT_SVG_FALLBACK_SIDE} when the
+ *   markup declares none). Deliberately NOT `createImageBitmap(svgBlob)`,
+ *   which is unsupported or flaky across engines while `<img src="x.svg">` is
+ *   how every browser already draws one.
+ *
+ * REJECTS, NEVER PLACEHOLDERS. No DOM, a decode that fails, a missing 2D
+ * context, a `toBlob` that yields null — each throws. The copy path treats
+ * that as "this copy carries no picture", which is honest; a grey rectangle
+ * on the user's clipboard would not be.
+ */
+export async function rasterToPngBlob(source: Blob, mime: string): Promise<Blob> {
+  if (mime === "image/png") {
+    return source;
+  }
+  if (typeof document === "undefined") {
+    throw new Error("png export needs a DOM to rasterize with");
+  }
+  const decoded =
+    mime === "image/svg+xml"
+      ? await decodeSvgForExport(source)
+      : await decodeRasterForExport(source);
+  try {
+    return await drawToPngBlob(decoded.image, decoded.width, decoded.height);
+  } finally {
+    decoded.release();
+  }
+}
+
+/** A decoded image plus the size to draw it at, and the one call that frees
+ * whatever the decode allocated (an object URL, a bitmap). */
+interface DecodedExportImage {
+  height: number;
+  image: CanvasImageSource;
+  release: () => void;
+  width: number;
+}
+
+async function decodeSvgForExport(source: Blob): Promise<DecodedExportImage> {
+  const url = URL.createObjectURL(source);
+  try {
+    const image = document.createElement("img");
+    image.src = url;
+    await image.decode();
+    // A viewBox-only SVG reports 0×0 in some engines. 512 is a size, not a
+    // guess about the artwork: an SVG scales, so any positive side renders it
+    // faithfully — and the alternative (refusing the copy) is worse.
+    return {
+      height: image.naturalHeight > 0 ? image.naturalHeight : EXPORT_SVG_FALLBACK_SIDE,
+      image,
+      release: () => URL.revokeObjectURL(url),
+      width: image.naturalWidth > 0 ? image.naturalWidth : EXPORT_SVG_FALLBACK_SIDE,
+    };
+  } catch (error) {
+    URL.revokeObjectURL(url);
+    throw error;
+  }
+}
+
+async function decodeRasterForExport(source: Blob): Promise<DecodedExportImage> {
+  if (typeof createImageBitmap === "function") {
+    const bitmap = await createImageBitmap(source);
+    return {
+      height: bitmap.height,
+      image: bitmap,
+      release: () => bitmap.close(),
+      width: bitmap.width,
+    };
+  }
+  const url = URL.createObjectURL(source);
+  try {
+    const image = document.createElement("img");
+    image.src = url;
+    await image.decode();
+    if (image.naturalWidth <= 0 || image.naturalHeight <= 0) {
+      // Unlike an SVG, a raster with no intrinsic size did not decode — there
+      // is nothing to fall back TO.
+      throw new Error("decoded image has no intrinsic size");
+    }
+    return {
+      height: image.naturalHeight,
+      image,
+      release: () => URL.revokeObjectURL(url),
+      width: image.naturalWidth,
+    };
+  } catch (error) {
+    URL.revokeObjectURL(url);
+    throw error;
+  }
+}
+
+async function drawToPngBlob(
+  image: CanvasImageSource,
+  width: number,
+  height: number,
+): Promise<Blob> {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width));
+  canvas.height = Math.max(1, Math.round(height));
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("2d context unavailable for png export");
+  }
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+      } else {
+        reject(new Error("canvas produced no png"));
+      }
+    }, "image/png");
+  });
+}

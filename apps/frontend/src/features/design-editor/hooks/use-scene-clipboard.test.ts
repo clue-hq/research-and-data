@@ -62,8 +62,13 @@ const DOM = new JSDOM("");
 function stubClipboardData(
   seed: Record<string, string> = {},
   files: File[] = [],
+  /** Task 10: the SHARED call log a case passes in when it needs to prove the
+   * sync `setData` trio ran BEFORE the async clipboard write was issued
+   * (R31's baseline-first rule is an ordering claim, so it needs an order). */
+  order: string[] = [],
 ): {
   data: DataTransfer;
+  order: string[];
   reads: string[];
   written: Map<string, string>;
 } {
@@ -77,11 +82,12 @@ function stubClipboardData(
       return held.get(type) ?? "";
     },
     setData(type: string, value: string): void {
+      order.push(`setData:${type}`);
       written.set(type, value);
       held.set(type, value);
     },
   };
-  return { data: data as unknown as DataTransfer, reads, written };
+  return { data: data as unknown as DataTransfer, order, reads, written };
 }
 
 function clipboardEvent(data: DataTransfer | null): {
@@ -1079,4 +1085,300 @@ it("⌘D with nothing selected is a non-event past the preventDefault", () => {
   assert.equal(event.prevented(), 1);
   assert.equal(applyOps.mock.callCount(), 0);
   assert.equal(reportError.mock.callCount(), 0);
+});
+
+// ── Task 10: the outbound image/png representation (ruling 4, R31–R35) ─────
+
+/**
+ * What Task 10 adds to a copy, and the ONE thing it may never cost.
+ *
+ * A copied IMAGE node should paste into Preview or Slack as a picture, which
+ * an OS clipboard only understands as `image/png` — and `image/png` can only
+ * be written through the async `navigator.clipboard.write`, never through the
+ * event's synchronous `setData`. So the copy path does BOTH: the shipped sync
+ * trio first and unchanged (the internal payload is never at risk), then one
+ * best-effort async write whose every failure is swallowed.
+ *
+ * The seams below (`writeClipboardItems`, `fetchAssetBytes`, `rasterToPng`)
+ * ride the deps object with production defaults — jsdom hosts neither
+ * `ClipboardItem` nor a canvas that can decode an image, so a test injects
+ * fakes rather than asserting against a browser this runner does not have.
+ */
+
+/** The harvested ad with its one image asset re-typed, so a case can say
+ * "this copy is of a png / a webp / an svg" without a second fixture. */
+function sceneWithImageMime(
+  mime: string | null,
+  options: { digest?: boolean; vector?: boolean } = {},
+): Scene {
+  const scene = clone(HARVESTED_AD_PAGE);
+  const record = scene.assets.asset_ing_2b0928ca4f3a3c70;
+  record.media = { ...record.media, mime_type: mime };
+  if (options.digest === false) {
+    record.media = { ...record.media, digest: null };
+  }
+  if (options.vector) {
+    record.vector = {
+      has_transparency: true,
+      height: 64,
+      path_data: null,
+      view_box: [0, 0, 64, 64],
+      width: 64,
+    };
+    record.raster = null;
+  }
+  return scene;
+}
+
+/** A `writeClipboardItems` fake: it records the ONE batch it is handed and
+ * either resolves (the browser took the item) or rejects (denied permission,
+ * an unsupported promise value, no user activation — R31's swallow). */
+function clipboardWriterFake(
+  order: string[],
+  outcome: "resolve" | "reject" = "resolve",
+) {
+  const batches: Array<Record<string, Blob | Promise<Blob>>> = [];
+  const write = mock.fn((items: Array<Record<string, Blob | Promise<Blob>>>) => {
+    order.push("clipboard.write");
+    batches.push(...items);
+    return outcome === "reject"
+      ? Promise.reject(new Error("clipboard write denied"))
+      : Promise.resolve();
+  });
+  return { batches, write };
+}
+
+/** Everything the async step is allowed to touch, defaulted so a case states
+ * only what it is about. */
+function imageCopyDeps(
+  scene: Scene,
+  overrides: {
+    bytes?: (url: string) => Promise<Blob>;
+    order?: string[];
+    outcome?: "resolve" | "reject";
+    raster?: (source: Blob, mime: string) => Promise<Blob>;
+  } = {},
+) {
+  const order = overrides.order ?? [];
+  const writer = clipboardWriterFake(order, overrides.outcome ?? "resolve");
+  const fetched: string[] = [];
+  const rasterCalls: Array<{ mime: string; size: number }> = [];
+  const fetchAssetBytes = mock.fn(async (url: string) => {
+    fetched.push(url);
+    return overrides.bytes
+      ? await overrides.bytes(url)
+      : new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" });
+  });
+  const rasterToPng = mock.fn(async (source: Blob, mime: string) => {
+    rasterCalls.push({ mime, size: source.size });
+    return overrides.raster
+      ? await overrides.raster(source, mime)
+      : new Blob([new Uint8Array([9, 9])], { type: "image/png" });
+  });
+  const { deps, reportError } = harness({
+    fetchAssetBytes,
+    rasterToPng,
+    scene,
+    selectedNodeId: "image_hero",
+    writeClipboardItems: writer.write,
+  });
+  return { deps, fetched, order, rasterCalls, reportError, writer };
+}
+
+/** One turn of the microtask + macrotask queues — long enough for the async
+ * step's own `.catch` to have run, so "nothing surfaced" is a real claim. */
+async function settle(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+it("copying a png IMAGE node writes html + plain + png to the async clipboard", async () => {
+  const { deps, fetched, rasterCalls, reportError, writer } = imageCopyDeps(
+    sceneWithImageMime("image/png"),
+  );
+  const clipboard = stubClipboardData();
+  const event = clipboardEvent(clipboard.data);
+
+  handleSceneClipboardCopy(deps, event, CANVAS_TARGET);
+  await settle();
+
+  assert.equal(writer.write.mock.callCount(), 1);
+  assert.equal(writer.batches.length, 1);
+  const item = writer.batches[0];
+  assert.deepEqual(Object.keys(item).sort(), [
+    "image/png",
+    "text/html",
+    "text/plain",
+  ]);
+  // The SAME strings the sync path wrote — one copy, two carriers.
+  assert.equal(
+    await (item["text/html"] as Blob).text(),
+    clipboard.written.get("text/html"),
+  );
+  assert.equal(
+    await (item["text/plain"] as Blob).text(),
+    clipboard.written.get("text/plain"),
+  );
+  const png = await (item["image/png"] as Promise<Blob>);
+  assert.equal(png.type, "image/png");
+  // The bytes came through the scene's own passthrough resolver — never a
+  // hand-built asset URL.
+  assert.deepEqual(fetched, [
+    "/api/clue/design-public/asset-store/2b0928ca4f3a3c70c5c2fed22996f0428da219c953a14e71567b73c1d8af937a",
+  ]);
+  // R35(b): a png asset's bytes ARE the representation — nothing to rasterize.
+  assert.deepEqual(rasterCalls, []);
+  assert.equal(reportError.mock.callCount(), 0);
+});
+
+it("jpeg, webp and svg assets route through the raster seam; png does not", async () => {
+  for (const mime of ["image/jpeg", "image/webp", "image/svg+xml"]) {
+    const { deps, rasterCalls, writer } = imageCopyDeps(sceneWithImageMime(mime));
+    const event = clipboardEvent(stubClipboardData().data);
+
+    handleSceneClipboardCopy(deps, event, CANVAS_TARGET);
+    await (writer.batches[0]["image/png"] as Promise<Blob>);
+
+    assert.deepEqual(
+      rasterCalls.map((call) => call.mime),
+      [mime],
+    );
+  }
+  // A record with no mime at all and a `vector` payload IS an svg — the
+  // fallback R33 states, not a guess about the bytes.
+  const vector = imageCopyDeps(sceneWithImageMime(null, { vector: true }));
+  handleSceneClipboardCopy(
+    vector.deps,
+    clipboardEvent(stubClipboardData().data),
+    CANVAS_TARGET,
+  );
+  await (vector.writer.batches[0]["image/png"] as Promise<Blob>);
+  assert.deepEqual(
+    vector.rasterCalls.map((call) => call.mime),
+    ["image/svg+xml"],
+  );
+});
+
+it("the sync setData trio runs BEFORE the async write, and a rejection is swallowed", async () => {
+  const order: string[] = [];
+  const { deps, reportError, writer } = imageCopyDeps(
+    sceneWithImageMime("image/png"),
+    { order, outcome: "reject" },
+  );
+  const clipboard = stubClipboardData({}, [], order);
+  const event = clipboardEvent(clipboard.data);
+
+  // No throw out of the handler, and no message: the copy ALREADY succeeded.
+  handleSceneClipboardCopy(deps, event, CANVAS_TARGET);
+  await settle();
+
+  assert.deepEqual(order, [
+    `setData:${SCENE_CLIPBOARD_MIME}`,
+    "setData:text/plain",
+    "setData:text/html",
+    "clipboard.write",
+  ]);
+  assert.equal(writer.write.mock.callCount(), 1);
+  // The internal payload is intact — a png failure never costs the copy.
+  assert.equal(
+    JSON.parse(clipboard.written.get(SCENE_CLIPBOARD_MIME)!).roots[0],
+    "image_hero",
+  );
+  assert.equal(reportError.mock.callCount(), 0);
+});
+
+it("a cut of an image node keeps the same order — writeCopy is the one path", async () => {
+  const order: string[] = [];
+  const { deps, writer } = imageCopyDeps(sceneWithImageMime("image/png"), {
+    order,
+  });
+  const clipboard = stubClipboardData({}, [], order);
+
+  handleSceneClipboardCut(deps, clipboardEvent(clipboard.data), CANVAS_TARGET);
+  await settle();
+
+  assert.deepEqual(order.at(-1), "clipboard.write");
+  assert.equal(writer.write.mock.callCount(), 1);
+});
+
+it("NON-image roots never reach the async writer (founder ruling 4's scope)", async () => {
+  for (const rootId of ["group_proof", "text_headline", "auto_row_copy"]) {
+    const { deps, writer } = imageCopyDeps(sceneWithImageMime("image/png"));
+    const clipboard = stubClipboardData();
+    handleSceneClipboardCopy(
+      { ...deps, selectedNodeId: rootId },
+      clipboardEvent(clipboard.data),
+      CANVAS_TARGET,
+    );
+    await settle();
+    assert.equal(writer.write.mock.callCount(), 0, rootId);
+    // Not vacuous: each of these IS a real copy — it simply carries no
+    // picture. (`group_proof` is a group over an ellipse and a text node,
+    // `auto_row_copy` the auto-layout row over the headline and that group.)
+    assert.equal(clipboard.written.size, 3, rootId);
+  }
+});
+
+it("an over-cap image copy writes no clipboard item — the envelope is the item", async () => {
+  const scene = sceneWithImageMime("image/png");
+  scene.nodes.image_hero.name = "x".repeat(1_100_000);
+  const { deps, reportError, writer } = imageCopyDeps(scene);
+  const clipboard = stubClipboardData();
+
+  handleSceneClipboardCopy(deps, clipboardEvent(clipboard.data), CANVAS_TARGET);
+  await settle();
+
+  assert.equal(writer.write.mock.callCount(), 0);
+  // The baseline is untouched by the skip: internal + plain still landed, and
+  // the reduced-copy sentence is the shipped one.
+  assert.ok(clipboard.written.has(SCENE_CLIPBOARD_MIME));
+  assert.ok(clipboard.written.has("text/plain"));
+  assert.equal(clipboard.written.has("text/html"), false);
+  assert.equal(reportError.mock.callCount(), 1);
+});
+
+it("with no async writer available the copy is exactly the shipped sync one", async () => {
+  const { deps } = imageCopyDeps(sceneWithImageMime("image/png"));
+  const clipboard = stubClipboardData();
+
+  handleSceneClipboardCopy(
+    { ...deps, writeClipboardItems: undefined },
+    clipboardEvent(clipboard.data),
+    CANVAS_TARGET,
+  );
+  await settle();
+
+  assert.deepEqual(
+    [...clipboard.written.keys()].sort(),
+    [SCENE_CLIPBOARD_MIME, "text/html", "text/plain"].sort(),
+  );
+});
+
+it("a missing digest or a non-ok fetch rejects the png promise and nothing else", async () => {
+  const noDigest = imageCopyDeps(
+    sceneWithImageMime("image/png", { digest: false }),
+  );
+  handleSceneClipboardCopy(
+    noDigest.deps,
+    clipboardEvent(stubClipboardData().data),
+    CANVAS_TARGET,
+  );
+  await assert.rejects(
+    noDigest.writer.batches[0]["image/png"] as Promise<Blob>,
+  );
+  // Never fetched: there was no honest URL to fetch.
+  assert.deepEqual(noDigest.fetched, []);
+  await settle();
+  assert.equal(noDigest.reportError.mock.callCount(), 0);
+
+  const failing = imageCopyDeps(sceneWithImageMime("image/png"), {
+    bytes: () => Promise.reject(new Error("404")),
+  });
+  handleSceneClipboardCopy(
+    failing.deps,
+    clipboardEvent(stubClipboardData().data),
+    CANVAS_TARGET,
+  );
+  await assert.rejects(failing.writer.batches[0]["image/png"] as Promise<Blob>);
+  await settle();
+  assert.equal(failing.reportError.mock.callCount(), 0);
 });

@@ -2,11 +2,13 @@
 
 import { useEffect, useRef } from "react";
 import { isTypingTarget } from "../adapter/scene-arrange";
+import { sceneAssetPassthroughUrl } from "../adapter/scene-canvas-view";
 import {
   SCENE_CLIPBOARD_KIND,
   SCENE_CLIPBOARD_MIME,
   encodeClipboardHtml,
   materializeClipboardPayload,
+  rasterToPngBlob,
   serializeSubtree,
   type SceneClipboardPayloadV1,
 } from "../adapter/scene-clipboard";
@@ -85,17 +87,32 @@ export interface SceneDuplicateEventLike {
   shiftKey: boolean;
 }
 
+/**
+ * One `ClipboardItem`'s worth of representations, keyed by mime. Values may be
+ * PROMISES: the spec lets a `ClipboardItem` be constructed with pending blobs,
+ * which is what keeps the write itself synchronous with the copy event (the
+ * user-activation window) while the png is still being rasterized.
+ */
+export type SceneClipboardItem = Record<string, Blob | Promise<Blob>>;
+
 export interface SceneClipboardDeps {
   /** R12: paste/duplicate generations, keyed `${documentId}:${sourceRootId}`.
    * One map per mount, cleared when the document changes. */
   cascade: Map<string, number>;
   documentId: string | null;
+  /** R35: how the outbound `image/png` bytes are fetched. Defaults to
+   * {@link fetchAssetBytes}; a test injects rather than reaching the network. */
+  fetchAssetBytes?: (url: string) => Promise<Blob>;
   /** Task 8's seam. Absent until it lands, and then the refusal below is what
    * the user sees instead — never a silent swallow. */
   onExternalImages?: (files: File[], rejected: string[]) => void;
   /** Task 8's seam for pasted svg markup. */
   onSvgMarkup?: (svg: string) => void;
   pageId: PageId | null;
+  /** R35: the Blob→png rasterizer. Defaults to the adapter's
+   * {@link rasterToPngBlob}; jsdom can decode no image, so a test injects a
+   * recorder instead. */
+  rasterToPng?: (source: Blob, mime: string) => Promise<Blob>;
   scene: Scene | null;
   selectedNodeId: NodeId | null;
   /** R27's INJECTION POINT, not a policy seam: the rich-text remap a plain-text
@@ -111,6 +128,12 @@ export interface SceneClipboardDeps {
   /** Display/debug only, stamped onto a copied payload. NEVER an auth claim —
    * asset resolution against the pasting workspace is the real gate. */
   workspaceId: string | null;
+  /** R35: the async clipboard writer, the ONLY carrier an `image/png` can ride
+   * (an event's `setData` takes strings). Defaults to
+   * `navigator.clipboard.write` wrapped in `ClipboardItem`s, and stays
+   * UNDEFINED where either is missing — the async step is then skipped whole,
+   * which is exactly the shipped sync copy. */
+  writeClipboardItems?: (items: SceneClipboardItem[]) => Promise<void>;
   writes: Pick<
     SceneManualEdits,
     "applyEdit" | "applyOps" | "canApply" | "reportError"
@@ -546,7 +569,142 @@ function writeCopy(
   } else {
     deps.writes.reportError(ENVELOPE_TOO_LARGE);
   }
+  // Task 10, and strictly AFTER the three writes above (R31): everything the
+  // editor itself needs is already on the clipboard, so whatever happens next
+  // can only ADD.
+  offerImagePng(deps, session, payload, representations);
   return payload.roots[0];
+}
+
+// ── Task 10: the outbound picture (founder ruling 4 / R31–R35) ─────────────
+
+/**
+ * A copied IMAGE node, offered to OTHER apps as a real picture.
+ *
+ * WHY THERE IS A SECOND WRITE AT ALL. Preview, Slack and Keynote understand
+ * one thing: `image/png` bytes. A copy event's `setData` takes STRINGS only,
+ * so the picture can leave this app only through `navigator.clipboard.write`
+ * — a different, async, permissioned API. Hence both: the sync trio above is
+ * the copy, and this is a best-effort enrichment of it.
+ *
+ * EVERY FAILURE IS SWALLOWED, on purpose. Denied permission, no user
+ * activation, a browser that rejects promise-valued items, a 404 on the asset
+ * bytes, a decode the canvas cannot do — none of them may cost the user the
+ * copy they already have, and none of them is worth a message about a
+ * representation they never asked for. `reportError` is deliberately not
+ * called here; the sync path owns the one sentence this gesture can say.
+ *
+ * THE KNOWN COST, ledgered rather than hidden: when the async write SUCCEEDS
+ * the browser replaces the clipboard with this item's three types, so the
+ * custom `SCENE_CLIPBOARD_MIME` fast path is gone for that copy. Custom mimes
+ * cannot ride a `ClipboardItem` (the browser's type allowlist), so this is
+ * unavoidable — and harmless: the `text/html` envelope carries the identical
+ * payload, and an internal paste classifies off it via `decodeClipboardHtml`.
+ * That is also why an over-cap copy (`html === null`) skips the write
+ * entirely: trading a complete clipboard for a picture would be a real loss.
+ *
+ * SCOPE IS THE ROOT'S KIND (ruling 4): only an image node. A text, shape,
+ * vector or group root already travels as `text/plain` + `text/html`, and
+ * flattening a group to a bitmap here would be a rendering decision this file
+ * has no business making.
+ */
+function offerImagePng(
+  deps: SceneClipboardDeps,
+  session: ArmedSession,
+  payload: SceneClipboardPayloadV1,
+  representations: { html: string | null; plain: string },
+): void {
+  const html = representations.html;
+  const root = payload.nodes[0];
+  if (html === null || !root || root.kind.kind !== "image") {
+    return;
+  }
+  const write = deps.writeClipboardItems ?? defaultClipboardItemWriter();
+  if (!write) {
+    return;
+  }
+  const png = imagePngBlob(deps, session.scene, root.kind.asset_id);
+  // The item consumes this same promise; this lone handler only keeps a
+  // rejection from surfacing as an unhandled one when the write itself has
+  // already failed for another reason.
+  png.catch(() => {});
+  // SYNCHRONOUS inside the copy event — the png is still pending, and that is
+  // the point: waiting for bytes would land the call outside the activation
+  // window, where every browser refuses it.
+  write([
+    {
+      "image/png": png,
+      "text/html": new Blob([html], { type: "text/html" }),
+      "text/plain": new Blob([representations.plain], { type: "text/plain" }),
+    },
+  ]).catch(() => {});
+}
+
+/** The copied image node's bytes, as png. Rejects — never resolves a
+ * placeholder — when the asset has no usable digest, the fetch fails, the
+ * mime cannot be determined, or the rasterizer cannot decode (R33). */
+async function imagePngBlob(
+  deps: SceneClipboardDeps,
+  scene: Scene,
+  assetId: string,
+): Promise<Blob> {
+  // The scene's OWN resolver — the same passthrough URL the canvas fetches
+  // through. Never a hand-built asset URL: the prefix/`new URL` trap is
+  // documented at its definition, and a record with no usable digest must
+  // answer null rather than a URL that can only 404.
+  const url = sceneAssetPassthroughUrl(scene.assets, assetId);
+  if (!url) {
+    throw new Error("copied image asset has no fetchable digest");
+  }
+  const bytes = await (deps.fetchAssetBytes ?? fetchAssetBytes)(url);
+  const record = scene.assets?.[assetId];
+  // R33's order: the record's declared mime, then "it is a vector record, so
+  // it is svg", then whatever the response labelled the bytes. An empty answer
+  // is a refusal, not a default — guessing png over jpeg bytes would produce a
+  // clipboard picture no app can open.
+  const mime =
+    record?.media?.mime_type || (record?.vector ? "image/svg+xml" : bytes.type);
+  if (!mime) {
+    throw new Error("copied image asset has no known mime type");
+  }
+  // A png needs no rasterizing at all — its bytes ARE the representation, so
+  // the copy path never schedules a decode it does not need. (The adapter's
+  // own png branch answers the same way for any other caller.)
+  if (mime === "image/png") {
+    return bytes;
+  }
+  return await (deps.rasterToPng ?? rasterToPngBlob)(bytes, mime);
+}
+
+/** The production `image/png` fetch: the digest passthrough, checked. A non-ok
+ * response is a rejection, never an html error page handed to the clipboard as
+ * if it were pixels. */
+async function fetchAssetBytes(url: string): Promise<Blob> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`asset bytes unavailable (${response.status})`);
+  }
+  return await response.blob();
+}
+
+/**
+ * The real async writer, or UNDEFINED where the browser has no async clipboard
+ * (older Safari/Firefox, jsdom, SSR). Undefined is a first-class answer: the
+ * copy is then exactly the shipped sync one, with nothing logged and nothing
+ * refused.
+ */
+function defaultClipboardItemWriter():
+  | ((items: SceneClipboardItem[]) => Promise<void>)
+  | undefined {
+  if (
+    typeof ClipboardItem === "undefined" ||
+    typeof navigator === "undefined" ||
+    typeof navigator.clipboard?.write !== "function"
+  ) {
+    return undefined;
+  }
+  return (items) =>
+    navigator.clipboard.write(items.map((item) => new ClipboardItem(item)));
 }
 
 /**
