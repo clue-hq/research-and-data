@@ -411,7 +411,9 @@ const MALFORMED_CLIPBOARD_REFUSAL =
 
 /**
  * Turn a validated payload plus a {@link PastePlacement} into ONE parents-first
- * `insert_node` batch against `scene`, or refuse.
+ * `insert_node` batch of CHILDLESS nodes against `scene`, or refuse. The tree
+ * is expressed by each op's parent ref and index, never by a populated
+ * `children` array — see the batch-building comment below for why.
  *
  * Every refusal is decided before the first op is built, so a refusal enqueues
  * nothing — atomicity by construction rather than by rollback. The unknown-asset
@@ -515,14 +517,24 @@ export function materializeClipboardPayload(
   }
 
   // The re-minted array is DFS preorder, so emitting in order IS parents-first.
+  //
+  // Every node is inserted CHILDLESS. lumen-core's `insert_node` refuses a node
+  // whose children name nodes not yet in the scene (`op.child_missing`), and a
+  // batch applies to a draft clone — so one such op would discard the entire
+  // paste. The engine's own subtree-clone path does the same thing
+  // (`clone.children.clear()`), and the reconcile insert path states the
+  // invariant outright: insert top-down with an empty child list and let each
+  // child's own InsertNode seat it under its parent. Preorder keeps every seat
+  // index in bounds, so the tree that results is identical.
   const rootIndex =
     placement.kind === "into-layout" ? placement.index : parentChildren.length;
   const ops = nodes.map((node, index) => {
+    const childless = { ...node, children: [] };
     if (index === 0) {
-      return insertNode(placement.parent, rootIndex, node);
+      return insertNode(placement.parent, rootIndex, childless);
     }
     const seat = seats.get(node.id)!;
-    return insertNode(seat.parent, seat.index, node);
+    return insertNode(seat.parent, seat.index, childless);
   });
   return { ops, rootId };
 }

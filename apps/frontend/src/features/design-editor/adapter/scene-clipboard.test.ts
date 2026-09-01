@@ -466,15 +466,16 @@ it("materializes a subtree as one insertNode op per node, parents before childre
   const ops = insertOps(result.ops);
   assert.equal(ops.length, 3);
 
-  // The root lands in the placement's parent; each descendant lands under its
-  // own re-minted parent, at its position in that parent's children array.
+  // The tree is expressed by the SEATING — a parent ref plus an index per op —
+  // and by nothing else. The root lands in the placement's parent; each
+  // descendant lands under its own re-minted parent, at its position in that
+  // parent's children array.
   assert.deepEqual(ops[0].parent, { kind: "page", id: AD_PAGE_ID });
   assert.equal(ops[0].node.id, result.rootId);
   assert.deepEqual(ops[1].parent, { kind: "node", id: result.rootId });
   assert.equal(ops[1].index, 0);
   assert.deepEqual(ops[2].parent, { kind: "node", id: result.rootId });
   assert.equal(ops[2].index, 1);
-  assert.deepEqual(ops[0].node.children, [ops[1].node.id, ops[2].node.id]);
 
   // Parents-before-children as a rule, not a coincidence: an op that names a
   // node parent must find it already inserted by an earlier op.
@@ -484,6 +485,22 @@ it("materializes a subtree as one insertNode op per node, parents before childre
       assert.ok(inserted.has(op.parent.id), `${op.parent.id} inserted after its child`);
     }
     inserted.add(op.node.id);
+  }
+});
+
+it("inserts every node CHILDLESS — a populated children array is op.child_missing", () => {
+  // lumen-core's `insert_node` refuses a node whose children name nodes not yet
+  // in the scene (`op.child_missing`, operations.rs), and a batch applies to a
+  // draft clone — so ONE such op discards the whole paste. The engine's own
+  // subtree-clone path inserts each node with an empty child list, top-down,
+  // and lets each child's own InsertNode seat it under its parent
+  // (editing.rs `clone.children.clear()`; the reconcile.rs insert invariant).
+  const payload = groupPayload();
+  const { ops } = expectOps(
+    materializeClipboardPayload(HARVESTED_AD_PAGE, payload, freehandOntoPage(), new Set()),
+  );
+  for (const op of insertOps(ops)) {
+    assert.deepEqual(op.node.children, [], `${op.node.id} was inserted with children`);
   }
 });
 
