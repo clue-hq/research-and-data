@@ -188,6 +188,24 @@ function armSession(deps: SceneClipboardDeps): ArmedSession | null {
   return { documentId, pageId, scene, selectedNodeId };
 }
 
+/**
+ * Does the DOM say the user has TEXT selected right now?
+ *
+ * The canvas is CanvasKit — it hosts no DOM text at all — so a non-collapsed
+ * selection can only belong to the shell around it: a chat message, a layer
+ * label, an artifact title. Copying the selected NODE over that would steal
+ * the user's copy, and cutting would additionally delete something they never
+ * aimed at. A collapsed selection (a bare caret) is not a selection, and a
+ * document-less runtime (node:test, SSR) trivially has none.
+ */
+function hasDomTextSelection(): boolean {
+  if (typeof document === "undefined") {
+    return false;
+  }
+  const selection = document.getSelection?.();
+  return selection != null && !selection.isCollapsed;
+}
+
 /** The armed session this event belongs to, or null when the event is simply
  * not ours — nothing armed, or a target that types. Every handler starts here,
  * so the two halves of "is this ours" are asked in exactly one place. */
@@ -319,14 +337,20 @@ function writeCopy(
   return payload.roots[0];
 }
 
-/** ⌘C / Edit ▸ Copy / right-click Copy. A read, so it asks no write gate. */
+/**
+ * ⌘C / Edit ▸ Copy / right-click Copy. A read, so it asks no write gate.
+ *
+ * It yields to a live DOM text selection: the brief's own rule is that the
+ * browser's copy of selected text must survive, and a node selection left over
+ * from an earlier click must not out-rank the words the user just highlighted.
+ */
 export function handleSceneClipboardCopy(
   deps: SceneClipboardDeps,
   event: SceneClipboardEventLike,
   target: SceneClipboardTarget | null,
 ): void {
   const session = ownedSession(deps, target);
-  if (!session) {
+  if (!session || hasDomTextSelection()) {
     return;
   }
   writeCopy(deps, session, event);
@@ -343,6 +367,11 @@ export function handleSceneClipboardCopy(
  * The write gate is asked FIRST, before anything is copied: a cut is a write,
  * and a document that cannot take the delete must not be left having copied
  * (the user would then paste and wonder where the original went).
+ *
+ * It yields to a live DOM text selection for copy's reason and one worse: a
+ * cut aimed at highlighted shell text would delete a node the user never
+ * pointed at. The yield is asked BEFORE the write gate, so a non-event stays a
+ * complete non-event — no message either.
  */
 export function handleSceneClipboardCut(
   deps: SceneClipboardDeps,
@@ -350,7 +379,7 @@ export function handleSceneClipboardCut(
   target: SceneClipboardTarget | null,
 ): void {
   const session = ownedSession(deps, target);
-  if (!session) {
+  if (!session || hasDomTextSelection()) {
     return;
   }
   if (!deps.writes.canApply()) {
@@ -392,18 +421,21 @@ export function handleSceneClipboardPaste(
   }
   const snapshot = snapshotClipboardData(data);
   const intent = classifyPaste(snapshot);
-  if (intent.kind === "none") {
-    return;
-  }
   // R9: files rode along, and the classifier fell PAST the image class — so
   // none of them is a type we accept. A files-bearing paste never silently
-  // becomes a text paste, which is why this is decided before the text
-  // classes get a say. (An internal payload still wins: the envelope-beats-
-  // files priority is the classifier's own pinned contract.)
+  // becomes a text paste OR A NON-EVENT, which is why this is computed from
+  // the SNAPSHOT and decided before any other class — including `none`, which
+  // is exactly what a clipboard holding only a GIF classifies as (no text, no
+  // html, no internal carrier, nothing allowed among the files). Answering
+  // that with silence would read as a broken editor. (An internal payload
+  // still wins: envelope-beats-files is the classifier's own pinned contract.)
   const refusedFiles =
     snapshot.files.length > 0 &&
     intent.kind !== "image-files" &&
     intent.kind !== "internal";
+  if (!refusedFiles && intent.kind === "none") {
+    return;
+  }
   // Task 9's class is the one that is not ours yet: leaving it native is
   // harmless (the browser pastes nothing into a canvas), while claiming it
   // would make ⌘V feel broken.
@@ -411,6 +443,14 @@ export function handleSceneClipboardPaste(
     return;
   }
   if (!deps.writes.canApply()) {
+    // PRECEDENCE: the read-only sentence outranks the allowlist one. Naming
+    // the allowlist here would mislead — an allowed PNG would not have pasted
+    // either — so the honest answer is the state that actually refused.
+    // The event is still CLAIMED when files rode along: we spoke about it, so
+    // the browser must not also act on it.
+    if (snapshot.files.length > 0) {
+      event.preventDefault();
+    }
     deps.writes.reportError(NOT_ACCEPTING_EDITS);
     return;
   }
@@ -453,6 +493,10 @@ export function handleSceneClipboardPaste(
       // Guarded above: the seam exists, or we never got here.
       event.preventDefault();
       deps.onPlainText?.(intent.text);
+      return;
+    case "none":
+      // Only reachable with `refusedFiles` set, which the branch above already
+      // answered — a genuinely empty clipboard returned at the guard.
       return;
     default: {
       // Exhaustiveness: a new intent class must decide its own routing, loudly.

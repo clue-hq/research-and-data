@@ -303,6 +303,76 @@ it("copy leaves a focused field's own clipboard alone", () => {
   assert.equal(clipboard.written.size, 0);
 });
 
+/** Run `body` with a stubbed `document.getSelection()`. Node has no `document`
+ * at all, so this installs one and removes it again — the rule under test is
+ * exactly "what does the DOM say the user has selected". */
+function withDomSelection(
+  selection: { isCollapsed: boolean } | null,
+  body: () => void,
+): void {
+  const host = globalThis as { document?: unknown };
+  const before = host.document;
+  host.document = { getSelection: () => selection };
+  try {
+    body();
+  } finally {
+    if (before === undefined) {
+      delete host.document;
+    } else {
+      host.document = before;
+    }
+  }
+}
+
+it("copy and cut YIELD to a live text selection in the shell", () => {
+  // The canvas is CanvasKit — it hosts no DOM text — so a non-collapsed DOM
+  // selection always belongs to the shell around it (a chat message, a label,
+  // an artifact title). Copying the selected node instead would steal the
+  // user's copy; cutting would additionally delete something they never aimed
+  // at. Neither event is ours.
+  const copyRun = harness();
+  const copyClipboard = stubClipboardData();
+  const copyEvent = clipboardEvent(copyClipboard.data);
+  const cutRun = harness();
+  const cutClipboard = stubClipboardData();
+  const cutEvent = clipboardEvent(cutClipboard.data);
+
+  withDomSelection({ isCollapsed: false }, () => {
+    handleSceneClipboardCopy(copyRun.deps, copyEvent, CANVAS_TARGET);
+    handleSceneClipboardCut(cutRun.deps, cutEvent, CANVAS_TARGET);
+  });
+
+  assert.equal(copyEvent.prevented(), 0);
+  assert.equal(copyClipboard.written.size, 0);
+  assert.equal(cutEvent.prevented(), 0);
+  assert.equal(cutClipboard.written.size, 0);
+  assert.equal(cutRun.applyEdit.mock.callCount(), 0);
+  assert.equal(cutRun.canApply.mock.callCount(), 0);
+  assert.equal(copyRun.reportError.mock.callCount(), 0);
+  assert.equal(cutRun.reportError.mock.callCount(), 0);
+});
+
+it("a COLLAPSED selection — a caret, or none at all — is not a text selection", () => {
+  const collapsed = harness();
+  const collapsedClipboard = stubClipboardData();
+  const collapsedEvent = clipboardEvent(collapsedClipboard.data);
+  const absent = harness();
+  const absentClipboard = stubClipboardData();
+  const absentEvent = clipboardEvent(absentClipboard.data);
+
+  withDomSelection({ isCollapsed: true }, () => {
+    handleSceneClipboardCopy(collapsed.deps, collapsedEvent, CANVAS_TARGET);
+  });
+  withDomSelection(null, () => {
+    handleSceneClipboardCopy(absent.deps, absentEvent, CANVAS_TARGET);
+  });
+
+  assert.equal(collapsedEvent.prevented(), 1);
+  assert.ok(collapsedClipboard.written.has(SCENE_CLIPBOARD_MIME));
+  assert.equal(absentEvent.prevented(), 1);
+  assert.ok(absentClipboard.written.has(SCENE_CLIPBOARD_MIME));
+});
+
 // ── cut ────────────────────────────────────────────────────────────────────
 
 it("cut copies THEN deletes the copied root — one structured edit", () => {
@@ -526,6 +596,48 @@ it("R9: a files-bearing paste NEVER silently becomes a text paste", () => {
   assert.equal(applyOps.mock.callCount(), 0);
   assert.deepEqual(reportError.mock.calls.map((call) => call.arguments[0]), [
     "Only PNG, JPEG, WebP, and SVG images can be pasted.",
+  ]);
+});
+
+it("R9: a clipboard carrying ONLY disallowed files refuses out loud, never in silence", () => {
+  // The GIF hole. With no text, no html and no internal carrier, the
+  // classifier's honest answer is `none` — but a human who pasted a picture
+  // and heard nothing at all would read that as a broken editor. Files
+  // present means the paste is ours to answer for, whatever the text classes
+  // would have said.
+  const { applyOps, deps, reportError } = harness();
+  const clipboard = stubClipboardData({}, [
+    new File(["bytes"], "loop.gif", { type: "image/gif" }),
+  ]);
+  const event = clipboardEvent(clipboard.data);
+
+  handleSceneClipboardPaste(deps, event, CANVAS_TARGET);
+
+  assert.equal(event.prevented(), 1);
+  assert.equal(applyOps.mock.callCount(), 0);
+  assert.deepEqual(reportError.mock.calls.map((call) => call.arguments[0]), [
+    "Only PNG, JPEG, WebP, and SVG images can be pasted.",
+  ]);
+});
+
+it("read-only OUTRANKS the allowlist refusal, and still claims the event", () => {
+  // Both halves of the precedence ruling. The allowlist sentence would
+  // mislead here — an allowed PNG would not have pasted either — so the
+  // read-only sentence is the honest one. But the paste is still ours: we
+  // spoke about the event, so the browser does not also get to.
+  const { applyOps, canApply, deps, reportError } = harness();
+  canApply.mock.mockImplementation(() => false);
+  const clipboard = stubClipboardData({}, [
+    new File(["bytes"], "loop.gif", { type: "image/gif" }),
+  ]);
+  const event = clipboardEvent(clipboard.data);
+
+  handleSceneClipboardPaste(deps, event, CANVAS_TARGET);
+
+  assert.equal(event.prevented(), 1);
+  assert.equal(applyOps.mock.callCount(), 0);
+  assert.deepEqual(reportError.mock.calls.map((call) => call.arguments[0]), [
+    "This document isn't accepting edits right now.",
   ]);
 });
 
