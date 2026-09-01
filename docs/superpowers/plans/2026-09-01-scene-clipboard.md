@@ -38,7 +38,7 @@ its load-bearing conclusions are restated in §Design so this plan stands alone)
 - Clipboard payloads are UNTRUSTED input always (even with our marker): decode → size check →
   schema validation → semantic validation (asset existence) → THEN model objects. Never
   `innerHTML` pasted HTML; parse with `DOMParser` and read attributes only.
-- External image formats: `image/png`, `image/jpeg` (.jpg/.jpeg), `image/svg+xml` — enforced
+- External image formats: `image/png`, `image/jpeg` (.jpg/.jpeg), `image/webp`, `image/svg+xml` — enforced
   client-side for honest early refusal; the server's `ingest_asset` sniff remains authoritative.
 - Frontend gate per task: focused vitest files, then
   `npm run design-system:build && npm run lint && npm run build` at rung close (suite baseline
@@ -224,6 +224,8 @@ what jsdom cannot: real OS clipboard, real cross-tab, real drops, Figma-interop 
 1. New-text-node-on-plain-paste when nothing suitable is selected (vs. refusing).
 2. Pasted-image sizing: fit within 60% of the page's short side at intrinsic aspect.
 3. Envelope cap 1 MiB / external file cap mirrors the server's `asset_max_bytes`.
+   (WebP admitted to the inbound allowlist by founder ruling 2026-09-01 — second pass; outbound
+   external-app copies still convert to PNG via `rasterToPngBlob`, so WebP needs no outbound work.)
 4. Duplicate (⌘D) bypasses the OS clipboard entirely (internal fast path, no clipboard mutation).
 5. `workspaceHint` rides the payload for debuggability but is never trusted; asset resolution is
    the actual cross-workspace gate.
@@ -231,8 +233,7 @@ what jsdom cannot: real OS clipboard, real cross-tab, real drops, Figma-interop 
 ## Out of scope (recorded)
 
 Multi-select copy; outbound rendering of shape/vector nodes as images (ruling 4); web-document
-editor; WebP inbound (server accepts it — follow-up ruling wanted before widening the client
-allowlist); clipboard-history UI; `web application/…` custom formats (progressive enhancement
+editor; clipboard-history UI; `web application/…` custom formats (progressive enhancement
 later — WebKit/Firefox support is not there yet, per the research note).
 
 ---
@@ -354,7 +355,7 @@ later — WebKit/Firefox support is not there yet, per the research note).
   `classifyPaste(snap: ClipboardSnapshot): PasteIntent` where `PasteIntent =
   {kind:"internal"; payload: SceneClipboardPayloadV1} | {kind:"image-files"; files: File[]} |
   {kind:"svg-markup"; svg: string} | {kind:"plain-text"; text: string} | {kind:"none"}`,
-  `ALLOWED_IMAGE_MIMES = ["image/png","image/jpeg","image/svg+xml"]`.
+  `ALLOWED_IMAGE_MIMES = ["image/png","image/jpeg","image/webp","image/svg+xml"]`.
 
 - [ ] **Step 1: failing tests** — priority matrix: internal mime beats envelope beats files beats
   svg-text beats plain; envelope decode failure falls THROUGH to the next class (never dead-ends);
@@ -450,7 +451,7 @@ later — WebKit/Firefox support is not there yet, per the research note).
   failure.
 
 - [ ] **Step 1: failing tests** — representation builder returns all three blobs for a png asset;
-  jpeg/svg route through `rasterToPngBlob`; `clipboard.write` rejection → sync fallback invoked,
+  jpeg/webp/svg route through `rasterToPngBlob`; `clipboard.write` rejection → sync fallback invoked,
   envelope intact (spy sequence); non-image roots never call `clipboard.write` (ruling 4 scope).
 - [ ] **Steps 2–4** — **Step 5: commit** `feat(design-editor): image-node copies carry image/png for external apps`
 
