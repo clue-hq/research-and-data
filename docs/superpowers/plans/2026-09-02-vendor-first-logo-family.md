@@ -10,6 +10,13 @@
 
 **Spec:** `_memory/2026-08-31-logo-vendor-first-decision.md` (the founder decision record) + `_memory/2026-09-02-logo-system-current-state.md` (the current-state map and this session's rulings). Both travel with this plan; executors read both. §0 below restates every binding ruling so no task depends on outside context.
 
+## Execution status
+
+Ledger: `.superpowers/sdd/2026-09-02-vendor-first-logo-family/progress.md`. Process: Opus-only implementers; all review/verification/decisions by the controller (founder ruling 2026-09-02).
+
+- Task 1 — DONE (`0cf64d654`)
+- Task 2 — DONE (`5a6e05d78`)
+
 ## Global Constraints
 
 - **Never push; local commits only; no AI attribution in commit messages** (no `Co-Authored-By: Claude`, no "Generated with" footers) — repo rule.
@@ -61,6 +68,8 @@ Import direction sanity: `lumen_agent.tools.logo_fetch` already imports `lumen_i
 
 ### Task 1: Brandfetch settings + env parity
 
+**Status: DONE 2026-09-02 — commit `0cf64d654`; controller first-hand review clean; local `.env` parity restored by controller.**
+
 **Files:**
 - Modify: `subsystems/clue-design/packages/py-lumen-config/py_lumen_config/config.py` (add fields beside the `pdl_*` block at ~line 232)
 - Modify: `.env.example` (repo root; beside the PDL block at ~line 369)
@@ -71,7 +80,7 @@ Import direction sanity: `lumen_agent.tools.logo_fetch` already imports `lumen_i
 - Consumes: nothing.
 - Produces: `settings.brandfetch_api_key: str` (default `""`), `settings.brandfetch_client_id: str` (default `""`), `settings.brandfetch_api_base_url: str` (default `"https://api.brandfetch.io"`), `settings.brandfetch_timeout_s: float` (default `20.0`). Later tasks read all four.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # subsystems/clue-design/apps/api/tests/test_logo_vendor.py
@@ -110,14 +119,14 @@ def test_brandfetch_settings_load_from_env(monkeypatch):
     assert fresh.brandfetch_timeout_s == 5.5
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 From `subsystems/clue-design/`:
 `PYTHONPATH=.:apps/api:apps/agent_runtime <repo-root>/.venv/bin/python -m pytest apps/api/tests/test_logo_vendor.py -v`
 Expected: FAIL — `AttributeError: 'Settings' object has no attribute 'brandfetch_api_key'`.
 (If the import of `Settings` itself fails, check how `apps/api/tests/test_ad_company_identity.py` — the PDL settings tests — constructs it and mirror that exactly.)
 
-- [ ] **Step 3: Add the settings fields**
+- [x] **Step 3: Add the settings fields**
 
 In `config.py`, directly below the `pdl_timeout_s` field (~line 237), following the PDL block's comment style:
 
@@ -133,7 +142,7 @@ In `config.py`, directly below the `pdl_timeout_s` field (~line 237), following 
     brandfetch_timeout_s: float = 20.0
 ```
 
-- [ ] **Step 4: Add the env lines (BOTH files, same commit — parity rule)**
+- [x] **Step 4: Add the env lines (BOTH files, same commit — parity rule)**
 
 Repo-root `.env.example`, after the PDL block (~line 375):
 
@@ -151,11 +160,11 @@ BRANDFETCH_TIMEOUT_S=20
 
 `subsystems/clue-design/.env.example`, after its PDL block (~line 80): the same four lines with the same comment.
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Same command as Step 2. Expected: both tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add subsystems/clue-design/packages/py-lumen-config/py_lumen_config/config.py .env.example subsystems/clue-design/.env.example subsystems/clue-design/apps/api/tests/test_logo_vendor.py
@@ -168,6 +177,8 @@ Blank key = vendor rung disabled, honest degrade to the ladder (PDL pattern)."
 ---
 
 ### Task 2: The 2×2 vocabulary (`logo_family.py`) + vendor payload parsing (pure half)
+
+**Status: DONE 2026-09-02 — commit `5a6e05d78`; controller first-hand review clean.**
 
 **Files:**
 - Create: `subsystems/clue-design/apps/api/lumen_ingestion/logo_family.py`
@@ -187,7 +198,7 @@ Blank key = vendor rung disabled, honest degrade to the ladder (PDL pattern)."
   - `logo_vendor.parse_brand_payload(payload: dict) -> list[VendorAsset]`
   - `logo_vendor.pick_format(asset: VendorAsset) -> dict | None` (svg first; else largest transparent raster; else largest raster; `None` when `formats` is empty)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `test_logo_vendor.py`:
 
@@ -293,12 +304,12 @@ def test_pick_format_prefers_svg_then_largest_transparent_raster():
     assert pick_format(VendorAsset(theme=None, type="logo", tags=[], formats=[])) is None
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 `PYTHONPATH=.:apps/api:apps/agent_runtime <repo-root>/.venv/bin/python -m pytest apps/api/tests/test_logo_vendor.py -v`
 Expected: the four new tests FAIL with `ModuleNotFoundError: lumen_ingestion.logo_family` / `logo_vendor`.
 
-- [ ] **Step 3: Write `logo_family.py`**
+- [x] **Step 3: Write `logo_family.py`**
 
 ```python
 # subsystems/clue-design/apps/api/lumen_ingestion/logo_family.py
@@ -351,7 +362,7 @@ class FamilyCell:
     evidence: dict = field(default_factory=dict)
 ```
 
-- [ ] **Step 4: Write `logo_vendor.py` (pure half only)**
+- [x] **Step 4: Write `logo_vendor.py` (pure half only)**
 
 ```python
 # subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py
@@ -478,11 +489,11 @@ def pick_format(asset: VendorAsset) -> JsonObject | None:
     return max(pool, key=area) if pool else None
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Same command. Expected: all Task 1 + Task 2 tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add subsystems/clue-design/apps/api/lumen_ingestion/logo_family.py subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py subsystems/clue-design/apps/api/tests/test_logo_vendor.py
