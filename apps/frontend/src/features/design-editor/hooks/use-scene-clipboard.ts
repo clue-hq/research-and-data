@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { isTypingTarget } from "../adapter/scene-arrange";
 import {
+  SCENE_CLIPBOARD_KIND,
   SCENE_CLIPBOARD_MIME,
   encodeClipboardHtml,
   materializeClipboardPayload,
@@ -13,10 +14,21 @@ import {
   classifyPaste,
   snapshotClipboardData,
 } from "../adapter/scene-clipboard-classify";
-import { planPastePlacement } from "../adapter/scene-clipboard-placement";
-import type { NodeId, PageId, Scene } from "../engine/scene/contracts";
+import {
+  planPastePlacement,
+  type PastePlacementMode,
+} from "../adapter/scene-clipboard-placement";
+import type {
+  Node,
+  NodeId,
+  PageId,
+  Scene,
+  TextNode,
+} from "../engine/scene/contracts";
+import { updateTextNode } from "../engine/scene/operations";
 import { pageIdForNode } from "../engine/scene/sceneQueries";
 import { deleteEdit } from "../engine/scene/structuredEdits";
+import { spansVectorForContentEdit } from "../engine/scene/textSpans";
 import type { SceneManualEdits } from "./use-scene-manual-edits";
 
 /**
@@ -81,14 +93,21 @@ export interface SceneClipboardDeps {
   /** Task 8's seam. Absent until it lands, and then the refusal below is what
    * the user sees instead — never a silent swallow. */
   onExternalImages?: (files: File[], rejected: string[]) => void;
-  /** Task 9's seam. Absent until it lands, and while it is absent a plain-text
-   * paste stays NATIVE (no `preventDefault`), which is harmless. */
-  onPlainText?: (text: string) => void;
   /** Task 8's seam for pasted svg markup. */
   onSvgMarkup?: (svg: string) => void;
   pageId: PageId | null;
   scene: Scene | null;
   selectedNodeId: NodeId | null;
+  /** R27's INJECTION POINT, not a policy seam: the rich-text remap a plain-text
+   * paste writes through is the shipped
+   * {@link spansVectorForContentEdit} — but an ESM live binding cannot be
+   * replaced from a test, so it rides here and defaults to that same import.
+   * Production never sets it. */
+  spansVectorForContentEdit?: typeof spansVectorForContentEdit;
+  /** R29/R21: the canvas's live viewport centre in PAGE space, or null when
+   * there is no viewport serving this document to ask. A minted text node is
+   * centred on it, and on the page's own centre when it answers null. */
+  viewportPageCenter?: () => { x: number; y: number } | null;
   /** Display/debug only, stamped onto a copied payload. NEVER an auth claim —
    * asset resolution against the pasting workspace is the real gate. */
   workspaceId: string | null;
@@ -125,6 +144,9 @@ const IMAGE_PASTE_UNAVAILABLE = "Pasting images isn't available yet.";
 
 const PASTE_INTENT = "clipboard.paste";
 const DUPLICATE_INTENT = "clipboard.duplicate";
+/** Task 9's undo frame: replacing a text node's content and minting a new text
+ * node are the same gesture to the user, so they share one label. */
+const PASTE_TEXT_INTENT = "clipboard.paste-text";
 
 /**
  * Is this event OURS? Armed (a document, a scene and a page — see
@@ -238,27 +260,25 @@ export function parentOriginOf(scene: Scene) {
 }
 
 /**
- * Place, materialize and apply ONE batch — the single code path behind both
- * ⌘V's internal fast path and ⌘D, which differ only in where the payload came
- * from and what the cascade is keyed by.
+ * Place, materialize and apply ONE batch — the single code path behind ⌘V's
+ * internal fast path, ⌘D, and Task 9's minted text node. They differ in
+ * exactly two things: where the payload came from, and WHERE it lands, which
+ * is the placement mode passed in.
  *
  * ONE `applyOps` call is ONE undo frame; a refusal applies nothing at all
  * (the materializer decides every refusal before it builds its first op, so
- * atomicity is by construction, not by rollback).
+ * atomicity is by construction, not by rollback). Returns whether the write
+ * path took the batch, which is what the cascade bookkeeping above it reads.
  */
 function placeAndApply(
   deps: SceneClipboardDeps,
   session: ArmedSession,
   payload: SceneClipboardPayloadV1,
-  sourceRootId: NodeId,
+  mode: PastePlacementMode,
   intent: string,
-): void {
-  const key = `${session.documentId}:${sourceRootId}`;
-  // R12: first placement of a given source is generation 1 — one cascade step
-  // off the copied box, so a paste is never hidden exactly under its source.
-  const generation = (deps.cascade.get(key) ?? 0) + 1;
+): boolean {
   const placement = planPastePlacement({
-    mode: { generation, kind: "paste-cascade" },
+    mode,
     pageId: session.pageId,
     parentComputedOrigin: parentOriginOf(session.scene),
     payloadBounds: payload.bounds,
@@ -273,13 +293,204 @@ function placeAndApply(
   );
   if ("refusal" in materialized) {
     deps.writes.reportError(materialized.refusal);
-    return;
+    return false;
   }
+  return deps.writes.applyOps(materialized.ops, intent);
+}
+
+/** {@link placeAndApply} under the R12 cascade: the ⌘V / ⌘D shape, where a
+ * repeat placement of the SAME source steps clear of the last one. */
+function cascadeAndApply(
+  deps: SceneClipboardDeps,
+  session: ArmedSession,
+  payload: SceneClipboardPayloadV1,
+  sourceRootId: NodeId,
+  intent: string,
+): void {
+  const key = `${session.documentId}:${sourceRootId}`;
+  // R12: first placement of a given source is generation 1 — one cascade step
+  // off the copied box, so a paste is never hidden exactly under its source.
+  const generation = (deps.cascade.get(key) ?? 0) + 1;
   // Bumped only on a batch the write path TOOK: a refused paste that advanced
   // the cascade would make the retry land somewhere the user never asked for.
-  if (deps.writes.applyOps(materialized.ops, intent)) {
+  if (
+    placeAndApply(
+      deps,
+      session,
+      payload,
+      { generation, kind: "paste-cascade" },
+      intent,
+    )
+  ) {
     deps.cascade.set(key, generation);
   }
+}
+
+// ── Task 9: plain text ─────────────────────────────────────────────────────
+
+/**
+ * R28's minted node, stated once. Every number here is a fixed literal rather
+ * than a brand-kit read: this hook has no kit, and a deterministic fallback the
+ * user can immediately restyle beats a guess dressed up as a theme.
+ */
+const PASTED_TEXT_ID = "pasted-text";
+const PASTED_TEXT_NAME = "Pasted text";
+const PASTED_TEXT_FONT_FAMILY = "Inter";
+const PASTED_TEXT_FONT_SIZE = 16;
+const PASTED_TEXT_LINE_HEIGHT = 1.35;
+/** The same 60%-of-the-page's-SHORT-side box a pasted picture is fitted into
+ * (`use-scene-image-paste.ts`'s R25), so the two paste gestures agree on what
+ * "comfortably inside this page" means. */
+const PASTED_TEXT_WIDTH_FRACTION = 0.6;
+
+/**
+ * ⌘V of plain text — the two shapes it takes, and the ONE `applyOps` behind
+ * both (R26: plain text is ours, not a seam).
+ *
+ * REPLACE, when a text node is selected and unlocked: the user pointed at a
+ * text node and pasted words into it, which is a content edit. The spans go
+ * through the shipped rich-text machinery ({@link spansVectorForContentEdit}),
+ * never a raw spread — that function owns what happens to a two-colour
+ * headline whose content is replaced wholesale, and re-deriving it here would
+ * be a second, quietly different answer.
+ *
+ * MINT, for everything else — an image, a shape, a group, a LOCKED text node,
+ * or nothing at all. A locked node is not a paste target for the same reason
+ * the placement planner refuses to reach inside one: the human said "don't
+ * reason about this". The new node rides the SAME pipeline an internal paste
+ * does (plan → materialize → apply), so it is re-minted, inserted childless,
+ * and placed by the R2 ladder — including into an auto-layout row when one is
+ * selected (founder ruling 2).
+ */
+function pasteText(
+  deps: SceneClipboardDeps,
+  session: ArmedSession,
+  text: string,
+): void {
+  const selected = session.selectedNodeId
+    ? session.scene.nodes[session.selectedNodeId]
+    : null;
+  if (selected && selected.kind.kind === "text" && !selected.locked) {
+    // The STORED node is what the remap reads (its `content` and `spans` are
+    // the document's); `text` is what is being written.
+    const stored: TextNode = selected.kind;
+    const spansFor = deps.spansVectorForContentEdit ?? spansVectorForContentEdit;
+    const spans = spansFor(stored, text, stored.spans ?? []);
+    deps.writes.applyOps(
+      [updateTextNode(selected, { content: text, spans })],
+      PASTE_TEXT_INTENT,
+    );
+    return;
+  }
+  const page = session.scene.pages[session.pageId] ?? null;
+  if (!page) {
+    // A pageId naming no page is a scene-invariant violation, not this
+    // handler's to repair — and it cannot arrive from the session, which reads
+    // both from the same loaded document. There is simply nowhere to place a
+    // node, so nothing is placed; a throw out of a window listener would be
+    // the worse answer.
+    return;
+  }
+  const width = Math.round(
+    PASTED_TEXT_WIDTH_FRACTION * Math.min(page.size.width, page.size.height),
+  );
+  const center = deps.viewportPageCenter?.() ?? {
+    x: page.size.width / 2,
+    y: page.size.height / 2,
+  };
+  placeAndApply(
+    deps,
+    session,
+    pastedTextPayload(text, width),
+    { center, kind: "viewport-center" },
+    PASTE_TEXT_INTENT,
+  );
+}
+
+/**
+ * The pasted text as a one-node clipboard payload, so it reaches the scene
+ * through the same materializer every other paste does rather than through a
+ * second, hand-rolled insert path.
+ *
+ * `bounds` exists ONLY to centre the box: the width is real, and the height is
+ * a line-count estimate at the node's own line height — the solver owns the
+ * hug height it actually lays out at, and nothing downstream reads this number
+ * again.
+ */
+function pastedTextPayload(
+  text: string,
+  width: number,
+): SceneClipboardPayloadV1 {
+  const lines = text.split("\n").length;
+  return {
+    kind: SCENE_CLIPBOARD_KIND,
+    version: 1,
+    workspaceHint: null,
+    roots: [PASTED_TEXT_ID],
+    nodes: [pastedTextNode(text, width)],
+    assetIds: [],
+    bounds: {
+      x: 0,
+      y: 0,
+      width,
+      height: Math.ceil(lines * PASTED_TEXT_FONT_SIZE * PASTED_TEXT_LINE_HEIGHT),
+    },
+    readableText: text,
+  };
+}
+
+/**
+ * R28's literal. The id is a PLACEHOLDER — `materializeClipboardPayload`
+ * re-mints it against the scene, so this node never reaches a document under
+ * it.
+ *
+ * Fixed width / hug height is the harvested ad's own shape for a text node
+ * (`text_headline`, `text_proof_stat`), and the single fill is not cosmetic: a
+ * text node with EMPTY fills paints nothing at all, so a fill-less mint would
+ * be an invisible paste.
+ */
+function pastedTextNode(text: string, width: number): Node {
+  return {
+    id: PASTED_TEXT_ID,
+    name: PASTED_TEXT_NAME,
+    kind: {
+      kind: "text",
+      content: text,
+      font_family: PASTED_TEXT_FONT_FAMILY,
+      font_size: PASTED_TEXT_FONT_SIZE,
+      font_weight: 400,
+      align: "left",
+      wrap: "wrap",
+      direction: "ltr",
+      line_height: PASTED_TEXT_LINE_HEIGHT,
+      letter_spacing: 0,
+    },
+    transform: {
+      x: 0,
+      y: 0,
+      rotation: 0,
+      skew_x: 0,
+      skew_y: 0,
+      flip_x: false,
+      flip_y: false,
+    },
+    size: { width: { kind: "fixed", value: width }, height: { kind: "hug" } },
+    children: [],
+    fills: [
+      {
+        id: "paint_pasted_text",
+        paint: { kind: "solid", color: { kind: "hex", value: "#111111" } },
+      },
+    ],
+    strokes: [],
+    corner: { top_left: 0, top_right: 0, bottom_right: 0, bottom_left: 0 },
+    opacity: 1,
+    clip: false,
+    layout: null,
+    // The engine's to solve, never ours to author (R8).
+    computed: null,
+    locked: false,
+  };
 }
 
 /** Serialize the current selection and stamp the workspace hint, or null when
@@ -437,12 +648,6 @@ export function handleSceneClipboardPaste(
   if (!refusedFiles && intent.kind === "none") {
     return;
   }
-  // Task 9's class is the one that is not ours yet: leaving it native is
-  // harmless (the browser pastes nothing into a canvas), while claiming it
-  // would make ⌘V feel broken.
-  if (!refusedFiles && intent.kind === "plain-text" && !deps.onPlainText) {
-    return;
-  }
   if (!deps.writes.canApply()) {
     // PRECEDENCE: the read-only sentence outranks the allowlist one. Naming
     // the allowlist here would mislead — an allowed PNG would not have pasted
@@ -458,7 +663,7 @@ export function handleSceneClipboardPaste(
 
   if (intent.kind === "internal") {
     event.preventDefault();
-    placeAndApply(
+    cascadeAndApply(
       deps,
       session,
       intent.payload,
@@ -491,9 +696,11 @@ export function handleSceneClipboardPaste(
       }
       return;
     case "plain-text":
-      // Guarded above: the seam exists, or we never got here.
+      // R26: ours, natively. The browser's own paste would put these
+      // characters nowhere (the canvas hosts no DOM text), so claiming the
+      // event is what makes ⌘V mean something here.
       event.preventDefault();
-      deps.onPlainText?.(intent.text);
+      pasteText(deps, session, intent.text);
       return;
     case "none":
       // Only reachable with `refusedFiles` set, which the branch above already
@@ -544,7 +751,7 @@ export function handleSceneClipboardDuplicate(
   if (!payload || !session.selectedNodeId) {
     return;
   }
-  placeAndApply(
+  cascadeAndApply(
     deps,
     session,
     payload,
@@ -556,13 +763,15 @@ export function handleSceneClipboardDuplicate(
 export interface UseSceneClipboardOptions {
   documentId: string | null;
   onExternalImages?: (files: File[], rejected: string[]) => void;
-  onPlainText?: (text: string) => void;
   onSvgMarkup?: (svg: string) => void;
   pageId: PageId | null;
   scene: Scene | null;
   /** The session's PRIMARY selection (`selectedIds[0] ?? null`). V1 copies one
    * subtree — the shipped selection model's own shape. */
   selectedNodeId: NodeId | null;
+  /** R29: the same canvas-viewport centre the image paste takes — where a
+   * minted text node lands. */
+  viewportPageCenter?: () => { x: number; y: number } | null;
   workspaceId?: string | null;
   writes: SceneClipboardDeps["writes"];
 }
@@ -577,11 +786,11 @@ export function useSceneClipboard(options: UseSceneClipboardOptions): void {
   const {
     documentId,
     onExternalImages,
-    onPlainText,
     onSvgMarkup,
     pageId,
     scene,
     selectedNodeId,
+    viewportPageCenter,
     workspaceId = null,
     writes,
   } = options;
@@ -595,11 +804,11 @@ export function useSceneClipboard(options: UseSceneClipboardOptions): void {
     cascade: new Map<string, number>(),
     documentId,
     onExternalImages,
-    onPlainText,
     onSvgMarkup,
     pageId,
     scene,
     selectedNodeId,
+    viewportPageCenter,
     workspaceId,
     writes,
   });
@@ -608,11 +817,11 @@ export function useSceneClipboard(options: UseSceneClipboardOptions): void {
       cascade: depsRef.current.cascade,
       documentId,
       onExternalImages,
-      onPlainText,
       onSvgMarkup,
       pageId,
       scene,
       selectedNodeId,
+      viewportPageCenter,
       workspaceId,
       writes,
     };

@@ -12,8 +12,16 @@ import {
   serializeSubtree,
   type SceneClipboardPayloadV1,
 } from "../adapter/scene-clipboard";
-import type { Node, Operation, Scene } from "../engine/scene/contracts";
+import type {
+  Node,
+  Operation,
+  Scene,
+  TextNode,
+  TextSpan,
+} from "../engine/scene/contracts";
+import { updateTextNode } from "../engine/scene/operations";
 import { deleteEdit, type StructuredEdit } from "../engine/scene/structuredEdits";
+import { spansVectorForContentEdit } from "../engine/scene/textSpans";
 import {
   buildCopyRepresentations,
   handleSceneClipboardCopy,
@@ -696,25 +704,250 @@ it("svg markup routes to the Task-8 seam, and refuses the same way without it", 
   ]);
 });
 
-it("plain text stays NATIVE until Task 9 wires it", () => {
-  const { deps, reportError } = harness();
-  const event = clipboardEvent(stubClipboardData({ "text/plain": "hello" }).data);
+// ── paste: plain text (Task 9) ─────────────────────────────────────────────
+//
+// R26 replaced the Task-7 seam: plain text is no longer left native and no
+// longer routed to an `onPlainText` callback — it is handled INSIDE this file,
+// so the two tests that pinned the seam are gone rather than adapted.
+//
+// The two shapes below are the whole feature: a selected text node has its
+// CONTENT replaced (spans remapped by the shipped rich-text machinery, never a
+// raw spread), and anything else mints a new text node at the viewport centre.
+
+/** The pasted characters, verbatim: leading/trailing spaces and a newline that
+ * must survive into the document untouched (R30 — no trimming anywhere). */
+const PASTED_TEXT = "  Trusted by 400 clinics\nsince 2019  ";
+
+/** The literal R28 fixes for a minted node, restated here so a silent change
+ * to either constant fails a test rather than a design review. */
+const PASTED_TEXT_WIDTH = 720; // round(0.6 × min(1200, 1200))
+const PASTED_TEXT_BOUNDS_HEIGHT = 44; // ceil(2 lines × 16 × 1.35)
+
+/** The R27 injection point. `spansVectorForContentEdit` is an ESM live binding,
+ * so it cannot be replaced in the module under test — it rides on the deps
+ * object instead, defaulting to the real import. The wrapper here DELEGATES to
+ * that same real function, so the assertions are against real output and the
+ * call arguments both. */
+function recordingSpansVector() {
+  return mock.fn(spansVectorForContentEdit);
+}
+
+function plainTextEvent(text = PASTED_TEXT) {
+  return clipboardEvent(stubClipboardData({ "text/plain": text }).data);
+}
+
+/** The one batch a plain-text paste applied, with its intent. */
+function appliedTextPaste(
+  applyOps: ReturnType<typeof harness>["applyOps"],
+): Operation[] {
+  assert.equal(applyOps.mock.callCount(), 1);
+  const [operations, intent] = applyOps.mock.calls[0].arguments;
+  assert.equal(intent, "clipboard.paste-text");
+  return operations;
+}
+
+/** The node an `insert_node` op carries. */
+function insertedNode(operation: Operation): Node {
+  return (operation as unknown as { node: Node }).node;
+}
+
+it("plain text over a selected text node REPLACES its content through updateTextNode", () => {
+  const spansVector = recordingSpansVector();
+  const { applyOps, deps, reportError } = harness({
+    selectedNodeId: "text_headline",
+    spansVectorForContentEdit: spansVector,
+  });
+  const event = plainTextEvent();
 
   handleSceneClipboardPaste(deps, event, CANVAS_TARGET);
 
-  assert.equal(event.prevented(), 0);
+  // R26: the paste is OURS now — claimed, and exactly one undo frame.
+  assert.equal(event.prevented(), 1);
+  const operations = appliedTextPaste(applyOps);
+  assert.equal(operations.length, 1);
+
+  // The op is the ENGINE's own builder, applied to the STORED node — built
+  // here the same way, so a hand-rolled `update_node` shape cannot pass.
+  const stored = HARVESTED_AD_PAGE.nodes["text_headline"];
+  const spans = spansVectorForContentEdit(
+    stored.kind as TextNode,
+    PASTED_TEXT,
+    [],
+  );
+  assert.deepEqual(
+    operations[0],
+    updateTextNode(stored, { content: PASTED_TEXT, spans }),
+  );
+
+  // The spans vector came FROM the rich-text machinery — never a raw spread.
+  assert.equal(spansVector.mock.callCount(), 1);
+  const [nodeArg, contentArg, nextSpansArg] = spansVector.mock.calls[0].arguments;
+  assert.equal(nodeArg, stored.kind);
+  assert.equal(contentArg, PASTED_TEXT);
+  assert.deepEqual(nextSpansArg, []);
   assert.equal(reportError.mock.callCount(), 0);
 });
 
-it("plain text reaches the Task-9 seam once it exists", () => {
-  const onPlainText = mock.fn<(text: string) => void>();
-  const { deps } = harness({ onPlainText });
-  const event = clipboardEvent(stubClipboardData({ "text/plain": "hello" }).data);
+it("a SPANNED node keeps the rich-text function's own remap of its spans", () => {
+  // The case the plan named: a two-colour headline, fully replaced. What the
+  // surviving spans are is `spansVectorForContentEdit`'s contract, not this
+  // file's — so the assertion is equality with that function's own answer for
+  // this exact input, which is the only way this stays true when the rich-text
+  // rules change.
+  const scene = clone(HARVESTED_AD_PAGE);
+  const headline = scene.nodes["text_headline"];
+  const storedSpans: TextSpan[] = [
+    { start: 0, end: 5, font_weight: 800 },
+    { start: 6, end: 11, italic: true },
+  ];
+  (headline.kind as TextNode).spans = storedSpans;
+  const spansVector = recordingSpansVector();
+  const { applyOps, deps } = harness({
+    scene,
+    selectedNodeId: "text_headline",
+    spansVectorForContentEdit: spansVector,
+  });
+
+  handleSceneClipboardPaste(deps, plainTextEvent(), CANVAS_TARGET);
+
+  const operations = appliedTextPaste(applyOps);
+  const expected = spansVectorForContentEdit(
+    headline.kind as TextNode,
+    PASTED_TEXT,
+    storedSpans,
+  );
+  assert.deepEqual(
+    operations[0],
+    updateTextNode(headline, { content: PASTED_TEXT, spans: expected }),
+  );
+  // The STORED spans are what was handed in as the next vector — the document's
+  // own styling, re-anchored to the new content by that function.
+  assert.deepEqual(spansVector.mock.calls[0].arguments[2], storedSpans);
+});
+
+it("plain text with NOTHING selected mints a text node at the viewport centre", () => {
+  const viewportPageCenter = mock.fn(() => ({ x: 800, y: 500 }));
+  const { applyOps, deps, reportError } = harness({
+    selectedNodeId: null,
+    viewportPageCenter,
+  });
+  const event = plainTextEvent();
 
   handleSceneClipboardPaste(deps, event, CANVAS_TARGET);
 
   assert.equal(event.prevented(), 1);
-  assert.deepEqual(onPlainText.mock.calls[0].arguments, ["hello"]);
+  const operations = appliedTextPaste(applyOps);
+  assert.equal(operations.length, 1);
+  const insert = operations[0] as unknown as {
+    kind: string;
+    parent: { id: string; kind: string };
+  };
+  assert.equal(insert.kind, "insert_node");
+  assert.deepEqual(insert.parent, { id: AD_PAGE_ID, kind: "page" });
+
+  const node = insertedNode(operations[0]);
+  assert.equal(node.kind.kind, "text");
+  // VERBATIM: the pasted characters, spaces and newline intact.
+  assert.equal((node.kind as TextNode).content, PASTED_TEXT);
+  assert.equal(node.name, "Pasted text");
+  // Childless, and re-minted by the materializer — never the placeholder id.
+  assert.deepEqual(node.children, []);
+  assert.notEqual(node.id, "pasted-text");
+  // Fixed width / hug height, the fixture's own precedent for a text node.
+  assert.deepEqual(node.size, {
+    width: { kind: "fixed", value: PASTED_TEXT_WIDTH },
+    height: { kind: "hug" },
+  });
+  // A text node with empty fills paints nothing, so it is born with one.
+  assert.equal(node.fills.length, 1);
+  // Centred on the viewport point: the box's own left edge is half its width
+  // to the left of the centre, and the page parent's origin is (0,0).
+  assert.equal(node.transform.x, 800 - PASTED_TEXT_WIDTH / 2);
+  assert.equal(node.transform.y, 500 - PASTED_TEXT_BOUNDS_HEIGHT / 2);
+  assert.equal(node.computed, null);
+  assert.equal(reportError.mock.callCount(), 0);
+});
+
+it("the PAGE's own centre is the fallback when there is no viewport to ask", () => {
+  // Two ways the canvas can decline: the callback is absent (nothing wired it),
+  // or it is there and answers null (the canvas is showing another document).
+  // Both land the same place — the middle of the page.
+  const absent = harness({ selectedNodeId: null });
+  handleSceneClipboardPaste(absent.deps, plainTextEvent(), CANVAS_TARGET);
+  const fromAbsent = insertedNode(appliedTextPaste(absent.applyOps)[0]);
+
+  const nulled = harness({
+    selectedNodeId: null,
+    viewportPageCenter: () => null,
+  });
+  handleSceneClipboardPaste(nulled.deps, plainTextEvent(), CANVAS_TARGET);
+  const fromNull = insertedNode(appliedTextPaste(nulled.applyOps)[0]);
+
+  assert.equal(fromAbsent.transform.x, 600 - PASTED_TEXT_WIDTH / 2);
+  assert.equal(fromAbsent.transform.y, 600 - PASTED_TEXT_BOUNDS_HEIGHT / 2);
+  assert.deepEqual(fromNull.transform, fromAbsent.transform);
+});
+
+it("a selected IMAGE mints a text node — never a content write on a picture", () => {
+  const { applyOps, deps } = harness({ selectedNodeId: "image_hero" });
+
+  handleSceneClipboardPaste(deps, plainTextEvent(), CANVAS_TARGET);
+
+  const operations = appliedTextPaste(applyOps);
+  assert.ok(
+    operations.every(
+      (operation) => (operation as { kind: string }).kind !== "update_node",
+    ),
+  );
+  assert.equal(insertedNode(operations[0]).kind.kind, "text");
+});
+
+it("a LOCKED text node is not a paste target — the text is minted instead", () => {
+  const scene = clone(HARVESTED_AD_PAGE);
+  scene.nodes["text_headline"].locked = true;
+  const { applyOps, deps } = harness({ scene, selectedNodeId: "text_headline" });
+
+  handleSceneClipboardPaste(deps, plainTextEvent(), CANVAS_TARGET);
+
+  const operations = appliedTextPaste(applyOps);
+  const insert = operations[0] as unknown as { kind: string };
+  assert.equal(insert.kind, "insert_node");
+  assert.equal(insertedNode(operations[0]).kind.kind, "text");
+});
+
+it("an unlocked auto-layout selection takes the minted text INTO the row", () => {
+  // Founder ruling 2 / the R2 ladder, unchanged: the placement planner decides
+  // this, exactly as it does for an internal paste.
+  const { applyOps, deps } = harness({ selectedNodeId: "auto_row_copy" });
+
+  handleSceneClipboardPaste(deps, plainTextEvent(), CANVAS_TARGET);
+
+  const operations = appliedTextPaste(applyOps);
+  const insert = operations[0] as unknown as {
+    index: number;
+    parent: { id: string; kind: string };
+  };
+  assert.deepEqual(insert.parent, { id: "auto_row_copy", kind: "node" });
+  assert.equal(
+    insert.index,
+    HARVESTED_AD_PAGE.nodes["auto_row_copy"].children.length,
+  );
+});
+
+it("a read-only document refuses a plain-text paste, applying nothing", () => {
+  const { applyOps, canApply, deps, reportError } = harness();
+  canApply.mock.mockImplementation(() => false);
+  const event = plainTextEvent();
+
+  handleSceneClipboardPaste(deps, event, CANVAS_TARGET);
+
+  assert.equal(applyOps.mock.callCount(), 0);
+  // No files rode along, so the event is NOT claimed — the T7 precedence, read
+  // only and unchanged by Task 9.
+  assert.equal(event.prevented(), 0);
+  assert.deepEqual(reportError.mock.calls.map((call) => call.arguments[0]), [
+    "This document isn't accepting edits right now.",
+  ]);
 });
 
 it("an empty clipboard is a complete non-event — not even a write-gate question", () => {

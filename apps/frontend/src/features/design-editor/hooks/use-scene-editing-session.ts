@@ -628,8 +628,9 @@ export function useSceneEditingSession({
   // (it takes artifact ids and document ids, no workspace), and the payload's
   // `workspaceHint` is display/debug only — a fabricated value would be worse
   // than the honest null, since asset resolution is the real cross-workspace
-  // gate. Task 9 owns the remaining external seam (`onPlainText`); until it
-  // lands the hook leaves a plain-text paste native.
+  // gate. Task 9 made a plain-text paste the hook's OWN (no seam): it replaces
+  // a selected text node's content or mints one at `viewportPageCenter`, the
+  // same canvas answer the image paste above takes.
   useSceneClipboard({
     documentId: activeDocumentId,
     onExternalImages: imagePaste.onExternalImages,
@@ -637,6 +638,7 @@ export function useSceneEditingSession({
     pageId,
     scene,
     selectedNodeId: primaryNodeId,
+    viewportPageCenter,
     writes,
   });
 
