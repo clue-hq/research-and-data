@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  DESIGN_CHECKPOINT_EVENT_TYPE,
   DESIGN_GENERATION_WAIT_NOTICE,
   DESIGN_LEG_EVENT_TYPES,
   designLegNotice,
@@ -162,6 +163,53 @@ test("a frame for another thread refreshes nothing", () => {
   assert.deepEqual(
     designRefreshForEvent(
       { type: "leg.awaiting_user", threadId: "thr-1" },
+      { activeThreadId: null },
+    ),
+    { refetchFeed: false, reloadCanvas: false },
+  );
+});
+
+// --- mid-run checkpoints (scene live-streaming rung A) ---------------------
+
+test("a mid-run checkpoint reloads the canvas and leaves the gallery alone", () => {
+  assert.deepEqual(
+    designRefreshForEvent(
+      { type: DESIGN_CHECKPOINT_EVENT_TYPE, threadId: "thr-1" },
+      activeThread,
+    ),
+    { refetchFeed: false, reloadCanvas: true },
+  );
+  // The literal is the platform's, verbatim; a typo here silently costs every
+  // mid-run reload, because an unrecognized type falls through to NO_REFRESH.
+  assert.equal(DESIGN_CHECKPOINT_EVENT_TYPE, "design.checkpoint");
+});
+
+test("no checkpoint, on any thread, ever refetches the gallery feed", () => {
+  // The gallery lists *artifacts*, and a checkpoint births none: it announces a
+  // new version of a document that already has its card. Refetching here would
+  // re-run the rail's read many times per minute for a list that cannot change.
+  for (const context of [activeThread, { activeThreadId: null }]) {
+    assert.equal(
+      designRefreshForEvent(
+        { type: DESIGN_CHECKPOINT_EVENT_TYPE, threadId: "thr-1" },
+        context,
+      ).refetchFeed,
+      false,
+    );
+  }
+});
+
+test("a checkpoint for another thread refreshes nothing", () => {
+  assert.deepEqual(
+    designRefreshForEvent(
+      { type: DESIGN_CHECKPOINT_EVENT_TYPE, threadId: "thr-2" },
+      activeThread,
+    ),
+    { refetchFeed: false, reloadCanvas: false },
+  );
+  assert.deepEqual(
+    designRefreshForEvent(
+      { type: DESIGN_CHECKPOINT_EVENT_TYPE, threadId: "thr-1" },
       { activeThreadId: null },
     ),
     { refetchFeed: false, reloadCanvas: false },

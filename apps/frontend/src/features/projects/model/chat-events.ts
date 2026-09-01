@@ -47,6 +47,12 @@ export const ChatStreamEventTypeSchema = z.enum([
   "leg.awaiting_user",
   "leg.closed",
   "leg.reopened",
+  // Scene live-streaming rung A: one committed P0.4 design checkpoint,
+  // forwarded mid-run off the design run's own outbox
+  // (`clue_api.design_fleet`). Unlike the `leg.*` frames it is not a lifecycle
+  // transition and writes nothing to the transcript — it exists so an open
+  // canvas can catch up with a version the document already has.
+  "design.checkpoint",
   "stream.hello",
   "stream.reset",
 ]);
@@ -87,6 +93,28 @@ const EnvelopeSchema = z.looseObject({
   type: ChatStreamEventTypeSchema,
 });
 
+/**
+ * The mark one `design.checkpoint` frame announces.
+ *
+ * Every member is nullable **on purpose**. The platform forwarder copies across
+ * only the keys the design event actually carried
+ * (`clue_api.design_fleet._forwarded_frame`), so a partial payload is an
+ * ordinary frame rather than a broken one — and the only thing the surface
+ * decides from a checkpoint is "reload the canvas", which needs none of them.
+ * Refusing the frame over an unreadable field would trade the whole live
+ * reload for a value nothing renders.
+ */
+export interface DesignCheckpoint {
+  /** The design document the committed version belongs to. */
+  documentId: string | null;
+  /** The document version this checkpoint committed. Monotone per document. */
+  version: number | null;
+  /** How many operations the checkpoint carried. A counter, not a list. */
+  operations: number | null;
+  /** Whether the engine's preflight was clean when it committed. */
+  preflightClean: boolean | null;
+}
+
 const CommonIdentitySchema = z.object({
   project_id: z.string().min(1),
   thread_id: z.string().min(1),
@@ -110,6 +138,8 @@ export interface ChatStreamEvent {
   deltaIndex: number | null;
   /** Present on the four `leg.*` lifecycle frames; null everywhere else. */
   legId: string | null;
+  /** Present on `design.checkpoint`; null on every other frame. */
+  checkpoint: DesignCheckpoint | null;
   type: ChatStreamEventType;
   /** Present on `part.created|updated|completed|failed`. */
   part: ChatPart | null;
@@ -129,6 +159,24 @@ export type ChatStreamEventParse =
 
 function optionalString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function optionalNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function optionalBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+/** Read a checkpoint's payload member-by-member; see {@link DesignCheckpoint}. */
+function readCheckpoint(raw: Record<string, unknown>): DesignCheckpoint {
+  return {
+    documentId: optionalString(raw.document_id),
+    version: optionalNumber(raw.version),
+    operations: optionalNumber(raw.operations),
+    preflightClean: optionalBoolean(raw.preflight_clean),
+  };
 }
 
 /**
@@ -218,6 +266,8 @@ export function parseChatStreamEvent(
       runId: envelope.data.run_id ?? null,
       deltaIndex: envelope.data.delta_index ?? null,
       legId: envelope.data.leg_id ?? null,
+      checkpoint:
+        envelope.data.type === "design.checkpoint" ? readCheckpoint(raw) : null,
       type: envelope.data.type,
       part,
       delta: typeof raw.delta === "string" ? raw.delta : null,

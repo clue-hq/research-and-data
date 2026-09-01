@@ -35,6 +35,16 @@ export function isDesignLegEvent(type: string): type is DesignLegEventType {
 }
 
 /**
+ * One committed design checkpoint, mid-run (scene live-streaming rung A).
+ *
+ * Not a leg frame: it announces no transition and closes nothing. It says a
+ * *version* of the leg's document was committed while the run is still going,
+ * which is the whole point — the canvas can now show work in progress instead
+ * of a blank wait until `leg.awaiting_user`.
+ */
+export const DESIGN_CHECKPOINT_EVENT_TYPE = "design.checkpoint";
+
+/**
  * The honest wait sentence (founder requirement 4, verbatim).
  *
  * Generation is minutes long and its duration is genuinely unknown, so the
@@ -161,6 +171,13 @@ export function designRefreshForEvent(
     case "leg.opened":
     case "leg.reopened":
       return { refetchFeed: true, reloadCanvas: false };
+    case DESIGN_CHECKPOINT_EVENT_TYPE:
+      // The canvas, and only the canvas. A checkpoint is a new *version* of a
+      // document that already has its gallery card, so a feed refetch would
+      // re-run the rail's read several times a minute for a list that cannot
+      // have changed. The reload itself is throttled by the consumer — the
+      // rate is transport, this is the policy.
+      return { refetchFeed: false, reloadCanvas: true };
     default:
       return NO_REFRESH;
   }

@@ -868,3 +868,68 @@ test("stream.reset drops parts but keeps the leg lines it cannot re-read", () =>
   assert.equal(turn.parts.length, 0);
   assert.equal(turn.legNotices.size, 1);
 });
+
+// --- mid-run checkpoints (scene live-streaming rung A) --------------------
+
+test("a design checkpoint parses the mark the design run committed", () => {
+  const event = legFrame({
+    type: "design.checkpoint",
+    document_id: "doc-7",
+    version: 12,
+    operations: 43,
+    preflight_clean: true,
+  });
+  assert.equal(event.type, "design.checkpoint");
+  assert.deepEqual(event.checkpoint, {
+    documentId: "doc-7",
+    version: 12,
+    operations: 43,
+    preflightClean: true,
+  });
+});
+
+test("a checkpoint whose payload is missing or wrong-typed still reloads", () => {
+  // The forwarder copies across only the keys the design event actually
+  // carried, so a partial payload is a normal frame, not a broken one — and
+  // the reload decision needs nothing but the type. Refusing the frame would
+  // trade a whole missing feature for an unreadable field.
+  for (const payload of [
+    {},
+    { document_id: 4, version: "twelve", operations: null, preflight_clean: "no" },
+  ]) {
+    const parsed = parseChatStreamEvent({
+      schema_version: "1",
+      event_id: 9001,
+      project_id: "p1",
+      thread_id: "t1",
+      turn_id: TURN,
+      type: "design.checkpoint",
+      ...payload,
+    });
+    assert.ok(parsed.ok, "a malformed checkpoint payload must not drop the frame");
+    assert.deepEqual(parsed.event.checkpoint, {
+      documentId: null,
+      version: null,
+      operations: null,
+      preflightClean: null,
+    });
+  }
+});
+
+test("only a checkpoint frame carries a checkpoint", () => {
+  assert.equal(legFrame({ type: "leg.awaiting_user", leg_id: "leg-9" }).checkpoint, null);
+  assert.equal(frame({ type: "turn.started" }).checkpoint, null);
+});
+
+test("a checkpoint writes no transcript line and moves no turn state", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({ type: "turn.started" }),
+    legFrame({ type: "design.checkpoint", document_id: "doc-7", version: 3 }),
+  ]);
+  const turn = state.turns.get(TURN);
+  assert.ok(turn);
+  assert.equal(turn.state, "running");
+  assert.equal(turn.parts.length, 0);
+  assert.equal(turn.legNotices.size, 0);
+  assert.equal(state.designLeg.open, false);
+});

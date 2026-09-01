@@ -35,7 +35,14 @@ import {
   type TranscriptMessage,
   type TranscriptState,
 } from "../model/chat-transcript";
-import { designRefreshForEvent } from "../model/design-leg";
+import {
+  DESIGN_CHECKPOINT_CANVAS_RELOAD_MIN_INTERVAL_MS,
+  throttleTrailing,
+} from "../model/design-checkpoint-throttle";
+import {
+  DESIGN_CHECKPOINT_EVENT_TYPE,
+  designRefreshForEvent,
+} from "../model/design-leg";
 import {
   deriveThreadStatus,
   threadLabel,
@@ -240,6 +247,37 @@ export function useProjectChatController({
     setError(failure instanceof Error ? failure.message : String(failure));
   }, []);
 
+  /**
+   * The mid-run canvas reload, rate-limited (scene live-streaming rung A).
+   *
+   * A generating scene commits a checkpoint every few seconds and each one is a
+   * real new document version, so the *decision* to reload is unconditional
+   * (`designRefreshForEvent`). Only the rate is capped, and only here: the
+   * terminal `leg.*` reloads keep going through the unthrottled path below,
+   * because a hand-back is the one reload the user is actually waiting on.
+   */
+  const bumpCanvasRevision = useCallback(() => {
+    if (!mounted.current) return;
+    setDesignRefresh((current) => ({
+      ...current,
+      canvasRevision: current.canvasRevision + 1,
+    }));
+  }, []);
+
+  const bumpCanvasForCheckpoint = useMemo(
+    () =>
+      throttleTrailing(
+        bumpCanvasRevision,
+        DESIGN_CHECKPOINT_CANVAS_RELOAD_MIN_INTERVAL_MS,
+      ),
+    [bumpCanvasRevision],
+  );
+
+  useEffect(
+    () => () => bumpCanvasForCheckpoint.cancel(),
+    [bumpCanvasForCheckpoint],
+  );
+
   const replaceThreadInRoute = useCallback(
     (threadId: string) => {
       // Phase R (R10): canonicalization is a `replace`, never a `push` — a
@@ -413,7 +451,14 @@ export function useProjectChatController({
           const refresh = designRefreshForEvent(event, {
             activeThreadId: threadId,
           });
-          if (refresh.refetchFeed || refresh.reloadCanvas) {
+          if (event.type === DESIGN_CHECKPOINT_EVENT_TYPE) {
+            // A mid-run checkpoint: canvas only (the decision says so), and
+            // rate-limited, because a busy run commits several a minute and
+            // remounting the editor on each would make it unreadable. The
+            // trailing edge always fires, so the version the canvas settles on
+            // is the last one that was committed, never a skipped one.
+            if (refresh.reloadCanvas) bumpCanvasForCheckpoint();
+          } else if (refresh.refetchFeed || refresh.reloadCanvas) {
             setDesignRefresh((current) => ({
               feedRevision: current.feedRevision + (refresh.refetchFeed ? 1 : 0),
               canvasRevision:
@@ -510,6 +555,7 @@ export function useProjectChatController({
       attachments.current.set(turnId, handle);
     },
     [
+      bumpCanvasForCheckpoint,
       invalidateProjectCatalog,
       loadConversation,
       loadThreads,
