@@ -833,9 +833,9 @@ tag reworded."
 
 **Interfaces:**
 - Consumes: Task 1 settings; Task 2/3 parsing + mapping; `logo_ladder.registrable_domain` (host folding).
-- Produces: `logo_vendor.fetch_vendor_family(domain: str, *, api_key: str | None = None, base_url: str | None = None, timeout_s: float | None = None, client: httpx.Client | None = None) -> tuple[dict[str, FamilyCell], list[str]]`.
+- Produces: `logo_vendor.fetch_vendor_family(domain: str, *, api_key: str | None = None, base_url: str | None = None, timeout_s: float | None = None, client: httpx.Client | None = None) -> tuple[dict[str, FamilyCell], list[str]]`. Also update the `VendorLookupFailed.__init__` inline comment (Task 2) to list the five codes `"quota" | "auth" | "timeout" | "http" | "malformed"`.
   - Raises `VendorCredentialsMissing` when the effective key is blank.
-  - Raises `VendorLookupFailed(code="quota")` on 429, `("timeout")` on `httpx.TimeoutException`, `("http")` on other non-200/404, `("malformed")` on unparseable JSON.
+  - Raises `VendorLookupFailed(code="quota")` on 429, `("auth")` on 401/403 (the vendor's documented "Unauthorized" — a MISCONFIGURED key, named as such so the operator sees it, message: `"brandfetch rejected the API key (HTTP <status>); check BRANDFETCH_API_KEY"`), `("timeout")` on `httpx.TimeoutException`, `("http")` on other non-200/404 (incl. the documented 400 "Bad Request"), `("malformed")` on unparseable JSON. (Vendor contract per the Brand API reference, scraped 2026-09-02: responses 200/400/401/404/429, `bearerAuth`.)
   - 404 → `({}, ["brandfetch has no record of <domain> — an answer, not an error"])`.
   - **D6 — asset host allowlist:** `_ASSET_HOST_SUFFIXES = ("brandfetch.io",)`. `download(src)` refuses (returns `None`) any `src` whose host is not that suffix or a subdomain of it, and the driver appends `"asset host <host> is not on the vendor allowlist; not fetched: <src>"` to its notes (merged with the mapping's notes in the return). The MockTransport test below asserts the handler is never called for the foreign host.
   - **Sync httpx**, not async: the callers (`fetch_logo` tools) are synchronous, and the existing prep layer already wraps the ladder's async driver with `asyncio.run` — the vendor rung stays simpler by being sync end-to-end. Asset downloads go through the same `httpx.Client` with the configured timeout and a 15 MB size cap read via `resp.headers.get("content-length")` check + len guard (mirroring `capture.net`'s cap value; the Brand API srcs are Brandfetch's own asset CDN, not attacker-controlled pages, so the full SSRF re-guard machinery is not pulled in here — the domain never varies).
@@ -887,6 +887,11 @@ def test_fetch_vendor_family_404_is_an_answer_and_429_is_typed():
         with _pytest.raises(VendorLookupFailed) as err:
             fetch_vendor_family("acme.com", api_key="k", client=client)
     assert err.value.code == "quota"
+
+    with _vendor_transport(lambda r: httpx.Response(401)) as client:
+        with _pytest.raises(VendorLookupFailed) as err:
+            fetch_vendor_family("acme.com", api_key="bad", client=client)
+    assert err.value.code == "auth" and "BRANDFETCH_API_KEY" in err.value.message
 
 
 def test_fetch_vendor_family_blank_key_raises_credentials_missing():
@@ -983,6 +988,12 @@ def fetch_vendor_family(domain, *, api_key=None, base_url=None, timeout_s=None, 
         if resp.status_code == 429:
             raise VendorLookupFailed(
                 "quota", "brandfetch quota or throughput limit reached (HTTP 429)"
+            )
+        if resp.status_code in (401, 403):
+            raise VendorLookupFailed(
+                "auth",
+                f"brandfetch rejected the API key (HTTP {resp.status_code}); "
+                "check BRANDFETCH_API_KEY",
             )
         if resp.status_code != 200:
             raise VendorLookupFailed("http", f"brand lookup returned HTTP {resp.status_code}")
