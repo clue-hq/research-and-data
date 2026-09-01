@@ -70,3 +70,39 @@ skill" is satisfied — the pilot-hardened skill is live, not inert catalog byte
 - Temp worktrees removed; branch `merge/comprehensive-remint` kept (merge parent, harmless).
 - `.env` file: absent in this workspace — when one is provisioned, remember env-value-wins
   reconciliation against the merged `.env.example`.
+
+## ADDENDUM (same day) — steps 3, 4, 5 COMPLETE
+
+- `1d4cc0d8b` — step 3 flag posture: entity-research runtime + both Sumble gap flags → false;
+  CLUE_MEMORY_ENABLED=false + CLUE_SELF_SERVE_PROVISIONING_ENABLED=false added (parity gaps
+  closed); CLUE_FRONTEND_CORS_ALLOW_ORIGINS placeholder. Note: the file deliberately carries the
+  opposing integration_pilot overlay block; the runtime-flag comment warns about it.
+- `49647391f` — inversion (a) fixed: `check_claim_value_entailment` returns False (admitted,
+  unjudged) when no judge is composed; red-proof test
+  `tests/stage0/test_c8_evidence_ergonomics.py::test_typed_value_without_a_judge_is_admitted_unjudged_r0`
+  (agent proved red against the old code, I re-ran green against clue-pg-semarang:55110).
+  KNOWN RESIDUAL: interview.py's CORROBORATION-INDEPENDENCE INVARIANT comment (~L895) still says
+  interview claim values are strings by construction — premise narrowed (typed values now also
+  land under `client_interview` when unjudged); safe direction (one source_key = one source),
+  moot while the Corroborator is uncomposed; comment not updated (out of scope).
+- `deb31c686` — inversion (b) fixed: inline Sumble Corroborator deleted; materialization always
+  RESOLVED on the provider value. No tests pinned CONFLICT/CORROBORATED from this path; enum and
+  consumers untouched.
+- `88f42e548` — DEEP_SPEND readiness floor min_verified_claims 1 → 0 (would deadlock with
+  verification off; human override remains the governing gate).
+- `068fa858b` — step 5: CLUE_VERIFICATION_ENABLED=false (.env.example L187), flipped only after
+  the inversion fixes per plan ordering. Proof set (70 tests) green in both env postures.
+- Baseline correction: the pre-existing-red list is wider than the R0 note above recorded —
+  add `test_toolbelt_wiring::test_out_of_order_matrix` (same root cause as the full-set red) and
+  6 reds in `tests/stage0/test_phase_c5_recipe0.py` ("project product confirmation requires an
+  established workspace client") — ALL confirmed failing at pristine `1d4cc0d8b` base by the
+  step-4 agent. Total known pre-existing debt: 4 + 1 + 6 = 11 test reds, owners undecided.
+
+## R0 exit-gate status after steps 2-5
+
+MET: merged branch; single alembic head (44039cb83844); old lane inert by posture (runtime flag
+false; launch tools refuse typed); interview writes typed values with verification off (proven);
+db-smoke green; frontend gate green (2060/2060).
+NOT YET: `make check` fully green (11 documented pre-existing reds — debt-payoff needs an owner
+ruling); seam docs signed (draft ready, joint session pending); step 7 frontend contract-gap
+ruling session; step 8 ARV2 skeleton (flag + empty driver + catalog folder + Secrets.ai_ark_api_key).
