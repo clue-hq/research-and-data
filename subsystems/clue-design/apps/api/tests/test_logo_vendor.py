@@ -26,10 +26,12 @@ def test_brandfetch_settings_load_from_env(monkeypatch):
 
     monkeypatch.setenv("BRANDFETCH_API_KEY", "bf_test_key")
     monkeypatch.setenv("BRANDFETCH_CLIENT_ID", "idTESTCLIENT")
+    monkeypatch.setenv("BRANDFETCH_API_BASE_URL", "https://example.test")
     monkeypatch.setenv("BRANDFETCH_TIMEOUT_S", "5.5")
     fresh = Settings(_env_file=None)
     assert fresh.brandfetch_api_key == "bf_test_key"
     assert fresh.brandfetch_client_id == "idTESTCLIENT"
+    assert fresh.brandfetch_api_base_url == "https://example.test"
     assert fresh.brandfetch_timeout_s == 5.5
 
 
@@ -141,12 +143,22 @@ def _mini_svg(fill: str = "#111111") -> bytes:
     ).encode()
 
 
+def _mini_png(rgb=(16, 24, 32), size=64) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGBA", (size, size), rgb + (255,)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 def test_map_vendor_assets_inverts_theme_and_skips_icon_and_photographic():
     from lumen_ingestion.logo_vendor import map_vendor_assets_to_cells, parse_brand_payload
 
     fetched = {
         "https://asset.brandfetch.io/a/lockup-dark.svg": (_mini_svg("#101820"), "image/svg+xml"),
-        "https://asset.brandfetch.io/a/symbol-light.png": (b"\x89PNGfakebytes", "image/png"),
+        "https://asset.brandfetch.io/a/symbol-light.png": (_mini_png(), "image/png"),
     }
     cells, notes = map_vendor_assets_to_cells(
         parse_brand_payload(BRAND_PAYLOAD), download=lambda url: fetched.get(url)
@@ -209,3 +221,16 @@ def test_map_vendor_assets_first_asset_wins_per_cell():
         [first, second], download=lambda url: (_mini_svg(), "image/svg+xml")
     )
     assert cells["light_lockup"].origin_url == "one"
+
+
+def test_map_vendor_assets_refuses_undecodable_raster():
+    from lumen_ingestion.logo_vendor import VendorAsset, map_vendor_assets_to_cells
+
+    garbage = VendorAsset(theme="dark", type="symbol", tags=[], formats=[
+        {"src": "g", "format": "png", "width": 300, "height": 300, "size": 1,
+         "background": None}])
+    cells, notes = map_vendor_assets_to_cells(
+        [garbage], download=lambda url: (b"not-a-png-at-all", "image/png")
+    )
+    assert cells == {}
+    assert any("cannot be decoded" in n for n in notes)

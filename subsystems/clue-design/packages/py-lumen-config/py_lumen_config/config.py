@@ -236,7 +236,7 @@ class Settings(BaseSettings):
     pdl_base_url: str = "https://api.peopledatalabs.com"
     pdl_timeout_s: float = 30.0
 
-    # -- Brandfetch (target-account logo vendor; W-logo vendor-first, 2026-09-02) --------
+    # -- Brandfetch (target-account logo vendor; vendor-first logo family, 2026-09-02) ----
     # Brand API key (Bearer). Blank = vendor rung disabled: `fetch_logo` degrades honestly
     # to the in-house ladder, exactly like a blank PDL_API_KEY degrades ad identity.
     brandfetch_api_key: str = ""

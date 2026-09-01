@@ -186,6 +186,11 @@ def map_vendor_assets_to_cells(assets, download):
                 f"(no intrinsic geometry or no drawable artwork, not renderable)"
             )
             continue
+        if fmt in ("png", "webp", "jpeg") and not _raster_decodes(body):
+            notes.append(
+                f"vendor {asset.type} refused: {fmt} bytes cannot be decoded as an image"
+            )
+            continue
         cells[name] = FamilyCell(
             cell=name,
             body=body,
@@ -203,3 +208,20 @@ def map_vendor_assets_to_cells(assets, download):
             },
         )
     return cells, notes
+
+
+def _raster_decodes(body: bytes) -> bool:
+    """Can Pillow open these bytes? The raster twin of `svg_is_renderable`: a
+    vendor cell must hold a file that PAINTS, whatever its format, and an
+    undecodable raster would otherwise travel all the way to `core.ingest_asset`
+    before anything said so."""
+    import io
+
+    from PIL import Image  # lazy, like the ladder: `capture` must import PIL-free
+
+    try:
+        with Image.open(io.BytesIO(body)) as image:
+            image.verify()
+        return True
+    except Exception:  # noqa: BLE001 - undecodable is the answer, not an error
+        return False
