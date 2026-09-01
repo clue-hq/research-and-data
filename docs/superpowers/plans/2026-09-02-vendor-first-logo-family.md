@@ -21,6 +21,7 @@ Ledger: `.superpowers/sdd/2026-09-02-vendor-first-logo-family/progress.md`. Proc
 - Task 4 — DONE (`abe5d9d4f`, `417da50b4`) — live-verified
 - Task 5 — DONE (`50908e087`)
 - Task 6 — DONE (`08de3c8e2`, `ab6b477a4`)
+- Task 7 — DONE (`16857940d`, `dcbcd4b63`; migration `1d09aba87206`)
 - Task 8 — DONE (`753e1e9d7`) — ran before Task 7
 
 ## Deferred items ledger (founder rule 2026-09-02: every deferral lives HERE and belongs to a task)
@@ -1578,6 +1579,8 @@ duck-typed seam (durable impl lands with the migration)."
 
 ### Task 7: The durable family cache (migration + `DurableLogoFamilyCache`)
 
+**Status: DONE 2026-09-02 — commits `16857940d` + tests `dcbcd4b63`; migration `1d09aba87206` (single head; smoke on a throwaway DB; dev DB upgraded additively); controller first-hand review clean. Accepted deviations: jsonb via `clue_design._codec.dump_json/load_json`, timestamps via `iso()` (in-repo conventions). Residual by design: no TTL ⇒ one row per distinct domain per workspace, unbounded (founder decision #4).**
+
 **Files:**
 - Create: `alembic/versions/<hash>_design_logo_family_cache.py` (id assigned by `alembic revision -m "design logo family cache"` from the repo ROOT; set `down_revision` to the current single head — run `alembic heads` first and confirm exactly one)
 - Create: `subsystems/clue-design/apps/api/lumen_api/agent_logo_family_cache.py`
@@ -1668,11 +1671,11 @@ async def upsert_logo_family(
     )
 ```
 
-- [ ] **Step 1: Run `alembic heads` from the repo root** with the repo `.env` sourced (`set -a; source .env; set +a`) — it must print ONE id (`6eff96862040` at plan time; if two, STOP — an unmerged parallel branch exists). Set the new migration's `down_revision` to that id.
+- [x] **Step 1: Run `alembic heads` from the repo root** with the repo `.env` sourced (`set -a; source .env; set +a`) — it must print ONE id (`6eff96862040` at plan time; if two, STOP — an unmerged parallel branch exists). Set the new migration's `down_revision` to that id.
 
-- [ ] **Step 2: Generate the migration** — from repo root: `alembic revision -m "design logo family cache"`; fill in `upgrade()`/`downgrade()` as above with the values from Step 1.
+- [x] **Step 2: Generate the migration** — from repo root: `alembic revision -m "design logo family cache"`; fill in `upgrade()`/`downgrade()` as above with the values from Step 1.
 
-- [ ] **Step 3: Gate the migration on a THROWAWAY database — never the workspace dev DB.** `make db-smoke` runs `alembic downgrade base` against whatever `CLUE_DATABASE_URL` names, and the repo `.env` names this workspace's LIVE dev DB (`clue_singapore_v1`, seeded). So, from the repo root:
+- [x] **Step 3: Gate the migration on a THROWAWAY database — never the workspace dev DB.** `make db-smoke` runs `alembic downgrade base` against whatever `CLUE_DATABASE_URL` names, and the repo `.env` names this workspace's LIVE dev DB (`clue_singapore_v1`, seeded). So, from the repo root:
 
 ```bash
 PGPASSWORD=clue psql -h localhost -p 55040 -U clue -d postgres -c 'CREATE DATABASE clue_singapore_v1_smoke'
@@ -1681,7 +1684,7 @@ PGPASSWORD=clue psql -h localhost -p 55040 -U clue -d postgres -c 'DROP DATABASE
 ```
 Expected: three alembic runs green (up → down → up), then `alembic heads` prints exactly one id (the new one). ONLY THEN apply the migration to the dev DB additively: `set -a; source .env; set +a; .venv/bin/alembic upgrade head` (upgrade only — never downgrade the dev DB). The API test suite reads that DB.
 
-- [ ] **Step 4: Write the failing cache tests**
+- [x] **Step 4: Write the failing cache tests**
 
 Fixture pattern (controller-resolved 2026-09-02): the api conftest (`apps/api/tests/conftest.py`) already gives every test an isolated workspace via the autouse `_isolated_design_workspace` (sets `LUMEN_DEV_WORKSPACE_ID`) and a disposable `design_storage` (`FsStorage(tmp_path/...)`); `make_blob_store(app)` builds a `DesignBlobStore` on the app's storage for THIS test's workspace. Build the app the way `apps/api/tests/test_abm_batch_publish.py`'s fixtures (lines ~49–96) do (`create_app(...)` with the injected `design_storage`), and define in this test file:
 
@@ -1759,10 +1762,10 @@ def test_workspace_isolation_is_fail_closed(design_blob_store, other_workspace_b
 
 (If `test_web_account_logo_bind.py` has no `other_workspace_blob_store`-style fixture, build one in this test file the same way it builds its primary fixture, with a second workspace id.)
 
-- [ ] **Step 5: Run to verify FAIL** — `ModuleNotFoundError: lumen_api.agent_logo_family_cache`.
+- [x] **Step 5: Run to verify FAIL** — `ModuleNotFoundError: lumen_api.agent_logo_family_cache`.
 `PYTHONPATH=.:apps/api:apps/agent_runtime <repo-root>/.venv/bin/python -m pytest apps/api/tests/test_logo_family_cache.py -v`
 
-- [ ] **Step 6: Implement `agent_logo_family_cache.py`**
+- [x] **Step 6: Implement `agent_logo_family_cache.py`**
 
 ```python
 """The durable target-logo family cache (founder decision #4, 2026-08-31).
@@ -1918,7 +1921,7 @@ class DurableLogoFamilyCache:
 
 Add `- Create: \`subsystems/design/clue_design/logo_family_cache.py\`` to this task's Files and to the commit's `git add`.
 
-- [ ] **Step 7: Run to verify PASS**, then commit
+- [x] **Step 7: Run to verify PASS**, then commit
 
 ```bash
 git add alembic/versions/*design_logo_family* subsystems/clue-design/apps/api/lumen_api/agent_logo_family_cache.py subsystems/clue-design/apps/api/tests/test_logo_family_cache.py
