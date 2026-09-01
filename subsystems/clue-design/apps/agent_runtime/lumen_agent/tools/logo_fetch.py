@@ -158,6 +158,57 @@ def _prepare(resolution, site: str, company_name: Optional[str]) -> LogoFetchOut
     )
 
 
+def ladder_cells(resolution) -> dict:
+    """The ladder's four slots folded into the 2x2. The ladder's `light`/`dark`
+    are theme-correct already (its slot names use OUR background semantics);
+    what this adds is the completeness split: a symbol-shaped primary is a
+    MARK, not a lockup, and the wordmark slot backfills the light lockup."""
+    from lumen_ingestion.logo_family import (
+        SOURCE_LADDER,
+        SOURCE_LADDER_MATERIALIZED,
+        FamilyCell,
+    )
+
+    def to_cell(name: str, slot, ladder_slot: str) -> FamilyCell:
+        return FamilyCell(
+            cell=name,
+            body=slot.body,
+            content_type=slot.content_type,
+            source=(
+                SOURCE_LADDER_MATERIALIZED
+                if slot.provenance == "materialized-adaptive"
+                else SOURCE_LADDER
+            ),
+            origin_url=slot.candidate.url,
+            evidence={
+                "ladder_slot": ladder_slot,
+                "rung": slot.candidate.rung,
+                "basis": slot.basis[:200],
+                "lockup": slot.candidate.lockup,
+                **({"materialized_ink": slot.ink} if slot.ink else {}),
+            },
+        )
+
+    cells: dict = {}
+    for theme in ("light", "dark"):
+        slot = resolution.slots.get(theme)
+        if slot is None or not slot.body:
+            continue
+        completeness = "mark" if slot.candidate.lockup == "symbol" else "lockup"
+        cells[f"{theme}_{completeness}"] = to_cell(f"{theme}_{completeness}", slot, theme)
+
+    mark = resolution.slots.get("mark")
+    if mark is not None and mark.body:
+        name = "dark_mark" if mark.candidate.variant == "dark" else "light_mark"
+        if name not in cells:
+            cells[name] = to_cell(name, mark, "mark")
+
+    wordmark = resolution.slots.get("wordmark")
+    if wordmark is not None and wordmark.body and "light_lockup" not in cells:
+        cells["light_lockup"] = to_cell("light_lockup", wordmark, "wordmark")
+    return cells
+
+
 def _now() -> str:
     from datetime import datetime, timezone
 

@@ -284,3 +284,60 @@ def test_fetch_logo_is_offered_to_both_authors(tmp_path, monkeypatch):
 
     assert "tools.fetch_logo" in Path(harness.__file__).read_text()
     assert "tools.fetch_logo" in Path(harness_web.__file__).read_text()
+
+
+# --------------------------------------------------------------------------- #
+# ladder slots -> 2x2 cells
+# --------------------------------------------------------------------------- #
+
+
+def _slot(body: bytes, *, lockup: str, variant: str, provenance: str = "genuine",
+          url: str = "https://acme.com/logo.svg", rung: str = "HEADER"):
+    from lumen_ingestion.logo_ladder import LadderCandidate, LadderSlot
+
+    candidate = LadderCandidate(url=url, rung=rung, fmt="svg")
+    candidate.lockup = lockup
+    candidate.variant = variant
+    return LadderSlot(candidate=candidate, provenance=provenance, body=body,
+                      content_type="image/svg+xml", basis="test basis")
+
+
+def _resolution(slots):
+    from lumen_ingestion.logo_ladder import LadderResolution
+
+    res = LadderResolution(status="resolved", identity={"passed": True})
+    res.slots = {"light": None, "dark": None, "mark": None, "wordmark": None, **slots}
+    return res
+
+
+def test_ladder_cells_maps_lockup_primaries_and_variant_marks():
+    from lumen_agent.tools.logo_fetch import ladder_cells
+
+    cells = ladder_cells(_resolution({
+        "light": _slot(_svg(), lockup="full_lockup", variant="light"),
+        "dark": _slot(_svg("#ffffff"), lockup="full_lockup", variant="dark"),
+        "mark": _slot(_svg(), lockup="symbol", variant="unknown"),
+    }))
+    assert set(cells) == {"light_lockup", "dark_lockup", "light_mark"}
+    assert cells["light_lockup"].source == "ladder"
+
+
+def test_ladder_cells_symbol_primary_lands_in_the_mark_cell():
+    from lumen_agent.tools.logo_fetch import ladder_cells
+
+    cells = ladder_cells(_resolution({
+        "light": _slot(_svg(), lockup="symbol", variant="light"),
+    }))
+    assert list(cells) == ["light_mark"]
+
+
+def test_ladder_cells_wordmark_backfills_light_lockup_and_materialized_is_stamped():
+    from lumen_agent.tools.logo_fetch import ladder_cells
+
+    cells = ladder_cells(_resolution({
+        "wordmark": _slot(_svg(), lockup="wordmark", variant="light"),
+        "dark": _slot(_svg("#ffffff"), lockup="full_lockup", variant="adaptive",
+                      provenance="materialized-adaptive"),
+    }))
+    assert cells["light_lockup"].evidence["ladder_slot"] == "wordmark"
+    assert cells["dark_lockup"].source == "ladder-materialized"
