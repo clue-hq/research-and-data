@@ -300,12 +300,14 @@ later — WebKit/Firefox support is not there yet, per the research note).
   ids for every node, `children` arrays rewritten through the old→new map, root `name` suffixed
   (`headline` → `headline_2`, `_3`, … against `siblingNames`), descendants keep names.
 
-- [ ] **Step 1: failing tests** — every output id is fresh and absent from `existingIds`;
+- [x] **Step 1: failing tests** — every output id is fresh and absent from `existingIds`;
   children arrays reference only re-minted ids; deterministic structure (same shape, new ids);
   name collision suffixes correctly incl. an existing `_2`; id collision with `existingIds`
-  retries (inject a colliding-first fake `randomUUID` like the structuredEdits tests do).
-- [ ] **Steps 2–4: FAIL → implement → PASS** — **Step 5: commit**
-  `feat(design-editor): clipboard subtree re-mint with reference rewrite`
+  retries (inject a colliding-first fake `randomUUID` like the structuredEdits tests do —
+  done via node:test `mock.method`, this suite's native equivalent of the vitest-shim spy;
+  plus batch self-collision retry, null-name root, payload-not-mutated).
+- [x] **Steps 2–4: FAIL (6 red) → implement → PASS (31/31; eslint clean)** — **Step 5: commit**
+  `feat(design-editor): clipboard subtree re-mint with reference rewrite` (`4384e4154`)
 
 ### Task 4: Placement planner (`planPastePlacement`)
 
