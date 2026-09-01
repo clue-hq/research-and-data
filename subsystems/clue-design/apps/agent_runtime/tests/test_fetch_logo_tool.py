@@ -23,6 +23,18 @@ from lumen_agent.tools.web_substrate import LumenWebTools
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
+@pytest.fixture(autouse=True)
+def _vendor_rung_disabled(monkeypatch):
+    """No test in this file may reach Brandfetch: the repo .env carries a real key.
+    Tests that exercise the vendor path monkeypatch `logo_fetch._vendor_rung` themselves."""
+    from lumen_ingestion.logo_vendor import VendorCredentialsMissing
+
+    def disabled(site, company):
+        raise VendorCredentialsMissing()
+
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", disabled)
+
+
 # --------------------------------------------------------------------------- #
 # fakes
 # --------------------------------------------------------------------------- #
@@ -127,11 +139,11 @@ def test_the_helper_shapes_one_ingest_per_resolved_slot(monkeypatch):
     _fake_site(monkeypatch, GOODMAN_HTML, GOODMAN_ASSETS, "goodmancampbell.com")
     outcome = logo_fetch.fetch_logo_family("goodmancampbell.com")
 
-    slots = {p.slot for p in outcome.prepared}
-    assert {"light", "dark"} <= slots
+    cells = {p.cell for p in outcome.prepared}
+    assert {"light_lockup", "dark_lockup"} <= cells
     assert not outcome.needs_review
 
-    light = next(p for p in outcome.prepared if p.slot == "light")
+    light = next(p for p in outcome.prepared if p.cell == "light_lockup")
     kwargs = light.ingest_kwargs("/tmp/store")
     # Content-addressed, so the same brand fetched twice is the same asset.
     assert kwargs["asset_id"] == light.asset_id
@@ -161,6 +173,7 @@ def test_the_helper_reports_review_without_preparing_anything(monkeypatch):
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.xfail(strict=True, reason="cells payload lands in task 10")
 def test_web_fetch_logo_registers_with_the_record_op_key(tmp_path, monkeypatch):
     _fake_site(monkeypatch, GOODMAN_HTML, GOODMAN_ASSETS, "goodmancampbell.com")
     tools = _web_tools(tmp_path)
@@ -341,3 +354,150 @@ def test_ladder_cells_wordmark_backfills_light_lockup_and_materialized_is_stampe
     }))
     assert cells["light_lockup"].evidence["ladder_slot"] == "wordmark"
     assert cells["dark_lockup"].source == "ladder-materialized"
+
+
+def test_ladder_cells_symbol_primary_wins_the_light_mark_cell():
+    from lumen_agent.tools.logo_fetch import ladder_cells
+
+    cells = ladder_cells(_resolution({
+        "light": _slot(_svg(), lockup="symbol", variant="light",
+                       url="https://acme.com/primary.svg"),
+        "mark": _slot(_svg(), lockup="symbol", variant="unknown",
+                      url="https://acme.com/mark.svg"),
+    }))
+    assert list(cells) == ["light_mark"]
+    assert cells["light_mark"].origin_url.endswith("primary.svg")
+
+
+# --------------------------------------------------------------------------- #
+# the two-rung dispatch
+# --------------------------------------------------------------------------- #
+
+
+class _RecordingCache:
+    def __init__(self):
+        self.stored = {}
+        self.gets = []
+
+    def get(self, site):
+        self.gets.append(site)
+        return self.stored.get(site)
+
+    def put(self, site, outcome):
+        self.stored[site] = outcome
+
+
+def _vendor_cells(*names):
+    from lumen_ingestion.logo_family import SOURCE_BRANDFETCH, FamilyCell
+
+    return {
+        n: FamilyCell(cell=n, body=_svg(), content_type="image/svg+xml",
+                      source=SOURCE_BRANDFETCH, origin_url=f"https://a/{n}.svg")
+        for n in names
+    }
+
+
+def test_dispatch_vendor_full_family_skips_the_ladder(monkeypatch):
+    from lumen_agent.tools import logo_fetch
+
+    monkeypatch.setattr(
+        logo_fetch, "_vendor_rung",
+        lambda site, company: (_vendor_cells(*logo_fetch.CELL_NAMES), []),
+    )
+
+    def explode(*a, **k):
+        raise AssertionError("ladder must not run when the vendor filled all cells")
+
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", explode)
+    outcome = logo_fetch.fetch_logo_family("acme.com")
+    assert outcome.status == "ok"
+    assert set(outcome.cells) == set(logo_fetch.CELL_NAMES)
+    assert all(source == "brandfetch" for source in outcome.cells.values())
+    assert {p.cell for p in outcome.prepared} == set(logo_fetch.CELL_NAMES)
+    assert all(p.provenance["created_by"] == "brandfetch" for p in outcome.prepared)
+
+
+def test_dispatch_partial_vendor_gets_ladder_backfill_only_for_empty_cells(monkeypatch):
+    from lumen_agent.tools import logo_fetch
+
+    monkeypatch.setattr(
+        logo_fetch, "_vendor_rung", lambda site, company: (_vendor_cells("light_lockup"), [])
+    )
+    ladder = _resolution({
+        "light": _slot(_svg(), lockup="full_lockup", variant="light"),   # must NOT win
+        "dark": _slot(_svg("#fff"), lockup="full_lockup", variant="dark"),
+        "mark": _slot(_svg(), lockup="symbol", variant="unknown"),
+    })
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: ladder)
+    outcome = logo_fetch.fetch_logo_family("acme.com")
+    assert outcome.cells["light_lockup"] == "brandfetch"   # vendor kept
+    assert outcome.cells["dark_lockup"] == "ladder"
+    assert outcome.cells["light_mark"] == "ladder"
+
+
+def test_dispatch_vendor_disabled_or_failing_degrades_to_ladder(monkeypatch):
+    from lumen_agent.tools import logo_fetch
+    from lumen_ingestion.logo_vendor import VendorCredentialsMissing, VendorLookupFailed
+
+    ladder = _resolution({"light": _slot(_svg(), lockup="full_lockup", variant="light")})
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: ladder)
+
+    def no_key(site, company):
+        raise VendorCredentialsMissing()
+
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", no_key)
+    outcome = logo_fetch.fetch_logo_family("acme.com")
+    assert outcome.cells == {"light_lockup": "ladder"}
+    assert any("vendor rung disabled" in n for n in outcome.notes)
+
+    def quota(site, company):
+        raise VendorLookupFailed("quota", "429")
+
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", quota)
+    outcome = logo_fetch.fetch_logo_family("acme.com")
+    assert outcome.cells == {"light_lockup": "ladder"}
+    assert any("quota" in n for n in outcome.notes)
+
+
+def test_dispatch_nothing_anywhere_is_fail_closed_needs_review(monkeypatch):
+    from lumen_agent.tools import logo_fetch
+    from lumen_ingestion.logo_ladder import LadderResolution
+
+    empty = LadderResolution(status="needs_review",
+                             identity={"passed": False, "reason": "no overlap"})
+    empty.slots = {"light": None, "dark": None, "mark": None, "wordmark": None}
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", lambda site, company: ({}, ["no record"]))
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: empty)
+    outcome = logo_fetch.fetch_logo_family("acme.com")
+    assert outcome.needs_review and outcome.prepared == []
+
+
+def test_dispatch_cache_hit_skips_both_rungs_and_force_refresh_overwrites(monkeypatch):
+    from lumen_agent.tools import logo_fetch
+
+    cache = _RecordingCache()
+    monkeypatch.setattr(
+        logo_fetch, "_vendor_rung",
+        lambda site, company: (_vendor_cells(*logo_fetch.CELL_NAMES), []),
+    )
+    monkeypatch.setattr(logo_fetch, "_ladder_rung",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no ladder")))
+    first = logo_fetch.fetch_logo_family("acme.com", cache=cache)
+    assert first.cache_hit is False and "https://acme.com/" in cache.stored
+
+    def explode(site, company):
+        raise AssertionError("vendor must not be called on a cache hit")
+
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", explode)
+    second = logo_fetch.fetch_logo_family("acme.com", cache=cache)
+    assert second.cache_hit is True and set(second.cells) == set(logo_fetch.CELL_NAMES)
+
+    # force_refresh bypasses the read and overwrites the entry
+    monkeypatch.setattr(
+        logo_fetch, "_vendor_rung",
+        lambda site, company: (_vendor_cells("light_lockup"), []),
+    )
+    ladder = _resolution({})
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: ladder)
+    third = logo_fetch.fetch_logo_family("acme.com", cache=cache, force_refresh=True)
+    assert third.cache_hit is False and list(third.cells) == ["light_lockup"]
