@@ -119,3 +119,87 @@ def pick_format(asset: VendorAsset) -> JsonObject | None:
     transparent = [f for f in rasters if f.get("background") == "transparent"]
     pool = transparent or rasters
     return max(pool, key=area) if pool else None
+
+
+def _classify_null_theme(body: bytes, fmt: str) -> tuple[str, str]:
+    """Our theme for a vendor asset that carries none, read off the bytes with
+    the ladder's own appearance analyzer (one classifier, no drift).
+    Returns (our_theme, basis)."""
+    from .logo_ladder import LadderCandidate, analyze_appearance
+
+    probe = LadderCandidate(url="", fmt=fmt, body=body)
+    verdict = analyze_appearance(probe).get("verdict")
+    if verdict == "dark_variant":  # light/white ink -> made for dark surfaces
+        return "dark", "classified from bytes: light ink (dark_variant)"
+    if verdict == "light_variant":
+        return "light", "classified from bytes: dark ink (light_variant)"
+    if verdict == "adaptive":
+        return "light", "classified from bytes: adaptive (one file, filed under light)"
+    return "light", "classified from bytes: no verdict; vendor-attributed, filed light"
+
+
+def map_vendor_assets_to_cells(assets, download):
+    """Vendor assets -> 2x2 cells. Filters (icon/other/photographic), inverts
+    theme, classifies theme=None from the bytes, gates SVGs on renderability.
+    First asset wins per cell. Returns (cells, notes)."""
+    from .logo_family import SOURCE_BRANDFETCH, FamilyCell, cell_name
+    from .logo_ladder import svg_is_renderable
+
+    cells: dict[str, FamilyCell] = {}
+    notes: list[str] = []
+    for asset in assets:
+        completeness = _COMPLETENESS_FOR_VENDOR_TYPE.get(asset.type)
+        if completeness is None:
+            continue  # icon/other: ruled out, silently -- they are not skips gone wrong
+        if "photographic" in asset.tags:
+            notes.append(f"vendor {asset.type} skipped: tagged photographic")
+            continue
+        chosen = pick_format(asset)
+        if chosen is None:
+            notes.append(f"vendor {asset.type} skipped: no downloadable format")
+            continue
+
+        our_theme = _OUR_THEME_FOR_VENDOR_THEME.get(asset.theme or "")
+        theme_basis = f"vendor theme={asset.theme!r} (inverted to ours)"
+        # theme=None needs the bytes to classify, so only pre-check occupancy
+        # when the theme is already known.
+        if our_theme is not None and cell_name(our_theme, completeness) in cells:
+            notes.append(f"vendor {asset.type} ({asset.theme}) skipped: cell already filled")
+            continue
+
+        fetched = download(str(chosen.get("src")))
+        if fetched is None:
+            notes.append(f"vendor {asset.type} download failed: {chosen.get('src')}")
+            continue
+        body, content_type = fetched
+        fmt = str(chosen.get("format") or "")
+        if our_theme is None:
+            our_theme, theme_basis = _classify_null_theme(body, fmt)
+
+        name = cell_name(our_theme, completeness)
+        if name in cells:
+            notes.append(f"vendor {asset.type} skipped: cell {name} already filled")
+            continue
+        if fmt == "svg" and not svg_is_renderable(body):
+            notes.append(
+                f"vendor {asset.type} refused: SVG cannot paint standalone "
+                f"(no intrinsic geometry or no drawable artwork, not renderable)"
+            )
+            continue
+        cells[name] = FamilyCell(
+            cell=name,
+            body=body,
+            content_type=content_type or _FORMAT_MIME.get(fmt, "image/png"),
+            source=SOURCE_BRANDFETCH,
+            origin_url=str(chosen.get("src")),
+            evidence={
+                "vendor": VENDOR_NAME,
+                "vendor_theme": asset.theme,
+                "vendor_type": asset.type,
+                "theme_basis": theme_basis,
+                "format": fmt,
+                "width": chosen.get("width"),
+                "height": chosen.get("height"),
+            },
+        )
+    return cells, notes
