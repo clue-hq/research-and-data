@@ -154,6 +154,13 @@ function insertedAt(operation: Operation): number {
   return (operation as Extract<Operation, { kind: "insert_node" }>).index;
 }
 
+/** The batch's inserts, in order — the ops each picture's `upsert_asset`
+ * precedes. Cases about WHERE a picture lands read this; the case about the
+ * batch's own shape reads the raw array. */
+function inserts(operations: Operation[]): Operation[] {
+  return operations.filter((operation) => operation.kind === "insert_node");
+}
+
 // ── R25: the sizing rule ───────────────────────────────────────────────────
 
 it("fits a pasted image inside 60% of the page's SHORT side, at its own aspect", () => {
@@ -195,7 +202,9 @@ it("turns pasted svg markup into an image/svg+xml File", async () => {
   const file = svgMarkupToFile(svg);
 
   assert.equal(file.type, "image/svg+xml");
-  assert.match(file.name, /\.svg$/);
+  // The brief's literal name, pinned: it is what the refusal path shows a user
+  // for markup that arrived with no filename of its own.
+  assert.equal(file.name, "pasted.svg");
   assert.equal(await file.text(), svg);
 });
 
@@ -213,12 +222,14 @@ it("uploads a png ONCE and inserts one image node carrying its asset id", async 
   assert.deepEqual(outcome, { inserted: 1, refusals: [] });
   assert.equal(test.uploaded.length, 1);
   assert.equal(test.errors.length, 0);
-  // R20: ONE applyOps for the whole gesture — one undo frame.
+  // R20: ONE applyOps for the whole gesture — one undo frame. TWO operations
+  // in it: the asset must be registered on the document before a node can
+  // reference it (see the batch-shape case below).
   assert.equal(test.applied.length, 1);
   assert.equal(test.applied[0].intent, IMAGE_PASTE_INTENT);
-  assert.equal(test.applied[0].operations.length, 1);
+  assert.equal(test.applied[0].operations.length, 2);
 
-  const operation = test.applied[0].operations[0];
+  const operation = test.applied[0].operations[1];
   assert.deepEqual(
     (operation as Extract<Operation, { kind: "insert_node" }>).parent,
     { kind: "page", id: AD_PAGE_ID },
@@ -265,6 +276,49 @@ it("uploads a png ONCE and inserts one image node carrying its asset id", async 
   assert.equal(node.locked, false);
 });
 
+it("REGISTERS each asset on the document before the node that references it", async () => {
+  let count = 0;
+  const test = harness({
+    upload: async () => {
+      count += 1;
+      return rasterRecord({ id: `asset_new_000${count}` });
+    },
+  });
+
+  await ingestExternalImages(
+    [pngFile("first.png"), pngFile("second.png")],
+    VIEWPORT_CENTER,
+    test.deps,
+  );
+
+  const operations = test.applied[0].operations;
+  // Per file, in order: register, then insert. `insert_node` alone would leave
+  // `scene.assets` without the record — the canvas resolves no bytes for an
+  // unregistered id (a blank box) and lumen-core's strict validation flags it.
+  assert.deepEqual(
+    operations.map((operation) => operation.kind),
+    ["upsert_asset", "insert_node", "upsert_asset", "insert_node"],
+  );
+  // Each pair is about the SAME asset: the record registered is the record the
+  // node points at.
+  for (const pair of [0, 2]) {
+    const upsert = operations[pair] as Extract<
+      Operation,
+      { kind: "upsert_asset" }
+    >;
+    const node = insertedNode(operations[pair + 1]);
+    assert.equal(
+      upsert.asset.id,
+      (node.kind as Extract<typeof node.kind, { kind: "image" }>).asset_id,
+    );
+  }
+  // The record travels VERBATIM — the store's own row, not a rebuilt one.
+  assert.deepEqual(
+    (operations[0] as Extract<Operation, { kind: "upsert_asset" }>).asset,
+    rasterRecord({ id: "asset_new_0001" }),
+  );
+});
+
 it("downscales a big picture through the R25 rule on the way in", async () => {
   const test = harness({
     upload: async () =>
@@ -273,7 +327,7 @@ it("downscales a big picture through the R25 rule on the way in", async () => {
 
   await ingestExternalImages([pngFile()], VIEWPORT_CENTER, test.deps);
 
-  const node = insertedNode(test.applied[0].operations[0]);
+  const node = insertedNode(inserts(test.applied[0].operations)[0]);
   // 60% of this fixture page's 1200 short side is 720.
   assert.deepEqual(node.size, {
     width: { kind: "fixed", value: 720 },
@@ -296,7 +350,7 @@ it("centres a DROPPED image on the page point the pointer named", async () => {
     test.deps,
   );
 
-  const node = insertedNode(test.applied[0].operations[0]);
+  const node = insertedNode(inserts(test.applied[0].operations)[0]);
   assert.equal(node.transform.x, 400);
   assert.equal(node.transform.y, 450);
 });
@@ -312,7 +366,7 @@ it("routes svg markup down the SAME path as a pasted file", async () => {
 
   assert.deepEqual(outcome, { inserted: 1, refusals: [] });
   assert.equal(test.uploaded[0].type, "image/svg+xml");
-  const node = insertedNode(test.applied[0].operations[0]);
+  const node = insertedNode(inserts(test.applied[0].operations)[0]);
   // The dimensions came from `vector`, which is where an SVG's live.
   assert.deepEqual(node.size, {
     width: { kind: "fixed", value: 300 },
@@ -339,7 +393,7 @@ it("fans a multi-file gesture out by +10/+10 per file, in ONE applyOps", async (
 
   assert.deepEqual(outcome, { inserted: 2, refusals: [] });
   assert.equal(test.applied.length, 1);
-  const [first, second] = test.applied[0].operations;
+  const [first, second] = inserts(test.applied[0].operations);
   assert.equal(insertedNode(first).transform.x, 400);
   assert.equal(insertedNode(first).transform.y, 500);
   assert.equal(insertedNode(second).transform.x, 410);
@@ -370,7 +424,7 @@ it("inserts consecutive CHILDREN when an unlocked auto-layout is selected", asyn
     test.deps,
   );
 
-  const [first, second] = test.applied[0].operations;
+  const [first, second] = inserts(test.applied[0].operations);
   assert.deepEqual(
     (first as Extract<Operation, { kind: "insert_node" }>).parent,
     { kind: "node", id: "auto_row_copy" },
@@ -494,9 +548,10 @@ it("applies the SURVIVORS of a mixed gesture and reports the rest in ONE message
 
   assert.equal(outcome.inserted, 1);
   assert.equal(outcome.refusals.length, 1);
-  // R20: one undo frame for the survivors, one message for the refusals.
+  // R20: one undo frame for the survivors, one message for the refusals — and
+  // the survivor's own pair, nothing from the file that never landed.
   assert.equal(test.applied.length, 1);
-  assert.equal(test.applied[0].operations.length, 1);
+  assert.equal(test.applied[0].operations.length, 2);
   assert.equal(test.errors.length, 1);
   assert.match(test.errors[0], /bad\.png/);
 });
@@ -575,6 +630,36 @@ it("re-asks the write gate after the upload, and refuses in the same words", asy
   assert.deepEqual(test.errors, [
     "This document isn't accepting edits right now.",
   ]);
+});
+
+it("keeps the per-file reasons when the whole gesture bails late", async () => {
+  let asked = 0;
+  const test = harness({
+    canApply: () => {
+      asked += 1;
+      return asked === 1;
+    },
+  });
+  const gif = new File([new Uint8Array(8)], "loop.gif", { type: "image/gif" });
+
+  const outcome = await ingestExternalImages(
+    [pngFile("keeper.png"), gif],
+    VIEWPORT_CENTER,
+    test.deps,
+  );
+
+  assert.equal(outcome.inserted, 0);
+  // R20 ("each naming the file and reason"): the late bail does not swallow
+  // what was already refused. The state that stopped the gesture is stated
+  // FIRST — it outranks the allowlist — and the file that was never going to
+  // land is still named.
+  assert.equal(test.errors.length, 1);
+  assert.equal(
+    test.errors[0],
+    `This document isn't accepting edits right now.; ${outcome.refusals[1]}`,
+  );
+  assert.equal(outcome.refusals.length, 2);
+  assert.match(outcome.refusals[1], /loop\.gif/);
 });
 
 it("refuses when the scene went away during the upload", async () => {

@@ -79,7 +79,7 @@ const SHORT_SIDE_FRACTION = 0.6;
 /** The name a pasted svg document is ingested under. Markup arrives with no
  * filename at all, and the label is what the user is shown when the record
  * refuses — so it has to be something, and something honest. */
-const PASTED_SVG_FILENAME = "pasted-image.svg";
+const PASTED_SVG_FILENAME = "pasted.svg";
 
 /** The one sentence for "this gesture cannot be placed on a page", which is
  * reachable on a pageless document (`open_design_leg@4` births one). */
@@ -174,14 +174,18 @@ export async function ingestExternalImages(
   if (files.length === 0 && alreadyRejected.length === 0) {
     return { inserted: 0, refusals: [] };
   }
+  // Accumulated from here on, and never discarded: a whole-gesture bail below
+  // states its own reason FIRST and then everything already refused per file
+  // (R20 — "each naming the file and reason"). Dropping them would leave a
+  // dropped GIF unexplained just because the document also went read-only.
+  const refusals: string[] = alreadyRejected.map(unsupportedTypeRefusal);
+
   // PRECEDENCE, Task 7's verbatim: the read-only sentence outranks the
-  // allowlist one. Naming the allowlist while the document refuses every write
-  // would send the user to convert a file that was never going to land.
+  // allowlist one — it is the state that actually refused, so it leads.
   if (!deps.canApply()) {
-    return refuse(deps, [NOT_ACCEPTING_EDITS]);
+    return refuse(deps, [NOT_ACCEPTING_EDITS, ...refusals]);
   }
 
-  const refusals: string[] = alreadyRejected.map(unsupportedTypeRefusal);
   const accepted: File[] = [];
   for (const file of files) {
     if (!isAllowedImage(file)) {
@@ -208,18 +212,22 @@ export async function ingestExternalImages(
   const scene = deps.scene();
   const page = scene?.pages[placement.pageId] ?? null;
   if (!scene || !page) {
-    return refuse(deps, [NO_PAGE_TO_PLACE_ON]);
+    return refuse(deps, [NO_PAGE_TO_PLACE_ON, ...refusals]);
   }
   // The re-gate (AD4.A precedent): the lock can be turned on, or the engine can
   // go read-only, while the bytes travel.
   if (!deps.canApply()) {
-    return refuse(deps, [NOT_ACCEPTING_EDITS]);
+    return refuse(deps, [NOT_ACCEPTING_EDITS, ...refusals]);
   }
 
   const pageSize = { width: page.size.width, height: page.size.height };
   const originOf = deps.parentOrigin(scene);
   const taken = new Set(Object.keys(scene.nodes));
   const operations: Operation[] = [];
+  /** Pictures placed so far — the R24 fan-out ordinal and the seat step. It is
+   * counted separately from `operations.length` because each picture emits TWO
+   * operations (see the batch below). */
+  let placed = 0;
 
   settled.forEach((result, fileIndex) => {
     const file = accepted[fileIndex];
@@ -254,9 +262,19 @@ export async function ingestExternalImages(
     });
     // R24: the Nth picture of one gesture steps clear of the (N-1)th, so a
     // four-file drop is four visible pictures rather than one on top of three.
-    const ordinal = operations.length;
+    const ordinal = placed;
     const nodeId = mintNodeId((candidate) => taken.has(candidate));
     taken.add(nodeId);
+    // REGISTER, THEN INSERT — the canonical pair, and the order is
+    // load-bearing rather than stylistic. A node whose `asset_id` names a
+    // record the document does not hold resolves to no bytes at all
+    // (`sceneAssetPassthroughUrl` reads `scene.assets[id]`, so the canvas draws
+    // a blank box) and fails the engine's strict asset validation. It is the
+    // same first half `buildNodePlacementOperations` emits
+    // (`engine/scene/assetLibrary.ts:326-341`) — the shipped Replace-image /
+    // Generate / Accept paths all lead with it. Both operations ride the ONE
+    // `applyOps` below, so a picture is still exactly one undo frame.
+    operations.push({ kind: "upsert_asset", asset: record });
     operations.push(
       insertNode(
         planned.parent,
@@ -264,11 +282,12 @@ export async function ingestExternalImages(
         imageNode(nodeId, file.name, record.id, size, fannedTransform(planned, ordinal)),
       ),
     );
+    placed += 1;
   });
 
   let inserted = 0;
   if (operations.length > 0 && deps.applyOps(operations, IMAGE_PASTE_INTENT)) {
-    inserted = operations.length;
+    inserted = placed;
   }
   if (refusals.length > 0) {
     deps.reportError(refusals.join("; "));
