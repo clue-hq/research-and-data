@@ -15,6 +15,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from clue_core.field import (
+    ACCOUNT_AXIS_FIELD_CLASSES,
+    classify_field_key,
+    is_valid_field_key,
+)
+
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 NonEmptyStr = Annotated[str, Field(min_length=1)]
 
@@ -22,8 +28,26 @@ NonEmptyStr = Annotated[str, Field(min_length=1)]
 def _assert_field_axis(
     subject_type: ResearchSubjectType, field_keys: tuple[str, ...], *, context: str
 ) -> None:
-    prefix = f"{subject_type.value}."
-    if any(not field_key.startswith(prefix) for field_key in field_keys):
+    """Refuse a field the named subject axis does not own.
+
+    The account axis is the shared field-class projection (``ACCOUNT_AXIS_FIELD_CLASSES`` —
+    CORE | ACCOUNT | ACCOUNT_RESONANCE | PACK), not a raw ``account.`` prefix: an account's
+    firmographic facts (``core.industry``, ``core.primary_tech_stack``, …) are organization-level
+    truth and belong to account research.  Contact and contact-facet fields remain outside it.
+    The contact axis keeps its literal prefix, so a ``core.*``/``account.*`` field can never be
+    smuggled into contact work.
+    """
+
+    if subject_type is ResearchSubjectType.ACCOUNT:
+        outside = any(
+            not is_valid_field_key(field_key)
+            or classify_field_key(field_key) not in ACCOUNT_AXIS_FIELD_CLASSES
+            for field_key in field_keys
+        )
+    else:
+        prefix = f"{subject_type.value}."
+        outside = any(not field_key.startswith(prefix) for field_key in field_keys)
+    if outside:
         raise ValueError(f"{context} contains a field outside the {subject_type.value} axis")
 
 
@@ -185,6 +209,7 @@ _ACCOUNT_REQUIRED_TOOLS = frozenset(
         "enrich_account",
         "inspect_account_evidence",
         "discover_buying_committee",
+        "record_committee_role_inferences",
         "assess_account_coverage",
         "read_research_result",
         "read_evidence",
@@ -334,12 +359,20 @@ class FieldSourceAuthority(BaseModel):
     cross-product: a source selected for field A could be submitted for field B.  This value is the
     executable relation.  Strategy labels are intentionally absent; an agent chooses a semantic
     tool and an exact source, while the frozen effective source plan remains the authority.
+
+    ``source_keys`` may be **empty**: an admitted field that no authorized source can actually
+    request (a source may *own* a field under the §3.1 contract while its pinned provider action
+    has no wire parameter for it) is born with no authority at all.  That is the honest
+    disposition, not a defect — every source is then unauthorized for the field, so the engine
+    refuses any request for it and the execution-completeness reader treats it as exhausted, i.e.
+    an honest gap that settles ``needs_review`` instead of an obligation nothing can discharge.
+    The launcher, not this contract, decides when that is correct.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     field_key: NonEmptyStr
-    source_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    source_keys: tuple[NonEmptyStr, ...] = ()
 
     @model_validator(mode="after")
     def _sources_are_unique(self) -> Self:
@@ -409,6 +442,26 @@ class SelectedContactResearchAuthority(BaseModel):
         return self
 
 
+class SealedDiscoveryLaunchReceipt(BaseModel):
+    """Immutable discovery authority pinned when an Account fleet is launched.
+
+    The receipt names the exact sealed generation and both stored membership artifacts.  It is
+    intentionally carried inside the already-versioned selection JSON: newly launched Account
+    jobs can consume immutable launch authority without changing historical job rows or inventing
+    a second mutable pointer.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    discovery_batch_id: UUID
+    discovery_generation: int = Field(ge=1)
+    discovery_seal_sha256: Sha256
+    account_manifest_ref: NonEmptyStr
+    account_manifest_sha256: Sha256
+    claim_manifest_ref: NonEmptyStr
+    claim_manifest_sha256: Sha256
+
+
 class EntityResearchSelection(BaseModel):
     """Exact user-confirmed account/contact set for one separately launched run."""
 
@@ -422,6 +475,10 @@ class EntityResearchSelection(BaseModel):
     product_id: NonEmptyStr
     project_run_id: UUID
     subject_type: ResearchSubjectType
+    # Compatibility: historical Account authorizations predate the launch-pinned seal receipt and
+    # must remain readable. The Account launcher requires this for every new selection; contact
+    # selections have no discovery authority and therefore keep it absent.
+    discovery_receipt: SealedDiscoveryLaunchReceipt | None = None
     account_entity_id: UUID | None = None
     subjects: tuple[SelectedResearchSubject, ...] = Field(min_length=1)
     directive_ref: NonEmptyStr
@@ -432,7 +489,10 @@ class EntityResearchSelection(BaseModel):
     admitted_source_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
     field_source_authority: tuple[FieldSourceAuthority, ...] = Field(min_length=1)
     committee_source_keys: tuple[NonEmptyStr, ...] = ()
-    research_questions: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    # Account research can be fully bounded by its exact field/source authority. Directional
+    # questions are optional there; the validator below keeps them mandatory for contact runs,
+    # where the question is part of the personal-research authorization.
+    research_questions: tuple[NonEmptyStr, ...] = ()
     facet_keys: tuple[NonEmptyStr, ...] = ()
     channel_permissions: tuple[ContactChannel, ...] = ()
     policy_refs: tuple[NonEmptyStr, ...] = Field(min_length=1)
@@ -460,6 +520,8 @@ class EntityResearchSelection(BaseModel):
                 raise ValueError(message)
         if self.confirmed_at.utcoffset() is None:
             raise ValueError("selection confirmation time must be timezone-aware")
+        if self.subject_type is ResearchSubjectType.CONTACT and not self.research_questions:
+            raise ValueError("contact research selection requires directional questions")
         if self.subject_type is ResearchSubjectType.ACCOUNT:
             if self.account_entity_id is not None:
                 raise ValueError("account selection subjects are their own account identities")
@@ -480,6 +542,8 @@ class EntityResearchSelection(BaseModel):
             if any(subject.contact_authority is not None for subject in self.subjects):
                 raise ValueError("account selection cannot carry contact target authority")
         else:
+            if self.discovery_receipt is not None:
+                raise ValueError("contact selection cannot carry Account discovery authority")
             if self.committee_source_keys:
                 raise ValueError("contact selection cannot authorize committee enumeration")
             if self.account_entity_id is None:
@@ -787,7 +851,7 @@ class GovernedResearchToolRequest(BaseModel):
     field_keys: tuple[NonEmptyStr, ...] = ()
     source_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
     field_source_authority: tuple[FieldSourceAuthority, ...] = ()
-    questions: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    questions: tuple[NonEmptyStr, ...] = ()
     budget_reservation_key: NonEmptyStr
     idempotency_key: NonEmptyStr
     parent_operation_ref: NonEmptyStr | None = None
@@ -805,6 +869,8 @@ class GovernedResearchToolRequest(BaseModel):
         ):
             if len(values) != len(set(values)):
                 raise ValueError(message)
+        if self.subject_type is ResearchSubjectType.CONTACT and not self.questions:
+            raise ValueError("contact research request requires directional questions")
         if self.subject_type is ResearchSubjectType.CONTACT:
             if self.parent_account_id is None:
                 raise ValueError("contact tool request requires the exact parent account")
@@ -1363,6 +1429,7 @@ __all__ = [
     "ResearchRunKind",
     "ResearchRunLifecycleContract",
     "ResearchSelectionBasis",
+    "SealedDiscoveryLaunchReceipt",
     "ResearchSubjectType",
     "SelectedContactResearchAuthority",
     "SelectedResearchSubject",

@@ -35,8 +35,11 @@ class _Action:
         before_dispatch: Callable[
             [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
         ],
+        settle_terminal: Callable[
+            [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
+        ],
     ) -> Sequence[ProviderResearchProjectionDraft]:
-        del request, before_dispatch
+        del request, before_dispatch, settle_terminal
         return ()
 
 

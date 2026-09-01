@@ -39,6 +39,31 @@ the web process):
 
 A *second* gateway consumer in this process would need the same explicit treatment: name it here,
 or the guard is documenting a lie again.
+
+To be exact about what guard 1 is: it is a **lexical** reachability guard over the import
+statements turn-serving code writes, not a claim about ``sys.modules``. ``clue_api/__init__.py`` is
+an eager re-export package — importing *anything* under ``clue_api`` executes ~38 submodule
+imports, two of which (``run_composition``, ``head_of_abm_wiring``) are on the forbidden list
+below. That is the same pre-existing condition the ``clue_gateway`` paragraph above concedes, and
+it is why the enforceable version of "no path to a model" is "no turn-serving module *names* one",
+which is exactly what stops the next slice from calling one.
+
+**Type-only edges are not traversed (reconciled with Lane E, comprehensive-research merge).**
+An ``if TYPE_CHECKING:`` block is a leaf in the walk: nothing in it is executed, so no code a turn
+runs can reach *through* it. This matters because the turn route legitimately reaches
+:mod:`clue_api.account_research_fleet` (via :mod:`clue_api.transactional_account_launch`, the
+one-act approval+launch transaction, which composes no gateway/provider/agent), and that module
+annotates Lane E's ``ProseSynthesisStep`` under ``TYPE_CHECKING`` precisely because the runtime
+edge would be circular — the real dependency runs the other way, ``prose_synthesis_step`` imports
+the fleet projection. Traversing that annotation charged the turn path with Lane E's
+``prose_synthesis_tools``/``value_narrative_tools`` (both merely *typed* against ``LLMGateway``,
+both handed their gateway by the *fleet* composition root), which no turn code can call.
+
+The narrowing is only in *traversal*. A forbidden module or a gateway-shaped name imported by a
+module the walk does reach is still a violation wherever it appears — including inside that
+module's own ``TYPE_CHECKING`` block, because turn-serving code that needs to *name* a gateway is
+already the thing this guard is looking for. And a function-local ``import`` is not type-only, so
+the "import the turn engine inside the handler" dodge is still caught.
 """
 
 from __future__ import annotations
@@ -106,7 +131,10 @@ def _module_path(module: str) -> Path | None:
 
 
 def _imports(tree: ast.AST) -> tuple[set[str], set[str]]:
-    """Every module and imported name an AST references, including inside functions."""
+    """Every module and imported name an AST references, including inside functions.
+
+    Deliberately includes ``if TYPE_CHECKING:`` bodies: naming a gateway is itself the signal.
+    """
 
     modules: set[str] = set()
     names: set[str] = set()
@@ -117,6 +145,40 @@ def _imports(tree: ast.AST) -> tuple[set[str], set[str]]:
             modules.add(node.module)
             names.update(alias.name for alias in node.names)
     return modules, names
+
+
+def _is_type_checking_test(test: ast.expr) -> bool:
+    """``TYPE_CHECKING`` or ``typing.TYPE_CHECKING`` — the two ways the repo spells the guard."""
+
+    if isinstance(test, ast.Name):
+        return test.id == "TYPE_CHECKING"
+    return isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
+
+
+def _runtime_imported_modules(tree: ast.AST) -> set[str]:
+    """The modules a module actually imports *when it runs* — ``TYPE_CHECKING`` bodies excluded.
+
+    This is what the graph walk follows, so a type-only edge is a leaf (see the module docstring).
+    The ``else:`` branch of a ``TYPE_CHECKING`` guard *is* runtime code, so it is still descended.
+    """
+
+    modules: set[str] = set()
+
+    def visit(node: ast.AST) -> None:
+        if isinstance(node, ast.If) and _is_type_checking_test(node.test):
+            # The body is erased at runtime; the ``else:`` branch is what actually executes.
+            for fallback in node.orelse:
+                visit(fallback)
+            return
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            modules.add(node.module)
+        for child in ast.iter_child_nodes(node):
+            visit(child)
+
+    visit(tree)
+    return modules
 
 
 def test_no_module_serving_a_turn_can_reach_a_model() -> None:
@@ -138,6 +200,9 @@ def test_no_module_serving_a_turn_can_reach_a_model() -> None:
         for imported in sorted(modules):
             if imported in _FORBIDDEN_MODULES:
                 violations.append(f"{module} imports {imported}")
+        # Only runtime edges extend the graph: a ``TYPE_CHECKING`` import is never executed by
+        # the web process, so nothing behind it is reachable from a turn.
+        for imported in sorted(_runtime_imported_modules(tree)):
             if imported.startswith("clue_api"):
                 frontier.append(imported)
         for name in sorted(names & _FORBIDDEN_NAMES):
@@ -146,6 +211,12 @@ def test_no_module_serving_a_turn_can_reach_a_model() -> None:
     assert violations == [], violations
     # The walk must actually have gone somewhere — an empty graph would pass vacuously.
     assert "clue_api.agent_turn_wiring" in seen
+    # And it must have gone through the comprehensive-research merge's one-act launch
+    # transaction, stopping exactly at Lane E's type-only annotation edge. If the first of these
+    # ever fails the exclusion below has become vacuous; if the second fails, something made the
+    # prose/value-narrative synthesis modules genuinely loadable from a turn.
+    assert "clue_api.account_research_fleet" in seen
+    assert "clue_api.prose_synthesis_step" not in seen
 
 
 def test_the_http_composition_root_builds_a_toolbelt_with_no_gateway() -> None:
@@ -177,3 +248,26 @@ def test_the_http_composition_root_builds_a_toolbelt_with_no_gateway() -> None:
         assert not any(keyword.arg is None for keyword in call.keywords), (
             "a **kwargs splat could smuggle a gateway past this guard"
         )
+
+
+def test_the_walk_follows_runtime_edges_only_and_still_sees_function_local_imports() -> None:
+    """Guard the guard: the ``TYPE_CHECKING`` carve-out is exactly that and nothing wider."""
+
+    tree = ast.parse(
+        "from typing import TYPE_CHECKING\n"
+        "import runtime_top_level\n"
+        "if TYPE_CHECKING:\n"
+        "    import type_only\n"
+        "else:\n"
+        "    import runtime_fallback\n"
+        "def handler():\n"
+        "    import runtime_local\n"
+    )
+
+    runtime = _runtime_imported_modules(tree)
+    assert "type_only" not in runtime
+    # A function body is executed, so the "import it inside the handler" dodge is still followed.
+    assert {"runtime_top_level", "runtime_fallback", "runtime_local"} <= runtime
+    # Detection is still total: naming something forbidden under ``TYPE_CHECKING`` is a violation.
+    modules, _ = _imports(tree)
+    assert "type_only" in modules

@@ -26,7 +26,8 @@ demarcation registry §2.2, and doing it here would mean editing another lane's 
 from __future__ import annotations
 
 import re
-from collections.abc import Awaitable, Callable, Coroutine, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping
+from contextlib import asynccontextmanager
 from typing import Annotated, Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
@@ -122,6 +123,7 @@ from clue_api.chat.schemas import (
     ProjectBootstrapWire,
     ProjectShellResponse,
     ProjectShellWire,
+    ResearchTaskListResponse,
     SidebarConversationWire,
     SidebarPageMeta,
     SidebarProjectsResponse,
@@ -135,6 +137,7 @@ from clue_api.chat.schemas import (
     gate_response_message,
     gate_wire,
     message_list_response,
+    research_task_wire,
     thread_href,
     thread_speaker_wire,
     thread_wire,
@@ -150,6 +153,7 @@ from clue_api.design_leg_wiring import (
 from clue_api.stage0_icp_gate import IcpGateSubjectError, exact_icp_gate_subject
 from clue_api.stage0_project_scope import resolve_stage0_project_scope_for_project
 from clue_api.thread_store import create_thread, get_thread, thread_id_for_operation
+from clue_api.transactional_account_launch import TransactionalToolInvokerFactory
 from clue_api.turn_action import derive_turn_action_ref
 from clue_auth import Permission, PrincipalError, PrincipalService
 from clue_config import Settings
@@ -171,6 +175,7 @@ from clue_projections import (
     project_sidebar_page,
     thread_gates,
     thread_messages,
+    thread_research_tasks,
     threads_for_project,
     threads_running,
     turn_context_receipt,
@@ -625,12 +630,23 @@ def _composer_capabilities() -> HomeComposerCapabilitiesWire:
     )
 
 
+def _bound_connection_factory(conn: AsyncConnection) -> ConnFactory:
+    """Adapt the route's open transaction to the standard connection-factory seam."""
+
+    @asynccontextmanager
+    async def bound() -> AsyncIterator[AsyncConnection]:
+        yield conn
+
+    return bound
+
+
 def build_chat_router(
     *,
     settings: Settings,
     conn_factory: ConnFactory,
     tool_invoker: ToolInvoker,
     storage: StorageBackend | None = None,
+    transactional_tool_invoker_factory: TransactionalToolInvokerFactory | None = None,
 ) -> APIRouter:
     """Build the workspace-scoped chat router. Empty unless ``settings.chat_enabled``.
 
@@ -671,6 +687,8 @@ def build_chat_router(
         idempotency_key: str | None,
         action_ref: str | None = None,
         operation_id: OperationId | None = None,
+        invoker: ToolInvoker | None = None,
+        invocation_conn_factory: ConnFactory | None = None,
     ) -> dict[str, Any]:
         """Invoke one governed tool and return its references.
 
@@ -696,7 +714,9 @@ def build_chat_router(
 
         ctx = tool_context_for_principal(
             who,
-            conn_factory=conn_factory,
+            conn_factory=(
+                invocation_conn_factory if invocation_conn_factory is not None else conn_factory
+            ),
             operation_id=(
                 operation_id
                 if operation_id is not None
@@ -707,7 +727,9 @@ def build_chat_router(
             action_ref=action_ref,
         )
         try:
-            result = await tool_invoker.invoke(name, body, ctx, idempotency_key=idempotency_key)
+            result = await (invoker if invoker is not None else tool_invoker).invoke(
+                name, body, ctx, idempotency_key=idempotency_key
+            )
         except PreconditionFailed as exc:
             first = exc.failures[0]
             status_code, code = _REASON_STATUS.get(first.reason_code, (422, "PRECONDITION_FAILED"))
@@ -1506,6 +1528,50 @@ def build_chat_router(
             )
         )
 
+    @router.get("/projects/{project_id}/threads/{thread_id}/research-tasks")
+    async def list_research_tasks_route(
+        project_id: str,
+        thread_id: str,
+        who: PrincipalDep,
+    ) -> ResearchTaskListResponse:
+        """Every research run this thread launched, counted off its jobs, right now.
+
+        The turn's SSE stream emits one ``task`` snapshot at turn close and then ends — but the
+        fleet works for minutes afterwards, so without this the progress card is frozen at the last
+        frame. This is what a live card polls: the same task shape the stream emitted (it is built
+        by the same :func:`~clue_api.chat.turn_parts.task_part_from_run`, so the two merge as one
+        card), plus the ``revision`` the transcript reducer merges on and the per-field progress
+        inside the accounts still running.
+
+        **Unpaginated, and never a not-found for a thread that launched nothing.** The list is
+        bounded by the number of runs a conversation authorized, and the card asks *every* thread —
+        so "no launches" has to be an empty list. A 404 here would make the poller treat an
+        ordinary conversation as a broken one.
+
+        Scoped exactly like its neighbours: a thread in another project or another workspace is
+        **not found**, never forbidden, because a 403 would confirm to somebody who cannot see it
+        that it exists.
+        """
+
+        _require(who, PERMISSION_THREAD_READ)
+        async with conn_factory() as conn:
+            thread = await get_thread(conn, workspace_id=who.workspace_id, thread_id=thread_id)
+        if thread is None or thread.project_id != project_id:
+            raise _refuse(
+                status_code=404,
+                code="THREAD_NOT_FOUND",
+                message="no such thread in this project",
+            )
+        views = await thread_research_tasks(
+            workspace_id=who.workspace_id,
+            project_id=project_id,
+            thread_id=thread_id,
+            conn_factory=conn_factory,
+        )
+        return ResearchTaskListResponse(
+            tasks=tuple(research_task_wire(view, workspace_id=who.workspace_id) for view in views)
+        )
+
     # --- the dev-lens turn-context inspector (dev-only; never registered in production) ---------
     #
     # Registered only under ``settings.chat_dev_inspector_enabled``, which
@@ -2083,6 +2149,34 @@ def build_chat_router(
                         turn_id=turn_id,
                     )
                 )
+                # Founder ruling 2026-08-19 (Slice B): on a budget-controls-disabled deployment,
+                # approving a directive-confirmation gate atomically confirms AND launches via
+                # ``launch_selected_account_research@1``. That tool's account authority is the
+                # approving turn's durable context refs, so the capture records the exact account
+                # set the gate froze at open — the approval click genuinely references those
+                # accounts. Injected only when the turn carries no refs of its own, and only for
+                # the approval decision this authority serves; decided before the replay read so
+                # a retried approval replays against identical refs.
+                if (
+                    gate is not None
+                    and gate.kind == KIND_DIRECTIVE_CONFIRMATION
+                    and gate.subject_snapshot.get("subject_kind") != "discovery_configuration"
+                    and not settings.budget_controls_enabled
+                    and not context_refs
+                    and body.gate_response is not None
+                    and _gate_response(body).decision == "approved"
+                ):
+                    snapshot_account_ids = gate.subject_snapshot.get("account_entity_ids")
+                    if isinstance(snapshot_account_ids, list):
+                        context_refs = tuple(
+                            DomainObjectRef(
+                                workspace_id=who.workspace_id,
+                                object_type="account",
+                                object_id=str(value),
+                                version=None,
+                            )
+                            for value in snapshot_account_ids
+                        )
                 # Replay is decided before anything is written: a retry must not persist a second
                 # artifact, and a *different* message under a used key must be refused rather than
                 # answered with the first one's turn.
@@ -2240,22 +2334,46 @@ def build_chat_router(
                         # Human-only, invoked outside the model surface with server-derived
                         # authority. Rejection and revision deliberately confirm nothing: they are
                         # durable records of a decision, and the agent answers them in its turn.
-                        tool_name = (
-                            "confirm_account_research_directive"
-                            if gate.kind == KIND_DIRECTIVE_CONFIRMATION
-                            else "confirm_project_product"
-                        )
-                        tool_body = (
-                            {
-                                "directive_id": str(gate.subject_snapshot["research_directive_id"]),
-                                "expected_sha256": gate.expected_subject_sha256,
+                        #
+                        # Founder ruling 2026-08-19 (Slice B): with budget controls DISABLED, the
+                        # approval of a directive-confirmation gate is one atomic act — confirm
+                        # AND launch — through ``launch_selected_account_research@1``, whose own
+                        # resolve re-derives the human receipt from this turn, requires the exact
+                        # gate-frozen account set (captured above as this turn's context refs),
+                        # confirms the draft, computes the estimate server-side, and launches.
+                        # Budget-controls-enabled deployments keep the confirm-only gate
+                        # unchanged; the tool itself refuses the direct path there.
+                        directive_gate = gate.kind == KIND_DIRECTIVE_CONFIRMATION
+                        atomic_launch = directive_gate and not settings.budget_controls_enabled
+                        if atomic_launch:
+                            tool_name = "launch_selected_account_research"
+                            tool_body: dict[str, Any] = {
+                                "project_run_id": str(gate.subject_snapshot["project_run_id"]),
+                                "research_directive_id": str(
+                                    gate.subject_snapshot["research_directive_id"]
+                                ),
+                                "account_entity_ids": [ref.object_id for ref in context_refs],
+                                "source_turn_ref": action_ref,
                             }
-                            if gate.kind == KIND_DIRECTIVE_CONFIRMATION
-                            else {
-                                "project_id": project_id,
-                                "product_id": response.selected_product_id,
-                            }
-                        )
+                        else:
+                            tool_name = (
+                                "confirm_account_research_directive"
+                                if directive_gate
+                                else "confirm_project_product"
+                            )
+                            tool_body = (
+                                {
+                                    "directive_id": str(
+                                        gate.subject_snapshot["research_directive_id"]
+                                    ),
+                                    "expected_sha256": gate.expected_subject_sha256,
+                                }
+                                if directive_gate
+                                else {
+                                    "project_id": project_id,
+                                    "product_id": str(response.selected_product_id),
+                                }
+                            )
                         await _invoke(
                             tool_name,
                             tool_body,
@@ -2267,6 +2385,20 @@ def build_chat_router(
                             operation_id=operation_id_from_key(
                                 who.workspace_id,
                                 f"gate-answer:{gate.gate_id}:{turn_id}",
+                            ),
+                            # The budget-disabled approval is one database act. Its narrow
+                            # request-scoped invoker binds the launch tool, journal, directive
+                            # confirmation, fleet rows, and queue offer to this exact transaction.
+                            # Other gate tools keep using the process toolbelt unchanged.
+                            invoker=(
+                                transactional_tool_invoker_factory(_bound_connection_factory(conn))
+                                if atomic_launch and transactional_tool_invoker_factory is not None
+                                else None
+                            ),
+                            invocation_conn_factory=(
+                                _bound_connection_factory(conn)
+                                if atomic_launch and transactional_tool_invoker_factory is not None
+                                else None
                             ),
                         )
                     elif gate.kind == KIND_ICP_CONFIRMATION and response.decision == "approved":
@@ -2332,6 +2464,7 @@ def install_chat_surface(
     principal_resolver: PrincipalResolver | None = None,
     auth_service: PrincipalService | None = None,
     storage: StorageBackend | None = None,
+    transactional_tool_invoker_factory: TransactionalToolInvokerFactory | None = None,
 ) -> None:
     """Mount the chat router when ``settings.chat_enabled``; otherwise do nothing at all.
 
@@ -2374,5 +2507,6 @@ def install_chat_surface(
             conn_factory=conn_factory,
             tool_invoker=tool_invoker,
             storage=storage,
+            transactional_tool_invoker_factory=transactional_tool_invoker_factory,
         )
     )

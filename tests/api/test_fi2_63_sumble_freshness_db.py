@@ -57,6 +57,7 @@ from clue_core import (
     AccountGapReason,
     EntityId,
     ExtractionMethod,
+    FreshnessState,
     ProjectRunId,
     ResearchMode,
     ResearchScope,
@@ -69,7 +70,12 @@ from clue_core.entity_research import (
     GovernedResearchToolRequest,
     ResearchSubjectType,
 )
-from clue_research.claimstore import field_species, insert_claim
+from clue_research.claimstore import (
+    WorkspaceScope,
+    current_value,
+    field_species,
+    insert_claim,
+)
 from clue_research.identity import stamp_reuse
 from clue_research.resolvers.sumble import JOBS_SOURCE_KEY
 from clue_storage import FsStorage
@@ -94,8 +100,9 @@ async def _hiring_claim(
     account_id: EntityId,
     project_run_id: ProjectRunId,
     age: timedelta,
+    evidence_span: str | None = "Seven open engineering roles were listed.",
 ) -> None:
-    """One confident, conflict-free, evidence-backed hiring-velocity claim of a chosen age."""
+    """One confident, conflict-free hiring-velocity claim of a chosen age and evidence state."""
 
     observed = datetime.now(UTC) - age
     claim = stamp_reuse(
@@ -109,7 +116,7 @@ async def _hiring_claim(
             run_id=RunId(project_run_id),
             research_mode=ResearchMode.ACCOUNT_PROFILING,
             source_url="https://insighthealth.ai/careers",
-            evidence_span="Seven open engineering roles were listed.",
+            evidence_span=evidence_span,
         ).model_copy(update={"source_key": JOBS_SOURCE_KEY}),
         workspace_id=workspace_id,
     ).model_copy(update={"observed_at": observed, "collected_at": observed})
@@ -323,6 +330,75 @@ def test_fi2_63a_a_fresh_confident_field_is_still_refused(tmp_path: Path) -> Non
     run_async(scenario())
 
 
+def test_a_fresh_claim_without_an_evidence_span_is_a_gap_not_an_answer(tmp_path: Path) -> None:
+    """Settlement F5: unbuyable *and* unsatisfiable is a deadlock, so the ladder must not refuse.
+
+    Execution completeness satisfies a field only with an *evidence-backed* current value
+    (``CurrentValue.evidence_backed`` — fresh, unconflicted, non-empty span), because a claim with
+    no evidence span cannot be promoted. The ladder read confidence, conflict and freshness only,
+    so a fresh confident winner with a NULL span was refused as "already answered" while nothing
+    could ever count it as answered: a field whose whole authority is Sumble stayed outstanding
+    forever and its account could never settle. Both sides now read one predicate, so the field is
+    an ordinary gap — bought again, with the span-less winner as the durable basis.
+    """
+
+    async def scenario() -> None:
+        workspace_id = "ws-fi2-63f"
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn(seed_pack=True) as conn:
+            started, ready = await _seed_selected_high_tier_account(
+                conn, storage, workspace_id=workspace_id
+            )
+            account_id = EntityId(ready.account_id)
+            run_id = ProjectRunId(started.project_run_id)
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            await _hiring_claim(
+                conn,
+                workspace_id=workspace_id,
+                account_id=account_id,
+                project_run_id=run_id,
+                age=timedelta(days=1),
+                evidence_span=None,
+            )
+            merged = await current_value(
+                conn,
+                account_id,
+                _HIRING,
+                scope=WorkspaceScope.for_workspace(workspace_id),
+            )
+            # The exact deadlock precondition: fresh and confident, yet not an answer.
+            assert merged is not None
+            assert merged.freshness_state is FreshnessState.FRESH
+            assert not merged.conflict
+            assert not merged.evidence_backed
+
+            preflight = await compile_sumble_account_gap_preflight(
+                workspace_id=workspace_id,
+                project_run_id=run_id,
+                account_id=account_id,
+                field_expected_value_credits={_HIRING: Decimal(5)},
+                provider_credit_cap=5,
+                allow_unbounded_tech=False,
+                observation_window=f"project-run:{run_id}:fi2-63f",
+                storage=storage,
+                cents_per_credit=Decimal("0.5"),
+                conn_factory=same_connection,
+            )
+            plan = {str(item.field_key): item for item in preflight.request.fields}
+            assert plan[_HIRING].reason is AccountGapReason.NO_EVIDENCE
+            assert plan[_HIRING].basis_claim_ids == (merged.provenance.claim_id,)
+            # Compiling a plan reserves nothing.
+            assert (
+                await conn.execute(text("SELECT count(*) FROM account_gap_operation"))
+            ).scalar_one() == 0
+
+    run_async(scenario())
+
+
 def test_fi2_63b_the_m8d_path_converts_ineligibility_into_a_governed_skip(
     tmp_path: Path,
 ) -> None:
@@ -367,7 +443,9 @@ def test_fi2_63b_the_m8d_path_converts_ineligibility_into_a_governed_skip(
 
             with pytest.raises(EntityResearchGovernedRejection) as refusal:
                 await action.execute(  # type: ignore[arg-type]
-                    _request(account_id, label="fi2-63c"), before_dispatch=never_dispatched
+                    _request(account_id, label="fi2-63c"),
+                    before_dispatch=never_dispatched,
+                    settle_terminal=never_dispatched,
                 )
 
             assert refusal.value.code == "account_gap_ineligible"
@@ -424,8 +502,14 @@ def test_fi2_63b_a_job_authority_loss_is_not_a_governed_skip(tmp_path: Path) -> 
             async def never_dispatched(reservation: object) -> object:
                 raise AssertionError("an unauthorized request must never reserve an operation")
 
-            with pytest.raises(SumbleAccountGapEligibilityError, match="job authority"):
-                await action.execute(_request(account_id), before_dispatch=never_dispatched)  # type: ignore[arg-type]
+            with pytest.raises(
+                SumbleAccountGapEligibilityError, match="exact Account research job"
+            ):
+                await action.execute(  # type: ignore[arg-type]
+                    _request(account_id),
+                    before_dispatch=never_dispatched,
+                    settle_terminal=never_dispatched,
+                )
 
             assert http.calls == []
             assert (
@@ -484,7 +568,11 @@ def test_fi2_63b_a_project_relative_declaration_is_not_a_governed_skip(tmp_path:
             with pytest.raises(
                 SumbleAccountGapEligibilityError, match=f"declared project-relative: {_HIRING}"
             ):
-                await action.execute(_request(account_id), before_dispatch=never_dispatched)  # type: ignore[arg-type]
+                await action.execute(  # type: ignore[arg-type]
+                    _request(account_id),
+                    before_dispatch=never_dispatched,
+                    settle_terminal=never_dispatched,
+                )
 
             assert http.calls == []
             assert (

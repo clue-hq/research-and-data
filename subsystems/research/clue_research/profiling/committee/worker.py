@@ -1,12 +1,15 @@
 """Committee discovery — the M8.3 worker (mode M3).
 
-``discover_committee`` is the contact-axis trunk: within a known high-tier account, it enumerates
-candidate people via the bound :class:`CommitteeSource`s, runs each through the M2 existence gate
-(:mod:`admission`), infers + plausibility-gates each admitted member's committee role
-(:mod:`roles`), and writes the role/persona field claims — producing the **buying committee**
-(Output 3) and the V1 contact graph (substrate §7). It is a bounded ``expand`` over one company's
-people: it stops on a marginal-yield drop or the committee budget cap (:mod:`stopping`), and reports
-committee coverage confidence (:mod:`coverage`) rather than implying exhaustiveness.
+``discover_committee`` is the contact-axis trunk: within a known explicitly selected account, it
+enumerates candidate people via the bound :class:`CommitteeSource`s, then runs each through the M2
+existence gate (:mod:`admission`) and writes their discovery-provenance + professional-fact claims,
+producing the **buying committee** (Output 3) and the V1 contact graph (substrate §7). Whether it
+*also* infers +
+plausibility-gates each member's committee role (:mod:`roles`) is the caller's choice: the
+``role_inference`` mode either keeps that judgment here (``worker_llm``) or defers it to the account
+agent (``agent_deferred``), which is discovery/identity only. It is a bounded ``expand`` over one
+company's people: it stops on a marginal-yield drop or the committee budget cap (:mod:`stopping`),
+and reports committee coverage confidence (:mod:`coverage`) rather than implying exhaustiveness.
 
 It returns **references** (contact ids + claim ids), never blobs. :class:`CommitteeAspectWorker`
 adapts it to the M7 ``AspectWorker`` seam (the orchestrator hands it an ``AspectContext`` and never
@@ -17,6 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -78,6 +82,12 @@ from clue_research.profiling.committee.stopping import CommitteeStoppingRule, Co
 # Default personas to consider when the ICP does not narrow them (D5: read per ICP version).
 _ALL_PERSONAS: tuple[Persona, ...] = tuple(Persona)
 
+# Who judges the committee role (contract §5.2 steps 1-2 — discovery/identity is not role judgment):
+#   ``worker_llm``      — this worker infers + plausibility-gates the role inline (legacy default).
+#   ``agent_deferred``  — discovery/identity only: zero role work, zero gateway calls; the account
+#                         agent judges roles afterwards and writes them back through its own tool.
+RoleInferenceMode = Literal["worker_llm", "agent_deferred"]
+
 
 class ProfessionalFactReplayConflict(RuntimeError):
     """The same immutable snapshot identity attempted to write a different professional fact."""
@@ -96,15 +106,22 @@ def _strong_key(candidate: CommitteePersonCandidate) -> str | None:
 
 def _provenance_params(
     candidate: CommitteePersonCandidate,
-) -> tuple[ExtractionMethod, SourceTier, str | None, str | None]:
-    """The provenance flavor for a role/persona claim derived from the LLM role inference.
+) -> tuple[ExtractionMethod, SourceTier, str, str] | None:
+    """The provenance flavor for a role/persona claim derived from the LLM role inference, or
+    ``None`` when the candidate cannot ground one.
 
     The role is an LLM judgment — the least-trusted layer (tier 4), grounded in the person's title
     (the ``evidence_span``) found at a public URL (substrate §4). The tier-4 path requires BOTH a
-    grounding URL *and* a non-empty title: a tier-4 claim with a null ``evidence_span`` can never be
-    promoted (``core.can_be_promoted``), so when either is missing we fall back to an internal
-    classification (``HUMAN``/tier 1, no URL) — mirroring M6.3's derived-claim convention — so the
-    role claim is always writable *and* promotable."""
+    grounding URL *and* a non-empty title: the frozen ``core.Claim`` validator requires a
+    ``source_url`` for any ``llm_synthesis`` claim, and a tier-4 claim with a null
+    ``evidence_span`` can never be promoted (``core.can_be_promoted``).
+
+    When either is missing this returns ``None`` and the caller writes **no** role/persona claim.
+    M6.3's ``HUMAN``/tier-1 derived-claim convention is **retired here** (contract §5.2: "must not
+    create new false human provenance; agent-derived role writes must remain identified as
+    agent-derived") — stamping an LLM guess as a human-asserted fact is the defect, not the fix.
+    An ungrounded candidate keeps an honestly empty role; the member itself still survives via its
+    discovery-provenance and professional-fact claims."""
     grounding_url = candidate.source_url or candidate.linkedin_url
     if grounding_url is not None and candidate.title and candidate.title.strip():
         return (
@@ -113,10 +130,10 @@ def _provenance_params(
             grounding_url,
             f"title: {candidate.title}",
         )
-    return ExtractionMethod.HUMAN, SourceTier(1), None, None
+    return None
 
 
-async def _write_committee_claim(
+async def write_committee_claim(
     conn: AsyncConnection,
     contact_entity_id: EntityId,
     field_key: str,
@@ -175,11 +192,18 @@ async def _write_role_and_persona(
     workspace_id: str,
     identity_binding: IdentityBinding,
     product_id: str | None,
-) -> tuple[ClaimId, ClaimId]:
+) -> tuple[ClaimId, ClaimId] | None:
     """Write the ``contact.role_on_committee`` (with the plausibility verdict) + ``contact.persona``
-    claims for one admitted member; returns their claim ids."""
-    method, tier, source_url, evidence_span = _provenance_params(candidate)
-    role_claim_id = await _write_committee_claim(
+    claims for one admitted member; returns their claim ids.
+
+    Returns ``None`` — writing **neither** claim — when the candidate cannot ground a tier-4
+    agent-derived role (:func:`_provenance_params`). The pair is written together or not at all:
+    never a half-written role without its persona, and never a fallback provenance."""
+    provenance = _provenance_params(candidate)
+    if provenance is None:
+        return None
+    method, tier, source_url, evidence_span = provenance
+    role_claim_id = await write_committee_claim(
         conn,
         contact_entity_id,
         ROLE_ON_COMMITTEE,
@@ -199,7 +223,7 @@ async def _write_role_and_persona(
         identity_binding=identity_binding,
         product_id=product_id,
     )
-    persona_claim_id = await _write_committee_claim(
+    persona_claim_id = await write_committee_claim(
         conn,
         contact_entity_id,
         PERSONA,
@@ -330,19 +354,33 @@ async def discover_committee(
     budget_cap_cents: CostCents | None = None,
     pre_spend_gate: PreSpendGate | None = None,
     config: CommitteeConfig = DEFAULT_COMMITTEE_CONFIG,
+    role_inference: RoleInferenceMode = "worker_llm",
 ) -> CommitteeResult:
-    """Discover the buying committee for one high-tier account (mode M3).
+    """Discover the buying committee for one explicitly selected account (mode M3).
 
-    Existence-gates every candidate through M2 (a strong-key-less candidate is dropped), infers +
-    plausibility-gates each admitted member's role, writes discovery-provenance + role/persona
-    claims, and bounds the walk by marginal-yield / budget. ``workspace_id`` binds the
-    tenant-private role/persona claims. ``role_model`` (or ``config.role_model``) is the gateway
-    model id for role inference — required, fails loud (model as config, never hardcoded). When a
-    ``pre_spend_gate`` is injected (M9.1), each people-source enumeration is gated as an
-    ``ENUMERATION``/``COMMITTEE`` spend and each role-inference LLM call as a ``FIELD`` spend before
-    it runs (REJECT skips that spend; the committee graph is otherwise preserved)."""
+    Existence-gates every candidate through M2 (a strong-key-less candidate is dropped), writes
+    discovery-provenance + professional-fact claims, and bounds the walk by marginal-yield / budget.
+    ``workspace_id`` binds the tenant-private claims.
+
+    ``role_inference`` decides who judges the committee role (:data:`RoleInferenceMode`):
+
+    * ``worker_llm`` (default) — this worker infers + plausibility-gates each admitted member's role
+      and writes the role/persona claim pair. A candidate that cannot ground an agent-derived role
+      (:func:`_provenance_params`) skips the inference entirely — no gate check, no LLM call, no
+      spend — and is admitted with an honestly empty role.
+    * ``agent_deferred`` — discovery and identity only. **No role work at all**: no role pre-spend
+      gate, no inference, no gateway call, no role/persona claim. Every admitted member is returned
+      roleless, and the account agent judges the roles afterwards (contract §5.2 steps 1-2).
+
+    ``role_model`` (or ``config.role_model``) is the gateway model id for role inference — required
+    in ``worker_llm`` mode, fails loud (model as config, never hardcoded); irrelevant in
+    ``agent_deferred`` mode, which never calls the gateway. When a ``pre_spend_gate`` is injected
+    (M9.1), each people-source enumeration is gated as an ``ENUMERATION``/``COMMITTEE`` spend and
+    each role-inference LLM call as a ``FIELD`` spend before it runs (REJECT skips that spend; the
+    committee graph is otherwise preserved)."""
+    infer_roles_here = role_inference == "worker_llm"
     model = role_model or config.role_model
-    if not model:
+    if infer_roles_here and not model:
         raise ValueError(
             "a role-inference model id is required (pass role_model=, or set config.role_model) — "
             "the model is config, never hardcoded (gateway seam)"
@@ -419,49 +457,63 @@ async def discover_committee(
                 continue
             seen_contact_ids.add(contact_entity_id)
 
-            # Pre-spend gate (M9.1): role inference is a tier-4 LLM FIELD spend on the admitted
-            # contact's ROLE_ON_COMMITTEE (empty tier_plan → no tier-in-plan reject). On REJECT skip
-            # the LLM; gate_role falls back to the heuristic role, so the committee graph survives.
-            role_gate_rejected = False
-            if pre_spend_gate is not None:
-                role_decision = await pre_spend_gate.check(
-                    PreSpendRequest(
-                        entity_id=contact_entity_id,
-                        entity_type=EntityType.CONTACT,
-                        field_key=ROLE_ON_COMMITTEE,
-                        source_tier=SourceTier(4),
-                        source_key="llm_role_inference",
-                        run_id=run_id,
+            # Role judgment — skipped entirely in ``agent_deferred`` mode (the account agent owns
+            # it), and skipped for a candidate that cannot ground an agent-derived role: without a
+            # grounding URL and a title, ``_write_role_and_persona`` would refuse to write anything,
+            # so inferring the role first would only burn a gate check and an LLM call to discard
+            # the verdict. Either way the member is admitted with an honestly empty role.
+            verdict: RoleVerdict | None = None
+            role_ids: tuple[ClaimId, ClaimId] | None = None
+            if infer_roles_here and _provenance_params(candidate) is not None:
+                # Pre-spend gate (M9.1): role inference is a tier-4 LLM FIELD spend on the admitted
+                # contact's ROLE_ON_COMMITTEE (empty tier_plan → no tier-in-plan reject). On REJECT
+                # skip the LLM; gate_role falls back to the heuristic role, so the committee graph
+                # survives.
+                role_gate_rejected = False
+                if pre_spend_gate is not None:
+                    role_decision = await pre_spend_gate.check(
+                        PreSpendRequest(
+                            entity_id=contact_entity_id,
+                            entity_type=EntityType.CONTACT,
+                            field_key=ROLE_ON_COMMITTEE,
+                            source_tier=SourceTier(4),
+                            source_key="llm_role_inference",
+                            run_id=run_id,
+                        )
                     )
+                    role_gate_rejected = role_decision.verdict is PreSpendVerdict.REJECT
+                if role_gate_rejected:
+                    inference = RoleInference(
+                        role=None, confidence=0.0, rationale="role-inference gate-rejected"
+                    )
+                else:
+                    assert model  # guarded above: worker_llm mode requires a role model
+                    inference = infer_role(
+                        gateway,
+                        model,
+                        candidate.title,
+                        account,
+                        relevant_personas=relevant_personas,
+                    )
+                verdict = gate_role(
+                    inference,
+                    candidate.title,
+                    implausible_confidence_ceiling=config.implausible_confidence_ceiling,
+                    fallback_confidence=config.fallback_confidence,
                 )
-                role_gate_rejected = role_decision.verdict is PreSpendVerdict.REJECT
-            if role_gate_rejected:
-                inference = RoleInference(
-                    role=None, confidence=0.0, rationale="role-inference gate-rejected"
-                )
-            else:
-                inference = infer_role(
-                    gateway, model, candidate.title, account, relevant_personas=relevant_personas
-                )
-            verdict = gate_role(
-                inference,
-                candidate.title,
-                implausible_confidence_ceiling=config.implausible_confidence_ceiling,
-                fallback_confidence=config.fallback_confidence,
-            )
-            total_cost += verdict.cost_cents
-            source_cost += verdict.cost_cents
+                total_cost += verdict.cost_cents
+                source_cost += verdict.cost_cents
 
-            role_claim_id, persona_claim_id = await _write_role_and_persona(
-                conn,
-                contact_entity_id,
-                candidate,
-                verdict,
-                run_id=run_id,
-                workspace_id=workspace_id,
-                identity_binding=outcome.identity_binding,
-                product_id=spec.product_id if spec is not None else None,
-            )
+                role_ids = await _write_role_and_persona(
+                    conn,
+                    contact_entity_id,
+                    candidate,
+                    verdict,
+                    run_id=run_id,
+                    workspace_id=workspace_id,
+                    identity_binding=outcome.identity_binding,
+                    product_id=spec.product_id if spec is not None else None,
+                )
             professional_claim_ids = await _write_professional_facts(
                 conn,
                 contact_entity_id,
@@ -471,6 +523,25 @@ async def discover_committee(
                 identity_binding=outcome.identity_binding,
                 product_id=spec.product_id if spec is not None else None,
             )
+            admitted += 1
+            new_admits += 1
+            if verdict is None or role_ids is None:
+                # No role inference for this member: either the run defers role judgment to the
+                # account agent (``agent_deferred``), or the candidate could not ground an
+                # agent-derived role (no URL and/or no title) so no role/persona claim was written —
+                # an honestly empty role, never a HUMAN-stamped guess (contract §5.2). The person is
+                # genuinely admitted and stays visible: its discovery-provenance + professional-fact
+                # claims are durable and are carried in ``claim_refs``; only the six role fields are
+                # absent, and it is counted in ``needs_review``.
+                members.append(
+                    CommitteeMemberRef(
+                        contact_entity_id=contact_entity_id,
+                        discovery_claim_id=outcome.discovery_claim_id,
+                        professional_claim_ids=professional_claim_ids,
+                    )
+                )
+                continue
+            role_claim_id, persona_claim_id = role_ids
             members.append(
                 CommitteeMemberRef(
                     contact_entity_id=contact_entity_id,
@@ -484,8 +555,6 @@ async def discover_committee(
                     professional_claim_ids=professional_claim_ids,
                 )
             )
-            admitted += 1
-            new_admits += 1
 
         rule.record(new_admits=new_admits, candidates_seen=seen_this_source, cost_cents=source_cost)
         reason = rule.reason()
@@ -506,7 +575,9 @@ async def discover_committee(
         coverage=coverage,
         cost_cents=total_cost,
         admitted=admitted,
-        needs_review=0,
+        # Honest tally: every admitted member still awaiting a role judgment (all of them in
+        # ``agent_deferred`` mode; the ungrounded ones in ``worker_llm``).
+        needs_review=sum(1 for member in members if not member.has_role),
         dropped=dropped,
     )
 

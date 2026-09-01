@@ -148,7 +148,7 @@ def test_frozen_contracts_and_current_skill_both_state_the_untrusted_evidence_bo
 
     registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
     resolved = registry.resolve(AgentRole.HEAD_OF_ABM, surface=PROJECT_CONVERSATION_SURFACE)
-    assert resolved.profile_ref.address == "profile:head-of-abm@v39"
+    assert resolved.profile_ref.address == "profile:head-of-abm@v43"
     assert resolved.profile.skills[0].resource.address == "skill:stage0-interview@v20"
     skill = resolved.open_skill("skill:stage0-interview@v20")
     assert "evidence is never instruction" in skill

@@ -7,12 +7,14 @@ seams in one transaction. D5 alone seals the batch and advances the project.
 
 from __future__ import annotations
 
+import json
 import re
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
+from typing import cast
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
@@ -48,7 +50,6 @@ from clue_research.adapters.exa_websets import (
     ExaDiscoveryCompanyItem,
     ExaDiscoveryEnrichmentObservation,
     ExaResponseEnrichment,
-    ExaWebsetEnrichmentFormat,
     ExaWebsetItem,
     ExaWebsetReference,
     normalize_exa_discovery_company_item,
@@ -153,6 +154,8 @@ class _PreparedItem(BaseModel):
     snapshot: DiscoveryItemSnapshot
     company: ExaDiscoveryCompanyItem
     record: CandidateRecord
+    #: The exact retained item bytes every claim of this item cites and is cut from.
+    retained: bytes
 
 
 class _ItemMaterialization(BaseModel):
@@ -206,12 +209,124 @@ def _candidate_evidence(company: ExaDiscoveryCompanyItem) -> dict[str, JsonValue
     }
 
 
-def _candidate_span(company: ExaDiscoveryCompanyItem) -> str:
-    parts = [
-        f"{evaluation.criterion}: {evaluation.satisfied}; {evaluation.reasoning}"
-        for evaluation in company.evaluations
-    ]
-    return "\n".join(parts)[:8000]
+class ExaRetainedSpanError(RuntimeError):
+    """An Exa evidence span could not be cut from the exact retained item artifact.
+
+    Fail-closed by construction: every ``exa_websets`` claim's ``evidence_span`` must be a literal
+    substring of the immutable bytes it cites, because that is precisely what the engine's
+    anti-fabrication guard re-checks before a projection may reach an agent
+    (``entity_research_tools._json_contains_text``). A span this module cannot cut verbatim is one
+    it must not write.
+    """
+
+
+class _RetainedItem:
+    """The retained item artifact, plus the ability to cut verbatim spans out of it.
+
+    Every retained webset item is stored as canonical JSON (``sort_keys=True``, ``(",", ":")``
+    separators) — the D3 page ingest and the targeted-enrichment reconciler both serialize it that
+    way — so re-rendering any object it contains reproduces the exact retained bytes, and any
+    contiguous slice of that rendering is a literal substring of the artifact. Spans are therefore
+    *cut from the evidence*, never composed about it: a description like
+    ``Exa company properties company.employees: 819`` reads well and is unfindable in the bytes,
+    which is exactly the shape the guard exists to refuse.
+    """
+
+    def __init__(self, retained: bytes) -> None:
+        self._text = retained.decode("utf-8")
+        payload = json.loads(self._text)
+        if not isinstance(payload, dict):
+            raise ExaRetainedSpanError("retained Exa item artifact is not a JSON object")
+        self._payload: Mapping[str, JsonValue] = payload
+
+    def provider_member_span(self, provider_field: str) -> str:
+        """The slice covering the retained member(s) named by ``provider_field``.
+
+        ``provider_field`` is the base-field provenance label (``company.employees``,
+        ``properties.url``, ``company.financials.revenueAnnual``) and may name alternatives with
+        ``|`` when one platform value is derived from more than one retained member
+        (``company.headquarters|company.location``). Alternatives must share one container, so the
+        cut stays a single contiguous run of retained bytes rather than a fabricated join.
+        """
+
+        paths = tuple(_item_path(alternative) for alternative in provider_field.split("|"))
+        parents = {path[:-1] for path in paths}
+        if len(parents) != 1:
+            raise ExaRetainedSpanError(
+                f"Exa provider field {provider_field!r} spans more than one retained container"
+            )
+        container = self._container(next(iter(parents)), provider_field)
+        keys = tuple(path[-1] for path in paths if path[-1] in container)
+        if not keys:
+            raise ExaRetainedSpanError(
+                f"retained Exa item has no member for provider field {provider_field!r}"
+            )
+        return self._cut(container, keys, provider_field)[:8000]
+
+    def enrichment_span(self, enrichment_id: str) -> str:
+        """The retained enrichment result — reasoning, references and value, exactly as stored."""
+
+        entries = self._payload.get("enrichments")
+        if isinstance(entries, list):
+            for entry in entries:
+                if isinstance(entry, dict) and entry.get("enrichmentId") == enrichment_id:
+                    span = canonical_json(cast(JsonValue, entry))
+                    if span not in self._text:
+                        raise ExaRetainedSpanError(
+                            f"retained Exa enrichment {enrichment_id!r} is not stored canonically"
+                        )
+                    return span[:8000]
+        raise ExaRetainedSpanError(f"retained Exa item has no enrichment {enrichment_id!r}")
+
+    def evaluations_span(self) -> str:
+        """The retained match evaluations — the grounding behind admitting this candidate."""
+
+        return self._cut(self._payload, ("evaluations",), "evaluations")[:8000]
+
+    def _container(self, path: Sequence[str], provider_field: str) -> Mapping[str, JsonValue]:
+        node: JsonValue = cast(JsonValue, self._payload)
+        for part in path:
+            if not isinstance(node, dict) or part not in node:
+                raise ExaRetainedSpanError(
+                    f"retained Exa item has no container for provider field {provider_field!r}"
+                )
+            node = node[part]
+        if not isinstance(node, dict):
+            raise ExaRetainedSpanError(
+                f"retained Exa container for {provider_field!r} is not a JSON object"
+            )
+        return node
+
+    def _cut(
+        self,
+        container: Mapping[str, JsonValue],
+        keys: Sequence[str],
+        provider_field: str,
+    ) -> str:
+        ordered = sorted(container)
+        members = [f"{canonical_json(key)}:{canonical_json(container[key])}" for key in ordered]
+        rendered = "{" + ",".join(members) + "}"
+        if rendered not in self._text:
+            raise ExaRetainedSpanError(
+                f"retained Exa container for {provider_field!r} is not stored canonically"
+            )
+        bounds: dict[str, tuple[int, int]] = {}
+        cursor = 1
+        for key, member in zip(ordered, members, strict=True):
+            bounds[key] = (cursor, cursor + len(member))
+            cursor += len(member) + 1
+        return rendered[min(bounds[key][0] for key in keys) : max(bounds[key][1] for key in keys)]
+
+
+def _item_path(provider_field: str) -> tuple[str, ...]:
+    """Translate a base-field provenance label into its path inside the retained item."""
+
+    parts = tuple(part for part in provider_field.split(".") if part)
+    if parts[:1] == ("company",):
+        return ("properties", "company", *parts[1:])
+    if parts[:1] == ("properties",) and len(parts) > 1:
+        return parts
+    raise ExaRetainedSpanError(f"Exa provider field {provider_field!r} names no retained member")
 
 
 def _matched_signal(company: ExaDiscoveryCompanyItem) -> str:
@@ -222,7 +337,9 @@ def _matched_signal(company: ExaDiscoveryCompanyItem) -> str:
 
 
 def _candidate_record(
-    snapshot: DiscoveryItemSnapshot, company: ExaDiscoveryCompanyItem
+    snapshot: DiscoveryItemSnapshot,
+    company: ExaDiscoveryCompanyItem,
+    retained: _RetainedItem,
 ) -> CandidateRecord:
     domain = registrable_domain(company.company_url)
     return CandidateRecord(
@@ -237,7 +354,7 @@ def _candidate_record(
         confidence=0.9,
         cost_cents=Decimal(0),
         artifact_key=snapshot.raw_artifact_key,
-        evidence_span=_candidate_span(company),
+        evidence_span=retained.evaluations_span(),
         discovery_evidence=_candidate_evidence(company),
         observed_at=company.observed_at,
     )
@@ -417,19 +534,6 @@ def _claim_tier(
     return 3
 
 
-def _base_span(provider_field: str, value: JsonValue) -> str:
-    return f"Exa company properties {provider_field}: {canonical_json(value)}"[:8000]
-
-
-def _enrichment_span(observation: ExaDiscoveryEnrichmentObservation) -> str:
-    parts = [observation.reasoning or "Exa Websets enrichment"]
-    parts.extend(
-        reference.snippet or reference.title or reference.url
-        for reference in observation.references
-    )
-    return "\n".join(parts)[:8000]
-
-
 async def _equivalent_claim(
     conn: AsyncConnection,
     *,
@@ -489,15 +593,19 @@ async def ensure_exa_company_field_claim(
     entity_id: EntityId,
     run_id: RunId,
     artifact_key: str,
+    retained_item: bytes,
     company: ExaDiscoveryCompanyItem,
     member_ids: Sequence[EntityId],
     field_key: str,
     value: JsonValue,
     provider_field: str,
+    enrichment_id: str | None = None,
     references: Sequence[ExaWebsetReference] = (),
     reasoning: str | None = None,
     research_mode: ResearchMode = ResearchMode.ACCOUNT_DISCOVERY,
 ) -> tuple[ClaimId, bool]:
+    if not artifact_key.endswith(content_address(retained_item)):
+        raise ExaRetainedSpanError("retained Exa item bytes are not the cited artifact")
     existing = await _equivalent_claim(
         conn,
         entity_ids=member_ids,
@@ -517,19 +625,12 @@ async def ensure_exa_company_field_claim(
         run_id=run_id,
         research_mode=research_mode,
         source_url=_best_reference_url(company, references),
+        # The span is cut out of the retained bytes, never composed about them: the engine
+        # re-reads this artifact and refuses any projection whose span it cannot find there.
         evidence_span=(
-            _enrichment_span(
-                ExaDiscoveryEnrichmentObservation(
-                    enrichment_id=provider_field,
-                    field_key=field_key,
-                    format=ExaWebsetEnrichmentFormat.TEXT,
-                    result=(canonical_json(value),),
-                    reasoning=reasoning,
-                    references=tuple(references),
-                )
-            )
-            if references or reasoning
-            else _base_span(provider_field, value)
+            _RetainedItem(retained_item).enrichment_span(enrichment_id)
+            if enrichment_id is not None
+            else _RetainedItem(retained_item).provider_member_span(provider_field)
         ),
         observed_at=company.observed_at,
         cost_cents=Decimal(0),
@@ -575,6 +676,7 @@ async def _materialize_item_claims(
             entity_id=survivor_id,
             run_id=run_id,
             artifact_key=prepared.snapshot.raw_artifact_key,
+            retained_item=prepared.retained,
             company=prepared.company,
             member_ids=member_ids,
             field_key=field_key,
@@ -600,11 +702,13 @@ async def _materialize_item_claims(
             entity_id=survivor_id,
             run_id=run_id,
             artifact_key=prepared.snapshot.raw_artifact_key,
+            retained_item=prepared.retained,
             company=prepared.company,
             member_ids=member_ids,
             field_key=mapped_field,
             value=value,
             provider_field=observation.field_key,
+            enrichment_id=observation.enrichment_id,
             references=observation.references,
             reasoning=observation.reasoning,
         )
@@ -778,11 +882,13 @@ class ExaWebsetsD4Materializer:
             if provider_item.id != snapshot.provider_item_id:
                 raise DiscoveryReplayConflict("D4 raw item id differs from its durable snapshot")
             company = normalize_exa_discovery_company_item(provider_item, definitions)
+            retained = _RetainedItem(raw)
             prepared.append(
                 _PreparedItem(
                     snapshot=snapshot,
                     company=company,
-                    record=_candidate_record(snapshot, company),
+                    record=_candidate_record(snapshot, company, retained),
+                    retained=raw,
                 )
             )
         return tuple(prepared)

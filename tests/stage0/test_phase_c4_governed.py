@@ -138,6 +138,10 @@ class _MemoryStorage:
 
 def test_readiness_policy_has_three_independent_gates() -> None:
     assert set(DEFAULT_STAGE0_POLICY.readiness.floors) == set(ReadinessGate)
+    assert (
+        DEFAULT_STAGE0_POLICY.readiness.floors[ReadinessGate.ICP_SYNTHESIS].min_coverage_ratio
+        == 0.0
+    )
     with pytest.raises(ValueError, match="all gates"):
         ReadinessSpec(floors={ReadinessGate.ICP_SYNTHESIS: ReadinessFloor()})
 

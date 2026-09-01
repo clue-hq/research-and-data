@@ -182,7 +182,10 @@ CORE_PACK: tuple[SeedField, ...] = (
         "core.industry",
         "str",
         PassKind.SCORING,
-        tier_plan=("sumble_organizations", "apollo", "exa"),
+        # ``exa_deep`` closes the §3.1 row-2 fallback: Sumble Organizations answers it first (tier
+        # 1), Exa Deep is the contract's second owner. Without the declaration the Exa account
+        # action refuses the field outright (it requires its own source key in the tier plan).
+        tier_plan=("sumble_organizations", "apollo", "exa", "exa_deep"),
         freshness_ttl=timedelta(days=90),
         value_schema={"type": "string"},
         description="Primary industry classification returned with account evidence.",
@@ -192,7 +195,9 @@ CORE_PACK: tuple[SeedField, ...] = (
         "core.company_about",
         "str",
         PassKind.SCORING,
-        tier_plan=("sumble_organizations", "exa_websets"),
+        # §3.1 row 3 owners: Exa Deep and Sumble Organizations. Tier discipline keeps the tier-1
+        # structured source first; ``exa_deep`` is the qualitative last resort it names.
+        tier_plan=("sumble_organizations", "exa_websets", "exa_deep"),
         freshness_ttl=timedelta(days=90),
         value_schema={"type": "string"},
         description="Provider-sourced public company description/about text.",
@@ -246,7 +251,9 @@ CORE_PACK: tuple[SeedField, ...] = (
         "core.annual_revenue",
         "object",
         PassKind.SCORING,
-        tier_plan=("apollo", "sumble_organizations", "exa"),
+        # §3.1 row 7: among the four permitted account sources only Exa Deep can answer revenue
+        # (the pinned Sumble organization attributes carry no revenue figure).
+        tier_plan=("apollo", "sumble_organizations", "exa", "exa_deep"),
         freshness_ttl=timedelta(days=365),
         value_schema={
             "type": "object",
@@ -353,7 +360,9 @@ CORE_PACK: tuple[SeedField, ...] = (
         "account.recent_funding",
         "object",
         PassKind.SCORING,
-        tier_plan=("apollo", "exa"),
+        # §3.1 row 12: grounded Exa Deep research is the permitted owner that can actually be
+        # dispatched today (the pinned Sumble v9 organization action cannot request funding).
+        tier_plan=("apollo", "exa", "exa_deep"),
         freshness_ttl=timedelta(days=90),
         value_schema={
             "type": "object",
@@ -369,7 +378,8 @@ CORE_PACK: tuple[SeedField, ...] = (
         "account.total_funding",
         "object",
         PassKind.SCORING,
-        tier_plan=("apollo", "exa_websets"),
+        # §3.1 row 11, same reasoning as ``account.recent_funding``.
+        tier_plan=("apollo", "exa_websets", "exa_deep"),
         freshness_ttl=timedelta(days=90),
         value_schema={
             "type": "object",

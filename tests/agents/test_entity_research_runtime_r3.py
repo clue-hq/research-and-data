@@ -46,6 +46,7 @@ from clue_agents.entity_research_runtime import (
     EntityResearchExecutionGuard,
     EntityResearchExternalWait,
     EntityResearchFinalizationEngine,
+    EntityResearchFinalizationRejected,
     EntityResearchRuntimeError,
 )
 from clue_agents.model import ScriptedAgentChatModel
@@ -68,6 +69,7 @@ ACCOUNT_TOOLS = (
     "enrich_account",
     "inspect_account_evidence",
     "discover_buying_committee",
+    "record_committee_role_inferences",
     "assess_account_coverage",
     "read_research_result",
     "read_evidence",
@@ -1065,5 +1067,323 @@ def test_unparseable_finalize_render_falls_back_to_the_model_echo_path() -> None
         )
         assert middleware._finalization_proposed is True
         assert await middleware.abefore_model({}, None) is None
+
+    run_async(run())
+
+
+def test_an_empty_model_turn_is_refused_back_to_the_model_instead_of_failing_the_job() -> None:
+    """Live regression: a maxed-out reasoning turn produced no tool call and no typed proposal.
+
+    The graph ended with no ``structured_response`` and the run then failed the whole job
+    validating ``None`` as a ``ResearchFinalizationProposal``. An empty turn is model output, not
+    job integrity, so it comes back as the ordinary governed refusal and the model finalizes on
+    its next turn.
+    """
+
+    async def run() -> None:
+        context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+        proposal = _proposal(context)
+        model = ScriptedAgentChatModel(
+            responses=(
+                AIMessage(content="(reasoning only; output budget exhausted)"),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "ResearchFinalizationProposal",
+                            "args": proposal.model_dump(mode="json"),
+                            "id": "typed-final-after-repair",
+                        }
+                    ],
+                ),
+            )
+        )
+        journal = Journal()
+        runtime = EntityResearchAgentRuntime(
+            factory=EntityResearchAgentFactory(
+                models=Models(model), journal=journal, guard=Guard()
+            ),
+            checkpointers=Checkpointers(),
+            journal=journal,
+            finalizer=Finalizer(),
+        )
+
+        outcome = await runtime.run(definition=_definition(context))
+
+        assert isinstance(outcome, EntityResearchAgentResult)
+        assert outcome.proposal == proposal
+        assert outcome.finalization_receipt is not None
+        assert not any(
+            event.kind is EntityAgentJournalEventKind.EXECUTION_FAILED for event in journal.events
+        )
+        # The refusal is durable without a new journal kind: it rides the message history the next
+        # model round records.
+        rounds = [
+            event
+            for event in journal.events
+            if event.kind is EntityAgentJournalEventKind.MODEL_STARTED
+        ]
+        assert len(rounds) == 2
+        replayed = json.dumps(rounds[-1].payload)
+        assert "governed_research_rejection" in replayed
+        assert "empty_model_turn" in replayed
+
+    run_async(run())
+
+
+def test_a_run_that_never_proposes_fails_in_the_runtime_species_not_pydantic() -> None:
+    """Repairs are bounded; exhausting them is a typed runtime refusal, never a ValidationError."""
+
+    async def run() -> None:
+        context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+        model = ScriptedAgentChatModel(
+            responses=(AIMessage(content="(reasoning only, forever)"),), repeat_last=True
+        )
+        journal = Journal()
+        runtime = EntityResearchAgentRuntime(
+            factory=EntityResearchAgentFactory(
+                models=Models(model), journal=journal, guard=Guard()
+            ),
+            checkpointers=Checkpointers(),
+            journal=journal,
+            finalizer=Finalizer(),
+        )
+
+        with pytest.raises(
+            EntityResearchFinalizationRejected,
+            match="without an admissible typed finalization proposal",
+        ):
+            await runtime.run(definition=_definition(context))
+
+        failures = [
+            event
+            for event in journal.events
+            if event.kind is EntityAgentJournalEventKind.EXECUTION_FAILED
+        ]
+        assert len(failures) == 1
+        assert failures[0].payload["error_type"] == "EntityResearchFinalizationRejected"
+        rounds = [
+            event
+            for event in journal.events
+            if event.kind is EntityAgentJournalEventKind.MODEL_STARTED
+        ]
+        assert len(rounds) == runtime_module._MAX_EMPTY_TURN_REPAIRS + 1
+
+    run_async(run())
+
+
+def test_a_resumed_terminal_checkpoint_without_a_proposal_re_enters_the_model() -> None:
+    """Live regression: two account jobs re-suspended forever on a proposal-less checkpoint.
+
+    The crashed drive's last model turn spent its whole output budget on reasoning, so the graph
+    ended at ``END`` with no ``structured_response``. Resuming that thread with no input replays the
+    dead end without running a single node — no model round, so the in-turn empty-turn repair can
+    never fire — and the drive fails identically on every resume. The resumed drive must re-enter
+    the model with the same governed refusal, which is the only reachable repair across processes.
+    """
+
+    async def run() -> None:
+        context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+        proposal = _proposal(context)
+        checkpointers = Checkpointers()
+        definition = _definition(context)
+
+        crashed_journal = Journal()
+        crashed = EntityResearchAgentRuntime(
+            factory=EntityResearchAgentFactory(
+                models=Models(
+                    ScriptedAgentChatModel(
+                        responses=(AIMessage(content="(reasoning only)"),), repeat_last=True
+                    )
+                ),
+                journal=crashed_journal,
+                guard=Guard(),
+            ),
+            checkpointers=checkpointers,
+            journal=crashed_journal,
+            finalizer=Finalizer(),
+        )
+        with pytest.raises(EntityResearchFinalizationRejected):
+            await crashed.run(definition=definition)
+
+        resumed_journal = Journal()
+        resumed = EntityResearchAgentRuntime(
+            factory=EntityResearchAgentFactory(
+                models=Models(
+                    ScriptedAgentChatModel(
+                        responses=(
+                            AIMessage(
+                                content="",
+                                tool_calls=[
+                                    {
+                                        "name": "ResearchFinalizationProposal",
+                                        "args": proposal.model_dump(mode="json"),
+                                        "id": "typed-final-after-resume",
+                                    }
+                                ],
+                            ),
+                        )
+                    )
+                ),
+                journal=resumed_journal,
+                guard=Guard(),
+            ),
+            checkpointers=checkpointers,
+            journal=resumed_journal,
+            finalizer=Finalizer(),
+        )
+
+        outcome = await resumed.run(definition=definition)
+
+        assert isinstance(outcome, EntityResearchAgentResult)
+        assert outcome.proposal == proposal
+        assert not any(
+            event.kind is EntityAgentJournalEventKind.EXECUTION_FAILED
+            for event in resumed_journal.events
+        )
+        rounds = [
+            event
+            for event in resumed_journal.events
+            if event.kind is EntityAgentJournalEventKind.MODEL_STARTED
+        ]
+        assert len(rounds) == 1
+        replayed = json.dumps(rounds[0].payload)
+        assert "empty_model_turn" in replayed
+
+    run_async(run())
+
+
+def test_a_refused_round_shape_returns_to_the_model_instead_of_killing_the_graph() -> None:
+    """Live regression: a governed refusal of the model's *wave* suspended the whole job.
+
+    ``authorize_parallel`` refusals are the ordinary repairable species — nothing is admitted,
+    reserved or dispatched — but they were raised out of the model callback, where nothing caught
+    them. Each call in the refused wave must come back to the model as its own error tool message.
+    """
+
+    class RefusingGuard(Guard):
+        async def authorize_parallel(
+            self,
+            *,
+            context: EntityResearchRuntimeContext,
+            calls: Sequence[EntityResearchToolCall],
+        ) -> None:
+            await super().authorize_parallel(context=context, calls=calls)
+            raise runtime_module.EntityResearchGovernedToolRefusal(
+                "one model round cannot duplicate account provider work"
+            )
+
+    async def run() -> None:
+        context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+        proposal = _proposal(context)
+        model = ScriptedAgentChatModel(
+            responses=(
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {"name": "read_research_result", "args": {"value": "a"}, "id": "read-a"},
+                        {"name": "read_research_result", "args": {"value": "b"}, "id": "read-b"},
+                    ],
+                ),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "ResearchFinalizationProposal",
+                            "args": proposal.model_dump(mode="json"),
+                            "id": "typed-final-after-round-repair",
+                        }
+                    ],
+                ),
+            )
+        )
+        journal = Journal()
+        runtime = EntityResearchAgentRuntime(
+            factory=EntityResearchAgentFactory(
+                models=Models(model), journal=journal, guard=RefusingGuard()
+            ),
+            checkpointers=Checkpointers(),
+            journal=journal,
+            finalizer=Finalizer(),
+        )
+
+        outcome = await runtime.run(definition=_definition(context))
+
+        assert isinstance(outcome, EntityResearchAgentResult)
+        assert outcome.proposal == proposal
+        assert not any(
+            event.kind is EntityAgentJournalEventKind.EXECUTION_FAILED for event in journal.events
+        )
+        refusals = [
+            event
+            for event in journal.events
+            if event.kind is EntityAgentJournalEventKind.TOOL_FAILED
+            and event.payload.get("disposition") == "round_admission_refused"
+        ]
+        assert len(refusals) == 2
+
+    run_async(run())
+
+
+def test_a_fourth_identical_read_is_refused_back_to_the_model() -> None:
+    """Live regression (job 5d9dfe7b): a model read the same unchanged state until the graph
+    recursion cap suspended the job. Identical consecutive read-only calls are answered normally
+    three times, refused recoverably from the fourth, and any different call resets the streak.
+    """
+
+    async def run() -> None:
+        context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+        definition = _definition(context)
+        journal = Journal()
+        middleware = runtime_module._EntityResearchRuntimeMiddleware(
+            definition=definition,
+            journal=journal,
+            guard=Guard(),
+            batches=BatchRecorder(),
+        )
+
+        answer = ToolMessage(content='{"state":"unchanged"}', tool_call_id="r", name="read")
+
+        def read_request(call_id: str) -> SimpleNamespace:
+            call = {"name": "read_account_research_state", "args": {}, "id": call_id}
+            return SimpleNamespace(
+                tool_call=call,
+                state={"messages": (AIMessage(content="", tool_calls=[call]),)},
+            )
+
+        async def read_handler(_request: object) -> ToolMessage:
+            return answer
+
+        for attempt in range(3):
+            returned = await middleware.awrap_tool_call(
+                read_request(f"read-{attempt}"), read_handler
+            )
+            assert returned is answer, f"read {attempt} should be answered"
+
+        refused = await middleware.awrap_tool_call(read_request("read-3"), read_handler)
+        assert isinstance(refused, ToolMessage)
+        assert refused.status == "error"
+        assert "identical_read_loop" in str(refused.content)
+        assert journal.events[-1].payload["disposition"] == "identical_read_loop_refused"
+
+        # A different call resets the streak: the same read is answered again afterwards.
+        different_call = {
+            "name": "read_research_result",
+            "args": {"result_ref": "research-result:x"},
+            "id": "different-read",
+        }
+
+        async def different_handler(_request: object) -> ToolMessage:
+            return ToolMessage(content="{}", tool_call_id="different-read", name="read")
+
+        await middleware.awrap_tool_call(
+            SimpleNamespace(
+                tool_call=different_call,
+                state={"messages": (AIMessage(content="", tool_calls=[different_call]),)},
+            ),
+            different_handler,
+        )
+        again = await middleware.awrap_tool_call(read_request("read-after-reset"), read_handler)
+        assert again is answer
 
     run_async(run())

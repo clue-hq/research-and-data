@@ -89,6 +89,12 @@ __all__ = [
 #: same rule. The trial surface withholds it too, so the shared ceiling again grants the trial
 #: nothing.
 CONVERSATION_RECIPE_KEY = "recipe0-stage0"
+# Revision 21 (Slice B browser-gate repair) is revision 20 with
+# ``draft_account_research_directive@5`` — @4's contract behind a satisfiable schema
+# (``directive.field_keys`` omittable) — in place of @4. Seeded replay-only: the active revision
+# stays 19.
+# Revision 20 (Slice B wave 2) is revision 16 with ``draft_account_research_directive@4`` — the
+# comprehensive-profile directive contract — in place of @3. Seeded replay-only.
 # Revision 19 (genad2) re-pins the delegation entry at ``open_design_leg@4`` — the same tool once
 # more, promoted so a document-less ``doc_kind='scene'`` open births a ZERO-PAGE document the
 # design agent then authors pages into (the format inputs are gone). Revision 18 stays the exact

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from decimal import Decimal
-from typing import Literal, cast
+from typing import Final, Literal, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy import text
@@ -23,6 +23,7 @@ from clue_api.contact_entity_research import (
     ContactResearchAuthorityError,
     ContactResearchStateStore,
 )
+from clue_api.entity_research_tools import EntityResearchResultIntegrityError
 from clue_core import (
     ContactChannel,
     ContactChannelOperation,
@@ -31,8 +32,30 @@ from clue_core import (
     ContactResearchPolicyPin,
 )
 from clue_db import ConnFactory, transaction
+from clue_research.durable.spend_posture import record_cap_refusal_skipped
 
 _CAUSATION_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r8:contact-channel-causation")
+
+#: Attribution for the record-only spend-cap posture (founder ruling 2026-08-20).
+_SITE_CHANNEL_SETTLE: Final = "contact_channel_settlement"
+
+
+def _record_cap_overshoot(spent: object, cap: object, *, site: str, reason: str) -> None:
+    """Announce a settled charge that landed past the cap the record-only posture stopped guarding.
+
+    The guard clause is dropped from the UPDATE rather than compared beforehand (the same shape as
+    the already-gated provider settlement), so the breach is read back off the row the write
+    returned: exact, and impossible to compute for a request that stayed within its cap.
+    """
+
+    settled, ceiling = Decimal(str(spent)), Decimal(str(cap))
+    if settled <= ceiling:
+        return
+    record_cap_refusal_skipped(
+        site=site,
+        reason=reason,
+        amounts={"spent_cents": settled, "budget_cap_cents": ceiling},
+    )
 
 
 class GovernedContactChannelActions:
@@ -49,6 +72,7 @@ class GovernedContactChannelActions:
         entity_research_job_id: UUID | None = None,
         conn_factory: ConnFactory = transaction,
         provider_concurrency_limit: int = 8,
+        enforce_budget: bool = True,
     ) -> None:
         self._intent = intent
         self._policy = effective_policy
@@ -57,6 +81,7 @@ class GovernedContactChannelActions:
         self._window = observation_window
         self._entity_research_job_id = entity_research_job_id
         self._conn_factory = conn_factory
+        self._enforce_budget = enforce_budget
         if provider_concurrency_limit < 1:
             raise ValueError("contact channel provider concurrency limit must be positive")
         self._provider_concurrency_limit = provider_concurrency_limit
@@ -210,6 +235,14 @@ class GovernedContactChannelActions:
         active: ActiveEntityResearchToolExecution,
         request: ContactChannelToolInput,
     ) -> None:
+        """Refuse a channel the model chose outside its selected authority — recoverably.
+
+        The ``channel`` argument is model output, so both refusals below are R10 species 1 and
+        stay ``ContactResearchAuthorityError``, which the tool binding now renders as an error
+        tool message. The causation, cost-fold and post-settlement reads further down are money
+        and truth, so they raise the suspending integrity species instead.
+        """
+
         authorization = active.context.authorization
         if (
             authorization.subject_entity_id != self._intent.contact_entity_id
@@ -246,8 +279,11 @@ class GovernedContactChannelActions:
     ) -> None:
         authorization = active.context.authorization
         event_ref = active.journal_event_ref
+        # Causation is the ledger. A missing journal event or a replay that changed authority is
+        # tampering with the record of what was dispatched and paid for: it must suspend for an
+        # operator, never return to the model as something it can talk past.
         if not event_ref.startswith("entity-agent-event:"):
-            raise ContactResearchAuthorityError("channel tool lacks an exact journal event")
+            raise EntityResearchResultIntegrityError("channel tool lacks an exact journal event")
         event_id = UUID(event_ref.removeprefix("entity-agent-event:"))
         causation_id = uuid5(
             _CAUSATION_NAMESPACE,
@@ -332,7 +368,7 @@ class GovernedContactChannelActions:
             and disposition in {"joined", "replayed"}
         )
         if observed != expected and not same_resumed_cause:
-            raise ContactResearchAuthorityError("channel causation replay changed authority")
+            raise EntityResearchResultIntegrityError("channel causation replay changed authority")
 
     async def _fold_cost(
         self,
@@ -341,6 +377,18 @@ class GovernedContactChannelActions:
         operation: ContactChannelOperation,
         stage: str,
     ) -> None:
+        """Settle one channel stage's spend against the job and run budgets.
+
+        Two refusals live here and they are not the same species. A settlement *replay that
+        changed* is a truth violation and refuses in both postures. The job/run cap breaches are
+        our own arithmetic over money the provider has **already charged** — under the 2026-08-20
+        record-only ruling the pilot posture folds the true cost and records the breach instead of
+        refusing (its exact sibling, ``entity_research_tools`` provider settlement, has been
+        pilot-gated since the FI pass; this path was simply missed). Unknown or unreconciled spend
+        still suspends (R10 species 2) — the model may never be handed a refusal it could answer
+        by spending again.
+        """
+
         cost = (
             operation.acquisition_cost_cents_charged
             if stage == "acquisition"
@@ -381,38 +429,60 @@ class GovernedContactChannelActions:
                     .one()
                 )
                 if Decimal(stored["cost_cents"]) != cost:
-                    raise ContactResearchAuthorityError(
+                    raise EntityResearchResultIntegrityError(
                         "channel cost fold replay changed settlement"
                     )
                 return
+            job_guard = "AND spent_cents+:cost<=budget_cap_cents " if self._enforce_budget else ""
             job_updated = (
-                await conn.execute(
-                    text(
-                        "UPDATE entity_research_job SET spent_cents=spent_cents+:cost, "
-                        "updated_at=now() WHERE job_id=:job_id AND research_run_id=:run_id "
-                        "AND spent_cents+:cost<=budget_cap_cents RETURNING job_id"
-                    ),
-                    values,
+                (
+                    await conn.execute(
+                        text(
+                            "UPDATE entity_research_job SET spent_cents=spent_cents+:cost, "
+                            "updated_at=now() WHERE job_id=:job_id AND research_run_id=:run_id "
+                            f"{job_guard}RETURNING spent_cents, budget_cap_cents"
+                        ),
+                        values,
+                    )
                 )
-            ).scalar_one_or_none()
+                .mappings()
+                .one_or_none()
+            )
             if job_updated is None:
-                raise ContactResearchAuthorityError(
+                raise EntityResearchResultIntegrityError(
                     "settled channel cost exceeds the exact contact-job budget"
                 )
+            _record_cap_overshoot(
+                job_updated["spent_cents"],
+                job_updated["budget_cap_cents"],
+                site=_SITE_CHANNEL_SETTLE,
+                reason="job_cap_exceeded",
+            )
+            run_guard = "AND spent_cents+:cost<=budget_cap_cents " if self._enforce_budget else ""
             run_updated = (
-                await conn.execute(
-                    text(
-                        "UPDATE entity_research_run SET spent_cents=spent_cents+:cost, "
-                        "updated_at=now() WHERE research_run_id=:run_id "
-                        "AND spent_cents+:cost<=budget_cap_cents RETURNING research_run_id"
-                    ),
-                    values,
+                (
+                    await conn.execute(
+                        text(
+                            "UPDATE entity_research_run SET spent_cents=spent_cents+:cost, "
+                            "updated_at=now() WHERE research_run_id=:run_id "
+                            f"{run_guard}RETURNING spent_cents, budget_cap_cents"
+                        ),
+                        values,
+                    )
                 )
-            ).scalar_one_or_none()
+                .mappings()
+                .one_or_none()
+            )
             if run_updated is None:
-                raise ContactResearchAuthorityError(
+                raise EntityResearchResultIntegrityError(
                     "settled channel cost exceeds the exact contact-run budget"
                 )
+            _record_cap_overshoot(
+                run_updated["spent_cents"],
+                run_updated["budget_cap_cents"],
+                site=_SITE_CHANNEL_SETTLE,
+                reason="run_cap_exceeded",
+            )
 
     async def _latest_acquisition(
         self,
@@ -470,7 +540,9 @@ class GovernedContactChannelActions:
             None,
         )
         if row is None:
-            raise ContactResearchAuthorityError("channel result is absent from exact job state")
+            raise EntityResearchResultIntegrityError(
+                "channel result is absent from exact job state"
+            )
         return self._state._channel_projection(cast(Mapping[str, object], row))
 
 

@@ -26,6 +26,7 @@ from clue_core import (
     EntityScope,
     MemoryAccepted,
     MemoryDisabled,
+    MemoryPreconditionFailed,
     MemoryProvenanceClass,
     MemoryRejected,
     MemoryScopeType,
@@ -45,12 +46,15 @@ from clue_core import (
     ResearchDirectiveStatus,
     ResearchSealedSelectionRef,
     ScopeRef,
+    SubmissionOutcome,
     compose_account_research_directive,
     research_directive_digest,
     research_directive_override_digest,
 )
+from clue_core.research_profile import COMPREHENSIVE_ACCOUNT_FIELDS
 from clue_research.claimstore.registry import get_field
 from clue_research.durable.scheduler import AccountSpec
+from clue_research.durable.spend_posture import record_policy_refusal_skipped
 from clue_research.icp import get_icp_version
 from clue_research.identity import get_account
 from clue_research.membership import ensure_project_account
@@ -58,6 +62,9 @@ from clue_research.sources.authority import load_effective_source_plan
 from clue_research.sources.registry import get_source, sources_for
 from clue_research.sources.source_profile import resolve_allowed_set
 from clue_spine import get_project
+
+#: Attribution for the record-only policy posture (:mod:`clue_research.durable.spend_posture`).
+_SITE_DIRECTIVE_MEMORY_SEAM = "research_directive_memory_seam"
 
 _OVERRIDE_NAMESPACE = UUID("466ca70e-f500-51b9-abf8-891353fcfc0c")
 _EVENT_NAMESPACE = UUID("742bbb9b-564f-572f-891a-0849122c3031")
@@ -97,6 +104,11 @@ def _override_id(
     return ResearchDirectiveOverrideId(uuid5(_OVERRIDE_NAMESPACE, f"{directive_id}:{account_id}"))
 
 
+#: Contract §3.1 — the fixed 21-field comprehensive account profile. Directive-valid as a
+#: platform contract independent of per-field pass_kind and of the pinned ICP's authored list.
+_COMPREHENSIVE_PROFILE_FIELDS = frozenset(COMPREHENSIVE_ACCOUNT_FIELDS)
+
+
 async def validate_research_directive_draft(
     conn: AsyncConnection,
     *,
@@ -134,11 +146,18 @@ async def validate_research_directive_draft(
     active_icp_fields = set(icp.field_keys)
     for field_key in sorted(field_keys):
         field = await get_field(conn, field_key)
-        if field is None or field.pass_kind is not PassKind.DEEP:
+        # The fixed comprehensive account profile (contract §3.1, COMPREHENSIVE_ACCOUNT_FIELDS) is a
+        # platform contract, not an ICP choice: its rows are directive-valid regardless of
+        # pass_kind (ten are core.* firmographics born in the scoring era) and regardless of the
+        # pinned ICP's authored field list (§3.3 row 1 — a full-profile command compiles to all
+        # 21 unless the user explicitly narrows). Every field OUTSIDE the fixed profile keeps the
+        # strict deep-registration and ICP-activation gates unchanged.
+        comprehensive = field_key in _COMPREHENSIVE_PROFILE_FIELDS
+        if field is None or (not comprehensive and field.pass_kind is not PassKind.DEEP):
             raise ResearchDirectiveInvalid(
                 f"research directive field {field_key!r} is not a registered deep field"
             )
-        if field_key not in active_icp_fields:
+        if not comprehensive and field_key not in active_icp_fields:
             raise ResearchDirectiveInvalid(
                 f"research directive field {field_key!r} is not active in the pinned ICP"
             )
@@ -727,7 +746,8 @@ async def draft_research_directive(
         (
             await conn.execute(
                 text(
-                    "SELECT directive_id, version, status::text FROM account_research_directive "
+                    "SELECT directive_id, version, status::text, predecessor_id "
+                    "FROM account_research_directive "
                     "WHERE workspace_id=:workspace_id AND project_id=:project_id "
                     "AND product_id=:product_id AND icp_key=:icp_key AND icp_version=:icp_version "
                     "ORDER BY version DESC LIMIT 1"
@@ -748,28 +768,102 @@ async def draft_research_directive(
         if predecessor_id is not None:
             raise ResearchDirectiveConflict("initial directive cannot name a predecessor")
         version = 1
+        superseded_draft_id: ResearchDirectiveId | None = None
     else:
         latest_id = ResearchDirectiveId(latest_row["directive_id"])
-        if predecessor_id != latest_id:
-            raise ResearchDirectiveConflict("successor must name the latest directive version")
-        if str(latest_row["status"]) != "confirmed":
-            raise ResearchDirectiveConflict("cannot append behind an unconfirmed directive")
+        latest_status = str(latest_row["status"])
+        if latest_status == "draft":
+            # A draft is a proposal, not an authority: a fresh draft replaces it instead of
+            # deadlocking the lineage. Found live at the Slice B browser gate: a draft whose
+            # effort tier could never price its confirmation gate blocked every successor
+            # forever, because confirmation is the only lifecycle exit and no reject path
+            # exists. Confirmed history stays immutable — only the unconfirmed latest is
+            # superseded, with its own append-only event naming the replacing directive.
+            if predecessor_id is not None and predecessor_id != latest_id:
+                raise ResearchDirectiveConflict("successor must name the latest directive version")
+            superseded_draft_id = latest_id
+            # The fresh draft takes over the superseded draft's position in the lineage: its
+            # predecessor is the lineage's currently-confirmed directive (unique by the
+            # one-confirmed-per-lineage index), or NULL when nothing is confirmed yet. Pointing
+            # at the superseded draft instead would break confirmation twice over — the
+            # confirmed-predecessor check would refuse it, and the one-confirmed index would
+            # refuse a confirm that never superseded the lineage's current confirmed authority
+            # (found live at the Slice B browser gate).
+            confirmed_row = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT directive_id FROM account_research_directive "
+                            "WHERE workspace_id=:workspace_id AND project_id=:project_id "
+                            "AND product_id=:product_id AND icp_key=:icp_key "
+                            "AND icp_version=:icp_version AND status='confirmed'"
+                        ),
+                        {
+                            "workspace_id": workspace_id,
+                            "project_id": project_id,
+                            "product_id": product_id,
+                            "icp_key": icp_key,
+                            "icp_version": icp_version,
+                        },
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            predecessor_id = (
+                ResearchDirectiveId(confirmed_row["directive_id"])
+                if confirmed_row is not None
+                else None
+            )
+        else:
+            if predecessor_id != latest_id:
+                raise ResearchDirectiveConflict("successor must name the latest directive version")
+            if latest_status != "confirmed":
+                raise ResearchDirectiveConflict("cannot append behind an unconfirmed directive")
+            superseded_draft_id = None
         version = int(latest_row["version"]) + 1
 
-    memory_outcome = await memory_write.submit(
-        MemorySubmission(
-            workspace_id=workspace_id,
-            scope=ScopeRef(scope_type=MemoryScopeType.PROJECT, scope_id=project_id),
-            type=MemoryType.PREFERENCE,
-            trigger=f"account-research-directive:{project_id}",
-            body=user_instruction,
-            provenance_class=MemoryProvenanceClass.USER_STATED,
-            creating_quote=user_instruction,
+    memory_outcome: SubmissionOutcome | None
+    try:
+        memory_outcome = await memory_write.submit(
+            MemorySubmission(
+                workspace_id=workspace_id,
+                scope=ScopeRef(scope_type=MemoryScopeType.PROJECT, scope_id=project_id),
+                type=MemoryType.PREFERENCE,
+                trigger=f"account-research-directive:{project_id}",
+                body=user_instruction,
+                provenance_class=MemoryProvenanceClass.USER_STATED,
+                creating_quote=user_instruction,
+            )
         )
-    )
+    except MemoryPreconditionFailed as exc:
+        # The seam's own deterministic person-adjacency guard: an instruction that happens to
+        # carry an email address or a phone-shaped number ("...and cc me at me@acme.com") is a
+        # malformed *memory submission* — the writer has no resolved contact to stamp, and this
+        # call site never has one by construction. That is a fact about the memory record, not
+        # about the directive, so it degrades like the rejection below rather than raising
+        # through a fully validated draft. (Scope shape, the guard's only other cause, is built
+        # by this function and cannot be wrong.)
+        record_policy_refusal_skipped(
+            site=_SITE_DIRECTIVE_MEMORY_SEAM,
+            reason="person_adjacent_precondition",
+            detail=str(exc),
+        )
+        memory_outcome = None
+    # The memory side-write is advisory and it stays that way: a rejection is recorded, never
+    # fatal (live blocker, 2026-08-20 16:26/16:29 IST — the memory seam's LLM reconciliation judge
+    # answered ``body_ok=false`` on an instruction that legitimately named committee personas, and
+    # the directive died). Doc M §2 is binding here — "memory is advisory; config is binding …
+    # nothing authoritative lives in memory" — and the seam already models the degradation:
+    # ``MemoryDisabled`` lands the directive with no refs and a truthful outcome. A rejection now
+    # degrades identically. Store hygiene is untouched (the seam still wrote nothing); only the
+    # veto over the primary flow dies. Deliberately unconditional, not pilot-gated: an advisory
+    # subsystem's hygiene opinion may not stop a directive in *any* posture.
     if isinstance(memory_outcome, MemoryRejected):
-        raise ResearchDirectiveInvalid(
-            f"project research instruction was rejected by the memory seam: {memory_outcome.reason}"
+        record_policy_refusal_skipped(
+            site=_SITE_DIRECTIVE_MEMORY_SEAM,
+            reason=memory_outcome.reason.value,
+            detail=memory_outcome.detail,
         )
     memory_refs = (memory_outcome.memory_id,) if isinstance(memory_outcome, MemoryAccepted) else ()
     memory_outcome_name = (
@@ -777,6 +871,10 @@ async def draft_research_directive(
         if isinstance(memory_outcome, MemoryAccepted)
         else "memory_disabled"
         if isinstance(memory_outcome, MemoryDisabled)
+        else f"memory_rejected:{memory_outcome.reason.value}"
+        if isinstance(memory_outcome, MemoryRejected)
+        else "memory_rejected:person_adjacent_precondition"
+        if memory_outcome is None
         else "unknown"
     )
 
@@ -851,6 +949,33 @@ async def draft_research_directive(
             project_id=project_id,
             account_entity_id=account_id,
             added_via="directive",
+        )
+    if superseded_draft_id is not None:
+        await conn.execute(
+            text(
+                "UPDATE account_research_directive SET status='superseded' "
+                "WHERE directive_id=:directive_id AND status='draft'"
+            ),
+            {"directive_id": superseded_draft_id},
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO account_research_directive_event "
+                "(event_id, directive_id, workspace_id, event_type, actor_type, actor_ref, "
+                "turn_ref, successor_id, operation_id) VALUES (:event_id, :directive_id, "
+                ":workspace_id, 'superseded', :actor_type, :actor_ref, :turn_ref, "
+                ":successor_id, :operation_id)"
+            ),
+            {
+                "event_id": _event_id(operation_id, superseded_draft_id, "superseded"),
+                "directive_id": superseded_draft_id,
+                "workspace_id": workspace_id,
+                "actor_type": actor_type,
+                "actor_ref": created_by,
+                "turn_ref": source_turn_ref,
+                "successor_id": directive_id,
+                "operation_id": operation_id,
+            },
         )
     await conn.execute(
         text(

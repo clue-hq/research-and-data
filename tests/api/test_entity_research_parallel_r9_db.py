@@ -32,6 +32,10 @@ from clue_agents.entity_research_runtime import (
 )
 from clue_agents.entity_research_tools import EntityResearchSemanticToolInput
 from clue_agents.model import ScriptedAgentChatModel
+from clue_api.account_entity_research import (
+    AccountResearchAuthorityError,
+    AccountResearchExecutionGuard,
+)
 from clue_api.contact_entity_research import (
     ContactResearchAuthorityError,
     ContactResearchExecutionGuard,
@@ -114,6 +118,7 @@ async def _claim(
             task_id=task.task_id,
             worker_id=worker_id,
             lease_generation=lease.generation,
+            task_attempt=1,
         )
 
 
@@ -717,11 +722,27 @@ def test_crash_reuses_admission_without_stale_internal_read_replay() -> None:
             third_context = first_context.model_copy(update={"agent_turn_id": uuid4()})
             await start_turn(third_context)
             await fresh.admit(context=third_context, calls=(first_read,))
+            await fresh.failed(
+                context=third_context,
+                call=first_read,
+                error=ValueError("first retained failure"),
+            )
+            # A checkpoint retry of the same admitted member may observe a different failure
+            # before a code/config repair lets it complete. The first immutable failure marker
+            # must not mask that retry as a parallel-ledger replay violation.
+            await fresh.failed(
+                context=third_context,
+                call=first_read,
+                error=RuntimeError("different retry failure"),
+            )
             await fresh.completed(
                 context=third_context,
                 call=first_read,
                 result={"state": "before"},
             )
+            assert (await fresh.replay(context=third_context, call=first_read)).result == {
+                "state": "before"
+            }
             fourth_context = first_context.model_copy(update={"agent_turn_id": uuid4()})
             await start_turn(fourth_context)
             second_read = first_read.model_copy(update={"tool_call_id": "read-after"})
@@ -890,5 +911,100 @@ def test_contact_parallel_guard_allows_only_distinct_depth_one_facets() -> None:
                 context=context,
                 calls=(facet("duplicate-a", "publications"), facet("duplicate-b", "publications")),
             )
+
+    run_async(scenario())
+
+
+def test_account_parallel_guard_allows_disjoint_structured_sources() -> None:
+    from clue_agents.entity_research_contracts import EntityResearchToolCall, canonical_sha256
+
+    context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+    guard = AccountResearchExecutionGuard(conn_factory=None)  # type: ignore[arg-type]
+
+    def enrich(call_id: str, source_key: str, field_key: str) -> EntityResearchToolCall:
+        arguments: dict[str, Any] = {
+            "field_keys": [field_key],
+            "source_keys": [source_key],
+            "questions": [],
+        }
+        return EntityResearchToolCall(
+            tool_call_id=call_id,
+            tool_name="enrich_account",
+            tool_version=1,
+            tool_input_sha256=canonical_sha256(arguments),
+            arguments=arguments,
+        )
+
+    async def scenario() -> None:
+        disjoint = (
+            enrich("tech", "sumble_tech_stack", "core.primary_tech_stack"),
+            enrich("jobs", "sumble_jobs", "account.hiring_velocity_eng"),
+        )
+        await guard.authorize_parallel(context=context, calls=disjoint)
+        DbEntityResearchToolBatchCoordinator._validate_batch(context, disjoint)
+        with pytest.raises(
+            AccountResearchAuthorityError,
+            match="disjoint structured sources",
+        ):
+            await guard.authorize_parallel(
+                context=context,
+                calls=(
+                    enrich("jobs-a", "sumble_jobs", "account.hiring_velocity_eng"),
+                    enrich("jobs-b", "sumble_jobs", "core.employee_count"),
+                ),
+            )
+        with pytest.raises(
+            EntityResearchParallelAdmissionError,
+            match="not independently partitioned",
+        ):
+            DbEntityResearchToolBatchCoordinator._validate_batch(
+                context,
+                (
+                    enrich("jobs-a", "sumble_jobs", "account.hiring_velocity_eng"),
+                    enrich("jobs-b", "sumble_jobs", "core.employee_count"),
+                ),
+            )
+
+    run_async(scenario())
+
+
+def test_two_read_only_calls_in_one_round_are_not_duplicate_provider_work() -> None:
+    """Live regression: a round holding two persisted-result reads suspended the whole job.
+
+    Both guards refused it — the account guard as "duplicate account provider work", and R9's own
+    batch validation as work "not independently partitioned", because a read tool carries no source
+    keys to partition. A read buys nothing, reserves nothing and dispatches nothing, so a repeated
+    one is reading, never duplicated provider work.
+    """
+
+    from clue_agents.entity_research_contracts import EntityResearchToolCall, canonical_sha256
+
+    def read(call_id: str, ref: str, *, tool_name: str = "read_research_result") -> Any:
+        arguments: dict[str, Any] = {"result_ref": ref}
+        return EntityResearchToolCall(
+            tool_call_id=call_id,
+            tool_name=tool_name,
+            tool_version=1,
+            tool_input_sha256=canonical_sha256(arguments),
+            arguments=arguments,
+        )
+
+    async def scenario() -> None:
+        account_context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+        account_calls = (read("read-a", "research-result:a"), read("read-b", "research-result:b"))
+        await AccountResearchExecutionGuard(conn_factory=None).authorize_parallel(  # type: ignore[arg-type]
+            context=account_context, calls=account_calls
+        )
+        DbEntityResearchToolBatchCoordinator._validate_batch(account_context, account_calls)
+
+        contact_context = _context(ResearchSubjectType.CONTACT, EntityAgentRole.CONTACT)
+        contact_calls = (
+            read("c-read-a", "research-result:a"),
+            read("c-read-b", "research-result:b", tool_name="read_evidence"),
+            read("c-read-c", "research-result:c", tool_name="read_evidence"),
+        )
+        await ContactResearchExecutionGuard(conn_factory=None).authorize_parallel(  # type: ignore[arg-type]
+            context=contact_context, calls=contact_calls
+        )
 
     run_async(scenario())

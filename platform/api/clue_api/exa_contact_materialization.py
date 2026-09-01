@@ -52,10 +52,10 @@ from clue_research.resolvers.exa import (
     ExaDeepContactNormalization,
     ExaDeepContactSearchRequest,
     ExaDeepContactTargetLock,
-    ExaDeepSearchResponse,
     normalize_exa_contact_deep_snapshot,
+    parse_exa_deep_response,
 )
-from clue_research.resolvers.exa.deep_contract import ExaDeepResult, field_key_from_exa_alias
+from clue_research.resolvers.exa.deep_contract import ExaDeepResult
 from clue_research.sources import bind_resolver_overrides
 from clue_storage import ArtifactIntegrityError, StorageBackend, read_verified_artifact
 
@@ -110,10 +110,13 @@ async def _verified_json(
 
 
 def _request_properties(request: ExaDeepContactSearchRequest) -> frozenset[str]:
-    properties = request.output_schema.get("properties")
-    if not isinstance(properties, dict):
-        raise ExaDeepContactSnapshotError("stored contact request has no structured field map")
-    return frozenset(str(field_key_from_exa_alias(alias)) for alias in properties)
+    try:
+        table = request.field_key_by_alias
+    except ValueError as exc:
+        raise ExaDeepContactSnapshotError(
+            "stored contact request has no structured field map"
+        ) from exc
+    return frozenset(str(field_key) for field_key in table.values())
 
 
 async def _build_exa_contact_snapshot_resolver(
@@ -156,7 +159,7 @@ async def _build_exa_contact_snapshot_resolver(
 
         try:
             async with conn_factory() as conn:
-                response = ExaDeepSearchResponse.model_validate_json(
+                response_payload = json.loads(
                     await _verified_json(
                         conn,
                         storage,
@@ -245,6 +248,14 @@ async def _build_exa_contact_snapshot_resolver(
         except (KeyError, TypeError, ValueError) as exc:
             raise ExaDeepContactSnapshotError(
                 "stored contact request cannot reconstruct its accepted C3 preflight"
+            ) from exc
+        try:
+            if not isinstance(response_payload, dict):
+                raise TypeError("stored Exa contact response artifact is not an object")
+            response = parse_exa_deep_response(request, response_payload)
+        except (TypeError, ValueError) as exc:
+            raise ExaDeepContactSnapshotError(
+                "stored contact Exa snapshot JSON is malformed"
             ) from exc
         if (
             durable_request.request_fingerprint != snapshot.request_fingerprint

@@ -726,6 +726,78 @@ def _marker_base_version(claim: Claim) -> int | None:
     return None
 
 
+async def _lock_client_kb_scope(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    client_entity_id: EntityId,
+    product_id: str | None,
+) -> None:
+    """Serialize version decisions for one company or exact-product KB sequence."""
+
+    await conn.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": (f"dynamic-client-kb:{workspace_id}:{client_entity_id}:{product_id or 'global'}")},
+    )
+
+
+async def ensure_product_kb_baseline(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    client_entity_id: EntityId,
+    product_id: str,
+    operation_key: str,
+) -> ClientKbWriteTarget:
+    """Return the current Product-KB, creating an honest empty v1 when none exists.
+
+    Product selection needs a durable knowledge *lineage* even before any product fact has been
+    admitted.  Unlike :func:`client_kb_write_target_for_materialization`, this operation never
+    derives or advances an existing version: it is an idempotent container bootstrap, not a claim
+    write target.  The empty marker reports 0/N coverage and lets the card expose every registered
+    product field as an open gap without fabricating a claim or requiring a verification judge.
+    """
+
+    if not product_id.strip():
+        raise ValueError("a Product-KB baseline requires a non-empty product id")
+    await _lock_client_kb_scope(
+        conn,
+        workspace_id=workspace_id,
+        client_entity_id=client_entity_id,
+        product_id=product_id,
+    )
+    marker = await _pinned_marker(
+        conn,
+        client_entity_id,
+        scope=WorkspaceScope.for_workspace(workspace_id),
+        version=None,
+        product_id=product_id,
+    )
+    if marker is not None:
+        return ClientKbWriteTarget(version=_marker_version(marker), run_id=marker.run_id)
+
+    run_id = RunId(
+        uuid5(
+            NAMESPACE_URL,
+            f"stage0-product-kb-baseline:{workspace_id}:{client_entity_id}:{operation_key}",
+        )
+    )
+    await record_run_lineage(conn, run_id=run_id, workspace_id=workspace_id, kind="stage0")
+    version = await _write_version_marker(
+        conn,
+        client_entity_id=client_entity_id,
+        workspace_id=workspace_id,
+        run_id=run_id,
+        coverage=_coverage(
+            set(),
+            set(),
+            knowledge_fields=PRODUCT_KNOWLEDGE_FIELDS,
+        ),
+        product_id=product_id,
+    )
+    return ClientKbWriteTarget(version=version, run_id=run_id, created_new_version=True)
+
+
 async def client_kb_write_target_for_materialization(
     conn: AsyncConnection,
     *,
@@ -747,9 +819,11 @@ async def client_kb_write_target_for_materialization(
     locking, and idempotency and therefore does not import the agent runtime or its tables.
     """
 
-    await conn.execute(
-        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
-        {"key": (f"dynamic-client-kb:{workspace_id}:{client_entity_id}:{product_id or 'global'}")},
+    await _lock_client_kb_scope(
+        conn,
+        workspace_id=workspace_id,
+        client_entity_id=client_entity_id,
+        product_id=product_id,
     )
     scope = WorkspaceScope.for_workspace(workspace_id)
     marker = await _pinned_marker(

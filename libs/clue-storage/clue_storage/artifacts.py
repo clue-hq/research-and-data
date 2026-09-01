@@ -37,6 +37,7 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import UtcDatetime
@@ -101,25 +102,40 @@ async def record_artifact(
     silent-resurrection contradiction, audit finding 4). ``DO UPDATE`` (unlike ``DO NOTHING``)
     also takes the row lock, which is what serializes this writer against an in-flight
     :func:`erase_if_unreferenced` / :func:`purge_erased_artifacts` on the same key.
+
+    **Concurrent duplicate bytes.** ``ON CONFLICT (storage_key)`` names one arbiter index, and
+    Postgres' speculative insertion resolves a conflict only on *that* index. The table also
+    carries the composite ``artifact_execution_anchor (storage_key, workspace_id)`` unique
+    constraint (the FK target every ``(artifact_key, workspace_id)`` evidence citation points at),
+    so a writer whose arbiter probe found nothing, but whose composite index insert then collides
+    with a *concurrently committed* row, raises a unique violation instead of taking the update
+    path. Two real provider calls legitimately return byte-identical responses (the same
+    zero-result organization document for two accounts), which crashed two live fleet jobs here.
+    The statement therefore runs inside a savepoint and is retried once: by the time the violation
+    surfaces the winner's row is committed, so the retry resolves through the arbiter and keeps the
+    resurrect/row-lock guarantees above intact.
     """
-    await conn.execute(
-        text(
-            "INSERT INTO artifact (storage_key, workspace_id, content_sha256, media_type, "
-            "size_bytes, source_key, source_url) "
-            "VALUES (:storage_key, :workspace_id, :content_sha256, :media_type, :size_bytes, "
-            ":source_key, :source_url) "
-            "ON CONFLICT (storage_key) DO UPDATE SET erased_at = NULL, purged_at = NULL"
-        ),
-        {
-            "storage_key": storage_key,
-            "workspace_id": workspace_id,
-            "content_sha256": content_sha256,
-            "media_type": media_type,
-            "size_bytes": size_bytes,
-            "source_key": source_key,
-            "source_url": source_url,
-        },
+    statement = text(
+        "INSERT INTO artifact (storage_key, workspace_id, content_sha256, media_type, "
+        "size_bytes, source_key, source_url) "
+        "VALUES (:storage_key, :workspace_id, :content_sha256, :media_type, :size_bytes, "
+        ":source_key, :source_url) "
+        "ON CONFLICT (storage_key) DO UPDATE SET erased_at = NULL, purged_at = NULL"
     )
+    parameters = {
+        "storage_key": storage_key,
+        "workspace_id": workspace_id,
+        "content_sha256": content_sha256,
+        "media_type": media_type,
+        "size_bytes": size_bytes,
+        "source_key": source_key,
+        "source_url": source_url,
+    }
+    try:
+        async with conn.begin_nested():
+            await conn.execute(statement, parameters)
+    except IntegrityError:
+        await conn.execute(statement, parameters)
     record = await get_artifact(conn, storage_key)
     if record is None:  # pragma: no cover - unreachable inside one transaction
         raise RuntimeError(f"artifact {storage_key!r} vanished during record")

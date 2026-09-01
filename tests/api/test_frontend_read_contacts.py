@@ -613,6 +613,7 @@ def test_persona_and_role_use_the_backend_four_value_vocabulary() -> None:
             assert rows[str(fixture.solo)]["persona"] == Persona.TECHNICAL_EVALUATOR.value
             assert rows[str(fixture.masked)]["persona"] == Persona.BLOCKER.value
             assert rows[str(fixture.solo)]["roleOnCommittee"]["confidence"] == pytest.approx(0.62)
+            assert rows[str(fixture.solo)]["roleOnCommittee"]["reasoning"] == "seeded"
 
     run_async(scenario())
 

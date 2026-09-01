@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from decimal import Decimal
 from typing import Any
@@ -17,13 +18,17 @@ from langchain_core.messages import (
 )
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.utils.function_calling import convert_to_openai_tool
+from openai import APIStatusError
+from openai.types.responses import ResponseError
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
 from clue_config.gateway import GatewayConfig, ModelPrice
 from clue_gateway import OpenRouterAgentModelProvider
+from clue_gateway import agent_model as agent_model
 from clue_gateway.agent_model import (
     GovernedAgentChatModel,
     provider_compatible_tool_schema,
+    transient_upstream_failure,
     unsupported_schema_pattern,
 )
 from clue_obs.otel import SPAN_LLM_GATEWAY_CALL, collect_spans
@@ -694,3 +699,201 @@ def test_supports_image_input_reads_the_models_catalog() -> None:
         return httpx.Response(500, json={"error": "down"}, request=request)
 
     assert _p32_provider(GatewayConfig(), unreachable).supports_image_input("vision/model") is None
+
+
+# --- bounded transient-failure retry (the live job-suspension defect) -------------------------
+
+
+def _in_body_error_envelope(*, model: str, code: str) -> dict[str, Any]:
+    """The exact live shape: HTTP 200 whose Responses body carries an ``error``.
+
+    ``langchain_openai`` raises a bare ``ValueError(ResponseError(...))`` while parsing this, so
+    the OpenAI SDK's own ``max_retries`` (transport/status only) never sees it — which is how an
+    ``An error occurred while processing the request.`` blip suspended a live account-research job.
+    """
+
+    return {
+        "id": "resp-transient",
+        "object": "response",
+        "created_at": 1_775_000_000,
+        "model": model,
+        "error": {"code": code, "message": "An error occurred while processing the request."},
+        "output": [],
+        "parallel_tool_calls": True,
+        "tool_choice": "auto",
+        "tools": [],
+        "status": "failed",
+    }
+
+
+def _flaky_provider(
+    *,
+    failures: int,
+    code: str,
+    seen: list[str],
+    config: GatewayConfig | None = None,
+) -> OpenRouterAgentModelProvider:
+    def respond(request: httpx.Request) -> httpx.Response:
+        model = str(json.loads(request.content)["model"])
+        seen.append(model)
+        if len(seen) <= failures:
+            return httpx.Response(
+                200, json=_in_body_error_envelope(model=model, code=code), request=request
+            )
+        return httpx.Response(200, json=_responses_envelope(model=model), request=request)
+
+    return _p32_provider(config or GatewayConfig(), respond)
+
+
+def test_two_transient_server_errors_are_retried_and_the_model_call_still_completes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The live crash, repaired: a momentary upstream fault is not job integrity.
+
+    The caller sees ONE successful model call — so the agent turn (and the journal's single
+    ``model_started``/``model_completed`` pair bracketing it) continues exactly as if the blip
+    had not happened.
+    """
+
+    monkeypatch.setattr(agent_model, "_TRANSIENT_BACKOFF_S", (0.0, 0.0))
+    seen: list[str] = []
+    model = _flaky_provider(failures=2, code="server_error", seen=seen).build(
+        model_id="primary/model", timeout_s=10, max_retries=0, max_output_tokens=64, temperature=0
+    )
+
+    response = model.invoke("Research the account.")
+
+    assert seen == ["primary/model"] * 3
+    assert response.text == "ok"
+    assert response.response_metadata["clue_requested_model"] == "primary/model"
+    assert response.response_metadata["clue_answering_model"] == "primary/model"
+
+
+def test_two_transient_server_errors_are_retried_on_the_async_path_the_agent_actually_uses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(agent_model, "_TRANSIENT_BACKOFF_S", (0.0, 0.0))
+    seen: list[str] = []
+    model = _flaky_provider(failures=2, code="server_error", seen=seen).build(
+        model_id="primary/model", timeout_s=10, max_retries=0, max_output_tokens=64, temperature=0
+    )
+
+    response = asyncio.run(model.ainvoke("Research the account."))
+
+    assert seen == ["primary/model"] * 3
+    assert response.text == "ok"
+
+
+def test_a_permanently_failing_upstream_still_fails_loudly_after_the_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retry is bounded: an upstream that never recovers reaches the supervisor, as today."""
+
+    monkeypatch.setattr(agent_model, "_TRANSIENT_BACKOFF_S", (0.0, 0.0))
+    seen: list[str] = []
+    model = _flaky_provider(failures=99, code="server_error", seen=seen).build(
+        model_id="primary/model", timeout_s=10, max_retries=0, max_output_tokens=64, temperature=0
+    )
+
+    with pytest.raises(ValueError) as raised:
+        model.invoke("Research the account.")
+
+    assert len(seen) == agent_model._MAX_TRANSIENT_ATTEMPTS == 3
+    assert "server_error" in str(raised.value)
+
+
+def test_a_deterministic_upstream_rejection_is_not_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``invalid_prompt`` cannot be repaired by asking again — one attempt, then loud."""
+
+    monkeypatch.setattr(agent_model, "_TRANSIENT_BACKOFF_S", (0.0, 0.0))
+    seen: list[str] = []
+    model = _flaky_provider(failures=99, code="invalid_prompt", seen=seen).build(
+        model_id="primary/model", timeout_s=10, max_retries=0, max_output_tokens=64, temperature=0
+    )
+
+    with pytest.raises(ValueError):
+        model.invoke("Research the account.")
+
+    assert len(seen) == 1
+
+
+def test_a_transient_failure_reaches_the_fallback_before_it_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One attempt = one pass over the candidates, so the fallback contract is unchanged: the
+    fallback is tried immediately, and only a round whose LAST candidate failed transiently
+    is retried."""
+
+    monkeypatch.setattr(agent_model, "_TRANSIENT_BACKOFF_S", (0.0, 0.0))
+    seen: list[str] = []
+    model = _flaky_provider(
+        failures=3,
+        code="server_error",
+        seen=seen,
+        config=GatewayConfig(fallback_model="fallback/model"),
+    ).build(
+        model_id="primary/model", timeout_s=10, max_retries=0, max_output_tokens=64, temperature=0
+    )
+
+    response = model.invoke("Research the account.")
+
+    assert seen == [
+        "primary/model",
+        "fallback/model",
+        "primary/model",
+        "fallback/model",
+    ]
+    assert response.response_metadata["clue_answering_model"] == "fallback/model"
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (ValueError(ResponseError(code="server_error", message="blip")), True),
+        (ValueError(ResponseError(code="rate_limit_exceeded", message="slow down")), True),
+        (ValueError(ResponseError(code="invalid_prompt", message="no")), False),
+        (ValueError({"code": "server_error", "message": "blip"}), True),
+        (ValueError("some other programming error"), False),
+        (httpx.ConnectError("connection refused"), True),
+        (httpx.ReadTimeout("timed out"), True),
+        (
+            APIStatusError(
+                "server error",
+                response=httpx.Response(503, request=httpx.Request("POST", "https://x/y")),
+                body=None,
+            ),
+            True,
+        ),
+        (
+            APIStatusError(
+                "rate limited",
+                response=httpx.Response(429, request=httpx.Request("POST", "https://x/y")),
+                body=None,
+            ),
+            True,
+        ),
+        (
+            APIStatusError(
+                "bad request",
+                response=httpx.Response(400, request=httpx.Request("POST", "https://x/y")),
+                body=None,
+            ),
+            False,
+        ),
+    ],
+)
+def test_transient_upstream_failure_classifies_only_momentary_faults(
+    error: BaseException, expected: bool
+) -> None:
+    assert transient_upstream_failure(error) is expected
+
+
+def test_the_retry_bound_and_backoff_stay_small_enough_for_a_leased_agent_turn() -> None:
+    """The turn holds a fleet lease whose heartbeat must keep landing, so the added wall clock
+    is bounded and short by construction."""
+
+    assert agent_model._MAX_TRANSIENT_ATTEMPTS == 3
+    assert len(agent_model._TRANSIENT_BACKOFF_S) == agent_model._MAX_TRANSIENT_ATTEMPTS - 1
+    assert sum(agent_model._TRANSIENT_BACKOFF_S) <= 5.0

@@ -32,6 +32,7 @@ from clue_core import (
     SealedDiscoveryAccounts,
     evaluate_discovery_seal,
 )
+from clue_core.entity_research import SealedDiscoveryLaunchReceipt
 from clue_db import ConnFactory, transaction
 from clue_research.durable import (
     DiscoveryBatchManifestBundle,
@@ -545,11 +546,20 @@ class DbSealedDiscoveryAccountManifestReader:
         project_run_id: ProjectRunId,
         icp_key: str,
         icp_version: int,
+        discovery_receipt: SealedDiscoveryLaunchReceipt | None = None,
     ) -> SealedDiscoveryAccounts | None:
         run_id = project_run_id
         async with self._conn_factory() as conn:
-            batch = await get_current_discovery_batch(
-                conn, workspace_id=workspace_id, project_run_id=run_id
+            batch = (
+                await get_discovery_batch(
+                    conn,
+                    workspace_id=workspace_id,
+                    batch_id=DiscoveryBatchId(discovery_receipt.discovery_batch_id),
+                )
+                if discovery_receipt is not None
+                else await get_current_discovery_batch(
+                    conn, workspace_id=workspace_id, project_run_id=run_id
+                )
             )
             if batch is None:
                 return None
@@ -558,7 +568,7 @@ class DbSealedDiscoveryAccountManifestReader:
                 or batch.icp_version != icp_version
                 or batch.state is not DiscoveryBatchState.SEALED
             ):
-                raise DiscoverySealConflict("scoring requires the exact current sealed generation")
+                raise DiscoverySealConflict("research requires the exact sealed generation")
             seal = await get_discovery_batch_seal(
                 conn, workspace_id=workspace_id, batch_id=batch.id
             )
@@ -567,6 +577,15 @@ class DbSealedDiscoveryAccountManifestReader:
             )
             if seal is None or bundle is None:
                 raise DiscoverySealConflict("sealed discovery manifest lineage is incomplete")
+            if discovery_receipt is not None and (
+                batch.generation != discovery_receipt.discovery_generation
+                or seal.seal_sha256 != discovery_receipt.discovery_seal_sha256
+                or bundle.account_manifest_artifact_key != discovery_receipt.account_manifest_ref
+                or bundle.account_manifest_sha256 != discovery_receipt.account_manifest_sha256
+                or bundle.claim_manifest_artifact_key != discovery_receipt.claim_manifest_ref
+                or bundle.claim_manifest_sha256 != discovery_receipt.claim_manifest_sha256
+            ):
+                raise DiscoverySealConflict("stored discovery lineage differs from launch receipt")
             if (
                 bundle.account_manifest_artifact_key != seal.account_manifest_artifact_key
                 or bundle.account_manifest_sha256 != seal.account_manifest_sha256
@@ -597,9 +616,12 @@ class DbSealedDiscoveryAccountManifestReader:
             if content_address(body) != bundle.account_manifest_sha256:
                 raise DiscoverySealConflict("account manifest artifact hash mismatch")
             manifest = DiscoveryAccountManifest.model_validate_json(body)
-            account_ids, claim_ids, _ = await discovery_manifest_members(
-                conn, workspace_id=workspace_id, batch_id=batch.id
-            )
+            # Membership was captured once, before sealing. Recomputing it from the live claim
+            # store here lets later Account-profile claims mutate an old generation and falsely
+            # invalidate an intact seal. The relational bundle plus the two content-addressed
+            # artifacts are the immutable post-seal authority.
+            account_ids = bundle.account_ids
+            claim_ids = bundle.claim_ids
             if (
                 manifest.workspace_id != workspace_id
                 or manifest.discovery_batch_id != batch.id

@@ -23,6 +23,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from threading import RLock
+from types import MappingProxyType
 from typing import Any, Final, Literal, Protocol
 from urllib.parse import urlsplit
 
@@ -75,6 +76,31 @@ _ORGANIZATION_FIELD_ATTRIBUTES: Final[dict[str, str]] = {
 _ORGANIZATION_PAID_ATTRIBUTES: Final[tuple[str, ...]] = tuple(
     _ORGANIZATION_FIELD_ATTRIBUTES.values()
 )
+
+#: The exact field keys each pinned v9 action can *request*. Ownership (which §3.1 row a Sumble
+#: source is allowed to answer) and requestability (which of them the shipped action can put on
+#: the wire) are different facts: ``organization_request`` raises ``ValueError`` on any other key,
+#: so every consumer must intersect its planned field set with these before dispatch. A field a
+#: source owns but cannot request is an honest gap for the next source, never a fabricated value.
+ORGANIZATION_SUPPORTED_FIELD_KEYS: Final[frozenset[str]] = frozenset(
+    {*_ORGANIZATION_FIELD_ATTRIBUTES, _PRIMARY_DOMAIN_FIELD}
+)
+JOBS_SUPPORTED_FIELD_KEYS: Final[frozenset[str]] = frozenset({_HIRING_VELOCITY_FIELD})
+TECH_STACK_SUPPORTED_FIELD_KEYS: Final[frozenset[str]] = frozenset({_TECH_STACK_FIELD})
+SUMBLE_SUPPORTED_FIELD_KEYS_BY_SOURCE: Final[Mapping[str, frozenset[str]]] = MappingProxyType(
+    {
+        ORGANIZATIONS_SOURCE_KEY: ORGANIZATION_SUPPORTED_FIELD_KEYS,
+        JOBS_SOURCE_KEY: JOBS_SUPPORTED_FIELD_KEYS,
+        TECH_STACK_SOURCE_KEY: TECH_STACK_SUPPORTED_FIELD_KEYS,
+    }
+)
+
+
+def sumble_action_supports_field(field_key: str, source_key: str) -> bool:
+    """Whether the pinned v9 action behind ``source_key`` can request ``field_key`` at all."""
+
+    return field_key in SUMBLE_SUPPORTED_FIELD_KEYS_BY_SOURCE.get(source_key, frozenset())
+
 
 type SumbleSourceKey = Literal["sumble_organizations", "sumble_jobs", "sumble_tech_stack"]
 type HttpFetcher = Callable[..., Any]
@@ -781,12 +807,15 @@ def register_sumble_resolvers(snapshots: SumbleSnapshotLookup) -> None:
 __all__ = [
     "AUTH_REF",
     "JOBS_SOURCE_KEY",
+    "JOBS_SUPPORTED_FIELD_KEYS",
+    "ORGANIZATION_SUPPORTED_FIELD_KEYS",
     "MappingSumbleSnapshotLookup",
     "MutableSumbleSnapshotLookup",
     "ORGANIZATIONS_SOURCE_KEY",
     "SUMBLE_API_BASE",
     "SUMBLE_API_VERSION",
     "SUMBLE_SOURCE_KEYS",
+    "SUMBLE_SUPPORTED_FIELD_KEYS_BY_SOURCE",
     "SumbleClient",
     "SumbleContractError",
     "SumbleCreditBudget",
@@ -804,6 +833,7 @@ __all__ = [
     "SumbleTechStackResponse",
     "SumbleUnboundedCreditRisk",
     "TECH_STACK_SOURCE_KEY",
+    "TECH_STACK_SUPPORTED_FIELD_KEYS",
     "build_sumble_resolvers",
     "engineering_jobs_request",
     "matched_organization_id",
@@ -812,4 +842,5 @@ __all__ = [
     "normalize_tech_stack",
     "organization_request",
     "register_sumble_resolvers",
+    "sumble_action_supports_field",
 ]

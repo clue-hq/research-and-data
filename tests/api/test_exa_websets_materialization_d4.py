@@ -19,6 +19,7 @@ from clue_api.exa_websets_materialization import (
     ExaD4Outcome,
     ExaWebsetsD4Materializer,
     _candidate_record,
+    _RetainedItem,
 )
 from clue_core import (
     DiscoveryBatchId,
@@ -475,9 +476,9 @@ async def _workspace_table_counts(conn: AsyncConnection, workspace_id: str) -> t
 
 
 def test_d4_candidate_handles_do_not_collapse_same_provider_item_across_searches() -> None:
-    provider_item = ExaWebsetItem.model_validate(
-        _company_item("item_shared_across_searches", city="Austin", criterion_state="yes")
-    )
+    payload = _company_item("item_shared_across_searches", city="Austin", criterion_state="yes")
+    retained = _RetainedItem(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())
+    provider_item = ExaWebsetItem.model_validate(payload)
     definitions = tuple(
         ExaResponseEnrichment.model_validate(payload)
         for payload in (
@@ -508,7 +509,7 @@ def test_d4_candidate_handles_do_not_collapse_same_provider_item_across_searches
             observed_at=_NOW,
         ),
     )
-    records = tuple(_candidate_record(snapshot, company) for snapshot in snapshots)
+    records = tuple(_candidate_record(snapshot, company, retained) for snapshot in snapshots)
 
     assert records[0].source_record_ref != records[1].source_record_ref
     assert records[0].discovery_evidence["provider_item_id"] == provider_item.id

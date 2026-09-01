@@ -534,7 +534,11 @@ Contacts row and profile:
       "title": "VP Finance",
       "titleRestricted": false,
       "persona": "economic_buyer",
-      "roleOnCommittee": { "value": "economic_buyer", "confidence": 0.87 },
+      "roleOnCommittee": {
+        "value": "economic_buyer",
+        "confidence": 0.87,
+        "reasoning": "Owns the financial approval for this workflow."
+      },
       "linkedinUrl": "https://linkedin.com/in/dana-buyer",
       "projectIds": ["prj_a", "prj_b"],
       "signals": { "typeCount": 1 },
@@ -550,6 +554,11 @@ The profile is that row plus `accountId`, `accountName`, `redirectedFrom`,
 `professionalFacts` (`{ fieldKey, claimId, value, observedAt, provider,
 restricted }`), and the claim-mapped `evidence` records specified by the FI-2
 slice-5 section below.
+
+`roleOnCommittee.reasoning` is the nullable agent-authored rationale from the same governed role
+claim as `value` and `confidence`. The backend serves it whenever held and never derives it from a
+title. The frontend schema preserves it, while the frontend remains the display authority: the
+current buying-committee table and profile intentionally do not render this field.
 
 `emailLookup` is `null` until a user requests enrichment. Once requested, it is
 `{ lookupId, state, resolution, emails, retryable }`, where `state` is `pending | available |

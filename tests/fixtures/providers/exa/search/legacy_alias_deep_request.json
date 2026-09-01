@@ -1,0 +1,42 @@
+{
+  "additionalQueries": [
+    "Cascade Gastroenterology Associates referral intake fax workflow Portland Oregon",
+    "Cascade Gastroenterology Associates patient access expansion official source"
+  ],
+  "contents": {
+    "highlights": {
+      "maxCharacters": 2000,
+      "query": "Find direct evidence for the requested account fields."
+    },
+    "text": {
+      "maxCharacters": 10000
+    }
+  },
+  "numResults": 50,
+  "outputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "f_6163636f756e742e6f7065726174696f6e616c5f7061696e": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "f_6163636f756e742e7374726174656769635f6d6f766573": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "f_6163636f756e742e6f7065726174696f6e616c5f7061696e",
+      "f_6163636f756e742e7374726174656769635f6d6f766573"
+    ],
+    "type": "object"
+  },
+  "query": "Research the exact account Cascade Gastroenterology Associates at cascade-gastro.example for grounded operational and strategic evidence.",
+  "stream": false,
+  "systemPrompt": "Research only the exact account at cascade-gastro.example. Prefer primary sources, retain every source URL, do not drift to similarly named organizations, and leave the field null when target-locked evidence is absent. Use this exact property map: f_6163636f756e742e6f7065726174696f6e616c5f7061696e=account.operational_pain; f_6163636f756e742e7374726174656769635f6d6f766573=account.strategic_moves.",
+  "type": "deep-reasoning"
+}

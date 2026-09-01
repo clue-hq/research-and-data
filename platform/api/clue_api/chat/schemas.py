@@ -26,12 +26,21 @@ import json
 from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from clue_api.agent_gate import money_text
 from clue_api.chat.message_bodies import HydratedBody
-from clue_projections import GateView, ThreadMessagePage, ThreadMessageSummary, ThreadView
+from clue_api.chat.turn_parts import TaskCounts, TaskState, task_part_from_run
+from clue_api.turn_action import TurnActionUnresolvable, parse_turn_action_ref
+from clue_projections import (
+    GateView,
+    ThreadMessagePage,
+    ThreadMessageSummary,
+    ThreadResearchTaskView,
+    ThreadView,
+)
 
 __all__ = [
     "AgentProfileOptionWire",
@@ -53,6 +62,10 @@ __all__ = [
     "PrepareComposerContextRequest",
     "PreparedComposerContextResponse",
     "PreparedComposerContextWire",
+    "ResearchTaskFieldProgressWire",
+    "ResearchTaskListResponse",
+    "ResearchTaskWire",
+    "research_task_wire",
     "ProjectBootstrapResponse",
     "ProjectBootstrapWire",
     "ProjectShellResponse",
@@ -763,6 +776,98 @@ def gate_wire(view: GateView, *, budget_controls_enabled: bool = True) -> GateWi
             for launch in view.launches
         ),
     )
+
+
+class ResearchTaskFieldProgressWire(_Wire):
+    """Fields landed vs. fields honestly given up on, across a run's settled subjects."""
+
+    completed: int = Field(ge=0)
+    unresolved: int = Field(ge=0)
+
+
+class ResearchTaskWire(_Wire):
+    """One pollable research task — the stream's ``task`` part, plus what a poller needs.
+
+    Deliberately *not* a new shape. ``part_id``/``kind``/``state``/``title``/``run_ref``/``counts``
+    are produced by :func:`~clue_api.chat.turn_parts.task_part_from_run`, the same function the
+    turn-close emitter uses, so a polled task and a streamed one merge as the same card in the
+    transcript reducer rather than as two cards that happen to look alike.
+
+    Three members the stream frame has no use for: ``revision``, the job-event high-water mark the
+    reducer merges on; ``field_progress``, which is ``None`` until a job has published coverage
+    and for a contact run (Slice F's surface) — never a fabricated zero; and ``source_turn_id``,
+    the turn whose durable ``turn-action:`` receipt launched the run — a streamed part rides its
+    own turn's frames, but a polled one must say which message re-materializes its card after a
+    reload (C3's cold-load fix). ``None`` only for a launch receipt that is not a turn action.
+    """
+
+    part_id: str
+    kind: Literal["task"] = "task"
+    revision: int = Field(ge=1)
+    state: TaskState
+    title: str
+    run_ref: dict[str, Any]
+    counts: TaskCounts
+    exception_refs: tuple[dict[str, Any], ...] = ()
+    field_progress: ResearchTaskFieldProgressWire | None = None
+    source_turn_id: str | None = None
+
+
+class ResearchTaskListResponse(_Wire):
+    """``{"tasks": [...]}`` — an empty list for a thread that launched nothing, never a 404."""
+
+    tasks: tuple[ResearchTaskWire, ...]
+
+
+def research_task_wire(view: ThreadResearchTaskView, *, workspace_id: str) -> ResearchTaskWire:
+    """One polled task on the wire, built from the canonical task-part projection.
+
+    The canonical typed part is projected once and copied member-for-member onto the polled shape:
+    if ``TaskPart`` gains a member, this conversion is where the omission shows up, instead of the
+    polled card quietly drifting from the streamed one.
+    """
+
+    part = task_part_from_run(
+        run_id=UUID(view.task.research_run_id),
+        run_kind=view.task.run_kind,
+        state=view.task.run_state,
+        counts=TaskCounts(**view.task.counts.model_dump()),
+        workspace_id=workspace_id,
+    )
+    return ResearchTaskWire(
+        part_id=part.part_id,
+        kind="task",
+        # The projected part's own revision is the ``1`` default; the durable ledger's high-water
+        # mark replaces it here, which is the whole point of the poll.
+        revision=view.revision,
+        state=part.state,
+        title=part.title,
+        run_ref=part.run_ref,
+        counts=part.counts,
+        exception_refs=part.exception_refs,
+        field_progress=(
+            None
+            if view.field_progress is None
+            else ResearchTaskFieldProgressWire(
+                completed=view.field_progress.completed,
+                unresolved=view.field_progress.unresolved,
+            )
+        ),
+        source_turn_id=_source_turn_id(view.task.source_action_ref),
+    )
+
+
+def _source_turn_id(source_action_ref: str) -> str | None:
+    """The turn a launch receipt names, or ``None`` for a receipt that is not a turn action.
+
+    The canonical parser is the authority (:func:`clue_api.turn_action.parse_turn_action_ref`);
+    a ref it refuses yields an honest ``None`` rather than a hand-parsed guess.
+    """
+
+    try:
+        return str(parse_turn_action_ref(source_action_ref))
+    except TurnActionUnresolvable:
+        return None
 
 
 def thread_speaker_wire(design_leg: dict[str, Any] | None) -> ThreadSpeakerWire:

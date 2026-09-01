@@ -21,6 +21,11 @@ import {
   type ChatMessagesRepository,
 } from "./chat-messages.repository";
 import {
+  createFixtureChatResearchTasksRepository,
+  createHttpChatResearchTasksRepository,
+  type ChatResearchTasksRepository,
+} from "./chat-research-tasks.repository";
+import {
   createFixtureChatStreamRepository,
   createHttpChatStreamRepository,
   type ChatStreamRepository,
@@ -68,6 +73,8 @@ export interface ChatRepositories {
   turns: ChatTurnsRepository;
   gates: ChatGatesRepository;
   stream: ChatStreamRepository;
+  /** The durable research-task read the progress card polls (Slice C). */
+  researchTasks: ChatResearchTasksRepository;
   /**
    * The dev-lens turn-context inspector. Present on both transports, but the
    * HTTP adapter's own probe reports it unavailable against any deployment that
@@ -91,6 +98,7 @@ export function createChatRepositories(
       turns: createHttpChatTurnsRepository(transport),
       gates: createHttpChatGatesRepository(transport),
       stream: createHttpChatStreamRepository(transport),
+      researchTasks: createHttpChatResearchTasksRepository(transport),
       inspector: createHttpChatInspectorRepository(transport),
       composerContext: createHttpComposerContextRepository(transport),
     };
@@ -108,6 +116,7 @@ export function createChatRepositories(
     turns: createFixtureChatTurnsRepository(state),
     gates: createFixtureChatGatesRepository(state),
     stream: createFixtureChatStreamRepository(state),
+    researchTasks: createFixtureChatResearchTasksRepository(),
     inspector: createFixtureChatInspectorRepository(),
     composerContext: unavailableComposerContextRepository,
   };

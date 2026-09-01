@@ -10,6 +10,7 @@ from typing import Protocol, runtime_checkable
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue
+from sqlalchemy.exc import InterfaceError, OperationalError
 
 from clue_fleet.enums import FleetTaskKind, FleetTaskStatus
 from clue_fleet.lease import (
@@ -146,7 +147,20 @@ class LeasedWorkWorker:
     async def run(self) -> None:
         log.info("worker.start", worker_id=self.worker_id)
         while not self._stop.is_set():
-            if not await self.drain_once():
+            try:
+                drained = await self.drain_once()
+            except (InterfaceError, OperationalError):
+                # A cancelled sibling can close asyncpg while SQLAlchemy is returning the
+                # connection. The queue methods are transaction-scoped, so retrying obtains a
+                # fresh, pre-pinged connection; one poisoned checkout must not kill the fleet.
+                log.warning(
+                    "worker.drain_db_error",
+                    worker_id=self.worker_id,
+                    exc_info=True,
+                )
+                await self._sleep(self._poll_interval)
+                continue
+            if not drained:
                 await self._sleep(self._poll_interval)
         log.info("worker.stop", worker_id=self.worker_id)
 

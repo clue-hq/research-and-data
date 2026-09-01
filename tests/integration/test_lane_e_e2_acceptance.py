@@ -367,7 +367,10 @@ async def _drive_terminal(
     lease = await acquire_work_lease(conn, work_id=WorkId(job_id), worker_id=worker_id, ttl=_TTL)
     assert lease is not None
     fence = EntityResearchExecutionFence(
-        task_id=task.task_id, worker_id=worker_id, lease_generation=lease.generation
+        task_id=task.task_id,
+        worker_id=worker_id,
+        lease_generation=lease.generation,
+        task_attempt=1,
     )
     begin = await begin_entity_research_job(conn, job_id, fence=fence)
     assert begin.admitted

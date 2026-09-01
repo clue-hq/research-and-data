@@ -33,9 +33,11 @@ from clue_research.durable.account_deep_launch import (
 )
 from clue_research.durable.account_gap_enrichment import (
     AccountGapBudgetExceeded,
+    AccountGapFieldWindowConflict,
     AccountGapNotFound,
     AccountGapReplayConflict,
     AccountGapRepositoryError,
+    account_gap_window_field_owners,
     claim_account_gap_operation,
     claim_account_gap_snapshot,
     find_account_gap_operation,
@@ -401,9 +403,11 @@ from clue_research.durable.workers import (
 __all__ = [
     # post-selection Sumble account-gap waterfall (M6A S1)
     "AccountGapBudgetExceeded",
+    "AccountGapFieldWindowConflict",
     "AccountGapNotFound",
     "AccountGapReplayConflict",
     "AccountGapRepositoryError",
+    "account_gap_window_field_owners",
     "claim_account_gap_operation",
     "claim_account_gap_snapshot",
     "find_account_gap_operation",

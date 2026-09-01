@@ -14,7 +14,11 @@ import pytest
 from langchain_core.messages import AIMessage
 from pydantic import ValidationError
 
-from clue_agents.account_entity_research import DiscoverBuyingCommitteeInput
+from clue_agents.account_entity_research import (
+    CommitteeRoleInference,
+    DiscoverBuyingCommitteeInput,
+    RecordCommitteeRoleInferencesInput,
+)
 from clue_agents.entity_research_contracts import (
     EntityAgentRole,
     EntityResearchToolBinding,
@@ -31,6 +35,7 @@ from clue_agents.entity_research_runtime import (
 from clue_agents.entity_research_tools import EntityResearchSemanticToolInput
 from clue_agents.model import ScriptedAgentChatModel
 from clue_api.entity_research_tools import (
+    EntityResearchGovernedRejection,
     EntityResearchProviderCausationStore,
     EntityResearchResultIntegrityError,
     EntityResearchResultStore,
@@ -73,8 +78,9 @@ class _Action:
         request: GovernedResearchToolRequest,
         *,
         before_dispatch: Any,
+        settle_terminal: Any,
     ) -> Sequence[Any]:
-        del request, before_dispatch
+        del request, before_dispatch, settle_terminal
         raise AssertionError("pure composition test must not dispatch a provider")
 
 
@@ -103,6 +109,27 @@ def test_model_facing_research_schema_contains_intent_and_no_engine_authority() 
         "idempotency_key",
     }
     assert forbidden.isdisjoint(properties)
+
+
+def test_committee_role_inference_schema_is_closed_and_contains_no_engine_authority() -> None:
+    inference = CommitteeRoleInference.model_json_schema()["properties"]
+    assert set(inference) == {
+        "contact_entity_id",
+        "role",
+        "confidence",
+        "reasoning",
+        "evidence_claim_ids",
+    }
+    assert set(RecordCommitteeRoleInferencesInput.model_json_schema()["properties"]) == {
+        "inferences"
+    }
+    assert inference["role"]["$ref"].endswith("/$defs/Persona")
+    assert inference["confidence"]["minimum"] == 0.0
+    assert inference["confidence"]["maximum"] == 1.0
+    assert inference["reasoning"]["minLength"] == 1
+    assert inference["reasoning"]["maxLength"] == 2_000
+    assert inference["evidence_claim_ids"]["minItems"] == 1
+    assert inference["evidence_claim_ids"]["maxItems"] == 16
 
 
 def test_governed_provider_tool_returns_actionable_bounded_schema_feedback(
@@ -170,6 +197,14 @@ def test_governed_provider_tool_returns_actionable_bounded_schema_feedback(
     assert payload["error"] == "semantic_tool_input_validation_failed"
     assert payload["details"] == [
         {
+            # The committee schema registers a per-field correction, so the refusal names the
+            # exact repair as well as the fault. Naming only the fault is what let the live agent
+            # retry the same malformed shape until its runtime budget ran out (run ``dc86340f``).
+            "correction": (
+                "'field_keys' must be omitted or []: committee discovery enumerates people, "
+                "never account fields. Research fields with research_account_deep or "
+                "enrich_account instead."
+            ),
             "location": ["field_keys"],
             "message": "Tuple should have at most 0 items after validation, not 1",
             "type": "too_long",
@@ -240,11 +275,16 @@ def test_semantic_request_cannot_apply_one_fields_source_to_another_field() -> N
             ),
             journal_event_ref=f"entity-agent-event:{uuid4()}",
         )
-        with pytest.raises(EntityResearchToolAuthorityError, match="no authorized requested"):
+        # R10 species 1: applying one field's source to another is a model mistake the agent can
+        # repair by dropping the pairing, so it refuses as a governed rejection, never a
+        # suspension. A comprehensive field may also legitimately carry an empty authority.
+        with pytest.raises(EntityResearchGovernedRejection) as refusal:
             await EntityResearchToolRequestStore(conn_factory=_unused_conn).record(
                 active=active,
                 semantic=EntityResearchSemanticToolInput.model_validate(arguments),
             )
+        assert refusal.value.code == "field_source_authority_mismatch"
+        assert "no authorized requested" in refusal.value.detail
 
     from tests.db.conftest import run_async
 
@@ -506,3 +546,126 @@ def test_governed_rejection_renders_bounded_recoverable_feedback() -> None:
     assert payload["recoverable"] is True
     assert len(payload["detail"]) <= 1_000
     assert "finalize honestly" in payload["guidance"]
+
+
+def test_a_committee_call_is_constructible_when_the_confirmed_plan_has_no_question() -> None:
+    """Live regression: an unrestricted committee plan made the call impossible to build.
+
+    The confirmed directive allowed committee discovery, authorised ``sumble_people`` and left
+    every selector unrestricted — but it confirmed no committee question, while the tool demanded
+    at least one *verbatim confirmed* question. The agent correctly refused to synthesize one, so
+    the committee obligation could never be attempted, coverage could never close, and the job
+    looped to the recursion cap. An empty tuple is the honest value; the engine separately refuses
+    any question the confirmed set does not contain, so nothing can be invented here.
+    """
+
+    from clue_agents.account_entity_research import AccountCommitteePlanProjection
+    from clue_api.account_entity_research_composition import _committee_plan_block
+
+    admitted = DiscoverBuyingCommitteeInput.model_validate(
+        {
+            "source_keys": ["sumble_people"],
+            "buying_unit_scope": {
+                "scope_id": str(uuid4()),
+                "account_entity_id": str(uuid4()),
+                "office_label": "Boston office",
+                "locality": "Boston",
+                "target_functions": ["Operations"],
+                "evidence_refs": [f"research-evidence:{uuid4()}"],
+            },
+        }
+    )
+    assert admitted.questions == ()
+
+    block = _committee_plan_block(
+        AccountCommitteePlanProjection(
+            directive_ref="research-directive:fixture:v1",
+            candidate_cap=200,
+        )
+    )
+    assert "leave `questions` empty" in block
+    assert "never invent" in block
+
+    with_question = _committee_plan_block(
+        AccountCommitteePlanProjection(
+            directive_ref="research-directive:fixture:v2",
+            candidate_cap=200,
+            questions=("Which exact people form the committee?",),
+        )
+    )
+    assert "leave `questions` empty" not in with_question
+    assert "Which exact people form the committee?" in with_question
+
+
+def test_account_model_authored_questions_narrow_to_the_confirmed_set() -> None:
+    """Model question text is not authority; the confirmed directive is.
+
+    Live (job 5d9dfe7b): a zero-question comprehensive directive confirms no questions, so a
+    model that insisted on adding intent text was refused on every committee/enrichment
+    composition, then refused assessment for the unattempted pair, and looped to the recursion
+    cap. For ACCOUNT subjects the request store now narrows to the confirmed subset instead of
+    refusing (an emptied set is the valid Slice-B zero-question shape); CONTACT stays strict
+    because its directives must carry confirmed questions.
+    """
+
+    async def scenario() -> None:
+        account_context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+        authorized_field = account_context.authorization.effective_admitted_field_keys[0]
+        authorized_source = account_context.authorization.effective_field_source_authority[
+            0
+        ].source_keys[0]
+        arguments = {
+            "field_keys": [authorized_field],
+            "source_keys": [authorized_source],
+            "questions": ["an invented question the directive never confirmed"],
+        }
+        active = ActiveEntityResearchToolExecution(
+            context=account_context,
+            call=EntityResearchToolCall(
+                tool_call_id="narrow-not-refuse",
+                tool_name="research_account_deep",
+                tool_version=1,
+                tool_input_sha256=canonical_sha256(arguments),
+                arguments=arguments,
+            ),
+            journal_event_ref=f"entity-agent-event:{uuid4()}",
+        )
+        # The old widening refusal raised EntityResearchToolAuthorityError before any DB use.
+        # Narrowing lets record() proceed to its durable write, which this pure composition
+        # harness deliberately cannot perform — reaching the DB boundary IS the proof the
+        # authority gate no longer refuses.
+        with pytest.raises(AssertionError, match="must not open Postgres"):
+            await EntityResearchToolRequestStore(conn_factory=_unused_conn).record(
+                active=active,
+                semantic=EntityResearchSemanticToolInput.model_validate(arguments),
+            )
+
+        contact_context = _context(ResearchSubjectType.CONTACT, EntityAgentRole.CONTACT)
+        contact_subject = contact_context.authorization.selected_subject
+        assert contact_subject.contact_authority is not None
+        contact_field = contact_subject.contact_authority.admitted_field_keys[0]
+        contact_arguments = {
+            "field_keys": [contact_field],
+            "source_keys": ["exa_deep"],
+            "questions": ["an invented contact question"],
+        }
+        contact_active = ActiveEntityResearchToolExecution(
+            context=contact_context,
+            call=EntityResearchToolCall(
+                tool_call_id="contact-still-strict",
+                tool_name="research_contact_deep",
+                tool_version=1,
+                tool_input_sha256=canonical_sha256(contact_arguments),
+                arguments=contact_arguments,
+            ),
+            journal_event_ref=f"entity-agent-event:{uuid4()}",
+        )
+        with pytest.raises(EntityResearchToolAuthorityError, match="widened confirmed questions"):
+            await EntityResearchToolRequestStore(conn_factory=_unused_conn).record(
+                active=contact_active,
+                semantic=EntityResearchSemanticToolInput.model_validate(contact_arguments),
+            )
+
+    from tests.db.conftest import run_async
+
+    run_async(scenario())

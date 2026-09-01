@@ -23,7 +23,7 @@ class EntityResearchSemanticToolInput(BaseModel):
 
     field_keys: tuple[NonEmptyStr, ...] = ()
     source_keys: tuple[NonEmptyStr, ...] = Field(min_length=1)
-    questions: tuple[NonEmptyStr, ...] = Field(min_length=1)
+    questions: tuple[NonEmptyStr, ...] = ()
     parent_operation_ref: NonEmptyStr | None = None
     parent_observation_ref: NonEmptyStr | None = None
     follow_up_reason: ResearchFollowUpReason | None = None
