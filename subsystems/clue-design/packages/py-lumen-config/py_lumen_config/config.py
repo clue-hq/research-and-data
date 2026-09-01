@@ -235,6 +235,17 @@ class Settings(BaseSettings):
     pdl_api_key: str = ""
     pdl_base_url: str = "https://api.peopledatalabs.com"
     pdl_timeout_s: float = 30.0
+
+    # -- Brandfetch (target-account logo vendor; W-logo vendor-first, 2026-09-02) --------
+    # Brand API key (Bearer). Blank = vendor rung disabled: `fetch_logo` degrades honestly
+    # to the in-house ladder, exactly like a blank PDL_API_KEY degrades ad identity.
+    brandfetch_api_key: str = ""
+    # Logo API *client id* (PUBLIC — appears in published-page <img> URLs). Powers the
+    # hotlink lane only; blank = the hotlink prompt guidance is omitted.
+    brandfetch_client_id: str = ""
+    brandfetch_api_base_url: str = "https://api.brandfetch.io"
+    brandfetch_timeout_s: float = 20.0
+
     # The vision model that distils harvested creatives into the ad-DNA card. Same shape and
     # same gateway as the asset describer above (OpenRouter chat-completions, multimodal).
     lumen_ad_dna_model: str = "x-ai/grok-4.5"
