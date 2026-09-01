@@ -23,6 +23,7 @@ Ledger: `.superpowers/sdd/2026-09-02-vendor-first-logo-family/progress.md`. Proc
 - Task 6 — DONE (`08de3c8e2`, `ab6b477a4`)
 - Task 7 — DONE (`16857940d`, `dcbcd4b63`; migration `1d09aba87206`)
 - Task 8 — DONE (`753e1e9d7`) — ran before Task 7
+- Task 9 — DONE (`8c3d0f3f7`)
 
 ## Deferred items ledger (founder rule 2026-09-02: every deferral lives HERE and belongs to a task)
 
@@ -2015,6 +2016,8 @@ refused; old name kept as alias."
 
 ### Task 9: Compose the cache + client id into both lanes' turn config
 
+**Status: DONE 2026-09-02 — commit `8c3d0f3f7`; controller first-hand review clean (composition at `main.py:8519` scene / `:8819` web).**
+
 **Files:**
 - Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/config.py` (beside `account_logo_binder` at ~line 187)
 - Modify: `subsystems/clue-design/apps/api/lumen_api/main.py` — **controller-resolved seams (2026-09-02):** the SCENE lane's turn config is built inside `run_agent_turn_preview` (def at ~8428; `config = AgentRuntimeConfig.from_env(root)` at ~8502, `turn_blobs` in scope at ~8455) and the WEB lane's inside `run_web_agent_turn` (def at ~8718; `from_env` at ~8806, `turn_blobs` in scope, the `account_logo_binder` replace at ~8872). Compose the cache INSIDE both functions, not at the worker call site (~9857), so both lanes get it from the same `turn_blobs` handle.
@@ -2024,7 +2027,7 @@ refused; old name kept as alias."
 - Consumes: `DurableLogoFamilyCache` (Task 7), `_turn_blob_store(host, workspace_id)` (existing).
 - Produces: `AgentRuntimeConfig.logo_family_cache: Any | None = None` and `AgentRuntimeConfig.brandfetch_client_id: str | None = None` (populated in `AgentRuntimeConfig.from_env` from `settings.brandfetch_client_id`, blank → `None`); both turn-composition seams pass `logo_family_cache=DurableLogoFamilyCache(blobs=_turn_blob_store(host, workspace_id))`.
 
-- [ ] **Step 1: Add the config fields** with comments in the established style:
+- [x] **Step 1: Add the config fields** with comments in the established style:
 
 ```python
     # The durable target-logo family cache (founder decision #4, 2026-08-31):
@@ -2039,7 +2042,7 @@ refused; old name kept as alias."
 
 In `from_env`, beside the other settings reads: `brandfetch_client_id=(settings.brandfetch_client_id.strip() or None)`.
 
-- [ ] **Step 2: Compose at both seams in `main.py`.** Add the import beside `DurableAgentAccountLogoBinder`'s (~line 69): `from .agent_logo_family_cache import DurableLogoFamilyCache`. Then, in BOTH `run_agent_turn_preview` (scene) and `run_web_agent_turn` (web), directly after the `config = replace(config, asset_store_root=turn_cache_root)` line each function already has (~8515 and ~8812), add one unconditional line:
+- [x] **Step 2: Compose at both seams in `main.py`.** Add the import beside `DurableAgentAccountLogoBinder`'s (~line 69): `from .agent_logo_family_cache import DurableLogoFamilyCache`. Then, in BOTH `run_agent_turn_preview` (scene) and `run_web_agent_turn` (web), directly after the `config = replace(config, asset_store_root=turn_cache_root)` line each function already has (~8515 and ~8812), add one unconditional line:
 
 ```python
         # Vendor-first logo family cache (decision #4): per workspace, keyed by registrable
@@ -2049,7 +2052,7 @@ In `from_env`, beside the other settings reads: `brandfetch_client_id=(settings.
 
 Both functions already hold `turn_blobs` (a `DesignBlobStore` for the turn's workspace). Nothing changes at the worker call site (~9857). Confirm with `grep -n "logo_family_cache" subsystems/clue-design/apps/api/lumen_api/main.py` → exactly two composition lines + the import.
 
-- [ ] **Step 3: Composition test** — append to `test_logo_family_cache.py`:
+- [x] **Step 3: Composition test** — append to `test_logo_family_cache.py`:
 
 ```python
 def test_agent_runtime_config_carries_the_cache_and_client_id_fields():
@@ -2060,9 +2063,9 @@ def test_agent_runtime_config_carries_the_cache_and_client_id_fields():
     assert "logo_family_cache" in names and "brandfetch_client_id" in names
 ```
 
-- [ ] **Step 4: Run** `... -m pytest apps/api/tests/test_logo_family_cache.py -v` — PASS.
+- [x] **Step 4: Run** `... -m pytest apps/api/tests/test_logo_family_cache.py -v` — PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add subsystems/clue-design/apps/agent_runtime/lumen_agent/config.py subsystems/clue-design/apps/api/lumen_api/main.py subsystems/clue-design/apps/api/tests/test_logo_family_cache.py
