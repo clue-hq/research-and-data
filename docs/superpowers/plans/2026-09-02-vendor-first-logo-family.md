@@ -1200,12 +1200,27 @@ materialized-adaptive provenance survives as its own source label."
 
 **Files:**
 - Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/logo_fetch.py` (the `fetch_logo_family`, `_prepare`, `LogoFetchOutcome`, `PreparedLogo`, `review_payload` block)
-- Test: `subsystems/clue-design/apps/agent_runtime/tests/test_fetch_logo_tool.py` (extend; existing tests in this file that assert slot names will be updated in Task 10 together with the tool payloads — mark them `xfail(strict=True, reason="cells payload lands in task 10")` ONLY if they break here, and remove the marks in Task 10)
+- Test: `subsystems/clue-design/apps/agent_runtime/tests/test_fetch_logo_tool.py` (extend). **Controller rulings (2026-09-02):** (a) the two HELPER-level tests (`test_the_helper_shapes_one_ingest_per_resolved_slot`, `test_the_helper_reports_review_without_preparing_anything`) test `logo_fetch` itself, which this task rewrites — UPDATE them to the cell vocabulary here (`p.cell`, `{"light_lockup", "dark_lockup"} <= cells`, `kwargs["provenance"]["created_by"] == "logo_ladder"`, `kwargs["source"]["kind"] == "website"` unchanged); (b) the TOOL-level payload tests (`test_web_fetch_logo_registers_with_the_record_op_key` and any scene equivalent asserting `entry["slot"] == "light"`) are Task 10's — mark them `@pytest.mark.xfail(strict=True, reason="cells payload lands in task 10")` and nothing else; (c) **LIVE-CALL SAFETY:** the existing `_fake_site` tests fake only the ladder driver, and the repo-root `.env` now carries a REAL Brandfetch key — so this task adds, at the top of the file, an autouse fixture that disables the vendor rung for every test unless a test overrides it:
+
+```python
+@pytest.fixture(autouse=True)
+def _vendor_rung_disabled(monkeypatch):
+    """No test in this file may reach Brandfetch: the repo .env carries a real key.
+    Tests that exercise the vendor path monkeypatch `logo_fetch._vendor_rung` themselves."""
+    from lumen_ingestion.logo_vendor import VendorCredentialsMissing
+
+    def disabled(site, company):
+        raise VendorCredentialsMissing()
+
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", disabled)
+```
+
+The dispatch tests below override it per-test with their own `monkeypatch.setattr(logo_fetch, "_vendor_rung", ...)`, which takes precedence.)
 
 **Interfaces:**
 - Consumes: `fetch_vendor_family`, `VendorCredentialsMissing`, `VendorLookupFailed` (Task 4); `ladder_cells` (Task 5); the existing ladder driver `logo_ladder.fetch_logo_family` (async, wrapped in `asyncio.run` as today); `logo_family.CELL_NAMES`.
 - Produces the NEW prep contract both lane tools consume in Task 10:
-  - `PreparedLogo` gains `cell: str` and `source: str`; `slot` is REMOVED (grep confirms the only consumers are the two substrate tools and tests — all updated in this plan). `provenance["created_by"]` becomes `"logo_ladder"` or `"brandfetch"` per cell source (`"ladder-materialized"` stamps `"logo_ladder"` — it is the ladder's mechanism).
+  - `PreparedLogo` gains `cell: str` and `source: str`. **Controller ruling (continuity, 2026-09-02):** `slot` is NOT removed here — both substrate tools read `prepared.slot` in six places and would crash until Task 10. Task 6 keeps a read-only alias `@property def slot(self) -> str: return self.cell` on `PreparedLogo`, commented `# deprecated alias: deleted in Task 10`; Task 10 deletes it when the tools switch to `.cell`. `provenance["created_by"]` becomes `"logo_ladder"` or `"brandfetch"` per cell source (`"ladder-materialized"` stamps `"logo_ladder"` — it is the ladder's mechanism).
   - `LogoFetchOutcome` gains `cells: dict[str, str]` (cell → source, for the payload), `vendor_notes: list[str]`, `cache_hit: bool = False`; keeps `status`/`site`/`company`/`prepared`/`identity`/`lockup_completeness`/`notes`/`candidates`.
   - `fetch_logo_family(url_or_domain: str, *, company_name: str | None = None, force_refresh: bool = False, cache=None) -> LogoFetchOutcome`. `cache` is any object with `get(site: str) -> LogoFetchOutcome | None` and `put(site: str, outcome: LogoFetchOutcome) -> None` (duck-typed; Task 7 builds the durable one; `None` = no caching, today's behavior).
   - Dispatch order: cache (unless `force_refresh`) → vendor → ladder for empty cells only → assemble. Ladder is NOT run when all four cells are vendor-filled. Ladder identity failure with zero vendor cells → `needs_review` exactly as today. Vendor cells survive even when the ladder's backfill run comes back `needs_review` (the vendor already answered identity for its own cells — keyed retrieval).
