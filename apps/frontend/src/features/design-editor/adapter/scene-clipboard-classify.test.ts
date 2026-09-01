@@ -182,6 +182,18 @@ it("reports the same intent kind for both internal carriers — the carrier is i
   assert.deepEqual(viaMime, viaHtml);
 });
 
+it("prefers the html envelope over image files", () => {
+  // The Chrome/Safari copy shape this pins: a subtree copy whose internal mime
+  // was lost by the OS clipboard still arrives as html, and a screenshot-y png
+  // may ride alongside it. The envelope is the higher-fidelity carrier, so it
+  // wins — move the file block above the envelope block and this case reddens.
+  const intent = classifyPaste(
+    snapshot({ html: HEADLINE_HTML, files: [imageFile("b.png", "image/png")] }),
+  );
+  const pasted = expectKind(intent, "internal");
+  assert.deepEqual(pasted.payload.roots, ["text_headline"]);
+});
+
 it("falls through to files when the html carries no envelope", () => {
   const png = imageFile("b.png", "image/png");
   const intent = classifyPaste(
