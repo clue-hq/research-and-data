@@ -122,3 +122,65 @@ def test_workspace_isolation_is_fail_closed(
     DurableLogoFamilyCache(blobs=design_blob_store).put("https://acme.com/", _outcome())
     foreign = DurableLogoFamilyCache(blobs=other_workspace_blob_store)
     assert foreign.get("https://acme.com/") is None
+
+
+def test_a_cell_whose_bytes_left_custody_makes_the_whole_family_a_miss(
+    design_blob_store: DesignBlobStore, app
+) -> None:
+    """The row can outlive the bytes (a moved backend root, a restore without the object store,
+    an out-of-band delete), and a row-level probe would call that healthy. The cache probes
+    CUSTODY instead, so a family whose bytes are gone is reported as a MISS and the next dispatch
+    refetches — half a 2x2 is not the family that was asked for."""
+    import hashlib
+    import os
+
+    from clue_design.storage import design_storage_key
+
+    from lumen_api.agent_logo_family_cache import DurableLogoFamilyCache
+
+    cache = DurableLogoFamilyCache(blobs=design_blob_store)
+    outcome = _outcome()
+    cache.put("https://acme.com/", outcome)
+    assert cache.get("https://acme.com/") is not None
+
+    # Remove the bytes out-of-band (the row survives; custody is no longer READABLE) — the
+    # suite's established idiom, `test_asset_custody.py`'s key-resolved unlink.
+    digest = hashlib.sha256(outcome.prepared[0].body).hexdigest()
+    key = design_storage_key(os.environ["LUMEN_DEV_WORKSPACE_ID"], digest)
+    Path(app.state.storage._root).joinpath(*key.split("/")).unlink()
+    assert design_blob_store.exists(digest), "the row still claims custody"
+
+    assert cache.get("https://acme.com/") is None
+
+
+def test_cache_errors_degrade_to_a_miss_and_never_raise(
+    design_blob_store: DesignBlobStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cache is an OPTIMIZATION, never a gate: the fetch path must survive a cache that is
+    entirely broken. A read error is a miss; a write error is logged and swallowed, because the
+    turn already holds the family it was going to store."""
+    from clue_design import logo_family_cache as dal
+
+    from lumen_api.agent_logo_family_cache import DurableLogoFamilyCache
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("simulated storage failure")
+
+    monkeypatch.setattr(dal, "get_logo_family", boom)
+    monkeypatch.setattr(dal, "upsert_logo_family", boom)
+    cache = DurableLogoFamilyCache(blobs=design_blob_store)
+    cache.put("https://acme.com/", _outcome())  # must not raise
+    assert cache.get("https://acme.com/") is None  # a read error is a miss
+
+
+def test_put_with_nothing_prepared_writes_nothing(design_blob_store: DesignBlobStore) -> None:
+    """A `needs_review` fetch prepared nothing. Caching that as a family would serve an empty
+    2x2 back as a hit and suppress the refetch — so `put` refuses it and stores no row."""
+    from lumen_api.agent_logo_family_cache import DurableLogoFamilyCache
+
+    cache = DurableLogoFamilyCache(blobs=design_blob_store)
+    empty = _outcome()
+    empty.prepared = []
+    empty.cells = {}
+    cache.put("https://acme.com/", empty)
+    assert cache.get("https://acme.com/") is None
