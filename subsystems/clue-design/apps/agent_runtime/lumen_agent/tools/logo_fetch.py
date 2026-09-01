@@ -55,10 +55,6 @@ class PreparedLogo:
     source_ref: JsonObject  # the ingest `source` kwarg (renamed field, same payload)
     evidence: JsonObject
 
-    @property
-    def slot(self) -> str:  # deprecated alias: deleted in Task 10
-        return self.cell
-
     def ingest_kwargs(self, store_root: str) -> JsonObject:
         import base64
 

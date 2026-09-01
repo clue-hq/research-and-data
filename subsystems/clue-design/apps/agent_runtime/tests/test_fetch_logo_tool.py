@@ -173,7 +173,6 @@ def test_the_helper_reports_review_without_preparing_anything(monkeypatch):
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.xfail(strict=True, reason="cells payload lands in task 10")
 def test_web_fetch_logo_registers_with_the_record_op_key(tmp_path, monkeypatch):
     _fake_site(monkeypatch, GOODMAN_HTML, GOODMAN_ASSETS, "goodmancampbell.com")
     tools = _web_tools(tmp_path)
@@ -181,9 +180,9 @@ def test_web_fetch_logo_registers_with_the_record_op_key(tmp_path, monkeypatch):
     result = json.loads(tools.fetch_logo("goodmancampbell.com", "Goodman Campbell"))
 
     assert result["status"] in ("ok", "needs_review")
-    assert result["logos"], "at least one slot must be registered"
-    slots = {entry["slot"] for entry in result["logos"]}
-    assert "light" in slots
+    assert result["logos"], "at least one cell must be registered"
+    cells = {entry["cell"] for entry in result["logos"]}
+    assert "light_lockup" in cells
 
     # Registered into the WebDoc's own asset table...
     for entry in result["logos"]:
@@ -194,11 +193,46 @@ def test_web_fetch_logo_registers_with_the_record_op_key(tmp_path, monkeypatch):
     assert all("record" in op for op in upserts)
     assert all("asset" not in op for op in upserts)
 
-    # Evidence travels with each slot so the agent can explain the choice.
-    light = next(e for e in result["logos"] if e["slot"] == "light")
+    # Evidence travels with each cell so the agent can explain the choice.
+    light = next(e for e in result["logos"] if e["cell"] == "light_lockup")
     assert light["rung"] in ("HEADER", "NAV_VISIBLE", "INLINE_SVG", "PAGE_LOGO_NAMED")
-    assert light["provenance"] in ("genuine", "materialized-adaptive")
+    assert light["source"] in ("ladder", "ladder-materialized")
     assert result["identity"]["passed"] is True
+    assert "cache_hit" in result
+
+
+def test_web_fetch_logo_threads_force_refresh_and_the_configured_cache(
+    tmp_path, monkeypatch
+):
+    """The tool's `force_refresh` and the turn config's cache reach the prep layer."""
+    from lumen_api.core import CoreClient
+
+    sentinel = object()
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "workspace_root",
+        logo_family_cache=sentinel,
+    )
+    core = CoreClient(repo_root=REPO_ROOT)
+    seed = core.web_new_doc("doc_web_cache", "Test site", None)["web_doc"]
+    tools = LumenWebTools(config, "Build an ABM page", initial_web_doc=seed)
+
+    captured: dict = {}
+
+    def recorder(requested, **kwargs):
+        captured["requested"] = requested
+        captured.update(kwargs)
+        return logo_fetch.LogoFetchOutcome(
+            status="needs_review", site="https://acme.com/", company=None
+        )
+
+    monkeypatch.setattr(logo_fetch, "fetch_logo_family", recorder)
+
+    result = json.loads(tools.fetch_logo("acme.com", force_refresh=True))
+
+    assert result["status"] == "needs_review"
+    assert captured["force_refresh"] is True
+    assert captured["cache"] is sentinel
 
 
 def test_web_fetch_logo_needs_review_ingests_nothing(tmp_path, monkeypatch):
