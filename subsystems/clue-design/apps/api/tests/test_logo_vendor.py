@@ -321,3 +321,23 @@ def test_fetch_vendor_family_never_fetches_off_allowlist_hosts():
     assert cells == {}
     assert "evil.example" not in seen
     assert any("allowlist" in n for n in notes)
+
+
+def test_fetch_vendor_family_timeout_and_malformed_are_typed():
+    import httpx
+    import pytest as _pytest
+
+    from lumen_ingestion.logo_vendor import VendorLookupFailed, fetch_vendor_family
+
+    def slow(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("simulated", request=request)
+
+    with _vendor_transport(slow) as client:
+        with _pytest.raises(VendorLookupFailed) as err:
+            fetch_vendor_family("acme.com", api_key="k", client=client)
+    assert err.value.code == "timeout"
+
+    with _vendor_transport(lambda r: httpx.Response(200, content=b"<html>not json</html>")) as client:
+        with _pytest.raises(VendorLookupFailed) as err:
+            fetch_vendor_family("acme.com", api_key="k", client=client)
+    assert err.value.code == "malformed"

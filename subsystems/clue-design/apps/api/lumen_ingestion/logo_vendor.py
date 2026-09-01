@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 JsonObject = dict[str, Any]
 
@@ -59,7 +60,7 @@ class VendorCredentialsMissing(Exception):
 
 
 class VendorLookupFailed(Exception):
-    """The vendor was asked and could not answer (quota/timeout/http/malformed).
+    """The vendor was asked and could not answer (quota/auth/timeout/http/malformed).
     Distinct from a 404, which IS an answer (empty family)."""
 
     def __init__(self, code: str, message: str) -> None:
@@ -241,7 +242,9 @@ _ASSET_HOST_SUFFIXES = ("brandfetch.io",)
 _USER_AGENT = "clue-design-logo-vendor/1 (+httpx)"
 
 
-from urllib.parse import urlsplit  # module-level: `download` and `_bare_domain` both need it
+def _asset_host_allowed(host: str) -> bool:
+    """Exact match or subdomain of any allowed suffix — every suffix, not just the first."""
+    return any(host == suffix or host.endswith("." + suffix) for suffix in _ASSET_HOST_SUFFIXES)
 
 
 def _bare_domain(value: str) -> str:
@@ -309,9 +312,7 @@ def fetch_vendor_family(domain, *, api_key=None, base_url=None, timeout_s=None, 
 
         def download(src: str):
             host = (urlsplit(src).hostname or "").lower()
-            if not (host == _ASSET_HOST_SUFFIXES[0] or any(
-                host.endswith("." + suffix) for suffix in _ASSET_HOST_SUFFIXES
-            )):
+            if not _asset_host_allowed(host):
                 driver_notes.append(
                     f"asset host {host or '?'} is not on the vendor allowlist; not fetched: {src}"
                 )
