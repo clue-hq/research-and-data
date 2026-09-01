@@ -869,6 +869,8 @@ test("stream.reset drops parts but keeps the leg lines it cannot re-read", () =>
   assert.ok(turn);
   assert.equal(turn.parts.length, 0);
   assert.equal(turn.legNotices.size, 1);
+});
+
 // --- C5: newest-first pages merging backward ------------------------------------------------
 
 function durablePageMessage(

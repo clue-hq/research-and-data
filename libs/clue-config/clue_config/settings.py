@@ -684,6 +684,7 @@ class Settings(BaseSettings):
         if isinstance(value, str) and value.strip().isdigit():
             return int(value.strip())
         return value
+
     @model_validator(mode="before")
     @classmethod
     def _apply_product_path_overlay(cls, data: Any) -> Any:

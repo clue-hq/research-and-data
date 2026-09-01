@@ -2149,34 +2149,6 @@ def build_chat_router(
                         turn_id=turn_id,
                     )
                 )
-                # Founder ruling 2026-08-19 (Slice B): on a budget-controls-disabled deployment,
-                # approving a directive-confirmation gate atomically confirms AND launches via
-                # ``launch_selected_account_research@1``. That tool's account authority is the
-                # approving turn's durable context refs, so the capture records the exact account
-                # set the gate froze at open — the approval click genuinely references those
-                # accounts. Injected only when the turn carries no refs of its own, and only for
-                # the approval decision this authority serves; decided before the replay read so
-                # a retried approval replays against identical refs.
-                if (
-                    gate is not None
-                    and gate.kind == KIND_DIRECTIVE_CONFIRMATION
-                    and gate.subject_snapshot.get("subject_kind") != "discovery_configuration"
-                    and not settings.budget_controls_enabled
-                    and not context_refs
-                    and body.gate_response is not None
-                    and _gate_response(body).decision == "approved"
-                ):
-                    snapshot_account_ids = gate.subject_snapshot.get("account_entity_ids")
-                    if isinstance(snapshot_account_ids, list):
-                        context_refs = tuple(
-                            DomainObjectRef(
-                                workspace_id=who.workspace_id,
-                                object_type="account",
-                                object_id=str(value),
-                                version=None,
-                            )
-                            for value in snapshot_account_ids
-                        )
                 # Replay is decided before anything is written: a retry must not persist a second
                 # artifact, and a *different* message under a used key must be refused rather than
                 # answered with the first one's turn.
@@ -2232,6 +2204,34 @@ def build_chat_router(
                     ),
                     storage=storage,
                 )
+                # Founder ruling 2026-08-19 (Slice B): on a budget-controls-disabled deployment,
+                # approving a directive-confirmation gate atomically confirms AND launches via
+                # ``launch_selected_account_research@1``. That tool's account authority is the
+                # approving turn's durable context refs, so the capture records the exact account
+                # set the gate froze at open — the approval click genuinely references those
+                # accounts. Injected only when the turn carries no refs of its own, and only for
+                # the approval decision this authority serves; decided before the replay read so
+                # a retried approval replays against identical refs.
+                if (
+                    gate is not None
+                    and gate.kind == KIND_DIRECTIVE_CONFIRMATION
+                    and gate.subject_snapshot.get("subject_kind") != "discovery_configuration"
+                    and not settings.budget_controls_enabled
+                    and not context_refs
+                    and body.gate_response is not None
+                    and _gate_response(body).decision == "approved"
+                ):
+                    snapshot_account_ids = gate.subject_snapshot.get("account_entity_ids")
+                    if isinstance(snapshot_account_ids, list):
+                        context_refs = tuple(
+                            DomainObjectRef(
+                                workspace_id=who.workspace_id,
+                                object_type="account",
+                                object_id=str(value),
+                                version=None,
+                            )
+                            for value in snapshot_account_ids
+                        )
                 # A gate answer must never become a design prompt (Part-III review finding C,
                 # ratified 2026-08-14): while a leg is open, the D1 routing rule would deliver
                 # these canonical bytes to the design agent as an instruction, and the gate flow
