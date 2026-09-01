@@ -1,0 +1,1960 @@
+# Vendor-First Logo Family (Brandfetch + 2×2 contract) Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Make target-account logo fetching vendor-first (Brandfetch Brand API) with per-cell fallback to the in-house ladder, expose the result to both design deepagents as a 2×2 family (theme × completeness), cache each family durably per workspace+domain, and add a hotlink lane for decorative in-page logos.
+
+**Architecture:** A new vendor rung (`lumen_ingestion/logo_vendor.py`) and a shared 2×2 vocabulary (`lumen_ingestion/logo_family.py`) sit beside the existing ladder; the two-rung dispatch lives in the lane-agnostic prep layer (`lumen_agent/tools/logo_fetch.py`) so both the scene and web `fetch_logo` tools inherit it with zero harness changes. A workspace-scoped durable cache (`design_logo_family` table + `DesignBlobStore` blobs) is injected into agent turns as a composed capability, following the `account_logo_binder` pattern exactly. The hotlink lane is prompt prose only.
+
+**Tech Stack:** Python 3.12, httpx (the subsystem is deliberately httpx-only), pydantic-settings (`py_lumen_config`), selectolax, PIL/pymupdf (already present via the ladder), Alembic (root `alembic/`), pytest.
+
+**Spec:** `_memory/2026-08-31-logo-vendor-first-decision.md` (the founder decision record) + `_memory/2026-09-02-logo-system-current-state.md` (the current-state map and this session's rulings). Both travel with this plan; executors read both. §0 below restates every binding ruling so no task depends on outside context.
+
+## Global Constraints
+
+- **Never push; local commits only; no AI attribution in commit messages** (no `Co-Authored-By: Claude`, no "Generated with" footers) — repo rule.
+- **Env-flag parity rule:** every new env var lands in BOTH `.env.example` (repo root) AND `subsystems/clue-design/.env.example`, with defaults, **in the same commit that introduces the code reading it**.
+- **Alembic:** hash revision ids only (`alembic revision -m "..."` from the repo root assigns one — never hand-pick); hand-written reversible `upgrade()`/`downgrade()`; named constraints; exactly one head afterward (`alembic heads`); gate with `make db-smoke` on a clean throwaway DB.
+- **Workspace scoping (the B3 law):** anything durable is keyed by `workspace_id` and fail-closed across tenants. No cross-workspace cache reads, ever.
+- **The never-synthesize register:** an empty cell is a CORRECT answer. Nothing in this plan invents, recolors, letters, or approximates a logo. `needs_review` stays fail-closed.
+- **Design test invocation:** from `subsystems/clue-design/`, `PYTHONPATH=.:apps/api:apps/agent_runtime <repo-root>/.venv/bin/python -m pytest <file> -v`. Run ONLY the focused test files named per task inline (the full design suite takes >1h — never run it synchronously; one background full run at the very end).
+- **Do not touch:** ladder internals (`logo_ladder.py` stage 1/2 logic), the brand-kit ingestion path (`capture/evidence_builder.py::_ladder_logos` — seller kits keep using the ladder directly; vendor-first was ruled for TARGET logos), `bind_account_logo` mechanics beyond the provenance-gate widening in Task 8, the recorded scene/web asymmetries.
+- The subsystem CLAUDE.md engine-handshake rule does not apply (no `crates/` sources change in this plan).
+
+---
+
+## §0 Design contract (founder rulings, restated so the plan is self-contained)
+
+1. **Vendor-first, ladder-second.** Brandfetch **Brand API** (`GET https://api.brandfetch.io/v2/brands/domain/{domain}`, Bearer key, **free tier**) is rung one; the in-house ladder is rung two. A plain two-rung fallback, not a waterfall framework. Missing key, quota exhaustion (HTTP 429), timeout, 5xx, or vendor miss all degrade honestly to the ladder with a typed note — never a hard failure. (The Logo API CDN is hotlink-only and forbids programmatic access — it is used ONLY for the hotlink lane, §0.7.)
+2. **The 2×2 is the tool contract.** Four cells: `light_lockup`, `dark_lockup`, `light_mark`, `dark_mark`. Theme uses OUR semantics — *the background the asset is for* (`light` = for light backgrounds = dark-colored art). "Lockup" = the full horizontal logo (a wordmark-only brand still fills the lockup cell, annotated via `lockup_completeness`). "Mark" = the bare symbol. One `fetch_logo` call returns the whole family; the agent reasons about placement.
+3. **Brandfetch theme semantics are INVERTED vs ours and the adapter hides that.** Brandfetch labels the asset's own appearance: their `theme: "dark"` = dark-colored logo (for light backgrounds) → our `light_*` cells; their `theme: "light"` → our `dark_*` cells. The inversion lives in exactly one function and is pinned by tests.
+4. **`type=icon` never fills anything** (founder ruling): only `type=logo` → lockup cells and `type=symbol` → mark cells. `type=other` and `photographic`-tagged assets are skipped.
+5. **Per-cell fallback** (founder ruling): the vendor fills what it can; the ladder runs once only if cells remain empty and backfills only those. Mixed-provenance families are fine; every cell stamps its `source`.
+6. **Cache:** first successful fetch stores the family durably, keyed `(workspace_id, registrable_domain)` — domain, not account id, because the tool receives a domain and the agent may fetch for non-account companies (partners); workspace-scoped per B3. No TTL expiry; the eviction affordance is `force_refresh=True` on the tool (per the accepted advisory note: "the user saw it's wrong" must have an action attached).
+7. **Hotlink lane:** decorative third-party logos inside generated web pages (logo walls, integration strips) use Logo API CDN URLs written directly into markup — free, uncached, compliant because end-viewer browsers fetch them. Boundary: **named target being personalized → `fetch_logo` (custody path); ambient third-party logos → hotlink.** Never a hotlink for `{{account.logo}}`.
+8. **No fetch/bind at account discovery or enrichment.** Design-time, on-demand, either lane, any company.
+9. **No gates, no verification cards, no prompt bureaucracy** beyond the routing prose. The human looking at the design is the verification layer. (One hygiene exception ruled in during planning: vendor SVG bytes are checked with the existing `svg_is_renderable` before ingest — new-scope hygiene on the new path, not a change to recorded ladder asymmetries.)
+10. **Vendor-fetched assets must be bindable.** `bind_account_logo` currently gates on provenance `created_by == "logo_ladder"`; it widens to accept `"brandfetch"` too (Task 8). Generated images and placeholders stay refused.
+
+### File map (what exists, what is created, what changes)
+
+| File | Action | Responsibility |
+|---|---|---|
+| `subsystems/clue-design/packages/py-lumen-config/py_lumen_config/config.py` | Modify | 4 new settings fields (Task 1) |
+| `.env.example` + `subsystems/clue-design/.env.example` | Modify | new env lines (Task 1) |
+| `subsystems/clue-design/apps/api/lumen_ingestion/logo_family.py` | **Create** | the 2×2 vocabulary + `FamilyCell`/`LogoFamily` dataclasses (Task 2) |
+| `subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py` | **Create** | Brandfetch client: typed errors, pure payload parsing, cell mapping w/ inversion, network driver (Tasks 2–4) |
+| `subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/logo_fetch.py` | Modify | ladder→cell mapping, two-rung dispatch, new outcome shape (Tasks 5–6) |
+| `alembic/versions/<hash>_design_logo_family_cache.py` | **Create** | cache table migration (Task 7) |
+| `subsystems/clue-design/apps/api/lumen_api/agent_logo_family_cache.py` | **Create** | `DurableLogoFamilyCache` capability (Task 7) |
+| `subsystems/clue-design/apps/api/lumen_api/agent_account_logos.py` | Modify | provenance-gate widening (Task 8) |
+| `subsystems/clue-design/apps/agent_runtime/lumen_agent/config.py` | Modify | `logo_family_cache` + `brandfetch_client_id` config fields (Task 9) |
+| `subsystems/clue-design/apps/api/lumen_api/main.py` | Modify | compose the cache at both turn seams (Task 9) |
+| `subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/substrate.py` | Modify | scene `fetch_logo`: cache + cells payload + docstring (Task 10) |
+| `subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/web_substrate.py` | Modify | web `fetch_logo`: cache + cells payload + docstring; `bind_account_logo` error text (Tasks 8, 10) |
+| `subsystems/clue-design/apps/agent_runtime/lumen_agent/prompts.py` / `prompts_web.py` | Modify | 2×2 vocabulary + hotlink lane prose (Tasks 11–12) |
+| Tests | **Create/Modify** | named per task |
+
+Import direction sanity: `lumen_agent.tools.logo_fetch` already imports `lumen_ingestion.logo_ladder` (cross-app import is the established seam; `PYTHONPATH` carries `apps/api`), so it may import `logo_vendor` and `logo_family` the same way. `lumen_api` already imports `lumen_ingestion` (`agent_account_logos.py` does). Nothing in `lumen_ingestion` imports upward.
+
+---
+
+### Task 1: Brandfetch settings + env parity
+
+**Files:**
+- Modify: `subsystems/clue-design/packages/py-lumen-config/py_lumen_config/config.py` (add fields beside the `pdl_*` block at ~line 232)
+- Modify: `.env.example` (repo root; beside the PDL block at ~line 369)
+- Modify: `subsystems/clue-design/.env.example` (beside its PDL block at ~line 76)
+- Test: `subsystems/clue-design/apps/api/tests/test_logo_vendor.py` (new file, first test)
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: `settings.brandfetch_api_key: str` (default `""`), `settings.brandfetch_client_id: str` (default `""`), `settings.brandfetch_api_base_url: str` (default `"https://api.brandfetch.io"`), `settings.brandfetch_timeout_s: float` (default `20.0`). Later tasks read all four.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# subsystems/clue-design/apps/api/tests/test_logo_vendor.py
+"""Brandfetch vendor rung: settings, parsing, cell mapping, network driver."""
+
+from __future__ import annotations
+
+
+def test_brandfetch_settings_fields_exist_with_safe_defaults(monkeypatch):
+    # Fresh Settings instance so developer .env values don't leak into assertions.
+    from py_lumen_config.config import Settings
+
+    for var in (
+        "BRANDFETCH_API_KEY",
+        "BRANDFETCH_CLIENT_ID",
+        "BRANDFETCH_API_BASE_URL",
+        "BRANDFETCH_TIMEOUT_S",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    fresh = Settings(_env_file=None)
+    assert fresh.brandfetch_api_key == ""
+    assert fresh.brandfetch_client_id == ""
+    assert fresh.brandfetch_api_base_url == "https://api.brandfetch.io"
+    assert fresh.brandfetch_timeout_s == 20.0
+
+
+def test_brandfetch_settings_load_from_env(monkeypatch):
+    from py_lumen_config.config import Settings
+
+    monkeypatch.setenv("BRANDFETCH_API_KEY", "bf_test_key")
+    monkeypatch.setenv("BRANDFETCH_CLIENT_ID", "idTESTCLIENT")
+    monkeypatch.setenv("BRANDFETCH_TIMEOUT_S", "5.5")
+    fresh = Settings(_env_file=None)
+    assert fresh.brandfetch_api_key == "bf_test_key"
+    assert fresh.brandfetch_client_id == "idTESTCLIENT"
+    assert fresh.brandfetch_timeout_s == 5.5
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+From `subsystems/clue-design/`:
+`PYTHONPATH=.:apps/api:apps/agent_runtime <repo-root>/.venv/bin/python -m pytest apps/api/tests/test_logo_vendor.py -v`
+Expected: FAIL — `AttributeError: 'Settings' object has no attribute 'brandfetch_api_key'`.
+(If the import of `Settings` itself fails, check how `apps/api/tests/test_ad_company_identity.py` — the PDL settings tests — constructs it and mirror that exactly.)
+
+- [ ] **Step 3: Add the settings fields**
+
+In `config.py`, directly below the `pdl_timeout_s` field (~line 237), following the PDL block's comment style:
+
+```python
+    # -- Brandfetch (target-account logo vendor; W-logo vendor-first, 2026-09-02) --------
+    # Brand API key (Bearer). Blank = vendor rung disabled: `fetch_logo` degrades honestly
+    # to the in-house ladder, exactly like a blank PDL_API_KEY degrades ad identity.
+    brandfetch_api_key: str = ""
+    # Logo API *client id* (PUBLIC — appears in published-page <img> URLs). Powers the
+    # hotlink lane only; blank = the hotlink prompt guidance is omitted.
+    brandfetch_client_id: str = ""
+    brandfetch_api_base_url: str = "https://api.brandfetch.io"
+    brandfetch_timeout_s: float = 20.0
+```
+
+- [ ] **Step 4: Add the env lines (BOTH files, same commit — parity rule)**
+
+Repo-root `.env.example`, after the PDL block (~line 375):
+
+```bash
+# Brandfetch — target-account logo vendor (design subsystem). BRANDFETCH_API_KEY is the
+# Brand API Bearer key (free tier: 100 requests; blank = fetch_logo uses the in-house
+# ladder only). BRANDFETCH_CLIENT_ID is the PUBLIC Logo-API client id embedded in
+# published-page <img> URLs for decorative third-party logos (blank = hotlink guidance
+# omitted from web prompts). Both from https://developers.brandfetch.com/register.
+BRANDFETCH_API_KEY=
+BRANDFETCH_CLIENT_ID=
+BRANDFETCH_API_BASE_URL=https://api.brandfetch.io
+BRANDFETCH_TIMEOUT_S=20
+```
+
+`subsystems/clue-design/.env.example`, after its PDL block (~line 80): the same four lines with the same comment.
+
+- [ ] **Step 5: Run test to verify it passes**
+
+Same command as Step 2. Expected: both tests PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add subsystems/clue-design/packages/py-lumen-config/py_lumen_config/config.py .env.example subsystems/clue-design/.env.example subsystems/clue-design/apps/api/tests/test_logo_vendor.py
+git commit -m "feat(logo): Brandfetch settings — api key, public client id, base url, timeout
+
+Env parity: both .env.example files carry the four lines at introduction.
+Blank key = vendor rung disabled, honest degrade to the ladder (PDL pattern)."
+```
+
+---
+
+### Task 2: The 2×2 vocabulary (`logo_family.py`) + vendor payload parsing (pure half)
+
+**Files:**
+- Create: `subsystems/clue-design/apps/api/lumen_ingestion/logo_family.py`
+- Create: `subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py`
+- Test: `subsystems/clue-design/apps/api/tests/test_logo_vendor.py` (extend)
+
+**Interfaces:**
+- Consumes: nothing from earlier tasks (settings are used first in Task 4).
+- Produces:
+  - `logo_family.CELL_NAMES: tuple[str, ...] = ("light_lockup", "dark_lockup", "light_mark", "dark_mark")`
+  - `logo_family.cell_name(theme: str, completeness: str) -> str` (`("light","lockup") -> "light_lockup"`; raises `ValueError` on unknown axis values)
+  - `logo_family.FamilyCell` dataclass: `cell: str`, `body: bytes`, `content_type: str`, `source: str` (`"brandfetch" | "ladder" | "ladder-materialized"`), `origin_url: str`, `evidence: dict`
+  - `logo_vendor.VENDOR_NAME = "brandfetch"`
+  - `logo_vendor.VendorCredentialsMissing(Exception)` with `.env_vars: tuple[str, ...]`
+  - `logo_vendor.VendorLookupFailed(Exception)` with `.code: str` (`"quota" | "timeout" | "http" | "malformed"`) and `.message: str`
+  - `logo_vendor.VendorAsset` dataclass: `theme: str | None`, `type: str`, `tags: list[str]`, `formats: list[dict]`
+  - `logo_vendor.parse_brand_payload(payload: dict) -> list[VendorAsset]`
+  - `logo_vendor.pick_format(asset: VendorAsset) -> dict | None` (svg first; else largest transparent raster; else largest raster; `None` when `formats` is empty)
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `test_logo_vendor.py`:
+
+```python
+# A trimmed real-shaped Brand API response (the schema's logos[] shape:
+# theme dark|light|null, type icon|logo|symbol|other, formats[] with
+# src/format/width/height/size/background).
+BRAND_PAYLOAD = {
+    "name": "Acme",
+    "domain": "acme.com",
+    "logos": [
+        {  # their theme "dark" = dark-colored art FOR LIGHT backgrounds
+            "theme": "dark",
+            "type": "logo",
+            "tags": [],
+            "formats": [
+                {"src": "https://asset.brandfetch.io/a/lockup-dark.svg", "format": "svg",
+                 "width": 400, "height": 80, "size": 4000, "background": "transparent"},
+                {"src": "https://asset.brandfetch.io/a/lockup-dark.png", "format": "png",
+                 "width": 800, "height": 160, "size": 20000, "background": "transparent"},
+            ],
+        },
+        {
+            "theme": "light",
+            "type": "symbol",
+            "tags": [],
+            "formats": [
+                {"src": "https://asset.brandfetch.io/a/symbol-light.png", "format": "png",
+                 "width": 300, "height": 300, "size": 9000, "background": "transparent"},
+            ],
+        },
+        {  # icon must be ignored entirely (founder ruling i)
+            "theme": "dark",
+            "type": "icon",
+            "tags": [],
+            "formats": [
+                {"src": "https://asset.brandfetch.io/a/icon.png", "format": "png",
+                 "width": 128, "height": 128, "size": 3000, "background": None},
+            ],
+        },
+        {  # photographic assets are never logos
+            "theme": None,
+            "type": "logo",
+            "tags": ["photographic"],
+            "formats": [
+                {"src": "https://asset.brandfetch.io/a/photo.jpeg", "format": "jpeg",
+                 "width": 900, "height": 600, "size": 90000, "background": None},
+            ],
+        },
+    ],
+}
+
+
+def test_cell_name_builds_the_four_cells_and_rejects_junk():
+    from lumen_ingestion.logo_family import CELL_NAMES, cell_name
+
+    assert CELL_NAMES == ("light_lockup", "dark_lockup", "light_mark", "dark_mark")
+    assert cell_name("light", "lockup") == "light_lockup"
+    assert cell_name("dark", "mark") == "dark_mark"
+    import pytest as _pytest
+    with _pytest.raises(ValueError):
+        cell_name("adaptive", "lockup")
+    with _pytest.raises(ValueError):
+        cell_name("light", "wordmark")
+
+
+def test_parse_brand_payload_keeps_vendor_vocabulary_and_drops_nothing():
+    from lumen_ingestion.logo_vendor import parse_brand_payload
+
+    assets = parse_brand_payload(BRAND_PAYLOAD)
+    # Parsing is faithful: all four entries survive; filtering is mapping's job.
+    assert [a.type for a in assets] == ["logo", "symbol", "icon", "logo"]
+    assert assets[0].theme == "dark"
+    assert assets[3].tags == ["photographic"]
+    assert assets[0].formats[0]["format"] == "svg"
+
+
+def test_parse_brand_payload_tolerates_malformed_entries():
+    from lumen_ingestion.logo_vendor import parse_brand_payload
+
+    assert parse_brand_payload({}) == []
+    assert parse_brand_payload({"logos": "nope"}) == []
+    assets = parse_brand_payload({"logos": [{"type": "logo"}, 42, {"formats": []}]})
+    # Entries missing fields normalize (theme None, tags [], formats []); non-dicts drop.
+    assert len(assets) == 2 and assets[0].type == "logo"
+
+
+def test_pick_format_prefers_svg_then_largest_transparent_raster():
+    from lumen_ingestion.logo_vendor import parse_brand_payload, pick_format
+
+    assets = parse_brand_payload(BRAND_PAYLOAD)
+    assert pick_format(assets[0])["format"] == "svg"
+    assert pick_format(assets[1])["src"].endswith("symbol-light.png")
+
+    from lumen_ingestion.logo_vendor import VendorAsset
+    raster_only = VendorAsset(theme=None, type="logo", tags=[], formats=[
+        {"src": "s", "format": "png", "width": 100, "height": 20, "size": 1,
+         "background": None},
+        {"src": "b", "format": "webp", "width": 600, "height": 120, "size": 2,
+         "background": "transparent"},
+    ])
+    assert pick_format(raster_only)["src"] == "b"
+    assert pick_format(VendorAsset(theme=None, type="logo", tags=[], formats=[])) is None
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+`PYTHONPATH=.:apps/api:apps/agent_runtime <repo-root>/.venv/bin/python -m pytest apps/api/tests/test_logo_vendor.py -v`
+Expected: the four new tests FAIL with `ModuleNotFoundError: lumen_ingestion.logo_family` / `logo_vendor`.
+
+- [ ] **Step 3: Write `logo_family.py`**
+
+```python
+# subsystems/clue-design/apps/api/lumen_ingestion/logo_family.py
+"""The 2x2 logo-family vocabulary shared by the vendor rung, the ladder mapping,
+the dispatch, and the cache (founder ruling 2026-09-02).
+
+Two axes, four cells. THEME uses OUR semantics -- the background the asset is
+FOR: `light` means "place on light backgrounds" (dark-colored art), `dark`
+means "place on dark backgrounds" (light/white art). COMPLETENESS is `lockup`
+(the full horizontal logo; a wordmark-only brand still fills this cell) or
+`mark` (the bare symbol). This is deliberately the same 2x2 the deferred
+batch-time slot-selection rule will consume.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+THEMES = ("light", "dark")
+COMPLETENESS = ("lockup", "mark")
+CELL_NAMES = ("light_lockup", "dark_lockup", "light_mark", "dark_mark")
+
+#: `FamilyCell.source` values. "ladder-materialized" is the ladder's
+#: observed-ink currentColor export (never synthesis -- see logo_ladder).
+SOURCE_BRANDFETCH = "brandfetch"
+SOURCE_LADDER = "ladder"
+SOURCE_LADDER_MATERIALIZED = "ladder-materialized"
+
+
+def cell_name(theme: str, completeness: str) -> str:
+    """`("light", "lockup") -> "light_lockup"`. Refuses unknown axis values loudly."""
+    if theme not in THEMES:
+        raise ValueError(f"unknown theme {theme!r} (expected one of {THEMES})")
+    if completeness not in COMPLETENESS:
+        raise ValueError(
+            f"unknown completeness {completeness!r} (expected one of {COMPLETENESS})"
+        )
+    return f"{theme}_{completeness}"
+
+
+@dataclass
+class FamilyCell:
+    """One resolved cell of the 2x2: real bytes plus where they came from."""
+
+    cell: str
+    body: bytes
+    content_type: str
+    source: str  # SOURCE_BRANDFETCH | SOURCE_LADDER | SOURCE_LADDER_MATERIALIZED
+    origin_url: str
+    evidence: dict = field(default_factory=dict)
+```
+
+- [ ] **Step 4: Write `logo_vendor.py` (pure half only)**
+
+```python
+# subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py
+"""The Brandfetch rung of the two-rung logo supply chain (vendor-first,
+founder decision 2026-08-31; rulings 2026-09-02).
+
+**This module is the only place in the repository that knows Brandfetch's
+Brand API exists** -- the shape `ad_library/pdl.py` established for PDL.
+Everything else consumes cells of the shared 2x2 (`logo_family`).
+
+The endpoint contract, per the vendor's documented Brand API schema:
+
+    GET {base}/v2/brands/domain/{domain}
+    Authorization: Bearer <key>
+    -> 200 {"logos": [{"theme": "dark"|"light"|null,
+                        "type": "icon"|"logo"|"symbol"|"other",
+                        "tags": [...],
+                        "formats": [{"src", "format", "width", "height",
+                                     "size", "background"}]}], ...}
+    -> 404  # unknown brand -- an ANSWER (empty family), not a fault
+    -> 429  # free-tier quota out -- a typed degrade, the ladder takes over
+
+**Theme semantics are INVERTED here and nowhere else.** Brandfetch labels the
+asset's own appearance (their "dark" = dark-colored art, which belongs on
+LIGHT backgrounds); our cells name the background the asset is FOR. The
+`_OUR_THEME_FOR_VENDOR_THEME` table is the entire inversion, and the tests pin
+it, because shipping this backwards swaps every light/dark pairing.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+JsonObject = dict[str, Any]
+
+VENDOR_NAME = "brandfetch"
+
+#: their theme -> our theme. See the module docstring; do not "simplify" this.
+_OUR_THEME_FOR_VENDOR_THEME = {"dark": "light", "light": "dark"}
+
+#: vendor `type` -> our completeness axis. `icon` is DELIBERATELY absent
+#: (founder ruling 2026-09-02: the social-avatar icon never fills a cell), and
+#: so is `other`.
+_COMPLETENESS_FOR_VENDOR_TYPE = {"logo": "lockup", "symbol": "mark"}
+
+_FORMAT_MIME = {
+    "svg": "image/svg+xml",
+    "png": "image/png",
+    "webp": "image/webp",
+    "jpeg": "image/jpeg",
+}
+
+
+class VendorCredentialsMissing(Exception):
+    """No BRANDFETCH_API_KEY configured. The dispatch treats this as
+    "vendor rung disabled" and runs the ladder -- a degrade, not a failure."""
+
+    def __init__(self, env_vars: tuple[str, ...] = ("BRANDFETCH_API_KEY",)) -> None:
+        self.env_vars = env_vars
+        super().__init__(f"missing credentials: {', '.join(env_vars)}")
+
+
+class VendorLookupFailed(Exception):
+    """The vendor was asked and could not answer (quota/timeout/http/malformed).
+    Distinct from a 404, which IS an answer (empty family)."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code  # "quota" | "timeout" | "http" | "malformed"
+        self.message = message
+        super().__init__(f"{code}: {message}")
+
+
+@dataclass
+class VendorAsset:
+    """One entry of the Brand API `logos[]` array, vendor vocabulary intact.
+    Parsing is faithful; filtering (icon/other/photographic) is mapping's job."""
+
+    theme: str | None
+    type: str
+    tags: list[str] = field(default_factory=list)
+    formats: list[JsonObject] = field(default_factory=list)
+
+
+def parse_brand_payload(payload: JsonObject) -> list[VendorAsset]:
+    """Normalize the Brand API response into typed assets. Non-dict entries
+    drop; missing fields normalize to empty -- a malformed entry must never
+    take the whole family down."""
+    logos = payload.get("logos") if isinstance(payload, dict) else None
+    if not isinstance(logos, list):
+        return []
+    out: list[VendorAsset] = []
+    for entry in logos:
+        if not isinstance(entry, dict):
+            continue
+        theme = entry.get("theme")
+        out.append(
+            VendorAsset(
+                theme=theme if theme in ("dark", "light") else None,
+                type=str(entry.get("type") or ""),
+                tags=[str(t) for t in entry.get("tags") or [] if isinstance(t, str)],
+                formats=[f for f in entry.get("formats") or [] if isinstance(f, dict)],
+            )
+        )
+    return out
+
+
+def pick_format(asset: VendorAsset) -> JsonObject | None:
+    """SVG first (logos are vector art); else the largest transparent raster;
+    else the largest raster. None when the asset ships no formats."""
+    svgs = [f for f in asset.formats if f.get("format") == "svg" and f.get("src")]
+    if svgs:
+        return svgs[0]
+
+    def area(f: JsonObject) -> int:
+        return int(f.get("width") or 0) * int(f.get("height") or 0)
+
+    rasters = [
+        f for f in asset.formats
+        if f.get("src") and f.get("format") in ("png", "webp", "jpeg")
+    ]
+    transparent = [f for f in rasters if f.get("background") == "transparent"]
+    pool = transparent or rasters
+    return max(pool, key=area) if pool else None
+```
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Same command. Expected: all Task 1 + Task 2 tests PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add subsystems/clue-design/apps/api/lumen_ingestion/logo_family.py subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py subsystems/clue-design/apps/api/tests/test_logo_vendor.py
+git commit -m "feat(logo): 2x2 family vocabulary + Brandfetch payload parsing (pure half)
+
+CELL_NAMES light/dark x lockup/mark; faithful vendor parsing; svg-first
+format pick. Theme inversion table declared (mapping lands next)."
+```
+
+---
+
+### Task 3: Vendor asset → cell mapping (the inversion, the filters, the renderability gate)
+
+**Files:**
+- Modify: `subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py`
+- Test: `subsystems/clue-design/apps/api/tests/test_logo_vendor.py` (extend)
+
+**Interfaces:**
+- Consumes: `parse_brand_payload`, `pick_format`, `logo_family.FamilyCell`, `logo_family.cell_name`; the ladder's `analyze_appearance` and `svg_is_renderable` (existing, `lumen_ingestion.logo_ladder`).
+- Produces: `logo_vendor.map_vendor_assets_to_cells(assets: list[VendorAsset], download: Callable[[str], tuple[bytes, str | None] | None]) -> tuple[dict[str, FamilyCell], list[str]]` — `(cells, notes)`. `download(src_url)` returns `(bytes, content_type)` or `None` on failure; injected so the mapping stays transport-free and testable.
+
+Mapping rules (all pinned by tests):
+1. `type` not in `{logo, symbol}` → skipped. `photographic` tag → skipped with a note.
+2. Theme inversion: vendor `dark` → our `light`, vendor `light` → our `dark`.
+3. `theme=None` → download first, then classify with the ladder's `analyze_appearance` over a minimal `LadderCandidate(fmt=..., body=...)`: verdict `light_variant` → our `light`, `dark_variant` → our `dark`, `adaptive` → our `light` (the ladder's own convention: one adaptive file serves both, filed under light, noted), anything else → our `light` with a note (a lockup with no theme signal is still the primary; empty would be less honest than light-by-default **only for vendor-attributed assets** — the vendor already answered identity, unlike the ladder's unknowns).
+4. First asset wins per cell (vendor order is preference order); later duplicates noted, not fetched.
+5. A failed download → note, cell stays empty (the ladder may backfill later).
+6. SVG bytes failing `svg_is_renderable` → note, cell stays empty. Raster `content_type` falls back from the format's `format` field via `_FORMAT_MIME`.
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+def _mini_svg(fill: str = "#111111") -> bytes:
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40" '
+        f'viewBox="0 0 120 40"><rect width="120" height="40" fill="{fill}"/></svg>'
+    ).encode()
+
+
+def test_map_vendor_assets_inverts_theme_and_skips_icon_and_photographic():
+    from lumen_ingestion.logo_vendor import map_vendor_assets_to_cells, parse_brand_payload
+
+    fetched = {
+        "https://asset.brandfetch.io/a/lockup-dark.svg": (_mini_svg("#101820"), "image/svg+xml"),
+        "https://asset.brandfetch.io/a/symbol-light.png": (b"\x89PNGfakebytes", "image/png"),
+    }
+    cells, notes = map_vendor_assets_to_cells(
+        parse_brand_payload(BRAND_PAYLOAD), download=lambda url: fetched.get(url)
+    )
+    # vendor theme=dark logo -> OUR light_lockup; vendor theme=light symbol -> OUR dark_mark
+    assert set(cells) == {"light_lockup", "dark_mark"}
+    assert cells["light_lockup"].source == "brandfetch"
+    assert cells["light_lockup"].content_type == "image/svg+xml"
+    assert cells["dark_mark"].origin_url.endswith("symbol-light.png")
+    # icon and photographic never became cells; photographic skip is said out loud
+    assert any("photographic" in n for n in notes)
+
+
+def test_map_vendor_assets_null_theme_is_classified_from_the_bytes():
+    from lumen_ingestion.logo_vendor import VendorAsset, map_vendor_assets_to_cells
+
+    dark_ink = VendorAsset(theme=None, type="logo", tags=[], formats=[
+        {"src": "u1", "format": "svg", "width": 120, "height": 40, "size": 1,
+         "background": "transparent"},
+    ])
+    cells, _ = map_vendor_assets_to_cells(
+        [dark_ink], download=lambda url: (_mini_svg("#101820"), "image/svg+xml")
+    )
+    # near-black ink -> light_variant verdict -> made for LIGHT backgrounds
+    assert list(cells) == ["light_lockup"]
+    assert "classified" in cells["light_lockup"].evidence.get("theme_basis", "")
+
+
+def test_map_vendor_assets_refuses_unrenderable_svg_and_failed_downloads():
+    from lumen_ingestion.logo_vendor import VendorAsset, map_vendor_assets_to_cells
+
+    sprite = b'<svg xmlns="http://www.w3.org/2000/svg"><use href="s.svg#x"/></svg>'
+    assets = [
+        VendorAsset(theme="dark", type="logo", tags=[], formats=[
+            {"src": "sprite", "format": "svg", "width": 0, "height": 0, "size": 1,
+             "background": None}]),
+        VendorAsset(theme="dark", type="symbol", tags=[], formats=[
+            {"src": "gone", "format": "png", "width": 300, "height": 300, "size": 1,
+             "background": None}]),
+    ]
+    fetched = {"sprite": (sprite, "image/svg+xml"), "gone": None}
+    cells, notes = map_vendor_assets_to_cells(
+        assets, download=lambda url: fetched.get(url)
+    )
+    assert cells == {}
+    assert any("cannot paint" in n or "renderable" in n for n in notes)
+    assert any("download failed" in n for n in notes)
+
+
+def test_map_vendor_assets_first_asset_wins_per_cell():
+    from lumen_ingestion.logo_vendor import VendorAsset, map_vendor_assets_to_cells
+
+    first = VendorAsset(theme="dark", type="logo", tags=[], formats=[
+        {"src": "one", "format": "svg", "width": 120, "height": 40, "size": 1,
+         "background": None}])
+    second = VendorAsset(theme="dark", type="logo", tags=[], formats=[
+        {"src": "two", "format": "svg", "width": 120, "height": 40, "size": 1,
+         "background": None}])
+    cells, _ = map_vendor_assets_to_cells(
+        [first, second], download=lambda url: (_mini_svg(), "image/svg+xml")
+    )
+    assert cells["light_lockup"].origin_url == "one"
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Expected: FAIL — `ImportError: cannot import name 'map_vendor_assets_to_cells'`.
+
+- [ ] **Step 3: Implement `map_vendor_assets_to_cells`**
+
+Append to `logo_vendor.py`:
+
+```python
+def _classify_null_theme(body: bytes, fmt: str) -> tuple[str, str]:
+    """Our theme for a vendor asset that carries none, read off the bytes with
+    the ladder's own appearance analyzer (one classifier, no drift).
+    Returns (our_theme, basis)."""
+    from .logo_ladder import LadderCandidate, analyze_appearance
+
+    probe = LadderCandidate(url="", fmt=fmt, body=body)
+    verdict = analyze_appearance(probe).get("verdict")
+    if verdict == "dark_variant":  # light/white ink -> made for dark surfaces
+        return "dark", "classified from bytes: light ink (dark_variant)"
+    if verdict == "light_variant":
+        return "light", "classified from bytes: dark ink (light_variant)"
+    if verdict == "adaptive":
+        return "light", "classified from bytes: adaptive (one file, filed under light)"
+    return "light", "classified from bytes: no verdict; vendor-attributed, filed light"
+
+
+def map_vendor_assets_to_cells(assets, download):
+    """Vendor assets -> 2x2 cells. Filters (icon/other/photographic), inverts
+    theme, classifies theme=None from the bytes, gates SVGs on renderability.
+    First asset wins per cell. Returns (cells, notes)."""
+    from .logo_family import SOURCE_BRANDFETCH, FamilyCell, cell_name
+    from .logo_ladder import svg_is_renderable
+
+    cells: dict[str, FamilyCell] = {}
+    notes: list[str] = []
+    for asset in assets:
+        completeness = _COMPLETENESS_FOR_VENDOR_TYPE.get(asset.type)
+        if completeness is None:
+            continue  # icon/other: ruled out, silently -- they are not skips gone wrong
+        if "photographic" in asset.tags:
+            notes.append(f"vendor {asset.type} skipped: tagged photographic")
+            continue
+        chosen = pick_format(asset)
+        if chosen is None:
+            notes.append(f"vendor {asset.type} skipped: no downloadable format")
+            continue
+
+        our_theme = _OUR_THEME_FOR_VENDOR_THEME.get(asset.theme or "")
+        theme_basis = f"vendor theme={asset.theme!r} (inverted to ours)"
+        # theme=None needs the bytes to classify, so only pre-check occupancy
+        # when the theme is already known.
+        if our_theme is not None and cell_name(our_theme, completeness) in cells:
+            notes.append(f"vendor {asset.type} ({asset.theme}) skipped: cell already filled")
+            continue
+
+        fetched = download(str(chosen.get("src")))
+        if fetched is None:
+            notes.append(f"vendor {asset.type} download failed: {chosen.get('src')}")
+            continue
+        body, content_type = fetched
+        fmt = str(chosen.get("format") or "")
+        if our_theme is None:
+            our_theme, theme_basis = _classify_null_theme(body, fmt)
+
+        name = cell_name(our_theme, completeness)
+        if name in cells:
+            notes.append(f"vendor {asset.type} skipped: cell {name} already filled")
+            continue
+        if fmt == "svg" and not svg_is_renderable(body):
+            notes.append(
+                f"vendor {asset.type} refused: SVG cannot paint standalone "
+                f"(no intrinsic geometry or no drawable artwork, not renderable)"
+            )
+            continue
+        cells[name] = FamilyCell(
+            cell=name,
+            body=body,
+            content_type=content_type or _FORMAT_MIME.get(fmt, "image/png"),
+            source=SOURCE_BRANDFETCH,
+            origin_url=str(chosen.get("src")),
+            evidence={
+                "vendor": VENDOR_NAME,
+                "vendor_theme": asset.theme,
+                "vendor_type": asset.type,
+                "theme_basis": theme_basis,
+                "format": fmt,
+                "width": chosen.get("width"),
+                "height": chosen.get("height"),
+            },
+        )
+    return cells, notes
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Expected: all PASS. If `_classify_null_theme` misbehaves, check that `LadderCandidate(url="", fmt="svg", body=...)` satisfies `analyze_appearance` (it reads only `fmt` and `body` for SVGs — see `logo_ladder.py:1377-1412`).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py subsystems/clue-design/apps/api/tests/test_logo_vendor.py
+git commit -m "feat(logo): vendor asset -> 2x2 cell mapping
+
+Theme inversion (their dark = our light) pinned by test; icon/other/photographic
+filtered; theme=null classified from bytes via the ladder's analyzer;
+svg_is_renderable gates vendor SVGs; first asset wins per cell."
+```
+
+---
+
+### Task 4: Vendor network driver (`fetch_vendor_family`)
+
+**Files:**
+- Modify: `subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py`
+- Test: `subsystems/clue-design/apps/api/tests/test_logo_vendor.py` (extend)
+
+**Interfaces:**
+- Consumes: Task 1 settings; Task 2/3 parsing + mapping; `logo_ladder.registrable_domain` (host folding).
+- Produces: `logo_vendor.fetch_vendor_family(domain: str, *, api_key: str | None = None, base_url: str | None = None, timeout_s: float | None = None, client: httpx.Client | None = None) -> tuple[dict[str, FamilyCell], list[str]]`.
+  - Raises `VendorCredentialsMissing` when the effective key is blank.
+  - Raises `VendorLookupFailed(code="quota")` on 429, `("timeout")` on `httpx.TimeoutException`, `("http")` on other non-200/404, `("malformed")` on unparseable JSON.
+  - 404 → `({}, ["brandfetch has no record of <domain> — an answer, not an error"])`.
+  - **Sync httpx**, not async: the callers (`fetch_logo` tools) are synchronous, and the existing prep layer already wraps the ladder's async driver with `asyncio.run` — the vendor rung stays simpler by being sync end-to-end. Asset downloads go through the same `httpx.Client` with the configured timeout and a 15 MB size cap read via `resp.headers.get("content-length")` check + len guard (mirroring `capture.net`'s cap value; the Brand API srcs are Brandfetch's own asset CDN, not attacker-controlled pages, so the full SSRF re-guard machinery is not pulled in here — the domain never varies).
+
+- [ ] **Step 1: Write the failing tests** (httpx.MockTransport — no live network in CI)
+
+```python
+def _vendor_transport(handler):
+    import httpx
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_fetch_vendor_family_happy_path_builds_cells():
+    import httpx
+
+    from lumen_ingestion.logo_vendor import fetch_vendor_family
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v2/brands/domain/acme.com":
+            assert request.headers["Authorization"] == "Bearer bf_test_key"
+            return httpx.Response(200, json=BRAND_PAYLOAD)
+        if request.url.path.endswith("lockup-dark.svg"):
+            return httpx.Response(200, content=_mini_svg("#101820"),
+                                  headers={"content-type": "image/svg+xml"})
+        if request.url.path.endswith("symbol-light.png"):
+            return httpx.Response(200, content=b"\x89PNGfake",
+                                  headers={"content-type": "image/png"})
+        return httpx.Response(404)
+
+    with _vendor_transport(handler) as client:
+        cells, notes = fetch_vendor_family(
+            "https://www.acme.com/pricing", api_key="bf_test_key", client=client
+        )
+    assert set(cells) == {"light_lockup", "dark_mark"}
+
+
+def test_fetch_vendor_family_404_is_an_answer_and_429_is_typed():
+    import httpx
+    import pytest as _pytest
+
+    from lumen_ingestion.logo_vendor import VendorLookupFailed, fetch_vendor_family
+
+    with _vendor_transport(lambda r: httpx.Response(404)) as client:
+        cells, notes = fetch_vendor_family("acme.com", api_key="k", client=client)
+    assert cells == {} and any("no record" in n for n in notes)
+
+    with _vendor_transport(lambda r: httpx.Response(429)) as client:
+        with _pytest.raises(VendorLookupFailed) as err:
+            fetch_vendor_family("acme.com", api_key="k", client=client)
+    assert err.value.code == "quota"
+
+
+def test_fetch_vendor_family_blank_key_raises_credentials_missing():
+    import pytest as _pytest
+
+    from lumen_ingestion.logo_vendor import VendorCredentialsMissing, fetch_vendor_family
+
+    with _pytest.raises(VendorCredentialsMissing):
+        fetch_vendor_family("acme.com", api_key="")
+```
+
+- [ ] **Step 2: Run tests to verify they fail** — `ImportError: fetch_vendor_family`.
+
+- [ ] **Step 3: Implement**
+
+Append to `logo_vendor.py`:
+
+```python
+#: the Brand API path; the base-url normalizer strips it if the operator's
+#: BRANDFETCH_API_BASE_URL already carries it (the PDL _normalize_base_url lesson).
+BRAND_PATH_PREFIX = "/v2/brands/domain/"
+_MAX_ASSET_BYTES = 15 * 1024 * 1024  # mirrors capture.net's logo cap
+
+
+def _bare_domain(value: str) -> str:
+    from urllib.parse import urlsplit
+
+    text = (value or "").strip()
+    if not text:
+        return ""
+    candidate = text if "//" in text else f"//{text}"
+    host = (urlsplit(candidate).hostname or text).strip().lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def fetch_vendor_family(domain, *, api_key=None, base_url=None, timeout_s=None, client=None):
+    """One Brand API lookup + asset downloads -> (cells, notes). The one impure
+    entry point of this module. See the module docstring for the contract."""
+    import httpx
+    from py_lumen_config import settings
+
+    key = (api_key if api_key is not None else settings.brandfetch_api_key).strip()
+    if not key:
+        raise VendorCredentialsMissing()
+    base = (base_url if base_url is not None else settings.brandfetch_api_base_url)
+    base = base.strip().rstrip("/")
+    if base.lower().endswith(BRAND_PATH_PREFIX.rstrip("/")):
+        base = base[: -len(BRAND_PATH_PREFIX.rstrip("/"))].rstrip("/")
+    timeout = timeout_s if timeout_s is not None else settings.brandfetch_timeout_s
+    host = _bare_domain(domain)
+    if not host:
+        raise VendorLookupFailed("http", f"could not read a host out of {domain!r}")
+
+    def run(http: "httpx.Client"):
+        try:
+            resp = http.get(
+                f"{base}{BRAND_PATH_PREFIX}{host}",
+                headers={"Authorization": f"Bearer {key}", "Accept": "application/json"},
+                timeout=timeout,
+            )
+        except httpx.TimeoutException as error:
+            raise VendorLookupFailed("timeout", f"brand lookup timed out: {error}") from error
+        except httpx.HTTPError as error:
+            raise VendorLookupFailed("http", f"brand lookup failed: {error}") from error
+        if resp.status_code == 404:
+            return {}, [f"brandfetch has no record of {host} — an answer, not an error"]
+        if resp.status_code == 429:
+            raise VendorLookupFailed(
+                "quota", "brandfetch quota or throughput limit reached (HTTP 429)"
+            )
+        if resp.status_code != 200:
+            raise VendorLookupFailed("http", f"brand lookup returned HTTP {resp.status_code}")
+        try:
+            payload = resp.json()
+        except ValueError as error:
+            raise VendorLookupFailed("malformed", "brand response was not JSON") from error
+
+        def download(src: str):
+            try:
+                got = http.get(src, timeout=timeout)
+            except httpx.HTTPError:
+                return None
+            if got.status_code != 200 or not got.content:
+                return None
+            if len(got.content) > _MAX_ASSET_BYTES:
+                return None
+            return got.content, got.headers.get("content-type")
+
+        return map_vendor_assets_to_cells(parse_brand_payload(payload), download)
+
+    if client is not None:
+        return run(client)
+    with httpx.Client() as owned:
+        return run(owned)
+```
+
+- [ ] **Step 4: Run tests to verify they pass.** Then run the whole file once more:
+`PYTHONPATH=.:apps/api:apps/agent_runtime <repo-root>/.venv/bin/python -m pytest apps/api/tests/test_logo_vendor.py -v` — all green.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py subsystems/clue-design/apps/api/tests/test_logo_vendor.py
+git commit -m "feat(logo): Brandfetch network driver — sync httpx, typed degrades
+
+404 = typed absence; 429 = quota degrade; timeout/http/malformed typed;
+15MB asset cap; base-url tolerant of the full path (PDL lesson)."
+```
+
+---
+
+### Task 5: Ladder slots → 2×2 cells (`ladder_cells`)
+
+**Files:**
+- Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/logo_fetch.py`
+- Test: `subsystems/clue-design/apps/agent_runtime/tests/test_fetch_logo_tool.py` (extend)
+
+**Interfaces:**
+- Consumes: `logo_ladder.LadderResolution` (slots dict: `light`/`dark`/`mark`/`wordmark` → `LadderSlot | None`; each `LadderSlot` has `.candidate` (with `.lockup` ∈ `symbol|wordmark|full_lockup|unknown`, `.variant` ∈ `light|dark|adaptive|unknown`, `.url`), `.provenance` (`"genuine" | "materialized-adaptive"`), `.body`, `.content_type`, `.basis`, `.ink`); `logo_family.FamilyCell`.
+- Produces: `logo_fetch.ladder_cells(resolution: LadderResolution) -> dict[str, FamilyCell]` — mapping rules:
+  - ladder `light` slot → `light_lockup` when `candidate.lockup in ("full_lockup", "wordmark", "unknown")`, else `light_mark` (a symbol-shaped primary is a mark).
+  - ladder `dark` slot → same rule on the `dark_*` side.
+  - ladder `mark` slot → `dark_mark` when `candidate.variant == "dark"`, else `light_mark` — only if that cell is still empty.
+  - ladder `wordmark` slot → `light_lockup` only if still empty (the ladder already refuses dark-variant wordmarks).
+  - `source` = `"ladder-materialized"` when `slot.provenance == "materialized-adaptive"`, else `"ladder"`.
+  - evidence carries the slot's `basis`, `rung`, ladder slot name, and `ink` when present.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `test_fetch_logo_tool.py` (it already imports `logo_fetch`; build synthetic resolutions with the real ladder dataclasses):
+
+```python
+def _slot(body: bytes, *, lockup: str, variant: str, provenance: str = "genuine",
+          url: str = "https://acme.com/logo.svg", rung: str = "HEADER"):
+    from lumen_ingestion.logo_ladder import LadderCandidate, LadderSlot
+
+    candidate = LadderCandidate(url=url, rung=rung, fmt="svg")
+    candidate.lockup = lockup
+    candidate.variant = variant
+    return LadderSlot(candidate=candidate, provenance=provenance, body=body,
+                      content_type="image/svg+xml", basis="test basis")
+
+
+def _resolution(slots):
+    from lumen_ingestion.logo_ladder import LadderResolution
+
+    res = LadderResolution(status="resolved", identity={"passed": True})
+    res.slots = {"light": None, "dark": None, "mark": None, "wordmark": None, **slots}
+    return res
+
+
+def test_ladder_cells_maps_lockup_primaries_and_variant_marks():
+    from lumen_agent.tools.logo_fetch import ladder_cells
+
+    cells = ladder_cells(_resolution({
+        "light": _slot(_svg(), lockup="full_lockup", variant="light"),
+        "dark": _slot(_svg("#ffffff"), lockup="full_lockup", variant="dark"),
+        "mark": _slot(_svg(), lockup="symbol", variant="unknown"),
+    }))
+    assert set(cells) == {"light_lockup", "dark_lockup", "light_mark"}
+    assert cells["light_lockup"].source == "ladder"
+
+
+def test_ladder_cells_symbol_primary_lands_in_the_mark_cell():
+    from lumen_agent.tools.logo_fetch import ladder_cells
+
+    cells = ladder_cells(_resolution({
+        "light": _slot(_svg(), lockup="symbol", variant="light"),
+    }))
+    assert list(cells) == ["light_mark"]
+
+
+def test_ladder_cells_wordmark_backfills_light_lockup_and_materialized_is_stamped():
+    from lumen_agent.tools.logo_fetch import ladder_cells
+
+    cells = ladder_cells(_resolution({
+        "wordmark": _slot(_svg(), lockup="wordmark", variant="light"),
+        "dark": _slot(_svg("#ffffff"), lockup="full_lockup", variant="adaptive",
+                      provenance="materialized-adaptive"),
+    }))
+    assert cells["light_lockup"].evidence["ladder_slot"] == "wordmark"
+    assert cells["dark_lockup"].source == "ladder-materialized"
+```
+
+- [ ] **Step 2: Run to verify FAIL** (`ImportError: ladder_cells`):
+`PYTHONPATH=.:apps/api:apps/agent_runtime <repo-root>/.venv/bin/python -m pytest apps/agent_runtime/tests/test_fetch_logo_tool.py -v -k ladder_cells`
+
+- [ ] **Step 3: Implement `ladder_cells` in `logo_fetch.py`**
+
+```python
+def ladder_cells(resolution) -> dict:
+    """The ladder's four slots folded into the 2x2. The ladder's `light`/`dark`
+    are theme-correct already (its slot names use OUR background semantics);
+    what this adds is the completeness split: a symbol-shaped primary is a
+    MARK, not a lockup, and the wordmark slot backfills the light lockup."""
+    from lumen_ingestion.logo_family import (
+        SOURCE_LADDER,
+        SOURCE_LADDER_MATERIALIZED,
+        FamilyCell,
+    )
+
+    def to_cell(name: str, slot, ladder_slot: str) -> FamilyCell:
+        return FamilyCell(
+            cell=name,
+            body=slot.body,
+            content_type=slot.content_type,
+            source=(
+                SOURCE_LADDER_MATERIALIZED
+                if slot.provenance == "materialized-adaptive"
+                else SOURCE_LADDER
+            ),
+            origin_url=slot.candidate.url,
+            evidence={
+                "ladder_slot": ladder_slot,
+                "rung": slot.candidate.rung,
+                "basis": slot.basis[:200],
+                "lockup": slot.candidate.lockup,
+                **({"materialized_ink": slot.ink} if slot.ink else {}),
+            },
+        )
+
+    cells: dict = {}
+    for theme in ("light", "dark"):
+        slot = resolution.slots.get(theme)
+        if slot is None or not slot.body:
+            continue
+        completeness = "mark" if slot.candidate.lockup == "symbol" else "lockup"
+        cells[f"{theme}_{completeness}"] = to_cell(f"{theme}_{completeness}", slot, theme)
+
+    mark = resolution.slots.get("mark")
+    if mark is not None and mark.body:
+        name = "dark_mark" if mark.candidate.variant == "dark" else "light_mark"
+        if name not in cells:
+            cells[name] = to_cell(name, mark, "mark")
+
+    wordmark = resolution.slots.get("wordmark")
+    if wordmark is not None and wordmark.body and "light_lockup" not in cells:
+        cells["light_lockup"] = to_cell("light_lockup", wordmark, "wordmark")
+    return cells
+```
+
+- [ ] **Step 4: Run to verify PASS** (same command, `-k ladder_cells`).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/logo_fetch.py subsystems/clue-design/apps/agent_runtime/tests/test_fetch_logo_tool.py
+git commit -m "feat(logo): ladder slots -> 2x2 cells
+
+Symbol-shaped primaries land in mark cells; wordmark backfills light_lockup;
+materialized-adaptive provenance survives as its own source label."
+```
+
+---
+
+### Task 6: The two-rung dispatch (rewrite `logo_fetch.fetch_logo_family`)
+
+**Files:**
+- Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/logo_fetch.py` (the `fetch_logo_family`, `_prepare`, `LogoFetchOutcome`, `PreparedLogo`, `review_payload` block)
+- Test: `subsystems/clue-design/apps/agent_runtime/tests/test_fetch_logo_tool.py` (extend; existing tests in this file that assert slot names will be updated in Task 10 together with the tool payloads — mark them `xfail(strict=True, reason="cells payload lands in task 10")` ONLY if they break here, and remove the marks in Task 10)
+
+**Interfaces:**
+- Consumes: `fetch_vendor_family`, `VendorCredentialsMissing`, `VendorLookupFailed` (Task 4); `ladder_cells` (Task 5); the existing ladder driver `logo_ladder.fetch_logo_family` (async, wrapped in `asyncio.run` as today); `logo_family.CELL_NAMES`.
+- Produces the NEW prep contract both lane tools consume in Task 10:
+  - `PreparedLogo` gains `cell: str` and `source: str`; `slot` is REMOVED (grep confirms the only consumers are the two substrate tools and tests — all updated in this plan). `provenance["created_by"]` becomes `"logo_ladder"` or `"brandfetch"` per cell source (`"ladder-materialized"` stamps `"logo_ladder"` — it is the ladder's mechanism).
+  - `LogoFetchOutcome` gains `cells: dict[str, str]` (cell → source, for the payload), `vendor_notes: list[str]`, `cache_hit: bool = False`; keeps `status`/`site`/`company`/`prepared`/`identity`/`lockup_completeness`/`notes`/`candidates`.
+  - `fetch_logo_family(url_or_domain: str, *, company_name: str | None = None, force_refresh: bool = False, cache=None) -> LogoFetchOutcome`. `cache` is any object with `get(site: str) -> LogoFetchOutcome | None` and `put(site: str, outcome: LogoFetchOutcome) -> None` (duck-typed; Task 7 builds the durable one; `None` = no caching, today's behavior).
+  - Dispatch order: cache (unless `force_refresh`) → vendor → ladder for empty cells only → assemble. Ladder is NOT run when all four cells are vendor-filled. Ladder identity failure with zero vendor cells → `needs_review` exactly as today. Vendor cells survive even when the ladder's backfill run comes back `needs_review` (the vendor already answered identity for its own cells — keyed retrieval).
+  - `review_payload` unchanged in shape but its `reason` mentions the vendor when the vendor was tried (`vendor_notes` threaded in).
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+class _RecordingCache:
+    def __init__(self):
+        self.stored = {}
+        self.gets = []
+
+    def get(self, site):
+        self.gets.append(site)
+        return self.stored.get(site)
+
+    def put(self, site, outcome):
+        self.stored[site] = outcome
+
+
+def _vendor_cells(*names):
+    from lumen_ingestion.logo_family import SOURCE_BRANDFETCH, FamilyCell
+
+    return {
+        n: FamilyCell(cell=n, body=_svg(), content_type="image/svg+xml",
+                      source=SOURCE_BRANDFETCH, origin_url=f"https://a/{n}.svg")
+        for n in names
+    }
+
+
+def test_dispatch_vendor_full_family_skips_the_ladder(monkeypatch):
+    from lumen_agent.tools import logo_fetch
+
+    monkeypatch.setattr(
+        logo_fetch, "_vendor_rung",
+        lambda site, company: (_vendor_cells(*logo_fetch.CELL_NAMES), []),
+    )
+
+    def explode(*a, **k):
+        raise AssertionError("ladder must not run when the vendor filled all cells")
+
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", explode)
+    outcome = logo_fetch.fetch_logo_family("acme.com")
+    assert outcome.status == "ok"
+    assert set(outcome.cells) == set(logo_fetch.CELL_NAMES)
+    assert all(source == "brandfetch" for source in outcome.cells.values())
+    assert {p.cell for p in outcome.prepared} == set(logo_fetch.CELL_NAMES)
+    assert all(p.provenance["created_by"] == "brandfetch" for p in outcome.prepared)
+
+
+def test_dispatch_partial_vendor_gets_ladder_backfill_only_for_empty_cells(monkeypatch):
+    from lumen_agent.tools import logo_fetch
+
+    monkeypatch.setattr(
+        logo_fetch, "_vendor_rung", lambda site, company: (_vendor_cells("light_lockup"), [])
+    )
+    ladder = _resolution({
+        "light": _slot(_svg(), lockup="full_lockup", variant="light"),   # must NOT win
+        "dark": _slot(_svg("#fff"), lockup="full_lockup", variant="dark"),
+        "mark": _slot(_svg(), lockup="symbol", variant="unknown"),
+    })
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: ladder)
+    outcome = logo_fetch.fetch_logo_family("acme.com")
+    assert outcome.cells["light_lockup"] == "brandfetch"   # vendor kept
+    assert outcome.cells["dark_lockup"] == "ladder"
+    assert outcome.cells["light_mark"] == "ladder"
+
+
+def test_dispatch_vendor_disabled_or_failing_degrades_to_ladder(monkeypatch):
+    from lumen_agent.tools import logo_fetch
+    from lumen_ingestion.logo_vendor import VendorCredentialsMissing, VendorLookupFailed
+
+    ladder = _resolution({"light": _slot(_svg(), lockup="full_lockup", variant="light")})
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: ladder)
+
+    def no_key(site, company):
+        raise VendorCredentialsMissing()
+
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", no_key)
+    outcome = logo_fetch.fetch_logo_family("acme.com")
+    assert outcome.cells == {"light_lockup": "ladder"}
+    assert any("vendor rung disabled" in n for n in outcome.notes)
+
+    def quota(site, company):
+        raise VendorLookupFailed("quota", "429")
+
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", quota)
+    outcome = logo_fetch.fetch_logo_family("acme.com")
+    assert outcome.cells == {"light_lockup": "ladder"}
+    assert any("quota" in n for n in outcome.notes)
+
+
+def test_dispatch_nothing_anywhere_is_fail_closed_needs_review(monkeypatch):
+    from lumen_agent.tools import logo_fetch
+    from lumen_ingestion.logo_ladder import LadderResolution
+
+    empty = LadderResolution(status="needs_review",
+                             identity={"passed": False, "reason": "no overlap"})
+    empty.slots = {"light": None, "dark": None, "mark": None, "wordmark": None}
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", lambda site, company: ({}, ["no record"]))
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: empty)
+    outcome = logo_fetch.fetch_logo_family("acme.com")
+    assert outcome.needs_review and outcome.prepared == []
+
+
+def test_dispatch_cache_hit_skips_both_rungs_and_force_refresh_overwrites(monkeypatch):
+    from lumen_agent.tools import logo_fetch
+
+    cache = _RecordingCache()
+    monkeypatch.setattr(
+        logo_fetch, "_vendor_rung",
+        lambda site, company: (_vendor_cells(*logo_fetch.CELL_NAMES), []),
+    )
+    monkeypatch.setattr(logo_fetch, "_ladder_rung",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no ladder")))
+    first = logo_fetch.fetch_logo_family("acme.com", cache=cache)
+    assert first.cache_hit is False and "https://acme.com/" in cache.stored
+
+    def explode(site, company):
+        raise AssertionError("vendor must not be called on a cache hit")
+
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", explode)
+    second = logo_fetch.fetch_logo_family("acme.com", cache=cache)
+    assert second.cache_hit is True and set(second.cells) == set(logo_fetch.CELL_NAMES)
+
+    # force_refresh bypasses the read and overwrites the entry
+    monkeypatch.setattr(
+        logo_fetch, "_vendor_rung",
+        lambda site, company: (_vendor_cells("light_lockup"), []),
+    )
+    ladder = _resolution({})
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: ladder)
+    third = logo_fetch.fetch_logo_family("acme.com", cache=cache, force_refresh=True)
+    assert third.cache_hit is False and list(third.cells) == ["light_lockup"]
+```
+
+- [ ] **Step 2: Run to verify FAIL**
+`... -m pytest apps/agent_runtime/tests/test_fetch_logo_tool.py -v -k dispatch`
+Expected: FAIL — `AttributeError: module ... has no attribute '_vendor_rung'`.
+
+- [ ] **Step 3: Rewrite the prep layer**
+
+In `logo_fetch.py`: keep `LOGO_TAGS`; replace `SLOT_NAMES` with a re-export `from lumen_ingestion.logo_family import CELL_NAMES` (delete `SLOT_NAMES` — Task 10 updates the two tool call sites; nothing else imports it, verify with `grep -rn "SLOT_NAMES" subsystems/clue-design --include='*.py'`).
+
+```python
+@dataclass
+class PreparedLogo:
+    """One resolved cell, shaped for `core.ingest_asset`."""
+
+    cell: str
+    source: str  # "brandfetch" | "ladder" | "ladder-materialized"
+    asset_id: str
+    label: str
+    body: bytes
+    content_type: str
+    provenance: JsonObject
+    source_ref: JsonObject   # the ingest `source` kwarg (renamed field, same payload)
+    evidence: JsonObject
+
+    def ingest_kwargs(self, store_root: str) -> JsonObject:
+        import base64
+
+        return {
+            "store_root": store_root,
+            "bytes_base64": base64.b64encode(self.body).decode("ascii"),
+            "asset_id": self.asset_id,
+            "label": self.label,
+            "declared_mime_type": self.content_type,
+            "kind": "vector" if self.content_type == "image/svg+xml" else "raster_image",
+            "provenance": self.provenance,
+            "source": self.source_ref,
+            "tags": list(LOGO_TAGS),
+            "raise_on_error": False,
+        }
+
+
+@dataclass
+class LogoFetchOutcome:
+    status: str
+    site: str
+    company: Optional[str]
+    prepared: List[PreparedLogo] = field(default_factory=list)
+    cells: Dict[str, str] = field(default_factory=dict)  # cell -> source
+    identity: JsonObject = field(default_factory=dict)
+    lockup_completeness: str = "unknown"
+    notes: List[str] = field(default_factory=list)
+    vendor_notes: List[str] = field(default_factory=list)
+    candidates: List[JsonObject] = field(default_factory=list)
+    cache_hit: bool = False
+
+    @property
+    def needs_review(self) -> bool:
+        return not self.prepared
+
+
+def _vendor_rung(site: str, company_name: Optional[str]):
+    """Module-level indirection so tests (and future vendors) swap it whole."""
+    from lumen_ingestion.logo_vendor import fetch_vendor_family
+
+    return fetch_vendor_family(site)
+
+
+def _ladder_rung(site: str, company_name: Optional[str]):
+    from lumen_ingestion import logo_ladder
+
+    return asyncio.run(logo_ladder.fetch_logo_family(site, company_name=company_name))
+
+
+def fetch_logo_family(
+    url_or_domain: str,
+    *,
+    company_name: Optional[str] = None,
+    force_refresh: bool = False,
+    cache=None,
+) -> LogoFetchOutcome:
+    """Two-rung dispatch: cache -> Brandfetch -> ladder (per-cell backfill).
+
+    Raises `CaptureError` only from the ladder rung (blocked/unreachable site);
+    every vendor failure is a typed degrade recorded in the outcome notes.
+    """
+    from lumen_ingestion import logo_ladder
+    from lumen_ingestion.logo_vendor import VendorCredentialsMissing, VendorLookupFailed
+
+    site = logo_ladder.normalize_site_url(url_or_domain)
+
+    if cache is not None and not force_refresh:
+        hit = cache.get(site)
+        if hit is not None:
+            hit.cache_hit = True
+            return hit
+
+    cells: dict = {}
+    notes: List[str] = []
+    vendor_notes: List[str] = []
+    try:
+        cells, vendor_notes = _vendor_rung(site, company_name)
+    except VendorCredentialsMissing:
+        notes.append("vendor rung disabled: no BRANDFETCH_API_KEY configured")
+    except VendorLookupFailed as error:
+        notes.append(f"vendor rung degraded ({error.code}): {error.message}")
+
+    resolution = None
+    missing = [name for name in CELL_NAMES if name not in cells]
+    if missing:
+        resolution = _ladder_rung(site, company_name)
+        for name, cell in ladder_cells(resolution).items():
+            if name in missing:
+                cells[name] = cell
+
+    outcome = _assemble(cells, resolution, site, company_name, notes, vendor_notes)
+    if cache is not None and outcome.prepared:
+        cache.put(site, outcome)
+    return outcome
+```
+
+And `_assemble` (replaces `_prepare`; same hashing/labeling logic, now per cell):
+
+```python
+def _assemble(cells, resolution, site, company_name, notes, vendor_notes) -> LogoFetchOutcome:
+    from lumen_ingestion import logo_ladder
+    from lumen_ingestion.logo_family import CELL_NAMES as _CELLS
+
+    host = logo_ladder.host_of(site)
+    label_base = company_name or logo_ladder.registrable_domain(host) or host
+
+    prepared: List[PreparedLogo] = []
+    for name in _CELLS:
+        cell = cells.get(name)
+        if cell is None or not cell.body:
+            continue
+        import hashlib
+
+        digest = hashlib.sha256(cell.body).hexdigest()
+        created_by = "brandfetch" if cell.source == "brandfetch" else "logo_ladder"
+        prepared.append(
+            PreparedLogo(
+                cell=name,
+                source=cell.source,
+                asset_id=f"asset_ing_{digest[:16]}",
+                label=f"{label_base} logo ({name})",
+                body=cell.body,
+                content_type=cell.content_type,
+                provenance={
+                    "created_by": created_by,
+                    "source_label": "brandfetch" if created_by == "brandfetch" else "website",
+                    "confidence": (resolution.confidence if resolution else 0.9),
+                },
+                source_ref={
+                    "kind": "vendor" if created_by == "brandfetch" else "website",
+                    "url": cell.origin_url,
+                    "captured_at": _now(),
+                },
+                evidence={"cell": name, "source": cell.source, **cell.evidence},
+            )
+        )
+
+    all_notes = list(notes)
+    if resolution is not None:
+        all_notes.extend(resolution.notes)
+    if not prepared:
+        all_notes.append(
+            "no cell cleared both rungs (the vendor had no attributable asset and "
+            "the ladder found nothing it could stand behind; a variant is never "
+            "synthesized), so nothing was ingested"
+        )
+
+    return LogoFetchOutcome(
+        status="ok" if prepared else "needs_review",
+        site=site,
+        company=company_name,
+        prepared=prepared,
+        cells={p.cell: p.source for p in prepared},
+        identity=(
+            {
+                "passed": resolution.identity.get("passed"),
+                "evidence": resolution.identity.get("evidence", [])[:3],
+                "reason": resolution.identity.get("reason"),
+            }
+            if resolution is not None
+            else {"passed": bool(prepared), "evidence": [], "reason": None}
+        ),
+        lockup_completeness=(resolution.lockup_completeness if resolution else "unknown"),
+        notes=all_notes,
+        vendor_notes=vendor_notes,
+        candidates=(
+            [c.summary() for c in resolution.ranked[:6]] if resolution is not None else []
+        ),
+    )
+```
+
+`review_payload` gets one line added — after `"notes": outcome.notes[:4],` insert `"vendor_notes": outcome.vendor_notes[:3],`.
+
+- [ ] **Step 4: Run the new tests** (`-k dispatch`) — PASS. Then run the whole file; the PRE-EXISTING tool tests (scene/web payload assertions on `slot`) will fail — that is expected and honest; fix them NOW as part of this task if they only touch `PreparedLogo.slot` renames, or mark each `@pytest.mark.xfail(strict=True, reason="cells payload lands in task 10")` when they assert the tool JSON payload shape (Task 10 removes every xfail; the plan's final gate re-runs the file and requires zero xfail marks left).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/logo_fetch.py subsystems/clue-design/apps/agent_runtime/tests/test_fetch_logo_tool.py
+git commit -m "feat(logo): two-rung dispatch — cache, Brandfetch, per-cell ladder backfill
+
+Vendor-full families skip the site scrape entirely; typed vendor degrades
+land in notes; nothing-anywhere stays fail-closed needs_review; cache is a
+duck-typed seam (durable impl lands with the migration)."
+```
+
+---
+
+### Task 7: The durable family cache (migration + `DurableLogoFamilyCache`)
+
+**Files:**
+- Create: `alembic/versions/<hash>_design_logo_family_cache.py` (id assigned by `alembic revision -m "design logo family cache"` from the repo ROOT; set `down_revision` to the current single head — run `alembic heads` first and confirm exactly one)
+- Create: `subsystems/clue-design/apps/api/lumen_api/agent_logo_family_cache.py`
+- Test: `subsystems/clue-design/apps/api/tests/test_logo_family_cache.py` (new)
+
+**Interfaces:**
+- Consumes: `DesignBlobStore` (`register(data, *, media_type, source_key) -> str`, `read(sha256) -> bytes`, `custody_states(digests) -> dict[str, CustodyState]`), `HybridRepository`-style bridged SQL (mirror how `agent_account_logos.py` builds its repository), `clue_design.storage.SOURCE_KEY_ASSET`, `logo_fetch.LogoFetchOutcome`/`PreparedLogo`.
+- Produces: `DurableLogoFamilyCache(blobs: DesignBlobStore)` with:
+  - `get(site: str) -> LogoFetchOutcome | None` — row lookup by `(workspace_id, registrable_domain(site))`; every cell digest custody-probed; **any** non-READABLE digest → the whole family is a miss (honest; the next dispatch refetches and re-puts); bytes read back and a fresh `LogoFetchOutcome` rebuilt (status `"ok"`, `cache_hit` set by the dispatch, prepared entries carrying the stored provenance/evidence verbatim).
+  - `put(site: str, outcome: LogoFetchOutcome) -> None` — `blobs.register(...)` per prepared cell (content-addressed upsert, so re-put converges), then UPSERT the row (`ON CONFLICT (workspace_id, registrable_domain) DO UPDATE` — force_refresh overwrite path). Only called with `outcome.prepared` non-empty (the dispatch guards; `put` also no-ops defensively on empty).
+  - Failure posture: a cache **read** error degrades to `None` + a logged warning (the fetch path must never die on cache trouble); a cache **write** error is logged and swallowed (the turn already has its family). Same reasoning as the advisory-not-authoritative rules elsewhere: the cache is an optimization, never a gate.
+
+**Migration** (hand-written, reversible, named constraints; mirror the column conventions of `design_account` in `alembic/versions/86a9ce389e6e_design_web_accounts_and_components_.py` — open it and copy its `workspace_id` column type and FK target verbatim):
+
+```python
+def upgrade() -> None:
+    op.create_table(
+        "design_logo_family",
+        sa.Column("workspace_id", <same type as design_account.workspace_id>, nullable=False),
+        sa.Column("registrable_domain", sa.Text(), nullable=False),
+        sa.Column("family", postgresql.JSONB(), nullable=False),
+        sa.Column("fetched_at", sa.TIMESTAMP(timezone=True), nullable=False,
+                  server_default=sa.text("now()")),
+        sa.Column("refreshed_at", sa.TIMESTAMP(timezone=True), nullable=True),
+        sa.PrimaryKeyConstraint("workspace_id", "registrable_domain",
+                                name="pk_design_logo_family"),
+        sa.ForeignKeyConstraint(["workspace_id"], [<same target as design_account>],
+                                name="fk_design_logo_family_workspace"),
+    )
+
+def downgrade() -> None:
+    op.drop_table("design_logo_family")
+```
+
+(`<same type/target as design_account>` is resolved by READING `86a9ce389e6e` in Step 1 — it is a lookup, not a decision. The `family` JSONB holds `{"site", "company", "lockup_completeness", "cells": {cell: {"sha256", "content_type", "source", "origin_url", "evidence", "provenance", "label", "asset_id"}}, "notes": [...]}` — everything `get` needs to rebuild the outcome without re-running either rung.)
+
+- [ ] **Step 1: Read `alembic/versions/86a9ce389e6e_design_web_accounts_and_components_.py`**, note `design_account.workspace_id`'s exact column type and FK target. Run `alembic heads` (must print ONE id; if two, STOP — an unmerged parallel branch exists, resolve per CLAUDE.md's migration conventions before continuing).
+
+- [ ] **Step 2: Generate the migration** — from repo root: `alembic revision -m "design logo family cache"`; fill in `upgrade()`/`downgrade()` as above with the values from Step 1.
+
+- [ ] **Step 3: Gate the migration** — `make db-smoke` (clean throwaway DB, up→down→up). Expected: green, one head.
+
+- [ ] **Step 4: Write the failing cache tests**
+
+Follow the DB-test fixture pattern of the nearest design API test that touches `DesignBlobStore` + repository (look at `apps/api/tests/test_web_account_logo_bind.py` — reuse its workspace/blob-store fixtures verbatim; they encode the bridged-transaction setup you must not reinvent):
+
+```python
+# subsystems/clue-design/apps/api/tests/test_logo_family_cache.py
+"""DurableLogoFamilyCache: workspace-scoped get/put, custody-probed reads,
+force-refresh overwrite convergence."""
+
+from __future__ import annotations
+
+
+def _outcome(site="https://acme.com/"):
+    from lumen_agent.tools.logo_fetch import LogoFetchOutcome, PreparedLogo
+
+    svg = (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" '
+        b'viewBox="0 0 10 10"><rect width="10" height="10" fill="#123"/></svg>'
+    )
+    prepared = PreparedLogo(
+        cell="light_lockup", source="brandfetch", asset_id="asset_ing_cafedeadbeef0000",
+        label="Acme logo (light_lockup)", body=svg, content_type="image/svg+xml",
+        provenance={"created_by": "brandfetch", "source_label": "brandfetch",
+                    "confidence": 0.9},
+        source_ref={"kind": "vendor", "url": "https://a/x.svg", "captured_at": "t"},
+        evidence={"cell": "light_lockup", "source": "brandfetch"},
+    )
+    return LogoFetchOutcome(status="ok", site=site, company="Acme",
+                            prepared=[prepared], cells={"light_lockup": "brandfetch"})
+
+
+def test_put_then_get_round_trips_the_family(design_blob_store):  # fixture per bind tests
+    from lumen_api.agent_logo_family_cache import DurableLogoFamilyCache
+
+    cache = DurableLogoFamilyCache(blobs=design_blob_store)
+    cache.put("https://acme.com/", _outcome())
+    got = cache.get("https://www.acme.com/pricing")  # registrable-domain keyed
+    assert got is not None
+    assert got.cells == {"light_lockup": "brandfetch"}
+    assert got.prepared[0].body.startswith(b"<svg")
+    assert got.prepared[0].provenance["created_by"] == "brandfetch"
+
+
+def test_get_unknown_domain_is_none_and_put_converges(design_blob_store):
+    from lumen_api.agent_logo_family_cache import DurableLogoFamilyCache
+
+    cache = DurableLogoFamilyCache(blobs=design_blob_store)
+    assert cache.get("https://nobody.example/") is None
+    cache.put("https://acme.com/", _outcome())
+    cache.put("https://acme.com/", _outcome())  # idempotent overwrite, no error
+    assert cache.get("https://acme.com/") is not None
+
+
+def test_workspace_isolation_is_fail_closed(design_blob_store, other_workspace_blob_store):
+    from lumen_api.agent_logo_family_cache import DurableLogoFamilyCache
+
+    DurableLogoFamilyCache(blobs=design_blob_store).put("https://acme.com/", _outcome())
+    foreign = DurableLogoFamilyCache(blobs=other_workspace_blob_store)
+    assert foreign.get("https://acme.com/") is None
+```
+
+(If `test_web_account_logo_bind.py` has no `other_workspace_blob_store`-style fixture, build one in this test file the same way it builds its primary fixture, with a second workspace id.)
+
+- [ ] **Step 5: Run to verify FAIL** — `ModuleNotFoundError: lumen_api.agent_logo_family_cache`.
+`PYTHONPATH=.:apps/api:apps/agent_runtime <repo-root>/.venv/bin/python -m pytest apps/api/tests/test_logo_family_cache.py -v`
+
+- [ ] **Step 6: Implement `agent_logo_family_cache.py`**
+
+```python
+"""The durable target-logo family cache (founder decision #4, 2026-08-31).
+
+Keyed `(workspace_id, registrable_domain)` -- domain, not account id, because
+the tool receives a domain and the agent may fetch for companies that are not
+accounts (founder ruling 2026-09-02). Workspace-scoped by construction: the
+blob store carries the tenant (the `agent_account_logos` rule) and the row
+lives under the same workspace, so a cross-tenant read is as unresolvable as
+an absent one.
+
+No TTL: the eviction affordance is `force_refresh` on the fetch tool. The
+cache is an OPTIMIZATION, never a gate -- every read error degrades to a miss
+and every write error is logged and swallowed; the fetch path must never die
+on cache trouble.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from typing import Any, Optional
+
+from py_lumen_obs import get_logger
+
+from clue_design.storage import SOURCE_KEY_ASSET
+
+from .design_store import CustodyState, DesignBlobStore
+
+_logger = get_logger("lumen_api.agent_logo_family_cache")
+
+__all__ = ["DurableLogoFamilyCache"]
+
+
+class DurableLogoFamilyCache:
+    """get/put for one workspace. Duck-typed against the prep layer's seam."""
+
+    def __init__(self, *, blobs: DesignBlobStore) -> None:
+        self.blobs = blobs
+        self.workspace_id = blobs.workspace_id
+
+    # -- keying ------------------------------------------------------------
+
+    @staticmethod
+    def _key(site: str) -> str:
+        from lumen_ingestion.logo_ladder import host_of, registrable_domain
+
+        return registrable_domain(host_of(site)) or host_of(site)
+
+    # -- seam --------------------------------------------------------------
+
+    def get(self, site: str):
+        try:
+            return self._get(site)
+        except Exception:  # noqa: BLE001 - a cache read error is a MISS
+            _logger.warning("logo_family_cache.read_failed", exc_info=True)
+            return None
+
+    def put(self, site: str, outcome: Any) -> None:
+        if not getattr(outcome, "prepared", None):
+            return
+        try:
+            self._put(site, outcome)
+        except Exception:  # noqa: BLE001 - a cache write error never fails the turn
+            _logger.warning("logo_family_cache.write_failed", exc_info=True)
+
+    # -- implementation ----------------------------------------------------
+    # `_get`/`_put` use the same bridged-SQL construction as
+    # agent_account_logos.DurableAgentAccountLogoBinder._repository (open that
+    # file and mirror it): SELECT/UPSERT on design_logo_family, blob custody
+    # via self.blobs.register / custody_states / read. `_get` rebuilds a
+    # LogoFetchOutcome from the row's `family` JSONB; ANY cell digest whose
+    # custody state is not READABLE makes the WHOLE family a miss.
+```
+
+`_get`/`_put` are ~40 lines each of straightforward row+blob plumbing; write them against the row shape defined in the migration note above, importing `LogoFetchOutcome`/`PreparedLogo` from `lumen_agent.tools.logo_fetch` (the API composes agent-runtime types at seams already — `main.py` imports `run_web_agent_turn`).
+
+- [ ] **Step 7: Run to verify PASS**, then commit
+
+```bash
+git add alembic/versions/*design_logo_family* subsystems/clue-design/apps/api/lumen_api/agent_logo_family_cache.py subsystems/clue-design/apps/api/tests/test_logo_family_cache.py
+git commit -m "feat(logo): durable family cache — (workspace, registrable_domain) keyed
+
+Hash-id reversible migration (db-smoke green, one head); custody-probed reads
+(any unreadable digest = whole-family miss); read/write errors degrade, never
+gate; no TTL — force_refresh is the eviction affordance."
+```
+
+---
+
+### Task 8: Widen the bind gate to vendor provenance
+
+**Files:**
+- Modify: `subsystems/clue-design/apps/api/lumen_api/agent_account_logos.py` (the `LADDER_PROVENANCE` block + `is_ladder_fetched`)
+- Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/web_substrate.py` (the `is_ladder_fetched` import + the `account_logo.not_a_fetched_logo` refusal text)
+- Test: `subsystems/clue-design/apps/agent_runtime/tests/test_web_account_logo_bind.py` (extend)
+
+**Interfaces:**
+- Consumes: Task 6's provenance stamping (`created_by` ∈ `{"logo_ladder", "brandfetch"}`).
+- Produces: `FETCHED_LOGO_PROVENANCES = frozenset({"logo_ladder", "brandfetch"})`; `is_fetched_logo(record) -> bool` (new name; `is_ladder_fetched` kept as a deprecated alias = same function object, so nothing silently breaks); `__all__` updated.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+def test_vendor_fetched_records_pass_the_bind_gate_and_generated_ones_do_not():
+    from lumen_api.agent_account_logos import is_fetched_logo
+
+    vendor = {"provenance": {"created_by": "brandfetch"}}
+    ladder = {"provenance": {"created_by": "logo_ladder"}}
+    generated = {"provenance": {"created_by": "image_generation"}}
+    assert is_fetched_logo(vendor) and is_fetched_logo(ladder)
+    assert not is_fetched_logo(generated)
+    # the old name still answers (deprecated alias, same object)
+    from lumen_api.agent_account_logos import is_ladder_fetched
+    assert is_ladder_fetched is is_fetched_logo
+```
+
+- [ ] **Step 2: Run to verify FAIL** (`ImportError: is_fetched_logo`):
+`... -m pytest apps/agent_runtime/tests/test_web_account_logo_bind.py -v -k vendor_fetched`
+
+- [ ] **Step 3: Implement**
+
+In `agent_account_logos.py` replace the `LADDER_PROVENANCE`/`is_ladder_fetched` block:
+
+```python
+#: ``provenance.created_by`` values that mean "a real published mark somebody's
+#: brand actually serves" — the ladder's site harvest, or the Brandfetch Brand
+#: API's keyed retrieval (vendor-first, 2026-09-02). This is what the bind
+#: gates on: a generated image is not a company's logo, and neither is a
+#: placeholder.
+LADDER_PROVENANCE = "logo_ladder"
+VENDOR_PROVENANCE = "brandfetch"
+FETCHED_LOGO_PROVENANCES = frozenset({LADDER_PROVENANCE, VENDOR_PROVENANCE})
+
+
+def is_fetched_logo(record: Any) -> bool:
+    """True when ``record`` is a mark fetched from the company's own site or
+    retrieved from the logo vendor keyed by the company's domain."""
+    if not isinstance(record, dict):
+        return False
+    provenance = record.get("provenance")
+    if not isinstance(provenance, dict):
+        return False
+    return str(provenance.get("created_by") or "") in FETCHED_LOGO_PROVENANCES
+
+
+#: Deprecated alias (pre-vendor name); same object so identity checks hold.
+is_ladder_fetched = is_fetched_logo
+```
+
+Update `__all__` to add `"FETCHED_LOGO_PROVENANCES"`, `"VENDOR_PROVENANCE"`, `"is_fetched_logo"`. In `web_substrate.py`, switch the import to `is_fetched_logo` and adjust the `account_logo.not_a_fetched_logo` message's first sentence to: `f"'{asset}' was not fetched from that company's own website or logo vendor, so it cannot become their logo."` (rest of the message unchanged).
+
+- [ ] **Step 4: Run to verify PASS**, plus the file's existing tests still green:
+`... -m pytest apps/agent_runtime/tests/test_web_account_logo_bind.py -v`
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add subsystems/clue-design/apps/api/lumen_api/agent_account_logos.py subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/web_substrate.py subsystems/clue-design/apps/agent_runtime/tests/test_web_account_logo_bind.py
+git commit -m "feat(logo): bind gate accepts vendor provenance
+
+is_fetched_logo({logo_ladder, brandfetch}); generated/placeholder still
+refused; old name kept as alias."
+```
+
+---
+
+### Task 9: Compose the cache + client id into both lanes' turn config
+
+**Files:**
+- Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/config.py` (beside `account_logo_binder` at ~line 187)
+- Modify: `subsystems/clue-design/apps/api/lumen_api/main.py` (web seam ~line 9857; scene seam — the `replace(config, account_logo_binder=...)` block at ~line 8872)
+- Test: `subsystems/clue-design/apps/api/tests/test_logo_family_cache.py` (extend with a composition assertion) — plus the Task 10 tool tests exercise the seam end-to-end.
+
+**Interfaces:**
+- Consumes: `DurableLogoFamilyCache` (Task 7), `_turn_blob_store(host, workspace_id)` (existing).
+- Produces: `AgentRuntimeConfig.logo_family_cache: Any | None = None` and `AgentRuntimeConfig.brandfetch_client_id: str | None = None` (populated in `AgentRuntimeConfig.from_env` from `settings.brandfetch_client_id`, blank → `None`); both turn-composition seams pass `logo_family_cache=DurableLogoFamilyCache(blobs=_turn_blob_store(host, workspace_id))`.
+
+- [ ] **Step 1: Add the config fields** with comments in the established style:
+
+```python
+    # The durable target-logo family cache (founder decision #4, 2026-08-31):
+    # `lumen_api.agent_logo_family_cache.DurableLogoFamilyCache`, supplied by the
+    # API worker at turn composition like `account_logo_binder`. None -> fetch_logo
+    # simply runs the two rungs every call (correct, just slower/costlier).
+    logo_family_cache: Any | None = None
+    # The PUBLIC Brandfetch Logo-API client id, for the web lane's hotlink prompt
+    # guidance (decorative third-party logos). None/blank -> guidance omitted.
+    brandfetch_client_id: str | None = None
+```
+
+In `from_env`, beside the other settings reads: `brandfetch_client_id=(settings.brandfetch_client_id.strip() or None)`.
+
+- [ ] **Step 2: Compose at both seams in `main.py`.** At the web seam (~9857), beside `account_logo_binder=DurableAgentAccountLogoBinder(...)`, add:
+
+```python
+                logo_family_cache=DurableLogoFamilyCache(
+                    blobs=_turn_blob_store(host, workspace_id),
+                ),
+```
+
+with the import added next to `DurableAgentAccountLogoBinder`'s (line ~69). At the scene seam (~8872), in the same `replace(config, ...)` chain that installs `account_logo_binder`, add an unconditional `config = replace(config, logo_family_cache=DurableLogoFamilyCache(blobs=turn_blobs))` (the scene block already holds `turn_blobs`). Confirm both `run_web_agent_turn` / scene turn plumb `config` fields through untouched (they do — `account_logo_binder` rides the same object).
+
+- [ ] **Step 3: Composition test** — append to `test_logo_family_cache.py`:
+
+```python
+def test_agent_runtime_config_carries_the_cache_and_client_id_fields():
+    from lumen_agent.config import AgentRuntimeConfig
+    import dataclasses
+
+    names = {f.name for f in dataclasses.fields(AgentRuntimeConfig)}
+    assert "logo_family_cache" in names and "brandfetch_client_id" in names
+```
+
+- [ ] **Step 4: Run** `... -m pytest apps/api/tests/test_logo_family_cache.py -v` — PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add subsystems/clue-design/apps/agent_runtime/lumen_agent/config.py subsystems/clue-design/apps/api/lumen_api/main.py subsystems/clue-design/apps/api/tests/test_logo_family_cache.py
+git commit -m "feat(logo): compose the family cache into both lanes' turn config
+
+Same capability seam as account_logo_binder; None = uncached (correct,
+just costlier). brandfetch_client_id rides config for the hotlink prompts."
+```
+
+---
+
+### Task 10: Both `fetch_logo` tools speak cells (+ `force_refresh`, + cache)
+
+**Files:**
+- Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/substrate.py` (`fetch_logo`, ~line 1333)
+- Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/web_substrate.py` (`fetch_logo`, ~line 3309)
+- Test: `subsystems/clue-design/apps/agent_runtime/tests/test_fetch_logo_tool.py` (update the xfail-marked payload tests; remove every xfail)
+
+**Interfaces:**
+- Consumes: Task 6's `fetch_logo_family(url, company_name=..., force_refresh=..., cache=...)` + outcome shape; Task 9's `config.logo_family_cache`.
+- Produces (both lanes): tool signature `fetch_logo(self, domain: str, company_name: Optional[str] = None, force_refresh: bool = False) -> str`; success payload now:
+
+```json
+{
+  "status": "ok",
+  "site": "...",
+  "identity": {...},
+  "lockup_completeness": "...",
+  "cache_hit": false,
+  "logos": [
+    {"cell": "light_lockup", "asset_id": "asset_ing_...", "source": "brandfetch", "...evidence": "..."}
+  ],
+  "notes": ["..."],
+  "next": "Place with ... Match the cell to the placement: *_lockup is the full logo (first choice on any surface that fits it), *_mark is the bare symbol (small placements only). Use dark_* cells on dark surfaces, light_* on light ones."
+}
+```
+
+Per-lane mechanics unchanged: scene ingests + `upsert_asset` with op key `asset`; web ingests + `_register_asset_record` + custody, with round-budget consumption and `CaptureError` handling exactly as today. Both lanes now pass `cache=getattr(self.config, "logo_family_cache", None)` and `force_refresh=force_refresh` into the prep call, and surface `cache_hit` in the payload. Loop over `outcome.prepared` keys on `prepared.cell` (was `.slot`).
+
+**Docstring updates (both lanes, verbatim contract — the scene docstring KEEPS its full-lockup ruling paragraph, now in cell vocabulary):** returns one asset per FAMILY CELL of a 2×2 — theme (`light_*` = for light backgrounds, `dark_*` = for dark) × completeness (`*_lockup` = the full logo, `*_mark` = the bare symbol). Sourced vendor-first (Brandfetch keyed by domain), in-house ladder fallback per cell; results are cached per workspace+company — pass `force_refresh=True` only when the user says the logo is wrong or outdated, which refetches and replaces the cached family. Scene lane keeps: "In an account-personalized or co-branded design, the OTHER company's logo must be its COMPLETE lockup — the `light_lockup`/`dark_lockup` cell for the surface you are placing on. The bare `*_mark` is a fallback for when the brand publishes no lockup, or the placement is genuinely too small to hold one — never the first choice." Both keep the `needs_review` + never-draw paragraphs verbatim.
+
+- [ ] **Step 1: Update the payload tests** — in `test_fetch_logo_tool.py`, remove every `xfail` from Task 6; update assertions from `"slot"` to `"cell"` keys and add, in whichever existing test drives a successful web fetch, `assert payload["logos"][0]["source"] in ("brandfetch", "ladder", "ladder-materialized")` and `assert "cache_hit" in payload`. Add one new test that a tool-level `force_refresh=True` reaches the prep layer (monkeypatch `logo_fetch.fetch_logo_family`, capture kwargs, assert `force_refresh is True` and `cache is config.logo_family_cache`).
+
+- [ ] **Step 2: Run to verify FAIL** — the tools still emit `slot`:
+`... -m pytest apps/agent_runtime/tests/test_fetch_logo_tool.py -v`
+
+- [ ] **Step 3: Update both tools** per the Produces block: signature, the `logo_fetch.fetch_logo_family(...)` call gains `force_refresh=force_refresh, cache=getattr(self.config, "logo_family_cache", None)`; the `placed.append({...})` entries become `{"cell": prepared.cell, "source": prepared.source, "asset_id": ..., **prepared.evidence}`; payload gains `"cache_hit": outcome.cache_hit`; docstrings replaced as specified; the scene payload's `"next"` string updated to the cell wording above.
+
+- [ ] **Step 4: Run the whole file** — all PASS, zero xfail remaining:
+`... -m pytest apps/agent_runtime/tests/test_fetch_logo_tool.py -v`
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/substrate.py subsystems/clue-design/apps/agent_runtime/tools/web_substrate.py subsystems/clue-design/apps/agent_runtime/tests/test_fetch_logo_tool.py
+git commit -m "feat(logo): both fetch_logo tools speak the 2x2 — cells, sources, cache_hit, force_refresh
+
+Scene keeps the full-lockup ruling in cell vocabulary; per-lane ingest
+mechanics untouched."
+```
+
+(If `git add` path typo above trips you: the web tool is `subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/web_substrate.py`.)
+
+---
+
+### Task 11: Prompts speak the 2×2 (both lanes)
+
+**Files:**
+- Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/prompts_web.py` (orchestrator ~371–380; author ~488–502; reviewer ~681–687)
+- Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/prompts.py` (scene prompt's fetch_logo mention — grep `fetch_logo` in the file for the exact block)
+- Test: `subsystems/clue-design/apps/agent_runtime/tests/test_prompts_logo_cells.py` (new, small)
+
+**Interfaces:** consumes nothing new; prose-only. The exact replacement prose (founder reviews it as part of this plan — the standing skill/prompt-review rule is satisfied by plan sign-off):
+
+Author prompt (~488–502), replace the slot sentences with:
+
+```
+- If the account card carries no logo asset, get their real one with
+  `fetch_logo("theirdomain.com")`. It returns one asset per family CELL —
+  a 2×2 of theme × completeness: `light_lockup`, `dark_lockup`,
+  `light_mark`, `dark_mark`. `light_*` cells are FOR light surfaces,
+  `dark_*` cells FOR dark surfaces; `*_lockup` is the complete logo
+  (symbol + name — the first choice wherever it fits), `*_mark` is the
+  bare symbol (small placements only). An empty cell means the brand
+  publishes nothing for it — that is a real answer; never fill it by
+  recoloring another cell. Results are cached for this company; pass
+  `force_refresh=True` only when the user says the logo is wrong or
+  outdated. If it comes back `needs_review`, say so and ask for the
+  file. Never draw, recolour, letter or approximate someone's logo.
+```
+
+Orchestrator (~371–380) and reviewer (~681–687): change only the vocabulary words — where the text says "asset ids per slot — `light`, ..." it becomes "one asset per family cell (`light_lockup`, `dark_lockup`, `light_mark`, `dark_mark`)"; the EMPTY-IS-CORRECT and bind-once-per-account sentences stay verbatim. Scene prompt: same vocabulary swap in its fetch_logo mention.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# subsystems/clue-design/apps/agent_runtime/tests/test_prompts_logo_cells.py
+"""The prompts and the tools agree on the 2x2 vocabulary."""
+
+
+def test_web_prompts_name_the_four_cells_and_never_the_old_slots():
+    from lumen_agent import prompts_web
+
+    text = prompts_web.build_web_author_prompt.__doc__ or ""
+    # Assert against the SOURCE, not a rendered prompt (rendering needs a full
+    # config): the vocabulary must appear in the module.
+    import inspect
+
+    source = inspect.getsource(prompts_web)
+    for cell in ("light_lockup", "dark_lockup", "light_mark", "dark_mark"):
+        assert cell in source
+    assert "asset ids per slot" not in source
+
+
+def test_scene_prompts_name_the_cells():
+    import inspect
+
+    from lumen_agent import prompts
+
+    source = inspect.getsource(prompts)
+    assert "light_lockup" in source
+```
+
+- [ ] **Step 2: FAIL** → **Step 3: apply the prose** → **Step 4: PASS**
+`... -m pytest apps/agent_runtime/tests/test_prompts_logo_cells.py -v`
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add subsystems/clue-design/apps/agent_runtime/lumen_agent/prompts_web.py subsystems/clue-design/apps/agent_runtime/lumen_agent/prompts.py subsystems/clue-design/apps/agent_runtime/tests/test_prompts_logo_cells.py
+git commit -m "feat(logo): prompts speak the 2x2 cell vocabulary
+
+Empty-is-correct and bind-once rules verbatim; only the slot words moved."
+```
+
+---
+
+### Task 12: The hotlink lane (web prompts, conditional on client id)
+
+**Files:**
+- Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/prompts_web.py` (author prompt; a new conditional block beside the Task 11 prose)
+- Test: `subsystems/clue-design/apps/agent_runtime/tests/test_prompts_logo_cells.py` (extend)
+
+**Interfaces:**
+- Consumes: `config.brandfetch_client_id` (Task 9). Find how `build_web_author_prompt(...)` receives config/account context (read its signature at `prompts_web.py:472`) and thread `brandfetch_client_id` the same way its neighbors arrive; the block renders ONLY when the id is truthy.
+- Produces: prompt prose (verbatim):
+
+```
+- DECORATIVE third-party logos — a customer logo wall, an integration grid,
+  a partner strip, any place the page merely SHOWS other companies — do not
+  need fetch_logo. Write a hotlink image straight into the markup:
+    <img src="https://cdn.brandfetch.io/domain/THEIR-DOMAIN/theme/dark/fallback/transparent/type/logo?c={client_id}" alt="THEIR-NAME logo">
+  The `theme` segment names the ASSET's own coloring, not the surface: on a
+  LIGHT surface use `theme/dark` (dark-colored art); on a DARK surface use
+  `theme/light`. Use `type/symbol` where only the bare mark fits.
+  `fallback/transparent` makes a missing logo render as nothing — never a
+  broken image. This is ONLY for ambient, decorative logos: the account
+  being personalized, and anything bound with `bind_account_logo` or
+  resolved by `{{account.logo}}`, always uses fetch_logo's registered
+  assets, never a hotlink.
+```
+
+(`{client_id}` is interpolated at prompt build; the CDN theme segment uses VENDOR semantics on purpose and the prose says so explicitly — this is the one place agents see Brandfetch's convention, so it is spelled out in placement terms.)
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+def test_hotlink_guidance_appears_only_with_a_client_id():
+    import inspect
+
+    from lumen_agent import prompts_web
+
+    source = inspect.getsource(prompts_web)
+    assert "cdn.brandfetch.io" in source
+    assert "fallback/transparent" in source
+    # the conditional: the block must be guarded on the client id being set
+    assert "brandfetch_client_id" in source
+```
+
+Plus a rendered-prompt test if `build_web_author_prompt` is cheaply callable with the existing test fixtures (mirror how existing prompt tests in the suite build one — grep `build_web_author_prompt(` under `apps/agent_runtime/tests/`); assert the URL appears when the id is set and is absent when `None`.
+
+- [ ] **Step 2: FAIL** → **Step 3: implement** (conditional block + threading) → **Step 4: PASS**
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add subsystems/clue-design/apps/agent_runtime/lumen_agent/prompts_web.py subsystems/clue-design/apps/agent_runtime/tests/test_prompts_logo_cells.py
+git commit -m "feat(logo): hotlink lane — decorative third-party logos via Logo API CDN
+
+Prompt-only; renders only when BRANDFETCH_CLIENT_ID is set; vendor theme
+semantics spelled out in placement terms; account.logo stays custody-only."
+```
+
+---
+
+### Task 13: Hotlink render verification (empirical check — headless contexts)
+
+**Files:** none committed (throwaway script under the gitignored `.context/`); result recorded in `_memory/`.
+
+This answers the one open empirical question: do the editor preview and the review-gate's Playwright renders pass Brandfetch's hotlink guards (`Referer` required; `automated_traffic` heuristics), or do hotlinked logos render only on real published pages?
+
+- [ ] **Step 1:** Obtain a real client id (founder registers at `https://developers.brandfetch.com/register` if not already done; the id goes in `.env` as `BRANDFETCH_CLIENT_ID=...`).
+- [ ] **Step 2:** Write `.context/hotlink_check.py`: serve one HTML page on `localhost` containing `<img src="https://cdn.brandfetch.io/domain/brandfetch.com/fallback/404/type/logo?c=<id>">` (using `fallback/404` so a refusal is unambiguous — a 200 means served, a 404/302 means refused); load it with the repo's installed Playwright chromium headless AND headed; log the image response status via `page.on("response")`.
+- [ ] **Step 3:** Run and record the outcome (status per context) in `_memory/2026-09-02-logo-vendor-build.md` (the build session note). If headless is REFUSED: the hotlink lane still ships (published pages are real browsers), but add one sentence to the Task 12 prompt block — "In the editor preview a hotlinked logo may show as empty; it renders on the published page." — and note the caveat in the memory file.
+- [ ] **Step 4:** No commit unless the prompt sentence was added (then amend prompts + its test string and commit with `docs(logo): editor-preview caveat for hotlinked logos`).
+
+---
+
+### Task 14: Integration pass, full gates, close-out
+
+**Files:**
+- Test: `subsystems/clue-design/apps/agent_runtime/tests/test_fetch_logo_tool.py` (one true end-to-end addition)
+- Modify: `_memory/2026-08-31-logo-vendor-first-decision.md` (status header only)
+- Create: `_memory/2026-09-02-logo-vendor-build.md` (close-out note)
+
+- [ ] **Step 1: End-to-end tool test** — in `test_fetch_logo_tool.py`, add one test that goes through the WEB tool with the vendor mocked at the httpx layer (monkeypatch `logo_fetch._vendor_rung` to call the real `fetch_vendor_family` with an `httpx.MockTransport` client serving `BRAND_PAYLOAD`-shaped JSON + asset bytes) and the ladder mocked at its driver seam (the file's existing pattern): assert the payload carries mixed sources when the vendor covers two cells and the ladder two, and that every ingested record's `provenance.created_by` matches its cell's source.
+
+- [ ] **Step 2: Focused gates** — run, in order, each green:
+
+```
+PYTHONPATH=.:apps/api:apps/agent_runtime <repo-root>/.venv/bin/python -m pytest \
+  apps/api/tests/test_logo_vendor.py \
+  apps/api/tests/test_logo_family_cache.py \
+  apps/api/tests/test_logo_ladder.py \
+  apps/api/tests/test_ingestion_logo_family.py \
+  apps/api/tests/test_logo_policy.py \
+  apps/agent_runtime/tests/test_fetch_logo_tool.py \
+  apps/agent_runtime/tests/test_web_account_logo_bind.py \
+  apps/agent_runtime/tests/test_prompts_logo_cells.py -v
+```
+
+(`test_logo_ladder.py`, `test_ingestion_logo_family.py`, `test_logo_policy.py` must be untouched-green — they prove the do-not-touch constraint held.)
+
+- [ ] **Step 3: Background full runs** — kick off `pytest apps/agent_runtime/tests` and `pytest apps/api/tests` in the background (never synchronously — the >1h rule); collect results before declaring done. Also re-run `alembic heads` (one head) and `make db-smoke` once more from the repo root.
+
+- [ ] **Step 4: Close out the record** — edit the status header of `_memory/2026-08-31-logo-vendor-first-decision.md` from "DECIDED, not yet built" to "BUILT — see `docs/superpowers/plans/2026-09-02-vendor-first-logo-family.md` and `_memory/2026-09-02-logo-vendor-build.md` (2026-09-XX)". Write the build close-out note (`_memory/2026-09-02-logo-vendor-build.md`): what shipped per task, the Task 13 empirical result, deviations from this plan, and the deferred markers (batch-time slot selection consumes `CELL_NAMES`; the free-tier quota ceiling and where the 429 degrade note surfaces).
+
+- [ ] **Step 5: Final commit**
+
+```bash
+git add subsystems/clue-design/apps/agent_runtime/tests/test_fetch_logo_tool.py _memory/2026-08-31-logo-vendor-first-decision.md _memory/2026-09-02-logo-vendor-build.md
+git commit -m "test(logo): end-to-end mixed-provenance family; close out the vendor-first build
+
+Focused gates green; ladder/ingestion/policy suites untouched-green;
+db-smoke green with one head; decision record marked BUILT."
+```
+
+---
+
+## Self-review (performed at plan-writing time)
+
+- **Spec coverage:** §0.1 → Tasks 4, 6; §0.2 → Tasks 2, 10, 11; §0.3 → Task 3 (pinned test); §0.4 → Task 3; §0.5 → Tasks 5, 6; §0.6 → Tasks 6, 7, 9, 10; §0.7 → Tasks 12, 13; §0.8 → no task creates any discovery-time path (constraint, verified by the file map); §0.9 → renderability gate in Task 3 only, no other gates added; §0.10 → Task 8. Advisory eviction note → `force_refresh` in Tasks 6, 10, 11. Env parity → Task 1. All four open items from the 2026-08-31 record are owned: vendor chosen (§0.1), config keys (Task 1), cache shape (Task 7), two-rung dispatch inside the shared prep (Task 6).
+- **Type consistency:** `FamilyCell(cell, body, content_type, source, origin_url, evidence)` used identically in Tasks 2, 3, 5, 6; `fetch_vendor_family -> (cells, notes)` consistent in Tasks 4, 6; `PreparedLogo.cell`/`.source`/`.source_ref` consistent in Tasks 6, 7, 10; cache seam `get(site) -> LogoFetchOutcome | None` / `put(site, outcome)` consistent in Tasks 6, 7, 9.
+- **Known intentional roughness:** Task 7's `_get`/`_put` bodies and the migration's two `<same as design_account>` values are lookups against named in-tree files (`86a9ce389e6e`, `agent_account_logos.py`), not open design decisions; Task 12's prompt-threading step names the exact function and line to read first. Executors must read those files before writing.
