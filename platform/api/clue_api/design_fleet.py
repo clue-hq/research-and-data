@@ -22,11 +22,18 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any
-from uuid import uuid4
+from typing import Any, Final
+from uuid import UUID, uuid4
 
+from pydantic import JsonValue
+from sqlalchemy import text
+
+from clue_api.chat.turn_events import TurnEventType, emit_turn_event
+from clue_core import DESIGN_RUN_SUBJECT_KIND
 from clue_db import transaction
+from clue_execution.run_events import list_run_events
 from clue_fleet import (
     LeaseGeneration,
     WorkId,
@@ -44,6 +51,219 @@ log = get_logger("clue_api.design_fleet")
 
 #: The worker identity the inline design-leg lane holds its work lease under.
 _DESIGN_LEG_LANE_WORKER_ID = "design-leg-inline-lane"
+
+#: The design run's PROGRESS topic on the shared outbox (``lumen_api.run_stream.PROGRESS_TOPIC``).
+#: Restated as a literal rather than imported: every design import in this module is lazy by
+#: contract, and a platform worker deployed without the design extras must still compose.
+_DESIGN_PROGRESS_TOPIC: Final = "design.run.event"
+
+#: The design runtime's name for one committed P0.4 checkpoint
+#: (``lumen_api.main.SCENE_CHECKPOINT_EVENT``), restated for the same reason.
+_SCENE_CHECKPOINT_EVENT: Final = "scene_checkpoint_committed"
+
+#: The design events this lane forwards onto the leg's chat thread, each mapped to the turn-event
+#: type it becomes and the payload keys carried across. Everything else the design vocabulary
+#: emits (~60 names, open by design) stays on the design run's own stream. A key the design event
+#: did not carry is simply absent from the frame — the forwarder never invents one, and never
+#: passes one through that the mapping does not name (``reason`` is a checkpoint's internal
+#: bookkeeping, not something a consumer should render).
+_FORWARDED_DESIGN_EVENTS: Final[dict[str, tuple[TurnEventType, tuple[str, ...]]]] = {
+    _SCENE_CHECKPOINT_EVENT: (
+        TurnEventType.DESIGN_CHECKPOINT,
+        ("document_id", "version", "operations", "preflight_clean"),
+    ),
+}
+
+#: One tail poll's worth of rows. A chatty turn simply catches up on the next poll.
+_FORWARD_PAGE_LIMIT: Final = 500
+
+
+@dataclass(frozen=True, slots=True)
+class _ThreadTurnIdentity:
+    """Where a forwarded frame lands: the leg turn, on its thread, in its project."""
+
+    workspace_id: str
+    project_id: str
+    thread_id: str
+    turn_id: UUID
+
+
+class _DesignEventForwarder:
+    """Tail one design run's outbox and forward its checkpoint marks onto the leg's thread.
+
+    **Best-effort, always.** A design turn's authority is its run row and the durable document
+    version its checkpoints already committed; a frame is only the announcement. So every failure
+    here — an unreadable outbox, a refused emit, a turn identity that cannot be resolved — is
+    logged and swallowed. It may never fail the drive, delay it, or disturb the turn's own
+    lifecycle frames, which a different writer owns.
+
+    **At most once per drive attempt.** The cursor is this object's, and this object belongs to
+    one :meth:`InlineDesignLaneDriver.drive` call. A retried turn re-forwards what its previous
+    attempt already sent; that is deliberate and cheap — a checkpoint frame carries the document
+    version it announces, and the consumer applies versions monotonically, so a replay is a
+    no-op rather than a correction. Cross-attempt deduplication would need durable state the
+    announcement does not deserve.
+
+    **Fencing.** The outbox carries no lease generation, on the row or in the payload, so a
+    reader cannot tell one attempt's rows from another's — and does not have to: the fence lives
+    at the *write* site (``lumen_api.run_stream.fenced_emit`` refuses a superseded attempt before
+    anything is inserted), so a fenced-out zombie's checkpoint is never a row and can never be
+    read here. A *takeover's* checkpoints are forwarded, correctly: the design run may change
+    hands, but the platform turn and its thread stay this driver's to project, which is exactly
+    why :meth:`InlineDesignLaneDriver.drive` re-joins a takeover's terminal result.
+    """
+
+    def __init__(
+        self,
+        *,
+        envelope: Any,
+        conn_factory: Any,
+        poll_interval_s: float,
+    ) -> None:
+        self._envelope = envelope
+        self._conn_factory = conn_factory
+        self._poll_interval_s = poll_interval_s
+        self._cursor = 0
+        self._identity: _ThreadTurnIdentity | None = None
+        self._silent = False
+        #: Frames actually appended by this forwarder (see
+        #: :attr:`InlineDesignLaneDriver.checkpoints_forwarded`).
+        self.forwarded = 0
+
+    async def run(self) -> None:
+        """Poll until cancelled. Never raises anything but ``CancelledError``."""
+
+        while True:
+            await asyncio.sleep(self._poll_interval_s)
+            await self.drain()
+
+    async def drain(self) -> None:
+        """One tick: forward every matching row past the cursor. Swallows its own failures."""
+
+        try:
+            await self._drain()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.warning(
+                "design_leg.checkpoint_forward_failed",
+                run_id=str(getattr(self._envelope, "run_id", None)),
+                exc_info=True,
+            )
+
+    async def _drain(self) -> None:
+        identity = await self._resolve_identity()
+        if identity is None:
+            return
+        async with self._conn_factory() as conn:
+            rows = await list_run_events(
+                conn,
+                workspace_id=identity.workspace_id,
+                subject_kind=DESIGN_RUN_SUBJECT_KIND,
+                subject_id=str(self._envelope.run_id),
+                after_seq=self._cursor,
+                limit=_FORWARD_PAGE_LIMIT,
+            )
+        for row in rows:
+            # Advanced BEFORE the emit: a row this attempt has already tried is spent, so a
+            # refused emit costs that one frame instead of wedging the tail on it forever.
+            self._cursor = row.seq
+            frame = _forwarded_frame(row)
+            if frame is None:
+                continue
+            event_type, payload = frame
+            async with self._conn_factory() as conn:
+                await emit_turn_event(
+                    conn,
+                    workspace_id=identity.workspace_id,
+                    project_id=identity.project_id,
+                    thread_id=identity.thread_id,
+                    turn_id=identity.turn_id,
+                    event_type=event_type,
+                    payload=payload,
+                )
+            self.forwarded += 1
+
+    async def _resolve_identity(self) -> _ThreadTurnIdentity | None:
+        """The leg turn this run belongs to, resolved once, or ``None`` when there is none.
+
+        Read from the envelope's own frozen ``config['leg']`` block — the identity
+        ``DesignLegTurnRunner`` stamped when it dispatched this turn — rather than reconstructed
+        from the run row, so the frames land on exactly the turn the leg's own lifecycle frames
+        do. The project comes from the thread, which is where the turn stream's foreign key
+        points anyway.
+
+        A design run with no leg block (a direct editor turn, or a pre-P3.4 envelope) has no
+        thread to announce on: the forwarder goes silent for the rest of the drive rather than
+        re-deciding that every tick.
+        """
+
+        if self._identity is not None:
+            return self._identity
+        if self._silent:
+            return None
+        config = getattr(self._envelope, "config", None)
+        leg = config.get("leg") if isinstance(config, dict) else None
+        thread_id = leg.get("thread_id") if isinstance(leg, dict) else None
+        raw_turn_id = leg.get("agent_turn_id") if isinstance(leg, dict) else None
+        turn_id: UUID | None = None
+        if isinstance(raw_turn_id, str):
+            with contextlib.suppress(ValueError):
+                turn_id = UUID(raw_turn_id)
+        if not isinstance(thread_id, str) or not thread_id or turn_id is None:
+            self._silent = True
+            log.info(
+                "design_leg.checkpoint_forward_unaddressed",
+                run_id=str(self._envelope.run_id),
+            )
+            return None
+        workspace_id = str(self._envelope.workspace_id)
+        async with self._conn_factory() as conn:
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT project_id FROM agent_thread "
+                        "WHERE id = :thread AND workspace_id = :workspace"
+                    ),
+                    {"thread": thread_id, "workspace": workspace_id},
+                )
+            ).one_or_none()
+        if row is None:
+            self._silent = True
+            log.warning(
+                "design_leg.checkpoint_forward_thread_missing",
+                run_id=str(self._envelope.run_id),
+                thread_id=thread_id,
+            )
+            return None
+        self._identity = _ThreadTurnIdentity(
+            workspace_id=workspace_id,
+            project_id=str(row[0]),
+            thread_id=thread_id,
+            turn_id=turn_id,
+        )
+        return self._identity
+
+
+def _forwarded_frame(row: Any) -> tuple[TurnEventType, dict[str, JsonValue]] | None:
+    """The turn frame one outbox row becomes, or ``None`` when it is not forwarded.
+
+    The row's payload is the design progress envelope ``{event_type, data}``
+    (``lumen_api.run_stream.progress_payload``); a terminal row carries a different topic and is
+    filtered out before its shape matters.
+    """
+
+    if row.topic != _DESIGN_PROGRESS_TOPIC:
+        return None
+    payload = row.payload if isinstance(row.payload, dict) else {}
+    mapping = _FORWARDED_DESIGN_EVENTS.get(str(payload.get("event_type")))
+    if mapping is None:
+        return None
+    event_type, keys = mapping
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        data = {}
+    return event_type, {key: data[key] for key in keys if key in data}
 
 
 class DesignRuntimeUnavailable(RuntimeError):
@@ -126,6 +346,7 @@ class InlineDesignLaneDriver:
         heartbeat_interval_s: float | None = None,
         join_poll_interval_s: float = 5.0,
         join_timeout_s: float = 1800.0,
+        checkpoint_poll_interval_s: float = 1.0,
     ) -> None:
         self._handler = handler
         self._conn_factory = conn_factory
@@ -137,11 +358,62 @@ class InlineDesignLaneDriver:
         )
         self._join_poll_interval_s = join_poll_interval_s
         self._join_timeout_s = join_timeout_s
+        #: How often the checkpoint tail reads the design run's outbox. Faster than the join
+        #: poll on purpose — the join is a rare recovery path, whereas this cadence is the
+        #: latency a marketer sees between the agent committing a round and the canvas showing
+        #: it. Slower than the design editor's own 4 Hz stream, because checkpoints land once
+        #: per authoring round (tens of seconds), not once per compile frame.
+        self._checkpoint_poll_interval_s = checkpoint_poll_interval_s
+        self._forwarder: _DesignEventForwarder | None = None
         #: Successful renewals across this driver's lifetime — observable, so a test (or an
         #: operator counter) can prove the beat is real rather than infer it from silence.
         self.renewals = 0
 
+    @property
+    def checkpoints_forwarded(self) -> int:
+        """Checkpoint frames the current (or most recent) drive has put on the thread.
+
+        Live rather than summed at the end, for the same reason :attr:`renewals` is: the tail's
+        whole claim is that it announces work *while* the turn runs, and a counter that only
+        settles afterwards could not tell that apart from a drain.
+        """
+
+        return 0 if self._forwarder is None else self._forwarder.forwarded
+
     async def drive(self, *, envelope: Any) -> None:
+        """Drive the run terminal, tailing its checkpoints onto the leg's thread as it goes.
+
+        The tail runs for the whole drive rather than on the join loop's tick, because the join
+        loop only runs when this lane is NOT the one driving: in the ordinary case the handler
+        holds the coroutine for the entire turn and the join never spins at all. A background
+        poller is therefore the only placement from which a checkpoint can be announced *while*
+        the turn is still running, which is the entire point (see :class:`_DesignEventForwarder`
+        for why every one of its failures is swallowed).
+
+        One final drain follows the drive: the last checkpoint of a fast turn can land between
+        the tail's last poll and the terminal row, and a frame arriving a beat late is worth
+        much more than a frame lost.
+        """
+
+        forwarder = _DesignEventForwarder(
+            envelope=envelope,
+            conn_factory=self._conn_factory,
+            poll_interval_s=self._checkpoint_poll_interval_s,
+        )
+        self._forwarder = forwarder
+        tail = asyncio.create_task(forwarder.run())
+        try:
+            await self._drive_to_terminal(envelope=envelope)
+        finally:
+            tail.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await tail
+            # Unguarded on purpose: ``drain`` swallows its own failures, so the only thing this
+            # can raise is the ``CancelledError`` of a drive the caller is stopping — which must
+            # keep propagating rather than be absorbed into a silent normal return.
+            await forwarder.drain()
+
+    async def _drive_to_terminal(self, *, envelope: Any) -> None:
         """Drive the run terminal — actively (MED-6, adversarial-review fix).
 
         The old shape parked in a blind bounded join whenever it did not hold the lease —

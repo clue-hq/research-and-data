@@ -94,6 +94,13 @@ class TurnEventType(StrEnum):
     LEG_AWAITING_USER = "leg.awaiting_user"
     LEG_CLOSED = "leg.closed"
     LEG_REOPENED = "leg.reopened"
+    # Scene live-streaming rung A: the design agent commits its work in progress mid-run (P0.4),
+    # and each commit marks the design run's own event stream. This is that mark, forwarded onto
+    # the leg's thread by the inline design lane (``clue_api.design_fleet``) so a marketer sees
+    # the document advance instead of a spinner. Progress, not lifecycle: a checkpoint frame
+    # announces a version the document ALREADY holds, it never ends or gates a turn, and losing
+    # one costs a redraw — which is why the forwarder is best-effort by construction.
+    DESIGN_CHECKPOINT = "design.checkpoint"
 
 
 #: The stored vocabulary as plain strings, kept equal to the enum (and to the DB CHECK) by a test —
