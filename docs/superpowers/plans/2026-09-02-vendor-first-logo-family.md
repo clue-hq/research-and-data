@@ -17,6 +17,18 @@ Ledger: `.superpowers/sdd/2026-09-02-vendor-first-logo-family/progress.md`. Proc
 - Task 1 — DONE (`0cf64d654`)
 - Task 2 — DONE (`5a6e05d78`)
 - Task 3 — DONE (`e8a5efe63`)
+- Task 3b — PENDING (carry-over D2+D3)
+
+## Deferred items ledger (founder rule 2026-09-02: every deferral lives HERE and belongs to a task)
+
+| # | Surfaced in | Item | Owning task / resolution |
+|---|---|---|---|
+| D1 | Task 1 review | `apps/api/tests` emits one pre-existing `StarletteDeprecationWarning` (`fastapi/testclient.py` → "Using `httpx` with `starlette.testclient` is deprecated") from the shared conftest import — unrelated to this plan's code, but the test output is not pristine. | **Task 14, Step 2a**: add a targeted `filterwarnings` entry for exactly that message/module to the pytest config governing `apps/api/tests`; the focused gate must then run warning-free. |
+| D2 | Task 1 review | `test_brandfetch_settings_load_from_env` does not assert `brandfetch_api_base_url` from env; the config comment's "W-logo" wave tag is a plan artifact. | **Task 3b** (carry-over, executed before Task 4). |
+| D3 | Task 3 review | Rule 6 gates renderability for SVG only, so an undecodable vendor RASTER still fills its cell (caught later by `core.ingest_asset`, never placed — but the mapping's own promise is "a cell holds a file that paints"). | **Task 3b**: Pillow decode gate `_raster_decodes` for png/webp/jpeg cells, with a garbage-bytes test; existing test fixture bytes made real. |
+| D4 | Pre-flight scan | Task 11's tests assert on module SOURCE text (`inspect.getsource`), not on a rendered prompt. | **Task 11**: mandatory additional test rendering the web author prompt through the suite's existing `prompt_of` fixture (see `apps/agent_runtime/tests/test_web_account_logo_bind.py`) and asserting the four cell names appear and the old slot phrasing does not. |
+| D5 | Task 6 plan text | Pre-existing tool payload tests may be marked `xfail(strict=True)` transiently between Task 6 and Task 10. | **Task 10**: zero `xfail` marks may remain in `test_fetch_logo_tool.py` at completion (controller checks with grep). |
+| D6 | Task 4 plan text | Asset downloads bypass `capture.net`'s SSRF re-guard on the reasoning that Brandfetch's asset CDN is a fixed domain — but the driver never enforced that. | **Task 4**: `_ASSET_HOST_SUFFIXES = ("brandfetch.io",)`; a `formats[].src` whose host is not under an allowed suffix is never fetched and is reported in the driver's notes; pinned by a MockTransport test that asserts no request reaches a foreign host. |
 
 ## Global Constraints
 
@@ -508,7 +520,7 @@ format pick. Theme inversion table declared (mapping lands next)."
 
 ### Task 3: Vendor asset → cell mapping (the inversion, the filters, the renderability gate)
 
-**Status: DONE 2026-09-02 — commit `e8a5efe63`; controller first-hand review clean (raster null-theme path probed through Pillow both directions). Deferred note: undecodable rasters fill their cell and are caught at `core.ingest_asset`, not here — final review to triage.**
+**Status: DONE 2026-09-02 — commit `e8a5efe63`; controller first-hand review clean (raster null-theme path probed through Pillow both directions). Deferred item D3 (undecodable rasters) is owned by Task 3b below.**
 
 **Files:**
 - Modify: `subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py`
@@ -716,6 +728,103 @@ svg_is_renderable gates vendor SVGs; first asset wins per cell."
 
 ---
 
+### Task 3b (carry-over of D2 + D3): raster decodability gate + Task 1 nits
+
+**Status: PENDING — executes before Task 4.**
+
+**Files:**
+- Modify: `subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py` (append `_raster_decodes`; one new gate in `map_vendor_assets_to_cells` directly after the SVG gate)
+- Modify: `subsystems/clue-design/packages/py-lumen-config/py_lumen_config/config.py` (comment tag only)
+- Test: `subsystems/clue-design/apps/api/tests/test_logo_vendor.py` (extend + one fixture fix)
+
+**Interfaces:**
+- Consumes: Task 3's `map_vendor_assets_to_cells`; Pillow (already a dependency — the ladder decodes rasters with it, lazily).
+- Produces: `logo_vendor._raster_decodes(body: bytes) -> bool`; mapping rule 6b — a png/webp/jpeg cell whose bytes Pillow cannot open is refused with a note containing "cannot be decoded"; the cell stays empty for the ladder to backfill.
+
+- [ ] **Step 1: Write the failing tests / fix the fixture**
+
+Append to `test_logo_vendor.py`:
+
+```python
+def _mini_png(rgb=(16, 24, 32), size=64) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGBA", (size, size), rgb + (255,)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def test_map_vendor_assets_refuses_undecodable_raster():
+    from lumen_ingestion.logo_vendor import VendorAsset, map_vendor_assets_to_cells
+
+    garbage = VendorAsset(theme="dark", type="symbol", tags=[], formats=[
+        {"src": "g", "format": "png", "width": 300, "height": 300, "size": 1,
+         "background": None}])
+    cells, notes = map_vendor_assets_to_cells(
+        [garbage], download=lambda url: (b"not-a-png-at-all", "image/png")
+    )
+    assert cells == {}
+    assert any("cannot be decoded" in n for n in notes)
+```
+
+In `test_map_vendor_assets_inverts_theme_and_skips_icon_and_photographic`, replace the fake bytes `b"\x89PNGfakebytes"` with `_mini_png()` (the fixture must be a real image now that rasters are decoded). Move `_mini_png` above that test so it is defined before use.
+
+In `test_brandfetch_settings_load_from_env`, add `monkeypatch.setenv("BRANDFETCH_API_BASE_URL", "https://example.test")` beside the other setenv calls and `assert fresh.brandfetch_api_base_url == "https://example.test"` beside the other asserts.
+
+- [ ] **Step 2: Run to verify FAIL** — the new test fails (garbage bytes currently fill `dark_mark`); the settings test passes already (an assertion added to green code — acceptable, it pins D2).
+`PYTHONPATH=.:apps/api:apps/agent_runtime <repo-root>/.venv/bin/python -m pytest apps/api/tests/test_logo_vendor.py -v`
+
+- [ ] **Step 3: Implement**
+
+Append to `logo_vendor.py`:
+
+```python
+def _raster_decodes(body: bytes) -> bool:
+    """Can Pillow open these bytes? The raster twin of `svg_is_renderable`: a
+    vendor cell must hold a file that PAINTS, whatever its format, and an
+    undecodable raster would otherwise travel all the way to `core.ingest_asset`
+    before anything said so."""
+    import io
+
+    from PIL import Image  # lazy, like the ladder: `capture` must import PIL-free
+
+    try:
+        with Image.open(io.BytesIO(body)) as image:
+            image.verify()
+        return True
+    except Exception:  # noqa: BLE001 - undecodable is the answer, not an error
+        return False
+```
+
+In `map_vendor_assets_to_cells`, directly after the SVG renderability `continue`:
+
+```python
+        if fmt in ("png", "webp", "jpeg") and not _raster_decodes(body):
+            notes.append(
+                f"vendor {asset.type} refused: {fmt} bytes cannot be decoded as an image"
+            )
+            continue
+```
+
+In `config.py`, change the comment header `# -- Brandfetch (target-account logo vendor; W-logo vendor-first, 2026-09-02) --------` to `# -- Brandfetch (target-account logo vendor; vendor-first logo family, 2026-09-02) ----`.
+
+- [ ] **Step 4: Run to verify PASS** — all 11 tests green (same command).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py subsystems/clue-design/packages/py-lumen-config/py_lumen_config/config.py subsystems/clue-design/apps/api/tests/test_logo_vendor.py
+git commit -m "feat(logo): raster decodability gate for vendor cells; settings test pins base url
+
+D3: a png/webp/jpeg cell must decode (Pillow) or it is refused with a note —
+the raster twin of svg_is_renderable. D2: base-url-from-env assertion; comment
+tag reworded."
+```
+
+---
+
 ### Task 4: Vendor network driver (`fetch_vendor_family`)
 
 **Files:**
@@ -728,6 +837,7 @@ svg_is_renderable gates vendor SVGs; first asset wins per cell."
   - Raises `VendorCredentialsMissing` when the effective key is blank.
   - Raises `VendorLookupFailed(code="quota")` on 429, `("timeout")` on `httpx.TimeoutException`, `("http")` on other non-200/404, `("malformed")` on unparseable JSON.
   - 404 → `({}, ["brandfetch has no record of <domain> — an answer, not an error"])`.
+  - **D6 — asset host allowlist:** `_ASSET_HOST_SUFFIXES = ("brandfetch.io",)`. `download(src)` refuses (returns `None`) any `src` whose host is not that suffix or a subdomain of it, and the driver appends `"asset host <host> is not on the vendor allowlist; not fetched: <src>"` to its notes (merged with the mapping's notes in the return). The MockTransport test below asserts the handler is never called for the foreign host.
   - **Sync httpx**, not async: the callers (`fetch_logo` tools) are synchronous, and the existing prep layer already wraps the ladder's async driver with `asyncio.run` — the vendor rung stays simpler by being sync end-to-end. Asset downloads go through the same `httpx.Client` with the configured timeout and a 15 MB size cap read via `resp.headers.get("content-length")` check + len guard (mirroring `capture.net`'s cap value; the Brand API srcs are Brandfetch's own asset CDN, not attacker-controlled pages, so the full SSRF re-guard machinery is not pulled in here — the domain never varies).
 
 - [ ] **Step 1: Write the failing tests** (httpx.MockTransport — no live network in CI)
@@ -786,6 +896,29 @@ def test_fetch_vendor_family_blank_key_raises_credentials_missing():
 
     with _pytest.raises(VendorCredentialsMissing):
         fetch_vendor_family("acme.com", api_key="")
+
+
+def test_fetch_vendor_family_never_fetches_off_allowlist_hosts():
+    import httpx
+
+    from lumen_ingestion.logo_vendor import fetch_vendor_family
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        if request.url.path.startswith("/v2/brands/domain/"):
+            return httpx.Response(200, json={"logos": [
+                {"theme": "dark", "type": "logo", "tags": [], "formats": [
+                    {"src": "https://evil.example/lockup.svg", "format": "svg",
+                     "width": 100, "height": 40, "size": 1, "background": None}]}]})
+        return httpx.Response(200, content=_mini_svg(), headers={"content-type": "image/svg+xml"})
+
+    with _vendor_transport(handler) as client:
+        cells, notes = fetch_vendor_family("acme.com", api_key="k", client=client)
+    assert cells == {}
+    assert "evil.example" not in seen
+    assert any("allowlist" in n for n in notes)
 ```
 
 - [ ] **Step 2: Run tests to verify they fail** — `ImportError: fetch_vendor_family`.
@@ -799,11 +932,15 @@ Append to `logo_vendor.py`:
 #: BRANDFETCH_API_BASE_URL already carries it (the PDL _normalize_base_url lesson).
 BRAND_PATH_PREFIX = "/v2/brands/domain/"
 _MAX_ASSET_BYTES = 15 * 1024 * 1024  # mirrors capture.net's logo cap
+#: D6 — the only hosts an asset `src` may point at. Brandfetch serves logo files from its own
+#: asset CDN; anything else in a `formats[].src` is not fetched, whatever the API said.
+_ASSET_HOST_SUFFIXES = ("brandfetch.io",)
+
+
+from urllib.parse import urlsplit  # module-level: `download` and `_bare_domain` both need it
 
 
 def _bare_domain(value: str) -> str:
-    from urllib.parse import urlsplit
-
     text = (value or "").strip()
     if not text:
         return ""
@@ -854,7 +991,17 @@ def fetch_vendor_family(domain, *, api_key=None, base_url=None, timeout_s=None, 
         except ValueError as error:
             raise VendorLookupFailed("malformed", "brand response was not JSON") from error
 
+        driver_notes: list[str] = []
+
         def download(src: str):
+            host = (urlsplit(src).hostname or "").lower()
+            if not (host == _ASSET_HOST_SUFFIXES[0] or any(
+                host.endswith("." + suffix) for suffix in _ASSET_HOST_SUFFIXES
+            )):
+                driver_notes.append(
+                    f"asset host {host or '?'} is not on the vendor allowlist; not fetched: {src}"
+                )
+                return None
             try:
                 got = http.get(src, timeout=timeout)
             except httpx.HTTPError:
@@ -865,7 +1012,8 @@ def fetch_vendor_family(domain, *, api_key=None, base_url=None, timeout_s=None, 
                 return None
             return got.content, got.headers.get("content-type")
 
-        return map_vendor_assets_to_cells(parse_brand_payload(payload), download)
+        cells, notes = map_vendor_assets_to_cells(parse_brand_payload(payload), download)
+        return cells, driver_notes + notes
 
     if client is not None:
         return run(client)
@@ -1839,7 +1987,19 @@ def test_scene_prompts_name_the_cells():
 
     source = inspect.getsource(prompts)
     assert "light_lockup" in source
+
+
+def test_rendered_web_author_prompt_names_the_cells(prompt_of):
+    # D4: the SOURCE assertions above prove the words exist; this proves they REACH the
+    # agent. `prompt_of` is the suite's existing rendered-prompt fixture (see
+    # test_web_account_logo_bind.py); mirror its call shape exactly.
+    rendered = prompt_of("author")
+    for cell in ("light_lockup", "dark_lockup", "light_mark", "dark_mark"):
+        assert cell in rendered
+    assert "asset ids per slot" not in rendered
 ```
+
+(If `prompt_of` is defined locally in `test_web_account_logo_bind.py` rather than in a conftest, lift it into `apps/agent_runtime/tests/conftest.py` unchanged so both files share it — that move is in scope for this task.)
 
 - [ ] **Step 2: FAIL** → **Step 3: apply the prose** → **Step 4: PASS**
 `... -m pytest apps/agent_runtime/tests/test_prompts_logo_cells.py -v`
@@ -1950,6 +2110,8 @@ PYTHONPATH=.:apps/api:apps/agent_runtime <repo-root>/.venv/bin/python -m pytest 
 ```
 
 (`test_logo_ladder.py`, `test_ingestion_logo_family.py`, `test_logo_policy.py` must be untouched-green — they prove the do-not-touch constraint held.)
+
+- [ ] **Step 2a (D1): make the focused gate warning-free** — the shared conftest's `fastapi.testclient` import raises one `StarletteDeprecationWarning` ("Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead"). Add ONE targeted `filterwarnings` entry to the pytest config that governs `apps/api/tests` (the `configfile` pytest prints at the top of its run — `pyproject.toml` at the repo root, `[tool.pytest.ini_options]`), of the form `"ignore:Using `httpx` with `starlette.testclient`:DeprecationWarning:fastapi.testclient"` (adjust the category to the exact class the run prints if it is not a `DeprecationWarning` subclass — read it off the warning summary). Re-run the Step 2 command: `N passed` with NO warnings summary. Commit separately: `chore(tests): silence the pre-existing starlette testclient deprecation in the api suite`.
 
 - [ ] **Step 3: Background full runs** — kick off `pytest apps/agent_runtime/tests` and `pytest apps/api/tests` in the background (never synchronously — the >1h rule); collect results before declaring done. Also re-run `alembic heads` (one head) and `make db-smoke` once more from the repo root.
 
