@@ -575,6 +575,9 @@ export function ChatSurface({
         exportStatus={sceneSession.exportStatus}
         onRequestExportPreview={sceneSession.requestExportPreview}
         onSceneChange={sceneSession.onSceneChange}
+        // Clipboard Task 8: a picture dragged onto the canvas is uploaded and
+        // inserted where it was dropped, through the session's own write path.
+        onSceneDropImageFiles={sceneSession.onSceneDropImageFiles}
         onSceneFitZoom={sceneSession.onFitZoom}
         onSceneGestureZoom={sceneSession.onGestureZoom}
         onSceneHistoryChange={sceneSession.onHistoryChange}

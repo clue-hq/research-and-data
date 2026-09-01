@@ -29,6 +29,7 @@ import { useSceneClipboard } from "./use-scene-clipboard";
 import type { SceneDocumentHistory } from "./use-scene-document";
 import { useSceneExport } from "./use-scene-export";
 import { useSceneImageAi } from "./use-scene-image-ai";
+import { useSceneImagePaste } from "./use-scene-image-paste";
 import { useSceneInspectorWrites } from "./use-scene-inspector-writes";
 import { useSceneReplaceImage } from "./use-scene-replace-image";
 
@@ -581,6 +582,33 @@ export function useSceneEditingSession({
   // otherwise, and keeps the absent-binding path the dummy's own.)
   const arrange = activeDocumentId && scene ? arrangeBinding : undefined;
 
+  // Clipboard Task 8: external image ingestion — the two seams Task 7 left for
+  // pictures that came from OUTSIDE this document (a ⌘V of files, pasted svg
+  // markup) plus the gesture the clipboard never sees at all, a drag-drop onto
+  // the canvas. It sits here for the same reason every other handler hook does:
+  // components never reach the engine or the transport.
+  //
+  // R21: where a pasted picture lands is the CANVAS's answer — the live
+  // viewport's centre in page space — asked through the same controls ref the
+  // write path uses, and only when that ref is serving THIS document (a canvas
+  // showing another artifact, or none, must not decide where this one pastes).
+  // Null falls back to the page's own centre inside the hook.
+  const viewportPageCenter = useCallback(() => {
+    const controls = canvasControls.current;
+    return controls?.documentId === activeDocumentId
+      ? controls.viewportPageCenter()
+      : null;
+  }, [activeDocumentId]);
+  const imagePaste = useSceneImagePaste({
+    applyOps: writes.applyOps,
+    canApply: writes.canApply,
+    pageId,
+    reportError: writes.reportError,
+    scene,
+    selectedNodeId: primaryNodeId,
+    viewportPageCenter,
+  });
+
   // Clipboard Task 7: ⌘C / ⌘X / ⌘V / ⌘D over the scene.
   //
   // It sits HERE, beside the arrange binding, for the same reason arrange does
@@ -600,10 +628,12 @@ export function useSceneEditingSession({
   // (it takes artifact ids and document ids, no workspace), and the payload's
   // `workspaceHint` is display/debug only — a fabricated value would be worse
   // than the honest null, since asset resolution is the real cross-workspace
-  // gate. Tasks 8 and 9 own the three external seams; until they land the hook
-  // refuses those pastes out loud rather than swallowing them.
+  // gate. Task 9 owns the remaining external seam (`onPlainText`); until it
+  // lands the hook leaves a plain-text paste native.
   useSceneClipboard({
     documentId: activeDocumentId,
+    onExternalImages: imagePaste.onExternalImages,
+    onSvgMarkup: imagePaste.onSvgMarkup,
     pageId,
     scene,
     selectedNodeId: primaryNodeId,
@@ -690,6 +720,9 @@ export function useSceneEditingSession({
      * picked becomes an asset and lands in the selected image node. */
     onReplaceImage,
     onSceneChange,
+    /** Clipboard Task 8: image files dragged onto the canvas, with the page
+     * point the pointer named — uploaded and inserted centred on it. */
+    onSceneDropImageFiles: imagePaste.onDropImageFiles,
     onSelectCanvas,
     onSelectLayer,
     onToggleLayer,

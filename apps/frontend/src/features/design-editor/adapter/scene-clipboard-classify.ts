@@ -160,8 +160,12 @@ function parseInternalPayload(raw: string): SceneClipboardPayloadV1 | null {
 
 /** Mime types are case-insensitive, and some platforms stamp the non-standard
  * `image/jpg` on a JPEG. Nothing else is normalized — an extension is not
- * evidence of a type, so a mislabelled file is refused, not sniffed. */
-function isAllowedImage(file: File): boolean {
+ * evidence of a type, so a mislabelled file is refused, not sniffed.
+ *
+ * Exported for Task 8's ingestion, which re-asks it for the gesture the
+ * clipboard never sees (a canvas drag-drop). ONE allowlist test, so a dropped
+ * `image/jpg` and a pasted one cannot get different answers. */
+export function isAllowedImage(file: File): boolean {
   const mime = file.type.toLowerCase();
   const normalized = mime === "image/jpg" ? "image/jpeg" : mime;
   return (ALLOWED_IMAGE_MIMES as readonly string[]).includes(normalized);

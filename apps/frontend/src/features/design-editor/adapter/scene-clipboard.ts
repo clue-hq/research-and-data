@@ -373,7 +373,10 @@ export function remintSubtree(
   return { nodes, rootId: nodes[0].id };
 }
 
-function mintNodeId(taken: (candidate: string) => boolean): NodeId {
+/** A fresh node id nothing in `taken` already claims. Exported for Task 8's
+ * external-image ingestion, which mints ids for nodes that were never in a
+ * clipboard payload — ONE minter, so the two paths cannot drift. */
+export function mintNodeId(taken: (candidate: string) => boolean): NodeId {
   let candidate = `node-${crypto.randomUUID().slice(0, 8)}`;
   while (taken(candidate)) {
     candidate = `node-${crypto.randomUUID().slice(0, 8)}`;

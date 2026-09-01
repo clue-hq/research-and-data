@@ -101,7 +101,8 @@ export interface SceneClipboardDeps {
 /** R17: `canApply` is the edit-mode proxy this seam has — the arrange
  * precedent. Its two silent refusals (nothing armed; the engine is D9
  * read-only) are exactly why it is asked up front rather than discovered. */
-const NOT_ACCEPTING_EDITS = "This document isn't accepting edits right now.";
+export const NOT_ACCEPTING_EDITS =
+  "This document isn't accepting edits right now.";
 
 /** The copy path's one refusal: the payload cleared 1 MiB, so the `text/html`
  * envelope — the carrier that survives the OS clipboard into other apps — was
@@ -229,7 +230,7 @@ function ownedSession(
  * would silently return (0,0) for the parent and reproduce F9 exactly: a
  * page-absolute number written into a parent-relative transform.
  */
-function parentOriginOf(scene: Scene) {
+export function parentOriginOf(scene: Scene) {
   return (parentId: NodeId): { x: number; y: number } => {
     const bounds = scene.nodes[parentId]?.computed?.layout_bounds;
     return bounds ? { x: bounds.x, y: bounds.y } : { x: 0, y: 0 };

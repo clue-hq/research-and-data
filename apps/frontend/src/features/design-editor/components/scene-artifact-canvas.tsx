@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
@@ -125,6 +126,8 @@ import type {
   EngineStructuredEditOutcome,
   HitResult,
 } from "../engine/scene/wasmEngine";
+import { descriptorToScene } from "../engine/scene/canvaskitGestures";
+import type { Point } from "../engine/scene/workspaceLayout";
 import {
   defaultWorkspaceViewport,
   screenToWorkspace,
@@ -283,6 +286,16 @@ export interface SceneCanvasControls {
   /** The scene as rendered right now (the relaid engine scene when the engine
    * is live, the server snapshot otherwise), or null before it loads. */
   sceneSnapshot(): Scene | null;
+  /**
+   * Clipboard Task 8 / R21: the centre of what the user is LOOKING at, in page
+   * space — where a ⌘V of an image file lands when no pointer named a spot.
+   *
+   * The canvas is the only surface that knows it: the viewport is derived here
+   * (fit, chosen step, or wherever a pan/zoom gesture left it) and never leaves
+   * this component. Null when there is no artboard or the stage has not been
+   * measured yet — the caller then falls back to the page's own centre.
+   */
+  viewportPageCenter(): { x: number; y: number } | null;
 }
 
 export interface SceneArtifactCanvasProps {
@@ -436,6 +449,17 @@ export interface SceneArtifactCanvasProps {
    * back through `selectedNodeId`), so the inspector, the layer tree and the
    * canvas all read one selection. */
   onSelect?: (nodeId: NodeId | null) => void;
+  /**
+   * Clipboard Task 8: image files DROPPED on the stage, with the page point the
+   * pointer named — the session uploads them and inserts them centred there.
+   *
+   * Absent (the standalone read path) means a file drop is left entirely to the
+   * browser, which is what it does everywhere else in the app today.
+   */
+  onDropImageFiles?: (
+    files: File[],
+    pagePoint: { x: number; y: number },
+  ) => void;
 }
 
 export function SceneArtifactCanvas(props: SceneArtifactCanvasProps) {
@@ -464,11 +488,31 @@ function typingTarget(target: EventTarget | null): boolean {
   );
 }
 
+/**
+ * Clipboard Task 8 / R21: a workspace-space point in PAGE space (scene units)
+ * — the space the paste planner, the payload bounds and `page.size` all speak.
+ *
+ * It is `sceneHitPoint`'s chain (`scene-selection.ts:42-59`) without its
+ * artboard containment test: both callers below name a point that may legally
+ * sit off the page (a drop on the workspace beside the artboard, a viewport
+ * panned past the page edge), and a node whose box extends past the page is
+ * something this engine already models. The `unitScale` divide is NOT optional
+ * — descriptor px are scene units only on a `pt`/`px` page, and wrong by 96x on
+ * an `in` one, which is the trap `sceneHitPoint`'s own docblock records.
+ */
+function pagePointOf(workspacePoint: Point, artboard: SceneArtboardModel): Point {
+  return descriptorToScene(
+    sceneDescriptorPoint(workspacePoint, artboard),
+    artboard.page.unitScale,
+  );
+}
+
 function SceneDocumentCanvas({
   controlsRef,
   documentId,
   gestureDisabled = false,
   onAppliedOperations,
+  onDropImageFiles,
   onEngineStatusChange,
   onFitZoom,
   onGestureZoom,
@@ -766,8 +810,34 @@ function SceneDocumentCanvas({
         engine && pageId ? engine.hitTest(pageId, x, y) : null,
       refresh,
       sceneSnapshot: () => scene,
+      // R21: the stage's own centre, run through the SAME chain a press takes
+      // (`handlePointerDown` below) — screen → workspace → page space. It reads
+      // the LIVE `viewport`, so a pasted image lands where the user has panned
+      // to, not where the fit put the artboard on open.
+      viewportPageCenter: () => {
+        if (!artboard || stageSize.width <= 0 || stageSize.height <= 0) {
+          return null;
+        }
+        return pagePointOf(
+          screenToWorkspace(
+            { x: stageSize.width / 2, y: stageSize.height / 2 },
+            viewport,
+          ),
+          artboard,
+        );
+      },
     }),
-    [currentVersion, documentId, engine, pageId, refresh, scene],
+    [
+      artboard,
+      currentVersion,
+      documentId,
+      engine,
+      pageId,
+      refresh,
+      scene,
+      stageSize,
+      viewport,
+    ],
   );
   useEffect(() => {
     if (!controlsRef) {
@@ -1527,6 +1597,55 @@ function SceneDocumentCanvas({
     }
   };
 
+  /**
+   * Clipboard Task 8: pictures dragged in from the desktop (or another tab).
+   *
+   * `dragover` must `preventDefault` for a drop to be delivered at all — that
+   * is the DOM's opt-in, not a style choice — and the copy `dropEffect` is what
+   * makes the cursor say "this will land here". Both are claimed only when the
+   * drag really carries FILES and the stage really has a document to drop into;
+   * a text drag, or a canvas with no session wired, keeps the browser's own
+   * behaviour.
+   */
+  const dragCarriesFiles = (transfer: DataTransfer | null): boolean =>
+    Array.from(transfer?.types ?? []).includes("Files");
+
+  const handleDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
+    if (!onDropImageFiles || !artboard || !dragCarriesFiles(event.dataTransfer)) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleDrop = (event: ReactDragEvent<HTMLDivElement>) => {
+    const element = stageRef.current;
+    if (!onDropImageFiles || !element || !artboard) {
+      return;
+    }
+    // SYNCHRONOUS, before anything else: a `DataTransfer`'s file list is dead
+    // after the event's own turn (the same Firefox lesson the paste snapshot
+    // records). A drop carrying no files stays NATIVE — un-prevented — so
+    // dragging a link or a text selection onto the stage still does whatever
+    // the browser does with it.
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    if (files.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    const bounds = element.getBoundingClientRect();
+    onDropImageFiles(
+      files,
+      pagePointOf(
+        screenToWorkspace(
+          { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+          viewport,
+        ),
+        artboard,
+      ),
+    );
+  };
+
   return (
     <div
       className={[
@@ -1537,6 +1656,8 @@ function SceneDocumentCanvas({
         .filter(Boolean)
         .join(" ")}
       onDoubleClick={handleDoubleClick}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
       onPointerCancel={handlePointerCancel}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

@@ -230,6 +230,10 @@ export function EditorSurface({
         exportStatus={sceneSession.exportStatus}
         onRequestExportPreview={sceneSession.requestExportPreview}
         onSceneChange={sceneSession.onSceneChange}
+        // Clipboard Task 8, the artifact route's half: the same drop binding
+        // the chat surface passes, so a picture dragged onto the canvas lands
+        // the same way on both surfaces.
+        onSceneDropImageFiles={sceneSession.onSceneDropImageFiles}
         onSceneFitZoom={sceneSession.onFitZoom}
         onSceneGestureZoom={sceneSession.onGestureZoom}
         onSceneHistoryChange={sceneSession.onHistoryChange}

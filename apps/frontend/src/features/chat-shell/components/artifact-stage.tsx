@@ -73,6 +73,7 @@ export function ArtifactStage({
   onRenameArtifact,
   onRenameArtifactFor,
   onSceneChange,
+  onSceneDropImageFiles,
   onSceneEngineStatusChange,
   onSceneFitZoom,
   onSceneHistoryChange,
@@ -153,6 +154,12 @@ export function ArtifactStage({
     scene: Scene | null,
     pageId: PageId | null,
     documentId: string,
+  ) => void;
+  /** Clipboard Task 8: image files dropped on the ad canvas, with the page
+   * point the pointer named. Passed straight through to the canvas. */
+  onSceneDropImageFiles?: (
+    files: File[],
+    pagePoint: { x: number; y: number },
   ) => void;
   /** AD2.3: the ad canvas's wasm stamp-handshake outcome, mirrored upward so
    * the shell can refuse edits (and, post Gate G-D, explain why). */
@@ -297,6 +304,7 @@ export function ArtifactStage({
                   controlsRef={sceneCanvasControlsRef}
                   documentId={activeDocumentId}
                   gestureDisabled={sceneGestureDisabled}
+                  onDropImageFiles={onSceneDropImageFiles}
                   onEngineStatusChange={onSceneEngineStatusChange}
                   onFitZoom={onSceneFitZoom}
                   onGestureZoom={onSceneGestureZoom}
