@@ -449,6 +449,12 @@ def test_dispatch_vendor_full_family_skips_the_ladder(monkeypatch):
     assert all(source == "brandfetch" for source in outcome.cells.values())
     assert {p.cell for p in outcome.prepared} == set(logo_fetch.CELL_NAMES)
     assert all(p.provenance["created_by"] == "brandfetch" for p in outcome.prepared)
+    # The engine's AssetSource has no vendor variant: vendor cells ingest as `website`.
+    assert all(p.source_ref["kind"] == "website" for p in outcome.prepared)
+    assert all(
+        p.ingest_kwargs("/tmp/store")["source"]["kind"] == "website"
+        for p in outcome.prepared
+    )
 
 
 def test_dispatch_partial_vendor_gets_ladder_backfill_only_for_empty_cells(monkeypatch):

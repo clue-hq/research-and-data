@@ -183,7 +183,9 @@ def _assemble(cells, resolution, site, company_name, notes, vendor_notes) -> Log
                     "confidence": (resolution.confidence if resolution else 0.9),
                 },
                 source_ref={
-                    "kind": "vendor" if created_by == "brandfetch" else "website",
+                    # The engine's AssetSource has no vendor variant; a vendor-served file is
+                    # a URL capture like any other, and `provenance` carries who served it.
+                    "kind": "website",
                     "url": cell.origin_url,
                     "captured_at": _now(),
                 },
