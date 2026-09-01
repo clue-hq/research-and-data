@@ -40,3 +40,14 @@ design / fleet). Istanbul's stack (3020/8010/8020/8030) and colombo's
 
 Start the stack only via `DEV_STACK.md`/`dev_stack.sh` (standing rule), overriding
 ports to this map. Apollo test login recipe: `_memory/2026-08-27-demo-night-setup.md`.
+
+## Addendum 2026-09-02 (live walk)
+
+- Stack launched by mirroring `scripts/dev_stack.sh` with nashville substitutions (design 8023,
+  platform 8013, fleet, frontend 3023; DB/agent root from `.env`; logs `/tmp/nashville-*.log`).
+  Helper binary + tailwind runtime copied from istanbul (identical design-subsystem commit).
+  `apps/frontend/.env.local` `CLUE_APP_ORIGIN` → `http://localhost:3023` (BFF write-origin guard).
+- KNOWN GAP: the DB was cloned from colombo but the BLOB STORE (`.artifacts`) was not — legacy
+  assets (Cursor lockup, Apollo wordmark, marble wash) 404 through the asset-store passthrough and
+  render blank. Copy colombo's `.artifacts/` if legacy images matter; newly uploaded assets work.
+- The Inter font-library `…/bytes` 404s (and the "Brand font unavailable" banner) are pre-existing.
