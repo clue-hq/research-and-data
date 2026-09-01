@@ -18,6 +18,7 @@ Ledger: `.superpowers/sdd/2026-09-02-vendor-first-logo-family/progress.md`. Proc
 - Task 2 — DONE (`5a6e05d78`)
 - Task 3 — DONE (`e8a5efe63`)
 - Task 3b — DONE (`9387f9b7f`)
+- Task 4 — DONE (`abe5d9d4f`, `417da50b4`) — live-verified
 
 ## Deferred items ledger (founder rule 2026-09-02: every deferral lives HERE and belongs to a task)
 
@@ -827,6 +828,8 @@ tag reworded."
 
 ### Task 4: Vendor network driver (`fetch_vendor_family`)
 
+**Status: DONE 2026-09-02 — commits `abe5d9d4f` + fix `417da50b4`; controller first-hand review clean; LIVE-verified end-to-end (real key, `brandfetch.com`: all four cells filled from `cdn.brandfetch.io`, inversion applied, zero notes). Errata: the happy-path fixture's `b"\x89PNGfake"` predates Task 3b's raster gate — shipped as `_mini_png()`; fix round added `_asset_host_allowed` (iterates every suffix), moved `urlsplit` into the import block, and a test for the `timeout`/`malformed` codes (16 tests in the file).**
+
 **Files:**
 - Modify: `subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py`
 - Test: `subsystems/clue-design/apps/api/tests/test_logo_vendor.py` (extend)
@@ -842,7 +845,7 @@ tag reworded."
   - **D6 — asset host allowlist:** `_ASSET_HOST_SUFFIXES = ("brandfetch.io",)`. `download(src)` refuses (returns `None`) any `src` whose host is not that suffix or a subdomain of it, and the driver appends `"asset host <host> is not on the vendor allowlist; not fetched: <src>"` to its notes (merged with the mapping's notes in the return). The MockTransport test below asserts the handler is never called for the foreign host.
   - **Sync httpx**, not async: the callers (`fetch_logo` tools) are synchronous, and the existing prep layer already wraps the ladder's async driver with `asyncio.run` — the vendor rung stays simpler by being sync end-to-end. Asset downloads go through the same `httpx.Client` with the configured timeout and a 15 MB size cap read via `resp.headers.get("content-length")` check + len guard (mirroring `capture.net`'s cap value; the Brand API srcs are Brandfetch's own asset CDN, not attacker-controlled pages, so the full SSRF re-guard machinery is not pulled in here — the domain never varies).
 
-- [ ] **Step 1: Write the failing tests** (httpx.MockTransport — no live network in CI)
+- [x] **Step 1: Write the failing tests** (httpx.MockTransport — no live network in CI)
 
 ```python
 def _vendor_transport(handler):
@@ -928,9 +931,9 @@ def test_fetch_vendor_family_never_fetches_off_allowlist_hosts():
     assert any("allowlist" in n for n in notes)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail** — `ImportError: fetch_vendor_family`.
+- [x] **Step 2: Run tests to verify they fail** — `ImportError: fetch_vendor_family`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `logo_vendor.py`:
 
@@ -1034,10 +1037,10 @@ def fetch_vendor_family(domain, *, api_key=None, base_url=None, timeout_s=None, 
         return run(owned)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass.** Then run the whole file once more:
+- [x] **Step 4: Run tests to verify they pass.** Then run the whole file once more:
 `PYTHONPATH=.:apps/api:apps/agent_runtime <repo-root>/.venv/bin/python -m pytest apps/api/tests/test_logo_vendor.py -v` — all green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py subsystems/clue-design/apps/api/tests/test_logo_vendor.py
