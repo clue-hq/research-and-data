@@ -2569,6 +2569,7 @@ def create_app(
         document = require_document(repo, document_id)
         require_scene_document(document)
         require_draft_document(document, "replace the current scene")
+        _refuse_if_agent_running(document_id, repo)
         try:
             validation = app.state.core.validate_scene(payload.scene)
         except CoreError as error:
@@ -2642,6 +2643,10 @@ def create_app(
         document = require_document(repo, document_id)
         require_scene_document(document)
         require_draft_document(document, "apply operations")
+        # Before the base-version check on purpose: a document a run is driving has almost
+        # certainly moved under the caller, and "an agent is working on this" is the honest
+        # answer to that, not "your base version is stale".
+        _refuse_if_agent_running(document_id, repo)
         require_base_version(document, payload.base_version)
         try:
             result = app.state.core.apply_operations(
@@ -2814,6 +2819,11 @@ def create_app(
     def undo_document(
         document_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
+        # On the ROUTE rather than inside `perform_undo_step`, which `/revert` also drives: the
+        # write lock guards the four manual scene-write routes, and widening it to revert is a
+        # decision nobody has made. The document gates therefore run one step later here than in
+        # the neighbouring routes (they live inside the step).
+        _refuse_if_agent_running(document_id, repo)
         reverted = perform_undo_step(repo, document_id)
         document = require_document(repo, document_id)
         log_event(
@@ -2839,6 +2849,7 @@ def create_app(
         document = require_document(repo, document_id)
         require_scene_document(document)
         require_draft_document(document, "redo")
+        _refuse_if_agent_running(document_id, repo)
         redo_stack = list(document.get("redo_stack") or [])
         if not redo_stack:
             raise HTTPException(
@@ -7555,6 +7566,28 @@ def require_draft_document(document: JsonObject, action: str) -> None:
                     "create a new draft revision before mutating it"
                 ),
             },
+        )
+
+
+def _refuse_if_agent_running(document_id: str, store: HybridRepository) -> None:
+    """Refuse a MANUAL scene write while a design run is driving this document.
+
+    The founder's rule for live-streamed design runs: while the agent is working, the document is
+    not editable by hand. Two authors on one scene interleave badly — the run commits mid-flight
+    (the P0.4 checkpoints), so a human edit landing between them is either clobbered by the next
+    checkpoint or turns the run's remaining operations into a conflict nobody asked for.
+
+    The 409 names the run, which is the only thing the caller can act on: watch it, or cancel it.
+
+    It guards the four MANUAL write routes only. The agent's own writes go through the governed
+    ``design_apply_operations`` tool (``_LegSceneCommitter``), never through these routes — a lock
+    that reached the tool would deadlock every run against itself.
+    """
+    run_id = store.active_design_run_for_document(document_id)
+    if run_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "document.agent_run_active", "run_id": run_id},
         )
 
 

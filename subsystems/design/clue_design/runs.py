@@ -499,6 +499,39 @@ async def list_running_runs(conn: AsyncConnection, *, workspace_id: str) -> list
     ]
 
 
+async def active_run_for_document(
+    conn: AsyncConnection, *, workspace_id: str, document_id: str
+) -> str | None:
+    """The id of a RUNNING run whose frozen envelope targets ``document_id``, else ``None``.
+
+    The write-lock read: while a design run is driving a document, the design API refuses manual
+    writes to that document (409 ``document.agent_run_active``), so a human and an agent can never
+    author the same scene at the same time.
+
+    The predicate is the run's own PAYLOAD, not the ``document_id`` column, because the payload is
+    the frozen ``DesignTurnEnvelope`` — the immutable statement of what this run was dispatched to
+    do. The column is a nullable convenience (:func:`create_run` stores an id it cannot resolve as
+    NULL), so a run whose envelope names a document is the honest question to ask.
+
+    Only ``running`` counts. A ``queued`` run has nobody driving it yet and a terminal one is over;
+    locking either would refuse edits for work that is not happening. The lock is therefore a state
+    that lifts by itself — including when a lease expires and the reaper fails the row.
+    """
+    row = (
+        await conn.execute(
+            text(
+                "SELECT run_id FROM design_agent_run"
+                " WHERE workspace_id = :w AND status = 'running'"
+                "   AND payload ->> 'document_id' = :d"
+                " ORDER BY created_at ASC, run_id ASC"
+                " LIMIT 1"
+            ),
+            {"w": workspace_id, "d": document_id},
+        )
+    ).first()
+    return None if row is None else str(row.run_id)
+
+
 # --- the stranded-work surface (D5 Round C) ----------------------------------------------------
 #
 # S4 boundary: these three read and write the DESIGN row only. Whether a stranded-looking run's

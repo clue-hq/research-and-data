@@ -1981,6 +1981,21 @@ class HybridRepository:
             lambda conn: design_runs.list_running_runs(conn, workspace_id=self.workspace_id)
         )
 
+    def active_design_run_for_document(self, document_id: str) -> Optional[str]:
+        """The run id of a design run currently DRIVING this document, or ``None``.
+
+        The write lock's one read (scene live-streaming, rung A): while a design run is in flight
+        on a document, the manual scene-write routes refuse with 409 ``document.agent_run_active``
+        and name this run, so a human edit can never interleave with the run's own commits. The
+        agent's own writes go through the governed tools, never those routes, so they are
+        untouched by it. See :func:`clue_design.runs.active_run_for_document` for what counts as
+        driving."""
+        return self._bridge._run(
+            lambda conn: design_runs.active_run_for_document(
+                conn, workspace_id=self.workspace_id, document_id=document_id
+            )
+        )
+
     # --- cross-domain reads over the Postgres document feed ----------------------------------
 
     def list_custom_component_usages(self, account_id: str, slug: str) -> List[JsonObject]:
