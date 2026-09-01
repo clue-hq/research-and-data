@@ -19,6 +19,7 @@ Ledger: `.superpowers/sdd/2026-09-02-vendor-first-logo-family/progress.md`. Proc
 - Task 3 — DONE (`e8a5efe63`)
 - Task 3b — DONE (`9387f9b7f`)
 - Task 4 — DONE (`abe5d9d4f`, `417da50b4`) — live-verified
+- Task 5 — DONE (`50908e087`)
 
 ## Deferred items ledger (founder rule 2026-09-02: every deferral lives HERE and belongs to a task)
 
@@ -1054,6 +1055,8 @@ git commit -m "feat(logo): Brandfetch network driver — sync httpx, typed degra
 
 ### Task 5: Ladder slots → 2×2 cells (`ladder_cells`)
 
+**Status: DONE 2026-09-02 — commit `50908e087`; controller first-hand review clean (collision precedence probed). Task 6 pins the symbol-primary-vs-mark collision with a test.**
+
 **Files:**
 - Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/logo_fetch.py`
 - Test: `subsystems/clue-design/apps/agent_runtime/tests/test_fetch_logo_tool.py` (extend)
@@ -1068,7 +1071,7 @@ git commit -m "feat(logo): Brandfetch network driver — sync httpx, typed degra
   - `source` = `"ladder-materialized"` when `slot.provenance == "materialized-adaptive"`, else `"ladder"`.
   - evidence carries the slot's `basis`, `rung`, ladder slot name, and `ink` when present.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `test_fetch_logo_tool.py` (it already imports `logo_fetch`; build synthetic resolutions with the real ladder dataclasses):
 
@@ -1125,10 +1128,10 @@ def test_ladder_cells_wordmark_backfills_light_lockup_and_materialized_is_stampe
     assert cells["dark_lockup"].source == "ladder-materialized"
 ```
 
-- [ ] **Step 2: Run to verify FAIL** (`ImportError: ladder_cells`):
+- [x] **Step 2: Run to verify FAIL** (`ImportError: ladder_cells`):
 `PYTHONPATH=.:apps/api:apps/agent_runtime <repo-root>/.venv/bin/python -m pytest apps/agent_runtime/tests/test_fetch_logo_tool.py -v -k ladder_cells`
 
-- [ ] **Step 3: Implement `ladder_cells` in `logo_fetch.py`**
+- [x] **Step 3: Implement `ladder_cells` in `logo_fetch.py`**
 
 ```python
 def ladder_cells(resolution) -> dict:
@@ -1182,9 +1185,9 @@ def ladder_cells(resolution) -> dict:
     return cells
 ```
 
-- [ ] **Step 4: Run to verify PASS** (same command, `-k ladder_cells`).
+- [x] **Step 4: Run to verify PASS** (same command, `-k ladder_cells`).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/logo_fetch.py subsystems/clue-design/apps/agent_runtime/tests/test_fetch_logo_tool.py
