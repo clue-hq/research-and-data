@@ -2,7 +2,7 @@
   "recipe_key": "recipe0-stage0",
   "scope_type": "system",
   "workspace_id": null,
-  "version": 18,
+  "version": 21,
   "executor_protocol": 1,
   "parameter_schema": {
     "type": "object",

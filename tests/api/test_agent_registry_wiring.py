@@ -71,15 +71,15 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # plan-safe directive @3, and pins the registered account-research field/source vocabulary.
         # v36 (part-iii merge) is v35 plus `open_design_leg@1` — P3.4's design delegation entry,
         # with P3.5's in-train schema revision (reopen_leg_id + reopened) in the pinned digests.
-        # v37 (comprehensive research, Slice B wave 2) re-pins the directive draft tool at @4 and
+        # v41 (comprehensive research, Slice B wave 2) re-pins the directive draft tool at @4 and
         # account-deep-steering at v7: a normal full-profile request now compiles deterministically
         # to the fixed 21-field account profile instead of the v6 skill's three qualitative fields.
-        # v38 (Slice B browser-gate repair) re-pins the draft tool at @5 (omittable
+        # v42 (Slice B browser-gate repair) re-pins the draft tool at @5 (omittable
         # `directive.field_keys`) and account-deep-steering at v8, and re-pins the amended v8 sha
         # after the committee co-definition section (founder ruling 2026-08-20: the deepagent
         # settles product and the four persona positions with the user before drafting a
         # committee-discovering directive, and the plan carries the outcome).
-        AgentRole.HEAD_OF_ABM: ("95cc75ac25cdd64c528898c731fabb50899820d36c6c51fa15bd7e0223303764"),
+        AgentRole.HEAD_OF_ABM: ("b661668e4482684075d6d8650cbc461db3950a8a6c32e78efdd076673296e1de"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -337,7 +337,7 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v38"
+    assert production.profile_ref.address == "profile:head-of-abm@v42"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
         "skill:stage0-interview@v20"
     )

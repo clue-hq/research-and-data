@@ -454,5 +454,5 @@ def test_the_comprehensive_directive_tool_is_the_granted_head_of_abm_version() -
     assert c6_roles_for_tool("draft_account_research_directive@5") == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("draft_account_research_directive@3") == ()
     assert c6_roles_for_tool("draft_account_research_directive@4") == ()
-    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v38"
-    assert PROJECT_CONVERSATION_AGENT_PROFILE_ID == "head-of-abm@v38"
+    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v42"
+    assert PROJECT_CONVERSATION_AGENT_PROFILE_ID == "head-of-abm@v42"

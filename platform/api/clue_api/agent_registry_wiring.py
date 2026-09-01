@@ -36,11 +36,11 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    # v38 (Slice B browser-gate repair): v37 with ``draft_account_research_directive@5`` and
+    # v42 (Slice B browser-gate repair): v41 with ``draft_account_research_directive@5`` and
     # steering skill v8 — @4's schema marked ``directive.field_keys`` required while the skill
     # (correctly) said to omit it, so a schema-honouring model could never place the comprehensive
     # request; @5 makes the key omittable and nothing else changes.
-    # v37 (comprehensive account/contact research, Slice B): v36 plus the comprehensive-profile
+    # v41 (comprehensive account/contact research, Slice B): v36 plus the comprehensive-profile
     # directive contract — ``draft_account_research_directive@4`` and steering skill v7. A normal
     # full-profile request now compiles deterministically to the fixed 21-field account profile
     # (contract §3.2/§3.3 row 1) instead of the three-field qualitative subset the v6 skill named.
@@ -49,7 +49,7 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # as PD-part3 P3.4's v24, re-versioned onto the v35 chain at the integration merge). v35
     # preserves the frozen v34 surface and gives Account-focused turns the exact pinned
     # field/source vocabulary needed to launch profiling without model-invented field keys.
-    AgentRole.HEAD_OF_ABM: "v38",
+    AgentRole.HEAD_OF_ABM: "v42",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
