@@ -429,13 +429,20 @@ later — WebKit/Firefox support is not there yet, per the research note).
   `pastedImageNodeSize(media: {width:number;height:number}, page: {width:number;height:number})`
   (fit-within-60%-short-side rule, downscale-only).
 
-- [ ] **Step 1: failing tests** — png file → upload called once, one insertNode ImageNode with
+- [x] **Step 1: failing tests** — png file → upload called once, one insertNode ImageNode with
   returned `asset_id` and `alt` = filename; `status:"pending"` record → refusal naming the label,
   NO insert; disallowed mime → refusal naming the allowlist, upload NOT called; svg markup →
   synthesized File with `image/svg+xml` routed down the same path; sizing rule: 4000×2000 image on a 1080×1080
   page → 648-wide fit; a 200×100 image pastes at 200×100 (downscale-only, never upscaled); multi-file paste inserts with per-file cascade; upload rejection surfaces
   the server detail verbatim.
-- [ ] **Steps 2–4** — **Step 5: commit** `feat(design-editor): external image paste/drop ingestion`
+- [x] **Steps 2–4** — **Step 5: commit** `feat(design-editor): external image paste/drop ingestion`
+  (`a381e2618` + fix round `ba7f06162`. Review caught that the batch never REGISTERED the uploaded
+  asset — a plan-interface omission — so every pasted image would have been a blank dangling
+  ref; ops are now `upsert_asset` + `insert_node` per file in ONE batch. Ground-truth correction:
+  intrinsic dimensions live in `raster.pixel_width/height` / `vector.width/height`, not `media`.
+  Rulings R20–R25 + R21a–c (scene-unit coordinates via `descriptorToScene`, unbounded
+  off-artboard drops, both ArtifactStage mounts wired) in the SDD ledger. 26/26; frontend
+  `npm test` 2420/2419/0.)
 
 ### Task 9: Plain-text paste behavior
 
