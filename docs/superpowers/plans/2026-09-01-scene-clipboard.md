@@ -320,14 +320,16 @@ later — WebKit/Firefox support is not there yet, per the research note).
   `parentComputedOrigin(nodeId)` (test-injectable, AD4.C style).
 - Produces: `PastePlacement` union + `planPastePlacement(args)` — exact signature in §Design.
 
-- [ ] **Step 1: failing tests** — (a) selected auto-layout container → `into-layout` at
+- [x] **Step 1: failing tests** — (a) selected auto-layout container → `into-layout` at
   `children.length` with NO transform; (b) cascade generation g → source position +10g/+10g,
   parent = source's parent, transform PARENT-RELATIVE; (c) drop at page point under a non-page
   parent → rebased by injected origin, and the RED case pins that the un-rebased page-absolute
   answer is wrong (F9's exact failure shape); (d) viewport-center mode centers `payloadBounds`;
   (e) locked/managed selected node falls through to page-level freehand.
-- [ ] **Steps 2–4: FAIL → implement → PASS** — **Step 5: commit**
-  `feat(design-editor): paste placement planner (rulings 1-2, F9 rebase pinned)`
+- [x] **Steps 2–4: FAIL → implement → PASS** (11/11; SDD Opus implementer, review Approved) —
+  **Step 5: commit** `feat(design-editor): paste placement planner (rulings 1-2, F9 rebase pinned)`
+  (`863c6b6ca`; orchestrator rulings R2–R5 in the SDD ledger settle parent derivation, drop
+  centering, into-layout-never-on-drop, and position-only transforms)
 
 ### Task 5: Materialization (`materializeClipboardPayload`) — payload → ops
 
@@ -344,10 +346,15 @@ later — WebKit/Firefox support is not there yet, per the research note).
   `insertNode` ops; root gets the placement (transform or index); refusal when any
   `payload.assetIds` entry is missing from `knownAssetIds` (message names the count).
 
-- [ ] **Step 1: failing tests** — 3-node subtree → 3 insertNode ops parents-first, root op carries
+- [x] **Step 1: failing tests** — 3-node subtree → 3 insertNode ops parents-first, root op carries
   placement; into-layout root op has the container ParentRef + index and NO transform patch;
   missing asset → `{refusal}` naming "1 image"; empty-payload → refusal.
-- [ ] **Steps 2–4** — **Step 5: commit** `feat(design-editor): clipboard materialization to insertNode batches`
+- [x] **Steps 2–4** — **Step 5: commit** `feat(design-editor): clipboard materialization to insertNode batches`
+  (`7921a3e25` + fix round `f5e95f73c`: task review caught that populated `children` arrays on
+  inserted nodes trip lumen-core's `op.child_missing` and void every ≥2-node paste — ops now
+  emit CHILDLESS nodes, tree expressed purely by parent ref + index, invariant pinned in test.
+  Rulings R7 (position-only root transform merge) and R8 (computed:null; absolute_box shifted
+  by paste delta on freehand) in the SDD ledger. 45/45 green.)
 
 ### Task 6: Paste classifier
 
