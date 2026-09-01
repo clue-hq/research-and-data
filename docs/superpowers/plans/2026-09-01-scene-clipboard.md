@@ -277,13 +277,15 @@ later — WebKit/Firefox support is not there yet, per the research note).
   `decodeClipboardHtml(html: string): SceneClipboardPayloadV1 | null`,
   `validateClipboardPayload(value: unknown): SceneClipboardPayloadV1 | null`.
 
-- [ ] **Step 1: failing tests** — round-trip identity; decode uses `DOMParser` and reads ONLY the
+- [x] **Step 1: failing tests** — round-trip identity; decode uses `DOMParser` and reads ONLY the
   `data-clue-scene` attribute (a payload wrapped in `<script>`-bearing HTML round-trips without
   any element being live-injected — assert no side effects, parse-only); foreign HTML → null;
   wrong `kind`/`version`/shape → null; extra unknown top-level keys → null (strict); oversized →
-  encode returns null; base64 garbage → null (no throw).
-- [ ] **Step 2: run — FAIL** → **Step 3: implement** → **Step 4: PASS**
-- [ ] **Step 5: commit** `feat(design-editor): clipboard html envelope codec with strict validation`
+  encode returns null; base64 garbage → null (no throw). (Plus: UTF-8-byte cap measurement,
+  non-ascii round-trip, non-self-contained node graphs refused. jsdom added as devDependency —
+  the runner is node:test with no DOM; Tasks 6–7 need it regardless.)
+- [x] **Step 2: run — FAIL** (13 new red) → **Step 3: implement** → **Step 4: PASS** (25/25; eslint clean)
+- [x] **Step 5: commit** `feat(design-editor): clipboard html envelope codec with strict validation` (`09af583c6`)
 
 ### Task 3: Subtree re-mint (`remintSubtree`)
 
