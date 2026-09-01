@@ -1130,17 +1130,23 @@ function sceneWithImageMime(
   return scene;
 }
 
-/** A `writeClipboardItems` fake: it records the ONE batch it is handed and
- * either resolves (the browser took the item) or rejects (denied permission,
- * an unsupported promise value, no user activation — R31's swallow). */
+/** A `writeClipboardItems` fake with the THREE outcomes a real browser has:
+ * it resolves (the item was taken), it rejects (denied permission, no user
+ * activation), or it THROWS SYNCHRONOUSLY — which is not hypothetical, since
+ * the production writer constructs `ClipboardItem`s in its own synchronous
+ * prefix and that constructor throws a TypeError in engines that refuse
+ * promise-valued entries (Firefox). All three are R31 swallows. */
 function clipboardWriterFake(
   order: string[],
-  outcome: "resolve" | "reject" = "resolve",
+  outcome: "resolve" | "reject" | "throw" = "resolve",
 ) {
   const batches: Array<Record<string, Blob | Promise<Blob>>> = [];
   const write = mock.fn((items: Array<Record<string, Blob | Promise<Blob>>>) => {
     order.push("clipboard.write");
     batches.push(...items);
+    if (outcome === "throw") {
+      throw new TypeError("ClipboardItem does not accept a promise value");
+    }
     return outcome === "reject"
       ? Promise.reject(new Error("clipboard write denied"))
       : Promise.resolve();
@@ -1155,7 +1161,7 @@ function imageCopyDeps(
   overrides: {
     bytes?: (url: string) => Promise<Blob>;
     order?: string[];
-    outcome?: "resolve" | "reject";
+    outcome?: "resolve" | "reject" | "throw";
     raster?: (source: Blob, mime: string) => Promise<Blob>;
   } = {},
 ) {
@@ -1175,14 +1181,14 @@ function imageCopyDeps(
       ? await overrides.raster(source, mime)
       : new Blob([new Uint8Array([9, 9])], { type: "image/png" });
   });
-  const { deps, reportError } = harness({
+  const { applyEdit, deps, reportError } = harness({
     fetchAssetBytes,
     rasterToPng,
     scene,
     selectedNodeId: "image_hero",
     writeClipboardItems: writer.write,
   });
-  return { deps, fetched, order, rasterCalls, reportError, writer };
+  return { applyEdit, deps, fetched, order, rasterCalls, reportError, writer };
 }
 
 /** One turn of the microtask + macrotask queues — long enough for the async
@@ -1381,4 +1387,54 @@ it("a missing digest or a non-ok fetch rejects the png promise and nothing else"
   await assert.rejects(failing.writer.batches[0]["image/png"] as Promise<Blob>);
   await settle();
   assert.equal(failing.reportError.mock.callCount(), 0);
+});
+
+it("a writer that THROWS SYNCHRONOUSLY never escapes the copy handler", async () => {
+  // The real path this pins: `new ClipboardItem({...})` is constructed inside
+  // the writer's own synchronous prefix, and it throws a TypeError in engines
+  // that do not accept promise-valued entries. An exception escaping a window
+  // `copy` listener is exactly the broken-editor shape this file forbids —
+  // R31's swallow covers a throw, not only a rejection.
+  const { deps, reportError, writer } = imageCopyDeps(
+    sceneWithImageMime("image/png"),
+    { outcome: "throw" },
+  );
+  const clipboard = stubClipboardData();
+
+  assert.doesNotThrow(() => {
+    handleSceneClipboardCopy(deps, clipboardEvent(clipboard.data), CANVAS_TARGET);
+  });
+  await settle();
+
+  assert.equal(writer.write.mock.callCount(), 1);
+  // The baseline stands, whole: the enrichment failed before it began.
+  assert.deepEqual(
+    [...clipboard.written.keys()].sort(),
+    [SCENE_CLIPBOARD_MIME, "text/html", "text/plain"].sort(),
+  );
+  assert.equal(reportError.mock.callCount(), 0);
+});
+
+it("a throwing writer still lets a CUT delete — the copy half cannot abort it", async () => {
+  // Worse than a lost picture: an exception out of `writeCopy` would return
+  // before `applyEdit(deleteEdit(...))`, so a cut on such a browser would copy
+  // the node and never remove it.
+  const { applyEdit, deps, writer } = imageCopyDeps(
+    sceneWithImageMime("image/png"),
+    { outcome: "throw" },
+  );
+  const clipboard = stubClipboardData();
+
+  assert.doesNotThrow(() => {
+    handleSceneClipboardCut(deps, clipboardEvent(clipboard.data), CANVAS_TARGET);
+  });
+  await settle();
+
+  assert.equal(writer.write.mock.callCount(), 1);
+  assert.equal(applyEdit.mock.callCount(), 1);
+  assert.deepEqual(
+    applyEdit.mock.calls[0].arguments[0],
+    deleteEdit({ id: "image_hero", kind: "node" }),
+  );
+  assert.ok(clipboard.written.has(SCENE_CLIPBOARD_MIME));
 });

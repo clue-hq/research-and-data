@@ -630,14 +630,29 @@ function offerImagePng(
   png.catch(() => {});
   // SYNCHRONOUS inside the copy event — the png is still pending, and that is
   // the point: waiting for bytes would land the call outside the activation
-  // window, where every browser refuses it.
-  write([
-    {
-      "image/png": png,
-      "text/html": new Blob([html], { type: "text/html" }),
-      "text/plain": new Blob([representations.plain], { type: "text/plain" }),
-    },
-  ]).catch(() => {});
+  // window, where every browser refuses it. Which is also why this is a
+  // try/catch and not a deferring `Promise.resolve().then(...)`: R31 swallows
+  // BOTH failure shapes, but only one of them may be bought by leaving the
+  // activation tick.
+  //
+  // THE SYNCHRONOUS THROW IS REAL, not defensive padding: the default writer
+  // constructs `ClipboardItem`s in its own synchronous prefix, and that
+  // constructor throws a TypeError in engines that do not accept
+  // promise-valued entries (Firefox). An exception escaping here would leave a
+  // window `copy` listener throwing — and would abort `handleSceneClipboardCut`
+  // BEFORE its delete, turning a cut into a copy that never removed anything.
+  try {
+    write([
+      {
+        "image/png": png,
+        "text/html": new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([representations.plain], { type: "text/plain" }),
+      },
+    ]).catch(() => {});
+  } catch {
+    // The enrichment failed before it began. The baseline copy stands, and it
+    // is the whole copy — so there is nothing to say and nothing to undo.
+  }
 }
 
 /** The copied image node's bytes, as png. Rejects — never resolves a
