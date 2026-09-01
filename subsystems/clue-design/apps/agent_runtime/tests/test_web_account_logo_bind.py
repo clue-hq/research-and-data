@@ -312,3 +312,17 @@ def test_the_recipe_says_the_same_two_things() -> None:
     assert "PUBLISH THE DERIVED PAGE, NEVER THE TEMPLATE" in squashed
     assert "bind_account_logo" in squashed
     assert "empty-logo page — which is CORRECT" in squashed
+
+
+def test_vendor_fetched_records_pass_the_bind_gate_and_generated_ones_do_not():
+    from lumen_api.agent_account_logos import is_fetched_logo
+
+    vendor = {"provenance": {"created_by": "brandfetch"}}
+    ladder = {"provenance": {"created_by": "logo_ladder"}}
+    generated = {"provenance": {"created_by": "image_generation"}}
+    assert is_fetched_logo(vendor) and is_fetched_logo(ladder)
+    assert not is_fetched_logo(generated)
+    # the old name still answers (deprecated alias, same object)
+    from lumen_api.agent_account_logos import is_ladder_fetched
+
+    assert is_ladder_fetched is is_fetched_logo

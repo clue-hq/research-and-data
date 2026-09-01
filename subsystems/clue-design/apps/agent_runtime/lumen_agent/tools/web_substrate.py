@@ -36,7 +36,7 @@ from selectolax.parser import HTMLParser
 
 from py_lumen_obs import bind_run_id, get_logger
 
-from lumen_api.agent_account_logos import AccountLogoRefused, is_ladder_fetched
+from lumen_api.agent_account_logos import AccountLogoRefused, is_fetched_logo
 from lumen_api.core import CoreClient, CoreError
 from lumen_api.database import FragmentReferenceError
 from lumen_api.clone_review import (
@@ -3482,11 +3482,12 @@ class LumenWebTools:
                 "ask for the file. An empty account logo is CORRECT; never draw, recolour or "
                 "approximate one.",
             )
-        if not is_ladder_fetched(record):
+        if not is_fetched_logo(record):
             return self._tool_error(
                 "account_logo.not_a_fetched_logo",
-                f"'{asset}' was not fetched from that company's own website, so it cannot "
-                "become their logo. Only a mark the logo ladder retrieved and attributed binds "
+                f"'{asset}' was not fetched from that company's own website or logo vendor, "
+                "so it cannot become their logo. "
+                "Only a mark the logo ladder retrieved and attributed binds "
                 "here — a generated image, a placeholder or a section's own artwork is not a "
                 "company's logo. Call fetch_logo with their domain; if it finds nothing, an "
                 "empty account logo is CORRECT.",
