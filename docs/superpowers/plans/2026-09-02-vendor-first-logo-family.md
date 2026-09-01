@@ -17,7 +17,7 @@ Ledger: `.superpowers/sdd/2026-09-02-vendor-first-logo-family/progress.md`. Proc
 - Task 1 — DONE (`0cf64d654`)
 - Task 2 — DONE (`5a6e05d78`)
 - Task 3 — DONE (`e8a5efe63`)
-- Task 3b — PENDING (carry-over D2+D3)
+- Task 3b — DONE (`9387f9b7f`)
 
 ## Deferred items ledger (founder rule 2026-09-02: every deferral lives HERE and belongs to a task)
 
@@ -730,7 +730,7 @@ svg_is_renderable gates vendor SVGs; first asset wins per cell."
 
 ### Task 3b (carry-over of D2 + D3): raster decodability gate + Task 1 nits
 
-**Status: PENDING — executes before Task 4.**
+**Status: DONE 2026-09-02 — commit `9387f9b7f`; controller first-hand review clean. (Brief erratum: the Step 2 parenthetical says garbage fills `dark_mark`; vendor theme=dark inverts to OUR light, so it fills `light_mark` — code and test are right.)**
 
 **Files:**
 - Modify: `subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py` (append `_raster_decodes`; one new gate in `map_vendor_assets_to_cells` directly after the SVG gate)
@@ -741,7 +741,7 @@ svg_is_renderable gates vendor SVGs; first asset wins per cell."
 - Consumes: Task 3's `map_vendor_assets_to_cells`; Pillow (already a dependency — the ladder decodes rasters with it, lazily).
 - Produces: `logo_vendor._raster_decodes(body: bytes) -> bool`; mapping rule 6b — a png/webp/jpeg cell whose bytes Pillow cannot open is refused with a note containing "cannot be decoded"; the cell stays empty for the ladder to backfill.
 
-- [ ] **Step 1: Write the failing tests / fix the fixture**
+- [x] **Step 1: Write the failing tests / fix the fixture**
 
 Append to `test_logo_vendor.py`:
 
@@ -773,10 +773,10 @@ In `test_map_vendor_assets_inverts_theme_and_skips_icon_and_photographic`, repla
 
 In `test_brandfetch_settings_load_from_env`, add `monkeypatch.setenv("BRANDFETCH_API_BASE_URL", "https://example.test")` beside the other setenv calls and `assert fresh.brandfetch_api_base_url == "https://example.test"` beside the other asserts.
 
-- [ ] **Step 2: Run to verify FAIL** — the new test fails (garbage bytes currently fill `dark_mark`); the settings test passes already (an assertion added to green code — acceptable, it pins D2).
+- [x] **Step 2: Run to verify FAIL** — the new test fails (garbage bytes currently fill `dark_mark`); the settings test passes already (an assertion added to green code — acceptable, it pins D2).
 `PYTHONPATH=.:apps/api:apps/agent_runtime <repo-root>/.venv/bin/python -m pytest apps/api/tests/test_logo_vendor.py -v`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `logo_vendor.py`:
 
@@ -810,9 +810,9 @@ In `map_vendor_assets_to_cells`, directly after the SVG renderability `continue`
 
 In `config.py`, change the comment header `# -- Brandfetch (target-account logo vendor; W-logo vendor-first, 2026-09-02) --------` to `# -- Brandfetch (target-account logo vendor; vendor-first logo family, 2026-09-02) ----`.
 
-- [ ] **Step 4: Run to verify PASS** — all 11 tests green (same command).
+- [x] **Step 4: Run to verify PASS** — all 11 tests green (same command).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add subsystems/clue-design/apps/api/lumen_ingestion/logo_vendor.py subsystems/clue-design/packages/py-lumen-config/py_lumen_config/config.py subsystems/clue-design/apps/api/tests/test_logo_vendor.py
