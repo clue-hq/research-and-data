@@ -1583,39 +1583,115 @@ duck-typed seam (durable impl lands with the migration)."
   - `put(site: str, outcome: LogoFetchOutcome) -> None` — `blobs.register(...)` per prepared cell (content-addressed upsert, so re-put converges), then UPSERT the row (`ON CONFLICT (workspace_id, registrable_domain) DO UPDATE` — force_refresh overwrite path). Only called with `outcome.prepared` non-empty (the dispatch guards; `put` also no-ops defensively on empty).
   - Failure posture: a cache **read** error degrades to `None` + a logged warning (the fetch path must never die on cache trouble); a cache **write** error is logged and swallowed (the turn already has its family). Same reasoning as the advisory-not-authoritative rules elsewhere: the cache is an optimization, never a gate.
 
-**Migration** (hand-written, reversible, named constraints; mirror the column conventions of `design_account` in `alembic/versions/86a9ce389e6e_design_web_accounts_and_components_.py` — open it and copy its `workspace_id` column type and FK target verbatim):
+**Migration** (hand-written, reversible, named constraints; raw-SQL style like `86a9ce389e6e`, whose `design_account` uses `workspace_id text NOT NULL` + `FOREIGN KEY (workspace_id) REFERENCES workspace (workspace_id)` — resolved by the controller 2026-09-02):
 
 ```python
 def upgrade() -> None:
-    op.create_table(
-        "design_logo_family",
-        sa.Column("workspace_id", <same type as design_account.workspace_id>, nullable=False),
-        sa.Column("registrable_domain", sa.Text(), nullable=False),
-        sa.Column("family", postgresql.JSONB(), nullable=False),
-        sa.Column("fetched_at", sa.TIMESTAMP(timezone=True), nullable=False,
-                  server_default=sa.text("now()")),
-        sa.Column("refreshed_at", sa.TIMESTAMP(timezone=True), nullable=True),
-        sa.PrimaryKeyConstraint("workspace_id", "registrable_domain",
-                                name="pk_design_logo_family"),
-        sa.ForeignKeyConstraint(["workspace_id"], [<same target as design_account>],
-                                name="fk_design_logo_family_workspace"),
+    op.execute(
+        """
+        CREATE TABLE design_logo_family (
+            workspace_id        text        NOT NULL,
+            registrable_domain  text        NOT NULL,
+            family              jsonb       NOT NULL,
+            fetched_at          timestamptz NOT NULL DEFAULT now(),
+            refreshed_at        timestamptz,
+            CONSTRAINT design_logo_family_pk
+                PRIMARY KEY (workspace_id, registrable_domain),
+            CONSTRAINT design_logo_family_workspace_fk
+                FOREIGN KEY (workspace_id) REFERENCES workspace (workspace_id)
+        )
+        """
     )
 
+
 def downgrade() -> None:
-    op.drop_table("design_logo_family")
+    op.execute("DROP TABLE design_logo_family")
 ```
 
-(`<same type/target as design_account>` is resolved by READING `86a9ce389e6e` in Step 1 — it is a lookup, not a decision. The `family` JSONB holds `{"site", "company", "lockup_completeness", "cells": {cell: {"sha256", "content_type", "source", "origin_url", "evidence", "provenance", "label", "asset_id"}}, "notes": [...]}` — everything `get` needs to rebuild the outcome without re-running either rung.)
+The `family` JSONB holds `{"site", "company", "lockup_completeness", "identity", "notes", "cells": {cell: {"sha256", "content_type", "source", "origin_url", "evidence", "provenance", "source_ref", "label", "asset_id"}}}` — everything `get` needs to rebuild the outcome without re-running either rung.
 
-- [ ] **Step 1: Read `alembic/versions/86a9ce389e6e_design_web_accounts_and_components_.py`**, note `design_account.workspace_id`'s exact column type and FK target. Run `alembic heads` (must print ONE id; if two, STOP — an unmerged parallel branch exists, resolve per CLAUDE.md's migration conventions before continuing).
+**Layering (controller ruling 2026-09-02, mirrors how `HybridRepository` delegates to `clue_design.accounts`):** the SQL lives in a new DAL module `subsystems/design/clue_design/logo_family_cache.py` (async functions over `AsyncConnection` using `sqlalchemy.text`, exactly the shape of `clue_design/accounts.py::get_web_account`); the API-side `DurableLogoFamilyCache` calls it through `DesignStoreBridge(self.workspace_id)._run(lambda conn: ...)` (the same bridge `HybridRepository` uses) and does blob custody through `DesignBlobStore.register / custody_states / read`. Mirror how `clue_design/assets.py` binds a jsonb parameter (json.dumps + `CAST(:f AS jsonb)` or its established equivalent — read that file, do not guess).
+
+```python
+# subsystems/design/clue_design/logo_family_cache.py
+"""``design_logo_family`` DAL — the durable target-logo family cache (vendor-first logo family, Task 7).
+Keyed (workspace_id, registrable_domain); workspace-scoped by the row itself, so a foreign
+workspace's read is an ordinary miss. No TTL: overwrite (force_refresh) stamps refreshed_at."""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+JsonObject = dict[str, Any]
+
+
+async def get_logo_family(
+    conn: AsyncConnection, *, workspace_id: str, registrable_domain: str
+) -> JsonObject | None:
+    row = (
+        await conn.execute(
+            text(
+                "SELECT family, fetched_at, refreshed_at FROM design_logo_family "
+                "WHERE workspace_id = :w AND registrable_domain = :d"
+            ),
+            {"w": workspace_id, "d": registrable_domain},
+        )
+    ).first()
+    if row is None:
+        return None
+    family = row.family if isinstance(row.family, dict) else json.loads(row.family)
+    return {"family": family, "fetched_at": row.fetched_at, "refreshed_at": row.refreshed_at}
+
+
+async def upsert_logo_family(
+    conn: AsyncConnection, *, workspace_id: str, registrable_domain: str, family: JsonObject
+) -> None:
+    await conn.execute(
+        text(
+            "INSERT INTO design_logo_family (workspace_id, registrable_domain, family) "
+            "VALUES (:w, :d, CAST(:f AS jsonb)) "
+            "ON CONFLICT (workspace_id, registrable_domain) "
+            "DO UPDATE SET family = EXCLUDED.family, refreshed_at = now()"
+        ),
+        {"w": workspace_id, "d": registrable_domain, "f": json.dumps(family)},
+    )
+```
+
+- [ ] **Step 1: Run `alembic heads` from the repo root** with the repo `.env` sourced (`set -a; source .env; set +a`) — it must print ONE id (`6eff96862040` at plan time; if two, STOP — an unmerged parallel branch exists). Set the new migration's `down_revision` to that id.
 
 - [ ] **Step 2: Generate the migration** — from repo root: `alembic revision -m "design logo family cache"`; fill in `upgrade()`/`downgrade()` as above with the values from Step 1.
 
-- [ ] **Step 3: Gate the migration** — `make db-smoke` (clean throwaway DB, up→down→up). Expected: green, one head.
+- [ ] **Step 3: Gate the migration on a THROWAWAY database — never the workspace dev DB.** `make db-smoke` runs `alembic downgrade base` against whatever `CLUE_DATABASE_URL` names, and the repo `.env` names this workspace's LIVE dev DB (`clue_singapore_v1`, seeded). So, from the repo root:
+
+```bash
+PGPASSWORD=clue psql -h localhost -p 55040 -U clue -d postgres -c 'CREATE DATABASE clue_singapore_v1_smoke'
+CLUE_DATABASE_URL=postgresql+asyncpg://clue:clue@localhost:55040/clue_singapore_v1_smoke make db-smoke
+PGPASSWORD=clue psql -h localhost -p 55040 -U clue -d postgres -c 'DROP DATABASE clue_singapore_v1_smoke'
+```
+Expected: three alembic runs green (up → down → up), then `alembic heads` prints exactly one id (the new one). ONLY THEN apply the migration to the dev DB additively: `set -a; source .env; set +a; .venv/bin/alembic upgrade head` (upgrade only — never downgrade the dev DB). The API test suite reads that DB.
 
 - [ ] **Step 4: Write the failing cache tests**
 
-Follow the DB-test fixture pattern of the nearest design API test that touches `DesignBlobStore` + repository (look at `apps/api/tests/test_web_account_logo_bind.py` — reuse its workspace/blob-store fixtures verbatim; they encode the bridged-transaction setup you must not reinvent):
+Fixture pattern (controller-resolved 2026-09-02): the api conftest (`apps/api/tests/conftest.py`) already gives every test an isolated workspace via the autouse `_isolated_design_workspace` (sets `LUMEN_DEV_WORKSPACE_ID`) and a disposable `design_storage` (`FsStorage(tmp_path/...)`); `make_blob_store(app)` builds a `DesignBlobStore` on the app's storage for THIS test's workspace. Build the app the way `apps/api/tests/test_abm_batch_publish.py`'s fixtures (lines ~49–96) do (`create_app(...)` with the injected `design_storage`), and define in this test file:
+
+```python
+@pytest.fixture()
+def design_blob_store(app):          # `app` = the create_app fixture you mirror from test_abm_batch_publish.py
+    from conftest import make_blob_store  # or the import path that file uses
+    return make_blob_store(app)
+
+
+@pytest.fixture()
+def other_workspace_blob_store(app):
+    import uuid
+    from lumen_api.design_store import DesignBlobStore
+    return DesignBlobStore(app.state.storage, f"ws_test_other_{uuid.uuid4().hex[:12]}")
+```
+(`DesignBlobStore(..., ensure_workspace=True)` is the default, so the second workspace row is created on first use.) Tests hit the workspace dev DB named by the repo `.env` — run them with `set -a; source <repo-root>/.env; set +a` in the shell first.
 
 ```python
 # subsystems/clue-design/apps/api/tests/test_logo_family_cache.py
@@ -1755,7 +1831,85 @@ class DurableLogoFamilyCache:
     # custody state is not READABLE makes the WHOLE family a miss.
 ```
 
-`_get`/`_put` are ~40 lines each of straightforward row+blob plumbing; write them against the row shape defined in the migration note above, importing `LogoFetchOutcome`/`PreparedLogo` from `lumen_agent.tools.logo_fetch` (the API composes agent-runtime types at seams already — `main.py` imports `run_web_agent_turn`).
+`_get`/`_put`, concretely (import `LogoFetchOutcome`/`PreparedLogo` from `lumen_agent.tools.logo_fetch` lazily inside the methods — the API composes agent-runtime types at seams already; `main.py` imports `run_web_agent_turn`):
+
+```python
+    def _put(self, site: str, outcome: Any) -> None:
+        import hashlib
+
+        from clue_design import logo_family_cache as dal
+
+        from .design_store import DesignStoreBridge
+
+        cells: dict = {}
+        for prepared in outcome.prepared:
+            sha = hashlib.sha256(prepared.body).hexdigest()
+            self.blobs.register(
+                prepared.body, media_type=prepared.content_type, source_key=SOURCE_KEY_ASSET
+            )
+            cells[prepared.cell] = {
+                "sha256": sha,
+                "content_type": prepared.content_type,
+                "source": prepared.source,
+                "origin_url": prepared.source_ref.get("url"),
+                "evidence": prepared.evidence,
+                "provenance": prepared.provenance,
+                "source_ref": prepared.source_ref,
+                "label": prepared.label,
+                "asset_id": prepared.asset_id,
+            }
+        family = {
+            "site": outcome.site,
+            "company": outcome.company,
+            "lockup_completeness": outcome.lockup_completeness,
+            "identity": outcome.identity,
+            "notes": list(outcome.notes),
+            "cells": cells,
+        }
+        DesignStoreBridge(self.workspace_id)._run(
+            lambda conn: dal.upsert_logo_family(
+                conn, workspace_id=self.workspace_id,
+                registrable_domain=self._key(site), family=family,
+            )
+        )
+
+    def _get(self, site: str):
+        from clue_design import logo_family_cache as dal
+        from lumen_agent.tools.logo_fetch import LogoFetchOutcome, PreparedLogo
+
+        from .design_store import DesignStoreBridge
+
+        row = DesignStoreBridge(self.workspace_id)._run(
+            lambda conn: dal.get_logo_family(
+                conn, workspace_id=self.workspace_id, registrable_domain=self._key(site)
+            )
+        )
+        if row is None:
+            return None
+        family = row["family"]
+        cells = family.get("cells") or {}
+        digests = [c["sha256"] for c in cells.values()]
+        states = self.blobs.custody_states(digests)
+        if any(states.get(d) is not CustodyState.READABLE for d in digests):
+            return None  # any unreadable cell = the WHOLE family is a miss (honest; refetch)
+        prepared = [
+            PreparedLogo(
+                cell=name, source=c["source"], asset_id=c["asset_id"], label=c["label"],
+                body=self.blobs.read(c["sha256"]), content_type=c["content_type"],
+                provenance=c["provenance"], source_ref=c["source_ref"], evidence=c["evidence"],
+            )
+            for name, c in cells.items()
+        ]
+        return LogoFetchOutcome(
+            status="ok", site=family["site"], company=family.get("company"),
+            prepared=prepared, cells={p.cell: p.source for p in prepared},
+            identity=family.get("identity") or {},
+            lockup_completeness=family.get("lockup_completeness", "unknown"),
+            notes=list(family.get("notes") or []),
+        )
+```
+
+Add `- Create: \`subsystems/design/clue_design/logo_family_cache.py\`` to this task's Files and to the commit's `git add`.
 
 - [ ] **Step 7: Run to verify PASS**, then commit
 
