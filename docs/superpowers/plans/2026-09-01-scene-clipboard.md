@@ -514,9 +514,13 @@ later — WebKit/Firefox support is not there yet, per the research note).
 
 ### Task 12: Rung close — frontend gate + live walk
 
-- [ ] **Step 1: frontend gate** — `npm run design-system:build && npm run lint && npm run build`
-  + full vitest suite; baseline 2246 must not regress; zero new lint errors.
-- [ ] **Step 2: live walk on the colombo stack** (3033, Apollo workspace, the Cursor ad),
+- [x] **Step 1: frontend gate** — `npm run design-system:build && npm run lint && npm run build`
+  + full vitest suite; baseline 2246 must not regress; zero new lint errors. (design-system:build 0;
+  lint 0 errors / 2 pre-existing warnings; `next build` completed; `npm test` 2462/2461/0/1 skip.)
+- [x] **Step 2: live walk on the colombo stack** (3033, Apollo workspace, the Cursor ad), — RAN ON THE
+  NASHVILLE stack (3023, clone DB) instead; every item below verified via the persisted document
+  except the Preview/Slack external-app spot-check (headless cannot do it — founder-owed). Two walk
+  findings fixed in `23bbd2f75` (W1 pasted-node names, W2 cross-document asset carriage).
   checklist: ⌘C/⌘V a text box (cascade lands, undo removes, redo restores); ⌘X removes + ⌘V
   restores with fresh ids; ⌘D twice cascades twice; copy a GROUP → paste → subtree intact with
   spans; paste with the card auto-layout selected → child appended (C-9 behavior observed and
@@ -527,9 +531,9 @@ later — WebKit/Firefox support is not there yet, per the research note).
   resolve); copy an image node → paste into Preview/Slack as a real image; copy a text node →
   paste into a text editor as plain text; every refusal path exercised once (bad file type,
   foreign envelope) — message visible, nothing half-applied.
-- [ ] **Step 3: close-out memory note** (`_memory/2026-09-01-scene-clipboard-close-out.md`):
+- [x] **Step 3: close-out memory note** (`_memory/2026-09-01-scene-clipboard-close-out.md`):
   commits, walk verdict, residuals, founder-visible defaults exercised.
-- [ ] **Step 4: commit** `docs(memory): scene clipboard close-out`
+- [x] **Step 4: commit** `docs(memory): scene clipboard close-out`
 
 ## Self-review (run at plan close)
 
