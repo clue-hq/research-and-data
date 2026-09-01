@@ -484,10 +484,18 @@ later — WebKit/Firefox support is not there yet, per the research note).
   `setData` path (envelope + plain only) — the internal payload must never be lost to a png
   failure.
 
-- [ ] **Step 1: failing tests** — representation builder returns all three blobs for a png asset;
+- [x] **Step 1: failing tests** — representation builder returns all three blobs for a png asset;
   jpeg/webp/svg route through `rasterToPngBlob`; `clipboard.write` rejection → sync fallback invoked,
   envelope intact (spy sequence); non-image roots never call `clipboard.write` (ruling 4 scope).
-- [ ] **Steps 2–4** — **Step 5: commit** `feat(design-editor): image-node copies carry image/png for external apps`
+- [x] **Steps 2–4** — **Step 5: commit** `feat(design-editor): image-node copies carry image/png for external apps`
+  (`b86d3dd81` + fix round `7bae72643`. DESIGN AS BUILT (ruling R31): the sync `setData` trio is
+  the baseline and is written FIRST; the async `ClipboardItem` write (html/plain/promise-png) is
+  additive, issued synchronously inside the copy event, and every failure — rejection OR
+  synchronous constructor throw (Firefox) — is swallowed, so the internal payload can never be lost
+  to a png failure. Known, accepted cost: a successful async write replaces the custom-mime fast
+  path with the envelope (browsers allowlist ClipboardItem types; fidelity preserved). Decode
+  branches of `rasterToPngBlob` are un-testable offline — Preview/Slack spot-check owed at Task 12.
+  55-test hook suite; frontend `npm test` 2440/2439/0.)
 
 ### Task 11: Text-session paste pinning (probably already green)
 
