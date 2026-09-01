@@ -25,6 +25,7 @@ import { fetchBrandKitDetail } from "../engine/scene/documentStore";
 import { collectKitFontFaceRefs } from "../engine/scene/kitFonts";
 import { fetchFontLibrary } from "../engine/scene/libraryFonts";
 import { useSceneArrange } from "./use-scene-arrange";
+import { useSceneClipboard } from "./use-scene-clipboard";
 import type { SceneDocumentHistory } from "./use-scene-document";
 import { useSceneExport } from "./use-scene-export";
 import { useSceneImageAi } from "./use-scene-image-ai";
@@ -579,6 +580,35 @@ export function useSceneEditingSession({
   // false, so nothing could be written; this keeps the panel from claiming
   // otherwise, and keeps the absent-binding path the dummy's own.)
   const arrange = activeDocumentId && scene ? arrangeBinding : undefined;
+
+  // Clipboard Task 7: ⌘C / ⌘X / ⌘V / ⌘D over the scene.
+  //
+  // It sits HERE, beside the arrange binding, for the same reason arrange does
+  // (AD4.A: components never reach the engine or the transport, so the session
+  // composes the handler hook) — and it returns nothing, because a clipboard
+  // has no panel: copy, cut and paste arrive as the browser's OWN semantic
+  // events (never a keymap — only inside those events is `clipboardData` live,
+  // and only they fire for the Edit menu and the right-click menu), and ⌘D is
+  // the single chord it registers.
+  //
+  // The selection it takes is the PRIMARY one, unresolved: `primaryNodeId`
+  // above has already been checked against the live scene, and the hook does
+  // its own cross-page check (R11), so passing `selectedIds[0]` raw would only
+  // duplicate that. V1 copies ONE subtree — the shipped selection model's shape.
+  //
+  // `workspaceId` is deliberately omitted: nothing in this session knows one
+  // (it takes artifact ids and document ids, no workspace), and the payload's
+  // `workspaceHint` is display/debug only — a fabricated value would be worse
+  // than the honest null, since asset resolution is the real cross-workspace
+  // gate. Tasks 8 and 9 own the three external seams; until they land the hook
+  // refuses those pastes out loud rather than swallowing them.
+  useSceneClipboard({
+    documentId: activeDocumentId,
+    pageId,
+    scene,
+    selectedNodeId: primaryNodeId,
+    writes,
+  });
 
   // AD4.D step 2 (§1.11): the export menu's request, answered. It sits beside
   // the write hooks rather than inside them because an export is a READ (ruling
