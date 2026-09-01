@@ -456,12 +456,17 @@ later — WebKit/Firefox support is not there yet, per the research note).
 - Produces: plain-text intent handling per §Design; `newTextNodeFromPaste(text, placement,
   kitDefaults): Node`.
 
-- [ ] **Step 1: failing tests** — selected TextNode → one updateTextNode op whose spans vector
+- [x] **Step 1: failing tests** — selected TextNode → one updateTextNode op whose spans vector
   came from `spansVectorForContentEdit` (spy on the real fn) — never a raw spread; spanned node +
   full replacement → spans remap per that function's own contract; nothing selected → one
   insertNode with a TextNode carrying the pasted characters at viewport center; selected
   ImageNode → falls through to new-text-node (not a content write on an image).
-- [ ] **Steps 2–4** — **Step 5: commit** `feat(design-editor): plain-text paste — replace selected text or mint a text node`
+- [x] **Steps 2–4** — **Step 5: commit** `feat(design-editor): plain-text paste — replace selected text or mint a text node`
+  (`f7912cc8c`, review approved first pass. Plain text is now the hook's own — the Task-7
+  `onPlainText` seam is removed (R26). The minted node rides the SAME plan→materialize pipeline as
+  internal paste (R28: Inter/16/400, 60%-short-side fixed width, hug height, solid #111111 fill);
+  the spans function is injected-with-real-default because ESM bindings cannot be spied (R27).
+  45-test suite; frontend `npm test` 2428/2427/0.)
 
 ### Task 10: Outbound representations for image nodes (ruling 4)
 
