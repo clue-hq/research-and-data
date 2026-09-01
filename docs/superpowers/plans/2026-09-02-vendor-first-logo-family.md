@@ -2008,7 +2008,7 @@ refused; old name kept as alias."
 
 **Files:**
 - Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/config.py` (beside `account_logo_binder` at ~line 187)
-- Modify: `subsystems/clue-design/apps/api/lumen_api/main.py` (web seam ~line 9857; scene seam — the `replace(config, account_logo_binder=...)` block at ~line 8872)
+- Modify: `subsystems/clue-design/apps/api/lumen_api/main.py` — **controller-resolved seams (2026-09-02):** the SCENE lane's turn config is built inside `run_agent_turn_preview` (def at ~8428; `config = AgentRuntimeConfig.from_env(root)` at ~8502, `turn_blobs` in scope at ~8455) and the WEB lane's inside `run_web_agent_turn` (def at ~8718; `from_env` at ~8806, `turn_blobs` in scope, the `account_logo_binder` replace at ~8872). Compose the cache INSIDE both functions, not at the worker call site (~9857), so both lanes get it from the same `turn_blobs` handle.
 - Test: `subsystems/clue-design/apps/api/tests/test_logo_family_cache.py` (extend with a composition assertion) — plus the Task 10 tool tests exercise the seam end-to-end.
 
 **Interfaces:**
@@ -2030,15 +2030,15 @@ refused; old name kept as alias."
 
 In `from_env`, beside the other settings reads: `brandfetch_client_id=(settings.brandfetch_client_id.strip() or None)`.
 
-- [ ] **Step 2: Compose at both seams in `main.py`.** At the web seam (~9857), beside `account_logo_binder=DurableAgentAccountLogoBinder(...)`, add:
+- [ ] **Step 2: Compose at both seams in `main.py`.** Add the import beside `DurableAgentAccountLogoBinder`'s (~line 69): `from .agent_logo_family_cache import DurableLogoFamilyCache`. Then, in BOTH `run_agent_turn_preview` (scene) and `run_web_agent_turn` (web), directly after the `config = replace(config, asset_store_root=turn_cache_root)` line each function already has (~8515 and ~8812), add one unconditional line:
 
 ```python
-                logo_family_cache=DurableLogoFamilyCache(
-                    blobs=_turn_blob_store(host, workspace_id),
-                ),
+        # Vendor-first logo family cache (decision #4): per workspace, keyed by registrable
+        # domain; the tool degrades to uncached fetching when this is None.
+        config = replace(config, logo_family_cache=DurableLogoFamilyCache(blobs=turn_blobs))
 ```
 
-with the import added next to `DurableAgentAccountLogoBinder`'s (line ~69). At the scene seam (~8872), in the same `replace(config, ...)` chain that installs `account_logo_binder`, add an unconditional `config = replace(config, logo_family_cache=DurableLogoFamilyCache(blobs=turn_blobs))` (the scene block already holds `turn_blobs`). Confirm both `run_web_agent_turn` / scene turn plumb `config` fields through untouched (they do — `account_logo_binder` rides the same object).
+Both functions already hold `turn_blobs` (a `DesignBlobStore` for the turn's workspace). Nothing changes at the worker call site (~9857). Confirm with `grep -n "logo_family_cache" subsystems/clue-design/apps/api/lumen_api/main.py` → exactly two composition lines + the import.
 
 - [ ] **Step 3: Composition test** — append to `test_logo_family_cache.py`:
 
@@ -2177,17 +2177,18 @@ def test_scene_prompts_name_the_cells():
     assert "light_lockup" in source
 
 
-def test_rendered_web_author_prompt_names_the_cells(prompt_of):
+def test_rendered_web_author_prompt_names_the_cells():
     # D4: the SOURCE assertions above prove the words exist; this proves they REACH the
-    # agent. `prompt_of` is the suite's existing rendered-prompt fixture (see
-    # test_web_account_logo_bind.py); mirror its call shape exactly.
-    rendered = prompt_of("author")
+    # agent. Same render call `test_web_account_logo_bind.py::_author_prompt` uses.
+    from lumen_agent.prompts_web import build_web_author_prompt
+
+    rendered = build_web_author_prompt(brand_card="{}", theme_token_names="brand, ink")
     for cell in ("light_lockup", "dark_lockup", "light_mark", "dark_mark"):
         assert cell in rendered
     assert "asset ids per slot" not in rendered
 ```
 
-(If `prompt_of` is defined locally in `test_web_account_logo_bind.py` rather than in a conftest, lift it into `apps/agent_runtime/tests/conftest.py` unchanged so both files share it — that move is in scope for this task.)
+(Controller correction 2026-09-02: there is no `prompt_of` fixture — `test_web_account_logo_bind.py` parametrizes over two local helpers, `_director_prompt()` and `_author_prompt()`; the test above inlines the author helper's exact call. If `build_web_author_prompt`'s signature has changed since, mirror `_author_prompt` in that file verbatim.)
 
 - [ ] **Step 2: FAIL** → **Step 3: apply the prose** → **Step 4: PASS**
 `... -m pytest apps/agent_runtime/tests/test_prompts_logo_cells.py -v`
