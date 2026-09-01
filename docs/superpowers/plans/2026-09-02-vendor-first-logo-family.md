@@ -24,6 +24,7 @@ Ledger: `.superpowers/sdd/2026-09-02-vendor-first-logo-family/progress.md`. Proc
 - Task 7 — DONE (`16857940d`, `dcbcd4b63`; migration `1d09aba87206`)
 - Task 8 — DONE (`753e1e9d7`) — ran before Task 7
 - Task 9 — DONE (`8c3d0f3f7`)
+- Task 10 — DONE (`7f301f62f`) — batch 4–10 live-verified end to end
 
 ## Deferred items ledger (founder rule 2026-09-02: every deferral lives HERE and belongs to a task)
 
@@ -1207,7 +1208,7 @@ materialized-adaptive provenance survives as its own source label."
 
 ### Task 6: The two-rung dispatch (rewrite `logo_fetch.fetch_logo_family`)
 
-**Status: DONE 2026-09-02 — commits `08de3c8e2` + fix `ab6b477a4`; controller first-hand review clean. Errata vs the plan text: `status` is `ok` only when a vendor cell exists or the ladder RESOLVED (a hesitant ladder-only family stays `needs_review` with its cells prepared, as before), and `cache.put` runs only on `ok`; `PreparedLogo.slot` survives as a deprecated alias until Task 10; one strict xfail (`test_web_fetch_logo_registers_with_the_record_op_key`) awaits Task 10.**
+**Status: DONE 2026-09-02 — commits `08de3c8e2` + fixes `ab6b477a4`, `2d1d31d8e` (D8: vendor cells ingest with the engine's `website` source kind); controller first-hand review clean. Errata vs the plan text: `status` is `ok` only when a vendor cell exists or the ladder RESOLVED (a hesitant ladder-only family stays `needs_review` with its cells prepared, as before), and `cache.put` runs only on `ok`; `PreparedLogo.slot` survives as a deprecated alias until Task 10; one strict xfail (`test_web_fetch_logo_registers_with_the_record_op_key`) awaits Task 10.**
 
 **Files:**
 - Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/logo_fetch.py` (the `fetch_logo_family`, `_prepare`, `LogoFetchOutcome`, `PreparedLogo`, `review_payload` block)
@@ -2081,6 +2082,8 @@ just costlier). brandfetch_client_id rides config for the hotlink prompts."
 
 ### Task 10: Both `fetch_logo` tools speak cells (+ `force_refresh`, + cache)
 
+**Status: DONE 2026-09-02 — commit `7f301f62f`; controller first-hand review clean; zero xfail (D5 met); LIVE-verified end to end through the real web tool with the real key and a real durable cache (4 cells ingested, second call a cache hit, bind gate accepts). Errata: `failed_slots` → `failed_cells` (no consumers); "Static fetch only on the ladder fallback" wording; the web payload never had a `next` field.**
+
 **Files:**
 - Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/substrate.py` (`fetch_logo`, ~line 1333)
 - Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/web_substrate.py` (`fetch_logo`, ~line 3309)
@@ -2109,17 +2112,17 @@ Per-lane mechanics unchanged: scene ingests + `upsert_asset` with op key `asset`
 
 **Docstring updates (both lanes, verbatim contract — the scene docstring KEEPS its full-lockup ruling paragraph, now in cell vocabulary):** returns one asset per FAMILY CELL of a 2×2 — theme (`light_*` = for light backgrounds, `dark_*` = for dark) × completeness (`*_lockup` = the full logo, `*_mark` = the bare symbol). Sourced vendor-first (Brandfetch keyed by domain), in-house ladder fallback per cell; results are cached per workspace+company — pass `force_refresh=True` only when the user says the logo is wrong or outdated, which refetches and replaces the cached family. Scene lane keeps: "In an account-personalized or co-branded design, the OTHER company's logo must be its COMPLETE lockup — the `light_lockup`/`dark_lockup` cell for the surface you are placing on. The bare `*_mark` is a fallback for when the brand publishes no lockup, or the placement is genuinely too small to hold one — never the first choice." Both keep the `needs_review` + never-draw paragraphs verbatim.
 
-- [ ] **Step 1: Update the payload tests** — in `test_fetch_logo_tool.py`, remove every `xfail` from Task 6; update assertions from `"slot"` to `"cell"` keys and add, in whichever existing test drives a successful web fetch, `assert payload["logos"][0]["source"] in ("brandfetch", "ladder", "ladder-materialized")` and `assert "cache_hit" in payload`. Add one new test that a tool-level `force_refresh=True` reaches the prep layer (monkeypatch `logo_fetch.fetch_logo_family`, capture kwargs, assert `force_refresh is True` and `cache is config.logo_family_cache`).
+- [x] **Step 1: Update the payload tests** — in `test_fetch_logo_tool.py`, remove every `xfail` from Task 6; update assertions from `"slot"` to `"cell"` keys and add, in whichever existing test drives a successful web fetch, `assert payload["logos"][0]["source"] in ("brandfetch", "ladder", "ladder-materialized")` and `assert "cache_hit" in payload`. Add one new test that a tool-level `force_refresh=True` reaches the prep layer (monkeypatch `logo_fetch.fetch_logo_family`, capture kwargs, assert `force_refresh is True` and `cache is config.logo_family_cache`).
 
-- [ ] **Step 2: Run to verify FAIL** — the tools still emit `slot`:
+- [x] **Step 2: Run to verify FAIL** — the tools still emit `slot`:
 `... -m pytest apps/agent_runtime/tests/test_fetch_logo_tool.py -v`
 
-- [ ] **Step 3: Update both tools** per the Produces block: signature, the `logo_fetch.fetch_logo_family(...)` call gains `force_refresh=force_refresh, cache=getattr(self.config, "logo_family_cache", None)`; the `placed.append({...})` entries become `{"cell": prepared.cell, "source": prepared.source, "asset_id": ..., **prepared.evidence}`; payload gains `"cache_hit": outcome.cache_hit`; docstrings replaced as specified; the scene payload's `"next"` string updated to the cell wording above.
+- [x] **Step 3: Update both tools** per the Produces block: signature, the `logo_fetch.fetch_logo_family(...)` call gains `force_refresh=force_refresh, cache=getattr(self.config, "logo_family_cache", None)`; the `placed.append({...})` entries become `{"cell": prepared.cell, "source": prepared.source, "asset_id": ..., **prepared.evidence}`; payload gains `"cache_hit": outcome.cache_hit`; docstrings replaced as specified; the scene payload's `"next"` string updated to the cell wording above.
 
-- [ ] **Step 4: Run the whole file** — all PASS, zero xfail remaining:
+- [x] **Step 4: Run the whole file** — all PASS, zero xfail remaining:
 `... -m pytest apps/agent_runtime/tests/test_fetch_logo_tool.py -v`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/substrate.py subsystems/clue-design/apps/agent_runtime/tools/web_substrate.py subsystems/clue-design/apps/agent_runtime/tests/test_fetch_logo_tool.py
