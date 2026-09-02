@@ -302,8 +302,14 @@ class PublishWebDocumentTool(DesignTool):
             request_base_url=inputs.public_base,
             workspace_id=repository.workspace_id,
             slug=inputs.slug,
-            # F5 T14 supplies the workspace handle
-            handle=None,
+            # T14 / R-F5-5: the workspace's own DNS label. ENSURED, not read — the same call
+            # `publish_site_address` makes for the API's reported url, so the BYTES a publish
+            # mints (canonical, og:url, the manifest back-reference, and the rebased internal
+            # links) name the same address the API reports. Left `None` here, a site served on
+            # `{handle}.<suffix>` would carry interim `/w/{workspace}/p/{slug}` links, which do
+            # not exist on that host. `ensure` never overwrites, and with no host suffix
+            # configured the handle changes nothing about the answer at all.
+            handle=repository.ensure_workspace_handle()["handle"],
         )
         return publish_web_document(
             repository=repository,
