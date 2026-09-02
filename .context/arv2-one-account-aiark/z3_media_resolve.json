@@ -1,0 +1,94 @@
+{
+  "sanaz_podcast": {
+    "title": "AI Summit: Sanaz Yashar, Co-Founder and CEO at Zafran Security",
+    "enclosure": "https://anchor.fm/s/f695d6d8/podcast/play/106390290/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2025-7-9%2F405396769-44100-2-7287bb9271f44.mp3",
+    "itunes_duration": "00:42:49",
+    "pubDate": "Sun, 10 Aug 2025 14:00:00 GMT",
+    "link": "https://podcasters.spotify.com/pod/show/boardroomclub/episodes/AI-Summit-Sanaz-Yashar--Co-Founder-and-CEO-at-Zafran-Security-e36d9ai",
+    "enclosure_bytes": 41116315
+  },
+  "identity_binding": [
+    {
+      "url": "https://www.simonandschuster.com/authors/Nick-Fisher/177280135",
+      "title": "Nick Fisher | Official Publisher Page | Simon & Schuster",
+      "text": "Nick Fisher | Official Publisher Page | Simon & Schuster\n\n# Nick Fisher\n\nPhotograph by Nick Fisher\n\n## About The Author\n\nNick Fisher cut his teeth in New York City during the burgeoning cocktail renaissance where he learned to appreciate a craft cocktail made with fresh ingredients, but it took a \u201cCocktails 101\u201d class at a San Francisco speakeasy to spark a creative passion in home bartending. It wasn\u2019t long until he was experimenting with advanced techniques such as putting a cocktail inside a ball of ice only to smash it open, revealing the drink. In 2014, he created the YouTube channel Cocktail Chemistry to showcase these techniques, and it quickly rose to one of the most-watched cocktail channels. His creative and unique takes on classic cocktails combined with beautiful visuals and easy-to-follow instructions are designed for aspiring home bartenders looking to get started, as well as cocktail enthusiasts looking for innovative new techniques. Nick lives in San Francisco with his wife and young daughter, who prefers to drink straight from the bottle.\n\n## Author Alerts\n\nGet updates about Nick Fisher and recommended reads from Simon & Schuster. Plus, get a FREE ebook when you sign up!\n\nBy clicking 'Sign me up' I agree to the Terms of Use and acknowledge the Privacy Policy and Notice of Financial Incentive. Free ebook offer available to NEW US subscribers only. Offer redeemable at Simon & Schuster's ebook fulfillment partner. Must redeem within 90 days. See full terms and conditions and this month's choices.\n\n## Books by Nick Fisher\n\nCocktail Chemistry\n\n## The Art and Science of Drinks from Iconic TV Shows and Movies\n\n\u201cCocktail Chemistry offers the essential knowledge, techniques, and flair for creating perfectly mixed drinks at home.\u201d \u2014Bartender Magazine Enjoy clever, pop culture-inspired drinks with this collection of more than 80 recipes from the beloved Cocktail Chemistry...\n\nPaper Over Board\n\nLIST PRICE $25.99\n\nPRICE MAY VARY BY RETAILER\n\nBuy From Us\n\nBuy from Other Retailers\n\nManage Cookies\n\nword word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word "
+    },
+    {
+      "url": "https://www.linkedin.com/pulse/why-i-joined-zafran-security-nick-fisher-jqinf",
+      "title": "Why I joined Zafran Security",
+      "text": "Why I joined Zafran Security\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\nThe Zafran Risk & Mitigation Platform\n\nFor me, the decision to join a startup comes down to 3 basic criteria:\n\n1. Is this a market with a massive unsolved problem at the center?\n2. Is the product poised to solve it in a unique and valuable way?\n3. Do the people bring something special in creating a world-class company?\n\nZafran (means \"saffron\") has emerged from stealth to spice up the cybersecurity industry and I'm honored to be leading the marketing team. Here's why:\n\n---\n\n### Vuln management is a recurring nightmare, and it's only getting worse\n\n> \"I wake up every day, right here, and there's always 10,000 vulnerabilities\"\n\nThis was the sentiment I heard during my first week when combing through dozens of Gong calls with vuln management teams. A large bank described the process of identification to prioritization to remediation as entirely manual, requiring a massive effort from multiple teams.\n\nThese teams want to know: What is actionable? What is truly exploitable? How do I get my stakeholders to prioritize patching the vulns most likely to be exploited against the organization?\n\nMeanwhile, their pre-defined base severity scores don't account for exploit prevalence, compensating controls, mitigations available, and business context to reflect the potential impact onto the organization.\n\nThen the security engineers and architects get pulled into the discussion, they oversee tools like CrowdStrike, Akamai Technologies, Rapid7, or Palo Alto Networks.\n\nThese teams want to know: What is the efficacy of my compensating controls? Which ones are mitigating my top risks, and where are the gaps? Which controls do we want to replace or remove overlaps?\n\nAnd finally, am I protected against [insert latest vulnerability in the news that my boss is definitely going to ask me about tomorrow]?\n\nYou quickly realize the ultimate problem isn't about managing patch SLAs across teams. A CISO at a major electronics customer put it best: it's about understanding my real risk exposure.\n\n---\n\n### The \"aha\" moment: From patch management to risk reduction\n\n> \"We're in a transformational period of how we view security. The sum of our tools is more valuable than they are individually\"\n\nWe heard this from a security architect at a major financial services firm before his \"aha\" moment during the Zafran proof of value, where we revealed how 96% of vulnerabilities didn\u2019t require patching and can be mitigated using existing controls.\n\nTheir current vuln prioritization process hadn't considered compensating controls, in addition to signals like exploitability, reachability, and runtime context.\n\n## Recommended by LinkedIn\n\nA CISO\u2019s Life: Always Against the Tide Anil K Appayanna 1 year ago\n\nA Strategic Approach to Harness Cybersecurity\u2026 Silvio D Gomes 2 years ago\n\nCyber Security Trends 2026: The New Threat Lands"
+    }
+  ],
+  "cc_videos": [
+    {
+      "url": "https://www.youtube.com/watch?v=GDD-I5M2U8s",
+      "title": "Recreated - The \"Johnny Silverhand\" from Cyberpunk 2077",
+      "published": "2020-07-06T18:26:46.000Z",
+      "author": "Cocktail Chemistry",
+      "text_head": "# Recreated - The \"Johnny Silverhand\" from Cyberpunk 2077\n\n- Channel: Cocktail Chemistry\n- Length: 06:57\n- Views: 149.8K\n- Likes: 5.5K\n- Published: 2020-07-06T11:26:46-07:00\n- Category: Entertainment\n- Keywords: cyberpunk, cyberpunk 2077, tequila old fashioned, johnny silverhands\n- Language: en\n\n## Description\n\nGet 50% OFF your first 6-bottle box https://bit.ly/BrightCellarsCocktailChemistry2. Bri"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=xN4Wx4FuX6k",
+      "title": "Is this Ai Cocktail any good? - Her inspired cocktail recipe! #mixology #bartender #cocktail",
+      "published": "2026-03-03T22:01:03.000Z",
+      "author": "Boozy Movies",
+      "text_head": "# Is this Ai Cocktail any good? - Her inspired cocktail recipe! #mixology #bartender #cocktail\n\n- Channel: Boozy Movies\n- Length: 00:42\n- Views: 1.5K\n- Likes: 20\n- Published: 2026-03-03T14:01:03-08:00\n- Category: Film & Animation\n- Keywords: cocktail recipes, bourbon cocktail, easy drinks, cocktails, ai, ai cocktail, can ai make cocktails, chat gpt cocktail, chat gpt drink, easy cocktail, mixology"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=XMEu9_TOXIg",
+      "title": "Tasty Indiana Jones cocktail for Raiders of the Lost Ark!",
+      "published": "2025-08-01T21:05:00.000Z",
+      "author": "Boozy Movies",
+      "text_head": "# Tasty Indiana Jones cocktail for Raiders of the Lost Ark!\n\n- Channel: Boozy Movies\n- Length: 00:32\n- Views: 290\n- Likes: 8\n- Published: 2025-08-01T14:05:00-07:00\n- Category: Howto & Style\n- Keywords: indiana jones, raiders of the lost ark, indiana jones cocktail, raiders of the lost ark cocktail, easy cocktails, easy cocktails to make at home, sherry, sherry cocktail, movie themed cocktail, movi"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=iaOQUSudf38",
+      "title": "Big Trouble in Little China Drink | How to Drink",
+      "published": "2019-07-09T23:43:31.000Z",
+      "author": "How To Drink",
+      "text_head": "# Big Trouble in Little China Drink | How to Drink\n\n- Channel: How To Drink\n- Length: 19:36\n- Views: 426.3K\n- Likes: 10.9K\n- Published: 2019-07-09T16:43:31-07:00\n- Category: Howto & Style\n- Keywords: htd, how to drink, mixology, tape brothers territory, alcohol, liquor, mixed drinks, how to, how to make, spirits, bitters, drink, cocktails, cocktail, classic, recipes, Kurt Russell, Big Trouble in L"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=mSA0MVx-pbE",
+      "title": "Mezcal and Whiskey Cocktail for the Good, the Bad, and the Ugly!",
+      "published": "2025-08-08T21:01:01.000Z",
+      "author": "Boozy Movies",
+      "text_head": "# Mezcal and Whiskey Cocktail for the Good, the Bad, and the Ugly!\n\n- Channel: Boozy Movies\n- Length: 00:51\n- Views: 109\n- Likes: 7\n- Published: 2025-08-08T14:01:01-07:00\n- Category: Howto & Style\n- Keywords: whiskey, mezcal, cocktail, the good the bad and the ugly, mezcal cocktail, whiskey cocktail, bbq cocktail, how to make a bbq cocktail, how to make a mezcal cocktail, best mezcal cocktail, mez"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=vQNrCXreNCw",
+      "title": "The Big Lebowski's \"White Russian\" | How to Drink",
+      "published": "2017-11-03T15:03:20.000Z",
+      "author": "How To Drink",
+      "text_head": "# The Big Lebowski's \"White Russian\" | How to Drink\n\n- Channel: How To Drink\n- Length: 06:40\n- Views: 2.4M\n- Likes: 49.0K\n- Published: 2017-11-03T08:03:20-07:00\n- Category: Howto & Style\n- Keywords: big lebowski cocktail, white russian, how to make a white russian, vodka russian, Cocktail, cocktails, cocktail recipes, drinks, drink, drinking, liquor, alcohol, bartending, mixology, how to drink, ht"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=STDO68ZCsBM",
+      "title": "I made the REAL David Martinez drink from Cyberpunk 2077 | How to Drink",
+      "published": "2022-10-03T20:08:50.000Z",
+      "author": "How To Drink",
+      "text_head": "# I made the REAL David Martinez drink from Cyberpunk 2077 | How to Drink\n\n- Channel: How To Drink\n- Length: 30:41\n- Views: 1.0M\n- Likes: 51.6K\n- Published: 2022-10-03T13:08:50-07:00\n- Category: Howto & Style\n- Keywords: htd, how to drink, mixology, tape brothers territory, alcohol, liquor, bartending, mixed drinks, how to, how to make, spirits, bitters, drink, cocktails, cocktail, classic, cyberp"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=EzlENgG1wpc",
+      "title": "Jurassic Park Inspired DINO DROPPING Cocktail You Have to Try!",
+      "published": null,
+      "author": "Boozy Movies",
+      "text_head": "Dino dropping a cocktail created by boozy movies inspired by Jurassic Park. To make it in a shaker tin, combine 1 oz of Rocky, a/2 oz of vodka, 1 oz ginger lour, a/2 oz peach snaps, 3/4 of an ouncez lemon juice, and 1/4 oz of maple syrup. Add ice, cover, and shake until chilled. Double strain into a Nick and Norora. Drop in two fresh blueberries and place a chocolate mering on top. Dino got you do"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=3gyP2tBo6AA",
+      "title": "Fossil Fuel (Cocktail Inspired by Jurassic Park)",
+      "published": "2022-08-15T19:39:03.000Z",
+      "author": "SinCityBartender",
+      "text_head": "# Fossil Fuel (Cocktail Inspired by Jurassic Park)\n\n- Channel: SinCityBartender\n- Length: 00:16\n- Views: 15.2K\n- Likes: 1.2K\n- Published: 2022-08-15T12:39:03-07:00\n- Category: Howto & Style\n- Language: en\n\n## Transcript\n\nhow to make fossil fuel first cherry vodka island punch pucker sour mix and swedish fish goes finally topped with gummy dinosaurs life finds away"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=avcD5WVLCYs",
+      "title": "Advanced Techniques - How To Make A Moscow Mule",
+      "published": "2016-04-16T16:30:51.000Z",
+      "author": "Cocktail Chemistry",
+      "text_head": "# Advanced Techniques - How To Make A Moscow Mule\n\n- Channel: Cocktail Chemistry\n- Length: 04:14\n- Views: 769.1K\n- Likes: 12.5K\n- Published: 2016-04-16T09:30:51-07:00\n- Category: Entertainment\n- Keywords: moscow mule, kentucky mule, dark and stormy, ginger syrup, ginger beer, cocktails\n- Language: en\n\n## Description\n\nA spicy Moscow Mule is the ultimate crowd pleaser. Here I'll teach you how to mak"
+    }
+  ]
+}

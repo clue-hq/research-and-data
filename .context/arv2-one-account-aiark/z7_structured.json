@@ -1,0 +1,826 @@
+{
+  "account_claims": [
+    {
+      "field_key": "core.account_name",
+      "value": "Zafran Security Ltd.",
+      "evidence_span": "Zafran Security Ltd.",
+      "source_url": "BUNDLE: SOURCE A / SOURCE B",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "core.primary_domain",
+      "value": "zafran.io",
+      "evidence_span": "https://www.zafran.io/",
+      "source_url": "BUNDLE: SOURCE B",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "core.company_about",
+      "value": "AI-Native Threat Exposure Management Platform that proves what attackers can exploit and mobilizes existing defenses; positions Agentic Exposure Management as end-to-end exposure lifecycle including autonomous remediation",
+      "evidence_span": "Zafran's agentic platform proves what attackers can exploit in your environment, then mobilizes your existing defenses to stop them.",
+      "source_url": "https://www.zafran.io/",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "core.company_about",
+      "value": "Describes itself as \"the first AI-native end-to-end Threat Exposure Management platform\" and promotes \"Agentic Exposure Management\" covering asset inventory, vulnerability detection, risk assessment, and autonomous remediation workflows",
+      "evidence_span": "\"the first AI-native end-to-end Threat Exposure Management platform\"",
+      "source_url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "core.industry",
+      "value": "Cybersecurity / Threat Exposure Management / Vulnerability Management",
+      "evidence_span": "Threat Exposure Management Platform",
+      "source_url": "https://www.zafran.io/",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "account.total_funding",
+      "value": {
+        "amount_usd": 130000000,
+        "semantics": "reported total funding as-of 2025-12-02"
+      },
+      "evidence_span": "This round brings the company\u2019s total funding to $130 million.",
+      "source_url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "account.recent_funding",
+      "value": "Series C $60M led by Menlo Ventures (Dec 2, 2025); subsequent strategic investments/extensions from Amex Ventures and Cisco Investments announced in 2026",
+      "evidence_span": "Zafran Triples ARR in $60M Round... Led by Menlo Ventures... This round brings the company\u2019s total funding to $130 million.",
+      "source_url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 2,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "account.total_funding",
+      "value": {
+        "amount_usd": "more than $130M (company reported); third-party coverage estimated >$140M after Cisco investment but exact amount NOT FOUND",
+        "semantics": "reported and third-party estimate mixed"
+      },
+      "evidence_span": "This round brings the company\u2019s total funding to $130 million. CTech says it extended the $60M round. CTech says \"The size of Cisco\u2019s investment was not disclosed\" and estimates it could take total funding ... to \"more than $140 million.\"",
+      "source_url": "BUNDLE: SOURCE A / SOURCE B",
+      "source_kind": "company_primary",
+      "confidence": "medium",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 2,
+      "evidence_span_fragments_failed": [
+        "this round brings the company's total funding to $130 million. ctech says it extended the $60m round. ctech says \"the si"
+      ]
+    },
+    {
+      "field_key": "core.company_about",
+      "value": "Claims outcome: de-risks 90% of critical vulnerabilities overnight and uses existing security tools to remediate the 10% most likely to be exploited",
+      "evidence_span": "de-risks 90% of critical vulnerabilities overnight across your hybrid environment and uses your existing security tools to rapidly mitigate and remediate the 10% most likely to be exploited.",
+      "source_url": "https://www.zafran.io/open-positions/8c2f9f9808bf41349208e2a3d376f40e",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "account.strategic_moves",
+      "value": "Launched Agentic Exposure Management (autonomous AI agents across vulnerability lifecycle); positioning product as an overlay that leverages existing scanners/agents/controls; packaging core + add-ons (Zafran Discover, Zafran Autonomous Workflows)",
+      "evidence_span": "By launching Agentic Exposure Management, Zafran is now poised to complete the entire end-to-end lifecycle... Packaging publicly described: \"the core platform plus two add-ons.\" \"Zafran Discover\" ... \"Zafran Autonomous Workflows\"",
+      "source_url": "BUNDLE: SOURCE A / SOURCE B",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 3,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "account.operational_pain",
+      "value": "Company cites rapid AI development driving hiring needs across engineering, sales, customer success, and core infrastructure; scaling to meet demand",
+      "evidence_span": "The new capital will accelerate product innovation and global expansion as Zafran advances its mission... hiring will span engineering, sales, customer success, and core infrastructure. \"The development in AI is very fast, and we need more people.\"",
+      "source_url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai / https://www.calcalistech.com/ctechnews/article/s1e1gw3zbl",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 2,
+      "evidence_span_fragments_failed": [
+        "hiring will span engineering, sales, customer success, and core infrastructure. \"the development in ai is very fast, and"
+      ]
+    },
+    {
+      "field_key": "core.employee_count",
+      "value": "NOT FOUND",
+      "evidence_span": "NOT FOUND",
+      "source_url": "BUNDLE: SOURCE A",
+      "source_kind": "provider_database",
+      "confidence": "low",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "core.employee_range",
+      "value": "NOT FOUND",
+      "evidence_span": "NOT FOUND",
+      "source_url": "BUNDLE: SOURCE A",
+      "source_kind": "provider_database",
+      "confidence": "low",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "core.annual_revenue",
+      "value": "NOT FOUND (third-party report cited ~ $20M ARR as an industry estimate; company claims more-than-tripled ARR but exact figure not disclosed)",
+      "evidence_span": "CTech reported industry estimates that Zafran had \"spent the past year generating annual recurring revenue of roughly $20 million\". Company claims \"more than tripled\" ARR and growth.",
+      "source_url": "BUNDLE: SOURCE A",
+      "source_kind": "third_party_press",
+      "confidence": "medium",
+      "use_class": "business_public",
+      "outreach_safe": false,
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": [
+        "ctech reported industry estimates that zafran had \"spent the past year generating annual recurring revenue of roughly $2"
+      ]
+    },
+    {
+      "field_key": "core.revenue_band",
+      "value": "NOT FOUND",
+      "evidence_span": "NOT FOUND",
+      "source_url": "BUNDLE: SOURCE A",
+      "source_kind": "provider_database",
+      "confidence": "low",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "core.hq_location",
+      "value": "New York, New York (company press release dateline); company has Israeli founders / presence referenced across coverage",
+      "evidence_span": "New York, New York \u2013 December 2, 2025 \u2013 Zafran Security... But also company founded by Israeli leaders and press coverage in Israeli outlets",
+      "source_url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai / BUNDLE: SOURCE A",
+      "source_kind": "company_primary",
+      "confidence": "medium",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 2,
+      "evidence_span_fragments_failed": [
+        "but also company founded by israeli leaders and press coverage in israeli outlets"
+      ]
+    },
+    {
+      "field_key": "account.recent_funding",
+      "value": "Strategic investment announced from Cisco Investments (2026-07-22), company confirmed investment (not an acquisition)",
+      "evidence_span": "Zafran announced a \"strategic investment from Cisco Investments\"... Globes reported \"Cisco investing in, not acquiring Zafran Security\" and quoted Yashar: \"Zafran is not being sold to Cisco but is about to make an investment.\"",
+      "source_url": "BUNDLE: SOURCE A",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": false,
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 2,
+      "evidence_span_fragments_failed": [
+        "zafran announced a \"strategic investment from cisco investments\"",
+        "globes reported \"cisco investing in, not acquiring zafran security\" and quoted yashar: \"zafran is not being sold to cisc"
+      ]
+    },
+    {
+      "field_key": "account.resonance.public_frustrations",
+      "value": "Company positions product as addressing customer frustration with noisy scanners and manual triage; claims to \"replace legacy scanner with Zafran continuous detection, no new agents\" and to \"normalize and de-duplicate findings\"",
+      "evidence_span": "Turn fragmented scanner output into one actionable view. ... Normalize and de-duplicate findings ... Replace legacy scanner with Zafran continuous detection, no new agents",
+      "source_url": "https://www.zafran.io/platform",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 3,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "account.resonance.culture",
+      "value": "Company frames itself as R&D and enterprise security talent driven; hires for engineering, sales, CS, and core infra after Series C",
+      "evidence_span": "we teamed up with leading investors, enlisted the best security experts, put together a dream team of R&D and enterprise security talent... hiring will span engineering, sales, customer success, and core infrastructure.",
+      "source_url": "https://www.zafran.io/about / https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 2,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "account.resonance.public_frustrations",
+      "value": "Third-party press raised questions about competitive differentiation and ARR growth pace; anonymous exec quoted saying product struggled to demonstrate meaningful competitive advantage",
+      "evidence_span": "CTech reported industry estimates... quoted an unnamed cybersecurity executive saying the product \"has struggled to demonstrate a meaningful competitive advantage\" and that \"cash burn remains high.\"",
+      "source_url": "BUNDLE: SOURCE A",
+      "source_kind": "third_party_press",
+      "confidence": "medium",
+      "use_class": "professional_public",
+      "outreach_safe": false,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 2,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "account.recent_funding",
+      "value": "Amex Ventures strategic investment announced Feb 24, 2026; CTech reported amount estimated at several million as an extension",
+      "evidence_span": "Zafran announced a \"strategic investment from Amex Ventures.\" CTech reports the amount only as \"estimated at several million dollars,\" and says it extended the $60M round.",
+      "source_url": "BUNDLE: SOURCE A",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": false,
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": [
+        "zafran announced a \"strategic investment from amex ventures.\" ctech reports the amount only as \"estimated at several mil"
+      ]
+    },
+    {
+      "field_key": "account.resonance.buying_culture",
+      "value": "Company targets CISOs, security practitioners, and business leaders and uses ABM-driven GTM; land motion emphasizes leveraging customers' existing tools and routing remediation through Jira/ServiceNow",
+      "evidence_span": "Define market narrative: Own and refine product positioning, messaging frameworks, and differentiated value propositions that resonate with CISOs, security practitioners, and business leaders. ... pulls their findings together and strips out the duplicates ... routes the result as \"a single ticket\" to an owner through Jira or ServiceNow.",
+      "source_url": "https://www.zafran.io/open-positions/d67a7de0b50a4b7facfcb168db99148f / https://www.zafran.io/ctem-academy/best-vulnerability-management-tools-of-2026",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 3,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "account.hiring_velocity_eng",
+      "value": "Multiple open roles listed in 2026: Senior Manager ABM & Integrated Campaigns, Sr Technical Marketing Manager, Director of Product Marketing, AVP Sales East, Technical Account Manager (public job postings)",
+      "evidence_span": "Senior Manager, ABM & Integrated Campaigns... Sr Technical Marketing Manager, Director of Product Marketing, AVP Sales East, and Technical Account Manager.",
+      "source_url": "https://www.zafran.io/open-positions/",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 2,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "account.resonance.attrition_signal",
+      "value": "Co-founder / CPO Snir Havdala reported by CTech to have departed to NVIDIA; company stated departure was planned and product leadership assumed by Itay Nachum (VP Product)",
+      "evidence_span": "CTech reported that co-founder/CPO Snir Havdala joined NVIDIA... Zafran responded: \"Snir Havdala's transition to his next professional chapter was planned and coordinated with the company over several months,\" and said Itay Nachum, \"Vice President of Product,\" assumed product leadership.",
+      "source_url": "BUNDLE: SOURCE A",
+      "source_kind": "third_party_press",
+      "confidence": "medium",
+      "use_class": "professional_public",
+      "outreach_safe": false,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 2,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "account.resonance.eng_blog_tone",
+      "value": "Company messaging emphasizes agentic AI, autonomous agents, and practical remediation outcomes (de-duplication, exploitability testing, mitigation via existing controls)",
+      "evidence_span": "Autonomous AI agents for your entire vulnerability management lifecycle ... Agentic RemediationTM ... generate ready-to-use remediation scripts ... RemOps uses generative AI to consolidate overlapping remediation tasks",
+      "source_url": "https://www.zafran.io/platform",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 3,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "account.recent_funding",
+      "value": "Series C messaging: capital to accelerate product innovation and global expansion",
+      "evidence_span": "The new capital will accelerate product innovation and global expansion as Zafran advances its mission to stop the exploitation of vulnerabilities, everywhere.",
+      "source_url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "account.resonance.public_frustrations",
+      "value": "Claims platform reduces remediation time from weeks to hours and presents RemOps metric of \"87%\" time reduction per vulnerability (modeled savings $169K to $2.7M)",
+      "evidence_span": "reduced remediation \"from weeks to hours\" ... Zafran's RemOps content claims a Zafran Remediation Item reduces time per vulnerability by \"87%,\" with modeled/claimed annual savings from \"$169K to over $2.7M\"",
+      "source_url": "https://www.zafran.io/resources/beyond-the-hype-remediation-operations-that-delivers-results-yi2h5",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 2,
+      "evidence_span_fragments_failed": [
+        "reduced remediation \"from weeks to hours\""
+      ]
+    },
+    {
+      "field_key": "core.company_linkedin_url",
+      "value": "https://www.linkedin.com/company/zafran-security",
+      "evidence_span": "https://www.linkedin.com/posts/zafran-security_gartnersec-activity-7466109352110837760-U5rq",
+      "source_url": "BUNDLE: SOURCE A / SOURCE B",
+      "source_kind": "third_party_press",
+      "confidence": "medium",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "core.primary_tech_stack",
+      "value": "Agentic AI / generative AI agents, Exposure Graph, integrations with scanners/endpoint/cloud security tools, ticketing integrations (Jira, ServiceNow)",
+      "evidence_span": "Agentic Exposure Management... Exposure Graph ... integrates with the scanners, endpoint agents, and cloud security tools you already own ... routes the result as \"a single ticket\" to an owner through Jira or ServiceNow.",
+      "source_url": "BUNDLE: SOURCE A / SOURCE B",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 3,
+      "evidence_span_fragments_failed": [
+        "integrates with the scanners, endpoint agents, and cloud security tools you already own"
+      ]
+    },
+    {
+      "field_key": "account.resonance.public_frustrations",
+      "value": "Company claims 99% of critical vulnerabilities are not exploitable and 1% require rapid remediation, repeated across corporate messaging",
+      "evidence_span": "Zafran uses your existing security tools to prove that 99% of critical vulnerabilities are not exploitable, then quickly remediates and mitigates the 1% that are most likely to cause an incident.",
+      "source_url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "account.resonance.public_frustrations",
+      "value": "Company claims to \"de-duplicate\" findings and provide a single source of truth across cloud, on-prem, and AppSec",
+      "evidence_span": "Unify findings across cloud, on-prem, and AppSec - Normalize and de-duplicate findings - Establish a single source of truth",
+      "source_url": "https://www.zafran.io/",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "field_key": "account.resonance.public_frustrations",
+      "value": "Company states it is trusted by Fortune 500 and high-growth companies and lists CISO quotes from Kraft Heinz, Chipotle, Netskope, Ashland, and a Fortune 25 Healthcare Enterprise",
+      "evidence_span": "\"Trusted by Fortune 500 and high-growth companies\" and testimonials naming Ricardo Lafosse (CISO, Kraft Heinz), Dave Estlick (CISO, Chipotle), James Robinson (CISO, Netskope), Robert Schuetter (CISO, Ashland), and an unnamed CISO at a Fortune 25 Healthcare Enterprise",
+      "source_url": "https://www.zafran.io/",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "business_public",
+      "outreach_safe": true,
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": [
+        "\"trusted by fortune 500 and high-growth companies\" and testimonials naming ricardo lafosse (ciso, kraft heinz), dave est"
+      ]
+    }
+  ],
+  "contact_claims": [
+    {
+      "person": "Sanaz Yashar",
+      "field_key": "contact.current_title",
+      "value": "Co-Founder & CEO",
+      "evidence_span": "Sanaz Yashar Co-Founder & CEO",
+      "source_url": "https://www.zafran.io/about",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "professional_public",
+      "outreach_safe": true,
+      "media_timestamp": null,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "person": "Sanaz Yashar",
+      "field_key": "contact.facet.public_appearances",
+      "value": "Guest on Boardroom Club podcast: \"AI Summit: Sanaz Yashar\"",
+      "evidence_span": "Boardroom Club: AI Summit: Sanaz Yashar (Zafran Security)",
+      "source_url": "https://podcasters.spotify.com/pod/show/boardroomclub/episodes/AI-Summit-Sanaz-Yashar--Co-Founder-and-CEO-at-Zafran-Security-e36d9ai",
+      "source_kind": "transcript_self",
+      "confidence": "high",
+      "use_class": "personal_public_self_stated",
+      "outreach_safe": true,
+      "media_timestamp": "00:00",
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "person": "Sanaz Yashar",
+      "field_key": "contact.facet.career_history",
+      "value": "Former offensive cyber investigator/incident responder (worked at Mandiant); background includes biology/microbiology and IDF service (mentioned in podcast)",
+      "evidence_span": "I was a part of maybe the best cybersecurity services in the world... The name is Mandiant. ... I was always the different one. I was born and raised in Iran... Moving forward ... to Israel... and then I went to the IDF...",
+      "source_url": "BUNDLE: SOURCE C",
+      "source_kind": "transcript_self",
+      "confidence": "high",
+      "use_class": "personal_public_self_stated",
+      "outreach_safe": false,
+      "media_timestamp": "00:22",
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 3,
+      "evidence_span_fragments_failed": [
+        "i was always the different one. i was born and raised in iran"
+      ]
+    },
+    {
+      "person": "Sanaz Yashar",
+      "field_key": "contact.facet.publications",
+      "value": "Quoted in company press materials and blog posts asserting product claims and fundraising messaging",
+      "evidence_span": "\"We must not allow attackers to claim the AI advantage,\" said Sanaz Yashar, CEO and Co-Founder of Zafran Security.",
+      "source_url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "professional_public",
+      "outreach_safe": true,
+      "media_timestamp": null,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "person": "Sanaz Yashar",
+      "field_key": "contact.facet.stated_interests",
+      "value": "Agentic AI for cyber, self-healing security approaches, reducing operator load in vulnerability management",
+      "evidence_span": "I believe the next generation of cybersecurity, it should look more like biology, when it's a self-healing platform... the biggest pain of cybersecurity... we don't have enough operators to operate all the different vulnerabilities.",
+      "source_url": "BUNDLE: SOURCE C",
+      "source_kind": "transcript_self",
+      "confidence": "high",
+      "use_class": "personal_public_self_stated",
+      "outreach_safe": true,
+      "media_timestamp": "05:06",
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 3,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "person": "Sanaz Yashar",
+      "field_key": "contact.current_location",
+      "value": "Not explicitly stated in transcript; company press release dateline New York, New York",
+      "evidence_span": "New York, New York \u2013 December 2, 2025 \u2013 Zafran Security",
+      "source_url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+      "source_kind": "company_primary",
+      "confidence": "medium",
+      "use_class": "professional_public",
+      "outreach_safe": true,
+      "media_timestamp": null,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "person": "Nick Fisher",
+      "field_key": "contact.current_title",
+      "value": "VP of Marketing",
+      "evidence_span": "Nick Fisher \u2014 \u201cVP of Marketing\u201d; LinkedIn lists \u201cApr 2024 - Present.\u201d",
+      "source_url": "https://www.linkedin.com/in/nicholastfisher",
+      "source_kind": "third_party_press",
+      "confidence": "high",
+      "use_class": "professional_public",
+      "outreach_safe": true,
+      "media_timestamp": null,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "person": "Nick Fisher",
+      "field_key": "contact.facet.publications",
+      "value": "Authored LinkedIn article \"Why I joined Zafran Security\" describing rationale for joining and market/problem framing",
+      "evidence_span": "Why I joined Zafran Security",
+      "source_url": "https://www.linkedin.com/pulse/why-i-joined-zafran-security-nick-fisher-jqinf",
+      "source_kind": "third_party_press",
+      "confidence": "high",
+      "use_class": "personal_public_self_stated",
+      "outreach_safe": true,
+      "media_timestamp": null,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "person": "Nick Fisher",
+      "field_key": "contact.facet.recent_post",
+      "value": "LinkedIn article claims Zafran PoV: 96% of vulnerabilities didn\u2019t require patching in a proof of value; frames challenge as understanding real risk exposure",
+      "evidence_span": "\"we revealed how 96% of vulnerabilities didn\u2019t require patching and can be mitigated using existing controls.\"",
+      "source_url": "https://www.linkedin.com/pulse/why-i-joined-zafran-security-nick-fisher-jqinf",
+      "source_kind": "personal_public_self_stated",
+      "confidence": "high",
+      "use_class": "personal_public_self_stated",
+      "outreach_safe": true,
+      "media_timestamp": null,
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": [
+        "\"we revealed how 96% of vulnerabilities didn't require patching and can be mitigated using existing controls.\""
+      ]
+    },
+    {
+      "person": "Nick Fisher",
+      "field_key": "contact.facet.hobby",
+      "value": "Hosts Cocktail Chemistry videos as a side hobby (filming in kitchen, invests in liquor and equipment), runs Patreon for support",
+      "evidence_span": "It is a a side hobby for me... I basically film on my iPhone in my kitchen at home... you can head on over to my Patreon page",
+      "source_url": "https://www.youtube.com/watch?v=8_YWBtq4eic",
+      "source_kind": "transcript_self",
+      "confidence": "high",
+      "use_class": "personal_public_self_stated",
+      "outreach_safe": false,
+      "media_timestamp": "00:00",
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 3,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "person": "Nick Fisher",
+      "field_key": "contact.facet.communication_style",
+      "value": "Informal, community-oriented, values craft and consistency (from video transcript and Patreon ask)",
+      "evidence_span": "\"It is a a side hobby for me and uh one that is quite expensive and time consuming.\" \"I want to make sure I can continue to do this and put out a regular cadence of videos\"",
+      "source_url": "https://www.youtube.com/watch?v=8_YWBtq4eic",
+      "source_kind": "transcript_self",
+      "confidence": "high",
+      "use_class": "personal_public_self_stated",
+      "outreach_safe": true,
+      "media_timestamp": "00:05",
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": [
+        "\"it is a a side hobby for me and uh one that is quite expensive and time consuming.\" \"i want to make sure i can continue"
+      ]
+    },
+    {
+      "person": "Vari Kaur",
+      "field_key": "contact.current_title",
+      "value": "Head of Growth Marketing (Varinder / Vari Kaur referenced as Head of Growth Marketing)",
+      "evidence_span": "Vari Kaur / Varinder Kaur \u2014 Head of Growth Marketing; the ABM role explicitly reports to this seat.",
+      "source_url": "https://www.zafran.io/open-positions/d5a0a102a1d5435694429de4861d25be",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "professional_public",
+      "outreach_safe": true,
+      "media_timestamp": null,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "person": "Tom Anthony",
+      "field_key": "contact.current_title",
+      "value": "SVP, Global Sales",
+      "evidence_span": "Tom Anthony \u2014 \u201cSVP, Global Sales.\u201d",
+      "source_url": "https://www.linkedin.com/posts/tomanthonyjr_last-week-the-zafran-security-team-came-together-activity-7437536933347717120-xXxL",
+      "source_kind": "third_party_press",
+      "confidence": "high",
+      "use_class": "professional_public",
+      "outreach_safe": true,
+      "media_timestamp": null,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "person": "Nick Fisher",
+      "field_key": "contact.persona",
+      "value": "persona_marketing (VP Marketing) [Note: supplied closed enum unknown; proposer suggests mapping]",
+      "evidence_span": "Nick Fisher \u2014 \u201cVP of Marketing\u201d",
+      "source_url": "https://www.linkedin.com/in/nicholastfisher",
+      "source_kind": "third_party_press",
+      "confidence": "high",
+      "use_class": "professional_public",
+      "outreach_safe": true,
+      "media_timestamp": null,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "person": "Sanaz Yashar",
+      "field_key": "contact.role_on_committee",
+      "value": "Executive sponsor / decision maker for product/strategy (CEO) - plausible buyer-committee role: strategic approver for high-level purchases",
+      "evidence_span": "Co-Founder & CEO ... \"We must not allow attackers to claim the AI advantage,\" said Sanaz Yashar, CEO and Co-Founder",
+      "source_url": "BUNDLE: SOURCE B / SOURCE C",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "professional_public",
+      "outreach_safe": true,
+      "media_timestamp": null,
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "person": "Tom Anthony",
+      "field_key": "contact.role_on_committee",
+      "value": "Head of sales / likely buyer-committee procurement influencer and owner of deal motion (SVP, Global Sales)",
+      "evidence_span": "Tom Anthony \u2014 \u201cSVP, Global Sales.\u201d \"Drive pipeline generation campaigns\" (AVP Sales role description references sales motion).",
+      "source_url": "BUNDLE: SOURCE A / SOURCE B",
+      "source_kind": "company_primary",
+      "confidence": "high",
+      "use_class": "professional_public",
+      "outreach_safe": true,
+      "media_timestamp": null,
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": [
+        "tom anthony - \"svp, global sales.\" \"drive pipeline generation campaigns\" (avp sales role description references sales mo"
+      ]
+    },
+    {
+      "person": "Nick Fisher",
+      "field_key": "contact.facet.recent_post",
+      "value": "LinkedIn article 'Why I joined Zafran Security' (explains POV and product benefits such as 96% not requiring patching in PoV)",
+      "evidence_span": "\"we revealed how 96% of vulnerabilities didn\u2019t require patching and can be mitigated using existing controls.\"",
+      "source_url": "https://www.linkedin.com/pulse/why-i-joined-zafran-security-nick-fisher-jqinf",
+      "source_kind": "third_party_press",
+      "confidence": "high",
+      "use_class": "personal_public_self_stated",
+      "outreach_safe": true,
+      "media_timestamp": null,
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": [
+        "\"we revealed how 96% of vulnerabilities didn't require patching and can be mitigated using existing controls.\""
+      ]
+    },
+    {
+      "person": "Sanaz Yashar",
+      "field_key": "contact.facet.publications",
+      "value": "Has given detailed explanations of Zafran's risk-modeling approach on Boardroom Club podcast (threat->asset->context->exploitability pipeline described)",
+      "evidence_span": "So, we started with the threat risk. We understand the asset, and then we understand the context of the asset... we check which of these assets are actually exposed to the internet or not.",
+      "source_url": "BUNDLE: SOURCE C",
+      "source_kind": "transcript_self",
+      "confidence": "high",
+      "use_class": "personal_public_self_stated",
+      "outreach_safe": true,
+      "media_timestamp": "11:01",
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 2,
+      "evidence_span_fragments_failed": [
+        "so, we started with the threat risk. we understand the asset, and then we understand the context of the asset"
+      ]
+    }
+  ],
+  "proposed_fields": [
+    {
+      "suggested_key": "account.claimed_customer_logos",
+      "why": "Company lists several named CISO quotes and references being \"Trusted by Fortune 500\" but does not publish a formal customer list; capturing claimed/testimonial customers as a separate field is useful",
+      "value": [
+        "Kraft Heinz (Ricardo Lafosse, CISO)",
+        "Chipotle (Dave Estlick, CISO)",
+        "Netskope (James Robinson, CISO)",
+        "Ashland (Robert Schuetter, CISO)",
+        "Unnamed Fortune 25 Healthcare Enterprise (CISO quote)",
+        "OpenAI (press: \"OpenAI Selects Zafran for Trusted Access for Cyber\")",
+        "Sallie Mae (Steve Lodin quoted)"
+      ],
+      "evidence_span": "\"Trusted by Fortune 500 and high-growth companies\" and testimonials naming Ricardo Lafosse... Dave Estlick... James Robinson... Robert Schuetter... \"OpenAI Selects Zafran for Trusted Access for Cyber.\" \"As seconds, agentic AI can reveal...\" quoted Steve Lodin",
+      "source_url": "BUNDLE: SOURCE B / SOURCE A",
+      "confidence": "high",
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 2,
+      "evidence_span_fragments_failed": [
+        "\"trusted by fortune 500 and high-growth companies\" and testimonials naming ricardo lafosse",
+        "\"openai selects zafran for trusted access for cyber.\" \"as seconds, agentic ai can reveal"
+      ]
+    },
+    {
+      "suggested_key": "account.product_packaging",
+      "why": "Company describes core platform plus two add-ons (Discover and Autonomous Workflows); not currently captured by catalog fields",
+      "value": {
+        "core": "Zafran platform (Agentic Exposure Management)",
+        "addons": [
+          "Zafran Discover",
+          "Zafran Autonomous Workflows"
+        ]
+      },
+      "evidence_span": "\"the core platform plus two add-ons.\" \"Zafran Discover\" assesses machines without installing a new agent, while \"Zafran Autonomous Workflows\" runs AI agents for zero-day monitoring and exploitability confirmation.",
+      "source_url": "BUNDLE: SOURCE A",
+      "confidence": "high",
+      "evidence_span_verbatim": true,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": []
+    },
+    {
+      "suggested_key": "account.claimed_outcomes_metrics",
+      "why": "Company asserts specific outcome metrics (e.g., 99% non-exploitable, 90% de-risked, 87% RemOps time reduction) that are important to track separately",
+      "value": {
+        "99_percent_not_exploitable": "company claim",
+        "de-risk_90_percent_critical_overnight": "company claim",
+        "RemOps_87_percent_time_reduction": "company claim"
+      },
+      "evidence_span": "Zafran uses your existing security tools to prove that 99% of critical vulnerabilities are not exploitable... de-risks 90% of critical vulnerabilities overnight... Zafran Remediation Item reduces time per vulnerability by \"87%\"",
+      "source_url": "BUNDLE: SOURCE B / SOURCE A",
+      "confidence": "high",
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 3,
+      "evidence_span_fragments_failed": [
+        "zafran remediation item reduces time per vulnerability by \"87%\""
+      ]
+    }
+  ],
+  "negatives_and_risks": [
+    {
+      "what": "Cisco acquisition rumor (July 2026) \u2014 acquisition claim",
+      "status": "REFUTED",
+      "evidence_span": "Zafran announced a \"strategic investment from Cisco Investments\"... Globes reported \"Cisco investing in, not acquiring Zafran Security\" and quoted Yashar: \"Zafran is not being sold to Cisco but is about to make an investment.\"",
+      "source_url": "BUNDLE: SOURCE A",
+      "outreach_safe": false,
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 2,
+      "evidence_span_fragments_failed": [
+        "zafran announced a \"strategic investment from cisco investments\"",
+        "globes reported \"cisco investing in, not acquiring zafran security\" and quoted yashar: \"zafran is not being sold to cisc"
+      ]
+    },
+    {
+      "what": "CTech/third-party claim of roughly $20M ARR and competitive struggles / high burn",
+      "status": "UNRESOLVED",
+      "evidence_span": "CTech reported industry estimates that Zafran had \"spent the past year generating annual recurring revenue of roughly $20 million\" and quoted an unnamed cybersecurity executive saying the product \"has struggled to demonstrate a meaningful competitive advantage\" and that \"cash burn remains high.\"",
+      "source_url": "BUNDLE: SOURCE A",
+      "outreach_safe": false,
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 1,
+      "evidence_span_fragments_failed": [
+        "ctech reported industry estimates that zafran had \"spent the past year generating annual recurring revenue of roughly $2"
+      ]
+    },
+    {
+      "what": "Founder / CPO Snir Havdala departure to NVIDIA",
+      "status": "CONFIRMED",
+      "evidence_span": "CTech reported that co-founder/CPO Snir Havdala joined NVIDIA as \"Director of Engineering\"... Zafran responded: \"Snir Havdala's transition to his next professional chapter was planned and coordinated with the company over several months,\" and said Itay Nachum, \"Vice President of Product,\" assumed product leadership.",
+      "source_url": "BUNDLE: SOURCE A",
+      "outreach_safe": false,
+      "evidence_span_verbatim": false,
+      "evidence_span_fragments_checked": 2,
+      "evidence_span_fragments_failed": [
+        "ctech reported that co-founder/cpo snir havdala joined nvidia as \"director of engineering\""
+      ]
+    }
+  ]
+}

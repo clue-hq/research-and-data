@@ -1,0 +1,767 @@
+{
+  "this_run_by_provider": {
+    "ai_ark": {
+      "calls": 10,
+      "cost_usd": 0.0,
+      "credits": 11.6,
+      "elapsed_s": 13.1,
+      "http_non200": 1
+    },
+    "live_http": {
+      "calls": 4,
+      "cost_usd": 0.0,
+      "credits": 0.0,
+      "elapsed_s": 2.0,
+      "http_non200": 1
+    },
+    "exa": {
+      "calls": 11,
+      "cost_usd": 0.087,
+      "credits": 0.0,
+      "elapsed_s": 51.6,
+      "http_non200": 0
+    },
+    "gemini": {
+      "calls": 39,
+      "cost_usd": 0.05753,
+      "credits": 0.0,
+      "elapsed_s": 137.9,
+      "http_non200": 0
+    },
+    "openrouter": {
+      "calls": 1,
+      "cost_usd": 0.021413,
+      "credits": 0.0,
+      "elapsed_s": 81.8,
+      "http_non200": 0
+    }
+  },
+  "this_run_totals": {
+    "cash_usd": 0.165943,
+    "ai_ark_credits": 11.6,
+    "calls": 65,
+    "wall_clock_s_sum_of_calls": 286.4
+  },
+  "ai_ark_calls": [
+    {
+      "label": "z1a_credit_before",
+      "op": "/v1/credit",
+      "http": 401,
+      "credits": 0.0,
+      "elapsed_s": 0.69,
+      "returned": 0,
+      "totalElements": null,
+      "note": null
+    },
+    {
+      "label": "z1a_companies_zafran",
+      "op": "/v1/companies",
+      "http": 200,
+      "credits": 0.1,
+      "elapsed_s": 1.99,
+      "returned": 1,
+      "totalElements": 1,
+      "note": "actual: 1 company returned x 0.1cr (size 3 requested, totalElements=1)"
+    },
+    {
+      "label": "z1b_people_domain",
+      "op": "/v1/people",
+      "http": 200,
+      "credits": 6.0,
+      "elapsed_s": 0.99,
+      "returned": 12,
+      "totalElements": 163,
+      "note": null
+    },
+    {
+      "label": "z1b_people_name_vari_kaur",
+      "op": "/v1/people",
+      "http": 200,
+      "credits": 0.5,
+      "elapsed_s": 0.69,
+      "returned": 1,
+      "totalElements": 1,
+      "note": "credits corrected to actual returned x 0.5cr"
+    },
+    {
+      "label": "z1b_people_name_nick_fisher",
+      "op": "/v1/people",
+      "http": 200,
+      "credits": 0.5,
+      "elapsed_s": 0.69,
+      "returned": 1,
+      "totalElements": 1,
+      "note": "credits corrected to actual returned x 0.5cr"
+    },
+    {
+      "label": "z1b_people_name_ben_seri",
+      "op": "/v1/people",
+      "http": 200,
+      "credits": 0.5,
+      "elapsed_s": 0.51,
+      "returned": 1,
+      "totalElements": 1,
+      "note": "credits corrected to actual returned x 0.5cr"
+    },
+    {
+      "label": "z1c_email_varinderkaur",
+      "op": "/v1/people/export/single",
+      "http": 200,
+      "credits": 1.0,
+      "elapsed_s": 0.83,
+      "returned": 0,
+      "totalElements": null,
+      "note": "actual: found=True -> 1.0cr"
+    },
+    {
+      "label": "z1c_email_nicholastfisher",
+      "op": "/v1/people/export/single",
+      "http": 200,
+      "credits": 1.0,
+      "elapsed_s": 0.69,
+      "returned": 0,
+      "totalElements": null,
+      "note": "actual: found=True -> 1.0cr"
+    },
+    {
+      "label": "z1c_email_sanaz-yashar",
+      "op": "/v1/people/export/single",
+      "http": 200,
+      "credits": 1.0,
+      "elapsed_s": 2.76,
+      "returned": 0,
+      "totalElements": null,
+      "note": "actual: found=True -> 1.0cr"
+    },
+    {
+      "label": "z1c_email_tomanthonyjr",
+      "op": "/v1/people/export/single",
+      "http": 200,
+      "credits": 1.0,
+      "elapsed_s": 3.3,
+      "returned": 0,
+      "totalElements": null,
+      "note": "actual: found=True -> 1.0cr"
+    }
+  ],
+  "exa_calls": [
+    {
+      "label": "z2_own_site",
+      "op": "contents/preferred",
+      "cost_usd": 0.004,
+      "elapsed_s": 0.12,
+      "n_results": 4
+    },
+    {
+      "label": "z2_search_media_nick",
+      "op": "auto",
+      "cost_usd": 0.007,
+      "elapsed_s": 0.86,
+      "n_results": 6
+    },
+    {
+      "label": "z2_search_media_sanaz",
+      "op": "auto",
+      "cost_usd": 0.007,
+      "elapsed_s": 0.97,
+      "n_results": 6
+    },
+    {
+      "label": "z2_search_rumour_cisco",
+      "op": "auto",
+      "cost_usd": 0.007,
+      "elapsed_s": 0.84,
+      "n_results": 6
+    },
+    {
+      "label": "z2_search_customers",
+      "op": "auto",
+      "cost_usd": 0.007,
+      "elapsed_s": 1.3,
+      "n_results": 6
+    },
+    {
+      "label": "z2_search_abm_stack",
+      "op": "auto",
+      "cost_usd": 0.007,
+      "elapsed_s": 1.02,
+      "n_results": 6
+    },
+    {
+      "label": "z2_search_compete",
+      "op": "auto",
+      "cost_usd": 0.007,
+      "elapsed_s": 1.17,
+      "n_results": 6
+    },
+    {
+      "label": "z3_identity_bind",
+      "op": "contents",
+      "cost_usd": 0.002,
+      "elapsed_s": 0.74,
+      "n_results": 2
+    },
+    {
+      "label": "z3_cc_videos",
+      "op": "auto",
+      "cost_usd": 0.007,
+      "elapsed_s": 1.01,
+      "n_results": 10
+    },
+    {
+      "label": "z5_deep_zafran",
+      "op": "deep-reasoning",
+      "cost_usd": 0.025,
+      "elapsed_s": 42.26,
+      "n_results": 20
+    },
+    {
+      "label": "z4c_nick_video_hunt",
+      "op": "auto",
+      "cost_usd": 0.007,
+      "elapsed_s": 1.29,
+      "n_results": 10
+    }
+  ],
+  "gemini_generate_calls": [
+    {
+      "label": "z4a_yt_nick_moscow_mule",
+      "op": "gemini-3.5-flash-lite:generateContent",
+      "cost_usd": 0.002991,
+      "elapsed_s": 9.37,
+      "usage": {
+        "promptTokenCount": 23403,
+        "candidatesTokenCount": 1626,
+        "totalTokenCount": 25029,
+        "promptTokensDetails": [
+          {
+            "modality": "VIDEO",
+            "tokenCount": 23109
+          },
+          {
+            "modality": "TEXT",
+            "tokenCount": 294
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "audio_seconds": 0.0
+    },
+    {
+      "label": "z4b_podcast_sanaz_boardroom",
+      "op": "gemini-3.5-flash-lite:generateContent",
+      "cost_usd": 0.024451,
+      "elapsed_s": 44.11,
+      "usage": {
+        "promptTokenCount": 64586,
+        "candidatesTokenCount": 12860,
+        "totalTokenCount": 77446,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 343
+          },
+          {
+            "modality": "AUDIO",
+            "tokenCount": 64243
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "audio_seconds": 2569
+    },
+    {
+      "label": "z4a_yt_nick_supporting_cc",
+      "op": "gemini-3.5-flash-lite:generateContent",
+      "cost_usd": 0.001191,
+      "elapsed_s": 23.22,
+      "usage": {
+        "promptTokenCount": 8493,
+        "candidatesTokenCount": 855,
+        "totalTokenCount": 9348,
+        "promptTokensDetails": [
+          {
+            "modality": "VIDEO",
+            "tokenCount": 8199
+          },
+          {
+            "modality": "TEXT",
+            "tokenCount": 294
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "audio_seconds": 0.0
+    },
+    {
+      "label": "z4a_yt_nick_faceless",
+      "op": "gemini-3.5-flash-lite:generateContent",
+      "cost_usd": 0.006188,
+      "elapsed_s": 14.12,
+      "usage": {
+        "promptTokenCount": 49538,
+        "candidatesTokenCount": 3085,
+        "totalTokenCount": 52623,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 294
+          },
+          {
+            "modality": "VIDEO",
+            "tokenCount": 49244
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "audio_seconds": 0.0
+    },
+    {
+      "label": "z4d_transcribe_sanaz",
+      "op": "gemini-3.5-transcribe:generateContent",
+      "cost_usd": 0.019284,
+      "elapsed_s": 30.31,
+      "usage": {
+        "promptTokenCount": 64358,
+        "totalTokenCount": 64358,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 115
+          },
+          {
+            "modality": "AUDIO",
+            "tokenCount": 64243
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "audio_seconds": 2569
+    },
+    {
+      "label": "z4e_second_half_quotes",
+      "op": "gemini-3.5-flash-lite:generateContent",
+      "cost_usd": 0.000636,
+      "elapsed_s": 1.94,
+      "usage": {
+        "promptTokenCount": 4289,
+        "candidatesTokenCount": 517,
+        "totalTokenCount": 4806,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 4289
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "audio_seconds": 0.0
+    }
+  ],
+  "media_economics": {
+    "items": [
+      {
+        "person": "Sanaz Yashar",
+        "item": "z4b_sanaz_boardroom",
+        "media_seconds": 2569,
+        "media_minutes": 42.82,
+        "modality": "AUDIO",
+        "media_tokens": 64243,
+        "tokens_per_second": 25.0,
+        "output_tokens": 12860,
+        "cost_usd": 0.024451,
+        "latency_s": 44.11,
+        "usd_per_hour_of_media": 0.0343,
+        "transcript_chars": 44409
+      },
+      {
+        "person": "Nick Fisher",
+        "item": "z4a_nick_moscow_mule",
+        "media_seconds": 254,
+        "media_minutes": 4.23,
+        "modality": "VIDEO(youtube)",
+        "media_tokens": 23109,
+        "tokens_per_second": 91.0,
+        "output_tokens": 1626,
+        "cost_usd": 0.002991,
+        "latency_s": 9.37,
+        "usd_per_hour_of_media": 0.0424,
+        "transcript_chars": 5240
+      },
+      {
+        "person": "Nick Fisher",
+        "item": "z4a_nick_supporting_cc",
+        "media_seconds": 91,
+        "media_minutes": 1.52,
+        "modality": "VIDEO(youtube)",
+        "media_tokens": 8199,
+        "tokens_per_second": 90.1,
+        "output_tokens": 855,
+        "cost_usd": 0.001191,
+        "latency_s": 23.22,
+        "usd_per_hour_of_media": 0.0471,
+        "transcript_chars": 3126
+      },
+      {
+        "person": "DISCARDED (wrong person)",
+        "item": "z4a_nick_faceless",
+        "media_seconds": 540,
+        "media_minutes": 9.0,
+        "modality": "VIDEO(youtube)",
+        "media_tokens": 49244,
+        "tokens_per_second": 91.2,
+        "output_tokens": 3085,
+        "cost_usd": 0.006188,
+        "latency_s": 14.12,
+        "usd_per_hour_of_media": 0.0413,
+        "transcript_chars": 11826
+      }
+    ],
+    "kept_items": 3,
+    "kept_media_seconds": 2914,
+    "kept_media_minutes": 48.6,
+    "kept_media_cost_usd": 0.028633,
+    "blended_usd_per_hour_of_media": 0.0354,
+    "audio_vs_video_tokens_per_second": {
+      "audio_mp3_measured": 25.0,
+      "youtube_video_measured": [
+        91.0,
+        90.1
+      ]
+    },
+    "embedding": {
+      "chunks": 29,
+      "doc_tokens": 13894,
+      "doc_cost_usd": 0.002779,
+      "query_tokens": 50,
+      "query_cost_usd": 1e-05,
+      "total_embed_cost_usd": 0.002789,
+      "raw_audio_embedding_would_have_cost_usd": 0.4662,
+      "raw_audio_seconds_considered": 2914
+    },
+    "per_person": {
+      "Sanaz Yashar": {
+        "items": 1,
+        "seconds": 2569,
+        "cost_usd": 0.024451
+      },
+      "Nick Fisher": {
+        "items": 2,
+        "seconds": 345,
+        "cost_usd": 0.004182
+      }
+    }
+  },
+  "recipe_full": {
+    "lines": [
+      {
+        "line": "AI Ark company search (size 3)",
+        "unit": "0.1cr/result",
+        "qty": "1 result",
+        "credits": 0.1,
+        "usd": 0.0
+      },
+      {
+        "line": "AI Ark people, domain-scoped roster",
+        "unit": "0.5cr/profile",
+        "qty": "12 profiles",
+        "credits": 6.0,
+        "usd": 0.0
+      },
+      {
+        "line": "AI Ark people, name-scoped committee lookups",
+        "unit": "0.5cr/profile",
+        "qty": "3 lookups x 1 hit",
+        "credits": 1.5,
+        "usd": 0.0
+      },
+      {
+        "line": "AI Ark email export",
+        "unit": "1cr when found",
+        "qty": "4 people, 4 found",
+        "credits": 4.0,
+        "usd": 0.0
+      },
+      {
+        "line": "Ashby posting API (27 live reqs + full JDs)",
+        "unit": "free",
+        "qty": "1 GET",
+        "credits": 0.0,
+        "usd": 0.0
+      },
+      {
+        "line": "Podcast RSS feed (mp3 enclosure + duration)",
+        "unit": "free",
+        "qty": "1 GET",
+        "credits": 0.0,
+        "usd": 0.0
+      },
+      {
+        "line": "Exa /contents own-site (4 pages, livecrawl)",
+        "unit": "$0.001/page",
+        "qty": "4",
+        "credits": 0.0,
+        "usd": 0.004
+      },
+      {
+        "line": "Exa /contents identity binding (3 urls)",
+        "unit": "$0.001/page",
+        "qty": "2 returned",
+        "credits": 0.0,
+        "usd": 0.002
+      },
+      {
+        "line": "Exa search, gap + media discovery",
+        "unit": "$0.007/search",
+        "qty": "8 searches",
+        "credits": 0.0,
+        "usd": 0.056
+      },
+      {
+        "line": "Exa deep-reasoning, 1 account call",
+        "unit": "$0.025",
+        "qty": "1",
+        "credits": 0.0,
+        "usd": 0.025
+      },
+      {
+        "line": "Gemini transcription, podcast 42:49",
+        "unit": "measured",
+        "qty": "1",
+        "credits": 0.0,
+        "usd": 0.024451
+      },
+      {
+        "line": "Gemini transcription, 2 short YouTube items (5:45 total)",
+        "unit": "measured",
+        "qty": "2",
+        "credits": 0.0,
+        "usd": 0.004182
+      },
+      {
+        "line": "Gemini embedding-2 index + 3 retrieval queries",
+        "unit": "$0.20/1M",
+        "qty": "29 chunks",
+        "credits": 0.0,
+        "usd": 0.002789
+      },
+      {
+        "line": "gpt-5-mini structuring (1 call)",
+        "unit": "measured",
+        "qty": "1",
+        "credits": 0.0,
+        "usd": 0.021413
+      },
+      {
+        "line": "Gemini transcription of a WRONG-PERSON video (waste)",
+        "unit": "measured",
+        "qty": "1",
+        "credits": 0.0,
+        "usd": 0.006188
+      },
+      {
+        "line": "Gemini re-transcription on gemini-3.5-transcribe (quality repair after the flash-lite loop)",
+        "unit": "measured",
+        "qty": "1",
+        "credits": 0.0,
+        "usd": 0.019284
+      },
+      {
+        "line": "Gemini second-half quote mining (text-only)",
+        "unit": "measured",
+        "qty": "1",
+        "credits": 0.0,
+        "usd": 0.000636
+      }
+    ],
+    "usd": 0.165943,
+    "credits": 11.6
+  },
+  "recipe_trimmed": {
+    "lines": [
+      {
+        "line": "AI Ark company search (size 1)",
+        "credits": 0.1,
+        "usd": 0.0,
+        "why": "the single highest-yield call in the whole run"
+      },
+      {
+        "line": "AI Ark name-scoped lookups for the 4 known committee members",
+        "credits": 2.0,
+        "usd": 0.0,
+        "why": "skip the 12-profile domain roster: 10 of its 12 were RSMs, not buyers"
+      },
+      {
+        "line": "AI Ark email export x2 (champion + economic buyer only)",
+        "credits": 2.0,
+        "usd": 0.0,
+        "why": "CEO/SVP emails are nice-to-have, not the send target"
+      },
+      {
+        "line": "Ashby posting API",
+        "credits": 0.0,
+        "usd": 0.0,
+        "why": "free and out-performed the $0.025 deep call on tooling"
+      },
+      {
+        "line": "Exa /contents own site (3 pages)",
+        "credits": 0.0,
+        "usd": 0.003,
+        "why": "homepage carries the named-customer testimonials"
+      },
+      {
+        "line": "Exa deep-reasoning, 1 call",
+        "credits": 0.0,
+        "usd": 0.025,
+        "why": "the only source of the negatives/reputation layer"
+      },
+      {
+        "line": "Gemini media, 1 item for the primary target only",
+        "credits": 0.0,
+        "usd": 0.002991,
+        "why": "one short item per person is enough for voice"
+      },
+      {
+        "line": "Gemini ASR on the long podcast (gemini-3.5-transcribe, no timestamps)",
+        "credits": 0.0,
+        "usd": 0.019284,
+        "why": "cheaper AND faithful; use it as the primary ASR and keep flash-lite only for short items where timestamps matter"
+      },
+      {
+        "line": "gpt-5-mini structuring",
+        "credits": 0.0,
+        "usd": 0.021413,
+        "why": "required"
+      }
+    ],
+    "usd": 0.071688,
+    "credits": 4.1
+  },
+  "credit_price_scenarios": {
+    "free_tier": {
+      "full_recipe_total_usd": 0.1659,
+      "trimmed_recipe_total_usd": 0.0717
+    },
+    "at_$0.02/cr": {
+      "full_recipe_total_usd": 0.3979,
+      "trimmed_recipe_total_usd": 0.1537
+    },
+    "at_$0.05/cr": {
+      "full_recipe_total_usd": 0.7459,
+      "trimmed_recipe_total_usd": 0.2767
+    }
+  },
+  "ceilings": {
+    "cash_ceiling_usd": 3.0,
+    "cash_used_usd": 0.1659,
+    "ai_ark_credit_ceiling": 25.0,
+    "ai_ark_credits_used": 11.6,
+    "media_ceiling_seconds": 9000.0,
+    "media_seconds_processed": 3454
+  },
+  "apollo": {
+    "calls": 0,
+    "cost_usd": 0.0,
+    "proof": "no apollo helper exists in z_lib.py and no ledger row has provider=='apollo' or an api.apollo.io URL"
+  },
+  "timing": {
+    "phases": [
+      {
+        "phase": "Z1a_ark_company",
+        "seconds": 13.2,
+        "note": "credit + company search",
+        "ts": "2026-09-02T07:15:49Z"
+      },
+      {
+        "phase": "Z1b_ark_people",
+        "seconds": 34.4,
+        "note": "domain roster + 3 name-scoped",
+        "ts": "2026-09-02T07:17:06Z"
+      },
+      {
+        "phase": "Z1c_ark_emails",
+        "seconds": 39.09,
+        "note": "4 exports",
+        "ts": "2026-09-02T07:18:22Z"
+      },
+      {
+        "phase": "Z2_free_sources",
+        "seconds": 6.54,
+        "note": "ashby + own site + 6 searches",
+        "ts": "2026-09-02T07:19:42Z"
+      },
+      {
+        "phase": "Z2b_ashby",
+        "seconds": 0.22,
+        "note": "free ATS API",
+        "ts": "2026-09-02T07:19:53Z"
+      },
+      {
+        "phase": "Z3_media_resolve",
+        "seconds": 2.05,
+        "note": "rss + identity + video list",
+        "ts": "2026-09-02T07:20:24Z"
+      },
+      {
+        "phase": "Z4a_gemini_youtube_nick_moscow_mule",
+        "seconds": 9.37,
+        "note": "https://www.youtube.com/watch?v=avcD5WVLCYs",
+        "ts": "2026-09-02T07:21:13Z"
+      },
+      {
+        "phase": "Z4b_gemini_podcast_sanaz_boardroom",
+        "seconds": 49.1,
+        "note": "https://anchor.fm/s/f695d6d8/podcast/play/106390290/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fst",
+        "ts": "2026-09-02T07:22:49Z"
+      },
+      {
+        "phase": "Z5_exa_deep",
+        "seconds": 42.27,
+        "note": "one deep-reasoning call",
+        "ts": "2026-09-02T07:23:41Z"
+      },
+      {
+        "phase": "Z4c_nick_video_hunt",
+        "seconds": 1.29,
+        "note": "exa search",
+        "ts": "2026-09-02T07:23:49Z"
+      },
+      {
+        "phase": "Z4a_gemini_youtube_nick_supporting_cc",
+        "seconds": 23.22,
+        "note": "https://www.youtube.com/watch?v=8_YWBtq4eic",
+        "ts": "2026-09-02T07:24:27Z"
+      },
+      {
+        "phase": "Z4a_gemini_youtube_nick_faceless",
+        "seconds": 14.12,
+        "note": "https://www.youtube.com/watch?v=4gKLZrv2p8g",
+        "ts": "2026-09-02T07:24:50Z"
+      },
+      {
+        "phase": "Z6_embed_retrieval",
+        "seconds": 12.03,
+        "note": "29 chunks + 3 queries",
+        "ts": "2026-09-02T07:25:40Z"
+      },
+      {
+        "phase": "Z7_structure",
+        "seconds": 81.77,
+        "note": "one gpt-5-mini call",
+        "ts": "2026-09-02T07:28:19Z"
+      },
+      {
+        "phase": "Z4d_retranscribe",
+        "seconds": 30.32,
+        "note": "gemini-3.5-transcribe",
+        "ts": "2026-09-02T07:33:51Z"
+      },
+      {
+        "phase": "Z4e_quote_verify",
+        "seconds": 1.95,
+        "note": "verify + mine",
+        "ts": "2026-09-02T07:34:35Z"
+      }
+    ]
+  }
+}

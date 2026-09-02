@@ -1,0 +1,26 @@
+{
+  "video": "https://www.youtube.com/watch?v=4gKLZrv2p8g",
+  "model": "gemini-3.5-flash-lite",
+  "usageMetadata": {
+    "promptTokenCount": 49538,
+    "candidatesTokenCount": 3085,
+    "totalTokenCount": 52623,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 294
+      },
+      {
+        "modality": "VIDEO",
+        "tokenCount": 49244
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "cost_usd": 0.006188,
+  "elapsed_s": 14.12,
+  "chars": 11826,
+  "finishReason": "STOP",
+  "verdict": "EXCLUDED \u2014 WRONG PERSON",
+  "exclusion_evidence": "British narrator recording 'in leafy old England out in the sticks', moving house, 'that mysterious British act', channel being unmasked in 2026. Nick Fisher of Cocktail Chemistry is American, created the channel in 2014, and Simon & Schuster's author page places him in San Francisco. Different channel, different person: discarded, not used for any claim."
+}

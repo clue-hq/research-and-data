@@ -302,3 +302,35 @@ fixed it 3/10 → 10/10.
 Yashar's first-person intelligence-origin line barred from hooks (`outreach_safe: false`) while
 career kept as background; 2 quote-less rows auto-purged; 119 claims, 0 missing quote/URL.
 Recommend `outreach_safe` as a permanent facet field (accuracy ≠ appropriateness).
+
+## Addendum 2026-09-02 — ONE-account run (Zafran): AI Ark-only data + real Gemini media layer
+
+Founder ruling restated: Apollo is NOT used (recent runs had 0 Apollo calls; the 12 Apollo credits
+in the cost history are from the three pre-AI-Ark runs on Aug 25-26). Gemini project fixed
+(new key, billing on; project 211576727430) — text gen, gemini-embedding-2 (768d), YouTube ingest
+all verified. Report: .context/arv2-one-account-aiark/ONE-ACCOUNT-REPORT.md (174 claims).
+**Spend $0.166 cash + 11.6 AI Ark cr, 65 calls, 0 Apollo (provable — no helper exists).**
+Full recipe $0.166+11.6cr/account; **trimmed $0.072+4.1cr** (drop domain roster, 2 emails, one
+short media item, ASR model primary) ≈ $0.154/account at $0.02/cr.
+**AI Ark field inventory:** valuable = legal_name, funding.rounds[] w/ dates/amounts/investors
+(found a $40M Series B 2024-09-08 no prior run had), staff.total 167, technologies[], and on
+people **certifications[] = the single best field** (Vari Kaur: 6sense + 2x Demandbase certified —
+both deep-research runs had said NOT FOUND), awards[], department, position_groups, badges.
+Empty: non-LinkedIn socials, SIC/NAICS absent, /v1/credit 401. Wire: **name filter works
+(0.5cr exact) while title filter is broken; domain roster (6cr) returned 10 sales/CS/finance
+seats** → name-scoped only. Email verification served from cache but still billed.
+**Gemini media (real):** 3 items, 48.6 min, $0.029 (+$0.019 repair). MP3 = 25 audio tok/s,
+YouTube = 91 tok/s (3.6x dearer/min → prefer RSS MP3 over YouTube). **Quality failure:**
+gemini-3.5-flash-lite LOOPED after [12:41] on a 43-min file (329 lines, 120 unique) with
+confident fabricated timestamps — would pass an eyeball check; `gemini-3.5-transcribe` re-ran
+faithfully for LESS ($0.019) but returns parts[0].audioTranscription.text with NO timestamps →
+production = transcribe model primary + flash-lite for timestamp alignment/quotes + verify every
+quote against the faithful ASR. Retrieval demo: 29 chunks, $0.0028, correct person picked
+(Nick [00:00-01:26], 0.701). Raw-audio embedding would be 167x the text embeddings.
+**Fruitful top-5:** Vari's 6sense/Demandbase certs (AI Ark 0.5cr); the SDR stack quote
+"Salesforce, LinkedIn Sales Navigator, ZoomInfo & Outreach" (FREE Ashby req — deep call said NOT
+FOUND); ABM req 77 days open reporting to Head of Growth Mktg (free); 4/4 emails VALID/SMTP
+firstname@zafran.io (4cr); named CISO customers on homepage (Kraft Heinz, Chipotle, Netskope).
+outreach_safe:false on the refuted Cisco rumour, the third-party ARR/burn claim, an exec's exit.
+**Surprise (again):** the free ATS API out-researched the paid deep call at its own job (27 live
+reqs w/ full descriptions; BDRs sit in Marketing). Free sources first, always.

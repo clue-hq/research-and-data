@@ -1,0 +1,221 @@
+[
+  {
+    "name": "Vari Kaur",
+    "persona": "champion",
+    "linkedin": "https://www.linkedin.com/in/varinderkaur",
+    "http": 200,
+    "ark_full_name": "Vari Kaur",
+    "ark_title": "Head of Growth Marketing",
+    "email_block_top_keys": [
+      "output",
+      "state"
+    ],
+    "email_block_raw": {
+      "state": "DONE",
+      "output": [
+        {
+          "address": "vari@zafran.io",
+          "mx": {
+            "record": "aspmx.l.google.com",
+            "google": false,
+            "found": true,
+            "provider": "g-suite"
+          },
+          "domainType": "SMTP",
+          "status": "VALID",
+          "subStatus": "EMPTY",
+          "date": "2026-08-31T07:51:52.000461",
+          "free": false,
+          "generic": false,
+          "found": true
+        }
+      ]
+    },
+    "email": null,
+    "credits": 0.5,
+    "export_top_keys": [
+      "awards",
+      "certifications",
+      "company",
+      "department",
+      "educations",
+      "email",
+      "id",
+      "identifier",
+      "industry",
+      "languages",
+      "last_updated",
+      "link",
+      "location",
+      "member_badges",
+      "position_groups",
+      "profile",
+      "skills",
+      "statistics"
+    ]
+  },
+  {
+    "name": "Nick Fisher",
+    "persona": "economic_buyer",
+    "linkedin": "https://www.linkedin.com/in/nicholastfisher",
+    "http": 200,
+    "ark_full_name": "Nick Fisher",
+    "ark_title": "VP of Marketing",
+    "email_block_top_keys": [
+      "output",
+      "state"
+    ],
+    "email_block_raw": {
+      "state": "DONE",
+      "output": [
+        {
+          "address": "nick@zafran.io",
+          "mx": {
+            "record": "aspmx.l.google.com",
+            "google": false,
+            "found": true,
+            "provider": "g-suite"
+          },
+          "domainType": "SMTP",
+          "status": "VALID",
+          "subStatus": "EMPTY",
+          "date": "2026-08-31T07:52:05.000725",
+          "free": false,
+          "generic": false,
+          "found": true
+        }
+      ]
+    },
+    "email": null,
+    "credits": 0.5,
+    "export_top_keys": [
+      "awards",
+      "certifications",
+      "company",
+      "department",
+      "educations",
+      "email",
+      "id",
+      "identifier",
+      "industry",
+      "languages",
+      "last_updated",
+      "link",
+      "location",
+      "member_badges",
+      "position_groups",
+      "profile",
+      "projects",
+      "publications",
+      "skills",
+      "statistics"
+    ]
+  },
+  {
+    "name": "Sanaz Yashar",
+    "persona": "executive_sponsor",
+    "linkedin": "https://www.linkedin.com/in/sanaz-yashar",
+    "http": 200,
+    "ark_full_name": "Sanaz Yashar",
+    "ark_title": "Co-Founder & CEO",
+    "email_block_top_keys": [
+      "output",
+      "state"
+    ],
+    "email_block_raw": {
+      "state": "DONE",
+      "output": [
+        {
+          "address": "sanaz@zafran.io",
+          "mx": {
+            "record": "aspmx.l.google.com",
+            "google": false,
+            "found": true,
+            "provider": "g-suite"
+          },
+          "domainType": "SMTP",
+          "status": "VALID",
+          "subStatus": "EMPTY",
+          "date": "2026-09-02T07:18:08.000422",
+          "free": false,
+          "generic": false,
+          "found": true
+        }
+      ]
+    },
+    "email": null,
+    "credits": 0.5,
+    "export_top_keys": [
+      "company",
+      "department",
+      "educations",
+      "email",
+      "id",
+      "identifier",
+      "industry",
+      "languages",
+      "last_updated",
+      "link",
+      "location",
+      "member_badges",
+      "position_groups",
+      "profile",
+      "skills",
+      "statistics",
+      "volunteer_experiences"
+    ]
+  },
+  {
+    "name": "Tom Anthony",
+    "persona": "adjacent_buyer",
+    "linkedin": "https://www.linkedin.com/in/tomanthonyjr",
+    "http": 200,
+    "ark_full_name": "Tom Anthony",
+    "ark_title": "SVP, Global Sales",
+    "email_block_top_keys": [
+      "output",
+      "state"
+    ],
+    "email_block_raw": {
+      "state": "DONE",
+      "output": [
+        {
+          "address": "tom@zafran.io",
+          "mx": {
+            "record": "aspmx.l.google.com",
+            "google": false,
+            "found": true,
+            "provider": "g-suite"
+          },
+          "domainType": "SMTP",
+          "status": "VALID",
+          "subStatus": "EMPTY",
+          "date": "2026-09-02T07:18:22.000271",
+          "free": false,
+          "generic": false,
+          "found": true
+        }
+      ]
+    },
+    "email": null,
+    "credits": 0.5,
+    "export_top_keys": [
+      "company",
+      "department",
+      "educations",
+      "email",
+      "id",
+      "identifier",
+      "industry",
+      "languages",
+      "last_updated",
+      "link",
+      "location",
+      "member_badges",
+      "position_groups",
+      "profile",
+      "skills",
+      "statistics"
+    ]
+  }
+]
