@@ -26,6 +26,7 @@ Ledger: `.superpowers/sdd/2026-09-02-vendor-first-logo-family/progress.md`. Proc
 - Task 9 — DONE (`8c3d0f3f7`)
 - Task 10 — DONE (`7f301f62f`) — batch 4–10 live-verified end to end
 - Task 11 — DONE (`aa8b943a3`, `6c3748fb6`) — D4 + D7 closed; see the task's status note
+- Task 12 — DONE (`598ac2d64`)
 
 ## Deferred items ledger (founder rule 2026-09-02: every deferral lives HERE and belongs to a task)
 
@@ -2228,6 +2229,8 @@ Empty-is-correct and bind-once rules verbatim; only the slot words moved."
 ---
 
 ### Task 12: The hotlink lane (web prompts, conditional on client id)
+
+**STATUS 2026-09-02: DONE** (`598ac2d64`). Execution notes: the block renders in the GENERAL author prompt (outside `account_block`, immediately after it) because logo walls / integration strips are landing-page sections too (controller ruling); threaded as a `brandfetch_client_id` kwarg from the single call site in `harness_web.py`; the CDN prefix lives in a module constant only so the source line fits the 100-char lint limit (the rendered URL is unbroken); four rendered-prompt tests plus the brief's source test.
 
 **Files:**
 - Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/prompts_web.py` (author prompt; a new conditional block beside the Task 11 prose)
