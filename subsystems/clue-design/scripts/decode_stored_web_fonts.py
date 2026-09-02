@@ -142,7 +142,10 @@ def decode_stored_web_fonts(
             if apply:
                 media["mime_type"] = new_mime
                 media["filename"] = new_name
-                notes.append(f"backfill relabelled {mime_type} -> {new_mime}; bytes were already sfnt")
+                notes.append(
+                    f"backfill relabelled {mime_type} -> {new_mime};"
+                    " bytes were already sfnt"
+                )
                 provenance["notes"] = notes
                 record["media"], record["provenance"] = media, provenance
                 _update_row(

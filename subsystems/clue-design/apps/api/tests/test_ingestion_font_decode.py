@@ -21,7 +21,6 @@ from fastapi.testclient import TestClient
 from fontTools.ttLib import TTFont
 
 from clue_design.envelopes import DesignIngestionEnvelope
-
 from conftest import make_client
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app

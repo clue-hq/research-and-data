@@ -120,7 +120,9 @@ def test_apply_decodes_relabels_and_is_idempotent(
     workspace_id = os.environ["LUMEN_DEV_WORKSPACE_ID"]
     script = load_script()
 
-    first = script.decode_stored_web_fonts(conn, storage_root, workspace_id=workspace_id, apply=True)
+    first = script.decode_stored_web_fonts(
+        conn, storage_root, workspace_id=workspace_id, apply=True
+    )
     assert first.decoded == 1 and first.failed == 0 and first.missing == 0
 
     repo = HybridRepository()
@@ -131,7 +133,8 @@ def test_apply_decodes_relabels_and_is_idempotent(
     assert media["mime_type"] == "font/ttf"
     assert media["filename"] == "asset_backfill_apply.ttf"
     assert media["location"]["opaque_ref"] == f"{workspace_id}/design/{new_digest}"
-    assert media["byte_length"] == (storage_root / workspace_id / "design" / new_digest).stat().st_size
+    decoded_blob = storage_root / workspace_id / "design" / new_digest
+    assert media["byte_length"] == decoded_blob.stat().st_size
     notes = stored["provenance"]["notes"]
     assert any("decoded at ingestion: woff2 -> ttf" in note for note in notes)
     assert any(f"backfill previous digest sha256:{old_digest}" in note for note in notes)
@@ -154,7 +157,9 @@ def test_apply_decodes_relabels_and_is_idempotent(
     # The original blob is untouched (reversible by hand from the provenance note).
     assert (storage_root / workspace_id / "design" / old_digest).read_bytes() == woff2
 
-    second = script.decode_stored_web_fonts(conn, storage_root, workspace_id=workspace_id, apply=True)
+    second = script.decode_stored_web_fonts(
+        conn, storage_root, workspace_id=workspace_id, apply=True
+    )
     assert second.decoded == 0 and second.failed == 0
 
 
