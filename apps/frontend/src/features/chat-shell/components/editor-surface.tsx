@@ -199,6 +199,7 @@ export function EditorSurface({
               key={sceneSession.primaryNodeId ?? "canvas"}
               addressing={sceneSession.addressing}
               arrange={sceneSession.arrange}
+              assetLibrary={sceneSession.assetLibrary}
               error={sceneSession.inspectorError}
               fontOptions={sceneSession.fontOptions}
               hydrated={sceneSession.hydrated}

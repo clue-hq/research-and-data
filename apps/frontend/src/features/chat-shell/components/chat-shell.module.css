@@ -2141,6 +2141,51 @@
   transform: translateY(-2px) scale(0.985);
 }
 
+/* Replace image, option A (founder ruling R-C): the two-row source chooser
+   behind the pill. Sits beside the select popup because it is the same
+   inspector-popup family — a Base UI Portal/Positioner/Popup nest with the
+   panel's own border, radius and surface. */
+.replaceImageMenu {
+  width: 236px;
+  padding: 6px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 10px;
+  background: var(--chat-shell-neutral);
+  box-shadow: 0 8px 24px rgb(0 24 62 / 12%), 0 1px 2px rgb(0 0 0 / 7%);
+  color: var(--chat-shell-content);
+  isolation: isolate;
+}
+
+.replaceImageMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+  font-family: var(--clue-ds-product-typography-ui-regular-font-family);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.replaceImageMenuItem[data-highlighted] {
+  background: var(--chat-shell-page);
+}
+
+.replaceImageMenuIcon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+}
+
+.imageReplaceCaret {
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--chat-shell-subtle);
+}
+
 .inspectorSelectList {
   max-height: min(264px, var(--available-height));
   padding: 4px;
