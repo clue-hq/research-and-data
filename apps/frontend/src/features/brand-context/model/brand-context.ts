@@ -13,6 +13,7 @@ export const BrandAssetCategorySchema = z.enum([
   "logo",
   "background",
   "mockup",
+  "upload",
   "ai-generated",
 ]);
 export const BrandAssetSortKeySchema = z.enum(["name", "type", "size", "created"]);
@@ -67,6 +68,8 @@ export const BrandAssetSchema = z.object({
   dimensions: z.string(),
   id: z.string(),
   name: z.string(),
+  /** Where the row came from: the brand kit itself, or the workspace asset registry. */
+  origin: z.enum(["kit", "registry"]),
   sizeBytes: z.number().nonnegative(),
   sizeLabel: z.string(),
   type: z.string(),

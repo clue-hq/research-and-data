@@ -9,6 +9,7 @@ import { PAGELESS_SCENE_NOTICE } from "@/features/design-editor/adapter/scene-pa
 import type { ScenePalette } from "@/features/design-editor/adapter/scene-palette";
 import type { AlignMode } from "@/features/design-editor/engine/scene/alignDistribute";
 import type { SceneArrangeBinding } from "@/features/design-editor/hooks/use-scene-arrange";
+import type { SceneAssetLibraryBinding } from "@/features/design-editor/hooks/use-scene-asset-library";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import {
   useInspectorController,
@@ -882,6 +883,7 @@ function AdImageReviewTile({
 
 function AdImageInspector({
   addressing,
+  assetLibrary,
   hydrated,
   imageAi,
   inspectorDisabled = false,
@@ -890,6 +892,7 @@ function AdImageInspector({
   onSelectionChange,
   ...binding
 }: AdSchemaBinding & {
+  assetLibrary?: SceneAssetLibraryBinding;
   imageAi?: SceneImageAiBinding;
   onReplaceImage?: (file: File) => void | Promise<void>;
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
@@ -958,7 +961,11 @@ function AdImageInspector({
             landing after a mid-upload reload still repaints the thumbnail,
             because `InspectorImageUpload` follows the live value when it
             changes. */}
-        <InspectorField label="Image"><InspectorImageUpload disabled={inert} onFileSelect={onReplaceImage} src={state.imagePreviewSrc} /></InspectorField>
+        {/* Replace image, option A: with a live document behind it the pill is
+            a two-row chooser (upload, or the workspace asset library); the
+            dummy fixture path has no `assetLibrary`, so it keeps the direct
+            file dialog it shipped with. */}
+        <InspectorField label="Image"><InspectorImageUpload disabled={inert} onFileSelect={onReplaceImage} onOpenLibrary={assetLibrary?.open} src={state.imagePreviewSrc} /></InspectorField>
         <InspectorField label="Mode"><InspectorSelect disabled={inert} label="Image fill mode" onChange={(value) => setValue("fillMode", value)} options={FILL_MODES} value={state.fillMode} /></InspectorField>
         {/* §1.3 row 2 (AD4.A step 3): Alt text — the AI suite's one MANUAL
             row. Upstream has no alt-text generator, so this is an ordinary
@@ -1020,6 +1027,7 @@ function AdImageInspector({
 export function ImageInspector({
   addressing,
   arrange,
+  assetLibrary,
   error = null,
   fontOptions = DEFAULT_FONT_OPTIONS,
   hydrated,
@@ -1041,6 +1049,12 @@ export function ImageInspector({
    * dummy fixture path, leaves every one of those buttons exactly as it
    * shipped. */
   arrange?: SceneArrangeBinding;
+  /** Replace image, option A: the session's asset-library picker. Only the
+   * image schema reads it, and only `open` — the panel's job here is to OFFER
+   * the library as the pill's second source; the picker itself is the session's
+   * surface. Absent (the dummy fixture path) leaves "Replace image" the plain
+   * file-dialog button it shipped as. */
+  assetLibrary?: SceneAssetLibraryBinding;
   /** AD2.7: an inline write error. Same one-line floor the web branch renders
    * (the W3.3 founder gate forbids any new failure UI). */
   error?: string | null;
@@ -1173,9 +1187,10 @@ export function ImageInspector({
           ) : null}
           {selection === "canvas" ? <AdCanvasInspector pageless={pageless} {...schema} /> : null}
           {selection === "text" ? <AdTextInspector arrange={arrange} fontOptions={fontOptions} {...schema} /> : null}
-          {/* `onReplaceImage` and `imageAi` go to THIS schema alone — the rows
-              are §1.3's — the way `fontOptions` goes only to the text schema. */}
-          {selection === "image" ? <AdImageInspector imageAi={imageAi} onReplaceImage={onReplaceImage} {...schema} /> : null}
+          {/* `onReplaceImage`, `imageAi` and `assetLibrary` go to THIS schema
+              alone — the rows are §1.3's — the way `fontOptions` goes only to
+              the text schema. */}
+          {selection === "image" ? <AdImageInspector assetLibrary={assetLibrary} imageAi={imageAi} onReplaceImage={onReplaceImage} {...schema} /> : null}
           {dummySelection ? <AdDummyInspector arrange={arrange} selection={selection} suppressAutoLayoutSection={suppressAutoLayoutSection} {...schema} /> : null}
           {/* `"button"` is deliberately absent from this list: with its schema
               hidden (row 7) it falls through to the canvas default. */}

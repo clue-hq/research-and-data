@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { Menu } from "@base-ui/react/menu";
 import { Popover } from "@base-ui/react/popover";
 import { Select } from "@base-ui/react/select";
 import { MinusIcon, PlusIcon } from "lucide-react";
@@ -19,6 +20,7 @@ import {
 } from "../hooks/use-inspector-controller";
 import { resolveInspectorThemeColors } from "../model/inspector-theme-colors";
 import { fieldCommit, fieldDisplay, textareaCommitKey } from "./inspector-field-draft";
+import { REPLACE_IMAGE_MENU_ROWS, replaceImageMenuAction } from "./replace-image-menu.logic";
 import styles from "./chat-shell.module.css";
 
 const INSPECTOR_ICON_ROOT = "/icons/chat-shell/inspector";
@@ -1632,6 +1634,7 @@ export function BackgroundFillControl({
 export function InspectorImageUpload({
   disabled = false,
   onFileSelect,
+  onOpenLibrary,
   src,
 }: {
   /** AD4.R-10 (G-H): Replace image is an OPERATION — a locked node, or an agent
@@ -1646,6 +1649,11 @@ export function InspectorImageUpload({
    * the website lane's own, which swallows its failures into the inspector's
    * error slot) behaves exactly as it always has. */
   onFileSelect?: (file: File) => void | Promise<void>;
+  /** Replace-image lane (option A, founder ruling R-C): when present the pill
+   * opens a two-row menu — upload from the computer, or pick from the
+   * workspace asset library. ABSENT keeps the dummy fixture path's direct file
+   * dialog, byte for byte: same button, same aria-label, same classes. */
+  onOpenLibrary?: () => void;
   src: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1702,32 +1710,81 @@ export function InspectorImageUpload({
     });
   };
 
+  const openFileDialog = () => inputRef.current?.click();
+
+  // The pill's face is the SAME in both branches — the node's picture and its
+  // label — so the menu path cannot drift from the dummy path's appearance.
+  // The caret is the only difference, and it renders only when there is a menu
+  // behind it to open.
+  const pill = (
+    <>
+      <Image
+        alt=""
+        fill
+        sizes="248px"
+        src={previewSrc}
+        // W4.2 (§1 row 12): a local FileReader preview is a data: URL the
+        // optimizer cannot fetch, and a `/api/clue/` src is an AUTHENTICATED
+        // BFF route — the optimizer fetches server-side without the session
+        // cookies, so an optimized pass would 401. Both go through unchanged.
+        unoptimized={
+          previewSrc.startsWith("data:") || previewSrc.startsWith("/api/clue/")
+        }
+      />
+      <span>
+        Replace image
+        {onOpenLibrary ? <span aria-hidden className={styles.imageReplaceCaret}>▾</span> : null}
+      </span>
+    </>
+  );
+
   return (
     <>
-      <button
-        aria-label="Replace image"
-        className={`${styles.imageReplaceField} ${disabled ? styles.inspectorControlDisabled : ""}`}
-        disabled={disabled}
-        onClick={() => inputRef.current?.click()}
-        type="button"
-      >
-        <Image
-          alt=""
-          fill
-          sizes="248px"
-          src={previewSrc}
-          // W4.2 (§1 row 12): a local FileReader preview is a data: URL the
-          // optimizer cannot fetch, and a `/api/clue/` src is an AUTHENTICATED
-          // BFF route — the optimizer fetches server-side without the session
-          // cookies, so an optimized pass would 401. Both go through unchanged.
-          unoptimized={
-            previewSrc.startsWith("data:") || previewSrc.startsWith("/api/clue/")
-          }
-        />
-        <span>Replace image</span>
-      </button>
+      {onOpenLibrary ? (
+        <Menu.Root>
+          <Menu.Trigger
+            aria-label="Replace image"
+            className={`${styles.imageReplaceField} ${disabled ? styles.inspectorControlDisabled : ""}`}
+            disabled={disabled}
+          >
+            {pill}
+          </Menu.Trigger>
+          <Menu.Portal>
+            <Menu.Positioner align="center" className={styles.inspectorSelectPositioner} side="bottom" sideOffset={6}>
+              <Menu.Popup className={styles.replaceImageMenu}>
+                {REPLACE_IMAGE_MENU_ROWS.map((row) => (
+                  <Menu.Item
+                    className={styles.replaceImageMenuItem}
+                    key={row.id}
+                    onClick={() => {
+                      const action = replaceImageMenuAction(row.id);
+                      if (action.kind === "open-file-dialog") openFileDialog();
+                      else onOpenLibrary();
+                    }}
+                  >
+                    <ReplaceImageMenuIcon row={row.id} />
+                    {row.label}
+                  </Menu.Item>
+                ))}
+              </Menu.Popup>
+            </Menu.Positioner>
+          </Menu.Portal>
+        </Menu.Root>
+      ) : (
+        <button
+          aria-label="Replace image"
+          className={`${styles.imageReplaceField} ${disabled ? styles.inspectorControlDisabled : ""}`}
+          disabled={disabled}
+          onClick={openFileDialog}
+          type="button"
+        >
+          {pill}
+        </button>
+      )}
       <input
-        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+        // No GIF: the design API sniffs the bytes and refuses it, so offering it
+        // in the dialog only buys the user a rejected upload.
+        accept="image/png,image/jpeg,image/webp,image/svg+xml"
         className={styles.visuallyHiddenInput}
         disabled={disabled}
         onChange={(event) => {
@@ -1739,6 +1796,15 @@ export function InspectorImageUpload({
         type="file"
       />
     </>
+  );
+}
+
+function ReplaceImageMenuIcon({ row }: { row: "upload" | "library" }) {
+  // 1.1px strokes (founder ruling R-C), currentColor.
+  return row === "upload" ? (
+    <svg aria-hidden className={styles.replaceImageMenuIcon} fill="none" stroke="currentColor" strokeWidth="1.1" viewBox="0 0 16 16"><path d="M8 11V3M4.5 6.5 8 3l3.5 3.5M3 12.5h10" /></svg>
+  ) : (
+    <svg aria-hidden className={styles.replaceImageMenuIcon} fill="none" stroke="currentColor" strokeWidth="1.1" viewBox="0 0 16 16"><rect height="5" rx="1" width="5" x="2" y="2" /><rect height="5" rx="1" width="5" x="9" y="2" /><rect height="5" rx="1" width="5" x="2" y="9" /><rect height="5" rx="1" width="5" x="9" y="9" /></svg>
   );
 }
 

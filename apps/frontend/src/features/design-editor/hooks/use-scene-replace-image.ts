@@ -48,15 +48,19 @@ import type { SceneWriteGate } from "./use-scene-manual-edits";
  * FAILURE IS VISIBLE AND NEVER OUTLIVES ITSELF. The message goes to the
  * inspector's EXISTING inline error slot (`ImageInspector`'s `error` prop, fed
  * by the manual-edits controller's `reportError`) — the same slot the CAS path
- * uses, and no new copy. And the returned promise REJECTS on every path where
+ * uses, and no new UI. EVERY refusal reaches it: the API's own words for an
+ * upload failure, and one of the four sentences below for the refusals this file
+ * decides (Task 3 — until then those four were silent, which is exactly why the
+ * flow read as "upload does nothing"). And the returned promise REJECTS on every path where
  * the document did not take the file, which is what puts `InspectorImageUpload`'s
  * local preview back: a panel showing a picture the document does not have is
  * the defect this lane has now paid for five times.
  */
 
 /** The rejection every refused pick carries. Its message is diagnostic only and
- * is never rendered — a refusal the user should read about reaches the
- * inspector's error slot instead, in the API's or the engine's own words. */
+ * is never rendered — what the user reads reaches the inspector's error slot
+ * instead, in the API's words, the engine's, or one of the four sentences
+ * below. */
 export class SceneReplaceImageRefused extends Error {
   constructor(reason: string) {
     super(`replace image refused: ${reason}`);
@@ -95,6 +99,21 @@ export interface SceneReplaceImageDeps {
   upload: (file: File) => Promise<AssetRecord>;
 }
 
+/**
+ * THE FOUR SENTENCES A REFUSAL SAYS. Until Task 3 every one of these paths threw
+ * a diagnostic-only `SceneReplaceImageRefused` and put NOTHING in the error
+ * slot: the panel's preview snapped back and the flow read as "upload does
+ * nothing" — the founder's report, and the actual bug. The rejection still
+ * happens (it is what reverts the preview); it is no longer the ONLY thing that
+ * happens. Exported because Task 4's picker refuses on the same grounds and must
+ * say the same words, not a second vocabulary for the same states.
+ */
+export const NOT_ACCEPTING_EDITS = "This document isn't accepting edits right now.";
+export const NOT_AN_IMAGE_TARGET = "Select an unlocked image to replace.";
+export const SELECTION_MOVED =
+  "The selection changed while the upload was running — try again.";
+export const SAME_IMAGE_IN_USE = "That's the image already in use.";
+
 /** The intent label, for signature parity with the write path's other callers.
  * It stops at `applyOps`, which documents why the queue takes none. */
 const REPLACE_IMAGE_INTENT = "inspector: replace image";
@@ -127,30 +146,41 @@ export function createSceneReplaceImageHandler(
     const before = readDeps();
     const target = before.node;
     const documentId = before.documentId;
-    if (!documentId) {
-      throw new SceneReplaceImageRefused("no document is armed");
+    // FIX 1 (review): nothing armed, or no live engine (D9 read-only) — states
+    // in which `applyOps` refuses SILENTLY, so a post-upload refusal would leave
+    // a minted asset behind an empty error slot. Reachable: CanvasKit fails to
+    // activate, the scene still loads and the layer tree still selects, so the
+    // button is live over an engine that can apply nothing.
+    //
+    // ASKED FIRST, BEFORE THE TARGET CHECK, and deliberately: in view mode
+    // NOTHING is editable, so "select an unlocked image" would send the user
+    // hunting for a selection that could never have worked. The document-level
+    // truth comes first, in the clipboard lane's wording.
+    //
+    // MERGED with the live-streaming lock (rung A, task 4): `writeGate` is the
+    // same question `canApply` asked, with the answer's REASON attached. Every
+    // refusal still speaks (Task 3's rule) — but in the slot that fits it: a
+    // gate that carries a note (the design agent's run) says it in the NOTE
+    // slot, in the lock's own words, because a locked editor is a state to wait
+    // out, not a failure; every other refusal (nothing armed, a dead engine)
+    // goes to the error slot as before.
+    const gate = before.writeGate();
+    if (!documentId || !gate.allowed) {
+      if (gate.note !== null) {
+        before.onNote(gate.note);
+      } else {
+        before.onError(NOT_ACCEPTING_EDITS);
+      }
+      throw new SceneReplaceImageRefused(
+        documentId ? (gate.refusal ?? "the write path is not armed") : "no document is armed",
+      );
     }
     // Not an image selection, or §4's lock — REFUSED BEFORE THE TRANSPORT. An
     // upload that mints an asset and then cannot place it is a half write: a
     // registry row nothing references.
     if (!target || !sceneImageReplacementTarget(target)) {
+      before.onError(NOT_AN_IMAGE_TARGET);
       throw new SceneReplaceImageRefused("this selection takes no image");
-    }
-    // FIX 1 (review): the same rule applied to the OTHER half of "can this land
-    // at all". Nothing armed, or no live engine (D9 read-only) — states in which
-    // `applyOps` refuses SILENTLY, so a post-upload refusal would leave a minted
-    // asset behind an empty error slot. Reachable: CanvasKit fails to activate,
-    // the scene still loads and the layer tree still selects, so the button is
-    // live over an engine that can apply nothing.
-    const gate = before.writeGate();
-    if (!gate.allowed) {
-      // Task 4 (I3): the ONE refusal with words says them. The other two stay
-      // silent exactly as they were — the canvas's G-D banner already explains
-      // a dead engine, and "not armed" is a state no user can see.
-      if (gate.note !== null) {
-        before.onNote(gate.note);
-      }
-      throw new SceneReplaceImageRefused(gate.refusal ?? "the write path is not armed");
     }
     // A new attempt supersedes what the last one said — a refusal about a file
     // the user has already replaced is no longer true. Cleared HERE rather than
@@ -179,17 +209,23 @@ export function createSceneReplaceImageHandler(
       after.node.id !== target.id ||
       after.documentId !== documentId
     ) {
+      after.onError(SELECTION_MOVED);
       throw new SceneReplaceImageRefused("the selection moved during the upload");
     }
     if (!sceneImageReplacementTarget(after.node)) {
+      after.onError(NOT_AN_IMAGE_TARGET);
       throw new SceneReplaceImageRefused("the node was locked during the upload");
     }
     const operations = sceneImagePlacementOperations(after.node, record);
     // A change that changes nothing is not a write — the deduplicated upload
-    // handed back the picture this node already carries. Not a failure either:
-    // the document really does hold it, so the preview stays.
+    // handed back the picture this node already carries. It used to RESOLVE
+    // silently, which is indistinguishable from a broken upload: the user picked
+    // a file, waited, and read nothing. It now says so and rejects, so the
+    // panel's preview reverts to the picture the document actually holds — which
+    // is the same picture, so nothing visibly moves except the explanation.
     if (!operations) {
-      return;
+      after.onError(SAME_IMAGE_IN_USE);
+      throw new SceneReplaceImageRefused("the asset is already in use");
     }
     if (!after.applyOps(operations, REPLACE_IMAGE_INTENT)) {
       throw new SceneReplaceImageRefused("the engine refused the batch");

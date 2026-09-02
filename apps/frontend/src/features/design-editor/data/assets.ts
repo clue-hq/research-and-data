@@ -73,3 +73,65 @@ export async function uploadWebAsset(
   }
   return payload.asset;
 }
+
+/** The registry kinds that paint as pictures — what the asset-library picker and the Brand
+ * context Assets page list. Fonts, documents and `other` never appear there. */
+export const IMAGE_ASSET_KINDS = ["raster_image", "vector", "logo"] as const;
+
+const LIST_PAGE_SIZE = 200;
+
+/** A typed refusal from the registry list seam — the same shape as the upload's. */
+export class WebAssetListError extends Error {
+  readonly code: string | null;
+  readonly status: number;
+  constructor(message: string, options: { code?: string | null; status: number }) {
+    super(message);
+    this.name = "WebAssetListError";
+    this.code = options.code ?? null;
+    this.status = options.status;
+  }
+}
+
+interface AssetListPayload {
+  assets?: AssetRecord[];
+  detail?: { code?: string; message?: string } | string;
+}
+
+/**
+ * Every non-archived image asset in the workspace registry, through the authenticated BFF
+ * (`GET /assets`), one request per image kind (the route filters a single `kind`), paged while a
+ * page comes back full. Order is kind order, then the server's own (`updated_at desc`).
+ */
+export async function listImageAssets(
+  { fetchImpl }: { fetchImpl?: typeof fetch } = {},
+): Promise<AssetRecord[]> {
+  const doFetch: typeof fetch = fetchImpl ?? ((input, init) => fetch(input, init));
+  const records: AssetRecord[] = [];
+  for (const kind of IMAGE_ASSET_KINDS) {
+    for (let offset = 0; ; offset += LIST_PAGE_SIZE) {
+      const response = await doFetch(
+        `${DESIGN_API_BFF_PREFIX}/assets?kind=${kind}&include_archived=false&limit=${LIST_PAGE_SIZE}&offset=${offset}`,
+      );
+      let payload: AssetListPayload = {};
+      try {
+        payload = (await response.json()) as AssetListPayload;
+      } catch {
+        // A non-JSON body keeps the status-shaped message below.
+      }
+      if (!response.ok || !Array.isArray(payload.assets)) {
+        const detail = payload.detail;
+        const message =
+          typeof detail === "string"
+            ? detail
+            : (detail?.message ?? detail?.code ?? `Asset list failed with status ${response.status}`);
+        throw new WebAssetListError(message, {
+          code: typeof detail === "string" ? null : (detail?.code ?? null),
+          status: response.status,
+        });
+      }
+      records.push(...payload.assets);
+      if (payload.assets.length < LIST_PAGE_SIZE) break;
+    }
+  }
+  return records;
+}

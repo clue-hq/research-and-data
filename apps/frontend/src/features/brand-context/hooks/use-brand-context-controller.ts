@@ -22,6 +22,7 @@ const assetFilterOptions: ReadonlyArray<{ label: string; value: "all" | BrandAss
   { label: "Logos", value: "logo" },
   { label: "Backgrounds", value: "background" },
   { label: "Mockups", value: "mockup" },
+  { label: "Uploads", value: "upload" },
   { label: "AI-generated images", value: "ai-generated" },
 ];
 

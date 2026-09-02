@@ -4,6 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { InspectorEventAddressing } from "@/features/chat-shell/hooks/use-inspector-controller";
 import { AGENT_RUN_LOCK_NOTE } from "@/features/chat-shell/model/agent-run-lock";
 import {
+  kitLibraryEntries,
+  type KitLibraryEntry,
+} from "../adapter/scene-asset-library";
+import {
   hydrateSceneSelectionState,
   rootFrameId,
   sceneSelectionFor,
@@ -26,9 +30,12 @@ import { fetchBrandKitDetail } from "../engine/scene/documentStore";
 import { collectKitFontFaceRefs } from "../engine/scene/kitFonts";
 import { fetchFontLibrary } from "../engine/scene/libraryFonts";
 import { useSceneArrange } from "./use-scene-arrange";
+import { useSceneAssetLibrary } from "./use-scene-asset-library";
+import { useSceneClipboard } from "./use-scene-clipboard";
 import type { SceneDocumentHistory } from "./use-scene-document";
 import { useSceneExport } from "./use-scene-export";
 import { useSceneImageAi } from "./use-scene-image-ai";
+import { useSceneImagePaste } from "./use-scene-image-paste";
 import { useSceneInspectorWrites } from "./use-scene-inspector-writes";
 import { useSceneReplaceImage } from "./use-scene-replace-image";
 
@@ -76,6 +83,9 @@ import { useSceneReplaceImage } from "./use-scene-replace-image";
 export type SceneEditingSession = ReturnType<typeof useSceneEditingSession>;
 
 const NO_ROWS: SceneLayerRow[] = [];
+/** One identity, so a kitless document does not re-derive the asset library on
+ * every render (`NO_ROWS`' reason exactly). */
+const NO_KIT_ENTRIES: KitLibraryEntry[] = [];
 
 interface LoadedScene {
   forDocumentId: string;
@@ -351,6 +361,13 @@ export function useSceneEditingSession({
       : null;
   const [libraryFamilies, setLibraryFamilies] = useState<string[]>([]);
   const [kitFamilies, setKitFamilies] = useState<string[]>([]);
+  // Replace-image lane: the kit's own pictures, which the asset library pins
+  // first. Read off the SAME kit fetch as the fonts and the palette below — one
+  // fetch, now three vocabularies. A document with NO kit attached pins
+  // nothing, DERIVED rather than reset in an effect (the palette's discipline
+  // below, and `react-hooks/set-state-in-effect` forbids the effect form).
+  const [fetchedKitEntries, setFetchedKitEntries] = useState<KitLibraryEntry[]>([]);
+  const kitEntries = brandKitId ? fetchedKitEntries : NO_KIT_ENTRIES;
   // STAMPED with the kit it was fetched for and DERIVED against the current
   // one, the discipline the scene, the selection, the zoom and the history all
   // follow here. Without it, opening a second ad would keep offering the
@@ -417,6 +434,7 @@ export function useSceneEditingSession({
           forBrandKitRef: brandKitRef,
           palette: buildScenePalette(detail),
         });
+        setFetchedKitEntries(kitLibraryEntries(detail));
       })
       .catch(() => undefined);
     return () => {
@@ -567,6 +585,18 @@ export function useSceneEditingSession({
     writeGate: writes.writeGate,
   });
 
+  // Replace-image lane: the asset-library picker. Same deps as the upload above — a pick IS a
+  // replace with the upload step removed (spec §4.2) — plus the kit's own asset ids for pinning.
+  const assetLibraryBinding = useSceneAssetLibrary({
+    applyOps: writes.applyOps,
+    canApply: writes.canApply,
+    documentId: activeDocumentId,
+    kitEntries,
+    node: primaryNode ?? null,
+    onError: writes.reportError,
+  });
+  const assetLibrary = activeDocumentId && scene ? assetLibraryBinding : undefined;
+
   // AD4.A step 3 (§1.3 row 2): the AI image suite — generate / edit / remove
   // background / candidate review. Same seam as Replace image above and for the
   // same reasons: the LIVE node (§4's lock and the node's own asset are facts
@@ -625,6 +655,66 @@ export function useSceneEditingSession({
   // false, so nothing could be written; this keeps the panel from claiming
   // otherwise, and keeps the absent-binding path the dummy's own.)
   const arrange = activeDocumentId && scene ? arrangeBinding : undefined;
+
+  // Clipboard Task 8: external image ingestion — the two seams Task 7 left for
+  // pictures that came from OUTSIDE this document (a ⌘V of files, pasted svg
+  // markup) plus the gesture the clipboard never sees at all, a drag-drop onto
+  // the canvas. It sits here for the same reason every other handler hook does:
+  // components never reach the engine or the transport.
+  //
+  // R21: where a pasted picture lands is the CANVAS's answer — the live
+  // viewport's centre in page space — asked through the same controls ref the
+  // write path uses, and only when that ref is serving THIS document (a canvas
+  // showing another artifact, or none, must not decide where this one pastes).
+  // Null falls back to the page's own centre inside the hook.
+  const viewportPageCenter = useCallback(() => {
+    const controls = canvasControls.current;
+    return controls?.documentId === activeDocumentId
+      ? controls.viewportPageCenter()
+      : null;
+  }, [activeDocumentId]);
+  const imagePaste = useSceneImagePaste({
+    applyOps: writes.applyOps,
+    canApply: writes.canApply,
+    pageId,
+    reportError: writes.reportError,
+    scene,
+    selectedNodeId: primaryNodeId,
+    viewportPageCenter,
+  });
+
+  // Clipboard Task 7: ⌘C / ⌘X / ⌘V / ⌘D over the scene.
+  //
+  // It sits HERE, beside the arrange binding, for the same reason arrange does
+  // (AD4.A: components never reach the engine or the transport, so the session
+  // composes the handler hook) — and it returns nothing, because a clipboard
+  // has no panel: copy, cut and paste arrive as the browser's OWN semantic
+  // events (never a keymap — only inside those events is `clipboardData` live,
+  // and only they fire for the Edit menu and the right-click menu), and ⌘D is
+  // the single chord it registers.
+  //
+  // The selection it takes is the PRIMARY one, unresolved: `primaryNodeId`
+  // above has already been checked against the live scene, and the hook does
+  // its own cross-page check (R11), so passing `selectedIds[0]` raw would only
+  // duplicate that. V1 copies ONE subtree — the shipped selection model's shape.
+  //
+  // `workspaceId` is deliberately omitted: nothing in this session knows one
+  // (it takes artifact ids and document ids, no workspace), and the payload's
+  // `workspaceHint` is display/debug only — a fabricated value would be worse
+  // than the honest null, since asset resolution is the real cross-workspace
+  // gate. Task 9 made a plain-text paste the hook's OWN (no seam): it replaces
+  // a selected text node's content or mints one at `viewportPageCenter`, the
+  // same canvas answer the image paste above takes.
+  useSceneClipboard({
+    documentId: activeDocumentId,
+    onExternalImages: imagePaste.onExternalImages,
+    onSvgMarkup: imagePaste.onSvgMarkup,
+    pageId,
+    scene,
+    selectedNodeId: primaryNodeId,
+    viewportPageCenter,
+    writes,
+  });
 
   // AD4.D step 2 (§1.11): the export menu's request, answered. It sits beside
   // the write hooks rather than inside them because an export is a READ (ruling
@@ -685,6 +775,10 @@ export function useSceneEditingSession({
      * `undefined` until a document is actually loaded — the same gate `imageAi`
      * takes, which is what keeps the buttons inert on the fixture path. */
     arrange,
+    /** The Replace-image lane's asset-library picker — open/close, the filtered
+     * items and `pick`. `undefined` until a document is loaded, the same gate
+     * `arrange` and `imageAi` take. */
+    assetLibrary,
     canvasControls,
     /** AD4.D step 3 (§1.11): the render the export menu's designed preview
      * region shows and the element that hosts it, or `null` when there is
@@ -727,6 +821,9 @@ export function useSceneEditingSession({
      * picked becomes an asset and lands in the selected image node. */
     onReplaceImage,
     onSceneChange,
+    /** Clipboard Task 8: image files dragged onto the canvas, with the page
+     * point the pointer named — uploaded and inserted centred on it. */
+    onSceneDropImageFiles: imagePaste.onDropImageFiles,
     onSelectCanvas,
     onSelectLayer,
     onToggleLayer,

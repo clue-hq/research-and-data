@@ -32,7 +32,7 @@ import type {
   RichTextDocument,
   WebTheme,
 } from "@/features/design-editor/engine/webDocuments";
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import { ProjectGallery } from "@/features/gallery/components/project-gallery";
 import type { GalleryArtifact } from "@/features/gallery/model/project-gallery";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
@@ -75,6 +75,7 @@ export function ArtifactStage({
   onRenameArtifact,
   onRenameArtifactFor,
   onSceneChange,
+  onSceneDropImageFiles,
   onSceneEngineStatusChange,
   onSceneFitZoom,
   onSceneLockedEdit,
@@ -95,6 +96,7 @@ export function ArtifactStage({
   onTogglePanel,
   onToggleEditing,
   openArtifacts,
+  overlay,
   projectTitle,
   redoDisabled,
   selectedCanvasNodeId,
@@ -162,6 +164,12 @@ export function ArtifactStage({
     scene: Scene | null,
     pageId: PageId | null,
     documentId: string,
+  ) => void;
+  /** Clipboard Task 8: image files dropped on the ad canvas, with the page
+   * point the pointer named. Passed straight through to the canvas. */
+  onSceneDropImageFiles?: (
+    files: File[],
+    pagePoint: { x: number; y: number },
   ) => void;
   /** AD2.3: the ad canvas's wasm stamp-handshake outcome, mirrored upward so
    * the shell can refuse edits (and, post Gate G-D, explain why). */
@@ -236,6 +244,10 @@ export function ArtifactStage({
   onTogglePanel: () => void;
   onToggleEditing: () => void;
   openArtifacts: ChatShellOpenArtifact[];
+  /** Replace-image Task 6: chrome the surfaces float over the stage (today the
+   * asset-library picker). Pass-through only — this component owns no part of
+   * what it renders, exactly as `onSceneDropImageFiles` owns no part of a drop. */
+  overlay?: ReactNode;
   projectTitle?: string;
   /** W3.4: empty-stack disables for the action menu's Undo/Redo. */
   redoDisabled?: boolean;
@@ -319,6 +331,7 @@ export function ArtifactStage({
                   documentId={activeDocumentId}
                   gestureDisabled={sceneGestureDisabled}
                   onLockedEdit={onSceneLockedEdit}
+                  onDropImageFiles={onSceneDropImageFiles}
                   onEngineStatusChange={onSceneEngineStatusChange}
                   onFitZoom={onSceneFitZoom}
                   onGestureZoom={onSceneGestureZoom}
@@ -348,6 +361,7 @@ export function ArtifactStage({
           projectTitle={projectTitle}
         />
       )}
+      {overlay}
     </section>
   );
 }

@@ -254,15 +254,16 @@ later — WebKit/Firefox support is not there yet, per the research note).
   (null when the root id resolves to no node), `extractReadableText(nodes: Node[]): string`
   (text-node contents, document order, newline-joined).
 
-- [ ] **Step 1: failing tests** — root+descendants closure (a group with two children serializes 3
+- [x] **Step 1: failing tests** — root+descendants closure (a group with two children serializes 3
   nodes, `roots:[groupId]`); an ImageNode contributes its `asset_id` to `assetIds` exactly once;
   a TextNode with spans serializes spans byte-identically; `readableText` joins two text nodes in
   document order; unknown root → null; bounds equal the root's page-space box (use the fixture
   `engine/scene/__tests__/__fixtures__/minimal_scene.json` the rich-text tests already use).
-- [ ] **Step 2: run — expect FAIL** (`npx vitest run src/features/design-editor/adapter/scene-clipboard.test.ts`)
-- [ ] **Step 3: implement** (pure functions; closure via iterative stack over `children`)
-- [ ] **Step 4: run — expect PASS**
-- [ ] **Step 5: commit** `feat(design-editor): scene clipboard DTO + subtree serializer`
+- [x] **Step 2: run — expect FAIL** (ran `npx tsx --test …/scene-clipboard.test.ts` — the app's real
+  runner per `package.json` "test"; the vitest name here was a plan drift. FAILED as expected.)
+- [x] **Step 3: implement** (pure functions; closure via iterative stack over `children`)
+- [x] **Step 4: run — expect PASS** (12/12 green; eslint clean)
+- [x] **Step 5: commit** `feat(design-editor): scene clipboard DTO + subtree serializer` (`e60891231`)
 
 ### Task 2: Envelope codec (`encodeClipboardHtml` / `decodeClipboardHtml`)
 
@@ -276,13 +277,15 @@ later — WebKit/Firefox support is not there yet, per the research note).
   `decodeClipboardHtml(html: string): SceneClipboardPayloadV1 | null`,
   `validateClipboardPayload(value: unknown): SceneClipboardPayloadV1 | null`.
 
-- [ ] **Step 1: failing tests** — round-trip identity; decode uses `DOMParser` and reads ONLY the
+- [x] **Step 1: failing tests** — round-trip identity; decode uses `DOMParser` and reads ONLY the
   `data-clue-scene` attribute (a payload wrapped in `<script>`-bearing HTML round-trips without
   any element being live-injected — assert no side effects, parse-only); foreign HTML → null;
   wrong `kind`/`version`/shape → null; extra unknown top-level keys → null (strict); oversized →
-  encode returns null; base64 garbage → null (no throw).
-- [ ] **Step 2: run — FAIL** → **Step 3: implement** → **Step 4: PASS**
-- [ ] **Step 5: commit** `feat(design-editor): clipboard html envelope codec with strict validation`
+  encode returns null; base64 garbage → null (no throw). (Plus: UTF-8-byte cap measurement,
+  non-ascii round-trip, non-self-contained node graphs refused. jsdom added as devDependency —
+  the runner is node:test with no DOM; Tasks 6–7 need it regardless.)
+- [x] **Step 2: run — FAIL** (13 new red) → **Step 3: implement** → **Step 4: PASS** (25/25; eslint clean)
+- [x] **Step 5: commit** `feat(design-editor): clipboard html envelope codec with strict validation` (`09af583c6`)
 
 ### Task 3: Subtree re-mint (`remintSubtree`)
 
@@ -297,12 +300,14 @@ later — WebKit/Firefox support is not there yet, per the research note).
   ids for every node, `children` arrays rewritten through the old→new map, root `name` suffixed
   (`headline` → `headline_2`, `_3`, … against `siblingNames`), descendants keep names.
 
-- [ ] **Step 1: failing tests** — every output id is fresh and absent from `existingIds`;
+- [x] **Step 1: failing tests** — every output id is fresh and absent from `existingIds`;
   children arrays reference only re-minted ids; deterministic structure (same shape, new ids);
   name collision suffixes correctly incl. an existing `_2`; id collision with `existingIds`
-  retries (inject a colliding-first fake `randomUUID` like the structuredEdits tests do).
-- [ ] **Steps 2–4: FAIL → implement → PASS** — **Step 5: commit**
-  `feat(design-editor): clipboard subtree re-mint with reference rewrite`
+  retries (inject a colliding-first fake `randomUUID` like the structuredEdits tests do —
+  done via node:test `mock.method`, this suite's native equivalent of the vitest-shim spy;
+  plus batch self-collision retry, null-name root, payload-not-mutated).
+- [x] **Steps 2–4: FAIL (6 red) → implement → PASS (31/31; eslint clean)** — **Step 5: commit**
+  `feat(design-editor): clipboard subtree re-mint with reference rewrite` (`4384e4154`)
 
 ### Task 4: Placement planner (`planPastePlacement`)
 
@@ -315,14 +320,16 @@ later — WebKit/Firefox support is not there yet, per the research note).
   `parentComputedOrigin(nodeId)` (test-injectable, AD4.C style).
 - Produces: `PastePlacement` union + `planPastePlacement(args)` — exact signature in §Design.
 
-- [ ] **Step 1: failing tests** — (a) selected auto-layout container → `into-layout` at
+- [x] **Step 1: failing tests** — (a) selected auto-layout container → `into-layout` at
   `children.length` with NO transform; (b) cascade generation g → source position +10g/+10g,
   parent = source's parent, transform PARENT-RELATIVE; (c) drop at page point under a non-page
   parent → rebased by injected origin, and the RED case pins that the un-rebased page-absolute
   answer is wrong (F9's exact failure shape); (d) viewport-center mode centers `payloadBounds`;
   (e) locked/managed selected node falls through to page-level freehand.
-- [ ] **Steps 2–4: FAIL → implement → PASS** — **Step 5: commit**
-  `feat(design-editor): paste placement planner (rulings 1-2, F9 rebase pinned)`
+- [x] **Steps 2–4: FAIL → implement → PASS** (11/11; SDD Opus implementer, review Approved) —
+  **Step 5: commit** `feat(design-editor): paste placement planner (rulings 1-2, F9 rebase pinned)`
+  (`863c6b6ca`; orchestrator rulings R2–R5 in the SDD ledger settle parent derivation, drop
+  centering, into-layout-never-on-drop, and position-only transforms)
 
 ### Task 5: Materialization (`materializeClipboardPayload`) — payload → ops
 
@@ -339,10 +346,15 @@ later — WebKit/Firefox support is not there yet, per the research note).
   `insertNode` ops; root gets the placement (transform or index); refusal when any
   `payload.assetIds` entry is missing from `knownAssetIds` (message names the count).
 
-- [ ] **Step 1: failing tests** — 3-node subtree → 3 insertNode ops parents-first, root op carries
+- [x] **Step 1: failing tests** — 3-node subtree → 3 insertNode ops parents-first, root op carries
   placement; into-layout root op has the container ParentRef + index and NO transform patch;
   missing asset → `{refusal}` naming "1 image"; empty-payload → refusal.
-- [ ] **Steps 2–4** — **Step 5: commit** `feat(design-editor): clipboard materialization to insertNode batches`
+- [x] **Steps 2–4** — **Step 5: commit** `feat(design-editor): clipboard materialization to insertNode batches`
+  (`7921a3e25` + fix round `f5e95f73c`: task review caught that populated `children` arrays on
+  inserted nodes trip lumen-core's `op.child_missing` and void every ≥2-node paste — ops now
+  emit CHILDLESS nodes, tree expressed purely by parent ref + index, invariant pinned in test.
+  Rulings R7 (position-only root transform merge) and R8 (computed:null; absolute_box shifted
+  by paste delta on freehand) in the SDD ledger. 45/45 green.)
 
 ### Task 6: Paste classifier
 
@@ -358,11 +370,14 @@ later — WebKit/Firefox support is not there yet, per the research note).
   {kind:"svg-markup"; svg: string} | {kind:"plain-text"; text: string} | {kind:"none"}`,
   `ALLOWED_IMAGE_MIMES = ["image/png","image/jpeg","image/webp","image/svg+xml"]`.
 
-- [ ] **Step 1: failing tests** — priority matrix: internal mime beats envelope beats files beats
+- [x] **Step 1: failing tests** — priority matrix: internal mime beats envelope beats files beats
   svg-text beats plain; envelope decode failure falls THROUGH to the next class (never dead-ends);
   file list filtered to allowlist (a .gif among a .png → only the png, refusal note for later);
   `<?xml…?><svg` and BOM-prefixed `<svg` both classify as svg-markup; whitespace-only text → none.
-- [ ] **Steps 2–4** — **Step 5: commit** `feat(design-editor): paste classifier with fall-through priority`
+- [x] **Steps 2–4** — **Step 5: commit** `feat(design-editor): paste classifier with fall-through priority`
+  (`cbfeb38f7` + fix round `08ba8471c` pinning envelope-beats-files, mutation-verified. 27/27.
+  Intent extended with `rejected: string[]` per orchestrator ruling so Task 7 refuses dropped
+  files loudly.)
 
 ### Task 7: Copy/cut/paste/duplicate wiring (`use-scene-clipboard`)
 
@@ -382,7 +397,7 @@ later — WebKit/Firefox support is not there yet, per the research note).
   §7); exports pure helpers `shouldOwnClipboardEvent(target, editing, armed)` and
   `buildCopyRepresentations(payload) → {internal, html, plain}` for testing.
 
-- [ ] **Step 1: failing tests** — pure halves: `shouldOwnClipboardEvent` false for typing targets
+- [x] **Step 1: failing tests** — pure halves: `shouldOwnClipboardEvent` false for typing targets
   /ungated docs/view mode; `buildCopyRepresentations` emits all three with readable plain text;
   cut composes copy + `deleteEdit(root)` only when `canApply()`; ⌘D produces a cascade-placement
   materialization WITHOUT touching any clipboard API (spy); paste with internal intent produces
@@ -390,7 +405,13 @@ later — WebKit/Firefox support is not there yet, per the research note).
   messages from §Error handling; jsdom ClipboardEvent round-trip for copy→paste where jsdom
   permits (skip-with-comment where its DataTransfer is incomplete — the web-toolbar tests set the
   precedent).
-- [ ] **Steps 2–4** — **Step 5: commit** `feat(design-editor): scene clipboard events — copy/cut/paste/duplicate`
+- [x] **Steps 2–4** — **Step 5: commit** `feat(design-editor): scene clipboard events — copy/cut/paste/duplicate`
+  (`097350bf4` + fix round `c935cb814`. SEAM DRIFT RECORDED (SDD ruling R16): the hook is composed
+  in `use-scene-editing-session.ts` beside `useSceneArrange` — NOT `scene-artifact-canvas.tsx` —
+  per the AD4.A precedent (sessions compose handler hooks; arrange registers its own window
+  listeners). Fix round closed the files-only R9 hole, pinned read-only-vs-allowlist precedence,
+  and made copy/cut yield to a live DOM text selection. Suite 39 (38+1 jsdom skip); full
+  frontend `npm test` 2396/2395/0.)
 
 ### Task 8: External image ingestion (paste-files + drop + SVG markup)
 
@@ -408,13 +429,20 @@ later — WebKit/Firefox support is not there yet, per the research note).
   `pastedImageNodeSize(media: {width:number;height:number}, page: {width:number;height:number})`
   (fit-within-60%-short-side rule, downscale-only).
 
-- [ ] **Step 1: failing tests** — png file → upload called once, one insertNode ImageNode with
+- [x] **Step 1: failing tests** — png file → upload called once, one insertNode ImageNode with
   returned `asset_id` and `alt` = filename; `status:"pending"` record → refusal naming the label,
   NO insert; disallowed mime → refusal naming the allowlist, upload NOT called; svg markup →
   synthesized File with `image/svg+xml` routed down the same path; sizing rule: 4000×2000 image on a 1080×1080
   page → 648-wide fit; a 200×100 image pastes at 200×100 (downscale-only, never upscaled); multi-file paste inserts with per-file cascade; upload rejection surfaces
   the server detail verbatim.
-- [ ] **Steps 2–4** — **Step 5: commit** `feat(design-editor): external image paste/drop ingestion`
+- [x] **Steps 2–4** — **Step 5: commit** `feat(design-editor): external image paste/drop ingestion`
+  (`a381e2618` + fix round `ba7f06162`. Review caught that the batch never REGISTERED the uploaded
+  asset — a plan-interface omission — so every pasted image would have been a blank dangling
+  ref; ops are now `upsert_asset` + `insert_node` per file in ONE batch. Ground-truth correction:
+  intrinsic dimensions live in `raster.pixel_width/height` / `vector.width/height`, not `media`.
+  Rulings R20–R25 + R21a–c (scene-unit coordinates via `descriptorToScene`, unbounded
+  off-artboard drops, both ArtifactStage mounts wired) in the SDD ledger. 26/26; frontend
+  `npm test` 2420/2419/0.)
 
 ### Task 9: Plain-text paste behavior
 
@@ -428,12 +456,17 @@ later — WebKit/Firefox support is not there yet, per the research note).
 - Produces: plain-text intent handling per §Design; `newTextNodeFromPaste(text, placement,
   kitDefaults): Node`.
 
-- [ ] **Step 1: failing tests** — selected TextNode → one updateTextNode op whose spans vector
+- [x] **Step 1: failing tests** — selected TextNode → one updateTextNode op whose spans vector
   came from `spansVectorForContentEdit` (spy on the real fn) — never a raw spread; spanned node +
   full replacement → spans remap per that function's own contract; nothing selected → one
   insertNode with a TextNode carrying the pasted characters at viewport center; selected
   ImageNode → falls through to new-text-node (not a content write on an image).
-- [ ] **Steps 2–4** — **Step 5: commit** `feat(design-editor): plain-text paste — replace selected text or mint a text node`
+- [x] **Steps 2–4** — **Step 5: commit** `feat(design-editor): plain-text paste — replace selected text or mint a text node`
+  (`f7912cc8c`, review approved first pass. Plain text is now the hook's own — the Task-7
+  `onPlainText` seam is removed (R26). The minted node rides the SAME plan→materialize pipeline as
+  internal paste (R28: Inter/16/400, 60%-short-side fixed width, hug height, solid #111111 fill);
+  the spans function is injected-with-real-default because ESM bindings cannot be spied (R27).
+  45-test suite; frontend `npm test` 2428/2427/0.)
 
 ### Task 10: Outbound representations for image nodes (ruling 4)
 
@@ -451,10 +484,18 @@ later — WebKit/Firefox support is not there yet, per the research note).
   `setData` path (envelope + plain only) — the internal payload must never be lost to a png
   failure.
 
-- [ ] **Step 1: failing tests** — representation builder returns all three blobs for a png asset;
+- [x] **Step 1: failing tests** — representation builder returns all three blobs for a png asset;
   jpeg/webp/svg route through `rasterToPngBlob`; `clipboard.write` rejection → sync fallback invoked,
   envelope intact (spy sequence); non-image roots never call `clipboard.write` (ruling 4 scope).
-- [ ] **Steps 2–4** — **Step 5: commit** `feat(design-editor): image-node copies carry image/png for external apps`
+- [x] **Steps 2–4** — **Step 5: commit** `feat(design-editor): image-node copies carry image/png for external apps`
+  (`b86d3dd81` + fix round `7bae72643`. DESIGN AS BUILT (ruling R31): the sync `setData` trio is
+  the baseline and is written FIRST; the async `ClipboardItem` write (html/plain/promise-png) is
+  additive, issued synchronously inside the copy event, and every failure — rejection OR
+  synchronous constructor throw (Firefox) — is swallowed, so the internal payload can never be lost
+  to a png failure. Known, accepted cost: a successful async write replaces the custom-mime fast
+  path with the envelope (browsers allowlist ClipboardItem types; fidelity preserved). Decode
+  branches of `rasterToPngBlob` are un-testable offline — Preview/Slack spot-check owed at Task 12.
+  55-test hook suite; frontend `npm test` 2440/2439/0.)
 
 ### Task 11: Text-session paste pinning (probably already green)
 
@@ -463,20 +504,23 @@ later — WebKit/Firefox support is not there yet, per the research note).
   `components/scene-artifact-canvas.tsx`'s existing rung-C coverage (same suites the rich-text
   lane used — `adapter/scene-text-edit.test.ts` and the session tests).
 
-- [ ] **Step 1: write the pinning tests** — `insertFromPaste` beforeinput inside a styled range
+- [x] **Step 1: write the pinning tests** — `insertFromPaste` beforeinput inside a styled range
   grows/remaps spans exactly as `insertText` does (the session transition treats them
   identically); paste replacing a cross-span selection normalizes per the span algebra; a paste
   while the session is open never reaches the canvas clipboard handler (guard test).
-- [ ] **Step 2: run** — expected PASS (machinery shipped in the rich-text lane). If any FAILS,
-  STOP: that is a real rich-text defect — fix it in `adapter/scene-text-session.ts` under its own
-  red-green cycle before proceeding, and record it in the close-out.
-- [ ] **Step 3: commit** `test(design-editor): pin text-session paste span remap`
+- [x] **Step 2: run** — expected PASS (machinery shipped in the rich-text lane). PASSED on first run
+  (4 pins + 1 positive control; each mutation-verified to be falsifiable). No rich-text defect.
+- [x] **Step 3: commit** `test(design-editor): pin text-session paste span remap` (`a043dded4`)
 
 ### Task 12: Rung close — frontend gate + live walk
 
-- [ ] **Step 1: frontend gate** — `npm run design-system:build && npm run lint && npm run build`
-  + full vitest suite; baseline 2246 must not regress; zero new lint errors.
-- [ ] **Step 2: live walk on the colombo stack** (3033, Apollo workspace, the Cursor ad),
+- [x] **Step 1: frontend gate** — `npm run design-system:build && npm run lint && npm run build`
+  + full vitest suite; baseline 2246 must not regress; zero new lint errors. (design-system:build 0;
+  lint 0 errors / 2 pre-existing warnings; `next build` completed; `npm test` 2462/2461/0/1 skip.)
+- [x] **Step 2: live walk on the colombo stack** (3033, Apollo workspace, the Cursor ad), — RAN ON THE
+  NASHVILLE stack (3023, clone DB) instead; every item below verified via the persisted document
+  except the Preview/Slack external-app spot-check (headless cannot do it — founder-owed). Two walk
+  findings fixed in `23bbd2f75` (W1 pasted-node names, W2 cross-document asset carriage).
   checklist: ⌘C/⌘V a text box (cascade lands, undo removes, redo restores); ⌘X removes + ⌘V
   restores with fresh ids; ⌘D twice cascades twice; copy a GROUP → paste → subtree intact with
   spans; paste with the card auto-layout selected → child appended (C-9 behavior observed and
@@ -487,9 +531,9 @@ later — WebKit/Firefox support is not there yet, per the research note).
   resolve); copy an image node → paste into Preview/Slack as a real image; copy a text node →
   paste into a text editor as plain text; every refusal path exercised once (bad file type,
   foreign envelope) — message visible, nothing half-applied.
-- [ ] **Step 3: close-out memory note** (`_memory/2026-09-01-scene-clipboard-close-out.md`):
+- [x] **Step 3: close-out memory note** (`_memory/2026-09-01-scene-clipboard-close-out.md`):
   commits, walk verdict, residuals, founder-visible defaults exercised.
-- [ ] **Step 4: commit** `docs(memory): scene clipboard close-out`
+- [x] **Step 4: commit** `docs(memory): scene clipboard close-out`
 
 ## Self-review (run at plan close)
 

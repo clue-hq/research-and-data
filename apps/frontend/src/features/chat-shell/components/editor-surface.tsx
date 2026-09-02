@@ -8,6 +8,7 @@ import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import { ArtifactStage } from "./artifact-stage";
+import { AssetLibraryPanel } from "./asset-library-panel";
 import { ImageInspector } from "./image-inspector";
 import { WebInspector } from "./web-inspector";
 import styles from "./chat-shell.module.css";
@@ -207,6 +208,7 @@ export function EditorSurface({
               key={sceneSession.primaryNodeId ?? "canvas"}
               addressing={sceneSession.addressing}
               arrange={sceneSession.arrange}
+              assetLibrary={sceneSession.assetLibrary}
               error={sceneSession.inspectorError}
               fontOptions={sceneSession.fontOptions}
               hydrated={sceneSession.hydrated}
@@ -238,6 +240,10 @@ export function EditorSurface({
         exportStatus={sceneSession.exportStatus}
         onRequestExportPreview={sceneSession.requestExportPreview}
         onSceneChange={sceneSession.onSceneChange}
+        // Clipboard Task 8, the artifact route's half: the same drop binding
+        // the chat surface passes, so a picture dragged onto the canvas lands
+        // the same way on both surfaces.
+        onSceneDropImageFiles={sceneSession.onSceneDropImageFiles}
         onSceneFitZoom={sceneSession.onFitZoom}
         onSceneGestureZoom={sceneSession.onGestureZoom}
         onSceneHistoryChange={sceneSession.onHistoryChange}
@@ -295,6 +301,18 @@ export function EditorSurface({
         onTogglePanel={() => undefined}
         onToggleEditing={() => controller.setEditing(!controller.editing)}
         openArtifacts={controller.openArtifacts}
+        // Replace-image Task 6: the asset-library picker floats over the stage,
+        // rendered by the surface (the stage is pass-through chrome). The Task-4
+        // binding derives `isOpen` from the armed document, so switching
+        // artifacts closes it by construction.
+        overlay={
+          sceneSession.assetLibrary?.isOpen ? (
+            <AssetLibraryPanel
+              library={sceneSession.assetLibrary}
+              onUploadFile={sceneSession.onReplaceImage}
+            />
+          ) : null
+        }
         // AD3.3: one pair of history-row disables in the header, so the artifact
         // on screen picks the lane whose stacks they describe (the same kind
         // switch that gates the two sessions above).
