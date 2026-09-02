@@ -499,16 +499,25 @@ export interface WebRenderResult {
  * authored formatting). The first task-6 cut omitted it from the view fetch
  * and rich-text highlights/link CSS visibly broke — browser-caught. `mode`
  * stays `editor`, which is the endpoint's own default and is NOT what injects
- * the bridge — the opt-in `bridge=1&nonce=…` pair is. */
+ * the bridge — the opt-in `bridge=1&nonce=…` pair is.
+ *
+ * F5 addendum (2026-09-02): the endpoint is page-aware. `pageId` names which
+ * page of a multi-page site to render; OMITTING it is the endpoint's own
+ * first-page default, so an absent/empty id sends no `page_id` param at all
+ * rather than an empty one (an unknown id is a typed 404 server-side). */
 export async function fetchWebRenderHtml(
   { apiBaseUrl, fetchImpl = defaultDesignFetch }: WebDocumentOptions,
   documentId: string,
   runtimeSrc: string,
-  bridge?: { nonce?: string }
+  bridge?: { nonce?: string },
+  pageId?: string
 ): Promise<WebRenderResult> {
   const url = new URL(`/documents/${encodeURIComponent(documentId)}/web/render`, apiBaseUrl);
   url.searchParams.set("mode", "editor");
   url.searchParams.set("runtime_src", runtimeSrc);
+  if (pageId) {
+    url.searchParams.set("page_id", pageId);
+  }
   if (bridge?.nonce) {
     url.searchParams.set("bridge", "1");
     url.searchParams.set("nonce", bridge.nonce);
