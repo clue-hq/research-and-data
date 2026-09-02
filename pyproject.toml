@@ -125,6 +125,11 @@ addopts = "-q"
 # — pre-existing third-party noise with no action for us until fastapi ships httpx2.
 filterwarnings = [
     "ignore:Using `httpx` with `starlette.testclient`:starlette.exceptions.StarletteDeprecationWarning:fastapi.testclient",
+    # SWIG registers its helper types when `pymupdf` is first imported (the design ladder's lazy
+    # `logo_ladder._rasterize` import), and Python 3.12 warns about each. Third-party, nothing to
+    # act on. The message field is a regex; no module qualifier because it is raised from
+    # `<frozen importlib._bootstrap>`, not from pymupdf itself.
+    "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
 ]
 
 # --- import-linter: the executable form of the modular-boundary rules -------

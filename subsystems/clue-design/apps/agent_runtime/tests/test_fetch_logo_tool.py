@@ -640,7 +640,6 @@ def test_web_fetch_logo_end_to_end_mixed_vendor_and_ladder_family(tmp_path, monk
     reader must never have to guess which half of it the vendor served.
     """
     import httpx
-
     from lumen_ingestion.logo_vendor import fetch_vendor_family
 
     ladder = _resolution({
