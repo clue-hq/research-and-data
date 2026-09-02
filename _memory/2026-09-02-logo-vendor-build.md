@@ -302,9 +302,22 @@ guidelines still say programmatic access "may result in rate limiting or blockin
 server-side use needs "a custom setup" — the founder accepted that risk knowingly; asking Brandfetch
 for a sanctioned setup remains the clean long-term answer.
 
-## 8. Session close (2026-09-02)
+## 8. Task 16 — the ladder's Chrome-impersonating transport (founder decision 2026-09-02)
 
-Final HEAD carries Tasks 1–14 plus the final-review fix. D11 is resolved (§7). Still open, outside this plan: the 28 baseline api failures
+The ladder's plain httpx client was refused by Cloudflare walls at the TLS layer (openai.com: 403,
+whatever the User-Agent). Shipped in `e3164d6e6`: the ladder's owned client is now
+`lumen_ingestion/capture/impersonate.py::ImpersonatingClient` (curl_cffi `impersonate="chrome"`,
+scrapling's engine, the same call the platform's Stage-0 scrapling adapter makes), behind
+**`LUMEN_LADDER_IMPERSONATE_CHROME`** (default ON; `0` restores httpx). Everything above the wire is
+unchanged (SSRF guard, redirect re-guard, size caps, every ladder rule); the brand-kit capture keeps
+httpx. Measured: impersonation clears openai.com in 0.3s and fetches assets; the browser-based
+`StealthyFetcher` costs 14–23s per page and still got 403 on g2.com, so no browser tier was built (D16).
+Live on the real dispatch: openai.com flag on → `ok`, `light_lockup` + `light_mark` from the ladder;
+flag off → `LUMI0503` 403. In that lane we no longer announce `lumen-ingestion/1` to scraped sites.
+
+## 9. Session close (2026-09-02)
+
+Final HEAD carries Tasks 1–16 plus the final-review fix. D11 is resolved (§7). Still open, outside this plan: the 28 baseline api failures
 (§5; the image-model fixture's missing `image_model_api_style` pin is the cheapest of them).
 Deferred items D12–D15 have named owners in the plan's ledger. Nothing pushed.
 
