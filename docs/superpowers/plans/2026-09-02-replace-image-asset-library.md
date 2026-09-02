@@ -116,7 +116,7 @@ Select/Popover), zod (Brand context models), node:test via `npx tsx --test`, esl
   paging while a page is full, concatenated in kind order then server order; throws
   `WebAssetUploadError`-shaped errors (`WebAssetListError`) on a non-ok response.
 
-- [ ] **Step 1: Write the failing tests** (append to `data/assets.test.ts`; keep its existing
+- [x] **Step 1: Write the failing tests** (append to `data/assets.test.ts`; keep its existing
   imports — it already imports `uploadWebAsset`; add `listImageAssets`, `IMAGE_ASSET_KINDS`,
   `WebAssetListError`)
 
@@ -177,12 +177,12 @@ test("listImageAssets refuses with the API's words on a non-ok response", async 
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `cd apps/frontend && npx tsx --test src/features/design-editor/data/assets.test.ts`
 Expected: FAIL — `listImageAssets` / `IMAGE_ASSET_KINDS` / `WebAssetListError` are not exported.
 
-- [ ] **Step 3: Implement** (append to `data/assets.ts`)
+- [x] **Step 3: Implement** (append to `data/assets.ts`)
 
 ```ts
 /** The registry kinds that paint as pictures — what the asset-library picker and the Brand
@@ -248,12 +248,12 @@ export async function listImageAssets(
 }
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `cd apps/frontend && npx tsx --test src/features/design-editor/data/assets.test.ts && npx eslint src/features/design-editor/data/assets.ts src/features/design-editor/data/assets.test.ts`
 Expected: all PASS; eslint clean.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/frontend/src/features/design-editor/data/assets.ts apps/frontend/src/features/design-editor/data/assets.test.ts
@@ -285,7 +285,7 @@ git commit -m "feat(design-editor): listImageAssets — registry read for the as
   `inUse = record.id === inUseAssetId`; `filterAssetLibrary` matches `label` (and `media.filename`)
   case-insensitively and `category` exactly (`"all"` passes).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 import assert from "node:assert/strict";
@@ -358,12 +358,12 @@ it("filters by query (label or filename, case-insensitive) and by category", () 
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `cd apps/frontend && npx tsx --test src/features/design-editor/adapter/scene-asset-library.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```ts
 import type { AssetRecord } from "../engine/scene/contracts";
@@ -464,12 +464,12 @@ export function filterAssetLibrary(
 }
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `cd apps/frontend && npx tsx --test src/features/design-editor/adapter/scene-asset-library.test.ts && npx eslint src/features/design-editor/adapter/scene-asset-library.ts src/features/design-editor/adapter/scene-asset-library.test.ts`
 Expected: PASS; eslint clean.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/frontend/src/features/design-editor/adapter/scene-asset-library.ts apps/frontend/src/features/design-editor/adapter/scene-asset-library.test.ts
@@ -498,7 +498,7 @@ git commit -m "feat(design-editor): pure asset-library composer (kit pinned, reg
   (the panel's preview still reverts). The same-asset case (adapter returns null) now reports and
   throws instead of returning silently. Upload failures unchanged (the API's words).
 
-- [ ] **Step 1: Write the failing tests** (append; build deps directly so the test does not
+- [x] **Step 1: Write the failing tests** (append; build deps directly so the test does not
   depend on the file's `harness` internals)
 
 ```ts
@@ -565,14 +565,14 @@ test("uploading the very image already in use SPEAKS instead of silently doing n
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `cd apps/frontend && npx tsx --test src/features/design-editor/hooks/use-scene-replace-image.test.ts`
 Expected: the four new tests FAIL (constants not exported; `errors` empty; the same-asset case
 resolves instead of rejecting). Existing tests stay green — if any existing test asserted that a
 refusal does NOT report, update it and state why in the test.
 
-- [ ] **Step 3: Implement** — in `use-scene-replace-image.ts`, add the four exported constants above
+- [x] **Step 3: Implement** — in `use-scene-replace-image.ts`, add the four exported constants above
   `REPLACE_IMAGE_INTENT`, and edit `createSceneReplaceImageHandler`:
 
 ```ts
@@ -605,12 +605,12 @@ refusal does NOT report, update it and state why in the test.
   change the input's `accept` to `"image/png,image/jpeg,image/webp,image/svg+xml"` with a one-line
   comment: the server's sniff refuses GIF, so the dialog must not offer it.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `cd apps/frontend && npx tsx --test src/features/design-editor/hooks/use-scene-replace-image.test.ts && npx eslint src/features/design-editor/hooks/use-scene-replace-image.ts src/features/design-editor/hooks/use-scene-replace-image.test.ts src/features/chat-shell/components/inspector-primitives.tsx`
 Expected: PASS; eslint clean.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/frontend/src/features/design-editor/hooks/use-scene-replace-image.ts apps/frontend/src/features/design-editor/hooks/use-scene-replace-image.test.ts apps/frontend/src/features/chat-shell/components/inspector-primitives.tsx
@@ -650,7 +650,7 @@ git commit -m "fix(design-editor): every replace-image refusal speaks; file dial
   The session exposes `assetLibrary: SceneAssetLibraryBinding` (offered only when a document is armed,
   the `arrange` precedent).
 
-- [ ] **Step 1: Write the failing tests** (the pure pick handler; the hook's React plumbing is
+- [x] **Step 1: Write the failing tests** (the pure pick handler; the hook's React plumbing is
   untestable under `tsx --test` and stays thin)
 
 ```ts
@@ -718,12 +718,12 @@ test("an unknown asset id is a refusal, not a throw", () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `cd apps/frontend && npx tsx --test src/features/design-editor/hooks/use-scene-asset-library.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```ts
 "use client";
@@ -898,12 +898,12 @@ export function useSceneAssetLibrary(options: SceneAssetLibraryDeps & {
 
   (3) add `assetLibrary,` to the returned object (alphabetical, near `arrange`).
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `cd apps/frontend && npx tsx --test src/features/design-editor/hooks/use-scene-asset-library.test.ts src/features/design-editor/hooks/use-scene-replace-image.test.ts && npx eslint src/features/design-editor/hooks/use-scene-asset-library.ts src/features/design-editor/hooks/use-scene-asset-library.test.ts src/features/design-editor/hooks/use-scene-editing-session.ts`
 Expected: PASS; eslint clean (no unused vars — `useMemo`/`useState` all used).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/frontend/src/features/design-editor/hooks/use-scene-asset-library.ts apps/frontend/src/features/design-editor/hooks/use-scene-asset-library.test.ts apps/frontend/src/features/design-editor/hooks/use-scene-editing-session.ts
@@ -934,7 +934,7 @@ git commit -m "feat(design-editor): asset-library binding — fetch on open, pic
   Pure: `replaceImageMenuAction(item: "upload" | "library"): { kind: "open-file-dialog" } | { kind: "open-library" }`
   and `REPLACE_IMAGE_MENU_ROWS = [{ id: "upload", label: "Upload from computer" }, { id: "library", label: "Choose from asset library" }]` (no format text anywhere).
 
-- [ ] **Step 1: Write the failing test** (`replace-image-menu.logic.test.ts`)
+- [x] **Step 1: Write the failing test** (`replace-image-menu.logic.test.ts`)
 
 ```ts
 import assert from "node:assert/strict";
@@ -953,12 +953,12 @@ it("maps each row to its action", () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `cd apps/frontend && npx tsx --test src/features/chat-shell/components/replace-image-menu.logic.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `replace-image-menu.logic.ts`:
 ```ts
@@ -1076,12 +1076,12 @@ Prop threading: `AdImageInspector` gets `assetLibrary?: SceneAssetLibraryBinding
 call; `chat-surface.tsx` (the scene inspector block near `:399`) and `editor-surface.tsx` (near
 `:205`) pass `assetLibrary={sceneSession.assetLibrary}` beside `imageAi`.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `cd apps/frontend && npx tsx --test src/features/chat-shell/components/replace-image-menu.logic.test.ts && npx eslint src/features/chat-shell/components/inspector-primitives.tsx src/features/chat-shell/components/image-inspector.tsx src/features/chat-shell/components/chat-surface.tsx src/features/chat-shell/components/editor-surface.tsx src/features/chat-shell/components/replace-image-menu.logic.ts src/features/chat-shell/components/replace-image-menu.logic.test.ts && npx tsc --noEmit -p tsconfig.json 2>&1 | grep -E "inspector-primitives|image-inspector|chat-surface|editor-surface" || echo "tsc: no diagnostics in touched files"`
 Expected: PASS; eslint clean; no new tsc diagnostics.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/frontend/src/features/chat-shell/components/inspector-primitives.tsx apps/frontend/src/features/chat-shell/components/image-inspector.tsx apps/frontend/src/features/chat-shell/components/chat-surface.tsx apps/frontend/src/features/chat-shell/components/editor-surface.tsx apps/frontend/src/features/chat-shell/components/chat-shell.module.css apps/frontend/src/features/chat-shell/components/replace-image-menu.logic.ts apps/frontend/src/features/chat-shell/components/replace-image-menu.logic.test.ts
@@ -1109,7 +1109,7 @@ git commit -m "feat(chat-shell): Replace image offers upload or the asset librar
   `splitLibrarySections(items) → { brand: AssetLibraryItem[]; workspace: AssetLibraryItem[] }`,
   `nextFocusIndex(current, key, count, columns)`.
 
-- [ ] **Step 1: Write the failing tests** (`asset-library-panel.logic.test.ts`)
+- [x] **Step 1: Write the failing tests** (`asset-library-panel.logic.test.ts`)
 
 ```ts
 import assert from "node:assert/strict";
@@ -1157,12 +1157,12 @@ it("moves focus across a 4-column grid with the arrow keys and clamps at the edg
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `cd apps/frontend && npx tsx --test src/features/chat-shell/components/asset-library-panel.logic.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `asset-library-panel.logic.ts`:
 ```ts
@@ -1336,12 +1336,12 @@ If `ArtifactStage` accepts no children, add an optional `overlay?: React.ReactNo
 the last child of the `artifactWorkspace` section (pass-through only, no logic — the Task-8
 `onSceneDropImageFiles` precedent).
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `cd apps/frontend && npx tsx --test src/features/chat-shell/components/asset-library-panel.logic.test.ts && npx eslint src/features/chat-shell/components/asset-library-panel.tsx src/features/chat-shell/components/asset-library-panel.logic.ts src/features/chat-shell/components/asset-library-panel.logic.test.ts src/features/chat-shell/components/chat-surface.tsx src/features/chat-shell/components/editor-surface.tsx src/features/chat-shell/components/artifact-stage.tsx && npx tsc --noEmit -p tsconfig.json 2>&1 | grep -E "asset-library-panel|chat-surface|editor-surface|artifact-stage" || echo "tsc: no diagnostics in touched files"`
 Expected: PASS; eslint clean; no new tsc diagnostics.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/frontend/src/features/chat-shell/components/asset-library-panel.tsx apps/frontend/src/features/chat-shell/components/asset-library-panel.logic.ts apps/frontend/src/features/chat-shell/components/asset-library-panel.logic.test.ts apps/frontend/src/features/chat-shell/components/chat-shell.module.css apps/frontend/src/features/chat-shell/components/chat-surface.tsx apps/frontend/src/features/chat-shell/components/editor-surface.tsx apps/frontend/src/features/chat-shell/components/artifact-stage.tsx
@@ -1375,7 +1375,7 @@ git commit -m "feat(chat-shell): anchored asset-library panel — brand kit pinn
   parsed by a new `DesignAssetListRecordSchema` in `model/brand-kit.ts`; a registry asset's
   `createdAt` = `provenance.created_at ?? ""`.
 
-- [ ] **Step 1: Write the failing tests** (append to `brand-context.repository.test.ts`)
+- [x] **Step 1: Write the failing tests** (append to `brand-context.repository.test.ts`)
 
 ```ts
 function registryRoutes(records: unknown[]): Record<string, { body: unknown }> {
@@ -1424,12 +1424,12 @@ test("a failed registry read leaves the kit's assets intact", async () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `cd apps/frontend && npx tsx --test src/features/brand-context/data/brand-context.repository.test.ts`
 Expected: the two new tests FAIL (no `origin`, no uploads).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `model/brand-context.ts`: `BrandAssetCategorySchema = z.enum(["logo","background","mockup","upload","ai-generated"])`;
 add `origin: z.enum(["kit", "registry"]),` to `BrandAssetSchema`.
@@ -1518,13 +1518,13 @@ AI-generated entry. `data/brand-context.fixture.ts`: add `origin: "kit"` to ever
 `.assetCardBadge { position:absolute; left:8px; top:8px; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:500; background:#fff; color:#44483F; border:0.5px solid var(--clue-ds-color-border-neutral); }`
 (and `.assetCardPreview { position: relative; }` if it is not already).
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `cd apps/frontend && npx tsx --test src/features/brand-context/data/brand-context.repository.test.ts src/features/brand-context/model/*.test.ts && npx eslint src/features/brand-context && npx tsc --noEmit -p tsconfig.json 2>&1 | grep -E "brand-context" || echo "tsc: no diagnostics in brand-context"`
 Expected: PASS (fix any existing brand-context test that built a `BrandAsset` without `origin` by
 adding `origin: "kit"`); eslint clean; no tsc diagnostics.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/frontend/src/features/brand-context
@@ -1539,14 +1539,14 @@ git commit -m "feat(brand-context): Assets lists kit items and workspace uploads
 - Create: `_memory/2026-09-02-replace-image-asset-library-close-out.md`
 - Modify: this plan (tick boxes)
 
-- [ ] **Step 1: Frontend gate**
+- [x] **Step 1: Frontend gate**
 
 Run (from `apps/frontend/`): `npm run design-system:build && npm run lint && npm test`; then stop the
 3023 dev server (kill by PID whose cwd is THIS worktree — never a sibling's), `rm -rf .next`,
 `npm run build`, restart the dev server (`npm run dev -- --port 3023`).
 Expected: lint 0 errors; `npm test` ≥ 2462 pass, 0 fail; build emits the route table.
 
-- [ ] **Step 2: Live walk** on the nashville stack (3023/8013/8023; recipe in
+- [x] **Step 2: Live walk** on the nashville stack (3023/8013/8023; recipe in
   `_memory/2026-09-01-nashville-workspace-setup.md`; Apollo test account), Cursor LinkedIn ad, Edit:
   1. select `image wash` → "Replace image" shows a caret; the menu has exactly two rows, no format text;
   2. "Upload from computer" → the OS dialog (no GIF offered) → a PNG replaces the wash; ⌘Z restores;
@@ -1562,7 +1562,7 @@ Expected: lint 0 errors; `npm test` ≥ 2462 pass, 0 fail; build emits the route
      AI image under "AI-generated images"; sort/search work across both.
   Record every observation (pass/defect) in the close-out; a defect opens a fix round, not a caveat.
 
-- [ ] **Step 3: Close-out** — write `_memory/2026-09-02-replace-image-asset-library-close-out.md`
+- [x] **Step 3: Close-out** — write `_memory/2026-09-02-replace-image-asset-library-close-out.md`
   (what shipped, commits, gate numbers, walk verdicts, residuals, rulings), tick this plan, commit:
 
 ```bash
