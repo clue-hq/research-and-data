@@ -486,3 +486,23 @@ parse (Tasks 3/8). Placeholder scan clean 2026-09-02.
   direct `/artifacts/[id]` route stays lockless in rung A.
 - **Runner correction:** `features/projects` / `chat-shell` tests are node:test (`npx tsx --test`).
 - Close-out: `_memory/2026-09-02-scene-streaming-rung-a.md`.
+
+## Amendments (rung B execution, 2026-09-02)
+
+- **Task 7:** a second migration (`f506a1210f0c`) widens the turn-event CHECK for
+  `design.op_batch`; the forwarder was extracted to `clue_api/design_event_forwarder.py`; a leg
+  with no pinned `document_id` streams checkpoints but no op batches.
+- **Task 8 (§B-3 corrected):** contiguity is `operations_total − operations.length === cursor`
+  (non-streamed ledger ops exist); cursors are keyed by the FRAME's document id.
+- **Task 9 (+ fix round):** the anchor reload decision is `!(cursorInSync && pumpClean)` with
+  unknown health → reload; an in-sync anchor does not clear the pump's dirty latch; no drawn-box
+  chrome (paced materialization with the MVP timings).
+- **Task 10 (+ 3 fix rounds, two correcting the plan's rulings):** cursor and seed are scoped per
+  (document, TURN) — ledger positions are per run; the seed uses an EXACT version match (a lower
+  mark would double-apply) else dirty; a join REPLAYS the in-flight turn's logged applies through
+  the seeded cursor (`replaySceneStreamJoin`), never seeks past them; a turn-less seed defers to the
+  lock fold's active turn; `appliedThrough` prevents any double-apply.
+- **Task 11 walk residuals:** worker-down leaves the run orphaned and the editor locked until a
+  worker returns and RETRIES the turn (no `turn.failed`); walk #7's single anchor reload was not
+  reproduced from clean loads (Fast Refresh artifact during instrumentation).
+- Close-out: `_memory/2026-09-02-scene-streaming-rung-b.md`.
