@@ -574,6 +574,45 @@ def test_dispatch_a_vendor_cell_makes_a_mixed_family_ok(monkeypatch):
     assert "https://acme.com/" in cache.stored
 
 
+def test_dispatch_keeps_vendor_cells_when_the_ladder_is_blocked(monkeypatch):
+    """A blocked/unreachable site must not throw away what the vendor already answered."""
+    from lumen_agent.tools import logo_fetch
+    from lumen_ingestion.capture.net import CaptureError
+
+    cache = _RecordingCache()
+    monkeypatch.setattr(
+        logo_fetch, "_vendor_rung",
+        lambda site, company: (_vendor_cells("light_lockup", "light_mark"), []),
+    )
+
+    def blocked(site, company):
+        raise CaptureError("LUMI0501", "blocked")
+
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", blocked)
+    outcome = logo_fetch.fetch_logo_family("acme.com", cache=cache)
+    assert outcome.status == "ok"
+    assert outcome.cells == {"light_lockup": "brandfetch", "light_mark": "brandfetch"}
+    assert any("ladder backfill unavailable (LUMI0501)" in n for n in outcome.notes)
+    assert "https://acme.com/" in cache.stored
+
+
+def test_dispatch_reraises_a_blocked_ladder_when_the_vendor_had_nothing(monkeypatch):
+    """With no vendor cell to keep, the ladder failure is still the caller's answer."""
+    from lumen_agent.tools import logo_fetch
+    from lumen_ingestion.capture.net import CaptureError
+
+    cache = _RecordingCache()
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", lambda site, company: ({}, ["no record"]))
+
+    def blocked(site, company):
+        raise CaptureError("LUMI0501", "blocked")
+
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", blocked)
+    with pytest.raises(CaptureError):
+        logo_fetch.fetch_logo_family("acme.com", cache=cache)
+    assert cache.stored == {}
+
+
 # --------------------------------------------------------------------------- #
 # end to end: one family, two provenances
 # --------------------------------------------------------------------------- #

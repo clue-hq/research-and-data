@@ -113,10 +113,13 @@ def fetch_logo_family(
 ) -> LogoFetchOutcome:
     """Two-rung dispatch: cache -> Brandfetch -> ladder (per-cell backfill).
 
-    Raises `CaptureError` only from the ladder rung (blocked/unreachable site);
-    every vendor failure is a typed degrade recorded in the outcome notes.
+    Raises `CaptureError` from the ladder rung (a blocked or unreachable site) only
+    when the vendor filled no cell at all; when the vendor already answered at least
+    one cell that same failure is recorded as a note and the partial family stands.
+    Every vendor failure is a typed degrade recorded in the outcome notes.
     """
     from lumen_ingestion import logo_ladder
+    from lumen_ingestion.capture.net import CaptureError
     from lumen_ingestion.logo_vendor import VendorCredentialsMissing, VendorLookupFailed
 
     site = logo_ladder.normalize_site_url(url_or_domain)
@@ -140,10 +143,24 @@ def fetch_logo_family(
     resolution = None
     missing = [name for name in CELL_NAMES if name not in cells]
     if missing:
-        resolution = _ladder_rung(site, company_name)
-        for name, cell in ladder_cells(resolution).items():
-            if name in missing:
-                cells[name] = cell
+        try:
+            resolution = _ladder_rung(site, company_name)
+        except CaptureError as error:
+            # Per-cell fallback (plan §0.5): a blocked or unreachable site cannot
+            # un-answer what the vendor already served, so a partial family stands.
+            # With no vendor cell to keep, that failure IS the answer -- re-raise.
+            if not cells:
+                raise
+            notes.append(
+                f"ladder backfill unavailable ({error.code}): {error.message};"
+                " vendor cells kept"
+            )
+            # The partial family caches as-is; its empty cells are retried only on a
+            # later `force_refresh=True` call (the plan's eviction affordance).
+        else:
+            for name, cell in ladder_cells(resolution).items():
+                if name in missing:
+                    cells[name] = cell
 
     outcome = _assemble(cells, resolution, site, company_name, notes, vendor_notes)
     if cache is not None and outcome.status == "ok":
