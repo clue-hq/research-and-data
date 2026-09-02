@@ -14,8 +14,9 @@ mint — is pinned against the real engine in
   markup we composed ourselves.
 * **The slot contract** (R23-2), exactly: the header declares ``prepared_for``, ``target_logo``,
   ``cta_href``, ``cta_label`` and nothing else; the footer declares none.
-* **The no-escape-route rule** (R23-3), structurally: an extra link, a nav or a menu is REFUSED
-  at the mint, not discouraged in a prompt.
+* **The campaign-shell shape** (R23-3, demoted to ADVICE by founder ruling R-F5-8): an extra
+  link, a nav or a menu is still DETECTED at the mint and handed back as a note in ``advice`` —
+  it is poor practice on a campaign page, not a refusal.
 * **Empty is correct.** An unbound target logo shows no second mark at all, and a footer with no
   discoverable legal links has no legal block.
 * **Born ``draft``, and content-addressed.** Released by the human who approves the brand kit;
@@ -47,6 +48,7 @@ from lumen_api.fragments import (
     LegalLink,
     SlotSpec,
     assert_campaign_shell_shape,
+    campaign_shell_shape_notes,
     campaign_shell_slots,
     compose_campaign_footer,
     compose_campaign_header,
@@ -370,8 +372,14 @@ def test_the_cobrand_placeholder_is_one_transparent_pixel_in_durable_custody(
 
 
 # --------------------------------------------------------------------------- #
-# Red case 3 — the no-escape-route rule, structurally (R23-3)
+# Red case 3 — the campaign-shell shape, as ADVICE (R23-3, demoted by R-F5-8)
 # --------------------------------------------------------------------------- #
+#
+# FOUNDER RULING R-F5-8 (2026-09-02): links are structurally free. Every detection below is
+# unchanged — the same anchors are counted, the same nav/menu/second control is spotted, the same
+# unmarked link is named — but the consequence is a NOTE the mint hands back in `advice`, never a
+# refusal. The gate wrapper (`assert_campaign_shell_shape`) survives for the tests that pin the
+# detections; no production path calls it any more.
 
 
 def test_the_composed_header_carries_exactly_one_anchor_and_it_is_the_cta() -> None:
@@ -383,81 +391,111 @@ def test_the_composed_header_carries_exactly_one_anchor_and_it_is_the_cta() -> N
     assert "<nav" not in html
 
 
-def test_a_header_with_a_second_link_is_refused_at_the_mint(
+def test_a_multi_anchor_header_is_a_NOTE_not_a_refusal() -> None:
+    """R-F5-8, in one line: the same finding, said as a sentence."""
+    with_menu = _rendered_header(extra='<a href="https://insight.example/pricing">Pricing</a>')
+
+    notes = campaign_shell_shape_notes(CAMPAIGN_SHELL_HEADER, with_menu)
+
+    assert notes and "anchors" in notes[0]
+    assert "2" in notes[0]
+    # The words the ruling chose: practice, not prohibition.
+    joined = " ".join(notes).lower()
+    assert "forbidden" not in joined and "refus" not in joined
+
+
+def test_a_header_with_a_second_link_mints_and_says_so(
     workspace_id: str, design_storage: FsStorage, tmp_path
 ) -> None:
-    """Not discouraged — refused. The rule lives at the door every caller goes through."""
+    """Not refused — noted. The mint hands the finding back in `advice` (R-F5-8)."""
     registry = _registry(workspace_id, design_storage, tmp_path / "cache")
     with_menu = _rendered_header(extra='<a href="https://insight.example/pricing">Pricing</a>')
 
-    with pytest.raises(FragmentRefused) as refusal:
-        _mint_header(registry, html=with_menu)
+    minted = _mint_header(registry, html=with_menu)
 
-    assert refusal.value.code == "fragment.shell_escape_route"
-    assert "pricing" in str(refusal.value.message).lower()
+    assert minted["fragment_id"]
+    advice = " ".join(minted["advice"]).lower()
+    assert "pricing" in advice
+    assert "anchors" in advice
 
 
-def test_a_header_whose_seller_mark_links_home_is_refused(
+def test_a_header_whose_seller_mark_links_home_mints_and_says_so(
     workspace_id: str, design_storage: FsStorage, tmp_path
 ) -> None:
-    """The classic escape route: a logo that goes to the homepage. R23-3 names it explicitly."""
+    """The classic escape route: a logo that goes to the homepage. Still detected, now advisory."""
     registry = _registry(workspace_id, design_storage, tmp_path / "cache")
     linked_mark = _rendered_header().replace(
         f'<img src="/asset-store/{SELLER_DIGEST}"',
         f'<a href="https://insight.example/"><img src="/asset-store/{SELLER_DIGEST}"',
     ).replace('class="lumen-shell-seller-mark max-h-8 w-auto">', 'class="max-h-8 w-auto"></a>')
 
-    with pytest.raises(FragmentRefused) as refusal:
-        _mint_header(registry, html=linked_mark)
+    minted = _mint_header(registry, html=linked_mark)
 
-    assert refusal.value.code == "fragment.shell_escape_route"
+    assert minted["fragment_id"]
+    assert minted["advice"]
+    assert "insight.example" in " ".join(minted["advice"])
 
 
-def test_a_shell_carrying_a_nav_or_a_menu_is_refused(
+def test_a_shell_carrying_a_nav_or_a_menu_mints_and_says_so(
     workspace_id: str, design_storage: FsStorage, tmp_path
 ) -> None:
     registry = _registry(workspace_id, design_storage, tmp_path / "cache")
 
-    with pytest.raises(FragmentRefused) as nav:
-        _mint_header(registry, html=_rendered_header(extra="<nav><p>Products</p></nav>"))
-    assert nav.value.code == "fragment.shell_escape_route"
+    nav = _mint_header(registry, html=_rendered_header(extra="<nav><p>Products</p></nav>"))
+    assert nav["fragment_id"]
+    assert any("<nav>" in note for note in nav["advice"]), nav["advice"]
 
-    with pytest.raises(FragmentRefused) as button:
-        _mint_header(registry, html=_rendered_header(extra="<button>Menu</button>"))
-    assert button.value.code == "fragment.shell_escape_route"
+    button = _mint_header(registry, html=_rendered_header(extra="<button>Menu</button>"))
+    assert button["fragment_id"]
+    assert any("<button>" in note for note in button["advice"]), button["advice"]
 
 
-def test_a_footer_link_that_is_not_a_legal_link_is_refused(
+def test_a_footer_link_that_is_not_a_legal_link_mints_and_says_so(
     workspace_id: str, design_storage: FsStorage, tmp_path
 ) -> None:
     registry = _registry(workspace_id, design_storage, tmp_path / "cache")
     with_careers = _rendered_footer(extra='<a href="https://insight.example/careers">Careers</a>')
 
-    with pytest.raises(FragmentRefused) as refusal:
-        registry.mint_campaign_shell(
-            role=CAMPAIGN_SHELL_FOOTER,
-            html=with_careers,
-            css=SHELL_CSS,
-            label="Campaign footer",
-        )
-
-    assert refusal.value.code == "fragment.shell_escape_route"
-
-
-def test_the_shape_gate_accepts_the_lawful_shells() -> None:
-    """The gate refuses; it also has to let the real thing through."""
-    assert_campaign_shell_shape(CAMPAIGN_SHELL_HEADER, _rendered_header())
-    assert_campaign_shell_shape(CAMPAIGN_SHELL_FOOTER, _rendered_footer())
-    assert_campaign_shell_shape(
-        CAMPAIGN_SHELL_FOOTER,
-        _rendered_footer(
-            legal=_legal_block("https://insight.example/privacy", "https://insight.example/terms")
-        ),
+    minted = registry.mint_campaign_shell(
+        role=CAMPAIGN_SHELL_FOOTER,
+        html=with_careers,
+        css=SHELL_CSS,
+        label="Campaign footer",
     )
 
+    assert minted["fragment_id"]
+    assert "careers" in " ".join(minted["advice"]).lower()
 
-def test_a_footer_with_more_legal_links_than_a_legal_block_has_is_refused() -> None:
-    """Three "legal" links is a nav wearing a legal block's clothes."""
+
+def test_the_shape_notes_are_silent_on_the_lawful_shells() -> None:
+    """The notes name what is off the practice; the real thing draws none."""
+    assert campaign_shell_shape_notes(CAMPAIGN_SHELL_HEADER, _rendered_header()) == []
+    assert campaign_shell_shape_notes(CAMPAIGN_SHELL_FOOTER, _rendered_footer()) == []
+    assert (
+        campaign_shell_shape_notes(
+            CAMPAIGN_SHELL_FOOTER,
+            _rendered_footer(
+                legal=_legal_block(
+                    "https://insight.example/privacy", "https://insight.example/terms"
+                )
+            ),
+        )
+        == []
+    )
+    # And the kept wrapper still lets them through without raising.
+    assert_campaign_shell_shape(CAMPAIGN_SHELL_HEADER, _rendered_header())
+    assert_campaign_shell_shape(CAMPAIGN_SHELL_FOOTER, _rendered_footer())
+
+
+def test_a_footer_with_more_legal_links_than_a_legal_block_has_is_noted() -> None:
+    """Three "legal" links is a nav wearing a legal block's clothes — said, not refused."""
+    notes = campaign_shell_shape_notes(
+        CAMPAIGN_SHELL_FOOTER,
+        _rendered_footer(legal=_legal_block("/a", "/b", "/c")),
+    )
+
+    assert notes and "anchors" in notes[0]
+    # The wrapper is kept for exactly this: the detections still have a raising form.
     with pytest.raises(FragmentRefused):
         assert_campaign_shell_shape(
             CAMPAIGN_SHELL_FOOTER,
@@ -1056,22 +1094,23 @@ def test_an_account_with_no_logo_renders_a_clean_header_not_a_broken_one(
 # gate, keeps the ruled slots, and inherits `composed`.
 
 
-def test_a_repair_of_a_shell_cannot_carry_a_nav_the_shell_gate_refuses_it(
+def test_a_repair_of_a_shell_carrying_a_nav_mints_and_says_so(
     workspace_id: str, design_storage: FsStorage, tmp_path
 ) -> None:
+    """R-F5-8: the repair door still RUNS the shape check — it just hands the finding back."""
     registry = _registry(workspace_id, design_storage, tmp_path / "cache")
     minted = _mint_header(registry)
 
-    with pytest.raises(FragmentRefused) as refusal:
-        registry.mint_repair(
-            replaces=minted["fragment_id"],
-            html=_rendered_header(extra="<nav><p>Products</p></nav>"),
-            css=SHELL_CSS,
-            rung=2,
-            note="a nav wearing a repair's clothes",
-        )
+    repair = registry.mint_repair(
+        replaces=minted["fragment_id"],
+        html=_rendered_header(extra="<nav><p>Products</p></nav>"),
+        css=SHELL_CSS,
+        rung=2,
+        note="a nav wearing a repair's clothes",
+    )
 
-    assert refusal.value.code == "fragment.shell_escape_route"
+    assert repair["fragment_id"]
+    assert any("<nav>" in note for note in repair["advice"]), repair["advice"]
 
 
 def test_a_lawful_shell_repair_stays_composed_and_keeps_the_ruled_slots(
@@ -1139,17 +1178,17 @@ def test_the_composed_cta_carries_the_kits_measured_button_radius() -> None:
     assert "rounded-md" not in html
 
 
-def test_a_shell_carrying_a_second_control_or_an_image_map_is_refused() -> None:
-    """Fix-round M3/N4: an `<input>`/`<textarea>` is a second control, and a `<map>`/`<area>` is
-    a navigation target `css(\"a\")` never counts."""
-    for extra in (
-        '<input type="text">',
-        "<textarea></textarea>",
-        '<map name="m"><area href="/pricing" shape="default"></map>',
+def test_a_shell_carrying_a_second_control_or_an_image_map_is_noted() -> None:
+    """Fix-round M3/N4, still DETECTED under R-F5-8: an `<input>`/`<textarea>` is a second
+    control, and a `<map>`/`<area>` is a navigation target `css(\"a\")` never counts."""
+    for extra, element in (
+        ('<input type="text">', "<input>"),
+        ("<textarea></textarea>", "<textarea>"),
+        ('<map name="m"><area href="/pricing" shape="default"></map>', "<map>"),
     ):
-        with pytest.raises(FragmentRefused) as refusal:
-            assert_campaign_shell_shape(CAMPAIGN_SHELL_HEADER, _rendered_header(extra=extra))
-        assert refusal.value.code == "fragment.shell_escape_route", extra
+        notes = campaign_shell_shape_notes(CAMPAIGN_SHELL_HEADER, _rendered_header(extra=extra))
+        assert notes, extra
+        assert any(element in note for note in notes), (extra, notes)
 
 
 def test_a_same_host_link_with_an_explicit_port_is_the_sellers_own() -> None:

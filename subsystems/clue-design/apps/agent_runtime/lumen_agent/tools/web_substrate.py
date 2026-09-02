@@ -780,6 +780,21 @@ def _split_non_error_diagnostics(
     return warnings, advice
 
 
+def _escape_route_advice(fragment_id: str, section_role: Any) -> str:
+    """What the walk thinks of a cloned nav or site footer on a campaign page — as a SENTENCE.
+
+    FOUNDER RULING R-F5-8 (2026-09-02): links are structurally free, so this is the whole of the
+    consequence. It names the fragment, says what it is, says what it does to a campaign page,
+    and says that the call is the author's. The words matter: "usually poor practice", never
+    "forbidden" — the walk pinned the thing it is describing.
+    """
+    role = str(section_role or "").strip().lower() or "section"
+    return (
+        f"{fragment_id} is a cloned {role} — its links leave this page; on a campaign page "
+        "that is usually poor practice (R-F5-8: allowed, not recommended)"
+    )
+
+
 def _extract_grounded_page(
     *,
     requested_url: str,
@@ -7238,11 +7253,13 @@ class LumenWebTools:
         them) as the first and last sections of the page, and — when you name one — a released
         cloned HERO between them. Everything else on the page stays where it is.
 
-        IT NEVER PINS THE CLIENT'S NAV OR SITE FOOTER. Every link in a nav is a way off the one
-        page written for this account. A workspace with no released shells is REFUSED
-        (`abm.no_campaign_shells`) and told to mint them; naming a `nav`- or `footer`-role clone
-        as the hero is REFUSED (`abm.escape_route_chrome`); and a page that already carries one
-        stops the assembly before anything lands. There is no fallback to the cloned nav.
+        IT DOES NOT REACH FOR THE CLIENT'S NAV OR SITE FOOTER, AND SAYS SO IF YOU DO. Every link
+        in a nav is a way off the one page written for this account, so the shells are this
+        page's chrome — a workspace with no released shells is REFUSED (`abm.no_campaign_shells`)
+        and told to mint them, because that is a missing input rather than a matter of taste. But
+        naming a `nav`- or `footer`-role clone as the hero PINS it and hands you a note in
+        `advice`, and a page that already carries one is assembled around and noted the same way
+        (founder ruling R-F5-8: allowed, not recommended). The judgement is yours.
 
         THE PAGE IS A TEMPLATE, NOT ONE ACCOUNT'S PAGE. The header's `prepared_for` and
         `target_logo` are bound to `{{account.name}}` and `{{account.logo}}`, which the account
@@ -7344,7 +7361,15 @@ class LumenWebTools:
                 brand_kit=kit_id,
             )
 
-        # --- the escape-route rule, over the PAGE and over this call's arguments ---------------
+        # --- the escape-route ADVICE, over the PAGE and over this call's arguments --------------
+        #
+        # FOUNDER RULING R-F5-8 (2026-09-02): links are structurally free. The DETECTION below is
+        # exactly the one R24-1 shipped — `is_escape_route_role` is unchanged, and it still spots
+        # the client's own nav and site footer wherever they arrive from — but a cloned nav is now
+        # PINNED when it is asked for, and what the walk thinks of it rides back in `advice`. The
+        # sentences say "usually poor practice", because that is what it is: this page belongs to
+        # the human running the campaign, not to this tool.
+        escape_route_advice: List[str] = []
         page = self._home_page()
         nodes = page.get("nodes") or {}
         root_id = page.get("root")
@@ -7370,15 +7395,10 @@ class LumenWebTools:
                     section_node_ids=list(pinned_now[fragment_id]),
                 )
             if is_escape_route_role(row.get("section_role")):
-                return self._tool_error(
-                    "abm.escape_route_chrome",
-                    f"this page already carries {fragment_id} — the client's own "
-                    f"{row.get('section_role')} — and every link in it is a way off the one page "
-                    "written for this account. Remove it before assembling the ABM chrome; the "
-                    "campaign shells replace it. Nothing was pinned.",
-                    fragment_id=fragment_id,
-                    section_role=row.get("section_role"),
-                    section_node_ids=list(pinned_now[fragment_id]),
+                # Already on the page, put there by an earlier call: the walk builds its chrome
+                # around it and says what it thinks, rather than refusing to assemble at all.
+                escape_route_advice.append(
+                    _escape_route_advice(fragment_id, row.get("section_role"))
                 )
 
         hero: Optional[JsonObject] = None
@@ -7414,14 +7434,10 @@ class LumenWebTools:
                     section_role=hero.get("section_role"),
                 )
             if is_escape_route_role(hero.get("section_role")):
-                return self._tool_error(
-                    "abm.escape_route_chrome",
-                    f"{clean_hero} is the client's own {hero.get('section_role')}, and an ABM "
-                    "page never wears one: every link in it is a way off the one page written "
-                    "for this account. The campaign shells are this page's chrome. Nothing was "
-                    "pinned.",
-                    fragment_id=clean_hero,
-                    section_role=hero.get("section_role"),
+                # Asked for by name as the hero. It is pinned — the caller may have a reason the
+                # walk cannot see — and the note goes with it.
+                escape_route_advice.append(
+                    _escape_route_advice(clean_hero, hero.get("section_role"))
                 )
             if raw_hero_slots:
                 # The AUTHORITATIVE kinds, out of the artifact. Fail LOUD rather than soft here,
@@ -7612,6 +7628,13 @@ class LumenWebTools:
             warnings=warnings,
             advice=advice,
         )
+        if escape_route_advice:
+            # FIRST in the bucket: it is the thing about this page an author is least likely to
+            # have thought about, and it is about the page rather than about one operation. The
+            # engine's own advice entries are dicts; these are sentences, which is what a ruling
+            # about practice has to say — there is no code for "your client's nav is on your
+            # campaign page and that is your call".
+            result["advice"] = escape_route_advice + list(result["advice"])
         self._note_degraded_pins(result, degraded_pins)
         self.record(
             "author",

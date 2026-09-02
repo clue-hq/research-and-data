@@ -7,11 +7,12 @@ substitutes, so one document serves every account.
 
 What this file guards, seam by seam:
 
-* **The cloned nav is never the answer** (ruling R24-1). A workspace with no released shells is
-  refused by name and told to mint them; a caller who names a ``nav``- or ``footer``-role clone
-  is refused ``abm.escape_route_chrome``; a page that already carries one is refused before
-  anything is pinned. There is no fallback path, which is the whole of the Ploy campaign-shell
-  rule made structural.
+* **The cloned nav is usually not the answer** (ruling R24-1, DEMOTED TO ADVICE by founder
+  ruling R-F5-8). A workspace with no released shells is still refused by name and told to mint
+  them — that is a missing input, not a taste. But a caller who names a ``nav``- or
+  ``footer``-role clone now gets it PINNED with a note in ``advice``, and a page that already
+  carries one is assembled around it and told. Links are structurally free; the agent is only
+  told what the practice is.
 * **Newest released shell per role, deterministically, and SAID** (the I6 interim law). Shells
   carry no supersession, so a kit change leaves two approved headers; the walk picks one the
   same way every time and names the sibling it stepped over.
@@ -418,29 +419,36 @@ def test_a_workspace_with_only_one_of_the_two_shells_is_refused_and_says_which(
 
 
 # =============================================================================================
-# Red case 3 — a nav or site footer may not be pinned on an ABM page, through any door
+# Red case 3 — a nav or site footer on an ABM page is ADVISED AGAINST, never refused (R-F5-8)
 # =============================================================================================
 
 
 @pytest.mark.parametrize("fragment_id", [NAV_ID, SITE_FOOTER_ID])
-def test_naming_a_nav_or_site_footer_as_the_hero_is_refused(
+def test_naming_a_nav_or_site_footer_as_the_hero_pins_it_and_advises(
     tmp_path: Path, fragment_id: str
 ) -> None:
+    """R-F5-8: allowed, not recommended. The walk does what it was asked, and says what it
+    thinks of it."""
     tools = _tools(tmp_path, _seeded(tmp_path))
 
     result = json.loads(tools.assemble_abm_page(hero_fragment_id=fragment_id))
 
-    assert result["error_code"] == "abm.escape_route_chrome"
-    assert fragment_id in result["message"]
-    assert _children(tools) == []
+    assert result["status"] == "ok"
+    assert fragment_id in [entry["fragment_id"] for entry in result["pinned"]]
+    notes = [item for item in result["advice"] if isinstance(item, str) and fragment_id in item]
+    assert notes, result["advice"]
+    assert "poor practice" in notes[0]
+    assert "R-F5-8" in notes[0]
+    # The header and the footer shells still went on, and the hero really is on the page.
+    assert len(_children(tools)) == 3
 
 
-def test_a_nav_already_pinned_on_the_page_stops_the_assembly_before_anything_lands(
+def test_a_nav_already_pinned_on_the_page_is_assembled_around_and_noted(
     tmp_path: Path,
 ) -> None:
-    """The rule is about the PAGE, not only about this call's arguments: a nav pinned by an
-    earlier `insert_cloned_section` is the same escape route, and the walk will not build chrome
-    around it and call the page an ABM page."""
+    """The DETECTION is about the PAGE, not only about this call's arguments — a nav pinned by an
+    earlier `insert_cloned_section` is spotted the same way. Under R-F5-8 the walk builds the
+    chrome around it and hands the author the note instead of refusing."""
     registry = _seeded(tmp_path)
     tools = _tools(tmp_path, registry)
     assert json.loads(tools.insert_cloned_section(NAV_ID))["status"] == "ok"
@@ -448,10 +456,13 @@ def test_a_nav_already_pinned_on_the_page_stops_the_assembly_before_anything_lan
 
     result = json.loads(tools.assemble_abm_page(hero_fragment_id=HERO_ID))
 
-    assert result["error_code"] == "abm.escape_route_chrome"
-    assert NAV_ID in result["message"]
-    # Nothing added, nothing removed: the walk does not silently unpin somebody's section.
-    assert _children(tools) == before
+    assert result["status"] == "ok"
+    notes = [item for item in result["advice"] if isinstance(item, str) and NAV_ID in item]
+    assert notes, result["advice"]
+    assert "cloned nav" in notes[0]
+    assert "poor practice" in notes[0]
+    # Nothing removed: the walk does not silently unpin somebody's section — it adds around it.
+    assert set(before).issubset(set(_children(tools)))
 
 
 # =============================================================================================
