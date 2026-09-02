@@ -25,6 +25,7 @@ Ledger: `.superpowers/sdd/2026-09-02-vendor-first-logo-family/progress.md`. Proc
 - Task 8 — DONE (`753e1e9d7`) — ran before Task 7
 - Task 9 — DONE (`8c3d0f3f7`)
 - Task 10 — DONE (`7f301f62f`) — batch 4–10 live-verified end to end
+- Task 11 — DONE (`aa8b943a3`, `6c3748fb6`) — D4 + D7 closed; see the task's status note
 
 ## Deferred items ledger (founder rule 2026-09-02: every deferral lives HERE and belongs to a task)
 
@@ -2139,6 +2140,8 @@ mechanics untouched."
 ---
 
 ### Task 11: Prompts speak the 2×2 (both lanes)
+
+**STATUS 2026-09-02: DONE** (`aa8b943a3` prose + tests; `6c3748fb6` fix round: wrap, placement hint, unused var). Errata found at execution: (1) the author's `fetch_logo` prose lives inside `account_block`, so the D4 render test passes `account_card="{}"` and a second no-account render asserts only the absence of the old phrase; (2) the orchestrator/reviewer never said "asset ids per slot" — they said "comes only from the ladder", replaced by "comes only from their real published asset — … `fetch_logo` (one asset per family cell: …) binding it"; (3) the scene resource maps' "fetched from their website" → "real published logo, one asset per family cell" (vendor-first made the old wording false); (4) the founder-signed author prose regained one sentence, "The assets are already registered; place them like any other asset." (controller ruling; the scene contract kept its placement hint, the web one had lost it); (5) the brief's unused `text = …__doc__` test line was dropped for the subsystem's ruff gate.
 
 **Files:**
 - Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/prompts_web.py` (orchestrator ~371–380; author ~488–502; reviewer ~681–687)
