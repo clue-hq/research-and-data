@@ -467,3 +467,22 @@ no preflight filter anywhere. Defaults 1–5 → Tasks 4 (copy, session-commit, 
 3 (throttle), 9 (timings). §B-3 matrix ↔ Task 8 tests 1:1. Type consistency: cursor actions
 (Task 8) consumed verbatim by pump (Task 9); frame names (Tasks 2/7) consumed by repository
 parse (Tasks 3/8). Placeholder scan clean 2026-09-02.
+
+
+## Amendments (rung A execution, 2026-09-02)
+
+- **Task 4b added (runtime):** the P0.4 checkpoint trigger keys on round ACCEPTANCE (critic PNG
+  clean; a canonical-SVG failure is excused only when every error is the font-embedding refusal).
+  Ground-truth correction: on this branch `checkpoint_scene` fires only from the orchestrator's
+  `checkpoint=True` render (§5.2), and the WOFF2 font-embedding refusal made `reviewer.status`
+  `error` every round, so NO checkpoint ever committed for ~71% of stored brand fonts. Commit
+  4aa344bf6. Separate follow-up: WOFF2 embedding in `lumen-skia/embed.rs`.
+- **Migration was required** (`35cda1939728`, closed CHECK on `agent_turn_event_stream_type`) —
+  the "no migrations" line above is superseded.
+- **Task 2 placement:** background tailer for the whole drive + final drain (the "poll-tick
+  piggyback" hint would have delivered frames only after terminal when this lane drives).
+- **Task 4 fix round:** durable leg seed from `ThreadWire.speaker.design_leg_state`; per-turn leg
+  release; `writeGate()`; proactive note. Ruled defaults: `turn.awaiting_input` holds the lock; the
+  direct `/artifacts/[id]` route stays lockless in rung A.
+- **Runner correction:** `features/projects` / `chat-shell` tests are node:test (`npx tsx --test`).
+- Close-out: `_memory/2026-09-02-scene-streaming-rung-a.md`.
