@@ -34,7 +34,7 @@ export function AssetLibraryPanel({ library, onUploadFile }: {
     ASSET_LIBRARY_CATEGORIES[0].label;
 
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (shouldCloseOnKey(event.key)) library.close(); };
+    const onKey = (event: KeyboardEvent) => { if (shouldCloseOnKey(event.key, event.target)) library.close(); };
     const onPointer = (event: PointerEvent) => { if (shouldCloseOnPointer(event.target, panelRef.current)) library.close(); };
     window.addEventListener("keydown", onKey);
     window.document.addEventListener("pointerdown", onPointer, true);

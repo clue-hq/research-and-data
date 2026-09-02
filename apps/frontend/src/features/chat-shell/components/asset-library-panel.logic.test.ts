@@ -31,6 +31,29 @@ it("closes on a pointerdown outside the panel, not inside", () => {
   assert.equal(shouldCloseOnPointer(null, panel), true);
 });
 
+/** Base UI portals the category chip's listbox (and the Replace-image menu) OUTSIDE the panel, so a
+ * press on an option is not `panel.contains`-inside. A target that reports one of those surfaces as
+ * an ancestor is still OURS. */
+const portalled = (surface: string) => ({
+  closest: (selector: string) => (selector.includes(surface) ? { surface } : null),
+});
+
+it("keeps the panel open for a pointerdown on its own portalled chip listbox or menu", () => {
+  const panel = { contains: (node: unknown) => node === "inside" };
+  assert.equal(shouldCloseOnPointer(portalled('[role="option"]'), panel), false);
+  assert.equal(shouldCloseOnPointer(portalled('[role="listbox"]'), panel), false);
+  assert.equal(shouldCloseOnPointer(portalled('[role="menuitem"]'), panel), false);
+  assert.equal(shouldCloseOnPointer(portalled('[role="menu"]'), panel), false);
+  assert.equal(shouldCloseOnPointer({ closest: () => null }, panel), true);
+});
+
+it("leaves Escape to the chip's popup while it is open, and closes the panel elsewhere", () => {
+  assert.equal(shouldCloseOnKey("Escape", portalled('[role="listbox"]')), false);
+  assert.equal(shouldCloseOnKey("Escape", { closest: () => null }), true);
+  assert.equal(shouldCloseOnKey("Escape", null), true);
+  assert.equal(shouldCloseOnKey("Enter", portalled('[role="listbox"]')), false);
+});
+
 it("moves focus across a 4-column grid with the arrow keys and clamps at the edges", () => {
   assert.equal(nextFocusIndex(0, "ArrowRight", 10, 4), 1);
   assert.equal(nextFocusIndex(3, "ArrowRight", 10, 4), 4);

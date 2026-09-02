@@ -19,13 +19,32 @@ export function splitLibrarySections(items: readonly AssetLibraryItem[]) {
   };
 }
 
-export function shouldCloseOnKey(key: string): boolean {
-  return key === "Escape";
+/** The panel's own popups are PORTALLED out of it: Base UI renders the category chip's listbox (and
+ * the Replace-image menu) at the document root, so `panel.contains` reports a press on an option as
+ * OUTSIDE, and the dismiss listeners would close the panel before the choice landed. A target that
+ * reports one of these surfaces as an ancestor is ours, wherever the DOM put it. */
+const OWNED_POPUP_SELECTOR = '[role="listbox"], [role="option"], [role="menu"], [role="menuitem"]';
+/** Escape belongs to the OPEN listbox first — Base UI holds focus inside its popup while it is up,
+ * and one Escape may not close both the popup and the panel behind it. */
+const OPEN_LISTBOX_SELECTOR = '[role="listbox"]';
+
+/** True when `target` can answer `closest(selector)` and reports a match. Pure and fake-friendly:
+ * the tests pass a plain object with a `closest`, a real listener passes `event.target`, and
+ * anything without a `closest` (a stub string, a null target) simply does not match. */
+function targetClosest(target: unknown, selector: string): boolean {
+  const closest = (target as { closest?: (selector: string) => unknown } | null | undefined)?.closest;
+  return typeof closest === "function" && Boolean(closest.call(target, selector));
+}
+
+export function shouldCloseOnKey(key: string, target?: unknown): boolean {
+  if (key !== "Escape") return false;
+  return !targetClosest(target, OPEN_LISTBOX_SELECTOR);
 }
 
 /** `panel` is typed for BOTH shapes that answer "is this node inside me?": a real element, whose
  * DOM `contains(node: Node | null)` is narrower than `unknown`, and the tests' pure stub. */
 export function shouldCloseOnPointer(target: unknown, panel: { contains: (node: never) => boolean } | null): boolean {
+  if (targetClosest(target, OWNED_POPUP_SELECTOR)) return false;
   return !panel || !target || !panel.contains(target as never);
 }
 
