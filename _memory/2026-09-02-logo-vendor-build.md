@@ -328,9 +328,21 @@ and are never dropped. Winners carry `measured_verdict` + `arbitration.beat`. Pl
 Live: freshcontext.ai → `wordmark.png` (light_lockup), `wordmark-ondark.svg` (dark_lockup),
 apple-icon (light_mark); brandfetch.com → four proven vendor SVGs with the ladder 403-blocked.
 
-## 10. Session close (2026-09-02)
+## 10. Task 18 — alternatives beside the 2×2 (founder decision 2026-09-02)
 
-Final HEAD carries Tasks 1–17 plus the final-review fix. D11 is resolved (§7). Still open, outside this plan: the 28 baseline api failures
+The arbiter cannot know whether a vendor "logo" is complete (workspan.com's is the bare W) or whether a
+short form fits a placement; the agent looking at the page can. Shipped in `8da597f58` + `7ef959d4c`:
+the four cells stay the recommendation, and every other VETTED asset — arbitration losers from either
+source and the vendor's `icon`/`other` types, never the ladder's raw ranked list — is registered like a
+cell and listed under `alternatives` in both tools' payloads, each with `competed_for`, `measured_verdict`,
+size/format and a one-line `reason`. Cached with the family; bindable. Prompts/docstrings: "use a cell
+first; an alternative only when the cell does not fit the placement — say so." Live: workspan.com → 15
+alternatives (the vendor's monochrome horizontal/stacked/square lockup variants in both inks — a real
+dark-surface full lockup among them); freshcontext.ai → the two short forms. Not capped (founder: show all).
+
+## 11. Session close (2026-09-02)
+
+Final HEAD carries Tasks 1–18 plus the final-review fix. D11 is resolved (§7). Still open, outside this plan: the 28 baseline api failures
 (§5; the image-model fixture's missing `image_model_api_style` pin is the cheapest of them).
 Deferred items D12–D15 have named owners in the plan's ledger. Nothing pushed.
 
