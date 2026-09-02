@@ -44,3 +44,56 @@ def test_rendered_web_author_prompt_without_an_account_card_has_no_old_slot_word
 
     rendered = build_web_author_prompt(brand_card="{}", theme_token_names="brand, ink")
     assert "asset ids per slot" not in rendered
+
+
+def test_hotlink_guidance_appears_only_with_a_client_id():
+    import inspect
+
+    from lumen_agent import prompts_web
+
+    source = inspect.getsource(prompts_web)
+    assert "cdn.brandfetch.io" in source
+    assert "fallback/transparent" in source
+    # the conditional: the block must be guarded on the client id being set
+    assert "brandfetch_client_id" in source
+
+
+def test_rendered_hotlink_block_carries_the_real_cdn_url():
+    # The id is interpolated at prompt build; this fake id never leaves the tests.
+    from lumen_agent.prompts_web import build_web_author_prompt
+
+    rendered = build_web_author_prompt(
+        brand_card="{}", theme_token_names="brand, ink", brandfetch_client_id="1idTESTID"
+    )
+    assert (
+        "https://cdn.brandfetch.io/domain/THEIR-DOMAIN/theme/dark/fallback/"
+        "transparent/type/logo?c=1idTESTID" in rendered
+    )
+    assert "fallback/transparent" in rendered
+    # the personalization marker survives f-string escaping as a literal
+    assert "{{account.logo}}" in rendered
+
+
+def test_rendered_hotlink_block_is_absent_without_a_client_id():
+    from lumen_agent.prompts_web import build_web_author_prompt
+
+    omitted = build_web_author_prompt(brand_card="{}", theme_token_names="brand, ink")
+    assert "cdn.brandfetch.io" not in omitted
+
+    explicit_none = build_web_author_prompt(
+        brand_card="{}", theme_token_names="brand, ink", brandfetch_client_id=None
+    )
+    assert "cdn.brandfetch.io" not in explicit_none
+
+
+def test_hotlink_block_and_account_block_render_together():
+    from lumen_agent.prompts_web import build_web_author_prompt
+
+    rendered = build_web_author_prompt(
+        brand_card="{}",
+        theme_token_names="brand, ink",
+        account_card="{}",
+        brandfetch_client_id="1idTESTID",
+    )
+    assert "cdn.brandfetch.io" in rendered
+    assert "fetch_logo" in rendered

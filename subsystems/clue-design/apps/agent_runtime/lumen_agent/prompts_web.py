@@ -470,11 +470,21 @@ DISCIPLINE
 """
 
 
+# The Brandfetch Logo-API CDN prefix for DECORATIVE third-party logo hotlinks.
+# The public client id is appended at prompt build; with no id the whole hotlink
+# block is omitted, because the URL would not resolve without one.
+_LOGO_CDN_HOTLINK_PREFIX = (
+    "https://cdn.brandfetch.io/domain/THEIR-DOMAIN/theme/dark"
+    "/fallback/transparent/type/logo?c="
+)
+
+
 def build_web_author_prompt(
     *,
     brand_card: str,
     theme_token_names: str,
     account_card: str | None = None,
+    brandfetch_client_id: str | None = None,
 ) -> str:
     account_block = (
         f"""
@@ -509,6 +519,24 @@ Account authoring rules (binding):
   file. Never draw, recolour, letter or approximate someone's logo.
 """
         if account_card
+        else ""
+    )
+    hotlink_block = (
+        f"""
+- DECORATIVE third-party logos — a customer logo wall, an integration grid,
+  a partner strip, any place the page merely SHOWS other companies — do not
+  need fetch_logo. Write a hotlink image straight into the markup:
+    <img src="{_LOGO_CDN_HOTLINK_PREFIX}{brandfetch_client_id}" alt="THEIR-NAME logo">
+  The `theme` segment names the ASSET's own coloring, not the surface: on a
+  LIGHT surface use `theme/dark` (dark-colored art); on a DARK surface use
+  `theme/light`. Use `type/symbol` where only the bare mark fits.
+  `fallback/transparent` makes a missing logo render as nothing — never a
+  broken image. This is ONLY for ambient, decorative logos: the account
+  being personalized, and anything bound with `bind_account_logo` or
+  resolved by `{{{{account.logo}}}}`, always uses fetch_logo's registered
+  assets, never a hotlink.
+"""
+        if brandfetch_client_id
         else ""
     )
     return f"""You are the website author. You work ON the page in front of
@@ -616,7 +644,7 @@ never cram).
 
 BRAND
 {brand_card}
-{account_block}
+{account_block}{hotlink_block}
 
 THEME TOKENS you may use for every color-bearing class:
 {theme_token_names}
