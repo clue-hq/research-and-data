@@ -76,10 +76,12 @@ from .custom_component_runtime import (
 )
 from .fragments.render import (
     build_fragment_render_package,
+    build_fragment_render_package_for_document,
     empty_fragment_render_package,
     fragment_collision_diagnostics,
     fragment_css_sheet,
     fragment_render_map,
+    web_doc_all_fragment_ids,
     web_doc_fragment_ids,
 )
 from .fragments import (
@@ -8697,33 +8699,50 @@ def _describe_web_turn_targets(
     web_doc: JsonObject, target_node_ids: List[str]
 ) -> str:
     """Build the TURN TARGET brief addendum for a scoped edit turn: one line
-    per selected node, naming the node, its kind, and the enclosing section the
-    turn should be scoped to. A selection that no longer exists in the page
-    yields a line telling the agent to fall back to its own judgment."""
-    page = None
+    per selected node, naming the node, its kind, the PAGE it sits on, and the
+    enclosing section the turn should be scoped to. A selection that no longer
+    exists in the document yields a line telling the agent to fall back to its
+    own judgment.
+
+    F5: every page is searched, not the one spelled `home`. A selection made on
+    a second page used to resolve against the home page's node map and come
+    back as "that element no longer exists" — the agent then rebuilt on its own
+    judgment instead of editing what the user had actually clicked."""
+    # (page id, nodes, that page's top-level band ids, child -> parent) per page,
+    # in document order. Built once; a target is then looked up across all of them.
+    pages: List[Tuple[str, Dict[str, Any], set, Dict[str, str]]] = []
     for candidate in web_doc.get("pages") or []:
-        if isinstance(candidate, dict) and candidate.get("id") == "home":
-            page = candidate
-            break
-    nodes = (page or {}).get("nodes") or {}
-    root_id = (page or {}).get("root")
-    root = nodes.get(root_id) or {}
-    root_child_set = set(root.get("children") or [])
-    parent_of: Dict[str, str] = {}
-    for nid, node in nodes.items():
-        if isinstance(node, dict):
-            for child in node.get("children") or []:
-                parent_of[child] = nid
+        if not isinstance(candidate, dict):
+            continue
+        nodes = candidate.get("nodes")
+        if not isinstance(nodes, dict):
+            continue
+        page_id = candidate.get("id") if isinstance(candidate.get("id"), str) else ""
+        root = nodes.get(candidate.get("root")) or {}
+        root_child_set = set(root.get("children") or []) if isinstance(root, dict) else set()
+        parent_of: Dict[str, str] = {}
+        for nid, node in nodes.items():
+            if isinstance(node, dict):
+                for child in node.get("children") or []:
+                    parent_of[child] = nid
+        pages.append((page_id, nodes, root_child_set, parent_of))
 
     lines: List[str] = []
     for target in target_node_ids:
-        node = nodes.get(target)
-        if not isinstance(node, dict):
+        # First page carrying the id wins. Node ids are document-unique, so this is a
+        # lookup rather than a choice; ordering it makes the tie deterministic anyway.
+        found = next(
+            (entry for entry in pages if isinstance(entry[1].get(target), dict)),
+            None,
+        )
+        if found is None:
             lines.append(
                 f"\n\nTURN TARGET: the user selected `{target}`, but that element no "
                 "longer exists in the page — use your own judgment about what to edit."
             )
             continue
+        page_id, nodes, root_child_set, parent_of = found
+        node = nodes[target]
         section: Optional[str] = None
         if target in root_child_set:
             section = target
@@ -8740,9 +8759,12 @@ def _describe_web_turn_targets(
         label = _web_node_label(node)
         descriptor = f'{kind} "{label}"' if label else str(kind)
         section_str = f"`{section}`" if section else "the page"
+        # A page with no id is not addressable, so it is named by saying nothing rather
+        # than by an invented index — the line then reads exactly as it did pre-F5.
+        page_clause = f" on page `{page_id}`" if page_id else ""
         lines.append(
-            f"\n\nTURN TARGET: the user selected `{target}` ({descriptor}) inside "
-            f"section {section_str}. Scope this turn to that section unless the "
+            f"\n\nTURN TARGET: the user selected `{target}` ({descriptor}){page_clause} "
+            f"inside section {section_str}. Scope this turn to that section unless the "
             "brief clearly requires more."
         )
     return "".join(lines)
@@ -8870,14 +8892,18 @@ def run_web_agent_turn(
         # placeholder for the visual reviewer to judge. A pin that reaches the document by any
         # OTHER route mid-turn — hand-built ops naming an id nothing resolved — still renders the
         # placeholder, which is the honest answer rather than an improvised one.
-        if web_doc_fragment_ids(web_doc, "home"):
+        #
+        # F5: EVERY page's pins, not the home page's. A turn is of a DOCUMENT — the agent can
+        # author on any page during it — so a package scoped to one page would render a band
+        # pinned on `/pricing` as the engine's placeholder in the agent's own screenshots, and
+        # the visual reviewer would judge the hole.
+        if web_doc_all_fragment_ids(web_doc):
             config = replace(
                 config,
-                fragment_render_package=build_fragment_render_package(
+                fragment_render_package=build_fragment_render_package_for_document(
                     turn_blobs.storage,
                     workspace_id=turn_workspace_id,
                     web_doc=web_doc,
-                    page_id="home",
                 ),
             )
         # F2.3: the WORKSPACE's released cloned sections, as a capability rather than a value —
