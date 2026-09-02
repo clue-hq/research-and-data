@@ -1727,7 +1727,9 @@ export function InspectorImageUpload({
         <span>Replace image</span>
       </button>
       <input
-        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+        // No GIF: the design API sniffs the bytes and refuses it, so offering it
+        // in the dialog only buys the user a rejected upload.
+        accept="image/png,image/jpeg,image/webp,image/svg+xml"
         className={styles.visuallyHiddenInput}
         disabled={disabled}
         onChange={(event) => {
