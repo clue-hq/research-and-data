@@ -443,13 +443,17 @@ named follow-on (premium), designed for but not built.
   auto-derived from the workspace/brand name, owner-editable until the first publish,
   immutable after (a rename after first publish is a future redirect feature, not a v1 knob).
 
-**Standing assumptions the execution plan will state (proposed 2026-09-02, not yet ruled):**
-(i) CP3's v1 product target is the **per-account ABM microsite** (landing + supporting pages,
-site-internal nav, still noindex) — it reuses every CP2 mechanism and needs no capture work;
-(ii) new pages are composed from the homepage section library + token-lawful new sections —
-**multi-page CAPTURE stays a separate, unscheduled follow-on**; (iii) a nav whose every link
-resolves to a page of the SAME site is exempt from the F4 escape-route law (`ESCAPE_ROUTE_ROLES`
-applies to links that leave the site, not to site-internal navigation).
+**Further founder rulings 2026-09-02 (LAW):**
+- **R-F5-6 CP3 v1 product target = the per-account ABM microsite** — a landing page plus
+  supporting pages, site-internal nav, still `noindex`. Reuses every CP2 mechanism.
+- **R-F5-7 Page material:** new pages are composed from the homepage section library plus
+  token-lawful new sections. **Multi-page CAPTURE of the client's real subpages is a separate
+  follow-on on a separate branch** — never part of F5.
+
+**Open at dispatch (explained to founder 2026-09-02, ruling pending):** (iii) whether a nav
+whose every link resolves to a page of the SAME site is exempt from the F4 escape-route law
+(`ESCAPE_ROUTE_ROLES` / the campaign-shell one-anchor shape gate) — i.e. the law moves from
+"by role" to "by destination".
 
 **The six lanes (replaces the four-blocker list):**
 - **F5.0 Engine page ops.** `AddPage` / `RemovePage` (invertible, envelope-ready, in

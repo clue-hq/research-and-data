@@ -42,10 +42,10 @@ the 2026-08-27 provision kept beneath it as record). Branch purpose: complete mu
 Also ruled: F5 owns default-domain serving (Part-IV item 5 no longer a gate); custom domains =
 premium follow-on, resolver table designed to receive them.
 
-## Standing assumptions (proposed, NOT yet ruled — confirm before dispatch)
-(i) CP3 v1 target = per-account ABM microsite (landing + supporting pages, internal nav, noindex);
-(ii) pages composed from homepage library + new sections, no multi-page capture;
-(iii) site-internal nav exempt from the escape-route law.
+## Later the same day — RULED: R-F5-6 CP3 v1 = per-account ABM microsite (landing + supporting
+pages, internal nav, noindex); R-F5-7 pages from homepage library + new sections, multi-page
+capture = separate follow-on on a SEPARATE BRANCH. Still open: (iii) site-internal nav vs the
+F4 escape-route law (explained to founder; ruling pending).
 
 ## Lanes fixed in the plan
 F5.0 engine page ops + route grammar · F5.1 page-aware render/preview/review · F5.2 N-page
