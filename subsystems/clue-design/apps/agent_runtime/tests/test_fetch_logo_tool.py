@@ -572,3 +572,123 @@ def test_dispatch_a_vendor_cell_makes_a_mixed_family_ok(monkeypatch):
     assert outcome.status == "ok"
     assert outcome.cells == {"light_lockup": "brandfetch", "dark_lockup": "ladder"}
     assert "https://acme.com/" in cache.stored
+
+
+# --------------------------------------------------------------------------- #
+# end to end: one family, two provenances
+# --------------------------------------------------------------------------- #
+
+#: A trimmed Brand API response (the `logos[]` shape of `apps/api/tests/test_logo_vendor.py`),
+#: carrying ONLY vendor theme=`dark` art — dark-colored, so it is FOR light backgrounds — as one
+#: `logo` and one `symbol`. Inverted and folded, that is exactly our `light_lockup` + `light_mark`,
+#: leaving the two dark cells for the ladder. Asset srcs sit on the vendor's own CDN because the
+#: driver refuses to fetch anything off the `brandfetch.io` allowlist.
+E2E_BRAND_PAYLOAD = {
+    "name": "Acme",
+    "domain": "acme.com",
+    "logos": [
+        {
+            "theme": "dark",
+            "type": "logo",
+            "tags": [],
+            "formats": [
+                {"src": "https://cdn.brandfetch.io/acme/lockup-dark.svg", "format": "svg",
+                 "width": 400, "height": 80, "size": 4000, "background": "transparent"},
+            ],
+        },
+        {
+            "theme": "dark",
+            "type": "symbol",
+            "tags": [],
+            "formats": [
+                {"src": "https://cdn.brandfetch.io/acme/symbol-dark.svg", "format": "svg",
+                 "width": 64, "height": 64, "size": 900, "background": "transparent"},
+            ],
+        },
+    ],
+}
+
+#: Four distinct bodies, because an asset id is the sha256 of its bytes: identical art would
+#: collapse two cells onto one asset id and hide a mis-keyed registration.
+E2E_VENDOR_ASSETS = {
+    "/acme/lockup-dark.svg": _svg("#101820"),
+    "/acme/symbol-dark.svg": _svg("#101820", 64, 64),
+}
+
+
+def _e2e_vendor_handler(request):
+    """Serve the Brand API lookup and the two CDN assets; 404 anything else."""
+    import httpx
+
+    if request.url.path == "/v2/brands/domain/acme.com":
+        assert request.headers["Authorization"] == "Bearer test-key"
+        return httpx.Response(200, json=E2E_BRAND_PAYLOAD)
+    body = E2E_VENDOR_ASSETS.get(request.url.path)
+    if body is not None:
+        return httpx.Response(200, content=body, headers={"content-type": "image/svg+xml"})
+    return httpx.Response(404)
+
+
+def test_web_fetch_logo_end_to_end_mixed_vendor_and_ladder_family(tmp_path, monkeypatch):
+    """The whole tool, both rungs live, nothing faked above the transport.
+
+    The vendor rung runs the REAL `fetch_vendor_family` against an httpx MockTransport, so the
+    lookup, the allowlist, the download, the theme inversion and the cell mapping all execute;
+    the ladder rung is faked at its own driver seam, as every other test in this file does. Two
+    cells therefore come from Brandfetch and two from the ladder, and the point of the test is
+    that each ingested record carries ITS OWN source: a family is allowed to be mixed, and a
+    reader must never have to guess which half of it the vendor served.
+    """
+    import httpx
+
+    from lumen_ingestion.logo_vendor import fetch_vendor_family
+
+    ladder = _resolution({
+        "dark": _slot(_svg("#ffffff"), lockup="full_lockup", variant="dark",
+                      url="https://acme.com/logo-white.svg"),
+        "mark": _slot(_svg("#ffffff", 64, 64), lockup="symbol", variant="dark",
+                      url="https://acme.com/mark-white.svg"),
+    })
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: ladder)
+
+    tools = _web_tools(tmp_path)
+    with httpx.Client(transport=httpx.MockTransport(_e2e_vendor_handler)) as client:
+        monkeypatch.setattr(
+            logo_fetch,
+            "_vendor_rung",
+            lambda site, company: fetch_vendor_family(
+                site, api_key="test-key", base_url="https://vendor.test", client=client
+            ),
+        )
+        result = json.loads(tools.fetch_logo("acme.com", "Acme"))
+
+    assert result["status"] == "ok"
+    assert result["cache_hit"] is False
+    assert len(result["logos"]) == 4, result
+    assert {entry["cell"]: entry["source"] for entry in result["logos"]} == {
+        "light_lockup": "brandfetch",
+        "light_mark": "brandfetch",
+        "dark_lockup": "ladder",
+        "dark_mark": "ladder",
+    }
+
+    # Four distinct assets, and every registered record says who served IT.
+    expected_created_by = {
+        "light_lockup": "brandfetch",
+        "light_mark": "brandfetch",
+        "dark_lockup": "logo_ladder",
+        "dark_mark": "logo_ladder",
+    }
+    registry = tools.web_doc["assets"]
+    assert len({entry["asset_id"] for entry in result["logos"]}) == 4
+    for entry in result["logos"]:
+        record = registry[entry["asset_id"]]
+        assert record["provenance"]["created_by"] == expected_created_by[entry["cell"]], entry
+        # The engine's AssetSource has no vendor variant: a vendor file is a URL capture too.
+        assert record["source"]["kind"] == "website"
+    assert registry[
+        next(e["asset_id"] for e in result["logos"] if e["cell"] == "light_lockup")
+    ]["source"]["url"].startswith("https://cdn.brandfetch.io/")
+    assert registry[
+        next(e["asset_id"] for e in result["logos"] if e["cell"] == "dark_lockup")
+    ]["source"]["url"] == "https://acme.com/logo-white.svg"
