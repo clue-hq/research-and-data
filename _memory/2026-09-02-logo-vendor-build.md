@@ -136,22 +136,115 @@ next reader does not re-derive them.
   `79727edb6` — pre-existing, not this plan's. Run the two suites as two invocations (which is what
   `subsystems/clue-design/AGENTS.md` §3 already prescribes).
 - **Three `pymupdf` SWIG `DeprecationWarning`s** (`builtin type SwigPyPacked/SwigPyObject/swigvarlink
-  has no __module__ attribute`) still print in both suites' warnings summary, raised at
-  `logo_ladder._rasterize`'s lazy `import pymupdf` on Python 3.12. Third-party, pre-existing, and out
-  of scope for D1 (which named exactly the starlette filter).
+  has no __module__ attribute`), raised at `logo_ladder._rasterize`'s lazy `import pymupdf` on
+  Python 3.12 — third-party and pre-existing. **Filtered** (a second narrow `filterwarnings` entry
+  in the root `pyproject.toml`, alongside the starlette one), so both focused gates now end with
+  `N passed` and no warnings summary at all. The filter hides noise we cannot act on; if pymupdf
+  ever warns about something real under that same message shape, the regex is narrow enough that
+  only `builtin type … has no __module__ attribute` is swallowed.
 
 ## 5. Full-suite results
 
-*(filled by the controller-provided results)*
+Both suites run from `subsystems/clue-design` with the §6 env prefix (vendor key blanked, release
+helper pinned) and `-p no:cacheprovider -q -rf`. Results collected by the controller 2026-09-02.
 
-Background runs launched from `subsystems/clue-design` with the env prefix in §6 and
-`-p no:cacheprovider -q -rf`: `/tmp/t14_agent_runtime_suite.log`, `/tmp/t14_api_suite.log`.
+- **`apps/agent_runtime/tests` — GREEN.** 0 FAILED/ERROR, progress reached [100%]. Read off
+  `/tmp/t14_agent_runtime_suite.log`: 1569 passed, 1 skipped, zero `F`/`E` characters, no `FAILED`
+  lines. (The log has no closing `N passed in Xs` line — the process appears to die at interpreter
+  shutdown after the warnings summary — so the counts are from the progress characters, which are
+  complete.)
+- **`apps/api/tests` — 29 distinct failing tests** (`/tmp/t14_api_suite.log`; distinct list
+  `/tmp/t14_api_failed.txt`). Against the D10 baseline (`/tmp/d10_baseline.txt`, 28 tests):
+  **28 identical, 0 fixed, 1 new.**
 
-Baseline to triage against (D10, resolved 2026-09-02): on the prepared worktree
-`apps/agent_runtime/tests` was fully GREEN, and `apps/api/tests` left **28 distinct failing tests**
-(custom-component compiler/publish/runtime, image-model w14/w17, asset-store serving, grammar audit,
-web-turn composition) — the SAME 28 fail at the pre-batch commit `b46b8c815` in a clean temporary
-worktree with an identical environment. Those are environment/config debt, not this plan's.
+The one new failure is `test_ingestion_grammar_audit.py::test_the_published_draft_kit_carries_the_grammar_audit`.
+It fails at the same assertion and the same line (587, `'running' == 'succeeded'` after
+`wait_for_ingestion_job`) as its two baseline siblings in the same file: a live brand-kit ingest
+whose grok-4.5 "ingestion-brief" completion took 66.6s and outran the 60s poll budget. The
+controller re-ran it in isolation at HEAD and it **passed in 58s**; the ingest path imports no plan
+code. **Controller ruling: same live-LLM-latency class as the two baseline siblings, not a
+regression.**
+
+### Triage of the 28 baseline failures, by cause
+
+Read off the failure sections in `/tmp/t14_api_suite.log` (each test's `E ` lines and first
+exception).
+
+**A. Custom-component compiler / publish / runtime — 14 tests. Cause: environment / toolchain.**
+`test_agent_custom_components.py` (1), `test_custom_component_compiler.py` (5),
+`test_custom_component_publish.py` (4), `test_custom_component_runtime.py` (4). Every one returns
+`503` from the compile route with the same diagnostic body:
+
+```
+"status":"transient_error","compiler_version":"unavailable",
+"diagnostics":[{"code":"CCI0002","category":"infrastructure",
+  "message":"custom-component compiler returned invalid JSON: …
+    Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'typescript' imported from …/subsystems/"}]
+```
+
+The Node compiler worker cannot resolve `typescript`, i.e. its npm dependency tree is not installed
+in this worktree. The engine itself classifies this `infrastructure`. Same class as D10's
+`apps/editor/node_modules` gap — the controller's `npm install` covered `apps/editor`, not the
+compiler's own package directory.
+
+**B. Image model w14 / w17 — 4 tests (`test_api.py`). Cause: config (the test fixture does not pin
+the transport, so it inherits the operator's `.env`).** `_image_model_env` (test_api.py:4260) sets
+`image_model_base_url` / `_api_key` / `_id` but **not** `image_model_api_style`. This workspace's
+`.env` — and both `.env.example`s — set `IMAGE_MODEL_API_STYLE=images`, so `_invoke_model` routes to
+`_invoke_images_api`, while the w17 stubs feed **chat-completions-shaped** payloads:
+
+```
+E  lumen_api.image_provider.ImageGenerationError: images API response contained no
+   data[0].b64_json or data[0].url: {'choices': [{'message': {'images': [{'image_url': …
+E  … : {'choices': [{'message': {'content': "I can't make that image."}}]}
+```
+
+These three (`w17a`, both `w17b`) pass only when the env selects `chat`. Not live-model
+nondeterminism — `httpx.post` is monkeypatched in all of them. The fourth, `w14`, is consistent with
+the same routing cause (its typed error is raised correctly; only the W1.4 diagnostic log line is
+missing — `assert 'openai/gpt-image-2' in ''`), but its section does not disambiguate "the images
+branch does not emit that diagnostic" from a structlog/`caplog` capture issue — **cause not fully
+established from the log** for w14 alone.
+
+**C. Asset custody / asset-store serving — 3 tests. Cause not established from the log.**
+`test_asset_custody.py` (2), `test_asset_store_serving.py` (1). All three are
+`assert 404 == 200` on `GET /asset-store/{digest}`. The log shows a clean 404 from the route with no
+exception and no error event — and in the same test the sibling routes succeed
+(`/assets/{id}/bytes` 200, `/assets/{id}/thumbnail` 200), so the rows and bytes exist and only the
+content-addressed lookup misses. A storage-root/config mismatch in this worktree is the most likely
+explanation, but the log does not prove it.
+
+**D. Grammar audit — 2 baseline tests (`test_ingestion_grammar_audit.py`). Cause: live-model
+latency.** Both end with `{'status': 'running', 'stage': 'Preparing your brand kit…'}` after
+`wait_for_ingestion_job`'s 60s budget: a real brand-kit ingest whose LLM call had not returned. The
+third test in this file is the new failure discussed above, same shape, and it passed on an isolated
+re-run — which is the direct evidence for the latency label.
+
+**E. Web-turn composition / fragment render / asset base URL / cloned sections — 5 tests. Cause not
+established from the log.** `test_agent_cloned_sections.py` (1), `test_web_fragment_render.py` (2),
+`test_web_turn_asset_base_url.py` (2). All five monkeypatch `harness_web.run_deepagent_web_turn`
+with a stub and then call `main_mod.run_web_agent_turn`; the stub **never runs**, so the turn raises
+during composition before reaching the harness. Two surface shapes, one failure:
+
+```
+E  AssertionError: {'schema_version': 1, 'status': 'failed',
+     'summary': 'Agent runtime failed before returning a result.', 'run_id': None, …}
+E  KeyError: 'config'          # the same thing, seen through the un-populated capture dict
+```
+
+The underlying exception is swallowed into the failed envelope and does not appear anywhere in the
+captured log, so the cause cannot be named from this run.
+
+### These 28 are not this plan's debt
+
+The evidence is the D10 pre-batch control, **not** file non-overlap: the same 28 test ids were run
+at `b46b8c815` (the commit before this plan's batch) in a clean temporary worktree with an identical
+environment, all 28 failed there, and `comm -23` against this run's list is empty. Stating it that
+way deliberately, because file non-overlap would be a **false** argument here —
+`git diff --stat b46b8c815..HEAD` shows the plan did touch `lumen_api/main.py` (+7, Task 9's two
+cache-composition lines), `lumen_agent/config.py` and `harness_web.py` (+1), which sit on group E's
+call path. Group E fails identically at `b46b8c815`, where none of those lines existed, which is
+what actually clears them.
 
 ## 6. How to run the focused gates
 
@@ -176,7 +269,8 @@ PYTHONPATH=.:apps/api:apps/agent_runtime R/.venv/bin/python -m pytest \
   apps/agent_runtime/tests/test_prompts_logo_cells.py -v   # 47 passed
 ```
 
-Two invocations, not one — see the `conftest` collision in §4.
+Two invocations, not one — see the `conftest` collision in §4. Both end with `N passed` and no
+warnings summary.
 
 The `BRANDFETCH_API_KEY=""` prefix is now belt-and-braces: the D9 autouse fixture in both
 conftests blanks `settings.brandfetch_api_key`, and `fetch_vendor_family` reads it at call time, so
