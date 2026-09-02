@@ -635,6 +635,30 @@ def _ingestion_offer_payload(
     }
 
 
+def resolve_web_page_id(web_doc: JsonObject, requested: Optional[str]) -> str:
+    """The page a web read targets: the caller's page when it exists, else the first page.
+
+    Multi-page (F5) retires the assumption that a WebDoc's page is called ``home``: a
+    document's pages are an ORDERED list, so "no page named" means the first one, not a
+    literal id that a real multi-page site may not even contain. A caller that DID name a
+    page and got it wrong is told so — a silent fallback to page one would render the
+    wrong page under the right URL.
+    """
+    pages = [p for p in (web_doc.get("pages") or []) if isinstance(p, dict)]
+    if requested:
+        if any(p.get("id") == requested for p in pages):
+            return requested
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "web_render.page_missing",
+                "message": f"page {requested!r} is not in this document",
+            },
+        )
+    first = pages[0].get("id") if pages else None
+    return first if isinstance(first, str) and first else "home"
+
+
 def create_app(
     engine_cache_root: Optional[Path] = None,
     *,
@@ -3569,6 +3593,7 @@ def create_app(
         runtime_src: Optional[str] = None,
         bridge: int = 0,
         nonce: Optional[str] = None,
+        page_id: Optional[str] = None,
         repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         # Render the stored WebDoc to HTML for the editor iframe (editor mode,
@@ -3581,6 +3606,9 @@ def create_app(
         document = require_document(repo, document_id)
         require_web_document(document)
         web_doc = document["scene"]
+        # F5: every page-shaped read below targets THIS page — `?page_id=` when the
+        # caller named one, else the document's first page. Unknown page => typed 404.
+        page = resolve_web_page_id(web_doc, page_id)
         brand_kit, _source, _assets, brand_fonts = resolve_web_turn_brand_kit(
             web_doc, blob_store(repo)
         )
@@ -3591,7 +3619,7 @@ def create_app(
             brand_fonts, str(request.base_url).rstrip("/")
         )
         runtime_frames: Dict[str, JsonObject] = {}
-        if web_doc_uses_custom_components(web_doc, "home"):
+        if web_doc_uses_custom_components(web_doc, page):
             try:
                 theme_response = app.state.core.web_validate(web_doc, brand_kit)
             except CoreError as error:
@@ -3616,7 +3644,7 @@ def create_app(
                 blob_store(repo),
                 account_id=account_id if isinstance(account_id, str) else None,
                 web_doc=web_doc,
-                page_id="home",
+                page_id=page,
                 theme=theme_response.get("web_theme"),
                 override_variables=override_variables,
                 runtime_host_path=Path(app.state.custom_component_runtime_host),
@@ -3632,7 +3660,7 @@ def create_app(
                     },
                 )
             try:
-                bridge_script = render_bridge_script(nonce or "", web_doc, "home")
+                bridge_script = render_bridge_script(nonce or "", web_doc, page)
             except ValueError as error:
                 raise HTTPException(
                     status_code=422,
@@ -3643,13 +3671,13 @@ def create_app(
         # engine the markup map + the concatenated scoped CSS. An id that will not resolve is
         # left OUT of the map on purpose — the engine renders its placeholder and says so
         # (LUMW0412), which is what keeps a document with a dead pin editable.
-        fragment_ids = web_doc_fragment_ids(web_doc, "home")
+        fragment_ids = web_doc_fragment_ids(web_doc, page)
         fragment_package = (
             build_fragment_render_package(
                 app.state.storage,
                 workspace_id=store_workspace_id(repo),
                 web_doc=web_doc,
-                page_id="home",
+                page_id=page,
             )
             if fragment_ids
             else empty_fragment_render_package()
@@ -3657,7 +3685,7 @@ def create_app(
         try:
             response = app.state.core.web_render(
                 web_doc,
-                "home",
+                page,
                 mode=mode,
                 asset_base_url=asset_base_url,
                 tailwind_runtime_src=runtime_src,
@@ -3683,7 +3711,7 @@ def create_app(
         # The ledgered cascade risk, reported not refused: compiled utilities land after fragment
         # CSS, so a cloned class the document also authors is overruled.
         diagnostics.extend(
-            fragment_collision_diagnostics(fragment_package, web_doc, "home")
+            fragment_collision_diagnostics(fragment_package, web_doc, page)
         )
         return {
             "schema_version": 1,
@@ -3869,6 +3897,11 @@ def create_app(
                 status_code=422,
                 detail={
                     "code": "web_operations.invalid",
+                    # The envelope code stays the one flattened code every existing
+                    # client branches on; the engine's OWN refusal code (e.g.
+                    # `op.route_invalid`, `op.route_exists`) rides alongside it so a
+                    # caller can tell WHICH refusal this was without parsing prose.
+                    "engine_code": error.get("code"),
                     "message": error.get("message")
                     or "the operation batch would leave the document invalid",
                     "diagnostics": diagnostics,
