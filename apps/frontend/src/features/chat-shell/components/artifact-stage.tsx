@@ -32,7 +32,7 @@ import type {
   RichTextDocument,
   WebTheme,
 } from "@/features/design-editor/engine/webDocuments";
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import { ProjectGallery } from "@/features/gallery/components/project-gallery";
 import type { GalleryArtifact } from "@/features/gallery/model/project-gallery";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
@@ -92,6 +92,7 @@ export function ArtifactStage({
   onTogglePanel,
   onToggleEditing,
   openArtifacts,
+  overlay,
   projectTitle,
   redoDisabled,
   selectedCanvasNodeId,
@@ -225,6 +226,10 @@ export function ArtifactStage({
   onTogglePanel: () => void;
   onToggleEditing: () => void;
   openArtifacts: ChatShellOpenArtifact[];
+  /** Replace-image Task 6: chrome the surfaces float over the stage (today the
+   * asset-library picker). Pass-through only — this component owns no part of
+   * what it renders, exactly as `onSceneDropImageFiles` owns no part of a drop. */
+  overlay?: ReactNode;
   projectTitle?: string;
   /** W3.4: empty-stack disables for the action menu's Undo/Redo. */
   redoDisabled?: boolean;
@@ -334,6 +339,7 @@ export function ArtifactStage({
           projectTitle={projectTitle}
         />
       )}
+      {overlay}
     </section>
   );
 }

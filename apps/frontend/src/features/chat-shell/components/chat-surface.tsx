@@ -33,6 +33,7 @@ import {
   editTargetContextRefs,
 } from "../model/edit-targets";
 import { ArtifactStage } from "./artifact-stage";
+import { AssetLibraryPanel } from "./asset-library-panel";
 import { ChatShellHeader } from "./chat-shell-header";
 import { ImageInspector } from "./image-inspector";
 import styles from "./chat-shell.module.css";
@@ -630,6 +631,18 @@ export function ChatSurface({
         onTogglePanel={shell.toggleArtifactPanel}
         onToggleEditing={() => shell.setEditing(!shell.editing)}
         openArtifacts={shell.openArtifacts}
+        // Replace-image Task 6: the asset-library picker floats over the stage,
+        // rendered by the surface (the stage is pass-through chrome). The Task-4
+        // binding derives `isOpen` from the armed document, so switching
+        // artifacts closes it by construction.
+        overlay={
+          sceneSession.assetLibrary?.isOpen ? (
+            <AssetLibraryPanel
+              library={sceneSession.assetLibrary}
+              onUploadFile={sceneSession.onReplaceImage}
+            />
+          ) : null
+        }
         projectTitle={workspace.title}
         // AD3.3: the header carries ONE pair of history-row disables, and the
         // artifact on screen decides which lane's stacks they describe — the

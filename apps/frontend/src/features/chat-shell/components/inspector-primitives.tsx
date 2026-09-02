@@ -1750,7 +1750,7 @@ export function InspectorImageUpload({
             {pill}
           </Menu.Trigger>
           <Menu.Portal>
-            <Menu.Positioner align="center" side="bottom" sideOffset={6}>
+            <Menu.Positioner align="center" className={styles.inspectorSelectPositioner} side="bottom" sideOffset={6}>
               <Menu.Popup className={styles.replaceImageMenu}>
                 {REPLACE_IMAGE_MENU_ROWS.map((row) => (
                   <Menu.Item
