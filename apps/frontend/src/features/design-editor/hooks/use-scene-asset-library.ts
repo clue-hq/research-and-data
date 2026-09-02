@@ -125,8 +125,16 @@ export function useSceneAssetLibrary(options: SceneAssetLibraryDeps & {
       .finally(() => { if (generation === fetchGeneration.current) setLoading(false); });
   }, [list]);
 
-  // Fetch on OPEN, never on mount — the picker is rare and the registry is not small.
-  const open = useCallback(() => { setOpenFor(documentId); refresh(); }, [documentId, refresh]);
+  // Fetch on OPEN, never on mount — the picker is rare and the registry is not small. Opening also
+  // RESETS the two tools (spec R-D: search and the type filter are the panel's own, fresh each
+  // time) — persisting them meant reopening after a search showed a filtered grid with the "In use"
+  // tile hidden, which reads as a broken library rather than a live filter.
+  const open = useCallback(() => {
+    setQuery("");
+    setCategory("all");
+    setOpenFor(documentId);
+    refresh();
+  }, [documentId, refresh]);
   const close = useCallback(() => setOpenFor(null), []);
 
   const inUseAssetId = node?.kind.kind === "image" ? node.kind.asset_id : null;
