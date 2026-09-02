@@ -18,10 +18,12 @@ content-addressed store idempotent across re-ingests and backfills.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 FontContainer = Literal["woff2", "woff", "ttf", "otf"]
 
@@ -143,4 +145,94 @@ def decode_note(decoded: DecodedFont) -> str:
         "font container decoded at ingestion: "
         f"{decoded.source_container} -> {decoded.container} "
         f"(source sha256:{decoded.source_sha256})"
+    )
+
+
+# ---------------------------------------------------------------------------------------------
+# Ingestion chokepoint
+# ---------------------------------------------------------------------------------------------
+
+#: The refusal code an undecodable WOFF/WOFF2 ingest returns. Bytes no engine can read are not
+#: a font asset (ruling R2, 2026-09-02); the harvest lane already reports refused ingests as
+#: LUMI0515 warnings and `POST /assets` returns 400.
+INGEST_FONT_DECODE_FAILED = "ingest.font_decode_failed"
+
+
+@dataclass(frozen=True)
+class NormalizedIngest:
+    """`CoreClient.ingest_asset`'s arguments after font normalization.
+
+    Exactly one of the two outcomes is set for a web font: ``decoded`` (bytes, MIME, filename
+    and provenance rewritten) or ``refusal`` (``{"code", "message"}``; nothing rewritten). Any
+    other payload comes back untouched, ``bytes_base64`` being the very same object.
+    """
+
+    bytes_base64: str
+    declared_mime_type: Optional[str]
+    filename: Optional[str]
+    provenance: Optional[dict[str, Any]]
+    decoded: Optional[DecodedFont]
+    refusal: Optional[dict[str, str]]
+
+
+def _leading_bytes(bytes_base64: str) -> bytes:
+    # Eight base64 characters decode to six bytes — enough for every magic above — so an image
+    # payload is never decoded whole just to learn it is not a font.
+    head = bytes_base64[:8] if len(bytes_base64) >= 8 else bytes_base64
+    try:
+        return base64.b64decode(head, validate=True)
+    except (binascii.Error, ValueError):
+        return b""
+
+
+def normalize_ingest_font(
+    *,
+    bytes_base64: str,
+    declared_mime_type: Optional[str],
+    filename: Optional[str],
+    provenance: Optional[dict[str, Any]],
+) -> NormalizedIngest:
+    """Rewrite an ingest call so a WOFF/WOFF2 payload reaches the helper as sfnt.
+
+    The helper refuses a declared MIME that contradicts the sniffed bytes
+    (``ingest.mime_mismatch``), so the MIME is rewritten with the bytes; the filename keeps
+    its stem and gets the real extension; the provenance gains one note naming the source
+    container and its sha256 so the original stays traceable.
+    """
+    untouched = NormalizedIngest(
+        bytes_base64, declared_mime_type, filename, provenance, decoded=None, refusal=None
+    )
+    if sniff_font_container(_leading_bytes(bytes_base64)) not in WEB_CONTAINERS:
+        return untouched
+    try:
+        raw = base64.b64decode(bytes_base64, validate=True)
+    except (binascii.Error, ValueError):
+        return untouched  # the helper reports malformed base64 exactly as it always has
+    try:
+        decoded = decode_web_font(raw)
+    except FontContainerError as error:
+        return NormalizedIngest(
+            bytes_base64,
+            declared_mime_type,
+            filename,
+            provenance,
+            decoded=None,
+            refusal={
+                "code": INGEST_FONT_DECODE_FAILED,
+                "message": f"{filename or 'font'}: {error}",
+            },
+        )
+    if decoded is None:  # the six-byte sniff and the full decode disagree only on garbage
+        return untouched
+    stamped = dict(provenance or {})
+    notes = list(stamped.get("notes") or [])
+    notes.append(decode_note(decoded))
+    stamped["notes"] = notes
+    return NormalizedIngest(
+        base64.b64encode(decoded.data).decode("ascii"),
+        decoded.mime_type,
+        sfnt_filename(filename, decoded.container),
+        stamped,
+        decoded=decoded,
+        refusal=None,
     )
