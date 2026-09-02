@@ -39,7 +39,7 @@ _OUR_THEME_FOR_VENDOR_THEME = {"dark": "light", "light": "dark"}
 
 #: vendor `type` -> our completeness axis. `icon` is DELIBERATELY absent
 #: (founder ruling 2026-09-02: the social-avatar icon never fills a cell), and
-#: so is `other`.
+#: so is `other`. Neither is thrown away: both leave as extras.
 _COMPLETENESS_FOR_VENDOR_TYPE = {"logo": "lockup", "symbol": "mark"}
 
 _FORMAT_MIME = {
@@ -140,22 +140,29 @@ def _classify_null_theme(body: bytes, fmt: str) -> tuple[str, str]:
 
 
 def map_vendor_assets_to_cells(assets, download):
-    """Vendor assets -> 2x2 cells. Filters (icon/other/photographic), inverts
-    theme, classifies theme=None from the bytes, gates SVGs on renderability
-    and rasters on decodability. First asset wins per cell.
-    Returns (cells, notes)."""
+    """Vendor assets -> 2x2 cells, plus the EXTRAS that fill no cell.
+
+    Inverts theme, classifies theme=None from the bytes, gates SVGs on
+    renderability and rasters on decodability. First asset wins per cell.
+
+    Returns (cells, extras, notes). `extras` holds, in payload order, every
+    asset that downloads and paints but is not a cell: an `icon`/`other` type,
+    and a `logo`/`symbol` whose cell was already filled. They are real assets
+    for this brand, so the agent gets them as alternatives rather than losing
+    them; each carries `competed_for` and a one-line `reason`. Photographic
+    assets and anything that cannot be downloaded or painted stay skipped.
+    """
     from .logo_family import SOURCE_BRANDFETCH, FamilyCell, cell_name
     from .logo_ladder import svg_is_renderable
 
     cells: dict[str, FamilyCell] = {}
+    extras: list[FamilyCell] = []
     notes: list[str] = []
     for asset in assets:
-        completeness = _COMPLETENESS_FOR_VENDOR_TYPE.get(asset.type)
-        if completeness is None:
-            continue  # icon/other: ruled out, silently -- they are not skips gone wrong
         if "photographic" in asset.tags:
             notes.append(f"vendor {asset.type} skipped: tagged photographic")
             continue
+        completeness = _COMPLETENESS_FOR_VENDOR_TYPE.get(asset.type)
         chosen = pick_format(asset)
         if chosen is None:
             notes.append(f"vendor {asset.type} skipped: no downloadable format")
@@ -163,12 +170,10 @@ def map_vendor_assets_to_cells(assets, download):
 
         our_theme = _OUR_THEME_FOR_VENDOR_THEME.get(asset.theme or "")
         theme_basis = f"vendor theme={asset.theme!r} (inverted to ours)"
-        # theme=None needs the bytes to classify, so only pre-check occupancy
-        # when the theme is already known.
-        if our_theme is not None and cell_name(our_theme, completeness) in cells:
-            notes.append(f"vendor {asset.type} ({asset.theme}) skipped: cell already filled")
-            continue
+        vendor_named_the_theme = our_theme is not None
 
+        # Everything downloads and paints before it is placed: an occupied cell
+        # no longer ends the asset's life, so its bytes are needed either way.
         fetched = download(str(chosen.get("src")))
         if fetched is None:
             notes.append(f"vendor {asset.type} download failed: {chosen.get('src')}")
@@ -177,11 +182,6 @@ def map_vendor_assets_to_cells(assets, download):
         fmt = str(chosen.get("format") or "")
         if our_theme is None:
             our_theme, theme_basis = _classify_null_theme(body, fmt)
-
-        name = cell_name(our_theme, completeness)
-        if name in cells:
-            notes.append(f"vendor {asset.type} skipped: cell {name} already filled")
-            continue
         if fmt == "svg" and not svg_is_renderable(body):
             notes.append(
                 f"vendor {asset.type} refused: SVG cannot paint standalone "
@@ -193,23 +193,50 @@ def map_vendor_assets_to_cells(assets, download):
                 f"vendor {asset.type} refused: {fmt} bytes cannot be decoded as an image"
             )
             continue
-        cells[name] = FamilyCell(
-            cell=name,
-            body=body,
-            content_type=content_type or _FORMAT_MIME.get(fmt, "image/png"),
-            source=SOURCE_BRANDFETCH,
-            origin_url=str(chosen.get("src")),
-            evidence={
-                "vendor": VENDOR_NAME,
-                "vendor_theme": asset.theme,
-                "vendor_type": asset.type,
-                "theme_basis": theme_basis,
-                "format": fmt,
-                "width": chosen.get("width"),
-                "height": chosen.get("height"),
-            },
-        )
-    return cells, notes
+
+        evidence = {
+            "vendor": VENDOR_NAME,
+            "vendor_theme": asset.theme,
+            "vendor_type": asset.type,
+            "theme": our_theme,
+            "theme_basis": theme_basis,
+            "format": fmt,
+            "width": chosen.get("width"),
+            "height": chosen.get("height"),
+        }
+
+        # The bytes and where they came from; only the cell name and the extra
+        # evidence differ between a cell and an extra.
+        found = {
+            "body": body,
+            "content_type": content_type or _FORMAT_MIME.get(fmt, "image/png"),
+            "source": SOURCE_BRANDFETCH,
+            "origin_url": str(chosen.get("src")),
+        }
+
+        if completeness is None:  # icon/other: never a cell, still a real asset
+            extras.append(FamilyCell(cell="", **found, evidence={
+                **evidence,
+                "competed_for": None,
+                "reason": f"vendor type '{asset.type}' is not a family cell",
+            }))
+            continue
+
+        name = cell_name(our_theme, completeness)
+        if name in cells:
+            notes.append(
+                f"vendor {asset.type} ({asset.theme}) skipped: cell already filled"
+                if vendor_named_the_theme
+                else f"vendor {asset.type} skipped: cell {name} already filled"
+            )
+            extras.append(FamilyCell(cell=name, **found, evidence={
+                **evidence,
+                "competed_for": name,
+                "reason": f"a vendor asset already filled {name}",
+            }))
+            continue
+        cells[name] = FamilyCell(cell=name, **found, evidence=evidence)
+    return cells, extras, notes
 
 
 def _raster_decodes(body: bytes) -> bool:
@@ -257,8 +284,8 @@ def _bare_domain(value: str) -> str:
 
 
 def fetch_vendor_family(domain, *, api_key=None, base_url=None, timeout_s=None, client=None):
-    """One Brand API lookup + asset downloads -> (cells, notes). The one impure
-    entry point of this module. See the module docstring for the contract."""
+    """One Brand API lookup + asset downloads -> (cells, extras, notes). The one
+    impure entry point of this module. See the module docstring for the contract."""
     import httpx
     from py_lumen_config import settings
 
@@ -290,7 +317,7 @@ def fetch_vendor_family(domain, *, api_key=None, base_url=None, timeout_s=None, 
         except httpx.HTTPError as error:
             raise VendorLookupFailed("http", f"brand lookup failed: {error}") from error
         if resp.status_code == 404:
-            return {}, [f"brandfetch has no record of {host} — an answer, not an error"]
+            return {}, [], [f"brandfetch has no record of {host} — an answer, not an error"]
         if resp.status_code == 429:
             raise VendorLookupFailed(
                 "quota", "brandfetch quota or throughput limit reached (HTTP 429)"
@@ -327,8 +354,10 @@ def fetch_vendor_family(domain, *, api_key=None, base_url=None, timeout_s=None, 
                 return None
             return got.content, got.headers.get("content-type")
 
-        cells, notes = map_vendor_assets_to_cells(parse_brand_payload(payload), download)
-        return cells, driver_notes + notes
+        cells, extras, notes = map_vendor_assets_to_cells(
+            parse_brand_payload(payload), download
+        )
+        return cells, extras, driver_notes + notes
 
     if client is not None:
         return run(client)

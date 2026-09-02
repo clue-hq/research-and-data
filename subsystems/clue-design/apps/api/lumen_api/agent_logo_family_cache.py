@@ -17,7 +17,8 @@ root moved, a restore that brought the database back without the object store,
 an out-of-band delete), so a hit whose cells are not all `READABLE` is reported
 as a MISS -- the whole family, not the surviving cells, because half a 2x2 is
 not the family the dispatch asked for. The next dispatch refetches and re-puts,
-which is honest and self-healing.
+which is honest and self-healing. The family includes the ALTERNATIVES (the
+other real assets found for the company), stored and probed under the same rule.
 """
 
 from __future__ import annotations
@@ -76,15 +77,14 @@ class DurableLogoFamilyCache:
 
         from .design_store import DesignStoreBridge
 
-        cells: dict = {}
-        for prepared in outcome.prepared:
+        def entry(prepared) -> dict:
             sha = hashlib.sha256(prepared.body).hexdigest()
             # Content-addressed and idempotent end to end (row before blob), so a re-put of the
             # same mark converges rather than duplicating custody.
             self.blobs.register(
                 prepared.body, media_type=prepared.content_type, source_key=SOURCE_KEY_ASSET
             )
-            cells[prepared.cell] = {
+            return {
                 "sha256": sha,
                 "content_type": prepared.content_type,
                 "source": prepared.source,
@@ -95,6 +95,14 @@ class DurableLogoFamilyCache:
                 "label": prepared.label,
                 "asset_id": prepared.asset_id,
             }
+
+        cells = {prepared.cell: entry(prepared) for prepared in outcome.prepared}
+        # The alternatives are part of the family, so they are stored with it. A list,
+        # not a map: several of them can name the same cell.
+        alternatives = [
+            {**entry(prepared), "cell": prepared.cell}
+            for prepared in getattr(outcome, "alternatives", None) or []
+        ]
         family = {
             "site": outcome.site,
             "company": outcome.company,
@@ -102,6 +110,7 @@ class DurableLogoFamilyCache:
             "identity": outcome.identity,
             "notes": list(outcome.notes),
             "cells": cells,
+            "alternatives": alternatives,
         }
         DesignStoreBridge(self.workspace_id)._run(
             lambda conn: dal.upsert_logo_family(
@@ -127,12 +136,17 @@ class DurableLogoFamilyCache:
             return None
         family = row["family"]
         cells = family.get("cells") or {}
+        stored_alternatives = family.get("alternatives") or []
+        # Cells AND alternatives: a missing alternative blob is a whole-family miss too,
+        # because half a family is not the family the dispatch asked for.
         digests = [c["sha256"] for c in cells.values()]
+        digests += [a["sha256"] for a in stored_alternatives]
         states = self.blobs.custody_states(digests)
         if any(states.get(d) is not CustodyState.READABLE for d in digests):
             return None  # any unreadable cell = the WHOLE family is a miss (honest; refetch)
-        prepared = [
-            PreparedLogo(
+
+        def restore(name: str, c: dict) -> PreparedLogo:
+            return PreparedLogo(
                 cell=name,
                 source=c["source"],
                 asset_id=c["asset_id"],
@@ -143,14 +157,16 @@ class DurableLogoFamilyCache:
                 source_ref=c["source_ref"],
                 evidence=c["evidence"],
             )
-            for name, c in cells.items()
-        ]
+
+        prepared = [restore(name, c) for name, c in cells.items()]
+        alternatives = [restore(a.get("cell") or "unclassified", a) for a in stored_alternatives]
         return LogoFetchOutcome(
             status="ok",
             site=family["site"],
             company=family.get("company"),
             prepared=prepared,
             cells={p.cell: p.source for p in prepared},
+            alternatives=alternatives,
             identity=family.get("identity") or {},
             lockup_completeness=family.get("lockup_completeness", "unknown"),
             notes=list(family.get("notes") or []),

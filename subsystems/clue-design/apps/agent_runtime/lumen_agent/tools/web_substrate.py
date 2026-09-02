@@ -3330,7 +3330,12 @@ class LumenWebTools:
         Each cell is the best PROVEN asset from two sources — Brandfetch and a
         scrape of the company's own site — judged by measured ink colour for the
         surface, completeness, format and size. Every asset says which source
-        served it. Results
+        served it. `alternatives` lists every other real asset found for the
+        company (a vendor icon, a short form, a losing candidate), each
+        registered too and each saying why it is not in a cell. Use a cell
+        first; reach for an alternative only when the cell does not fit the
+        placement — for example when the dark lockup turns out to be only a
+        symbol — and say so. Results
         are cached per workspace+company, so asking twice in a project costs
         one fetch — pass `force_refresh=True` only when the user says the logo
         is wrong or outdated, which refetches and replaces the cached family.
@@ -3427,6 +3432,37 @@ class LumenWebTools:
                 failures=failures,
             )
 
+        # The other real assets found for this company, registered the same way.
+        # A failed alternative is dropped and named; only `placed` decides success.
+        alternatives: List[JsonObject] = []
+        failed_alternatives: List[JsonObject] = []
+        for prepared in outcome.alternatives:
+            ingest = self.core.ingest_asset(**prepared.ingest_kwargs(store_root))
+            if not ingest.get("ok"):
+                detail = (ingest.get("error") or {}).get("message", "unknown error")
+                failed_alternatives.append({"cell": prepared.cell, "error": detail})
+                continue
+            record = (ingest.get("asset") or {}).get("record") or {}
+            registered = self._register_asset_record(
+                record,
+                origin="logo_ladder",
+                label=prepared.label,
+                alt=f"{outcome.company or prepared.label} logo",
+                extra={"cell": prepared.cell, "alternative": True},
+            )
+            if '"status": "ok"' not in registered:
+                failed_alternatives.append(
+                    {"cell": prepared.cell, "error": "registration refused"}
+                )
+                continue
+            alternatives.append({
+                "asset_id": prepared.asset_id,
+                "source": prepared.source,
+                "competed_for": prepared.evidence.get("competed_for"),
+                "reason": prepared.evidence.get("reason"),
+                **prepared.evidence,
+            })
+
         self._register_fetched_logo_custody(outcome)
         payload: JsonObject = {
             "status": outcome.status,
@@ -3435,10 +3471,13 @@ class LumenWebTools:
             "lockup_completeness": outcome.lockup_completeness,
             "cache_hit": outcome.cache_hit,
             "logos": placed,
+            "alternatives": alternatives,
             "notes": outcome.notes[:4],
         }
         if failures:
             payload["failed_cells"] = failures
+        if failed_alternatives:
+            payload["failed_alternatives"] = failed_alternatives
         self.record(
             "agent",
             "web_logo_fetched",

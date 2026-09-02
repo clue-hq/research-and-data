@@ -37,6 +37,17 @@ def test_rendered_web_author_prompt_names_the_cells():
     assert "asset ids per slot" not in rendered
 
 
+def test_rendered_web_author_prompt_offers_the_alternatives():
+    """The cells stay the default, and the prompt says the alternatives exist."""
+    from lumen_agent.prompts_web import build_web_author_prompt
+
+    rendered = build_web_author_prompt(
+        brand_card="{}", theme_token_names="brand, ink", account_card="{}"
+    )
+    assert "`alternatives`" in rendered
+    assert "use a cell first" in rendered
+
+
 def test_rendered_web_author_prompt_without_an_account_card_has_no_old_slot_words():
     # The non-ABM render (what `test_web_account_logo_bind.py::_author_prompt` builds)
     # must not carry the retired vocabulary either.

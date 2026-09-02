@@ -471,7 +471,7 @@ def test_dispatch_runs_the_ladder_even_when_the_vendor_filled_every_cell(monkeyp
 
     monkeypatch.setattr(
         logo_fetch, "_vendor_rung",
-        lambda site, company: (_vendor_cells(*logo_fetch.CELL_NAMES), []),
+        lambda site, company: (_vendor_cells(*logo_fetch.CELL_NAMES), [], []),
     )
 
     asked = []
@@ -502,7 +502,7 @@ def test_dispatch_both_sources_compete_for_the_same_cell(monkeypatch):
     from lumen_agent.tools import logo_fetch
 
     monkeypatch.setattr(
-        logo_fetch, "_vendor_rung", lambda site, company: (_vendor_cells("light_lockup"), [])
+        logo_fetch, "_vendor_rung", lambda site, company: (_vendor_cells("light_lockup"), [], [])
     )
     ladder = _resolution({
         "light": _slot(_svg(), lockup="full_lockup", variant="light",
@@ -551,7 +551,7 @@ def test_dispatch_nothing_anywhere_is_fail_closed_needs_review(monkeypatch):
     empty = LadderResolution(status="needs_review",
                              identity={"passed": False, "reason": "no overlap"})
     empty.slots = {"light": None, "dark": None, "mark": None, "wordmark": None}
-    monkeypatch.setattr(logo_fetch, "_vendor_rung", lambda site, company: ({}, ["no record"]))
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", lambda site, company: ({}, [], ["no record"]))
     monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: empty)
     outcome = logo_fetch.fetch_logo_family("acme.com")
     assert outcome.needs_review and outcome.prepared == []
@@ -563,7 +563,7 @@ def test_dispatch_cache_hit_skips_both_rungs_and_force_refresh_overwrites(monkey
     cache = _RecordingCache()
     monkeypatch.setattr(
         logo_fetch, "_vendor_rung",
-        lambda site, company: (_vendor_cells(*logo_fetch.CELL_NAMES), []),
+        lambda site, company: (_vendor_cells(*logo_fetch.CELL_NAMES), [], []),
     )
     monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: _resolution({}))
     first = logo_fetch.fetch_logo_family("acme.com", cache=cache)
@@ -579,7 +579,7 @@ def test_dispatch_cache_hit_skips_both_rungs_and_force_refresh_overwrites(monkey
     # force_refresh bypasses the read and overwrites the entry
     monkeypatch.setattr(
         logo_fetch, "_vendor_rung",
-        lambda site, company: (_vendor_cells("light_lockup"), []),
+        lambda site, company: (_vendor_cells("light_lockup"), [], []),
     )
     ladder = _resolution({})
     monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: ladder)
@@ -591,7 +591,7 @@ def test_dispatch_hesitant_ladder_only_family_is_needs_review_and_not_cached(mon
     from lumen_agent.tools import logo_fetch
 
     cache = _RecordingCache()
-    monkeypatch.setattr(logo_fetch, "_vendor_rung", lambda site, company: ({}, []))
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", lambda site, company: ({}, [], []))
     hesitant = _resolution({"light": _slot(_svg(), lockup="full_lockup", variant="light")})
     hesitant.status = "needs_review"   # e.g. alternate lockups: a human call, not a scoring call
     hesitant.identity = {"passed": True}
@@ -607,7 +607,7 @@ def test_dispatch_a_vendor_cell_makes_a_mixed_family_ok(monkeypatch):
 
     cache = _RecordingCache()
     monkeypatch.setattr(
-        logo_fetch, "_vendor_rung", lambda site, company: (_vendor_cells("light_lockup"), [])
+        logo_fetch, "_vendor_rung", lambda site, company: (_vendor_cells("light_lockup"), [], [])
     )
     hesitant = _resolution({"dark": _slot(_svg("#fff"), lockup="full_lockup", variant="dark")})
     hesitant.status = "needs_review"
@@ -626,7 +626,7 @@ def test_dispatch_keeps_vendor_cells_when_the_ladder_is_blocked(monkeypatch):
     cache = _RecordingCache()
     monkeypatch.setattr(
         logo_fetch, "_vendor_rung",
-        lambda site, company: (_vendor_cells("light_lockup", "light_mark"), []),
+        lambda site, company: (_vendor_cells("light_lockup", "light_mark"), [], []),
     )
 
     def blocked(site, company):
@@ -646,7 +646,7 @@ def test_dispatch_reraises_a_blocked_ladder_when_the_vendor_had_nothing(monkeypa
     from lumen_ingestion.capture.net import CaptureError
 
     cache = _RecordingCache()
-    monkeypatch.setattr(logo_fetch, "_vendor_rung", lambda site, company: ({}, ["no record"]))
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", lambda site, company: ({}, [], ["no record"]))
 
     def blocked(site, company):
         raise CaptureError("LUMI0501", "blocked")
@@ -677,12 +677,14 @@ def test_dispatch_freshcontext_replay(monkeypatch):
                   "width": 310, "height": 176},
     )
     monkeypatch.setattr(
-        logo_fetch, "_vendor_rung", lambda site, company: ({"dark_lockup": vendor}, [])
+        logo_fetch, "_vendor_rung", lambda site, company: ({"dark_lockup": vendor}, [], [])
     )
     ladder = _resolution({
-        "light": _slot(_flat_png(310, 176, DARK_INK), lockup="wordmark", variant="unknown",
+        # The site's own short form is a DIFFERENT file from the vendor's copy of it
+        # (different bytes, hence a different asset id), as it is live.
+        "light": _slot(_flat_png(320, 176, DARK_INK), lockup="wordmark", variant="unknown",
                        url="https://freshcontext.ai/images/logo-mark.png",
-                       content_type="image/png", width=310, height=176),
+                       content_type="image/png", width=320, height=176),
         "dark": _slot(_svg("#ffffff"), lockup="wordmark", variant="dark",
                       url="https://freshcontext.ai/images/wordmark-ondark.svg"),
         "mark": _slot(_flat_png(180, 180, ORANGE_INK), lockup="symbol", variant="unknown",
@@ -705,6 +707,136 @@ def test_dispatch_freshcontext_replay(monkeypatch):
     assert chosen["dark_lockup"].endswith("wordmark-ondark.svg")  # the real on-dark asset
     assert chosen["light_mark"].endswith("apple-icon.png")
     assert any("dark_lockup" in note and "brandfetch" in note for note in outcome.notes)
+
+    # Both beaten assets are real: the vendor's short form (which the agent may still
+    # want where a lockup does not fit) and the site's own header file.
+    alternatives = {p.source_ref["url"]: p for p in outcome.alternatives}
+    vendor_short = alternatives["https://cdn.brandfetch.io/freshcontext.ai/logo.png"]
+    assert vendor_short.cell == "dark_lockup"
+    assert vendor_short.evidence["competed_for"] == "dark_lockup"
+    assert "ink measured" in vendor_short.evidence["reason"]
+    assert vendor_short.label.endswith("logo (alternative: dark_lockup)")
+    header = alternatives["https://freshcontext.ai/images/logo-mark.png"]
+    assert header.cell == "light_lockup"
+    assert header.evidence["competed_for"] == "light_lockup"
+    assert header.evidence["reason"].startswith("lost on completeness, format or size")
+
+
+# --------------------------------------------------------------------------- #
+# the alternatives beside the 2x2
+# --------------------------------------------------------------------------- #
+
+
+def _vendor_with_extras():
+    """A vendor answer holding one cell plus two extras: an icon, and a second
+    `logo` whose bytes are the cell's own (the duplicate a dedup must drop)."""
+    from lumen_ingestion.logo_family import SOURCE_BRANDFETCH, FamilyCell
+
+    lockup = _svg("#101820")
+    cells = {
+        "light_lockup": FamilyCell(
+            cell="light_lockup", body=lockup, content_type="image/svg+xml",
+            source=SOURCE_BRANDFETCH, origin_url="https://cdn.brandfetch.io/a/lockup.svg",
+            evidence={"vendor_type": "logo"},
+        )
+    }
+    extras = [
+        FamilyCell(
+            cell="", body=_png(96), content_type="image/png", source=SOURCE_BRANDFETCH,
+            origin_url="https://cdn.brandfetch.io/a/icon.png",
+            evidence={"vendor_type": "icon", "competed_for": None,
+                      "reason": "vendor type 'icon' is not a family cell"},
+        ),
+        FamilyCell(
+            cell="light_lockup", body=lockup, content_type="image/svg+xml",
+            source=SOURCE_BRANDFETCH, origin_url="https://cdn.brandfetch.io/a/again.svg",
+            evidence={"vendor_type": "logo", "competed_for": "light_lockup",
+                      "reason": "a vendor asset already filled light_lockup"},
+        ),
+    ]
+    return cells, extras
+
+
+def _alternatives_fixture(monkeypatch):
+    """Vendor cell + vendor extras + one ladder candidate that loses the same cell."""
+    from lumen_agent.tools import logo_fetch
+
+    cells, extras = _vendor_with_extras()
+    monkeypatch.setattr(
+        logo_fetch, "_vendor_rung", lambda site, company: (cells, extras, [])
+    )
+    ladder = _resolution({
+        "light": _slot(_svg("#203040"), lockup="wordmark", variant="light",
+                       url="https://acme.com/header.svg"),
+    })
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: ladder)
+
+
+def test_dispatch_pools_arbiter_losers_and_vendor_extras_into_alternatives(monkeypatch):
+    """The cells stay the recommendation; everything else real is offered beside them."""
+    from lumen_agent.tools import logo_fetch
+
+    _alternatives_fixture(monkeypatch)
+    outcome = logo_fetch.fetch_logo_family("acme.com")
+
+    # The 2x2 is untouched by any of this.
+    assert outcome.status == "ok"
+    assert outcome.cells == {"light_lockup": "brandfetch"}
+    assert [p.cell for p in outcome.prepared] == ["light_lockup"]
+
+    # Losers first, then the vendor's extras; the duplicate of the winner is dropped.
+    assert [p.cell for p in outcome.alternatives] == ["light_lockup", "unclassified"]
+    loser, icon = outcome.alternatives
+    assert loser.source == "ladder"
+    assert loser.source_ref["url"] == "https://acme.com/header.svg"
+    assert loser.label == "acme.com logo (alternative: light_lockup)"
+    assert loser.evidence["competed_for"] == "light_lockup"
+    assert loser.evidence["reason"]
+    assert icon.source == "brandfetch"
+    assert icon.label == "acme.com logo (alternative: icon)"
+    assert icon.evidence["competed_for"] is None
+    assert icon.evidence["vendor_type"] == "icon"
+    winner_id = outcome.prepared[0].asset_id
+    assert winner_id not in {p.asset_id for p in outcome.alternatives}
+
+
+def test_web_fetch_logo_registers_the_alternatives_too(tmp_path, monkeypatch):
+    _alternatives_fixture(monkeypatch)
+    tools = _web_tools(tmp_path)
+
+    result = json.loads(tools.fetch_logo("acme.com", "Acme"))
+
+    assert [entry["cell"] for entry in result["logos"]] == ["light_lockup"]
+    assert "failed_alternatives" not in result
+    alternatives = result["alternatives"]
+    assert [entry["competed_for"] for entry in alternatives] == ["light_lockup", None]
+    registry = tools.web_doc["assets"]
+    created_by = {"brandfetch": "brandfetch", "ladder": "logo_ladder"}
+    for entry in alternatives:
+        assert entry["reason"]
+        record = registry[entry["asset_id"]]
+        assert record["provenance"]["created_by"] == created_by[entry["source"]]
+    # Registered like a cell, and never confused with one.
+    assert {e["asset_id"] for e in alternatives}.isdisjoint(
+        {e["asset_id"] for e in result["logos"]}
+    )
+
+
+def test_scene_fetch_logo_registers_the_alternatives_too(tmp_path, monkeypatch):
+    _alternatives_fixture(monkeypatch)
+    tools = _scene_tools(tmp_path, monkeypatch)
+
+    result = json.loads(tools.fetch_logo("acme.com", "Acme"))
+
+    assert [entry["cell"] for entry in result["logos"]] == ["light_lockup"]
+    assert [entry["competed_for"] for entry in result["alternatives"]] == [
+        "light_lockup", None
+    ]
+    upserts = [
+        op for op in tools.core.applied_operations if op.get("kind") == "upsert_asset"
+    ]
+    assert len(upserts) == 3  # one cell + two alternatives
+    assert "use a cell first" in result["next"]
 
 
 # --------------------------------------------------------------------------- #

@@ -31,10 +31,13 @@ completeness: `light_lockup`, `dark_lockup`, `light_mark`, `dark_mark`.
 `light_*` cells are FOR light surfaces, `dark_*` cells FOR dark surfaces;
 `*_lockup` is the complete logo (symbol + name — the first choice wherever
 it fits), `*_mark` is the bare symbol (small placements only); place them
-with `asset(action="place", ...)`. An empty cell means the brand publishes
-nothing for it — that is a real answer; never fill it by recoloring another
-cell. If it answers `needs_review`, nothing was registered: say so and ask
-for the file. Never draw, recolor or approximate someone else's logo.
+with `asset(action="place", ...)`. `alternatives` are the other real assets
+found for them, also registered; use a cell first, and an alternative only
+when the cell does not fit the placement — say so when you do. An empty cell
+means the brand publishes nothing for it — that is a real answer; never fill
+it by recoloring another cell. If it answers `needs_review`, nothing was
+registered: say so and ask for the file. Never draw, recolor or approximate
+someone else's logo.
 \
 THE SHARED-SURFACE CONTRACT (policy for WHAT may change; grammar lives elsewhere):
 1. The request defines the goal. Selected/named elements are the SUBJECT of the

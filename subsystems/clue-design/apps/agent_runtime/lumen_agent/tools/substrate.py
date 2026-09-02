@@ -1355,7 +1355,12 @@ class LumenDesignTools:
         Each cell is the best PROVEN asset from two sources — Brandfetch and a
         scrape of the company's own site — judged by measured ink colour for the
         surface, completeness, format and size. Every asset says which source
-        served it. Results
+        served it. `alternatives` lists every other real asset found for the
+        company (a vendor icon, a short form, a losing candidate), each
+        registered too and each saying why it is not in a cell. Use a cell
+        first; reach for an alternative only when the cell does not fit the
+        placement — for example when the dark lockup turns out to be only a
+        symbol — and say so. Results
         are cached per workspace+company, so asking twice in a project costs
         one fetch — pass `force_refresh=True` only when the user says the logo
         is wrong or outdated, which refetches and replaces the cached family.
@@ -1446,6 +1451,34 @@ class LumenDesignTools:
                 failures=failures,
             )
 
+        # The other real assets found for this company, registered the same way.
+        # A failed alternative is dropped and named; only `placed` decides success.
+        alternatives: list[JsonObject] = []
+        failed_alternatives: list[JsonObject] = []
+        for prepared in outcome.alternatives:
+            ingest = self.core.ingest_asset(**prepared.ingest_kwargs(store_root))
+            if not ingest.get("ok"):
+                detail = (ingest.get("error") or {}).get("message", "unknown error")
+                failed_alternatives.append({"cell": prepared.cell, "error": detail})
+                continue
+            record = (ingest.get("asset") or {}).get("record") or {}
+            operations = [{"kind": "upsert_asset", "asset": record}]
+            try:
+                apply_response = self.core.apply_operations(self.scene, operations)
+            except CoreError as error:
+                failed_alternatives.append({"cell": prepared.cell, "error": error.message})
+                continue
+            self._replace_scene_from_core_response(
+                apply_response, "fetch_logo", operations
+            )
+            alternatives.append({
+                "asset_id": record.get("id") or prepared.asset_id,
+                "source": prepared.source,
+                "competed_for": prepared.evidence.get("competed_for"),
+                "reason": prepared.evidence.get("reason"),
+                **prepared.evidence,
+            })
+
         payload: JsonObject = {
             "status": outcome.status,
             "site": outcome.site,
@@ -1453,17 +1486,22 @@ class LumenDesignTools:
             "lockup_completeness": outcome.lockup_completeness,
             "cache_hit": outcome.cache_hit,
             "logos": placed,
+            "alternatives": alternatives,
             "notes": outcome.notes[:4],
             "next": (
                 "Place one with asset(action='place', asset_id=..., node_id=... or "
                 "slot_id=...). Match the cell to the placement: *_lockup is the full "
                 "logo (first choice on any surface that fits it), *_mark is the bare "
                 "symbol (small placements only). Use dark_* cells on dark surfaces, "
-                "light_* on light ones."
+                "light_* on light ones. `alternatives` are other real assets found "
+                "for this company, also registered: use a cell first; pick an "
+                "alternative only when the cell does not fit the placement, and say so."
             ),
         }
         if failures:
             payload["failed_cells"] = failures
+        if failed_alternatives:
+            payload["failed_alternatives"] = failed_alternatives
         self.record(
             "coordinator",
             "logo_fetched",

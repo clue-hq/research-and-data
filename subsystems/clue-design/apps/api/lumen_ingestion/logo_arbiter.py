@@ -107,15 +107,22 @@ def rank_key(contender: Contender) -> tuple:
 
 def choose_cells(
     candidates: Mapping[str, Sequence[FamilyCell]],
-) -> tuple[dict[str, FamilyCell], list[str]]:
+) -> tuple[dict[str, FamilyCell], list[FamilyCell], list[str]]:
     """Pick one candidate per cell, and say what each winner beat.
 
     Nothing is rejected outright: a candidate whose ink is not proven for the
     surface only ranks BELOW one whose ink is, so it still wins a cell no proven
     asset applied for — recorded as unverified rather than dropped. A cell with
     no candidates stays empty; the family is never completed by recoloring.
+
+    Returns (chosen, alternatives, notes). `alternatives` is every beaten
+    contender, in cell then rank order, each carrying `competed_for`,
+    `lost_to` and a one-line `reason`: a loser is still a real asset for this
+    brand, and only the agent looking at the placement can tell whether the
+    winner actually fits it.
     """
     chosen: dict[str, FamilyCell] = {}
+    alternatives: list[FamilyCell] = []
     notes: list[str] = []
 
     for name in CELL_NAMES:
@@ -137,6 +144,20 @@ def choose_cells(
         chosen[name] = replace(winner.family_cell, cell=name, evidence=evidence)
 
         for loser in beaten:
+            loser_evidence = dict(loser.family_cell.evidence or {})
+            loser_evidence["measured_verdict"] = loser.verdict
+            loser_evidence["competed_for"] = name
+            loser_evidence["lost_to"] = (
+                f"{winner.family_cell.source}:{_tail(winner.family_cell)}"
+            )
+            loser_evidence["reason"] = (
+                f"ink measured {loser.verdict}, not proven for a {theme} surface"
+                if winner.proven and not loser.proven
+                else f"lost on completeness, format or size to {_tail(winner.family_cell)}"
+            )
+            alternatives.append(
+                replace(loser.family_cell, cell=name, evidence=loser_evidence)
+            )
             if loser.family_cell.source != SOURCE_BRANDFETCH:
                 continue
             notes.append(
@@ -150,7 +171,7 @@ def choose_cells(
                 f"measured {winner.verdict}, and nothing proven for a {theme} surface was offered"
             )
 
-    return chosen, notes
+    return chosen, alternatives, notes
 
 
 def _contender(name: str, cell: FamilyCell, theme: str) -> Contender:

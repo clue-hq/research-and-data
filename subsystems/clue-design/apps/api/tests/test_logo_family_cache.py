@@ -53,6 +53,38 @@ def other_workspace_blob_store(app) -> DesignBlobStore:
 # --------------------------------------------------------------------------- #
 
 
+def _alternative():
+    """One vetted asset that is not a cell — a vendor icon — shaped like a cell."""
+    from lumen_agent.tools.logo_fetch import PreparedLogo
+
+    png = bytes.fromhex(
+        "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+        "890000000a49444154789c6360000002000100ffff03000006000557bfabd400"
+        "00000049454e44ae426082"
+    )
+    return PreparedLogo(
+        cell="unclassified",
+        source="brandfetch",
+        asset_id="asset_ing_0badc0ffee000000",
+        label="Acme logo (alternative: icon)",
+        body=png,
+        content_type="image/png",
+        provenance={
+            "created_by": "brandfetch",
+            "source_label": "brandfetch",
+            "confidence": 0.9,
+        },
+        source_ref={"kind": "website", "url": "https://a/icon.png", "captured_at": "t"},
+        evidence={
+            "cell": "unclassified",
+            "source": "brandfetch",
+            "vendor_type": "icon",
+            "competed_for": None,
+            "reason": "vendor type 'icon' is not a family cell",
+        },
+    )
+
+
 def _outcome(site="https://acme.com/"):
     from lumen_agent.tools.logo_fetch import LogoFetchOutcome, PreparedLogo
 
@@ -81,6 +113,7 @@ def _outcome(site="https://acme.com/"):
         company="Acme",
         prepared=[prepared],
         cells={"light_lockup": "brandfetch"},
+        alternatives=[_alternative()],
     )
 
 
@@ -99,6 +132,12 @@ def test_put_then_get_round_trips_the_family(design_blob_store: DesignBlobStore)
     assert got.cells == {"light_lockup": "brandfetch"}
     assert got.prepared[0].body.startswith(b"<svg")
     assert got.prepared[0].provenance["created_by"] == "brandfetch"
+    # The alternatives are part of the family: they round-trip with it.
+    assert [a.cell for a in got.alternatives] == ["unclassified"]
+    alternative = got.alternatives[0]
+    assert alternative.body == _alternative().body
+    assert alternative.label == "Acme logo (alternative: icon)"
+    assert alternative.evidence["reason"].startswith("vendor type 'icon'")
 
 
 def test_get_unknown_domain_is_none_and_put_converges(
@@ -149,6 +188,30 @@ def test_a_cell_whose_bytes_left_custody_makes_the_whole_family_a_miss(
     key = design_storage_key(os.environ["LUMEN_DEV_WORKSPACE_ID"], digest)
     Path(app.state.storage._root).joinpath(*key.split("/")).unlink()
     assert design_blob_store.exists(digest), "the row still claims custody"
+
+    assert cache.get("https://acme.com/") is None
+
+
+def test_an_alternative_whose_bytes_left_custody_makes_the_whole_family_a_miss(
+    design_blob_store: DesignBlobStore, app
+) -> None:
+    """Same rule as a cell: half a family is not the family the dispatch asked for, and an
+    alternative the agent cannot place is not a hit either."""
+    import hashlib
+    import os
+
+    from clue_design.storage import design_storage_key
+
+    from lumen_api.agent_logo_family_cache import DurableLogoFamilyCache
+
+    cache = DurableLogoFamilyCache(blobs=design_blob_store)
+    outcome = _outcome()
+    cache.put("https://acme.com/", outcome)
+    assert cache.get("https://acme.com/") is not None
+
+    digest = hashlib.sha256(outcome.alternatives[0].body).hexdigest()
+    key = design_storage_key(os.environ["LUMEN_DEV_WORKSPACE_ID"], digest)
+    Path(app.state.storage._root).joinpath(*key.split("/")).unlink()
 
     assert cache.get("https://acme.com/") is None
 

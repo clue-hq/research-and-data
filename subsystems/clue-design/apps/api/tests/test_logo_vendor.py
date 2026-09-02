@@ -62,7 +62,7 @@ BRAND_PAYLOAD = {
                  "width": 300, "height": 300, "size": 9000, "background": "transparent"},
             ],
         },
-        {  # icon must be ignored entirely (founder ruling i)
+        {  # icon fills no cell; it is kept as an extra (founder decision 2026-09-02)
             "theme": "dark",
             "type": "icon",
             "tags": [],
@@ -153,14 +153,15 @@ def _mini_png(rgb=(16, 24, 32), size=64) -> bytes:
     return buffer.getvalue()
 
 
-def test_map_vendor_assets_inverts_theme_and_skips_icon_and_photographic():
+def test_map_vendor_assets_inverts_theme_keeps_the_icon_as_an_extra_and_skips_photographic():
     from lumen_ingestion.logo_vendor import map_vendor_assets_to_cells, parse_brand_payload
 
     fetched = {
         "https://asset.brandfetch.io/a/lockup-dark.svg": (_mini_svg("#101820"), "image/svg+xml"),
         "https://asset.brandfetch.io/a/symbol-light.png": (_mini_png(), "image/png"),
+        "https://asset.brandfetch.io/a/icon.png": (_mini_png(), "image/png"),
     }
-    cells, notes = map_vendor_assets_to_cells(
+    cells, extras, notes = map_vendor_assets_to_cells(
         parse_brand_payload(BRAND_PAYLOAD), download=lambda url: fetched.get(url)
     )
     # vendor theme=dark logo -> OUR light_lockup; vendor theme=light symbol -> OUR dark_mark
@@ -168,8 +169,30 @@ def test_map_vendor_assets_inverts_theme_and_skips_icon_and_photographic():
     assert cells["light_lockup"].source == "brandfetch"
     assert cells["light_lockup"].content_type == "image/svg+xml"
     assert cells["dark_mark"].origin_url.endswith("symbol-light.png")
-    # icon and photographic never became cells; photographic skip is said out loud
+    # The icon fills no cell, but it is a real asset the agent may judge: kept as an extra.
+    assert [e.evidence["vendor_type"] for e in extras] == ["icon"]
+    assert extras[0].cell == ""
+    assert extras[0].evidence["competed_for"] is None
+    assert extras[0].evidence["reason"] == "vendor type 'icon' is not a family cell"
+    assert extras[0].evidence["theme_basis"]
+    assert extras[0].body and extras[0].source == "brandfetch"
+    # photographic is never a logo, and the skip is said out loud
     assert any("photographic" in n for n in notes)
+
+
+def test_map_vendor_assets_gates_an_extra_on_paint_like_a_cell():
+    """An extra is a REAL asset or it is nothing: an icon that cannot paint is refused."""
+    from lumen_ingestion.logo_vendor import VendorAsset, map_vendor_assets_to_cells
+
+    sprite = b'<svg xmlns="http://www.w3.org/2000/svg"><use href="s.svg#x"/></svg>'
+    icon = VendorAsset(theme="dark", type="icon", tags=[], formats=[
+        {"src": "sprite", "format": "svg", "width": 0, "height": 0, "size": 1,
+         "background": None}])
+    cells, extras, notes = map_vendor_assets_to_cells(
+        [icon], download=lambda url: (sprite, "image/svg+xml")
+    )
+    assert cells == {} and extras == []
+    assert any("cannot paint" in n or "renderable" in n for n in notes)
 
 
 def test_map_vendor_assets_null_theme_is_classified_from_the_bytes():
@@ -179,7 +202,7 @@ def test_map_vendor_assets_null_theme_is_classified_from_the_bytes():
         {"src": "u1", "format": "svg", "width": 120, "height": 40, "size": 1,
          "background": "transparent"},
     ])
-    cells, _ = map_vendor_assets_to_cells(
+    cells, _, _ = map_vendor_assets_to_cells(
         [dark_ink], download=lambda url: (_mini_svg("#101820"), "image/svg+xml")
     )
     # near-black ink -> light_variant verdict -> made for LIGHT backgrounds
@@ -200,15 +223,15 @@ def test_map_vendor_assets_refuses_unrenderable_svg_and_failed_downloads():
              "background": None}]),
     ]
     fetched = {"sprite": (sprite, "image/svg+xml"), "gone": None}
-    cells, notes = map_vendor_assets_to_cells(
+    cells, extras, notes = map_vendor_assets_to_cells(
         assets, download=lambda url: fetched.get(url)
     )
-    assert cells == {}
+    assert cells == {} and extras == []
     assert any("cannot paint" in n or "renderable" in n for n in notes)
     assert any("download failed" in n for n in notes)
 
 
-def test_map_vendor_assets_first_asset_wins_per_cell():
+def test_map_vendor_assets_first_asset_wins_per_cell_and_the_second_is_an_extra():
     from lumen_ingestion.logo_vendor import VendorAsset, map_vendor_assets_to_cells
 
     first = VendorAsset(theme="dark", type="logo", tags=[], formats=[
@@ -217,10 +240,41 @@ def test_map_vendor_assets_first_asset_wins_per_cell():
     second = VendorAsset(theme="dark", type="logo", tags=[], formats=[
         {"src": "two", "format": "svg", "width": 120, "height": 40, "size": 1,
          "background": None}])
-    cells, _ = map_vendor_assets_to_cells(
-        [first, second], download=lambda url: (_mini_svg(), "image/svg+xml")
-    )
+
+    def download(url):
+        return _mini_svg("#101820" if url == "one" else "#203040"), "image/svg+xml"
+
+    cells, extras, notes = map_vendor_assets_to_cells([first, second], download=download)
     assert cells["light_lockup"].origin_url == "one"
+    # The loser is downloaded, gated and kept: it is another real asset for this brand.
+    assert [e.origin_url for e in extras] == ["two"]
+    assert extras[0].cell == "light_lockup"
+    assert extras[0].evidence["competed_for"] == "light_lockup"
+    assert extras[0].evidence["reason"] == "a vendor asset already filled light_lockup"
+    assert extras[0].body == _mini_svg("#203040")
+    assert any("already filled" in n for n in notes)
+
+
+def test_map_vendor_assets_refuses_a_second_asset_that_cannot_paint():
+    """The occupancy loser passes the same paint gate as a cell, so an unpaintable
+    one is refused rather than offered."""
+    from lumen_ingestion.logo_vendor import VendorAsset, map_vendor_assets_to_cells
+
+    sprite = b'<svg xmlns="http://www.w3.org/2000/svg"><use href="s.svg#x"/></svg>'
+    first = VendorAsset(theme="dark", type="logo", tags=[], formats=[
+        {"src": "one", "format": "svg", "width": 120, "height": 40, "size": 1,
+         "background": None}])
+    second = VendorAsset(theme="dark", type="logo", tags=[], formats=[
+        {"src": "two", "format": "svg", "width": 120, "height": 40, "size": 1,
+         "background": None}])
+
+    def download(url):
+        if url == "one":
+            return _mini_svg(), "image/svg+xml"
+        return sprite, "image/svg+xml"
+
+    cells, extras, _ = map_vendor_assets_to_cells([first, second], download=download)
+    assert list(cells) == ["light_lockup"] and extras == []
 
 
 def test_map_vendor_assets_refuses_undecodable_raster():
@@ -229,10 +283,10 @@ def test_map_vendor_assets_refuses_undecodable_raster():
     garbage = VendorAsset(theme="dark", type="symbol", tags=[], formats=[
         {"src": "g", "format": "png", "width": 300, "height": 300, "size": 1,
          "background": None}])
-    cells, notes = map_vendor_assets_to_cells(
+    cells, extras, notes = map_vendor_assets_to_cells(
         [garbage], download=lambda url: (b"not-a-png-at-all", "image/png")
     )
-    assert cells == {}
+    assert cells == {} and extras == []
     assert any("cannot be decoded" in n for n in notes)
 
 
@@ -258,16 +312,18 @@ def test_fetch_vendor_family_happy_path_builds_cells():
         if request.url.path.endswith("lockup-dark.svg"):
             return httpx.Response(200, content=_mini_svg("#101820"),
                                   headers={"content-type": "image/svg+xml"})
-        if request.url.path.endswith("symbol-light.png"):
+        if request.url.path.endswith(("symbol-light.png", "icon.png")):
             return httpx.Response(200, content=_mini_png(),
                                   headers={"content-type": "image/png"})
         return httpx.Response(404)
 
     with _vendor_transport(handler) as client:
-        cells, notes = fetch_vendor_family(
+        cells, extras, notes = fetch_vendor_family(
             "https://www.acme.com/pricing", api_key="bf_test_key", client=client
         )
     assert set(cells) == {"light_lockup", "dark_mark"}
+    # The driver carries the extras out too, so the tool can offer them.
+    assert [e.evidence["vendor_type"] for e in extras] == ["icon"]
 
 
 def test_fetch_vendor_family_404_is_an_answer_and_429_is_typed():
@@ -277,8 +333,8 @@ def test_fetch_vendor_family_404_is_an_answer_and_429_is_typed():
     from lumen_ingestion.logo_vendor import VendorLookupFailed, fetch_vendor_family
 
     with _vendor_transport(lambda r: httpx.Response(404)) as client:
-        cells, notes = fetch_vendor_family("acme.com", api_key="k", client=client)
-    assert cells == {} and any("no record" in n for n in notes)
+        cells, extras, notes = fetch_vendor_family("acme.com", api_key="k", client=client)
+    assert cells == {} and extras == [] and any("no record" in n for n in notes)
 
     with _vendor_transport(lambda r: httpx.Response(429)) as client:
         with _pytest.raises(VendorLookupFailed) as err:
@@ -317,8 +373,8 @@ def test_fetch_vendor_family_never_fetches_off_allowlist_hosts():
         return httpx.Response(200, content=_mini_svg(), headers={"content-type": "image/svg+xml"})
 
     with _vendor_transport(handler) as client:
-        cells, notes = fetch_vendor_family("acme.com", api_key="k", client=client)
-    assert cells == {}
+        cells, extras, notes = fetch_vendor_family("acme.com", api_key="k", client=client)
+    assert cells == {} and extras == []
     assert "evil.example" not in seen
     assert any("allowlist" in n for n in notes)
 

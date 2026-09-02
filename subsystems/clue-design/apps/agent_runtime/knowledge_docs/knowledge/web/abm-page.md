@@ -57,12 +57,13 @@ from cloned chrome. Pinned clones keep their own ids.
    published assets — one per family cell (`light_lockup`, `dark_lockup`,
    `light_mark`, `dark_mark`: `light_*` for light surfaces, `dark_*` for dark
    surfaces, `*_lockup` the complete logo, `*_mark` the bare symbol). An empty
-   cell means the brand publishes nothing for it. If it answers `needs_review`, it
-   could not confirm the asset belongs to that company — that means ASK, not
-   guess: use the name alone and tell the user you need the file. AN EMPTY LOGO
-   SLOT IS CORRECT: a header with the seller's mark alone is a clean header, not
-   a broken one. NO nav links. Exactly one CTA, the conversion CTA. On phone:
-   both marks + CTA.
+   cell means the brand publishes nothing for it. `alternatives` are other real
+   assets found for them; a cell first, an alternative only when the cell does
+   not fit. If it answers `needs_review`, it could not confirm the asset belongs
+   to that company — that means ASK, not guess: use the name alone and tell the
+   user you need the file. AN EMPTY LOGO SLOT IS CORRECT: a header with the
+   seller's mark alone is a clean header, not a broken one. NO nav links.
+   Exactly one CTA, the conversion CTA. On phone: both marks + CTA.
 2. **personalized hero** — h1 names the ACCOUNT, not the market ("Acme's
    clinical notes, written for you" — never the generic tagline), one
    paragraph mapping the seller's value to the account's situation as given

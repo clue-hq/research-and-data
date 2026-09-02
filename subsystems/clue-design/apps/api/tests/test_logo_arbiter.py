@@ -104,7 +104,7 @@ def test_a_dark_cell_takes_the_ladders_white_svg_over_the_vendors_dark_png():
     ladder = _ladder("dark_lockup", _svg("#ffffff"), "image/svg+xml",
                      url="https://freshcontext.ai/images/wordmark-ondark.svg")
 
-    cells, notes = choose_cells({"dark_lockup": [vendor, ladder]})
+    cells, alternatives, notes = choose_cells({"dark_lockup": [vendor, ladder]})
 
     chosen = cells["dark_lockup"]
     assert chosen.source == "ladder"
@@ -114,6 +114,18 @@ def test_a_dark_cell_takes_the_ladders_white_svg_over_the_vendors_dark_png():
     assert chosen.evidence["arbitration"]["beat"] == ["brandfetch:logo.png"]
     assert any("dark_lockup" in note and "brandfetch" in note for note in notes)
 
+    # The beaten asset is real and stays available: the agent judges the fit.
+    assert len(alternatives) == 1
+    loser = alternatives[0]
+    assert loser.source == "brandfetch"
+    assert loser.cell == "dark_lockup"
+    assert loser.evidence["competed_for"] == "dark_lockup"
+    assert loser.evidence["lost_to"] == "ladder:wordmark-ondark.svg"
+    assert loser.evidence["measured_verdict"] == "light_variant"
+    assert loser.evidence["reason"] == (
+        "ink measured light_variant, not proven for a dark surface"
+    )
+
 
 def test_an_unproven_candidate_wins_only_when_it_is_the_only_one():
     from lumen_ingestion.logo_arbiter import choose_cells
@@ -121,8 +133,9 @@ def test_an_unproven_candidate_wins_only_when_it_is_the_only_one():
     vendor = _vendor("dark_lockup", _png(310, 176, DARK_INK), "image/png",
                      url="https://cdn.brandfetch.io/fc/logo.png", width=310, height=176)
 
-    cells, notes = choose_cells({"dark_lockup": [vendor]})
+    cells, alternatives, notes = choose_cells({"dark_lockup": [vendor]})
 
+    assert alternatives == []  # one candidate beat nothing
     chosen = cells["dark_lockup"]
     assert chosen.source == "brandfetch"
     assert chosen.evidence["arbitration"]["proven"] is False
@@ -145,9 +158,17 @@ def test_a_light_cell_takes_the_bigger_of_two_proven_wordmarks():
     complete = _ladder("light_lockup", _png(1162, 571, DARK_INK), "image/png",
                        url="https://freshcontext.ai/wordmark.png", width=1162, height=571)
 
-    cells, _ = choose_cells({"light_lockup": [short, complete]})
+    cells, alternatives, _ = choose_cells({"light_lockup": [short, complete]})
 
     assert cells["light_lockup"].origin_url.endswith("wordmark.png")
+    # The short form lost on size, not on ink, and the reason says which.
+    assert [a.origin_url for a in alternatives] == [
+        "https://freshcontext.ai/logo-mark.png"
+    ]
+    assert alternatives[0].evidence["reason"] == (
+        "lost on completeness, format or size to wordmark.png"
+    )
+    assert alternatives[0].evidence["lost_to"] == "ladder:wordmark.png"
 
 
 def test_an_svg_beats_a_larger_raster():
@@ -158,7 +179,7 @@ def test_an_svg_beats_a_larger_raster():
     vector = _ladder("light_lockup", _svg(), "image/svg+xml",
                      url="https://acme.com/wordmark.svg")
 
-    cells, _ = choose_cells({"light_lockup": [raster, vector]})
+    cells, _, _ = choose_cells({"light_lockup": [raster, vector]})
 
     assert cells["light_lockup"].origin_url.endswith("wordmark.svg")
 
@@ -171,7 +192,7 @@ def test_the_vendor_wins_an_exact_tie():
     ladder = _ladder("light_lockup", _svg(), "image/svg+xml",
                      url="https://acme.com/lockup.svg")
 
-    cells, _ = choose_cells({"light_lockup": [ladder, vendor]})
+    cells, _, _ = choose_cells({"light_lockup": [ladder, vendor]})
 
     assert cells["light_lockup"].source == "brandfetch"
 
@@ -188,15 +209,15 @@ def test_a_proven_vendor_asset_wins_a_dark_cell_on_size_through_the_normal_key()
     bigger = _ladder("dark_lockup", _png(900, 300, WHITE_INK), "image/png",
                      url="https://acme.com/big-white.png", width=900, height=300)
 
-    cells, _ = choose_cells({"dark_lockup": [vendor, smaller]})
+    cells, _, _ = choose_cells({"dark_lockup": [vendor, smaller]})
     assert cells["dark_lockup"].source == "brandfetch"
 
-    cells, _ = choose_cells({"dark_lockup": [vendor, bigger]})
+    cells, _, _ = choose_cells({"dark_lockup": [vendor, bigger]})
     assert cells["dark_lockup"].origin_url.endswith("big-white.png")
 
 
 def test_empty_candidate_lists_yield_no_cell():
     from lumen_ingestion.logo_arbiter import choose_cells
 
-    assert choose_cells({}) == ({}, [])
-    assert choose_cells({"light_lockup": [], "dark_mark": []}) == ({}, [])
+    assert choose_cells({}) == ({}, [], [])
+    assert choose_cells({"light_lockup": [], "dark_mark": []}) == ({}, [], [])

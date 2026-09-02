@@ -511,12 +511,15 @@ Account authoring rules (binding):
   `dark_*` cells FOR dark surfaces; `*_lockup` is the complete logo
   (symbol + name — the first choice wherever it fits), `*_mark` is the
   bare symbol (small placements only). The assets are already registered;
-  place them like any other asset. An empty cell means the brand
-  publishes nothing for it — that is a real answer; never fill it by
-  recoloring another cell. Results are cached for this company; pass
-  `force_refresh=True` only when the user says the logo is wrong or
-  outdated. If it comes back `needs_review`, say so and ask for the
-  file. Never draw, recolour, letter or approximate someone's logo.
+  place them like any other asset. `alternatives` are the other real
+  assets found for them, also registered; use a cell first, and an
+  alternative only when the cell does not fit the placement — say so
+  when you do. An empty cell means the brand publishes nothing for it —
+  that is a real answer; never fill it by recoloring another cell.
+  Results are cached for this company; pass `force_refresh=True` only
+  when the user says the logo is wrong or outdated. If it comes back
+  `needs_review`, say so and ask for the file. Never draw, recolour,
+  letter or approximate someone's logo.
 """
         if account_card
         else ""

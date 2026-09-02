@@ -11,6 +11,16 @@ and the in-house LADDER both propose candidates for every cell, and
 `logo_arbiter.choose_cells` picks the best one per cell -- measured ink for the
 surface first, because a vendor theme label is a hint, never proof.
 
+The four cells are the RECOMMENDATION, and every other real asset found for the
+company rides along as an ALTERNATIVE (founder decision 2026-09-02). The arbiter
+can prove ink and identity; it cannot know whether a vendor "logo" is complete
+or whether a short form fits the placement in front of the agent. So the beaten
+candidates from both sources and the vendor's `icon`/`other` types are prepared
+and registered too, each saying what it competed for and why it is not in a
+cell. Three constraints: only VETTED assets travel (arbitration losers and the
+vendor's unclassified types -- never the ladder's raw ranked list), the cells
+stay the default and the prompts say so, and the notes stay short and factual.
+
 Static tier only on the ladder rung. A Playwright launch costs about thirty
 seconds, which is more than a turn can spend, so a page that renders its header
 in JavaScript comes back honestly empty rather than slowly right.
@@ -79,6 +89,10 @@ class LogoFetchOutcome:
     company: Optional[str]
     prepared: List[PreparedLogo] = field(default_factory=list)
     cells: Dict[str, str] = field(default_factory=dict)  # cell -> source
+    #: Every OTHER real asset found for this company, registered like the cells
+    #: and each saying why it is not one. Never a cell, never a fallback the
+    #: engine picks: the agent chooses one only when a cell does not fit.
+    alternatives: List[PreparedLogo] = field(default_factory=list)
     identity: JsonObject = field(default_factory=dict)
     lockup_completeness: str = "unknown"
     notes: List[str] = field(default_factory=list)
@@ -135,10 +149,11 @@ def fetch_logo_family(
 
     cells_by_source: dict = {name: [] for name in CELL_NAMES}
     vendor_cells: dict = {}
+    vendor_extras: list = []
     notes: List[str] = []
     vendor_notes: List[str] = []
     try:
-        vendor_cells, vendor_notes = _vendor_rung(site, company_name)
+        vendor_cells, vendor_extras, vendor_notes = _vendor_rung(site, company_name)
     except VendorCredentialsMissing:
         notes.append("vendor rung disabled: no BRANDFETCH_API_KEY configured")
     except VendorLookupFailed as error:
@@ -166,16 +181,57 @@ def fetch_logo_family(
         for name, found in ladder_candidates(resolution).items():
             cells_by_source[name].extend(found)
 
-    cells, arbitration_notes = choose_cells(cells_by_source)
+    cells, losers, arbitration_notes = choose_cells(cells_by_source)
     notes.extend(arbitration_notes)
 
-    outcome = _assemble(cells, resolution, site, company_name, notes, vendor_notes)
+    # The vetted pool: beaten candidates from either source, then the vendor's
+    # icon/other types. Never the ladder's raw ranked list.
+    alternatives_cells = losers + vendor_extras
+
+    outcome = _assemble(
+        cells, alternatives_cells, resolution, site, company_name, notes, vendor_notes
+    )
     if cache is not None and outcome.status == "ok":
         cache.put(site, outcome)
     return outcome
 
 
-def _assemble(cells, resolution, site, company_name, notes, vendor_notes) -> LogoFetchOutcome:
+def _prepare(name, cell, resolution, label_base, *, label=None) -> PreparedLogo:
+    """One `FamilyCell` shaped for `core.ingest_asset`. `name` is what the asset
+    calls itself — a cell name for a cell, the cell it competed for (or
+    "unclassified") for an alternative."""
+    import hashlib
+
+    # Content-addressed, so fetching the same brand twice in a run
+    # re-registers the same id instead of duplicating the asset.
+    digest = hashlib.sha256(cell.body).hexdigest()
+    created_by = "brandfetch" if cell.source == "brandfetch" else "logo_ladder"
+    return PreparedLogo(
+        cell=name,
+        source=cell.source,
+        asset_id=f"asset_ing_{digest[:16]}",
+        label=label or f"{label_base} logo ({name})",
+        body=cell.body,
+        content_type=cell.content_type,
+        provenance={
+            "created_by": created_by,
+            "source_label": "brandfetch" if created_by == "brandfetch" else "website",
+            "confidence": (resolution.confidence if resolution else 0.9),
+        },
+        source_ref={
+            # The engine's AssetSource has no vendor variant; a vendor-served file is
+            # a URL capture like any other, and `provenance` carries who served it.
+            "kind": "website",
+            "url": cell.origin_url,
+            "captured_at": _now(),
+        },
+        evidence={"cell": name, "source": cell.source, **cell.evidence},
+    )
+
+
+def _assemble(
+    cells, alternatives_cells, resolution, site, company_name, notes, vendor_notes
+) -> LogoFetchOutcome:
     from lumen_ingestion import logo_ladder
     from lumen_ingestion.logo_family import CELL_NAMES as _CELLS
 
@@ -187,35 +243,28 @@ def _assemble(cells, resolution, site, company_name, notes, vendor_notes) -> Log
         cell = cells.get(name)
         if cell is None or not cell.body:
             continue
-        import hashlib
+        prepared.append(_prepare(name, cell, resolution, label_base))
 
-        # Content-addressed, so fetching the same brand twice in a run
-        # re-registers the same id instead of duplicating the asset.
-        digest = hashlib.sha256(cell.body).hexdigest()
-        created_by = "brandfetch" if cell.source == "brandfetch" else "logo_ladder"
-        prepared.append(
-            PreparedLogo(
-                cell=name,
-                source=cell.source,
-                asset_id=f"asset_ing_{digest[:16]}",
-                label=f"{label_base} logo ({name})",
-                body=cell.body,
-                content_type=cell.content_type,
-                provenance={
-                    "created_by": created_by,
-                    "source_label": "brandfetch" if created_by == "brandfetch" else "website",
-                    "confidence": (resolution.confidence if resolution else 0.9),
-                },
-                source_ref={
-                    # The engine's AssetSource has no vendor variant; a vendor-served file is
-                    # a URL capture like any other, and `provenance` carries who served it.
-                    "kind": "website",
-                    "url": cell.origin_url,
-                    "captured_at": _now(),
-                },
-                evidence={"cell": name, "source": cell.source, **cell.evidence},
-            )
+    # The alternatives ride beside the cells; they never change what a cell is,
+    # what the status says, or whether the family needs review.
+    alternatives: List[PreparedLogo] = []
+    seen = {p.asset_id for p in prepared}
+    for cell in alternatives_cells or []:
+        if not cell.body:
+            continue
+        competed_for = cell.evidence.get("competed_for")
+        tag = competed_for or cell.evidence.get("vendor_type") or "other"
+        candidate = _prepare(
+            competed_for or "unclassified",
+            cell,
+            resolution,
+            label_base,
+            label=f"{label_base} logo (alternative: {tag})",
         )
+        if candidate.asset_id in seen:
+            continue  # same bytes as a cell or an earlier alternative: one asset
+        seen.add(candidate.asset_id)
+        alternatives.append(candidate)
 
     all_notes = list(notes)
     if resolution is not None:
@@ -242,6 +291,7 @@ def _assemble(cells, resolution, site, company_name, notes, vendor_notes) -> Log
         company=company_name,
         prepared=prepared,
         cells={p.cell: p.source for p in prepared},
+        alternatives=alternatives,
         identity=(
             {
                 "passed": resolution.identity.get("passed"),
