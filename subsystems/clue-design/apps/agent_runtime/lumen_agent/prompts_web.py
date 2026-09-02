@@ -372,14 +372,15 @@ OPERATING SHAPE
      the account derive substitutes per account, so one document serves every
      account and stays re-derivable. Never write one account's name or logo into
      the markup.
-   - THE TARGET'S LOGO comes only from the ladder — the `{{{{account.logo}}}}`
-     marker, or `fetch_logo` binding their real published asset. AN EMPTY LOGO
-     SLOT IS CORRECT. Never redraw, letter, recolour or approximate a company's
-     mark, and never accept a placeholder in its place. A fetched mark that is
-     to serve a NAMED account is saved onto them with `bind_account_logo` —
-     once, per account, deliberately — after which `{{{{account.logo}}}}` resolves
-     for them on every page derived from any template. Without that step the
-     mark dies with the turn.
+   - THE TARGET'S LOGO comes only from their real published asset — the
+     `{{{{account.logo}}}}` marker, or `fetch_logo` (one asset per family cell:
+     `light_lockup`, `dark_lockup`, `light_mark`, `dark_mark`) binding it.
+     AN EMPTY LOGO SLOT IS CORRECT. Never redraw, letter, recolour or
+     approximate a company's mark, and never accept a placeholder in its
+     place. A fetched mark that is to serve a NAMED account is saved onto
+     them with `bind_account_logo` — once, per account, deliberately — after
+     which `{{{{account.logo}}}}` resolves for them on every page derived from
+     any template. Without that step the mark dies with the turn.
    - PUBLISH THE DERIVED PAGE, NEVER THE TEMPLATE. The assembled page shows its
      `{{{{account.…}}}}` markers to anyone who opens it, so it is derived per
      account first and the derived pages are what publish. The publish refuses
@@ -494,12 +495,17 @@ Account authoring rules (binding):
   account appears as name + logo only. Facts about them come from the card
   or the brief — never inferred.
 - If the account card carries no logo asset, get their real one with
-  `fetch_logo("theirdomain.com")`. It returns asset ids per slot — `light`,
-  `dark` (reversed, for dark surfaces), `mark`, `wordmark` — already
-  registered, so you place them like any other asset. A missing slot means
-  the brand publishes nothing for it. If it answers `needs_review`, nothing
-  was registered: say so in chat and ask for the file. Never draw, recolor
-  or approximate someone's logo.
+  `fetch_logo("theirdomain.com")`. It returns one asset per family CELL —
+  a 2×2 of theme × completeness: `light_lockup`, `dark_lockup`,
+  `light_mark`, `dark_mark`. `light_*` cells are FOR light surfaces,
+  `dark_*` cells FOR dark surfaces; `*_lockup` is the complete logo
+  (symbol + name — the first choice wherever it fits), `*_mark` is the
+  bare symbol (small placements only). An empty cell means the brand
+  publishes nothing for it — that is a real answer; never fill it by
+  recoloring another cell. Results are cached for this company; pass
+  `force_refresh=True` only when the user says the logo is wrong or
+  outdated. If it comes back `needs_review`, say so and ask for the
+  file. Never draw, recolour, letter or approximate someone's logo.
 """
         if account_card
         else ""
@@ -677,10 +683,11 @@ WORKING RULES
   MARKERS — `{{{{account.name}}}}`, `{{{{account.domain}}}}`, `{{{{account.logo}}}}` — which
   the account derive substitutes per account ("Clinical notes, written for
   {{{{account.name}}}}"). Never write one account's name or logo into the markup.
-  THE TARGET'S LOGO comes only from the ladder: the `{{{{account.logo}}}}` marker,
-  or `fetch_logo` for their real published asset. AN EMPTY LOGO SLOT IS CORRECT
-  — never redraw, letter, recolour or approximate a mark, and never put a
-  placeholder where one would go. When a fetched mark belongs to a NAMED target
+  THE TARGET'S LOGO comes only from their real published asset: the
+  `{{{{account.logo}}}}` marker, or `fetch_logo` (one asset per family cell:
+  `light_lockup`, `dark_lockup`, `light_mark`, `dark_mark`) binding it.
+  AN EMPTY LOGO SLOT IS CORRECT — never redraw, letter, recolour or
+  approximate a mark, and never put a placeholder where one would go. When a fetched mark belongs to a NAMED target
   account, `bind_account_logo(account_id, asset_id)` saves it onto them, and
   from then on `{{{{account.logo}}}}` resolves for them on every page derived from
   any template. Placing it dresses this page; binding it makes it theirs. If
