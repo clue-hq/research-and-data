@@ -1,7 +1,7 @@
 # Logo sourcing — founder decision record (2026-08-31)
 
-**Status: DECIDED, not yet built. Pickup happens on its own branch — this branch
-(`integration/design-improvement`) only carries the record.** Scope was deliberately ruled
+**Status: BUILT — see `docs/superpowers/plans/2026-09-02-vendor-first-logo-family.md` and
+`_memory/2026-09-02-logo-vendor-build.md` (2026-09-02).** Scope was deliberately ruled
 lean by the founder; do not expand it at implementation time.
 
 ## Premise — how this discussion arose
