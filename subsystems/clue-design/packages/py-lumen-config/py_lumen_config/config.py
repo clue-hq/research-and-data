@@ -117,6 +117,14 @@ class Settings(BaseSettings):
     # A typo must fail at startup rather than silently seat the other page, so it is
     # enum-validated below.
     lumen_degraded_repair_selection: str = "keep_flagged"
+    # Whether the two automated QA renderers — the page thumbnail and the clone-review walk —
+    # present a normal Chrome User-Agent instead of the headless one. Brandfetch's logo CDN
+    # refuses any User-Agent containing `HeadlessChrome`, so a hotlinked decorative logo renders
+    # EMPTY there and the review cannot judge the page as a visitor sees it. FOUNDER DECISION
+    # (2026-09-02, plan D11): default ON; `0` restores the headless User-Agent, which is the
+    # switch to reach for if the vendor objects. It reaches those two renderers only — never the
+    # editor, never publish, never fragment isolation. See `lumen_api/qa_render_ua.py`.
+    lumen_qa_render_ua_override: bool = True
 
     # --- Image generation (image_provider) ---
     # Blank base_url/api_key → /assets/generate returns a clean 503.

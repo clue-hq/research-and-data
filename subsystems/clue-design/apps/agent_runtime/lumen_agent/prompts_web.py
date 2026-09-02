@@ -531,8 +531,9 @@ Account authoring rules (binding):
   LIGHT surface use `theme/dark` (dark-colored art); on a DARK surface use
   `theme/light`. Use `type/symbol` where only the bare mark fits.
   `fallback/transparent` makes a missing logo render as nothing — never a
-  broken image. Automated renders (the page thumbnail, the reviewer's
-  render) may show a hotlinked logo as empty;
+  broken image. If an automated render (the page thumbnail, the reviewer's
+  render) shows a hotlinked logo as empty, that is the CDN refusing a
+  headless browser, not a broken page;
   it renders in the editor preview and on the published page. This is ONLY
   for ambient, decorative logos: the account being personalized, and
   anything bound with `bind_account_logo` or resolved by
