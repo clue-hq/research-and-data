@@ -1,6 +1,10 @@
 """Option A (2026-09-02), end to end: a WOFF2 font that enters through the two production doors
 — the website-ingestion pipeline (`_RecordingCore` → durable custody → registry) and
 `POST /assets` — is stored, recorded, and served as TTF.
+
+The pipeline leg drives the fleet WORKER ENTRY (`execute_ingestion_job`) in process rather than
+offering the job over the route, because any live design API on the same DSN would otherwise
+claim the offered `design_job` and run it without this module's stubs.
 """
 
 from __future__ import annotations
@@ -9,12 +13,16 @@ import base64
 import json
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from fontTools.ttLib import TTFont
 
-from conftest import make_client, wait_for_ingestion_job
+from clue_design.envelopes import DesignIngestionEnvelope
+
+from conftest import make_client
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 
@@ -70,8 +78,18 @@ def assert_stored_as_ttf(client: TestClient, asset_id: str, inter_ttf: bytes) ->
 def test_website_ingestion_persists_a_harvested_woff2_face_as_ttf(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, inter_ttf: bytes, inter_woff2: bytes
 ) -> None:
+    """The job row is created directly and executed through the worker entry, never OFFERED.
+
+    ``execute_ingestion_job`` is what the embedded (and detached) fleet worker actually calls, and
+    it resolves ``run_website_ingestion`` from ``lumen_api.main``'s namespace at call time — the
+    documented seam this module's stubs hang on. Going through
+    ``POST /brand-kits/ingest/website`` instead would enqueue a ``design_job`` on the shared
+    queue, where a co-running design API on the same DSN claims it and runs the REAL capture.
+    """
     from lumen_api import main as main_module
+    from lumen_api.main import execute_ingestion_job
     from lumen_ingestion.evidence import BrandEvidence
+    from lumen_ingestion.jobs import IngestionJobStore
     from lumen_ingestion.pipeline import run_website_ingestion
 
     asset_id = "asset_ing_fontdecode01"
@@ -117,10 +135,6 @@ def test_website_ingestion_persists_a_harvested_woff2_face_as_ttf(
         ingested.append(response["asset"]["record"])
         return BrandEvidence.model_validate(json.loads(EVIDENCE_FIXTURE.read_text()))
 
-    async def passthrough(url: str) -> str:
-        return url
-
-    monkeypatch.setattr(main_module, "_resolve_guard_url", lambda: passthrough)
     monkeypatch.setattr(
         main_module,
         "run_website_ingestion",
@@ -137,12 +151,24 @@ def test_website_ingestion_persists_a_harvested_woff2_face_as_ttf(
         ),
     )
 
-    post = client.post("/brand-kits/ingest/website", json={"url": "https://record-fix.example"})
-    assert post.status_code == 200, post.text
-    job_id = post.json()["job"]["job_id"]
-    wait_for_ingestion_job(client, job_id)
-    job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
-    assert job["status"] == "succeeded", job
+    workspace_id = HybridRepository().workspace_id
+    job = IngestionJobStore(workspace_id=workspace_id).create(
+        "website", {"url": "https://record-fix.example"}
+    )
+    state = client.app.state
+    status = execute_ingestion_job(
+        DesignIngestionEnvelope(
+            kind="ingestion",
+            work_id=uuid4(),
+            workspace_id=workspace_id,
+            job_id=job["job_id"],
+            ingestion_kind="website",
+        ),
+        host=SimpleNamespace(
+            storage=state.storage, engine_cache_root=state.engine_cache_root
+        ),
+    )
+    assert status == "succeeded", status
 
     assert [record["id"] for record in ingested] == [asset_id]
     assert ingested[0]["media"]["mime_type"] == "font/ttf"
