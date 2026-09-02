@@ -1,0 +1,96 @@
+{
+  "requestId": "6f682cf16e6bc323f33793e483181c3c",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://www.cogent.com/blog/introducing-cogent-security",
+      "title": "Introducing Cogent Security - Blog",
+      "url": "https://www.cogent.com/blog/introducing-cogent-security",
+      "publishedDate": "2025-07-14T00:00:00.000Z",
+      "text": "Blog\n\nCompany\n\n# Introducing Cogent Security\n\nCogent exits stealth with $11M in funding and a thesis: the hardest part of vulnerability management is everything after the scan.\n\nJul 14, 2025, 4 min read, Vineet Edupuganti, Co-Founder and CEO\n\n## The First AI Taskforce for Vulnerability Management\n\nCogent Security is redefining how enterprises stay ahead of today\u2019s relentless wave of vulnerabilities and exploits. We\u2019re slashing remediation times, eliminating manual effort, and delivering real business impact, already protecting millions of assets across the Fortune 500 and beyond.\n\nToday, we\u2019re thrilled to launch out of stealth with $11 million in funding and the backing of world-class investors and advisors across security, enterprise software, and AI.\n\n## Vulnerability Management Is at a Breaking Point\n\nFor decades, identifying and fixing vulnerabilities has been a cornerstone of enterprise cybersecurity. But in today\u2019s rapidly evolving threat landscape, that cornerstone is cracking:\n\n- Nearly 45,000 CVEs were published this year alone, 4x more than a decade ago\u00b9\n- Vulnerability exploitation is now the fastest growing cause of breaches globally per Verizon DBIR\u00b2\n- Threat actors are moving faster than ever, cutting time-to-exploit in half thanks to generative AI\u00b3\n\nReinforcing these trends, high-profile incidents like Log4Shell have inflicted billions in damages, requiring multi-year remediation efforts. Meanwhile, most organizations are still relying on manual workflows, trib"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/vineetedupuganti_vulnerabilitymanagement-cybersecurity-activity-7350548277064278019-mFOU",
+      "title": "Post by Vineet Edupuganti",
+      "url": "https://www.linkedin.com/posts/vineetedupuganti_vulnerabilitymanagement-cybersecurity-activity-7350548277064278019-mFOU",
+      "publishedDate": "2025-07-14T15:34:35.000Z",
+      "author": "Vineet Edupuganti",
+      "text": "Introducing Cogent Security: Revolutionizing Vulnerability Management with AI | Vineet Edupuganti posted on the topic | LinkedIn\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\n# Introducing Cogent Security: Revolutionizing Vulnerability Management with AI\n\nhttps://www.linkedin.com/in/vineetedupuganti\n\nVineet Edupuganti\n\nCo-founder & CEO @ Cogent Security | Ex-Abnormal AI\n\n1y\n\nEdited\n\n- Report this post\n\nVulnerability management is fundamentally broken. Today, we're launching Cogent Security to fix it. I'm incredibly proud to be building alongside my co-founders, Thanos Baskous and Geng Sng, our world-class team, and with the backing of Saam Motamedi and Corinne Marie Riley at Greylock Partners and leading angel investors from companies like Abnormal AI, OpenAI, and others. Finding vulnerabilities is easy. Fixing them is a nightmare of tangled workflows and misaligned incentives, and the rise of fast-moving, AI-powered attacks has only intensified the pressure. It\u2019s no surprise that vulnerability exploitation is now the #1 fastest-growing cause of breaches. \ud83d\udd25 At Cogent Security, we\u2019re fighting fire with fire. Our domain-specific AI agents autonomously gather context, identify top risks, and take action. By removing the tedious, manual work of vulnerability management, we empower security teams to go from detection to remediation at scale and protect their organizations. This mission ",
+      "image": "https://static.licdn.com/aero-v1/sc/h/c45fy346jw096z9pbphyyhdz7",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/vineetedupuganti_today-were-announcing-autonomous-vulnerability-activity-7483203736241217536-RKTO",
+      "title": "Today we're announcing Autonomous Vulnerability Response (AVR), the first end-to-end autonomous AI vulnerability response capability proven in production. | Vineet Edupuganti",
+      "url": "https://www.linkedin.com/posts/vineetedupuganti_today-were-announcing-autonomous-vulnerability-activity-7483203736241217536-RKTO",
+      "publishedDate": "2026-07-15T17:00:01.000Z",
+      "author": "Vineet Edupuganti",
+      "text": "Introducing Autonomous Vulnerability Response (AVR) for End-to-End AI Response | Vineet Edupuganti posted on the topic | LinkedIn\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\nCo-founder & CEO @ Cogent Security | Ex-Abnormal AI\n\n2w\n\nToday we're announcing Autonomous Vulnerability Response (AVR), the first end-to-end autonomous AI vulnerability response capability proven in production. Most vulnerability management tools stop at the ticket. AVR runs the whole loop as one continuous process: 1. Detection: agentless, catches zero day exposures within ~10 minutes of disclosure. 2. Investigation: gathers evidence across the environment, correlates against asset ownership and compensating controls, produces a findings package with reasoning preserved. 3. Remediation: generates the fix, scores change impact, dispatches through Jira or ServiceNow, and executes under customer guardrails. 4. Validation: independently confirms the fix through a scanner rescan or SBOM rebuild. If it didn't hold, the ticket reopens automatically. Where customer policy allows, the loop runs without human intervention. Where policy requires oversight, humans stay in. The video below is with Corey Kaemming(CISO, Valvoline Instant Oil Change) and Shawn Kerns(Head of InfoSec, University of the Pacific), two of the practitioners running AVR in production. Full write-up in the comments.\n\nTranscript Transcript\n\n##### Tr",
+      "image": "https://dms.licdn.com/playlist/vid/v2/D5605AQEEuj3pDCZ1CQ/thumbnail-with-play-button-overlay-high/B56Z9muDvDGQC4-/0/1784134785085?e=2147483647&v=beta&t=oKR2M-GHeWf9OOLXyt-IIyphEn2tmNDlI4XuAbWetJY",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/vineetedupuganti_vulnerabilitymanagement-cybersecurity-activity-7429897005000327168-9tNA",
+      "title": "Today we\u2019re announcing Cogent Security's $42M Series A led by Bain Capital Ventures (BCV) and Greylock Partners, with participation from Definition and leading angels across AI, enterprise software, and security. | Vineet Edupuganti",
+      "url": "https://www.linkedin.com/posts/vineetedupuganti_vulnerabilitymanagement-cybersecurity-activity-7429897005000327168-9tNA",
+      "publishedDate": "2026-02-18T14:38:06.000Z",
+      "author": "Vineet Edupuganti",
+      "text": "Cogent Security Raises $42M in Series A Led by Bain Capital Ventures | Vineet Edupuganti posted on the topic | LinkedIn\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\nCo-founder & CEO @ Cogent Security | Ex-Abnormal AI\n\n5mo\n\nToday we\u2019re announcing Cogent Security's $42M Series A led by Bain Capital Ventures (BCV) and Greylock Partners, with participation from Definition and leading angels across AI, enterprise software, and security. We\u2019re also honored to welcome Enrique Salem to our Board of Directors. Enrique has helped build and scale some of the defining security companies of the last 20 years (Symantec, Rubrik, Netskope, etc) and will help us unlock our next phase of growth. Here\u2019s the reality of vulnerability management in 2026: Security teams don\u2019t have a visibility problem. They have an execution problem. Tools generate findings. AI-fueled attackers generate breaches. The space in between is manual, slow, and broken. That\u2019s the gap we built Cogent to eliminate. Our AI agents gather deep context about customer environments, investigate the vulnerabilities that matter, and drive remediation work to completion. The result: faster remediation, lower exposure, and dramatically less manual effort inside complex enterprise environments. What I\u2019m most proud of is our team. We\u2019ve fused security product leaders from Abnormal, Zscaler, and Wiz with world-class AI and software talent fro",
+      "image": "https://dms.licdn.com/playlist/vid/v2/D5605AQHVGkDjQBrRog/thumbnail-with-play-button-overlay-high/B56ZxxL5JJHoDU-/0/1771425472659?e=2147483647&v=beta&t=lSKjjFxM3L7jbz-2NlBhvLekJgo-4G-uaUGl_FNohQc",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/vineetedupuganti_today-were-introducing-cogent-community-activity-7391154039004086272-HkA1",
+      "title": "Today we\u2019re introducing Cogent Community, a free solution for security practitioners. | Vineet Edupuganti",
+      "url": "https://www.linkedin.com/posts/vineetedupuganti_today-were-introducing-cogent-community-activity-7391154039004086272-HkA1",
+      "publishedDate": "2025-11-03T16:47:23.000Z",
+      "author": "Vineet Edupuganti",
+      "text": "Introducing Cogent Community: A Free AI Solution for Security Practitioners | Vineet Edupuganti posted on the topic | LinkedIn\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\nCo-founder & CEO @ Cogent Security | Ex-Abnormal AI\n\n9mo\n\nToday we\u2019re introducing Cogent Community, a free solution for security practitioners. Community brings our agentic AI together with VulnCheck, the premier source for open vulnerability and exploit intelligence, so defenders can level the playing field against AI-enabled adversaries. As we worked with customers to understand their pain points across the vulnerability management lifecycle, we uncovered a major bottleneck. Teams were losing hours each day on vulnerability research just to answer three questions: what\u2019s going on in the wild, is this relevant to us, and what do we do next? By the time the picture was clear, other fires were already burning. So, we trained agents to become experts in curating, analyzing, and guiding action on vulnerability and exploit intelligence. Practitioners get precious time back, while the heavy lift of research and synthesis gets picked up by AI. What\u2019s in Community: - Discovery: A real-time feed of breaking disclosures and trending activity from news and threat intel sources. - Research: Community compares sources, cites evidence, and explains impact in plain terms. - Guidance: Actionable mitigation and remediation optio",
+      "image": "https://dms.licdn.com/playlist/vid/v2/D4E05AQHmGkAGYSyj-Q/thumbnail-with-play-button-overlay-high/B4EZpKnaEdJ0DM-/0/1762188438004?e=2147483647&v=beta&t=ob3j1gXe9A-hyu7RHtBqG-L6Vdhf_oN9KqU-2xQrlOM",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.cogent.com/company/about",
+      "title": "About Cogent | Applied AI Lab for Security Remediation",
+      "url": "https://www.cogent.com/company/about",
+      "text": "---\ntitle: \"About Cogent | Applied AI Lab for Security Remediation\"\ndescription: Founded by leaders from Abnormal AI and top tech firms, Cogent automates the vulnerability lifecycle with AI agents that deliver measurable ROI.\npublished: \"Aug 19, 2026, 8:34 PM UTC\"\n---\n\n# Removing cyber threats, enabling human progress\n\nWe work intensely and collaboratively to push boundaries in AI, security, and software so we can solve hard technical problems and protect our customers.\n\nCCU5L@T0UIR@E8\n\n## Our People\n\nWe\u2019ve brought together an exceptional team of engineers, researchers, and operators who thrive on solving hard problems. Curious, rigorous, and deeply experienced, they\u2019re building at the frontier of AI every day.\n\nJoin the team\n\nL2eDaYd#eWr8s4hBiTpY\n\n## Our Founders\n\nCogent was founded by a team of seasoned engineering and product leaders with deep expertise in AI and Technology. Our vision is a world where progress accelerates because security is assured.\n\n### Vineet Edupuganti\n\nCo-founder & CEO\n\nEx Abnormal AI, Stanford\n\n### Thanos Baskous\n\nCo-founder & VP Engineering\n\nEx Coinbase, Blackstone\n\n### Geng Sng\n\nCo-founder & CTO\n\nEx Abnormal AI, Duke\n\nTrusted by the world\u2019s leading security teams \n\nO5uKrZ i&nXv7eIs@t1oSrTs7\n\n## Backed by the best\n\nCogent are proud to be supported by leading venture firms, founders, and operators shaping the future of AI.\n\nAQwQaKrWdRsO\n\n## Recognized for excellence\n\nCogent have been honored by leading industry bodies for innovation in advancing app"
+    },
+    {
+      "id": "https://www.msspalert.com/news/startup-cogent-comes-to-vulnerability-management-armed-with-ai-agents",
+      "title": "Startup Cogent Comes to Vulnerability Management Armed with AI Agents",
+      "url": "https://www.msspalert.com/news/startup-cogent-comes-to-vulnerability-management-armed-with-ai-agents",
+      "publishedDate": "2025-07-23T00:00:00.000Z",
+      "author": "Jeffrey   Burt",
+      "text": "Startup Cogent Comes to Vulnerability Management Armed with AI Agents | news | MSSP Alert\n\n# Startup Cogent Comes to Vulnerability Management Armed with AI Agents\n\nJuly 23, 2025\n\nShare\n\nBy Jeffrey Burt\n\n(Adobe Stock)\n\nThe vulnerability management space is a fast-growing and crowded one, with the global market expected to grow to as much as$24.04 billion by 2030, driven by the need to protect enterprise data and remain compliant in an expanding regulatory environment. It is a space dominated by heavyweights like Qualys, Rapid7, Cisco Systems, and Tenable - all competing to helping enterprises stay ahead of the next vulnerability.\n\nDespite this, Vineet Edupuganti and the other founders of Cogent Security saw an opportunity to elbow their way into the competitive sector, with expanding generative AI technologies, including agentic AI, as the way to do it.\n\n\u201cA core piece of what makes Cogent different is that we are AI-native, and also plug into the broader ecosystem,\u201d Edupuganti, the company\u2019s CEO, told MSSP Alert. \u201cMany existing solutions operate within siloed walled gardens, whether due to strategic or technical reasons. Cogent is able to pull together telemetry from a range of sources \u2013 [such as] vulnerability scanners, CNAPP [cloud native application protection platforms], and EDR [endpoint detection and response] \u2013 and stitch this together.\u201d\n\nIn addition, the platform uses AI agents that are trained in vulnerability management, and this automates workflows more effectively ",
+      "image": "https://files.cyberriskalliance.com/wp-content/uploads/2024/10/101724_zero_day_exploit.jpg",
+      "favicon": "https://www.msspalert.com/favicon.ico"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/vineetedupuganti_one-of-my-biggest-takeaways-from-building-activity-7496263105782427648-e77C",
+      "title": "One of my biggest takeaways from building Cogent is that AI is making intelligence cheaper, but context and trust are becoming more valuable. | Vineet Edupuganti",
+      "url": "https://www.linkedin.com/posts/vineetedupuganti_one-of-my-biggest-takeaways-from-building-activity-7496263105782427648-e77C",
+      "publishedDate": "2026-08-20T00:00:00.000Z",
+      "author": "Vineet Edupuganti",
+      "text": "# One of my biggest takeaways from building Cogent is that AI is making intelligence cheaper, but context and trust are becoming more valuable. | Vineet Edupuganti \u00b7 LinkedIn \u00b7 2026-08-20\n\n**Vineet Edupuganti**: Co-Founder and CEO at Cogent Security with 1 year of total professional experience. Previous roles include Head of Multi Product Platform Division at Abnormal AI. Based in San Francisco, California, United States [US].\n\n---\n\nOne of my biggest takeaways from building [Cogent](https://linkedin.com/company/cogentsecurity) is that AI is making intelligence cheaper, but context and trust are becoming more valuable.\n\nThe most interesting problems aren\u2019t where off-the-shelf AI already works well. They\u2019re where you need deep, proprietary enterprise context, the cost of being wrong is high, and the bar for taking action is even higher.\n\nCybersecurity, and vulnerability remediation in particular, is a great example. Being right 90% of the time isn\u2019t good enough when you\u2019re deciding what to fix or making changes to production systems. You need to deeply understand the environment, make high-confidence decisions, and earn the trust to act on them.\n\nAs models continue to commoditize, the hardest AI problems will be the most defensible: the ones where being wrong is expensive and earning the right to take action is hard.\n\n## Comments\n\n**[Vinay Bansal](https://linkedin.com/in/vinaybansal1)** \u00b7 2026-08-21 \u00b7 2 reactions\n> Earning the right to take action is the phrase worth sitting wi"
+    }
+  ],
+  "searchTime": 947.2,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.03,
+  "_request": {
+    "query": "\"Vineet Edupuganti\" article blog post author byline Cogent Security",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

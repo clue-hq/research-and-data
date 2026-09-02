@@ -1,0 +1,57 @@
+{
+  "id": "gen-1788330116-VyZP0WLQuJZLdRRzMxW2",
+  "object": "chat.completion",
+  "created": 1788330116,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"unique_insight\": {\n    \"text\": \"Ana Corio is the creator/member of a short-form industry newsletter called 'The Frequency' \u2014 a monthly, 5-minute read about AI governance and industry trends tied to her work at Harmonic Security.\",\n    \"evidence_quote\": \"So... we built \u2018The Frequency\u2019. Monthly (to start), 5 min read, zero fluff\",\n    \"source_url\": \"https://www.linkedin.com/posts/anastasiacorio_one-of-my-favorite-parts-of-this-job-is-watching-activity-7480647440614936576-Y6BK\",\n    \"why_generic_tools_miss_it\": \"Generic enrichment tools index job titles and companies but typically miss short-lived or internal content projects and team newsletters described in social posts.\",\n    \"outreach_safe\": true\n  },\n  \"extra_life_claims\": [\n    {\n      \"field_key\": \"contact.facet.stated_interests|contact.facet.hobby\",\n      \"value\": [\"Hits the beach for a mind break\", \"Binges marketing content (#growthmarketing #contentmarketing #digitalmarketing)\"],\n      \"evidence_quote\": \"1. Hit the beach for a mind break. \ud83c\udfd6\\n3. Binge marketing content in specific areas of interest. (For me - #growthmarketing #contentmarketing #digitalmarketing).\",\n      \"source_url\": \"https://www.linkedin.com/posts/anastasiacorio_marketingnerd-growthmarketing-contentmarketing-activity-6686617378190618624--lBV\",\n      \"charter_category\": \"life_outside_work\",\n      \"priority\": \"P2\",\n      \"use_class\": \"personal-public-non-sensitive\",\n      \"outreach_safe\": true\n    }\n  ]\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABql8CEq7ECdVWz-4Rj8AVhHsG9ISRVMcSBSWGozs-wD4V9ZvLHytZPbqSAc40EfTkL0NGYuz1jFVOl-rpLTnWk_X6AS8mGMk5LhDfmFBorTbPCuJAEqy-NA_jEiwSGrUgjkCoPwOMpppjhshd41aWewexo0Ufrf8BUsj8iUequRFN6_TGx-tukprhfpQhWeDKYfdLx_WuvvBt8K1oNUaQja58Bzybwyj0QLRwkhc84Rs7gAoO3ZzK0JhVk6UkzxbMf5EUdixyZGdFmsJ1U62v-0yWVkzaRK8ZODMhKM5t6vm-Q8pPa99hGfwYP-DUHktpiE9NoQBwYoM72vyTFUGP4vYXkmG-EKi_wW9HUeB3SAeH9bGFx7_22kaqIEyovi6YEsKObQ5GYvk8FMQ1g8nXnb9ac0i7CPOUoNf7pjuBsOvlmhMddtL8CBc5n-6w5-P746FzPSjvXLzjz7h-6zzGGTT2wMU1JpnrFXqbmsuFrRx9qDc6dmW8cytwU_JGzv5CoEDFgDUPRURIHowGJK2y0U9Q2iqahJ3foZ9fgKX_Yskb-ubcJOTP958gkp7u7f6NarLE834RZaFrTgsgMf1XUf5G0GB--VhYe41mym1Py6-CYpW6PFkZ9Ozozj26BacvFX6doIxC51umT3h853I3SM3Ky6qwyHL-5XdoJ-XQE2Am5U80M7pbNCrH-3oLfosS6C03nln1InQxh5dPFdVTp_512BBGdAWjDKsTgj5HFsT8tooWYU7sictS4heER_kizJqva3AYnLb2hz8h4A14g3hW_ircFxFlZFgdOGE8EhRNiCWfPpEVOmfgSLPXFo-VZ239fC8pgqwh-ZKN-Mpqim6bs7Zp3slHNPvsSBHUfuVoa4eVC210jugXljJfoE2n6DR0wj50097w6A1y3jwr3rGE5W0kIhvPaRsayIZNkcZbVH1fiL9fqFUbgANVugut7z4yx8Vd4ApvDRsZZaFGl6ECJgzH0d1sVFirhZML7xahR3ZwoKQKTvp4CU-iKGn1Ymnly3Q2wU0vPr5cH4qaH4uTMLxeGuFvrsPaQzNtmxWPapsAyUNSLMoGKmAT9u7J3mamvFZ_vl-x7QbPRBN7an4ssrGaO42uhn7ciUBZKLvP2VqZAxuhV7ZbJUeyU-zLjmiZEmtXR-qSCSP4H3ew3bxjH4haHeK-BC7Cuy6Xri__fSlkofE-Au-ZuSWh4509gP8zVUYuq1ZsHbGTxI7VLtsNND5yyXsjRg83-tfIGVqMT5nRzpzYwjK-n9Xz3efJc8j1rlBgZSDnzrVM9Qaaz4RpM9bO0mCNudfp9MjOkbs7rGENe9WoSO5_NehBOAxdAn7KpSHbKhvWksDHQaqHFE7H7SJGKhOzS2fsE3gAx5kr23_W96ssfGrgPQrLb0WHSF9a3jE6LUJC7bz7nsVBQwxq7JA==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_015e0ebef80868cf016a97c084c7dc87d09f47ad8c68c5d30b",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 2928,
+    "completion_tokens": 383,
+    "total_tokens": 3311,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.001498,
+      "upstream_inference_prompt_cost": 0.000732,
+      "upstream_inference_completions_cost": 0.000766
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 7.87
+}

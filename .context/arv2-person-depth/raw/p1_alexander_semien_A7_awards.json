@@ -1,0 +1,21 @@
+{
+  "requestId": "de74b2ec86dc75e305c4ccba135b5b20",
+  "resolvedSearchType": "",
+  "results": [],
+  "searchTime": 2302.7,
+  "costDollars": {
+    "total": 0
+  },
+  "_http_status": 200,
+  "_elapsed_s": 2.37,
+  "_request": {
+    "query": "\"Alexander Semien\" award winner \"40 under 40\" top marketers recognition list",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

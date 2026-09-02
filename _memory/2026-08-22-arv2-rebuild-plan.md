@@ -268,3 +268,37 @@ quotes flagged not hidden -> verify_links audit earns its place; (5) Series-A ru
 cybersecurity unprompted; healthcare = build-mode, zero GTM hiring. 203-claim sample DB, 0
 unregistered fields. Sample DB + report ready as ARV2 acceptance evidence for wiring the new
 toolbelt into Head of ABM.
+
+## Addendum 2026-08-31b — Person-Depth run COMPLETE ($1.29, 8.8 min, 10 people)
+
+Founder correction: the smoke test omitted the personal-hooks charter (planner's omission). Re-run
+with the full dossier charter + Google media layer: .context/arv2-person-depth/PERSON-DEPTH-REPORT.md.
+**Results:** avg depth 61/100, avg 7.2 hooks/person, **8/10 at or above the Insight-Health bar
+(~5 hooks)**; alma mater 10/10, unique insight 10/10, hobby/book/side-project 7/10, long-form
+spoken voice 3/10 (all CEOs — the marketing buyers are the least researchable). Standouts: Nick
+Fisher = cocktail YouTuber with a published book; Sanaz Yashar = 15y Unit 8200 + Thai boxing;
+Vineet Edupuganti = 2016 Siemens Grand Prize (full transcript); Tyler Chonoles = Bowdoin golf
+roster (guitar/skiing); Alastair Paterson = $160M ReliaQuest exit + school-band concert at 15.
+5/10 zero hometown; 0/10 any X/Bluesky/Threads/Reddit presence.
+**Media layer:** NO Gemini key present (checked twice). Hard finding: YouTube public timedtext
+endpoint is DEAD (200/0 bytes across 7 request forms) — delete that path. Rescue: **Exa /contents
+on the YouTube watch URL returns the full ASR transcript for 4/5 videos at ~$0.001-0.004, no
+timestamps**. Exact Gemini math for the 12 items (5.04h audio): transcribe $0.20 + embed text
+$0.014 + raw-audio-embed 2 short clips $0.036 = **$0.25 total = $0.04/hour**; raw-audio-embedding
+everything = $2.90 (13.5x). Ruling confirmed: transcribe with Flash-Lite, embed text with
+embedding-2, raw audio only <3 min. gemini-embedding-2 IS multimodal (correction to earlier
+sessions). Key still needed for timestamps + the two CEO podcast interviews.
+**Money:** $1.286 (Exa $1.188 = 133 searches $0.924 + 11 deep $0.241 + contents; OpenRouter
+$0.098); **$0.129/person, trimmed recipe $0.07/person** (400-person sweep ≈ $28). 0 AI Ark credits.
+**Angles:** winners = prior-employer+long-form-voice, podcast, authored, alumni; CUT video-search,
+podcast-directories, Substack/Medium, awards, social = 27% of cost, zero unique yield.
+`includeDomains` is a trap (forces same-name strangers).
+**Surprises:** (1) the deep call beats the sweep feeding it — 16% of cited URLs unseen by 120
+sweep queries, incl. the best hook; (2) Exa deep-reasoning fails SILENTLY — signature = 9
+results/$0.015 vs 18-20/$0.023 — add an auto-retry guard; (3) structuring conservatism said
+"thin footprint" for 7/10 people whose dossiers held gold — one narrow $0.002 question per person
+fixed it 3/10 → 10/10.
+**Governance in code:** minors clause stripped a self-published post mentioning a CEO's children;
+Yashar's first-person intelligence-origin line barred from hooks (`outreach_safe: false`) while
+career kept as background; 2 quote-less rows auto-purged; 119 claims, 0 missing quote/URL.
+Recommend `outreach_safe` as a permanent facet field (accuracy ≠ appropriateness).

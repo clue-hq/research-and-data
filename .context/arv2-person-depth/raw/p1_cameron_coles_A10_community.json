@@ -1,0 +1,563 @@
+{
+  "requestId": "bf21c09598b19888780fa8bf039fedc6",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/sygtssf1y8p",
+      "title": "Cameron Coles",
+      "url": "https://www.linkedin.com/in/cameron-coles-2b0a831a7",
+      "publishedDate": "2026-08-10T00:44:14.000Z",
+      "text": "# Cameron Coles\n\nChief Performance & Business Transformation Officer at G42 International\n\nDubai, United Arab Emirates (AE)\n\n500 connections \u2022 4,976 followers\n\n## About\n\nI am a senior transformation and turnaround leader with 25+ years of experience helping organisations improve performance, navigate complexity, and deliver sustainable value creation across the Middle East, Europe, Asia, and Australia.My career has focused on guiding companies through periods of rapid change, operational and financial pressure, or strategic transition. I bring a practical, hands-on leadership style grounded in disciplined execution, commercial clarity, and an ability to simplify complexity for boards, executives, shareholders and lenders.I specialise in:- Large-scale transformation and performance improvement- Enterprise restructurings and rapid turnaround interventions- Cash, cost and operational optimisation- Strategic re-alignment and organisational redesign- Building governance, discipline and execution capability- Stabilising and strengthening underperforming businessesI work with leadership teams to create clarity and value and deliver measurable, lasting impact.\n\nTotal Experience: 25 years and 7 months\n\n## Experience\n\n### Board Member - [Inception](https://www.linkedin.com/company/inception-42-company) (Current)\n\nMar 2026 - Present (5 months)\n\nDepartment: Other\n\nInception is a Technology, Information and Internet company. Inception is a company dedicated to transforming industries thro",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/sygtssf1y8p",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Cameron Coles",
+            "firstName": "Cameron",
+            "lastName": "Coles",
+            "location": "Dubai, United Arab Emirates",
+            "workHistory": [
+              {
+                "title": "Board Member",
+                "location": null,
+                "dates": {
+                  "from": "2026-03-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/zcc310ldnjz",
+                  "name": "Inception"
+                }
+              },
+              {
+                "title": "Board Member",
+                "location": null,
+                "dates": {
+                  "from": "2026-03-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hcvxjmnj2hn",
+                  "name": "CPX"
+                }
+              },
+              {
+                "title": "Chief Performance & Business Transformation Officer at G42 International",
+                "location": "Abu Dhabi, Abu Dhabi Emirate, United Arab Emirates",
+                "dates": {
+                  "from": "2025-12-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/d0nv2z0pwsg",
+                  "name": "G42"
+                }
+              },
+              {
+                "title": "Managing Director",
+                "location": "Dubai, United Arab Emirates",
+                "dates": {
+                  "from": "2021-01-01",
+                  "to": "2025-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/mtpk1bszq4z",
+                  "name": "Alvarez & Marsal"
+                }
+              },
+              {
+                "title": "EY Turnaround & Restructuring Strategy",
+                "location": "Greater London, England, United Kingdom",
+                "dates": {
+                  "from": "2018-01-01",
+                  "to": "2021-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/w65k5v4qrhv",
+                  "name": "EY-Parthenon"
+                }
+              },
+              {
+                "title": "Turnaround, Transformation & Restructuring Senior Advisor",
+                "location": null,
+                "dates": {
+                  "from": "2016-01-01",
+                  "to": "2018-01-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Independent Consultant"
+                }
+              },
+              {
+                "title": "Director",
+                "location": "Dubai, United Arab Emirates",
+                "dates": {
+                  "from": "2011-01-01",
+                  "to": "2014-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/370fryhgcwm",
+                  "name": "EY"
+                }
+              },
+              {
+                "title": "Manager, Restructuring",
+                "location": "Edinburgh, Scotland, United Kingdom",
+                "dates": {
+                  "from": "2008-01-01",
+                  "to": "2010-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/1w37jkdcvry",
+                  "name": "Deloitte"
+                }
+              },
+              {
+                "title": "Director, Business Restructuring Services",
+                "location": "Dubai, Sydney & Vietnam",
+                "dates": {
+                  "from": "2014-01-01",
+                  "to": "2018-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/44w0w8j3p2w",
+                  "name": "PwC"
+                }
+              },
+              {
+                "title": "Business Restructuring Services",
+                "location": "City Of Edinburgh, Scotland, United Kingdom",
+                "dates": {
+                  "from": "1999-01-01",
+                  "to": "2007-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/44w0w8j3p2w",
+                  "name": "PwC"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Economics",
+                "dates": {
+                  "from": "1992",
+                  "to": "1995"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/6s4sh453zt2",
+                  "name": "The University of Queensland"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.familylife.com/profiles/cameron-cole/",
+      "title": "Cameron Cole - FamilyLife\u00ae - A Cru Ministry",
+      "url": "https://www.familylife.com/profiles/cameron-cole/",
+      "author": "Cameron Cole",
+      "text": "Cameron Cole - FamilyLife\u00ae - A Cru Ministry\n\n Cameron Cole \n\n# Cameron Cole\n\nCameron Cole has been the Director of Youth Ministries for eighteen years at the Church of the Advent, and in January of 2016 his duties expanded to include Children, Youth, and Families. He is the founding chairman of Rooted Ministry, an organization that promotes gospel-centered youth ministry. He is the co-editor of \u201cGospel-Centered Youth Ministry: A Practice Guide\u201d (Crossway, 2016). Cameron is the author of Therefore, I Have Hope: 12 Truths that Comfort, Sustain, and Redeem in Tragedy (Crossway, 2018), which won World Magazine\u2019s 2018 Book of the Year (Accessible Theology) and was runner up for The Gospel Coalition\u2019s Book of the Year (First-Time Author). He is also the co-editor of The Jesus I Wish I Knew in High School (New Growth Press) and the author of Heavenward: How Eternity Can Change Your Life on Earth (Crossway, 2024). Cameron is a cum laude graduate of Wake Forest University undergrad and summa cum laude graduate from Wake Forest with an M.A. in Education. He holds a Masters in Divinity from Reformed Theological Seminary.\n\n## Guest Episodes\n\n \n\n### Heavenward: Cameron Cole\n\nDecember 27, 2024\n\n Cameron Cole \n\nHow can you live a heaven-centered life? Cameron Cole, author of \u201cHeavenward,\u201d shares how focusing on heaven can transform your everyday life, providing hope, purpose, and motivation.\n\nDecember 26, 2024\n\nHow do you find faith after tragedy? Hear how Cameron Cole found hope and healin",
+      "image": "https://www.familylife.com/wp-content/uploads/sites/1001/2026/01/FL50thAnniversary_LandscapeLogo_Green.svg"
+    },
+    {
+      "id": "https://exa.ai/library/person/z051bpxkwrh",
+      "title": "Cameron Coles",
+      "url": "https://www.linkedin.com/in/cameron-coles-software",
+      "publishedDate": "2026-07-28T00:12:56.000Z",
+      "text": "# Cameron Coles\n\nLead React Native Developer at Stewardship\n\nNewark-On-Trent, England, United Kingdom (GB)\n\n65 connections \u2022 65 followers\n\n## About\n\nSoftware Developer based in Nottinghamshire, UK. I specialise in web and mobile app\u2026\n\nTotal Experience: 6 years and 10 months\n\n## Experience\n\n### Lead React Native Developer - [Stewardship](https://www.linkedin.com/company/stewardship) (Current)\n\nNov 2025 - Present (8 months) in London Area, United Kingdom\n\nDepartment: Engineering and Technical\n\nStewardship is a nonprofit organization. Stewardship helps Christians be the best stewards of the resources God gives them. Stewardship has 70-80 employees and has annual revenue in the under $1M range, founded in 1906. Headquartered in London, United Kingdom. Its workforce is distributed across United Kingdom, Switzerland, United States, and South Africa.\n\n### [Aarsleff Ground Engineering Ltd](https://www.linkedin.com/company/aarsleff-ground-engineering-uk)\n\n#### Software Developer\n\nJun 2023 - Nov 2025 (2 years and 5 months)\n\nDepartment: Engineering and Technical \u2022 Level: Specialist\n\n#### IT & BI Assistant\n\nMay 2022 - May 2023 (1 year)\n\nDepartment: Engineering and Technical \u2022 Level: Specialist\n\nAarsleff Ground Engineering Ltd is a Civil Engineering company. Aarsleff Ground Engineering is a leading ground engineering and piling company that provides value-engineered, multi-disciplinary foundation solutions across the UK. Aarsleff Ground Engineering Ltd has 100-150 employees (+1-2% YoY) an",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQFBpJHdl3didA/profile-displayphoto-scale_200_200/B4EZwgbI29KcAY-/0/1770070511708?e=2147483647&v=beta&t=hj7BPNwr6ajCjBXmcwuO2XKTa1-DCYUcD4anXso0H70",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/z051bpxkwrh",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Cameron Coles",
+            "firstName": "Cameron",
+            "lastName": "Coles",
+            "location": "Newark-On-Trent, England, United Kingdom",
+            "workHistory": [
+              {
+                "title": "Lead React Native Developer",
+                "location": "London Area, United Kingdom",
+                "dates": {
+                  "from": "2025-11-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/bhstw40tltb",
+                  "name": "Stewardship"
+                }
+              },
+              {
+                "title": "Software Developer",
+                "location": null,
+                "dates": {
+                  "from": "2023-06-01",
+                  "to": "2025-11-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/q955kkd5ww1",
+                  "name": "Aarsleff Ground Engineering Ltd"
+                }
+              },
+              {
+                "title": "IT & BI Assistant",
+                "location": null,
+                "dates": {
+                  "from": "2022-05-01",
+                  "to": "2023-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/q955kkd5ww1",
+                  "name": "Aarsleff Ground Engineering Ltd"
+                }
+              },
+              {
+                "title": "Information Technology Technician",
+                "location": null,
+                "dates": {
+                  "from": "2020-08-01",
+                  "to": "2022-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/glcscfhvkn7",
+                  "name": "Pinnacle International Freight Ltd"
+                }
+              },
+              {
+                "title": "IT Apprentice",
+                "location": null,
+                "dates": {
+                  "from": "2019-09-01",
+                  "to": "2020-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/glcscfhvkn7",
+                  "name": "Pinnacle International Freight Ltd"
+                }
+              }
+            ],
+            "educationHistory": [],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/r1rdfqw0mgp",
+      "title": "Cameron Cole",
+      "url": "https://www.linkedin.com/in/cameron-cole-33aa1417",
+      "publishedDate": "2026-08-06T17:17:31.000Z",
+      "text": "# Cameron Cole\n\nFounding Chairman of Rooted Ministries\n\nBirmingham, Alabama, United States (US)\n\n474 connections \u2022 482 followers\n\n## About\n\nFounding Chairman of Rooted Ministries\n\nTotal Experience: 23 years and 4 months\n\n## Experience\n\n### Director of Adult and Nextgen Discipleship - St. Peter's Anglican Church (Current)\n\nAug 2025 - Present (1 year) in Birmingham, Alabama, United States\n\nDepartment: Education \u2022 Level: Director\n\n### Founding Chairman Interim Executive Director - [ROOTED MINISTRIES INC](https://www.linkedin.com/company/rooted-ministries-inc) (Current)\n\nJan 2010 - Present (15 years and 9 months) in Birmingham, Alabama, United States\n\nFounder of youth ministry organization that helps churches and parents disciple children toward life-long faith in Christ. Rooted promotes gospel-centered youth ministry. The organization has fourteen employees and over 150 volunteers, as of 2022.\n\nROOTED MINISTRIES INC is a nonprofit organization. ROOTED MINISTRIES INC has 1-10 employees (+10% YoY), founded in 2010. Headquartered in Birmingham, Alabama, United States.\n\n### Director of Children, Youth, and Family - [Cathedral Church of the Advent](https://www.linkedin.com/company/cathedraladvent)\n\nJan 2015 - Jan 2025 (10 years) in Birmingham, AL\n\nCathedral Church of the Advent is a nonprofit organization. Church of the Advent is a church with a heart for the Gospel in the city of Birmingham. Cathedral Church of the Advent has 1-10 employees (3-4% YoY decline) and has annual revenue ",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/r1rdfqw0mgp",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Cameron Cole",
+            "firstName": "Cameron",
+            "lastName": "Cole",
+            "location": "Birmingham, Alabama, United States",
+            "workHistory": [
+              {
+                "title": "Director of Adult and Nextgen Discipleship",
+                "location": "Birmingham, Alabama, United States",
+                "dates": {
+                  "from": "2025-08-01",
+                  "to": null
+                },
+                "company": {
+                  "id": null,
+                  "name": "St. Peter's Anglican Church"
+                }
+              },
+              {
+                "title": "Founding Chairman Interim Executive Director",
+                "location": "Birmingham, Alabama, United States",
+                "dates": {
+                  "from": "2010-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/bmf76x49f1q",
+                  "name": "ROOTED MINISTRIES INC"
+                }
+              },
+              {
+                "title": "Director of Children, Youth, and Family",
+                "location": "Birmingham, AL",
+                "dates": {
+                  "from": "2015-01-01",
+                  "to": "2025-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/c826gdvt4lt",
+                  "name": "Cathedral Church of the Advent"
+                }
+              },
+              {
+                "title": "Director of Youth Ministries",
+                "location": null,
+                "dates": {
+                  "from": "2005-12-01",
+                  "to": "2014-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/c826gdvt4lt",
+                  "name": "Cathedral Church of the Advent"
+                }
+              },
+              {
+                "title": "Regional Sales Representative",
+                "location": null,
+                "dates": {
+                  "from": "2003-03-01",
+                  "to": "2005-11-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/qdmn6ljsxzh",
+                  "name": "White Plume Technologies"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Masters in Divinity, Theology",
+                "dates": {
+                  "from": "2009",
+                  "to": "2020"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Reformed Theological Seminary"
+                }
+              },
+              {
+                "degree": "M.A., Education",
+                "dates": {
+                  "from": "2001",
+                  "to": "2002"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/h1b35ftj0ds",
+                  "name": "Wake Forest University"
+                }
+              },
+              {
+                "degree": "B.A., Latin and English",
+                "dates": {
+                  "from": "1998",
+                  "to": "2001"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/h1b35ftj0ds",
+                  "name": "Wake Forest University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/dpn7pqxq3bv",
+      "title": "Cameron Coles",
+      "url": "https://www.linkedin.com/in/cameron-coles25",
+      "publishedDate": "2026-06-09T18:15:28.000Z",
+      "text": "# Cameron Coles\n\nArea Business Director | Territory Transformation Leader | Multi-Modality Commercial Leader | Market Access Strategist | President\u2019s Club & Director\u2019s Award | Top-Decile Performer\n\nRaleigh, North Carolina, United States (US)\n\n500 connections \u2022 932 followers\n\n## About\n\nArea Business Director | Territory Transformation Leader | Multi-Modality Commercial Leader | Market Access Strategist | President\u2019s Club & Director\u2019s Award | Top-Decile Performer\n\n## Education\n\n### Bachelor of Science - BS, Communication and Media Studies at [Emory & Henry University](https://www.linkedin.com/school/emoryandhenrycollege)\n\n2010 - 2014 (4 years) in Emory, Virginia, United States\n\n## Skills\n\nacademic medical centers \u2022 access \u2022 access strategy \u2022 account management \u2022 account manager \u2022 accounts management \u2022 across \u2022 administration \u2022 adobe audition \u2022 advisory \u2022 alignment \u2022 analytical skills \u2022 biologics \u2022 board \u2022 bonds \u2022 business development \u2022 business direction \u2022 business strategy \u2022 buying \u2022 capability development \u2022 coaching \u2022 coaching & mentoring \u2022 coaching & mentorship \u2022 collaborating \u2022 commercial \u2022 commercial capability \u2022 commercial capability development \u2022 commercial execution \u2022 communication \u2022 core \u2022 core leadership \u2022 cross-functional \u2022 cross-functional influence \u2022 cross-functional team leadership \u2022 customer service \u2022 dermatology \u2022 development \u2022 director \u2022 disciplined execution \u2022 district manager \u2022 district trainer \u2022 diversity \u2022 diversity, equity, and inclusion (de&i) \u2022 encore \u2022 ",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQFmyUnI2Tq7Ng/profile-displayphoto-scale_200_200/B4EZ4X6GwfGkAc-/0/1778517571465?e=2147483647&v=beta&t=z-RYTWZ7XTrHYuOwmrI-GLs9TPGgPyJiohSqQ9eXEAY",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/dpn7pqxq3bv",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Cameron Coles",
+            "firstName": "Cameron",
+            "lastName": "Coles",
+            "location": "Raleigh, North Carolina, United States",
+            "workHistory": [],
+            "educationHistory": [
+              {
+                "degree": "Bachelor of Science - BS, Communication and Media Studies",
+                "dates": {
+                  "from": "2010",
+                  "to": "2014"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Emory & Henry University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.cameroncolecollective.com/",
+      "title": "Financial Services | The Cameron Cole Collective, LLC",
+      "url": "https://www.cameroncolecollective.com/",
+      "text": "Financial Services | The Cameron Cole Collective, LLC\n\ntop of page\n\n# THE CAMERON COLE COLLECTIVE, LLC\n\nBUILDING THE FOUNDATION TODAY FOR A PROSPEROUS TOMORROW\n\nFinance | Leadership | Education | Empowerment\n\n## WHO WE ARE Financial Professionals | Leadership Consultants\n\nWelcome to The Cameron Cole Collective, LLC., where we partner with you to achieve your financial dreams. We believe that everyone deserves to feel financial empowerment, and our consulting services are designed to give you the knowledge and tools you need to take control of your financial future. Whether you're looking to grow your wealth, protect your assets, or implement practical strategies to secure your future, we are here to help you confidently reach your goals.\n\nLeadership Development Consulting\n\nSpecializing in leadership development and nonprofit leadership, our mission is to help individuals and organizations create positive change in their communities by cultivating effective leadership skills. We offer a range of services designed to meet the unique needs of each of our clients, from individual coaching to organizational development. Our team has the expertise and experience to guide you every step of the way, and we are committed to helping you achieve your goals.\n\n## OUR SERVICES\n\nTaking a holistic approach to securing your success\n\nFinancial Consultation\n\nWe offer a range of services to meet you where you are! We take a holistic approach to assess your current financial picture and implement",
+      "image": "https://static.wixstatic.com/media/01c3aff52f2a4dffa526d7a9843d46ea.png/v1/fill/w_20,h_20,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/alt_text_label_Instagram.png"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/cameron-coles-2b0a831a7_were-building-out-g42s-business-performance-activity-7406940932836851713-aCG0",
+      "title": "We\u2019re building out G42's Business Performance & Transformation team and I\u2019m excited to share this opportunity. Please note that all applications must be submitted through the link below so they can be \u2026 | Cameron Coles",
+      "url": "https://www.linkedin.com/posts/cameron-coles-2b0a831a7_were-building-out-g42s-business-performance-activity-7406940932836851713-aCG0",
+      "publishedDate": "2025-12-17T00:00:00.000Z",
+      "author": "Cameron Coles",
+      "text": "# We\u2019re building out G42's Business Performance & Transformation team and I\u2019m excited to share this opportunity. Please note that all applications must be submitted through the link below so they can be \u2026 | Cameron Coles \u00b7 LinkedIn \u00b7 2025-12-17\n\n**Cameron Coles**: Board Member at Inception for 5 months with 25 years 7 months of total professional experience. Previous roles include Managing Director at Alvarez & Marsal, EY Turnaround & Restructuring Strategy at EY-Parthenon, and Turnaround, Transformation & Restructuring Senior Advisor at Independent Consultant. Based in Dubai, United Arab Emirates [AE].\n\n---\n\nWe\u2019re building out G42's Business Performance & Transformation team and I\u2019m excited to share this opportunity. Please note that all applications must be submitted through the link below so they can be reviewed properly by the team. Direct messages won\u2019t be tracked or considered as part of the process.\n\nThank you.\n\n## Comments (3 shown of 6 reported)\n\n**[Osama AlQattan](https://linkedin.com/in/osamasalqattan)** \u00b7 2025-12-26\n> Amazing opportunity\n\n**[Talal M. Al Kaissi](https://linkedin.com/in/talal-m-al-kaissi-20059a5)** \u00b7 2025-12-17 \u00b7 8 reactions\n> Sharing for my network to amplify\n\n**[Hadi Anwar](https://linkedin.com/in/hadianwar1)** \u00b7 2025-12-28 \u00b7 1 reaction\n> Sharing for wider visibility\n\n## Engagement\n\n- Reactions: 108\n- Comments: 6"
+    },
+    {
+      "id": "https://exa.ai/library/person/fp5wwp32qmk",
+      "title": "Cameron Coles",
+      "url": "https://www.linkedin.com/in/cameroncoles",
+      "publishedDate": "2026-08-22T05:34:34.000Z",
+      "text": "# Cameron Coles\n\nVP of Marketing\n\nSan Francisco Bay Area (US)\n\n500 connections \u2022 1,626 followers\n\n## About\n\nVP of Marketing\n\nTotal Experience: 14 years and 3 months\n\n## Experience\n\n### VP of Marketing - [Cogent Security](https://www.linkedin.com/company/cogentsecurity) (Current)\n\nNov 2025 - Present (9 months) in San Francisco, CA\n\nDepartment: Marketing \u2022 Level: President/Vice President\n\nCogent is a Computer and Network Security company. Cogent has 40-50 employees, founded in 2024. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and India. Has $53M in total funding, with 2 prior funding rounds.\n\n### VP of Marketing - [Cyberhaven](https://www.linkedin.com/company/cyberhaven)\n\nMay 2022 - Jun 2025 (3 years and 1 month)\n\nDepartment: Marketing \u2022 Level: President/Vice President\n\nCyberhaven is a Computer and Network Security company. Cyberhaven is a company that protects data from other tools can't see, from threats they can't detect, across technologies they can't control. Cyberhaven has 200-300 employees (+30% YoY) and has annual revenue in the $10M-$20M range, founded in 2016. Headquartered in Palo Alto, California, United States, with presence in Switzerland. Its workforce is distributed across 25 countries (including United States, India, Romania, Ukraine, and Switzerland). with 5 prior funding rounds.\n\n### Head of Product and Content Marketing - [Wiz](https://www.linkedin.com/company/wizsecurity)\n\nFeb 2021 - Dec 2021 ",
+      "image": "https://media.licdn.com/dms/image/v2/D5603AQG93jhdkXEmuA/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1697095873400?e=2147483647&v=beta&t=vigENYNjkjZx85B8kGNAxt3L9UigDXHJng9YxfTFzlM",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/fp5wwp32qmk",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Cameron Coles",
+            "firstName": "Cameron",
+            "lastName": "Coles",
+            "location": "San Francisco Bay Area",
+            "workHistory": [
+              {
+                "title": "VP of Marketing",
+                "location": "San Francisco, CA",
+                "dates": {
+                  "from": "2025-11-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/p5c1zdbdxyc",
+                  "name": "Cogent Security"
+                }
+              },
+              {
+                "title": "VP of Marketing",
+                "location": null,
+                "dates": {
+                  "from": "2022-05-01",
+                  "to": "2025-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/kswlmhh79br",
+                  "name": "Cyberhaven"
+                }
+              },
+              {
+                "title": "Head of Product and Content Marketing",
+                "location": null,
+                "dates": {
+                  "from": "2021-02-01",
+                  "to": "2021-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/62tkvvz4kdg",
+                  "name": "Wiz"
+                }
+              },
+              {
+                "title": "Director of Product Marketing",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2018-10-01",
+                  "to": "2021-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9g32tckkbqz",
+                  "name": "Proxy"
+                }
+              },
+              {
+                "title": "Director of Product Marketing",
+                "location": "Campbell, CA",
+                "dates": {
+                  "from": "2013-07-01",
+                  "to": "2018-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/z0dpgqksbpn",
+                  "name": "Skyhigh"
+                }
+              },
+              {
+                "title": "Product Marketing Manager",
+                "location": "Mountain View, CA",
+                "dates": {
+                  "from": "2011-07-01",
+                  "to": "2013-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/7mvlmftls86",
+                  "name": "Symantec"
+                }
+              },
+              {
+                "title": "Product Marketing Manager",
+                "location": null,
+                "dates": {
+                  "from": "2010-07-01",
+                  "to": "2013-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/wjcvmjtd17m",
+                  "name": "Clearwell Systems (Acquired by Symantec)"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "BSE Marketing",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/9tgwp2y71mh",
+                  "name": "The Wharton School"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    }
+  ],
+  "searchTime": 2496.6,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 2.73,
+  "_request": {
+    "query": "\"Cameron Coles\" volunteer board member advisor mentor nonprofit community",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

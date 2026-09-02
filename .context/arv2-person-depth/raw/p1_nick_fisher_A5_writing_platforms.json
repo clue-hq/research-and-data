@@ -1,0 +1,106 @@
+{
+  "requestId": "ddffb40660aeb84e8d4338604181df58",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://dev.to/nickfisherau",
+      "title": "Nick Fisher - DEV Community",
+      "url": "https://dev.to/nickfisherau",
+      "text": "Nick Fisher - DEV Community\n\n \n\n# Nick Fisher \n\nFull-stack ML engineer.\n\n Australia/Singapore Joined on Nov 9, 2018 http://www.nick-fisher.com \n\nWork\n\nSelf-employed\n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n More info about @nickfisherau \n\nSkills/Languages\n\nFluttter, Dart, C++, PyTorch\n\nCurrently hacking on\n\nhttps://polyvox.app - virtual language teachers https://imaginanki.com - generate flashcards with AI\n\n### Want to connect with Nick Fisher?",
+      "image": "https://dev-to-uploads.s3.amazonaws.com/uploads/articles/3otvb2z646ytpt1hl2rv.jpg"
+    },
+    {
+      "id": "https://medium.com/@nick.fisher_905/introducing-polyvox-612349706d7e",
+      "title": "Introducing Polyvox. I\u2019m happy to share that the Polyvox app\u2026 | by Nick Fisher | Medium",
+      "url": "https://medium.com/@nick.fisher_905/introducing-polyvox-612349706d7e",
+      "publishedDate": "2023-10-19T02:48:28.000Z",
+      "author": "Nick Fisher",
+      "text": "Introducing Polyvox. I\u2019m happy to share that the Polyvox app\u2026 | by Nick Fisher | Medium\n\nSign up\n\nGet app\n\nSign up\n\n2 min read\n\nOct 19, 2023\n\n--\n\nShare\n\n### Introducing Polyvox\n\nI\u2019m happy to share that the Polyvox app is now available for iOS and Android!\n\nPolyvox is an app for learning foreign languages (for now, just Mandarin Chinese), by speaking and listening with a digital 3D teacher.\n\nThis is \u5218\u5b50\u67ab (Liu Zifeng), the first teacher available in the app.\n\nLiu Zifeng will take you through a series of lessons designed for early and intermediate Mandarin Chinese learners \u2014 all in 100% native Chinese.\n\nYou\u2019ll talk back to her through the microphone on your device. Don\u2019t worry if you\u2019re learning Chinese for the first time, the app uses very tolerant speech recognition to accommodate beginner accents.\n\n## Is it an AI language learning app?\n\nKind of, but not really.\n\nThere\u2019s a plethora of AI language learning products on the market at the moment, most built on Large Language Models APIs (LLMs, a type of text-based AI model) that take on the persona of a foreign language teacher.\n\nThere is definitely a place for these, but there are a couple of problems.\n\nFirst, they can\u2019t (yet) run on mobile devices, so all of these products require an internet connection and a monthly or yearly subscription. If your subscription lapses or the company goes under, you\u2019re left with nothing.\n\nPolyvox, on the other hand, runs entirely on your mobile device. No subscriptions or internet connection requi",
+      "image": "https://miro.medium.com/v2/resize:fit:270/1*6Av65PRrsnlTECjWyLfUuA.png",
+      "favicon": "https://miro.medium.com/v2/5d8de952517e8160e40ef9841c781cdc14a5db313057fa3c3de41c6f5b494b19"
+    },
+    {
+      "id": "https://dev.to/hackus/bff-4lo0",
+      "title": "BFF - DEV Community",
+      "url": "https://dev.to/hackus/bff-4lo0",
+      "publishedDate": "2025-02-08T16:30:56.000Z",
+      "text": "BFF - DEV Community\n\n## Intro\n\nHeard recently about BFF. I have used it before, however, I like when people, become enthusiastic about a technology. It is so interesting almost funny, it also drives the incentive to discover it more.\n\nI have refreshed myself on the topic, read a couple of articles and spotted a pattern. This article is about the dissonance I am feeling, after I used BFF, with what is being written about it, and what can be truly beneficial about it, in my opinion.\n\n## A little bit about the name\n\n\"Backend For Frontend\" - if you call it this way you follow the usage coined by Phil Cal\u00e7ado PhilCalcado.com- BEFFE, however, it was shrunk to BFF by Nick Fisher. I think Phil Cal\u00e7ado is the first who described this pattern, though.\n\n\"Backend For Frontends\" - if you call it this way you follow the usage promoted by Sam Newman SamNewman.io who adds some additional flavors to it.\n\n## Description\n\nAs PhilCalcado.com describes, it is a pattern that facilitates communication between FE with only one BE. For example segregated between Web and Mobile, you have one Mobile FE communicating with Mobile BFF, similarly for Web.\n\nHowever, how it is used in reality or at least how I have seen it used, is that each domain be that, invoice, order, bill, contracts, etc. has it's own BFF. This is closer to how Sam Newman describes it SamNewman.io, however, at an even more granular level.\n\nSo it may solve the problem for the FE, as FE doesn't need to call various services, however, it ",
+      "image": "https://media2.dev.to/dynamic/image/width=1000,height=500,fit=cover,gravity=auto,format=auto/https%3A%2F%2Fdev-to-uploads.s3.amazonaws.com%2Fuploads%2Farticles%2Fljan87ehmqy27axrfb40.png"
+    },
+    {
+      "id": "https://medium.com/@nicholas.r.fisher17/the-simple-math-behind-why-stocks-must-increase-more-after-declines-982b6d52e6a5",
+      "title": "The Simple Math Behind Why Stocks Must Increase More After Declines | by Nick Fisher | Medium",
+      "url": "https://medium.com/@nicholas.r.fisher17/the-simple-math-behind-why-stocks-must-increase-more-after-declines-982b6d52e6a5",
+      "publishedDate": "2025-04-13T01:51:51.000Z",
+      "author": "Nick Fisher",
+      "text": "The Simple Math Behind Why Stocks Must Increase More After Declines | by Nick Fisher | Medium\n\nSign up\n\nGet app\n\nSign up\n\n# The Simple Math Behind Why Stocks Must Increase More After Declines\n\n2 min read\n\nApr 13, 2025\n\n--\n\nListen\n\nShare\n\nInvestors often underestimate the mathematics behind recovering from losses in the stock market. A 20% drop in a stock\u2019s price doesn\u2019t require a 20% gain to return to the original value. In reality, it requires a significantly larger increase. Here\u2019s the math explained simply, along with Python code and visuals to illustrate clearly.\n\n## The Math Explained\n\nWhen a stock price declines, it must rise by a larger percentage than it fell to get back to its original level. For example:\n\n- If a stock drops by 20% from $100, its new price is $80.\n- To recover to $100 from $80, it must rise by $20, or 25%.\n\nThis asymmetry grows exponentially larger with more significant drops.\n\n## Why Does This Happen?\n\nThe relationship is due to percentage calculations being based on different starting values for losses and recoveries:\n\n- Percentage loss is calculated from the higher initial price.\n- Percentage recovery is calculated from the lower, decreased price.\n\n## Python Visualization\n\nHere\u2019s how you can visualize this concept clearly using Python:\n\n```\nimport numpy as npimport matplotlib.pyplot as plt\n```\n\n```\n# Create an array of percentage drops from 1% to 90%percent_drop = np.arange(1, 91, 1)# Calculate the required percentage recovery to break evenpercent",
+      "image": "https://miro.medium.com/v2/da:true/resize:fit:1200/0*SYk-ZaSYuFspbGKd",
+      "favicon": "https://miro.medium.com/v2/5d8de952517e8160e40ef9841c781cdc14a5db313057fa3c3de41c6f5b494b19"
+    },
+    {
+      "id": "https://medium.com/@nicholas.r.fisher17/football-field-chart-fin-analysis-3b2c21faf72e",
+      "title": "Football Field Chart (Fin Analysis)",
+      "url": "https://medium.com/@nicholas.r.fisher17/football-field-chart-fin-analysis-3b2c21faf72e",
+      "publishedDate": "2025-04-17T02:15:51.000Z",
+      "author": "Nick Fisher",
+      "text": "MediumFootball Field Chart (Fin Analysis) | by Nick Fisher | Medium\n\nSign up\n\nGet app\n\nSign up\n\n## Nick Fisher\n\n# Football Field Chart (Fin Analysis)\n\n7 min read\n\nApr 17, 2025\n\n--\n\nShare\n\nImagine you want to know how much a stock is worth. Not one answer, but many. Different methods give different values. This Python code helps you see these values clearly, all at once.\n\nFirst, you enter a stock ticker, like AAPL for Apple. You choose how you want to gather the numbers. You can scrape them from the web, type them in yourself, or load them from a file. Each method has its value range: low, middle, and high.\n\nThe code creates something called a football field chart. This chart looks just like a football field \u2014 green, with clear lines and goal posts marking the current stock price. Each valuation method is shown as a bar. These bars tell you the low and high values that experts suggest. The middle line on each bar is the best guess.\n\nFor example, the P/E ratio method might suggest Apple is worth between $140 and $160, with the best guess at $150. Another technique, EV/EBITDA, might show a slightly different range.\n\nThe yellow goal post marks today\u2019s stock price. This helps you quickly see if the stock is undervalued or overpriced compared to all the valuation methods.\n\n## Get Nick Fisher\u2019s stories in your inbox\n\nJoin Medium for free to get updates from this writer.\n\nSubscribe\n\nSubscribe\n\nRemember me for faster sign in\n\nHere\u2019s how the code works:\n\n- It starts by importing tools:",
+      "image": "https://miro.medium.com/v2/resize:fit:817/1*Te9CfzW6tJkpLrxzXHyo6Q.png",
+      "favicon": "https://miro.medium.com/v2/5d8de952517e8160e40ef9841c781cdc14a5db313057fa3c3de41c6f5b494b19"
+    },
+    {
+      "id": "https://medium.com/@parkerlewis404/any-thoughts-on-using-ffi-ffigen-to-make-a-flutter-windows-application-that-accesses-peripherals-ae141afcdb8c",
+      "title": "Medium",
+      "url": "https://medium.com/@parkerlewis404/any-thoughts-on-using-ffi-ffigen-to-make-a-flutter-windows-application-that-accesses-peripherals-ae141afcdb8c",
+      "publishedDate": "2022-11-11T15:53:35.000Z",
+      "author": "Ben Nguyen",
+      "text": "MediumAny thoughts on using ffi/ffigen to make a Flutter Windows application that accesses peripherals connected to the desktop (usb, bluetooth, etc )? I have both 32-bit and 64-bit dlls that can access\u2026 - Ben Nguyen - Medium\n\nOpen in app\n\nSign up\n\nGet app\n\nSign up\n\nNov 11, 2022\n\nAny thoughts on using ffi/ffigen to make a Flutter Windows application that accesses peripherals connected to the desktop (usb, bluetooth, etc )?\n\nI have both 32-bit and 64-bit dlls that can access different hardware.. can flutter build/link with those dlls, and more importantly work when the dll functions are called? Any tips on 'Integrating C library in a desktop Flutter app using Dart FFI'? I found an older blog post by Nick Fisher on using Dart FFI to access native libraries in Flutter called \"Calling Native Libraries in Flutter with Dart FFI\" however it's based on Flutter 2.x.\n\n## Written by Ben Nguyen\n\n0 followers\n\nText to speech",
+      "image": "https://miro.medium.com/v2/da:true/bc1f8416df0cad099e43cda2872716e5864f18a73bda2a7547ea082aca9b5632"
+    },
+    {
+      "id": "https://medium.com/strava-engineering/cadence-choo-choo-fbce4770ade7",
+      "title": "Cadence, Choo Choo!!",
+      "url": "https://medium.com/strava-engineering/cadence-choo-choo-fbce4770ade7",
+      "publishedDate": "2016-01-27T08:00:00.000Z",
+      "author": "Strava Engineering",
+      "text": "MediumCadence, Choo Choo!!. Over the last four years the mobile\u2026 | by Strava Engineering | strava-engineering | Medium\n\nOpen in app\n\nSign up\n\nGet app\n\nSign up\n\n## strava-engineering\n\nEngineers building the home for your active life.\n\nMobile\n\nTeam\n\nProcess\n\n# Cadence, Choo Choo!!\n\n7 min read\n\nJan 27, 2016\n\n--\n\n1\n\nShare\n\nOver the last four years the mobile team at Strava has shipped more than fifty releases across Android and iOS. Our release cycle has varied from over three months for huge monolithic features to less than a week for hotfixes of issues discovered shortly after releasing. Historically app updates and new feature releases have been tightly coupled. As demands on each release escalated we saw release dates slip and quality jump around due to making concessions trying to push a release out the door. After going through a particularly ambitious release in early Spring 2015 we needed to reassess how and when we release.\n\n\u201cThe Lumens Express\u201d by Nick Fisher is under CC BY-ND 2.0\n\nAt the end of Summer 2015 we shipped a landmark update. The difference between this release and the scores of prior releases was not a groundbreaking feature or an important bug fix, the difference was that this release went out on its own schedule: it was not dictated by the need to release a certain feature and it was not a response to an emergency. It marks a move to a constant four-week long release cycle and an important shift in how mobile engineering and product development is done at ",
+      "image": "https://miro.medium.com/v2/resize:fit:640/0*KOy1KiEjyl6JKaGn.jpg",
+      "favicon": "https://miro.medium.com/v2/5d8de952517e8160e40ef9841c781cdc14a5db313057fa3c3de41c6f5b494b19"
+    },
+    {
+      "id": "https://medium.com/@nickfisher_71495/pixel-memories-nhl-94-106b63633493",
+      "title": "Pixel Memories: NHL \u201894",
+      "url": "https://medium.com/@nickfisher_71495/pixel-memories-nhl-94-106b63633493",
+      "publishedDate": "2019-04-09T06:56:48.000Z",
+      "author": "Nick Fisher",
+      "text": "Pixel Memories: NHL \u201894. EA\u2019s hockey classic still checks it\u2026 | by Nick Fisher | Medium\n[Open in app](https://rsci.app.link/?$canonical_url=https://medium.com/p/106b63633493&~feature=LoOpenInAppButton&~channel=ShowPostUnderUser&source=post_page---top_nav_layout_nav-----------------------------------------)\nSign up\n[Sign in](https://medium.com/m/signin?operation=login&redirect=https://medium.com/@nickfisher_71495/pixel-memories-nhl-94-106b63633493&source=post_page---top_nav_layout_nav-----------------------global_nav------------------)\n[](https://medium.com/?source=post_page---top_nav_layout_nav-----------------------------------------)\n[\nWrite\n](https://medium.com/m/signin?operation=register&redirect=https://medium.com/new-story&source=---top_nav_layout_nav-----------------------new_post_topnav------------------)\n[\n](https://medium.com/search?source=post_page---top_nav_layout_nav-----------------------------------------)\nSign up\n[Sign in](https://medium.com/m/signin?operation=login&redirect=https://medium.com/@nickfisher_71495/pixel-memories-nhl-94-106b63633493&source=post_page---top_nav_layout_nav-----------------------global_nav------------------)\n![](https://miro.medium.com/v2/resize:fill:64:64/1*dmbNkD5D-u45r44go_cf0g.png)\n# Pixel Memories: NHL \u201894\n[\n![Nick Fisher](https://miro.medium.com/v2/resize:fill:64:64/1*Mtep9IyLXvkjuL24fNDgrw.jpeg)\n](https://medium.com/@nickfisher_71495?source=post_page---byline--106b63633493---------------------------------------)\n[Nick Fisher](h",
+      "image": "https://miro.medium.com/v2/resize:fit:320/1*-OuET0q2mw4ebKxA7ls_TA.png",
+      "favicon": "https://miro.medium.com/v2/5d8de952517e8160e40ef9841c781cdc14a5db313057fa3c3de41c6f5b494b19"
+    }
+  ],
+  "searchTime": 1601,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.77,
+  "_request": {
+    "query": "\"Nick Fisher\" Zafran Security marketing security",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    },
+    "includeDomains": [
+      "substack.com",
+      "medium.com",
+      "dev.to",
+      "hashnode.dev",
+      "ghost.io"
+    ]
+  }
+}
