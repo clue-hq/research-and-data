@@ -99,12 +99,17 @@ export type SceneStreamFrame =
  * - `anchor` — a durable version landed. `inSync` says the canvas's streamed
  *   state provably equals it, which is what task 9 uses to decide whether the
  *   visible reload is worth showing the user.
+ * - `seed` — task 10: a canvas JOINED this run, having loaded the document at
+ *   a durable version. It is not a frame; it is the surface reporting a load,
+ *   folded into the same ordered log so the pump learns of it exactly where it
+ *   happened relative to the frames around it.
  */
 export type SceneStreamAction =
   | { action: "apply"; operations: readonly Operation[] }
   | { action: "drop" }
   | { action: "dirty" }
-  | { action: "anchor"; version: number | null; inSync: boolean };
+  | { action: "anchor"; version: number | null; inSync: boolean }
+  | { action: "seed"; position: number; dirty: boolean };
 
 const DROP: SceneStreamAction = { action: "drop" };
 const DIRTY: SceneStreamAction = { action: "dirty" };
@@ -122,6 +127,81 @@ export interface SceneStreamCursor {
 /** A cursor for a document nothing has been streamed for yet. */
 export function newSceneStreamCursor(documentId: string): SceneStreamCursor {
   return { documentId, position: 0, dirty: false };
+}
+
+/** What a canvas reports when it finishes loading a document. */
+export interface SceneStreamSeed {
+  documentId: string;
+  /** The durable version the canvas actually loaded. */
+  documentVersion: number;
+  /** The `design.checkpoint` marks seen so far — the fold keeps them. */
+  backlogCheckpoints: readonly SceneCheckpointMark[];
+}
+
+/**
+ * Where a JUST-LOADED document stands in its run's ledger (task 10).
+ *
+ * `newSceneStreamCursor` starts at 0 because nothing has been streamed for that
+ * document yet — right for a canvas opened before the run, and wrong for one
+ * opened (or reloaded) DURING it. A late joiner's document already contains
+ * every operation the run has committed, and the cursor has to say so, or the
+ * arithmetic above is measuring from the wrong origin.
+ *
+ * The translation is the checkpoint frames the stream replays on attach: each
+ * one says "version V holds N operations", so the loaded version picks the
+ * position. Three cases, and they are the whole function:
+ *
+ * 1. **a replayed checkpoint committed exactly this version** — its position IS
+ *    what the document holds. Clean: the next contiguous frame animates, and
+ *    the backlog beyond it fast-forwards.
+ * 2. **version 0 and nothing in the backlog** — a document born into this run
+ *    and not yet committed. Position 0, clean; task 8's default, unchanged.
+ * 3. **no checkpoint describes this version** — either the loaded version is
+ *    ahead of every replayed mark (the backlog horizon did not reach it) or it
+ *    sits between two of them. Its position is UNKNOWN, so the cursor seeds
+ *    DIRTY at the highest position it does know and every frame drops until the
+ *    next checkpoint re-anchors. The canvas honestly shows the document it
+ *    loaded meanwhile; nothing is applied over a hole.
+ *
+ * **Why case 1 wants the EXACT version, not "the newest mark at or below it".**
+ * A mark below the loaded version is a LOWER BOUND, never a position: the
+ * document holds that mark's operations plus everything committed since, and
+ * the stream has not said how many that is. Seeding there and then accepting
+ * the frame that begins there would re-apply operations the loaded document
+ * already contains — the exact corruption this module exists to refuse. The
+ * straddle is not hypothetical either: checkpoints key on round acceptance, so
+ * a version can be committed without a checkpoint frame of its own, and a
+ * document fetch racing ahead of the frame that describes it is the ordinary
+ * shape of a late join. It costs a few seconds of live motion (the next
+ * checkpoint re-anchors, and rung A reloads the canvas under it) and it cannot
+ * cost a corrupted picture, which is the direction this whole feature fails in.
+ *
+ * A mark whose version or position cannot be read is skipped, for the same
+ * reason the fold declines to re-seat on one: it is not evidence of anything.
+ */
+export function seedSceneStreamCursor({
+  documentId,
+  documentVersion,
+  backlogCheckpoints,
+}: SceneStreamSeed): SceneStreamCursor {
+  let exact: number | null = null;
+  let highestKnown = 0;
+  let sawMark = false;
+  for (const mark of backlogCheckpoints) {
+    if (mark.documentId !== documentId) continue;
+    const version = readPosition(mark.version);
+    const position = readPosition(mark.operations);
+    if (version === null || position === null) continue;
+    sawMark = true;
+    highestKnown = Math.max(highestKnown, position);
+    // The LAST-arriving mark for the version wins — two marks for one version
+    // agree on the position in every honest case, and the later one is the one
+    // the stream currently stands behind.
+    if (version === documentVersion) exact = position;
+  }
+  if (exact !== null) return { documentId, position: exact, dirty: false };
+  if (documentVersion <= 0 && !sawMark) return newSceneStreamCursor(documentId);
+  return { documentId, position: highestKnown, dirty: true };
 }
 
 export interface SceneStreamAdvance {
@@ -271,16 +351,91 @@ export interface SceneStreamActionRecord {
 export interface SceneStreamState {
   cursors: ReadonlyMap<string, SceneStreamCursor>;
   actions: readonly SceneStreamActionRecord[];
+  /**
+   * Task 10: the readable `design.checkpoint` marks seen so far, in arrival
+   * order and bounded.
+   *
+   * A cursor remembers only WHERE it stands, which is all a frame needs. A
+   * canvas joining mid-run needs the other half of the mapping — which VERSION
+   * that position belongs to — and the only place it exists is the checkpoint
+   * frames themselves. Keeping them here rather than in the controller means
+   * the seed is folded and tested with everything else it has to agree with.
+   */
+  checkpoints: readonly SceneCheckpointMark[];
 }
 
 const NO_CURSORS: ReadonlyMap<string, SceneStreamCursor> = new Map();
 const NO_ACTIONS: readonly SceneStreamActionRecord[] = [];
+const NO_CHECKPOINTS: readonly SceneCheckpointMark[] = [];
 
 /** Nothing streamed yet. */
 export const NO_SCENE_STREAM: SceneStreamState = {
   cursors: NO_CURSORS,
   actions: NO_ACTIONS,
+  checkpoints: NO_CHECKPOINTS,
 };
+
+/**
+ * How many checkpoint marks the fold keeps.
+ *
+ * Only the mark that committed the loaded version is ever read, so this only
+ * has to cover the replay horizon of one attach — and a run commits a
+ * checkpoint every few seconds, not every frame, so it is generous. Trimming
+ * from the FRONT is what makes the bound safe: the mark a late joiner needs is
+ * a recent one, and losing an old one only ever costs it a seed it would have
+ * refused anyway.
+ */
+export const SCENE_STREAM_CHECKPOINT_LOG_LIMIT = 32;
+
+function withAction(
+  state: SceneStreamState,
+  checkpoints: readonly SceneCheckpointMark[],
+  cursors: ReadonlyMap<string, SceneStreamCursor>,
+  documentId: string,
+  action: SceneStreamAction,
+): SceneStreamState {
+  const last = state.actions[state.actions.length - 1];
+  const actions = [
+    ...state.actions,
+    { sequence: (last?.sequence ?? 0) + 1, documentId, action },
+  ];
+  return {
+    cursors,
+    actions:
+      actions.length > SCENE_STREAM_ACTION_LOG_LIMIT
+        ? actions.slice(actions.length - SCENE_STREAM_ACTION_LOG_LIMIT)
+        : actions,
+    checkpoints,
+  };
+}
+
+/**
+ * A canvas finished loading `documentId` at `documentVersion` (task 10).
+ *
+ * Re-seats that document's cursor with `seedSceneStreamCursor` and records the
+ * join in the SAME ordered action log the frames go through. The record is what
+ * the reveal pump reads: it says "the canvas under you is a freshly loaded
+ * document", which is both the point it may start applying from and the point
+ * everything it was holding stops being true. It is appended on every load —
+ * including a reload that lands the same version — because the LOAD is the
+ * event, not the number.
+ */
+export function seedSceneStreamState(
+  state: SceneStreamState,
+  seed: { documentId: string; documentVersion: number },
+): SceneStreamState {
+  const cursor = seedSceneStreamCursor({
+    ...seed,
+    backlogCheckpoints: state.checkpoints,
+  });
+  const cursors = new Map(state.cursors);
+  cursors.set(seed.documentId, cursor);
+  return withAction(state, state.checkpoints, cursors, seed.documentId, {
+    action: "seed",
+    position: cursor.position,
+    dirty: cursor.dirty,
+  });
+}
 
 function frameDocumentId(frame: SceneStreamFrame): string | null {
   return frame.type === "design.op_batch"
@@ -313,16 +468,16 @@ export function applySceneStreamFrame(
   if (action.action === "drop") return state;
   const cursors = new Map(state.cursors);
   cursors.set(documentId, cursor);
-  const last = state.actions[state.actions.length - 1];
-  const actions = [
-    ...state.actions,
-    { sequence: (last?.sequence ?? 0) + 1, documentId, action },
-  ];
-  return {
-    cursors,
-    actions:
-      actions.length > SCENE_STREAM_ACTION_LOG_LIMIT
-        ? actions.slice(actions.length - SCENE_STREAM_ACTION_LOG_LIMIT)
-        : actions,
-  };
+  // Task 10: keep the mark behind an anchor, so a canvas that loads later can
+  // translate its version into a ledger position. Only anchors get here — an
+  // unreadable checkpoint dropped above, and it would tell the seed nothing.
+  let checkpoints = state.checkpoints;
+  if (action.action === "anchor" && frame.type === "design.checkpoint") {
+    const kept = [...checkpoints, frame.checkpoint];
+    checkpoints =
+      kept.length > SCENE_STREAM_CHECKPOINT_LOG_LIMIT
+        ? kept.slice(kept.length - SCENE_STREAM_CHECKPOINT_LOG_LIMIT)
+        : kept;
+  }
+  return withAction(state, checkpoints, cursors, documentId, action);
 }

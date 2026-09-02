@@ -437,6 +437,17 @@ export function useSceneEditingSession({
   const [history, setHistory] = useState<{
     forDocumentId: string;
     history: SceneDocumentHistory;
+    /**
+     * The durable version this load landed on, carried beside the depths
+     * because the canvas reports both in the same breath.
+     *
+     * Scene live-streaming task 10 (late join) is what reads it: a canvas that
+     * opens onto a run already in flight has to say WHERE the document it just
+     * loaded stands in the run's operation ledger, and the version is the only
+     * thing that can be translated into that. Null when the load could not
+     * report one.
+     */
+    version: number | null;
   } | null>(null);
   // The last committed version each document's canvas reported. A ref, not
   // state: it is read only inside the submission snapshot, and it must SURVIVE
@@ -453,13 +464,25 @@ export function useSceneEditingSession({
       if (currentVersion !== null) {
         lastLoadedVersionsRef.current.set(documentId, currentVersion);
       }
-      setHistory({ forDocumentId: documentId, history: next });
+      setHistory({ forDocumentId: documentId, history: next, version: currentVersion });
     },
     [],
   );
   const liveHistory =
     activeDocumentId && history?.forDocumentId === activeDocumentId
       ? history.history
+      : null;
+  /**
+   * Task 10: the load the active document is currently showing — its durable
+   * version and the generation that loaded it. Stamped and derived exactly like
+   * the history above, so a switched artifact never reports the previous ad's
+   * version, and `loadGeneration` is what makes a RELOAD onto the same version a
+   * distinct load (rung A reloads the canvas on a checkpoint, and each of those
+   * is a fresh join for the stream).
+   */
+  const loadedDocument =
+    activeDocumentId && history?.forDocumentId === activeDocumentId && history.version !== null
+      ? { documentId: activeDocumentId, version: history.version, loadGeneration: history.history.loadGeneration }
       : null;
 
   // AD3.2: the real write path. The controller applies each operation to the
@@ -690,6 +713,11 @@ export function useSceneEditingSession({
     inspectorError: writes.error,
     layerRows,
     note: writes.note,
+    /** Task 10 (scene live-streaming rung B): the durable version the open
+     * document is currently loaded at, with the generation that loaded it —
+     * what a late join reports to the stream so its cursor starts where the
+     * canvas actually stands. `null` until a load has reported a version. */
+    loadedDocument,
     /** AD3.3: receives the canvas's loaded undo/redo depths. */
     onHistoryChange,
     /** Task 4: the canvas reporting a gesture or caret it refused because the

@@ -220,6 +220,34 @@ export function ChatSurface({
     publishSceneRevealHealth(sceneReveal.isClean);
     return () => publishSceneRevealHealth(null);
   }, [publishSceneRevealHealth, sceneReveal.isClean]);
+  /**
+   * Task 10 (scene live-streaming rung B): THE LATE JOIN.
+   *
+   * A tab that opens — or reloads — onto a document whose run is already in
+   * flight loads the last committed version, and the stream is somewhere past
+   * it. The canvas reports the version it loaded; the controller's fold turns
+   * that into the ledger position the run says that version holds, so the
+   * cursor starts where this canvas actually stands instead of at zero, the
+   * frames the backlog already carries beyond it land at once, and the ones
+   * after that draw themselves in. Nothing is persisted anywhere to make this
+   * work: the durable version and the stream's own replayed backlog are the
+   * whole mechanism, which is why a reload is the same path as a first open.
+   *
+   * Gated on the LOCK, because the seed only means anything while a run is
+   * streaming this document — outside one, task 8's position-0 cursor is
+   * already right. Keyed on the load GENERATION as well as the version, so a
+   * rung-A reload that lands the same version is still a fresh join: it
+   * replaced the picture the pump was drawing.
+   */
+  const seedSceneStream = chat.seedSceneStream;
+  const joinedDocument = sceneLocked ? sceneSession.loadedDocument : null;
+  const joinedDocumentId = joinedDocument?.documentId ?? null;
+  const joinedVersion = joinedDocument?.version ?? null;
+  const joinedGeneration = joinedDocument?.loadGeneration ?? null;
+  useEffect(() => {
+    if (joinedDocumentId === null || joinedVersion === null) return;
+    seedSceneStream(joinedDocumentId, joinedVersion);
+  }, [joinedDocumentId, joinedGeneration, joinedVersion, seedSceneStream]);
   const designReferencesEnabled =
     chat.designLegOpen &&
     shell.artifactKind === "ad" &&

@@ -629,3 +629,220 @@ test("a cursor `dirty` action leaves the drawn scene alone — it is a waiting r
     pump.stop();
   });
 });
+
+/* ---------------------------------------------------------------------------
+ * Late join (task 10) — the seed action, and the backlog it fast-forwards.
+ *
+ * Someone who opens (or reloads) a tab onto a document whose run is in flight
+ * wants to SEE where the design is, not to watch five minutes of it re-drawn
+ * from the beginning. The cursor's seed says WHERE the loaded document stands
+ * in the ledger; this is what the pump does with the frames beyond it.
+ * ------------------------------------------------------------------------ */
+
+function seed(sequence: number, documentId: string, position: number): SceneStreamActionRecord {
+  return record(sequence, documentId, { action: "seed", position, dirty: false });
+}
+
+test("a join fast-forwards the backlog that arrives with it — no animation", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, displays, pump } = harness();
+
+    consumeSceneStreamActions(
+      pump,
+      [
+        seed(1, "doc_1", 40),
+        record(2, "doc_1", { action: "apply", operations: [insertNode("n1")] }),
+        record(3, "doc_1", { action: "apply", operations: [insertNode("n2")] }),
+      ],
+      "doc_1",
+      0,
+    );
+    // Before ANY clock has run: both batches are in the engine and on screen.
+    assert.deepEqual(engine.batches.flat(), [insertNode("n1"), insertNode("n2")]);
+    const shown = displays.at(-1);
+    assert.ok(shown && "n1" in shown.nodes && "n2" in shown.nodes);
+
+    // And nothing is left on the clock — the join spent the whole backlog.
+    const settled = displays.length;
+    clock.advance(10_000);
+    assert.equal(displays.length, settled);
+
+    pump.stop();
+  });
+});
+
+test("a backlog arriving after the join still fast-forwards; the pass behind it animates", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, displays, pump } = harness();
+
+    // The document loaded first; the replayed op frames land a tick later. The
+    // join itself hands the canvas back to the document it loaded (one null).
+    consumeSceneStreamActions(pump, [seed(1, "doc_1", 40)], "doc_1", 0);
+    assert.equal(engine.batches.length, 0);
+    assert.equal(displays.length, 1);
+    assert.equal(displays.at(-1), null, "the join hands the canvas back first");
+
+    consumeSceneStreamActions(
+      pump,
+      [record(2, "doc_1", { action: "apply", operations: [insertNode("n1")] })],
+      "doc_1",
+      1,
+    );
+    assert.equal(displays.length, 2, "the backlog snaps — no clock ran");
+    assert.ok(displays.at(-1)?.nodes.n1);
+
+    // Caught up: the next batch is LIVE, and it draws itself in.
+    consumeSceneStreamActions(
+      pump,
+      [record(3, "doc_1", { action: "apply", operations: [insertNode("n2")] })],
+      "doc_1",
+      2,
+    );
+    assert.equal(displays.length, 2, "a live batch is paced, not snapped");
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.equal(displays.length, 3);
+    assert.ok(displays.at(-1)?.nodes.n2);
+
+    pump.stop();
+  });
+});
+
+test("a join hands the canvas back to the document it just loaded", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { displays, pump } = harness();
+
+    consumeSceneStreamActions(
+      pump,
+      [record(1, "doc_1", { action: "apply", operations: [insertNode("n1")] })],
+      "doc_1",
+      0,
+    );
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.equal(displays.length, 1);
+
+    // A reload landed a fresh document under the pump: whatever it was holding
+    // is a picture of a different base.
+    consumeSceneStreamActions(pump, [seed(2, "doc_1", 96)], "doc_1", 1);
+    assert.equal(displays.at(-1), null);
+
+    pump.stop();
+  });
+});
+
+test("a join clears the engine-refusal latch — the reloaded document is the new base", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, pump } = harness();
+
+    engine.refuseWith("reject");
+    pump.enqueue([insertNode("n1")]);
+    clock.advance(FIRST_LEAD);
+    assert.equal(pump.isDirty(), true);
+
+    engine.refuseWith("no");
+    consumeSceneStreamActions(pump, [seed(1, "doc_1", 96)], "doc_1", 0);
+    assert.equal(pump.isDirty(), false);
+
+    consumeSceneStreamActions(
+      pump,
+      [record(2, "doc_1", { action: "apply", operations: [insertNode("n2")] })],
+      "doc_1",
+      1,
+    );
+    assert.ok(engine.batches.flat().some((operation) => operation === undefined) === false);
+    assert.deepEqual(engine.batches.at(-1), [insertNode("n2")]);
+
+    pump.stop();
+  });
+});
+
+test("a join naming another document never touches this pump", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { displays, pump } = harness();
+
+    consumeSceneStreamActions(
+      pump,
+      [record(1, "doc_1", { action: "apply", operations: [insertNode("n1")] })],
+      "doc_1",
+      0,
+    );
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.equal(displays.length, 1);
+
+    consumeSceneStreamActions(pump, [seed(2, "doc_other", 40)], "doc_1", 1);
+    assert.equal(displays.length, 1, "another document's join is not this canvas's");
+
+    pump.stop();
+  });
+});
+
+test("an eviction gap in the action log stops the pump until the next anchor", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, displays, pump } = harness();
+
+    consumeSceneStreamActions(
+      pump,
+      [record(1, "doc_1", { action: "apply", operations: [insertNode("n1")] })],
+      "doc_1",
+      0,
+    );
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.equal(displays.length, 1);
+
+    // The log's oldest surviving entry is sequence 70: everything between 2 and
+    // 69 was appended and evicted while this consumer was not looking, and any
+    // of it could have been an apply. What survived is contiguous in the LEDGER
+    // with what did not, which is precisely why it may not be applied here.
+    consumeSceneStreamActions(
+      pump,
+      [record(70, "doc_1", { action: "apply", operations: [insertNode("n9")] })],
+      "doc_1",
+      1,
+    );
+    clock.advance(10_000);
+    assert.equal(pump.isDirty(), true);
+    assert.equal(displays.length, 1, "nothing lands on top of the hole");
+    assert.equal(engine.batches.length, 1, "and nothing was even offered");
+
+    // The anchor behind the gap is the recovery, exactly as it is for a refused
+    // apply: stale, so the canvas reloads and the pump starts over from it.
+    consumeSceneStreamActions(
+      pump,
+      [record(71, "doc_1", { action: "anchor", version: 9, inSync: false })],
+      "doc_1",
+      70,
+    );
+    assert.equal(pump.isDirty(), false);
+    assert.equal(displays.at(-1), null);
+
+    pump.stop();
+  });
+});
+
+test("a jump in sequence WITHIN one log read is not a gap — other documents stream too", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, pump } = harness();
+
+    consumeSceneStreamActions(
+      pump,
+      [
+        record(1, "doc_other", { action: "apply", operations: [insertNode("x")] }),
+        record(2, "doc_other", { action: "dirty" }),
+        record(3, "doc_1", { action: "apply", operations: [insertNode("n1")] }),
+      ],
+      "doc_1",
+      0,
+    );
+    clock.advance(FIRST_LEAD);
+    assert.equal(pump.isDirty(), false);
+    assert.deepEqual(engine.batches, [[insertNode("n1")]]);
+
+    pump.stop();
+  });
+});

@@ -3,10 +3,14 @@ import test from "node:test";
 import {
   NO_SCENE_STREAM,
   SCENE_STREAM_ACTION_LOG_LIMIT,
+  SCENE_STREAM_CHECKPOINT_LOG_LIMIT,
   advanceSceneStreamCursor,
   applySceneStreamFrame,
   newSceneStreamCursor,
   operationsFromStreamFrame,
+  seedSceneStreamCursor,
+  seedSceneStreamState,
+  type SceneCheckpointMark,
   type SceneStreamFrame,
 } from "./scene-stream-cursor";
 
@@ -460,4 +464,195 @@ test("every drop path returns the cursor it was given, unchanged by identity", (
     if (step.action.action !== "drop") continue;
     assert.equal(step.cursor, seated);
   }
+});
+
+/* ---------------------------------------------------------------------------
+ * Late join (task 10) — the seed.
+ *
+ * Task 8's cursor starts at 0 because nothing has been streamed for it yet.
+ * That is right for a canvas opened BEFORE the run and wrong for one opened
+ * DURING it: the document it loaded already contains every operation the run
+ * committed, so a cursor at 0 either goes dirty on the next frame (best case,
+ * no live motion) or — if the run's whole ledger happens to be in the replayed
+ * backlog — applies operations the loaded document already holds. The seed is
+ * the answer: the loaded VERSION is a position in the same ledger, and the
+ * replayed `design.checkpoint` frames are what translate it.
+ * ------------------------------------------------------------------------ */
+
+function mark(
+  documentId: string | null,
+  version: number | null,
+  operations: number | null,
+): SceneCheckpointMark {
+  return { documentId, version, operations };
+}
+
+test("a late join seeds from the replayed checkpoint that committed the loaded version", () => {
+  const cursor = seedSceneStreamCursor({
+    documentId: DOC,
+    documentVersion: 7,
+    backlogCheckpoints: [
+      mark(DOC, 5, 40),
+      mark(DOC, 7, 96),
+      // Committed after the version this canvas loaded: the document does NOT
+      // contain these operations, so they must not move the cursor.
+      mark(DOC, 8, 120),
+    ],
+  });
+  assert.deepEqual(cursor, { documentId: DOC, position: 96, dirty: false });
+});
+
+test("the seed reads only its own document's checkpoints", () => {
+  const cursor = seedSceneStreamCursor({
+    documentId: DOC,
+    documentVersion: 7,
+    backlogCheckpoints: [
+      mark(OTHER, 7, 500),
+      mark(null, 7, 400),
+      mark(DOC, 7, 96),
+      // Unreadable marks are skipped exactly as the fold declines to re-seat on
+      // one: a position that cannot be read is not evidence of anything.
+      mark(DOC, null, 300),
+      mark(DOC, 9, null),
+    ],
+  });
+  assert.deepEqual(cursor, { documentId: DOC, position: 96, dirty: false });
+});
+
+test("a version-0 document with no checkpoint in the backlog seeds at 0 — task 8's default", () => {
+  const cursor = seedSceneStreamCursor({
+    documentId: DOC,
+    documentVersion: 0,
+    backlogCheckpoints: [mark(OTHER, 3, 50)],
+  });
+  assert.deepEqual(cursor, newSceneStreamCursor(DOC));
+});
+
+test("a document AHEAD of every replayed checkpoint seeds dirty at the highest known position", () => {
+  // The backlog horizon did not reach the checkpoint that committed version 9.
+  // Nothing may be applied until the next anchor — the canvas honestly shows
+  // the document it loaded meanwhile.
+  const cursor = seedSceneStreamCursor({
+    documentId: DOC,
+    documentVersion: 9,
+    backlogCheckpoints: [mark(DOC, 3, 20), mark(DOC, 5, 40)],
+  });
+  assert.deepEqual(cursor, { documentId: DOC, position: 40, dirty: true });
+});
+
+test("a version no checkpoint describes seeds dirty, even with marks on both sides of it", () => {
+  // The straddle. A mark BELOW the loaded version is a lower bound, not a
+  // position: version 6 holds v5's 40 operations plus however many the commit
+  // that produced it added, and no replayed frame says how many. Seeding at 40
+  // would accept a frame that begins at 40 and re-apply operations the loaded
+  // document already contains.
+  const cursor = seedSceneStreamCursor({
+    documentId: DOC,
+    documentVersion: 6,
+    backlogCheckpoints: [mark(DOC, 5, 40), mark(DOC, 8, 120)],
+  });
+  assert.deepEqual(cursor, { documentId: DOC, position: 120, dirty: true });
+});
+
+test("a loaded document with NO checkpoints at all seeds dirty at 0", () => {
+  const cursor = seedSceneStreamCursor({
+    documentId: DOC,
+    documentVersion: 4,
+    backlogCheckpoints: [],
+  });
+  assert.deepEqual(cursor, { documentId: DOC, position: 0, dirty: true });
+});
+
+test("the fold keeps the readable checkpoint marks the seed reads, bounded", () => {
+  let state = NO_SCENE_STREAM;
+  assert.deepEqual(state.checkpoints, []);
+  state = applySceneStreamFrame(state, checkpoint({ version: 5, operations: 40 }));
+  state = applySceneStreamFrame(state, checkpoint({ version: 6, operations: 64 }));
+  assert.deepEqual(state.checkpoints, [mark(DOC, 5, 40), mark(DOC, 6, 64)]);
+
+  const total = SCENE_STREAM_CHECKPOINT_LOG_LIMIT + 5;
+  for (let index = 1; index <= total; index += 1) {
+    state = applySceneStreamFrame(
+      state,
+      checkpoint({ version: 100 + index, operations: 1000 + index }),
+    );
+  }
+  assert.equal(state.checkpoints.length, SCENE_STREAM_CHECKPOINT_LOG_LIMIT);
+  assert.deepEqual(state.checkpoints.at(-1), mark(DOC, 100 + total, 1000 + total));
+});
+
+test("seeding the fold re-seats the document's cursor and logs the join", () => {
+  // A late joiner's replayed backlog: two checkpoints, then op frames the
+  // un-seeded cursor could not place.
+  let state = applySceneStreamFrame(NO_SCENE_STREAM, checkpoint({ version: 5, operations: 40 }));
+  state = applySceneStreamFrame(state, checkpoint({ version: 7, operations: 96 }));
+  const beforeSeed = state.actions.length;
+
+  state = seedSceneStreamState(state, { documentId: DOC, documentVersion: 5 });
+  assert.deepEqual(state.cursors.get(DOC), {
+    documentId: DOC,
+    position: 40,
+    dirty: false,
+  });
+  const logged = state.actions.at(-1);
+  assert.equal(state.actions.length, beforeSeed + 1);
+  assert.deepEqual(logged?.action, { action: "seed", position: 40, dirty: false });
+  assert.equal(logged?.documentId, DOC);
+  assert.equal(logged?.sequence, state.actions.at(-2)!.sequence + 1);
+});
+
+test("the seed re-seats a cursor the stream had already carried past the loaded version", () => {
+  // THE CORRUPTION THIS CLOSES. The backlog anchored the cursor at the run's
+  // latest checkpoint (position 96), but the canvas loaded version 5 — which
+  // holds only 40 operations. Without the seed the next contiguous frame would
+  // apply over the 56 operations the canvas does not have.
+  let state = applySceneStreamFrame(NO_SCENE_STREAM, checkpoint({ version: 5, operations: 40 }));
+  state = applySceneStreamFrame(state, checkpoint({ version: 7, operations: 96 }));
+  assert.equal(state.cursors.get(DOC)?.position, 96);
+
+  state = seedSceneStreamState(state, { documentId: DOC, documentVersion: 5 });
+  const next = applySceneStreamFrame(
+    state,
+    opBatch({ operations: [op("a"), op("b")], operationsTotal: 98 }),
+  );
+  assert.equal(next.actions.at(-1)?.action.action, "dirty");
+  assert.equal(
+    next.cursors.get(DOC)?.dirty,
+    true,
+    "a frame beyond the loaded version may not be applied over the hole",
+  );
+});
+
+test("the seed leaves every other document's cursor alone", () => {
+  let state = applySceneStreamFrame(
+    NO_SCENE_STREAM,
+    opBatch({ documentId: OTHER, operations: [op("a")], operationsTotal: 1 }),
+  );
+  state = applySceneStreamFrame(state, checkpoint({ version: 5, operations: 40 }));
+  const other = state.cursors.get(OTHER);
+  state = seedSceneStreamState(state, { documentId: DOC, documentVersion: 5 });
+  assert.equal(state.cursors.get(OTHER), other);
+});
+
+test("a mid-run reload is the same path: the second load re-seats to its own version", () => {
+  // The tab reloaded while the run kept going. Nothing was persisted on the
+  // client to make this work — the durable version the canvas loaded, and the
+  // checkpoints the stream replays on re-attach, are the whole mechanism.
+  let state = applySceneStreamFrame(NO_SCENE_STREAM, checkpoint({ version: 5, operations: 40 }));
+  state = seedSceneStreamState(state, { documentId: DOC, documentVersion: 5 });
+  assert.equal(state.cursors.get(DOC)?.position, 40);
+
+  state = applySceneStreamFrame(state, checkpoint({ version: 6, operations: 71 }));
+  state = seedSceneStreamState(state, { documentId: DOC, documentVersion: 6 });
+  assert.deepEqual(state.cursors.get(DOC), {
+    documentId: DOC,
+    position: 71,
+    dirty: false,
+  });
+  // …and the frame that begins exactly there is live motion again.
+  const next = applySceneStreamFrame(
+    state,
+    opBatch({ operations: [op("a")], operationsTotal: 72 }),
+  );
+  assert.equal(next.actions.at(-1)?.action.action, "apply");
 });

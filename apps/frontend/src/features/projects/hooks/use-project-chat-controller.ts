@@ -64,6 +64,7 @@ import {
 import {
   NO_SCENE_STREAM,
   applySceneStreamFrame,
+  seedSceneStreamState,
   type SceneStreamFrame,
   type SceneStreamState,
 } from "@/features/design-editor/adapter/scene-stream-cursor";
@@ -183,6 +184,20 @@ export interface ProjectChatController {
    * health always reloads, which is rung A's shipped behaviour.
    */
   publishSceneRevealHealth: (probe: SceneRevealHealthProbe | null) => void;
+  /**
+   * Task 10 (late join): a canvas finished loading `documentId` at
+   * `documentVersion`.
+   *
+   * The second INPUT on this interface, and the narrowest one that can carry
+   * the fact: two primitives, no document type and no pump type. The controller
+   * cannot see the editor — the same shape everything else here takes — so the
+   * surface that loaded the document reports the version, and the fold turns it
+   * into the cursor position the run's ledger says that version holds.
+   *
+   * Called on every LOAD, including a reload that lands the same version: the
+   * load is the event, because it replaces whatever the canvas was showing.
+   */
+  seedSceneStream: (documentId: string, documentVersion: number) => void;
   submitting: boolean;
   gateFor(part: ChatGatePart): GateCardModel | null;
   gateAnswerForTurn(turnId: string): GateAnswerDisplay | null;
@@ -293,6 +308,26 @@ export function useProjectChatController({
   const publishSceneRevealHealth = useCallback(
     (probe: SceneRevealHealthProbe | null) => {
       sceneRevealHealthRef.current = probe;
+    },
+    [],
+  );
+  /**
+   * Task 10: a canvas joined the run — it loaded this document at this durable
+   * version, and the cursor has to be re-seated to where that version stands in
+   * the ledger, or the arithmetic above measures from the wrong origin.
+   *
+   * Through the REF, exactly like the fold above and for the same reason: a
+   * frame arriving in the same tick has to see the seeded cursor, and a state
+   * updater's result is not readable until the commit after.
+   */
+  const seedSceneStream = useCallback(
+    (documentId: string, documentVersion: number) => {
+      const next = seedSceneStreamState(sceneStreamRef.current, {
+        documentId,
+        documentVersion,
+      });
+      sceneStreamRef.current = next;
+      setSceneStream(next);
     },
     [],
   );
@@ -1124,6 +1159,7 @@ export function useProjectChatController({
     agentRunLock,
     sceneStream,
     publishSceneRevealHealth,
+    seedSceneStream,
     submitting,
     gateFor,
     gateAnswerForTurn,

@@ -313,6 +313,12 @@ export class SceneRevealPump {
   private active = false;
   /** An apply refused or threw: stop applying until the next anchor. */
   private dirtyUntilAnchor = false;
+  /**
+   * Task 10: a canvas has just joined a run in flight and has not caught up to
+   * it yet. While it holds, the next batches to arrive are BACKLOG — frames the
+   * run already streamed — and they land at once instead of being drawn in.
+   */
+  private joining = false;
   private queue: RevealStep[] = [];
   private compression = 1;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -357,9 +363,58 @@ export class SceneRevealPump {
     this.cancelTimer();
     this.active = true;
     this.dirtyUntilAnchor = false;
+    this.joining = false;
     this.queue = [];
     this.compression = 1;
     this.pendingDisplay = null;
+  }
+
+  /**
+   * A canvas JOINED this run: it has finished loading the document at a durable
+   * version, and task 10's cursor seed has re-seated the ledger position to
+   * match (`SceneStreamAction` `seed`).
+   *
+   * Two things follow, and they are the whole method.
+   *
+   * **The document under the pump is new.** Whatever it was holding — a queued
+   * batch, a scene held back mid-draw, a refusal it latched on — describes the
+   * document that was there BEFORE this load, so it is dropped exactly as a
+   * stale anchor drops it, and the canvas renders the document it just loaded.
+   *
+   * **What arrives next is backlog, not news.** A run that has been going for
+   * five minutes has streamed five minutes of frames; a tab that opens into it
+   * wants to see where the design IS, not to watch it re-drawn from the
+   * beginning. So the batches that follow the join land in one apply
+   * (`settleJoin`), and only once the canvas has caught up does the reveal
+   * start drawing elements in again.
+   */
+  join(): void {
+    if (!this.active) return;
+    this.cancelTimer();
+    this.queue = [];
+    this.pendingDisplay = null;
+    this.dirtyUntilAnchor = false;
+    this.joining = true;
+    this.emit(null);
+  }
+
+  /**
+   * End of one consume pass: if this pump is still catching up from a join and
+   * that pass brought it work, show all of it at once and declare the join
+   * over — from the next pass on, the reveal paces normally.
+   *
+   * The join latch outlives an EMPTY pass on purpose. The document load and the
+   * replayed frames race: the load can win by a tick or two, and a backlog that
+   * animated because it arrived one commit after the seed would be exactly the
+   * five-minute re-draw the join exists to skip. A pass that brings nothing
+   * therefore leaves the latch standing, and the first pass that brings a batch
+   * spends it.
+   */
+  settleJoin(): void {
+    if (!this.joining || !this.active) return;
+    if (this.queue.length === 0 && this.pendingDisplay === null) return;
+    this.fastForward();
+    this.joining = false;
   }
 
   /**
@@ -371,9 +426,31 @@ export class SceneRevealPump {
     this.cancelTimer();
     this.active = false;
     this.dirtyUntilAnchor = false;
+    this.joining = false;
     this.queue = [];
     this.pendingDisplay = null;
     this.emit(null);
+  }
+
+  /**
+   * The action log lost entries between one read of it and the next (task 10).
+   *
+   * The log is bounded at 64: a commit that appends more than the consumer has
+   * yet read EVICTS the oldest, and what was evicted may have been an `apply`.
+   * The cursor's own arithmetic cannot save the pump here — every batch it
+   * cleared IS contiguous in the ledger, which is exactly why the ones that
+   * survived the eviction would land on top of a canvas missing the ones that
+   * did not. So contiguity is never assumed across an eviction: the pump
+   * latches the same dirty it latches on a refused apply, drops op frames, and
+   * waits for the anchor behind the gap — which reloads the canvas from the
+   * document, because a dirty pump is not clean and an unclean pump reloads.
+   */
+  gap(): void {
+    if (!this.active || this.dirtyUntilAnchor) return;
+    console.error(
+      "[scene-reveal] the streamed action log outran this canvas; the pump waits for the next checkpoint",
+    );
+    this.markDirty();
   }
 
   /**
@@ -608,6 +685,14 @@ export function consumeSceneStreamActions(
   lastSequence: number,
 ): number {
   let sequence = lastSequence;
+  // An eviction gap: the log's oldest surviving entry is already PAST the
+  // resume point, so entries this consumer never saw were trimmed away. Checked
+  // before anything is consumed, because what follows a gap must not be applied
+  // (see `SceneRevealPump.gap`). Note that a jump in sequence WITHIN the log is
+  // not a gap — the log is shared by every document the thread streams, and
+  // another document's records legitimately sit between this one's.
+  const oldest = actions[0];
+  if (oldest !== undefined && oldest.sequence > lastSequence + 1) pump.gap();
   for (const record of actions) {
     if (record.sequence <= sequence) continue;
     sequence = record.sequence;
@@ -621,11 +706,23 @@ export function consumeSceneStreamActions(
       case "anchor":
         pump.anchor(record.action.inSync);
         break;
+      case "seed":
+        // Task 10: a canvas loaded this document at a durable version and the
+        // cursor was re-seated to match. Whatever the pump was holding belongs
+        // to the document that load replaced, and whatever arrives next is the
+        // run's backlog rather than its news.
+        pump.join();
+        break;
       case "dirty":
       case "drop":
         break;
     }
   }
+  // The join's other half, and the reason it is here rather than in the loop:
+  // the batches that catch a late joiner up can arrive in the SAME pass as the
+  // seed or a tick or two behind it (the document fetch and the replayed frames
+  // race), and both must land at once. A no-op on a pump that is not joining.
+  pump.settleJoin();
   return sequence;
 }
 
