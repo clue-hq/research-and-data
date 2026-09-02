@@ -72,6 +72,9 @@ def test_rendered_hotlink_block_carries_the_real_cdn_url():
     assert "fallback/transparent" in rendered
     # the personalization marker survives f-string escaping as a literal
     assert "{{account.logo}}" in rendered
+    # Brandfetch's CDN refuses HeadlessChrome, so our automated renders show the
+    # hotlink empty; the caveat must survive the wrap as one contiguous phrase.
+    assert "it renders in the editor preview and on the published page" in rendered
 
 
 def test_rendered_hotlink_block_is_absent_without_a_client_id():
@@ -84,6 +87,11 @@ def test_rendered_hotlink_block_is_absent_without_a_client_id():
         brand_card="{}", theme_token_names="brand, ink", brandfetch_client_id=None
     )
     assert "cdn.brandfetch.io" not in explicit_none
+
+    # the automated-render caveat belongs to the block, so it goes with it
+    caveat = "it renders in the editor preview and on the published page"
+    assert caveat not in omitted
+    assert caveat not in explicit_none
 
 
 def test_hotlink_block_and_account_block_render_together():
