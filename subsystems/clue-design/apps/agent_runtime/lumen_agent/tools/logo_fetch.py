@@ -6,10 +6,10 @@ only in how a registered asset reaches their document — the WebDoc op key is
 here: normalize the input, run the two rungs, and shape one ingest call per
 resolved cell of the 2x2 family.
 
-Two rungs, in order (founder decision 2026-08-31): the VENDOR (Brandfetch) is
-asked first, because a licensed brand API answers in one call what a scrape
-guesses at; the in-house LADDER then backfills only the cells the vendor left
-empty. A vendor-full family never touches the site at all.
+Two sources, one arbiter (founder decision 2026-09-02): the VENDOR (Brandfetch)
+and the in-house LADDER both propose candidates for every cell, and
+`logo_arbiter.choose_cells` picks the best one per cell -- measured ink for the
+surface first, because a vendor theme label is a hint, never proof.
 
 Static tier only on the ladder rung. A Playwright launch costs about thirty
 seconds, which is more than a turn can spend, so a page that renders its header
@@ -36,7 +36,7 @@ __all__ = [
     "LogoFetchOutcome",
     "PreparedLogo",
     "fetch_logo_family",
-    "ladder_cells",
+    "ladder_candidates",
     "review_payload",
 ]
 
@@ -111,7 +111,9 @@ def fetch_logo_family(
     force_refresh: bool = False,
     cache=None,
 ) -> LogoFetchOutcome:
-    """Two-rung dispatch: cache -> Brandfetch -> ladder (per-cell backfill).
+    """Two-rung dispatch: cache -> Brandfetch + ladder -> arbiter.
+
+    Both sources propose; the arbiter picks per cell.
 
     Raises `CaptureError` from the ladder rung (a blocked or unreachable site) only
     when the vendor filled no cell at all; when the vendor already answered at least
@@ -120,6 +122,7 @@ def fetch_logo_family(
     """
     from lumen_ingestion import logo_ladder
     from lumen_ingestion.capture.net import CaptureError
+    from lumen_ingestion.logo_arbiter import choose_cells
     from lumen_ingestion.logo_vendor import VendorCredentialsMissing, VendorLookupFailed
 
     site = logo_ladder.normalize_site_url(url_or_domain)
@@ -130,37 +133,41 @@ def fetch_logo_family(
             hit.cache_hit = True
             return hit
 
-    cells: dict = {}
+    cells_by_source: dict = {name: [] for name in CELL_NAMES}
+    vendor_cells: dict = {}
     notes: List[str] = []
     vendor_notes: List[str] = []
     try:
-        cells, vendor_notes = _vendor_rung(site, company_name)
+        vendor_cells, vendor_notes = _vendor_rung(site, company_name)
     except VendorCredentialsMissing:
         notes.append("vendor rung disabled: no BRANDFETCH_API_KEY configured")
     except VendorLookupFailed as error:
         notes.append(f"vendor rung degraded ({error.code}): {error.message}")
+    for name, cell in vendor_cells.items():
+        cells_by_source[name].append(cell)
 
     resolution = None
-    missing = [name for name in CELL_NAMES if name not in cells]
-    if missing:
-        try:
-            resolution = _ladder_rung(site, company_name)
-        except CaptureError as error:
-            # Per-cell fallback (plan §0.5): a blocked or unreachable site cannot
-            # un-answer what the vendor already served, so a partial family stands.
-            # With no vendor cell to keep, that failure IS the answer -- re-raise.
-            if not cells:
-                raise
-            notes.append(
-                f"ladder backfill unavailable ({error.code}): {error.message};"
-                " vendor cells kept"
-            )
-            # The partial family caches as-is; its empty cells are retried only on a
-            # later `force_refresh=True` call (the plan's eviction affordance).
-        else:
-            for name, cell in ladder_cells(resolution).items():
-                if name in missing:
-                    cells[name] = cell
+    try:
+        # Always, even on a full vendor family: the site's own assets get to
+        # compete for every cell (founder ruling 2026-09-02).
+        resolution = _ladder_rung(site, company_name)
+    except CaptureError as error:
+        # A blocked or unreachable site cannot un-answer what the vendor already
+        # served, so a vendor-only family stands. With no vendor candidate to
+        # keep, that failure IS the answer -- re-raise.
+        if not vendor_cells:
+            raise
+        notes.append(
+            f"ladder unavailable ({error.code}): {error.message}; vendor candidates only"
+        )
+        # The partial family caches as-is; its empty cells are retried only on a
+        # later `force_refresh=True` call (the plan's eviction affordance).
+    if resolution is not None:
+        for name, found in ladder_candidates(resolution).items():
+            cells_by_source[name].extend(found)
+
+    cells, arbitration_notes = choose_cells(cells_by_source)
+    notes.extend(arbitration_notes)
 
     outcome = _assemble(cells, resolution, site, company_name, notes, vendor_notes)
     if cache is not None and outcome.status == "ok":
@@ -253,11 +260,13 @@ def _assemble(cells, resolution, site, company_name, notes, vendor_notes) -> Log
     )
 
 
-def ladder_cells(resolution) -> dict:
-    """The ladder's four slots folded into the 2x2. The ladder's `light`/`dark`
-    are theme-correct already (its slot names use OUR background semantics);
-    what this adds is the completeness split: a symbol-shaped primary is a
-    MARK, not a lockup, and the wordmark slot backfills the light lockup."""
+def ladder_candidates(resolution) -> dict:
+    """The ladder's four slots folded into 2x2 CANDIDATES. The ladder's
+    `light`/`dark` are theme-correct already (its slot names use OUR background
+    semantics); what this adds is the completeness split: a symbol-shaped
+    primary is a MARK, not a lockup. Nothing is dropped here — the wordmark
+    slot competes for the light lockup instead of only backfilling it, and
+    several candidates per cell are normal. The arbiter picks."""
     from lumen_ingestion.logo_family import (
         SOURCE_LADDER,
         SOURCE_LADDER_MATERIALIZED,
@@ -280,28 +289,33 @@ def ladder_cells(resolution) -> dict:
                 "rung": slot.candidate.rung,
                 "basis": slot.basis[:200],
                 "lockup": slot.candidate.lockup,
+                # The size the arbiter ranks on.
+                "width": slot.candidate.width,
+                "height": slot.candidate.height,
                 **({"materialized_ink": slot.ink} if slot.ink else {}),
             },
         )
 
-    cells: dict = {}
+    found: dict = {}
+
+    def propose(name: str, slot, ladder_slot: str) -> None:
+        found.setdefault(name, []).append(to_cell(name, slot, ladder_slot))
+
     for theme in ("light", "dark"):
         slot = resolution.slots.get(theme)
         if slot is None or not slot.body:
             continue
         completeness = "mark" if slot.candidate.lockup == "symbol" else "lockup"
-        cells[f"{theme}_{completeness}"] = to_cell(f"{theme}_{completeness}", slot, theme)
+        propose(f"{theme}_{completeness}", slot, theme)
 
     mark = resolution.slots.get("mark")
     if mark is not None and mark.body:
-        name = "dark_mark" if mark.candidate.variant == "dark" else "light_mark"
-        if name not in cells:
-            cells[name] = to_cell(name, mark, "mark")
+        propose("dark_mark" if mark.candidate.variant == "dark" else "light_mark", mark, "mark")
 
     wordmark = resolution.slots.get("wordmark")
-    if wordmark is not None and wordmark.body and "light_lockup" not in cells:
-        cells["light_lockup"] = to_cell("light_lockup", wordmark, "wordmark")
-    return cells
+    if wordmark is not None and wordmark.body:
+        propose("light_lockup", wordmark, "wordmark")
+    return found
 
 
 def _now() -> str:

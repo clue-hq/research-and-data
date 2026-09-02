@@ -3327,8 +3327,10 @@ class LumenWebTools:
         brand publishes nothing for it — that is a real answer, not a failure,
         and it is never filled by recoloring another cell.
 
-        Cells are sourced vendor-first (Brandfetch, keyed by domain), with the
-        in-house ladder filling only the cells the vendor left empty. Results
+        Each cell is the best PROVEN asset from two sources — Brandfetch and a
+        scrape of the company's own site — judged by measured ink colour for the
+        surface, completeness, format and size. Every asset says which source
+        served it. Results
         are cached per workspace+company, so asking twice in a project costs
         one fetch — pass `force_refresh=True` only when the user says the logo
         is wrong or outdated, which refetches and replaces the cached family.

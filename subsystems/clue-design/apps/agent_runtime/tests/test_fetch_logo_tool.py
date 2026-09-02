@@ -59,6 +59,24 @@ def _png(size: int = 180) -> bytes:
     return buffer.getvalue()
 
 
+#: Ink colours the arbiter must be able to MEASURE off the bytes.
+DARK_INK = (58, 38, 26)     # brown art: for LIGHT surfaces
+ORANGE_INK = (240, 138, 44)  # mid-tone: measures `unknown`
+
+
+def _flat_png(width: int, height: int, rgb: tuple) -> bytes:
+    """Flat art on transparency, at a real logo's proportions."""
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    ImageDraw.Draw(image).rectangle(
+        [width // 8, height // 4, width * 7 // 8, height * 3 // 4], fill=rgb + (255,)
+    )
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 GOODMAN_HTML = """
 <html><head><title>Goodman Campbell Brain and Spine</title>
   <link rel="apple-touch-icon" href="/brand/goodman-logomark.png"></head>
@@ -339,14 +357,17 @@ def test_fetch_logo_is_offered_to_both_authors(tmp_path, monkeypatch):
 
 
 def _slot(body: bytes, *, lockup: str, variant: str, provenance: str = "genuine",
-          url: str = "https://acme.com/logo.svg", rung: str = "HEADER"):
+          url: str = "https://acme.com/logo.svg", rung: str = "HEADER",
+          content_type: str = "image/svg+xml", width: int | None = None,
+          height: int | None = None):
     from lumen_ingestion.logo_ladder import LadderCandidate, LadderSlot
 
-    candidate = LadderCandidate(url=url, rung=rung, fmt="svg")
+    fmt = "svg" if content_type == "image/svg+xml" else content_type.rsplit("/", 1)[-1]
+    candidate = LadderCandidate(url=url, rung=rung, fmt=fmt, width=width, height=height)
     candidate.lockup = lockup
     candidate.variant = variant
     return LadderSlot(candidate=candidate, provenance=provenance, body=body,
-                      content_type="image/svg+xml", basis="test basis")
+                      content_type=content_type, basis="test basis")
 
 
 def _resolution(slots):
@@ -357,50 +378,61 @@ def _resolution(slots):
     return res
 
 
-def test_ladder_cells_maps_lockup_primaries_and_variant_marks():
-    from lumen_agent.tools.logo_fetch import ladder_cells
+def test_ladder_candidates_maps_lockup_primaries_and_variant_marks():
+    from lumen_agent.tools.logo_fetch import ladder_candidates
 
-    cells = ladder_cells(_resolution({
-        "light": _slot(_svg(), lockup="full_lockup", variant="light"),
+    found = ladder_candidates(_resolution({
+        "light": _slot(_svg(), lockup="full_lockup", variant="light",
+                       content_type="image/png", width=400, height=80),
         "dark": _slot(_svg("#ffffff"), lockup="full_lockup", variant="dark"),
         "mark": _slot(_svg(), lockup="symbol", variant="unknown"),
     }))
-    assert set(cells) == {"light_lockup", "dark_lockup", "light_mark"}
-    assert cells["light_lockup"].source == "ladder"
+    assert set(found) == {"light_lockup", "dark_lockup", "light_mark"}
+    assert found["light_lockup"][0].source == "ladder"
+    # The size the arbiter ranks on rides along with each candidate.
+    assert found["light_lockup"][0].evidence["width"] == 400
+    assert found["light_lockup"][0].evidence["height"] == 80
 
 
-def test_ladder_cells_symbol_primary_lands_in_the_mark_cell():
-    from lumen_agent.tools.logo_fetch import ladder_cells
+def test_ladder_candidates_symbol_primary_lands_in_the_mark_cell():
+    from lumen_agent.tools.logo_fetch import ladder_candidates
 
-    cells = ladder_cells(_resolution({
+    found = ladder_candidates(_resolution({
         "light": _slot(_svg(), lockup="symbol", variant="light"),
     }))
-    assert list(cells) == ["light_mark"]
+    assert list(found) == ["light_mark"]
 
 
-def test_ladder_cells_wordmark_backfills_light_lockup_and_materialized_is_stamped():
-    from lumen_agent.tools.logo_fetch import ladder_cells
+def test_ladder_candidates_wordmark_competes_for_light_lockup_and_materialized_is_stamped():
+    """The wordmark slot used to be dropped whenever the light slot was filled.
+    It now stands beside it and the arbiter picks."""
+    from lumen_agent.tools.logo_fetch import ladder_candidates
 
-    cells = ladder_cells(_resolution({
-        "wordmark": _slot(_svg(), lockup="wordmark", variant="light"),
+    found = ladder_candidates(_resolution({
+        "light": _slot(_svg(), lockup="full_lockup", variant="light",
+                       url="https://acme.com/header.svg"),
+        "wordmark": _slot(_svg(), lockup="wordmark", variant="light",
+                          url="https://acme.com/wordmark.svg"),
         "dark": _slot(_svg("#ffffff"), lockup="full_lockup", variant="adaptive",
                       provenance="materialized-adaptive"),
     }))
-    assert cells["light_lockup"].evidence["ladder_slot"] == "wordmark"
-    assert cells["dark_lockup"].source == "ladder-materialized"
+    assert [c.evidence["ladder_slot"] for c in found["light_lockup"]] == ["light", "wordmark"]
+    assert found["dark_lockup"][0].source == "ladder-materialized"
 
 
-def test_ladder_cells_symbol_primary_wins_the_light_mark_cell():
-    from lumen_agent.tools.logo_fetch import ladder_cells
+def test_ladder_candidates_symbol_primary_and_mark_slot_both_propose():
+    from lumen_agent.tools.logo_fetch import ladder_candidates
 
-    cells = ladder_cells(_resolution({
+    found = ladder_candidates(_resolution({
         "light": _slot(_svg(), lockup="symbol", variant="light",
                        url="https://acme.com/primary.svg"),
         "mark": _slot(_svg(), lockup="symbol", variant="unknown",
                       url="https://acme.com/mark.svg"),
     }))
-    assert list(cells) == ["light_mark"]
-    assert cells["light_mark"].origin_url.endswith("primary.svg")
+    assert list(found) == ["light_mark"]
+    assert [c.origin_url for c in found["light_mark"]] == [
+        "https://acme.com/primary.svg", "https://acme.com/mark.svg"
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -426,12 +458,15 @@ def _vendor_cells(*names):
 
     return {
         n: FamilyCell(cell=n, body=_svg(), content_type="image/svg+xml",
-                      source=SOURCE_BRANDFETCH, origin_url=f"https://a/{n}.svg")
+                      source=SOURCE_BRANDFETCH, origin_url=f"https://a/{n}.svg",
+                      evidence={"vendor_type": "symbol" if n.endswith("_mark") else "logo"})
         for n in names
     }
 
 
-def test_dispatch_vendor_full_family_skips_the_ladder(monkeypatch):
+def test_dispatch_runs_the_ladder_even_when_the_vendor_filled_every_cell(monkeypatch):
+    """Both sources always propose (founder ruling): a full vendor family no
+    longer buys the site's own assets out of the running."""
     from lumen_agent.tools import logo_fetch
 
     monkeypatch.setattr(
@@ -439,11 +474,15 @@ def test_dispatch_vendor_full_family_skips_the_ladder(monkeypatch):
         lambda site, company: (_vendor_cells(*logo_fetch.CELL_NAMES), []),
     )
 
-    def explode(*a, **k):
-        raise AssertionError("ladder must not run when the vendor filled all cells")
+    asked = []
 
-    monkeypatch.setattr(logo_fetch, "_ladder_rung", explode)
+    def ladder(site, company):
+        asked.append(site)
+        return _resolution({})
+
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", ladder)
     outcome = logo_fetch.fetch_logo_family("acme.com")
+    assert asked == ["https://acme.com/"]
     assert outcome.status == "ok"
     assert set(outcome.cells) == set(logo_fetch.CELL_NAMES)
     assert all(source == "brandfetch" for source in outcome.cells.values())
@@ -457,22 +496,28 @@ def test_dispatch_vendor_full_family_skips_the_ladder(monkeypatch):
     )
 
 
-def test_dispatch_partial_vendor_gets_ladder_backfill_only_for_empty_cells(monkeypatch):
+def test_dispatch_both_sources_compete_for_the_same_cell(monkeypatch):
+    """The vendor's plain `logo` and the ladder's FULL lockup both propose for
+    `light_lockup`; the more complete one takes it, and a note says so."""
     from lumen_agent.tools import logo_fetch
 
     monkeypatch.setattr(
         logo_fetch, "_vendor_rung", lambda site, company: (_vendor_cells("light_lockup"), [])
     )
     ladder = _resolution({
-        "light": _slot(_svg(), lockup="full_lockup", variant="light"),   # must NOT win
+        "light": _slot(_svg(), lockup="full_lockup", variant="light",
+                       url="https://acme.com/full.svg"),
         "dark": _slot(_svg("#fff"), lockup="full_lockup", variant="dark"),
         "mark": _slot(_svg(), lockup="symbol", variant="unknown"),
     })
     monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: ladder)
     outcome = logo_fetch.fetch_logo_family("acme.com")
-    assert outcome.cells["light_lockup"] == "brandfetch"   # vendor kept
+    assert outcome.cells["light_lockup"] == "ladder"
     assert outcome.cells["dark_lockup"] == "ladder"
     assert outcome.cells["light_mark"] == "ladder"
+    light = next(p for p in outcome.prepared if p.cell == "light_lockup")
+    assert light.evidence["arbitration"]["beat"] == ["brandfetch:light_lockup.svg"]
+    assert any("light_lockup" in note and "brandfetch" in note for note in outcome.notes)
 
 
 def test_dispatch_vendor_disabled_or_failing_degrades_to_ladder(monkeypatch):
@@ -520,8 +565,7 @@ def test_dispatch_cache_hit_skips_both_rungs_and_force_refresh_overwrites(monkey
         logo_fetch, "_vendor_rung",
         lambda site, company: (_vendor_cells(*logo_fetch.CELL_NAMES), []),
     )
-    monkeypatch.setattr(logo_fetch, "_ladder_rung",
-                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no ladder")))
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: _resolution({}))
     first = logo_fetch.fetch_logo_family("acme.com", cache=cache)
     assert first.cache_hit is False and "https://acme.com/" in cache.stored
 
@@ -592,7 +636,7 @@ def test_dispatch_keeps_vendor_cells_when_the_ladder_is_blocked(monkeypatch):
     outcome = logo_fetch.fetch_logo_family("acme.com", cache=cache)
     assert outcome.status == "ok"
     assert outcome.cells == {"light_lockup": "brandfetch", "light_mark": "brandfetch"}
-    assert any("ladder backfill unavailable (LUMI0501)" in n for n in outcome.notes)
+    assert any("ladder unavailable (LUMI0501)" in n for n in outcome.notes)
     assert "https://acme.com/" in cache.stored
 
 
@@ -611,6 +655,56 @@ def test_dispatch_reraises_a_blocked_ladder_when_the_vendor_had_nothing(monkeypa
     with pytest.raises(CaptureError):
         logo_fetch.fetch_logo_family("acme.com", cache=cache)
     assert cache.stored == {}
+
+
+def test_dispatch_freshcontext_replay(monkeypatch):
+    """The case that forced the rule (freshcontext.ai, measured 2026-09-02).
+
+    Brandfetch holds one asset: a 310x176 PNG of the short form, labelled
+    `theme=light` -> our `dark_lockup`, but its ink is dark brown, so it is for
+    LIGHT surfaces. The site publishes the real on-dark SVG and the complete
+    1162x571 wordmark. Vendor-first with per-cell backfill kept the mislabelled
+    asset and dropped both; both sources proposing gets all three cells right.
+    """
+    from lumen_agent.tools import logo_fetch
+    from lumen_ingestion.logo_family import SOURCE_BRANDFETCH, FamilyCell
+
+    vendor = FamilyCell(
+        cell="dark_lockup", body=_flat_png(310, 176, DARK_INK), content_type="image/png",
+        source=SOURCE_BRANDFETCH,
+        origin_url="https://cdn.brandfetch.io/freshcontext.ai/logo.png",
+        evidence={"vendor_theme": "light", "vendor_type": "logo",
+                  "width": 310, "height": 176},
+    )
+    monkeypatch.setattr(
+        logo_fetch, "_vendor_rung", lambda site, company: ({"dark_lockup": vendor}, [])
+    )
+    ladder = _resolution({
+        "light": _slot(_flat_png(310, 176, DARK_INK), lockup="wordmark", variant="unknown",
+                       url="https://freshcontext.ai/images/logo-mark.png",
+                       content_type="image/png", width=310, height=176),
+        "dark": _slot(_svg("#ffffff"), lockup="wordmark", variant="dark",
+                      url="https://freshcontext.ai/images/wordmark-ondark.svg"),
+        "mark": _slot(_flat_png(180, 180, ORANGE_INK), lockup="symbol", variant="unknown",
+                      url="https://freshcontext.ai/images/apple-icon.png",
+                      content_type="image/png", width=180, height=180),
+        "wordmark": _slot(_flat_png(1162, 571, DARK_INK), lockup="wordmark",
+                          variant="unknown", url="https://freshcontext.ai/images/wordmark.png",
+                          content_type="image/png", width=1162, height=571),
+    })
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: ladder)
+
+    outcome = logo_fetch.fetch_logo_family("freshcontext.ai")
+
+    assert outcome.cells == {
+        "light_lockup": "ladder", "dark_lockup": "ladder", "light_mark": "ladder"
+    }
+    assert "dark_mark" not in outcome.cells
+    chosen = {p.cell: p.source_ref["url"] for p in outcome.prepared}
+    assert chosen["light_lockup"].endswith("wordmark.png")       # the COMPLETE wordmark
+    assert chosen["dark_lockup"].endswith("wordmark-ondark.svg")  # the real on-dark asset
+    assert chosen["light_mark"].endswith("apple-icon.png")
+    assert any("dark_lockup" in note and "brandfetch" in note for note in outcome.notes)
 
 
 # --------------------------------------------------------------------------- #
