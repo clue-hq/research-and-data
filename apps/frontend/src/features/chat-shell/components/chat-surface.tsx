@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ConversationContent } from "@/features/projects/components/conversation-content";
 import { ProjectComposer } from "@/features/projects/components/project-composer";
@@ -16,6 +16,8 @@ import type {
   ProjectWorkspace,
 } from "@/features/projects/model/project-workspace";
 import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene-editing-session";
+import { useSceneLiveReveal } from "@/features/design-editor/hooks/use-scene-live-reveal";
+import type { Operation } from "@/features/design-editor/engine/scene/contracts";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import { useEditorShellController } from "../hooks/use-editor-shell-controller";
 import { agentRunLockForThread } from "../model/agent-run-lock";
@@ -171,6 +173,32 @@ export function ChatSurface({
   // way — the stage's canvas branch picks the surface by kind.
   const activeDocumentId =
     session.activeDocumentId ?? sceneSession.activeDocumentId;
+  /**
+   * Task 9 (scene live-streaming rung B): the live reveal.
+   *
+   * While the agent-run lock holds over an open ad, the streamed operation
+   * batches task 8 cleared for application are drawn into the canvas on an
+   * animation clock — the design appears to draw itself in, instead of the
+   * user watching a still picture for five minutes and then a jump cut.
+   *
+   * Display state ONLY. The pump's seam is `applyStreamedOperations`, the live
+   * engine apply with no repaint and no mirror-up; it never persists, never
+   * enqueues and never touches history. Nothing here is durable — the agent's
+   * own checkpoints are, and rung A reloads the canvas from them.
+   */
+  const applyStreamedToEngine = useCallback(
+    (operations: Operation[]) =>
+      sceneSession.canvasControls.current?.applyStreamedOperations(
+        operations,
+      ) ?? null,
+    [sceneSession.canvasControls],
+  );
+  const sceneReveal = useSceneLiveReveal({
+    actions: chat.sceneStream.actions,
+    apply: applyStreamedToEngine,
+    documentId: sceneSession.activeDocumentId,
+    locked: sceneLocked,
+  });
   const designReferencesEnabled =
     chat.designLegOpen &&
     shell.artifactKind === "ad" &&
@@ -636,6 +664,9 @@ export function ChatSurface({
         onSceneSelect={sceneSession.onSelectCanvas}
         onSceneZoomChange={sceneSession.onZoomChange}
         sceneCanvasControlsRef={sceneSession.canvasControls}
+        // Task 9: what the ad canvas draws while the reveal pump is streaming.
+        // Null the rest of the time, and the canvas renders the document.
+        sceneDisplayScene={sceneReveal.displayScene}
         // AD4.C / Ruling C-4 — GATE G-H, the canvas half of the same ruling
         // `inspectorDisabled` above implements, off the same fact: while the
         // design agent is at work on this document the human may not change

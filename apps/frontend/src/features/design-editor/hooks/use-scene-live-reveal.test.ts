@@ -1,0 +1,605 @@
+import assert from "node:assert/strict";
+import test, { mock } from "node:test";
+import type { SceneStreamActionRecord } from "../adapter/scene-stream-cursor";
+import type { Operation, Scene } from "../engine/scene/contracts";
+import type { EngineApplyOutcome } from "../engine/scene/wasmEngine";
+import {
+  ADD_PAGE_DRAW_MS,
+  DRAW_MAX_MS,
+  DRAW_MIN_MS,
+  INTER_STEP_PAUSE_MS,
+  MATERIALIZE_FADE_MS,
+  MAX_BATCH_REVEAL_MS,
+  MIN_STEP_TOTAL_MS,
+  REDUCED_MOTION_STEP_MS,
+  SceneRevealPump,
+  TRAVEL_MS,
+  consumeSceneStreamActions,
+} from "./use-scene-live-reveal";
+
+/**
+ * The live-reveal pump (scene live-streaming rung B, task 9).
+ *
+ * The MVP editor's `useAgentTurn.ts` §S2.1 cases, re-expressed against the
+ * platform pump: the engine runs AHEAD of the display and the visible swap is
+ * HELD until the travel+draw clock elapses, a batch landing mid-draw reconciles
+ * cumulatively instead of crawling through a backlog, a fast-forward snaps, an
+ * engine refusal shows nothing and latches until the next anchor, and an unlock
+ * hands the canvas back to the document.
+ *
+ * Everything here runs on node:test's fake clock; nothing waits on real time.
+ * `steppedClock` is the house pattern from task 3's throttle test — a coarse
+ * `tick` runs callbacks at the END of the window, which would let a hold that
+ * fired late still look on time.
+ */
+
+/** Run `body` with the timers faked, and always give the clock back. */
+function onFakeClock(body: () => void): void {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    body();
+  } finally {
+    mock.timers.reset();
+  }
+}
+
+function steppedClock() {
+  return {
+    advance(ms: number) {
+      for (let step = 0; step < ms; step += 1) mock.timers.tick(1);
+    },
+  };
+}
+
+/* ---------------------------------------------------------------------------
+ * Fixtures. A 1000×1000 page and zero-area boxes, so every ported timing lands
+ * on an exact integer: `drawMsForReveal` scales with the box diagonal as a
+ * fraction of the page's, and a zero box is exactly DRAW_MIN_MS.
+ * ------------------------------------------------------------------------ */
+
+const PAGE_ID = "page_1";
+
+function baseScene(): Scene {
+  return {
+    schema_version: 1,
+    meta: {
+      id: "doc_1",
+      title: "Ad",
+      artifact_type: null,
+      medium: "digital",
+      brand_kit: null,
+      status: { kind: "draft" },
+    },
+    pages: {
+      [PAGE_ID]: {
+        id: PAGE_ID,
+        name: "Page",
+        size: {
+          width: 1000,
+          height: 1000,
+          unit: "px",
+          preset: null,
+          orientation: "portrait",
+        },
+        children: [],
+        bleed: null,
+        safe_area: null,
+        background: [],
+      },
+    },
+    nodes: {},
+    slots: {},
+    assets: {},
+    export_profiles: [],
+  } as unknown as Scene;
+}
+
+function insertNode(nodeId: string): Operation {
+  return {
+    kind: "insert_node",
+    parent: { kind: "page", id: PAGE_ID },
+    index: 0,
+    node: { id: nodeId },
+  } as unknown as Operation;
+}
+
+function addPage(pageId: string): Operation {
+  return {
+    kind: "add_page",
+    page: { id: pageId, name: pageId },
+  } as unknown as Operation;
+}
+
+function updateNode(nodeId: string): Operation {
+  return {
+    kind: "update_node",
+    node_id: nodeId,
+    patch: {},
+  } as unknown as Operation;
+}
+
+/**
+ * A stand-in for the canvas's engine seam: it folds `insert_node` into the
+ * scene with a zero-area computed box (so the timing is exact) and records
+ * every batch it was handed.
+ */
+function fakeEngine() {
+  let scene = baseScene();
+  const batches: Operation[][] = [];
+  let refuse: "no" | "reject" | "throw" = "no";
+  return {
+    batches,
+    refuseWith(mode: "no" | "reject" | "throw") {
+      refuse = mode;
+    },
+    scene: () => scene,
+    apply(operations: Operation[]): EngineApplyOutcome | null {
+      batches.push(operations);
+      if (refuse === "throw") throw new Error("engine exploded");
+      if (refuse === "reject") {
+        return {
+          accepted: false,
+          scene,
+          diagnostics: [],
+          inverseOperations: null,
+          appliedOperations: 0,
+        };
+      }
+      const nodes = { ...scene.nodes } as Record<string, unknown>;
+      const pages = { ...scene.pages } as Record<string, unknown>;
+      for (const operation of operations) {
+        const op = operation as unknown as Record<string, never>;
+        const kind = (op as unknown as { kind: string }).kind;
+        if (kind === "insert_node") {
+          const id = (op as unknown as { node: { id: string } }).node.id;
+          nodes[id] = {
+            id,
+            name: id,
+            kind: { kind: "text" },
+            computed: { layout_bounds: { x: 0, y: 0, width: 0, height: 0 } },
+          };
+        } else if (kind === "add_page") {
+          const page = (op as unknown as { page: { id: string } }).page;
+          pages[page.id] = { ...page, children: [] };
+        }
+      }
+      scene = { ...scene, nodes, pages } as unknown as Scene;
+      return {
+        accepted: true,
+        scene,
+        diagnostics: [],
+        inverseOperations: null,
+        appliedOperations: operations.length,
+      };
+    },
+  };
+}
+
+function harness(reducedMotion = false) {
+  const engine = fakeEngine();
+  const displays: (Scene | null)[] = [];
+  const pump = new SceneRevealPump({
+    apply: (operations) => engine.apply(operations),
+    onDisplayScene: (scene) => displays.push(scene),
+    reducedMotion,
+  });
+  pump.start();
+  return { engine, displays, pump };
+}
+
+/** The lead before the first step, and the hold before its content lands. */
+const FIRST_LEAD = INTER_STEP_PAUSE_MS; // 120
+const NODE_HOLD = TRAVEL_MS + DRAW_MIN_MS; // 200 + 250
+
+/* ------------------------------------------------------------------------ */
+
+test("the ported timings are the MVP editor's own numbers", () => {
+  assert.equal(TRAVEL_MS, 200);
+  assert.equal(DRAW_MIN_MS, 250);
+  assert.equal(DRAW_MAX_MS, 500);
+  assert.equal(ADD_PAGE_DRAW_MS, 300);
+  assert.equal(MATERIALIZE_FADE_MS, 250);
+  assert.equal(INTER_STEP_PAUSE_MS, 120);
+  assert.equal(MAX_BATCH_REVEAL_MS, 15000);
+  assert.equal(MIN_STEP_TOTAL_MS, 250);
+  assert.equal(REDUCED_MOTION_STEP_MS, 80);
+});
+
+test("a node batch reaches the engine immediately and the display swaps at travel+draw", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, displays, pump } = harness();
+
+    pump.enqueue([insertNode("n1")]);
+    // Nothing has run yet: the first step begins after one inter-step pause,
+    // exactly as the MVP's `enqueueStreamedBatch` schedules it.
+    assert.equal(engine.batches.length, 0);
+
+    clock.advance(FIRST_LEAD);
+    // ENGINE-AHEAD: the operations are in the engine…
+    assert.equal(engine.batches.length, 1);
+    // …and the display has NOT moved. This is the S2.1 inversion.
+    assert.equal(displays.length, 0);
+
+    clock.advance(NODE_HOLD - 1);
+    assert.equal(displays.length, 0, "the content must not land before the box does");
+
+    clock.advance(1);
+    assert.equal(displays.length, 1);
+    assert.ok(displays[0] && "n1" in displays[0].nodes);
+
+    pump.stop();
+  });
+});
+
+test("an add_page materializes at once — the empty artboard IS the placeholder", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { displays, pump } = harness();
+
+    pump.enqueue([addPage("page_2")]);
+    clock.advance(FIRST_LEAD);
+    // No hold: the MVP holds NODE content only, because a held page has no
+    // artboard for its own chrome to anchor to.
+    assert.equal(displays.length, 1);
+    assert.ok(displays[0] && "page_2" in displays[0].pages);
+
+    pump.stop();
+  });
+});
+
+test("a batch landing mid-draw drains the backlog in ONE cumulative apply", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, displays, pump } = harness();
+
+    pump.enqueue([insertNode("n1"), insertNode("n2")]);
+    clock.advance(FIRST_LEAD);
+    assert.deepEqual(engine.batches.length, 1, "step 1 applied");
+    assert.equal(displays.length, 0, "step 1 is still drawing");
+
+    // Mid-draw: the second step is still queued behind the one in flight.
+    clock.advance(100);
+    pump.enqueue([insertNode("n3")]);
+
+    // The backlog was drained as ONE apply and materialized immediately — no
+    // visible catch-up crawl — and the held step's content rode along with it.
+    assert.equal(engine.batches.length, 2);
+    assert.deepEqual(engine.batches[1], [insertNode("n2")]);
+    assert.equal(displays.length, 1);
+    assert.ok(displays[0] && "n1" in displays[0].nodes && "n2" in displays[0].nodes);
+
+    // …and the NEW batch then paces normally from its own lead.
+    clock.advance(FIRST_LEAD);
+    assert.equal(engine.batches.length, 3);
+    assert.deepEqual(engine.batches[2], [insertNode("n3")]);
+
+    pump.stop();
+  });
+});
+
+test("non-visual operations ride WITH the next visual step, never on a dead beat", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, pump } = harness();
+
+    pump.enqueue([updateNode("n0"), insertNode("n1")]);
+    clock.advance(FIRST_LEAD);
+    assert.deepEqual(engine.batches, [[updateNode("n0"), insertNode("n1")]]);
+
+    pump.stop();
+  });
+});
+
+test("fastForward snaps: everything pending applies and shows at once", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, displays, pump } = harness();
+
+    pump.enqueue([insertNode("n1"), insertNode("n2")]);
+    clock.advance(FIRST_LEAD);
+    assert.equal(displays.length, 0);
+
+    pump.fastForward();
+    assert.equal(engine.batches.length, 2);
+    assert.equal(displays.length, 1, "one swap, not one per step");
+    assert.ok(displays[0] && "n1" in displays[0].nodes && "n2" in displays[0].nodes);
+
+    // Nothing is left on the clock.
+    clock.advance(10_000);
+    assert.equal(displays.length, 1);
+
+    pump.stop();
+  });
+});
+
+test("fastForward with nothing queued still lands the held content", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, displays, pump } = harness();
+
+    pump.enqueue([insertNode("n1")]);
+    clock.advance(FIRST_LEAD);
+    assert.equal(engine.batches.length, 1);
+    assert.equal(displays.length, 0);
+
+    pump.fastForward();
+    assert.equal(engine.batches.length, 1, "nothing was re-applied");
+    assert.equal(displays.length, 1, "the held scene was released");
+
+    pump.stop();
+  });
+});
+
+test("an engine refusal shows NOTHING and latches until the next anchor", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, displays, pump } = harness();
+
+    engine.refuseWith("reject");
+    pump.enqueue([insertNode("n1")]);
+    clock.advance(FIRST_LEAD + NODE_HOLD + 1000);
+    assert.equal(displays.length, 0, "a refused batch is never hand-patched onto the canvas");
+    assert.equal(pump.isDirty(), true);
+
+    // The latch holds: later batches are not even offered to the engine.
+    engine.refuseWith("no");
+    pump.enqueue([insertNode("n2")]);
+    clock.advance(10_000);
+    assert.equal(engine.batches.length, 1);
+    assert.equal(displays.length, 0);
+
+    // The cursor anchors later, the reload repairs the display, and the pump
+    // draws again from the reloaded base.
+    pump.anchor(false);
+    assert.equal(pump.isDirty(), false);
+    assert.deepEqual([...displays], [null], "the canvas goes back to the document");
+
+    pump.enqueue([insertNode("n3")]);
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.equal(engine.batches.length, 2);
+    assert.equal(displays.length, 2);
+
+    pump.stop();
+  });
+});
+
+test("an IN-SYNC anchor does not rescue a dirty pump — the cursor cannot see the engine", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, displays, pump } = harness();
+
+    engine.refuseWith("reject");
+    pump.enqueue([insertNode("n1")]);
+    clock.advance(FIRST_LEAD + 1);
+    assert.equal(pump.isDirty(), true);
+
+    // The CURSOR is clean — it never learns that the engine refused — so it
+    // will keep reporting in sync. The pump refuses the reassurance: it hands
+    // the canvas back to the document rather than resume drawing on a hole.
+    engine.refuseWith("no");
+    pump.anchor(true);
+    assert.equal(pump.isDirty(), true, "an unreloaded canvas is still behind");
+    assert.deepEqual(displays.at(-1), null);
+
+    pump.enqueue([insertNode("n2")]);
+    clock.advance(10_000);
+    assert.equal(engine.batches.length, 1, "still latched");
+
+    // Only the anchor that actually reloads (and so re-seats the engine) lets
+    // the pump draw again.
+    pump.anchor(false);
+    pump.enqueue([insertNode("n3")]);
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.equal(engine.batches.length, 2);
+
+    pump.stop();
+  });
+});
+
+test("an engine that THROWS latches exactly like one that refuses", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, displays, pump } = harness();
+
+    engine.refuseWith("throw");
+    pump.enqueue([insertNode("n1")]);
+    clock.advance(FIRST_LEAD + 1);
+    assert.equal(pump.isDirty(), true);
+    assert.equal(displays.length, 0);
+
+    pump.stop();
+  });
+});
+
+test("an in-sync anchor keeps the drawn scene; a stale one hands the canvas back", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { displays, pump } = harness();
+
+    pump.enqueue([insertNode("n1")]);
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.equal(displays.length, 1);
+
+    // inSync: the canvas provably already shows the checkpoint's version, so
+    // the working scene is kept and nothing is emitted.
+    pump.anchor(true);
+    assert.equal(displays.length, 1, "an in-sync anchor must not flicker the canvas");
+
+    // Stale: the reload's document becomes the new base, so the override drops
+    // and the canvas renders the reloaded document.
+    pump.anchor(false);
+    assert.deepEqual(displays[1], null);
+
+    pump.stop();
+  });
+});
+
+test("stopping (the lock releasing) clears the override and the clock", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, displays, pump } = harness();
+
+    pump.enqueue([insertNode("n1"), insertNode("n2")]);
+    clock.advance(FIRST_LEAD);
+    assert.equal(engine.batches.length, 1);
+
+    pump.stop();
+    assert.deepEqual(displays.at(-1), null, "the canvas returns to the document");
+
+    const applied = engine.batches.length;
+    clock.advance(10_000);
+    assert.equal(engine.batches.length, applied, "no timer survived the stop");
+    assert.equal(displays.filter((scene) => scene !== null).length, 0);
+  });
+});
+
+test("a stopped pump ignores everything until it is started again", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, pump } = harness();
+    pump.stop();
+
+    pump.enqueue([insertNode("n1")]);
+    clock.advance(10_000);
+    assert.equal(engine.batches.length, 0);
+  });
+});
+
+test("reduced motion collapses the theater to one fast beat", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, displays, pump } = harness(true);
+
+    pump.enqueue([insertNode("n1")]);
+    // No lead pause under reduced motion: the first step starts at once.
+    clock.advance(0);
+    mock.timers.tick(0);
+    assert.equal(engine.batches.length, 1);
+    clock.advance(REDUCED_MOTION_STEP_MS);
+    assert.equal(displays.length, 1);
+
+    pump.stop();
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * Resume by sequence. Several SSE frames commit in one React tick, so reading
+ * only the LATEST action would coalesce applies away — the pump tracks the last
+ * sequence it consumed and walks every newer entry in order.
+ * ------------------------------------------------------------------------ */
+
+function record(
+  sequence: number,
+  documentId: string,
+  action: SceneStreamActionRecord["action"],
+): SceneStreamActionRecord {
+  return { sequence, documentId, action };
+}
+
+test("every action newer than the cursor is consumed, in order — never just the last", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, pump } = harness();
+
+    const log: SceneStreamActionRecord[] = [
+      record(1, "doc_1", { action: "apply", operations: [insertNode("n1")] }),
+      record(2, "doc_1", { action: "apply", operations: [insertNode("n2")] }),
+      record(3, "doc_1", { action: "apply", operations: [insertNode("n3")] }),
+    ];
+    const next = consumeSceneStreamActions(pump, log, "doc_1", 0);
+    assert.equal(next, 3);
+
+    // Three batches landed. The second and third fast-forwarded the first's
+    // backlog (the MVP's own new-batch rule), so the engine saw all three.
+    clock.advance(FIRST_LEAD * 4 + NODE_HOLD * 4);
+    const seen = engine.batches.flat();
+    assert.deepEqual(seen, [insertNode("n1"), insertNode("n2"), insertNode("n3")]);
+
+    // Re-consuming the same log from the returned cursor does nothing.
+    const applied = engine.batches.length;
+    assert.equal(consumeSceneStreamActions(pump, log, "doc_1", next), 3);
+    clock.advance(10_000);
+    assert.equal(engine.batches.length, applied);
+
+    pump.stop();
+  });
+});
+
+test("actions naming another document advance the cursor but never touch the pump", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, pump } = harness();
+
+    const log: SceneStreamActionRecord[] = [
+      record(1, "doc_other", { action: "apply", operations: [insertNode("x")] }),
+      record(2, "doc_1", { action: "apply", operations: [insertNode("n1")] }),
+    ];
+    assert.equal(consumeSceneStreamActions(pump, log, "doc_1", 0), 2);
+    clock.advance(FIRST_LEAD);
+    assert.deepEqual(engine.batches, [[insertNode("n1")]]);
+
+    pump.stop();
+  });
+});
+
+test("an anchor in the log reaches the pump with its inSync verdict", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { displays, pump } = harness();
+
+    consumeSceneStreamActions(
+      pump,
+      [record(1, "doc_1", { action: "apply", operations: [insertNode("n1")] })],
+      "doc_1",
+      0,
+    );
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.equal(displays.length, 1);
+
+    consumeSceneStreamActions(
+      pump,
+      [record(2, "doc_1", { action: "anchor", version: 7, inSync: true })],
+      "doc_1",
+      1,
+    );
+    assert.equal(displays.length, 1, "in-sync: nothing changes");
+
+    consumeSceneStreamActions(
+      pump,
+      [record(3, "doc_1", { action: "anchor", version: 8, inSync: false })],
+      "doc_1",
+      2,
+    );
+    assert.deepEqual(displays.at(-1), null, "stale: the reload's document wins");
+
+    pump.stop();
+  });
+});
+
+test("a cursor `dirty` action leaves the drawn scene alone — it is a waiting room", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { displays, pump } = harness();
+
+    consumeSceneStreamActions(
+      pump,
+      [record(1, "doc_1", { action: "apply", operations: [insertNode("n1")] })],
+      "doc_1",
+      0,
+    );
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.equal(displays.length, 1);
+
+    consumeSceneStreamActions(
+      pump,
+      [record(2, "doc_1", { action: "dirty" })],
+      "doc_1",
+      1,
+    );
+    assert.equal(displays.length, 1);
+    assert.equal(pump.isDirty(), false, "the CURSOR is dirty, not the engine");
+
+    pump.stop();
+  });
+});

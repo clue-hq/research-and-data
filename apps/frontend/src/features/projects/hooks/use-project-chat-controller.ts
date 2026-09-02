@@ -247,6 +247,15 @@ export function useProjectChatController({
   // its position. Zeroing it would turn every one of them into a gap.
   const [sceneStream, setSceneStream] =
     useState<SceneStreamState>(NO_SCENE_STREAM);
+  // Task 9: the cursor's own copy, kept synchronously.
+  //
+  // The fold has to be READ inside the frame handler, not only stored — a
+  // checkpoint's `inSync` verdict decides whether that same frame reloads the
+  // canvas, and a state updater's result is not available until the commit
+  // after. So the ref is the source the fold reads and `setSceneStream`
+  // publishes it; a side effect inside the updater would be the alternative,
+  // and StrictMode double-invokes those.
+  const sceneStreamRef = useRef<SceneStreamState>(NO_SCENE_STREAM);
   const [optimistic, setOptimistic] = useState<OptimisticTurn[]>([]);
   const [access, setAccess] = useState<ChatAccessState | null>(null);
   const [route, setRoute] = useState<ChatRouteState | null>(null);
@@ -534,6 +543,12 @@ export function useProjectChatController({
           // applied over a hole. Scoped to the active thread exactly as the
           // refresh decision below is; the cursor itself then drops anything
           // naming a document other than its own.
+          //
+          // Task 9 reads the verdict back out: did the cursor prove, for THIS
+          // frame, that the canvas already stands at the checkpoint's version?
+          // Then the reload below is a remount that would change nothing a
+          // user can see, and would interrupt a reveal to do it.
+          let anchoredInSync = false;
           if (event.threadId === threadId) {
             const sceneFrame: SceneStreamFrame | null =
               event.opBatch !== null
@@ -542,9 +557,17 @@ export function useProjectChatController({
                   ? { type: "design.checkpoint", checkpoint: event.checkpoint }
                   : null;
             if (sceneFrame !== null) {
-              setSceneStream((current) =>
-                applySceneStreamFrame(current, sceneFrame),
+              const next = applySceneStreamFrame(
+                sceneStreamRef.current,
+                sceneFrame,
               );
+              if (next !== sceneStreamRef.current) {
+                sceneStreamRef.current = next;
+                setSceneStream(next);
+                const decided = next.actions[next.actions.length - 1]?.action;
+                anchoredInSync =
+                  decided?.action === "anchor" && decided.inSync;
+              }
             }
           }
           // Genweb slice 3 (founder requirements 1 + 6): the gallery and any
@@ -561,7 +584,16 @@ export function useProjectChatController({
             // remounting the editor on each would make it unreadable. The
             // trailing edge always fires, so the version the canvas settles on
             // is the last one that was committed, never a skipped one.
-            if (refresh.reloadCanvas) bumpCanvasForCheckpoint();
+            //
+            // Task 9 (rung B) adds the one exception the cursor earned: when
+            // the anchor is IN SYNC the streamed canvas provably holds exactly
+            // the version this checkpoint committed, so reloading it would
+            // replace the picture with an identical one — and interrupt the
+            // reveal to do it. Out of sync (a gap, a dirty cursor, a document
+            // the stream never reached), the anchor wins and the reload fires
+            // exactly as rung A shipped it: the document is always right, and
+            // whatever was streamed no longer provably is.
+            if (refresh.reloadCanvas && !anchoredInSync) bumpCanvasForCheckpoint();
           } else if (refresh.refetchFeed || refresh.reloadCanvas) {
             setDesignRefresh((current) => ({
               feedRevision: current.feedRevision + (refresh.refetchFeed ? 1 : 0),

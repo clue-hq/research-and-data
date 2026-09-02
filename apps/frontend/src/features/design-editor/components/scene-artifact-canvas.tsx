@@ -242,6 +242,27 @@ export interface SceneCanvasControls {
    */
   applyOperations(operations: Operation[]): EngineApplyOutcome | null;
   /**
+   * Task 9 (scene live-streaming rung B): apply a STREAMED batch to the live
+   * engine and repaint NOTHING.
+   *
+   * The deliberate half-sibling of `applyOperations` above, and the whole
+   * difference is the repaint. The reveal pump runs the engine AHEAD of the
+   * picture on purpose — it holds each element back until its draw clock
+   * elapses, and then shows the applied scene through `displayScene` below — so
+   * a `refresh()` here would materialize the content the instant it was applied
+   * and there would be no reveal left to hold.
+   *
+   * It mirrors nothing up either. The scene it produces is not the document:
+   * nothing here is durable until the agent commits a checkpoint, so feeding
+   * it to the session would put an uncommitted picture behind the inspector,
+   * the layer tree and the edit-target chips.
+   *
+   * Null when the engine is unavailable, exactly as `applyOperations` is — and
+   * the pump reads that null as a refusal, because it is one: nothing was
+   * applied, so nothing may be shown.
+   */
+  applyStreamedOperations(operations: Operation[]): EngineApplyOutcome | null;
+  /**
    * AD4.C-3 / ruling C-12: apply ONE structured edit to the live engine and
    * repaint — the same optimistic half as `applyOperations` above, for the one
    * write the canvas issues that is not a plain operation batch: the
@@ -322,6 +343,23 @@ export interface SceneArtifactCanvasProps {
    * reconciliation (see the comment at that call site).
    */
   gestureDisabled?: boolean;
+  /**
+   * Task 9 (scene live-streaming rung B): draw THIS scene instead of the loaded
+   * document, for as long as it is non-null.
+   *
+   * The same substitution shape AD4.C's gesture `preview` already uses, and
+   * kept just as narrow: it reaches exactly one derivation — the artboard model
+   * the draw loop walks — and touches no state, no selection, no hit test and
+   * no write path. Null (the default, and every route but the chat surface)
+   * renders the document exactly as before.
+   *
+   * It is a PICTURE, never a document. The reveal pump that produces it applies
+   * streamed operations to the live engine and shows them on an animation
+   * clock; nothing it does is durable, and it drops back to null the moment the
+   * agent-run lock releases — at which point rung A has already reloaded the
+   * canvas from the committed version.
+   */
+  displayScene?: Scene | null;
   /**
    * Task 4: this press or double-click WOULD have edited the document, and was
    * refused only because `gestureDisabled` holds.
@@ -494,6 +532,7 @@ function typingTarget(target: EventTarget | null): boolean {
 
 function SceneDocumentCanvas({
   controlsRef,
+  displayScene = null,
   documentId,
   gestureDisabled = false,
   onAppliedOperations,
@@ -606,11 +645,19 @@ function SceneDocumentCanvas({
   // because the DOM overlay is drawing them. The STATE is passed, not the
   // derived model — the model is built FROM this artboard, so feeding it back
   // in would be circular; a stale id matches no node and suppresses nothing.
+  // Task 9 adds `displayScene`: while the reveal pump is streaming, the tree is
+  // built from the scene it is DRAWING rather than the one the document loaded
+  // — the same one-derivation substitution `preview` above makes for a dragged
+  // node's box, and just as narrow. Null (every route but a locked chat
+  // surface) leaves this exactly as it was.
+  const drawnScene = displayScene ?? scene;
   const artboard = useMemo(
     () =>
-      scene ? sceneArtboardModel(scene, pageId, preview, editingNodeId) : null,
+      drawnScene
+        ? sceneArtboardModel(drawnScene, pageId, preview, editingNodeId)
+        : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tokenGeneration
-    [scene, pageId, preview, editingNodeId, tokenGeneration],
+    [drawnScene, pageId, preview, editingNodeId, tokenGeneration],
   );
 
   // Fit-on-open (§1.10) is a pure function of the card's size and the page
@@ -779,6 +826,10 @@ function SceneDocumentCanvas({
         }
         return outcome;
       },
+      // Task 9: the same engine call, without the repaint and without the
+      // mirror-up. See the declaration above for why both are absent.
+      applyStreamedOperations: (operations) =>
+        engine ? engine.applyOperations(operations) : null,
       applyStructuredEdit: (edit) => {
         if (!engine) {
           return null;

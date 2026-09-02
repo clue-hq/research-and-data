@@ -85,6 +85,7 @@ export function ArtifactStage({
   onSceneSelect,
   onSceneZoomChange,
   sceneCanvasControlsRef,
+  sceneDisplayScene,
   sceneGestureDisabled,
   scenePalette,
   sceneSelectedNodeId,
@@ -204,6 +205,11 @@ export function ArtifactStage({
   /** AD2.3: receives the mounted ad canvas's imperative controls (hit-testing
    * for AD2.5's selection, refresh, and the rendered scene). */
   sceneCanvasControlsRef?: RefObject<SceneCanvasControls | null>;
+  /** Task 9 (scene live-streaming rung B): the reveal pump's held scene — what
+   * the ad canvas draws INSTEAD of the loaded document while a design agent is
+   * streaming operations into it. Null (and on every route but the locked chat
+   * surface) the canvas renders the document, exactly as it does today. */
+  sceneDisplayScene?: Scene | null;
   /** AD4.C / GATE G-H: an agent turn is in flight, so on-canvas drag and
    * resize are off and the corner handles are not drawn. Selection stays live.
    * Passed by the chats route only — the artifact route has no turn stream to
@@ -309,6 +315,7 @@ export function ArtifactStage({
               <div aria-label="Ad output canvas" className={styles.sceneStage}>
                 <SceneArtifactCanvas
                   controlsRef={sceneCanvasControlsRef}
+                  displayScene={sceneDisplayScene}
                   documentId={activeDocumentId}
                   gestureDisabled={sceneGestureDisabled}
                   onLockedEdit={onSceneLockedEdit}
