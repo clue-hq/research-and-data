@@ -146,6 +146,9 @@ def _render_preview_text(
     # directly and excuses exactly that one export-format refusal. The reviewer
     # lines above are untouched — the model still reads status=error and both
     # errors verbatim, because the SVG really did fail.
+    # OPTION A (2026-09-02, docs/superpowers/plans/2026-09-02-woff2-font-decode-at-ingestion.md)
+    # removes the cause: fonts are stored as sfnt. This excuse stays until the backfill has
+    # run on every environment; after that it should be deleted, not kept as belt-and-braces.
     acceptance = checkpoint_acceptance(
         payload.get("canonical") or {}, payload.get("critic") or {}
     )

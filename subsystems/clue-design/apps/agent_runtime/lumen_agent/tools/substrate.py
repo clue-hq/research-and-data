@@ -5119,6 +5119,9 @@ def bundle_validation_errors(
 # `code` the Python export summary does not carry (`export_preview` records only
 # `CoreError.message`), so this leading marker — the constant half of the
 # formatted message, before the page id — is the stable key.
+# Since option A (2026-09-02) new ingests never store WOFF2, so this marker only fires for
+# faces the backfill (scripts/decode_stored_web_fonts.py) has not reached. Delete the excuse
+# once every environment has been backfilled.
 SVG_FONT_EMBEDDING_REFUSAL_MARKER = "SVG font embedding failed"
 
 
