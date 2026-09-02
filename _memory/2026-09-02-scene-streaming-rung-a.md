@@ -58,8 +58,8 @@ one-RTT unlock window (409 nets); press-refusal prose; 3 lock-check sites; repor
 error; refused force-commit leaves caret; force-commit/pointer paths pure-tested only.
 
 ## Founder questions (open)
-1. Visible lock reason OUTSIDE edit mode — today only the disabled Edit pill's hover title (no
-   designed slot; presentation-truth rule). Where should it live?
+1. ~~Visible lock reason OUTSIDE edit mode~~ — RULED 2026-09-02: the disabled Edit pill's hover
+   title is accepted as sufficient for now (no new chrome); revisit only on user confusion.
 2. `turn.awaiting_input` (gate-parked design turn) holds the lock — flip if a parked run should be
    editable.
 3. `/finalize` (and `agent-instructions`/`layout-managed-editing`) unguarded during runs — scope?
