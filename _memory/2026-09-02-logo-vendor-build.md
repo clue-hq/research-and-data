@@ -315,9 +315,22 @@ httpx. Measured: impersonation clears openai.com in 0.3s and fetches assets; the
 Live on the real dispatch: openai.com flag on → `ok`, `light_lockup` + `light_mark` from the ladder;
 flag off → `LUMI0503` 403. In that lane we no longer announce `lumen-ingestion/1` to scraped sites.
 
-## 9. Session close (2026-09-02)
+## 9. Task 17 — both sources propose, one arbiter picks (founder decision 2026-09-02)
 
-Final HEAD carries Tasks 1–16 plus the final-review fix. D11 is resolved (§7). Still open, outside this plan: the 28 baseline api failures
+The freshcontext.ai fetch exposed two rules that lost real assets: vendor-first let Brandfetch's
+single, mislabelled asset (short "f(c)" form, dark art labelled for dark surfaces) hold `dark_lockup`
+while the site's real on-dark SVG was discarded, and the ladder's header-first fold let the short form
+beat the complete wordmark. Shipped in `9662fb285`: the ladder ALWAYS runs, both sources propose
+candidates for every cell, and `lumen_ingestion/logo_arbiter.py::choose_cells` picks per cell —
+measured ink for the surface first (dark cells must prove light ink; the vendor label is a hint),
+then completeness, SVG over raster, size, vendor on ties. Unproven candidates rank below proven ones
+and are never dropped. Winners carry `measured_verdict` + `arbitration.beat`. Plan §0.5 is superseded.
+Live: freshcontext.ai → `wordmark.png` (light_lockup), `wordmark-ondark.svg` (dark_lockup),
+apple-icon (light_mark); brandfetch.com → four proven vendor SVGs with the ladder 403-blocked.
+
+## 10. Session close (2026-09-02)
+
+Final HEAD carries Tasks 1–17 plus the final-review fix. D11 is resolved (§7). Still open, outside this plan: the 28 baseline api failures
 (§5; the image-model fixture's missing `image_model_api_style` pin is the cheapest of them).
 Deferred items D12–D15 have named owners in the plan's ledger. Nothing pushed.
 
