@@ -27,7 +27,9 @@ Ledger: `.superpowers/sdd/2026-09-02-vendor-first-logo-family/progress.md`. Proc
 - Task 10 — DONE (`7f301f62f`) — batch 4–10 live-verified end to end
 - Task 11 — DONE (`aa8b943a3`, `6c3748fb6`) — D4 + D7 closed; see the task's status note
 - Task 12 — DONE (`598ac2d64`)
-- Task 13 — DONE (empirical; no code commit; caveat sentence landed via Step 4 — see the task's status note; D11 opened)
+- Task 13 — DONE (empirical; caveat sentence `79727edb6`; D11 opened)
+- Task 14 — DONE (`193ba27e3`, `426a28a20`, `a3141df88`, `10e7c0479`, `4f48750ad`) — full suites: agent_runtime green; api = the 28 D10 baseline + 1 flaky sibling (passes on retry)
+- Final whole-branch review — DONE; one finding fixed (`c1196ed8d`: vendor cells survive a blocked ladder backfill); D15 opened
 
 ## Deferred items ledger (founder rule 2026-09-02: every deferral lives HERE and belongs to a task)
 
@@ -46,6 +48,7 @@ Ledger: `.superpowers/sdd/2026-09-02-vendor-first-logo-family/progress.md`. Proc
 | D12 | Task 14 gates | `apps/api/tests` and `apps/agent_runtime/tests` each hold a non-package `conftest.py`; one pytest process over both mis-resolves `from conftest import make_blob_store` (6 errors). Pre-existing (reproduced at `79727edb6`), so this plan's Step 2 single-command gate is an erratum — the gate is TWO invocations (as `subsystems/clue-design/AGENTS.md` §3 prescribes). | **Owner: the next design-suite hygiene pass** (outside this plan's file list): make the two test dirs packages or set `--import-mode=importlib`. |
 | D13 | Task 14 close-out | A Brandfetch 429 degrades honestly (`VendorLookupFailed(code="quota")` → outcome/tool `vendor_notes`, ladder takes over every cell) but nothing ALERTS: a workspace could run ladder-only for a month unnoticed. Free-tier ceiling observed `x-api-key-quota: 100`. | **Owner: the design observability pass** — emit one metric/log line at the `quota` degrade site in `logo_fetch.fetch_logo_family`; no code in this plan. |
 | D14 | Task 14 close-out | Batch-time slot selection (which cell a derived page places: light vs dark surface, lockup vs mark) is not built; it must read `lumen_ingestion.logo_family.CELL_NAMES`, never re-spell the four names. | **Owner: the ABM batch/personalization task that adds per-page cell choice**; recorded here so the vocabulary stays single-sourced. |
+| D15 | Final review fix (`c1196ed8d`) | A vendor-partial family whose ladder backfill hit a TRANSIENT block (rate limit, brief 5xx) is cached with its empty cells and stays that way until `force_refresh=True` — a consequence of decision #4 (no TTL) meeting the new per-cell degrade. | **Owner: whoever revisits decision #4** — if a TTL or a "degraded entry" marker is ever added to `design_logo_family`, retry the ladder for cells whose note says `ladder backfill unavailable`. No code in this plan. |
 | D6 | Task 4 plan text | Asset downloads bypass `capture.net`'s SSRF re-guard on the reasoning that Brandfetch's asset CDN is a fixed domain — but the driver never enforced that. | **Task 4**: `_ASSET_HOST_SUFFIXES = ("brandfetch.io",)`; a `formats[].src` whose host is not under an allowed suffix is never fetched and is reported in the driver's notes; pinned by a MockTransport test that asserts no request reaches a foreign host. |
 
 ## Global Constraints
@@ -2310,7 +2313,7 @@ This answers the one open empirical question: do the editor preview and the revi
 
 ### Task 14: Integration pass, full gates, close-out
 
-**STATUS 2026-09-02: IN PROGRESS → see Execution status.** Errata found at execution: Step 2's single pytest command cannot run (D12) — the gate is two invocations (105 api + 47 agent_runtime = 152 passed); Step 2a's one starlette entry left three third-party `pymupdf` SWIG DeprecationWarnings, ruled a second message-targeted entry; Step 3's `make db-smoke` ran ONLY on a throwaway `clue_singapore_v1_smoke` DB (created/dropped in the step; dev DB untouched, still at head `1d09aba87206`, one head); the full suites run in the background and their results land in the close-out note's §5.
+**STATUS 2026-09-02: DONE.** Errata found at execution: Step 2's single pytest command cannot run (D12) — the gate is two invocations (105 api + 47 agent_runtime = 152 passed); Step 2a's one starlette entry left three third-party `pymupdf` SWIG DeprecationWarnings, ruled a second message-targeted entry; Step 3's `make db-smoke` ran ONLY on a throwaway `clue_singapore_v1_smoke` DB (created/dropped in the step; dev DB untouched, still at head `1d09aba87206`, one head); the full suites run in the background and their results land in the close-out note's §5.
 
 **Files:**
 - Test: `subsystems/clue-design/apps/agent_runtime/tests/test_fetch_logo_tool.py` (one true end-to-end addition)

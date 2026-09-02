@@ -40,7 +40,7 @@ Commits, newest last. All authored by the human committer; no AI attribution any
 | 11 | `aa8b943a3`, `6c3748fb6` | Prompts + the `abm-page.md` knowledge doc rewritten to the 2×2 cell vocabulary (D4 + D7 closed). |
 | 12 | `598ac2d64` | The hotlink lane — prompt prose only, rendered whenever `brandfetch_client_id` is set. |
 | 13 | — (empirical; caveat sentence in `79727edb6`) | Hotlink render verification. No code. See §2. |
-| 14 | `193ba27e3`, `426a28a20`, and this note's commit | Suite-wide vendor guard (D9), the end-to-end mixed-provenance test, the warnings filter (D1), the gates, and this record. |
+| 14 | `193ba27e3`, `426a28a20`, `a3141df88`, `10e7c0479`, `4f48750ad` | Suite-wide vendor guard (D9), the end-to-end mixed-provenance test, the warnings filter (D1), the gates, and this record. |
 
 ## 2. Task 13 — the empirical hotlink result
 
@@ -112,6 +112,12 @@ next reader does not re-derive them.
   customer logo walls and integration strips are landing-page sections, not ABM-only.
 - **`PreparedLogo.slot`** survived as a read-only alias of `.cell` from Task 6 to Task 10 so the two
   tools kept working across four tasks; it is gone at Task 10 (grep-verified, zero `xfail` left).
+
+- **Final-review fix `c1196ed8d` — vendor cells survive a blocked ladder backfill.** `fetch_logo_family`
+  ran the ladder whenever a cell was missing, and the ladder's `CaptureError` (blocked/unreachable
+  site) propagated to both tools, which discarded the vendor's cells behind an error envelope. Now:
+  vendor filled ≥1 cell → the failure is a note and the partial family stands (and caches — D15);
+  vendor filled nothing → re-raised as before.
 
 ## 4. Deferred markers (open work, owned by nobody yet)
 
@@ -283,3 +289,12 @@ Migration gates (2026-09-02): `alembic heads` → `1d09aba87206`, exactly one he
 created and dropped in the same step, with the DSN override proven to take effect before the
 downgrade ran. Never run it against the dev DB in `.env`: `downgrade base` would destroy this
 workspace's data.
+
+## 7. Session close (2026-09-02)
+
+Final HEAD carries Tasks 1–14 plus the final-review fix. Open founder decisions: **D11** (headless
+render UA override — accept empty decorative logos in thumbnails/review renders, or set a
+non-headless UA at the three Playwright sites) and, outside this plan, the 28 baseline api failures
+(§5; the image-model fixture's missing `image_model_api_style` pin is the cheapest of them).
+Deferred items D12–D15 have named owners in the plan's ledger. Nothing pushed.
+
