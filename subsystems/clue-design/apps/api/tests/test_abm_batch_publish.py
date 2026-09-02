@@ -171,7 +171,7 @@ def test_the_batch_derives_and_publishes_one_page_per_account_and_says_which_car
         assert row["status"] == "published"
         assert row["document_id"]
         assert row["slug"].startswith("abm-")
-        assert row["url"] == f"/w/{workspace_id}/p/{row['slug']}"
+        assert row["url"] == f"http://testserver/w/{workspace_id}/p/{row['slug']}"
         assert row["noindex"] is True
         assert row["error"] is None
         assert client.get(row["url"]).status_code == 200

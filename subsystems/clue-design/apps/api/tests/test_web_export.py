@@ -582,7 +582,9 @@ def test_publish_serve_republish_rollback(client: TestClient, workspace_id: str)
     assert published.status_code == 200, published.text
     body = published.json()
     slug = body["slug"]
-    assert body["url"] == f"/w/{workspace_id}/p/{slug}"
+    # F5/R-F5-1: the reported URL is ABSOLUTE and config-sourced. With no host suffix set
+    # (the default, and what the test env has) it is the interim path on the request origin.
+    assert body["url"] == f"http://testserver/w/{workspace_id}/p/{slug}"
     assert body["doc_version"] == 1
     assert body["previous_available"] is False
 

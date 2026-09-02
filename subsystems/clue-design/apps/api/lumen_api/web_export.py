@@ -54,6 +54,7 @@ from .fragments.render import (
     web_doc_all_fragment_ids,
     web_doc_fragment_ids,
 )
+from .public_address import PublicSiteAddress, public_site_address
 
 JsonObject = Dict[str, Any]
 
@@ -1834,7 +1835,7 @@ def build_publish_package(
     workspace_id: str,
     node_bin: str = "node",
     noindex: bool = False,
-    site_address: Any = None,
+    site_address: Optional[PublicSiteAddress] = None,
 ) -> PublishPackage:
     """Build one immutable publish package for same-origin delivery.
 
@@ -1850,10 +1851,13 @@ def build_publish_package(
     The ``/asset-store`` URLs stay unprefixed: that route is not part of the
     public publish surface and is unchanged by O6b.
 
-    ``site_address`` is the seam the next task fills: it will carry the site's real public
-    address (its own host) and replace the interim ``/w/{workspace}/p/{slug}`` scheme. It is
-    accepted now so callers can be written against the final signature; while it is ``None`` —
-    which is every caller today — the interim scheme above applies unchanged.
+    ``site_address`` (a ``PublicSiteAddress``) is where the site actually lives, and it is now
+    the ONE source of every URL above. Configuration decides it (founder ruling R-F5-1): with
+    ``LUMEN_PUBLIC_PAGES_HOST_SUFFIX`` blank — the default, and every deployment until DNS and
+    TLS exist — it resolves to precisely the interim scheme described above, so the bytes are
+    unchanged; with the suffix set and the workspace's handle known, the same package is minted
+    against ``https://{handle}.{suffix}/{slug}``. ``None`` is accepted for callers that have no
+    address to hand and means "interim, built from ``public_base`` and ``workspace_id``".
 
     ``noindex`` (clone-fidelity F4.3, ruling R25-4) adds ONE line to the head:
     ``<meta name="robots" content="noindex">``. It is a per-page option and it
@@ -1873,11 +1877,21 @@ def build_publish_package(
     primary = _primary_page(site_pages)
     routes = [page.route for page in site_pages]
     warnings: List[str] = []
-    base = public_base.rstrip("/")
-    public_prefix = f"{base}/w/{workspace_id}"
-    site_path = f"/p/{slug}"
+    address = site_address or public_site_address(
+        request_base_url=public_base,
+        workspace_id=workspace_id,
+        slug=slug,
+        # F5 T14 supplies the workspace handle
+        handle=None,
+    )
+    #: The origin the page's own bytes are served beside: `/asset-store` and the CSP.
+    base = address.asset_origin
+    #: The site root, absolute. Canonical, og:url and the manifest back-reference all hang here.
+    site_url = address.page_url("/")
     #: The site's path from the visitor's own origin — what an internal link has to become.
-    link_site_path = f"{urlsplit(public_prefix).path}{site_path}"
+    link_site_path = address.link_path
+    #: `/p-assets/<digest>.<ext>` — workspace-scoped on the shared interim origin, bare on a host.
+    asset_prefix = address.asset_base(workspace_id)
     deterministic_seed = (
         f"publish:{document['id']}:{document['current_version']}:"
         f"{_sha256(_canonical_json(web_doc))}"
@@ -1891,7 +1905,7 @@ def build_publish_package(
                 blobs=blobs,
                 asset_url_for=(
                     lambda digest, extension: (
-                        f"{public_prefix}/p-assets/{digest}.{extension}"
+                        f"{asset_prefix}/p-assets/{digest}.{extension}"
                     )
                 ),
                 deterministic_seed=deterministic_seed,
@@ -1973,7 +1987,7 @@ def build_publish_package(
             _fragment_cascade_warnings(fragments, site_css, page_fragments.ids)
         )
 
-        canonical = f"{public_prefix}{site_path}" + ("" if page.route == "/" else page.route)
+        canonical = address.page_url(page.route)
         head = _seo_snippet(
             title=document["title"],
             description=_seo_description(web_doc, document["title"], page.page_id),
@@ -2031,7 +2045,7 @@ def build_publish_package(
         ),
         **_font_manifest_entries(font_gate),
         "slug": slug,
-        "canonical_url": f"{public_prefix}{site_path}",
+        "canonical_url": site_url,
         # Present ONLY when the page asked for it, so an ordinary publish's manifest — and
         # therefore its `manifest_digest`, and therefore its `package_digest` — is byte-identical
         # to what it was before the option existed.
@@ -2045,7 +2059,7 @@ def build_publish_package(
         '<meta name="lumen-publish-manifest-digest" content="'
         f'{manifest_digest}">\n'
         '<link rel="lumen-publish-manifest" href="'
-        f'{_escape_attr(f"{public_prefix}{site_path}/manifest.json")}">\n'
+        f'{_escape_attr(f"{site_url}/manifest.json")}">\n'
     )
     pages: List[PublishedPage] = []
     for page, html in staged:

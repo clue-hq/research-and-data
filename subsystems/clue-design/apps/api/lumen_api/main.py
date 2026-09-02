@@ -145,6 +145,7 @@ from .dto import (
     scene_replaced_dto,
     snapshot_summary,
 )
+from .public_address import PublicSiteAddress, public_site_address
 from .web_bridge import render_bridge_script
 from .models import (
     AgentTurnPreviewRequest,
@@ -4362,11 +4363,12 @@ def create_app(
         slug = (payload.slug or "").strip() or web_default_slug(
             document["title"], document_id
         )
+        public_base = str(request.base_url).rstrip("/")
         publish = _publish_web(
             repo,
             document,
             slug=slug,
-            public_base=str(request.base_url).rstrip("/"),
+            public_base=public_base,
             idempotency_key=idempotency_key,
         )
         log_event(
@@ -4380,7 +4382,9 @@ def create_app(
         return {
             "schema_version": 1,
             "slug": slug,
-            "url": public_publish_path(repo, slug),
+            "url": publish_site_address(
+                repo, slug, request_base_url=public_base
+            ).page_url("/"),
             "doc_version": publish["doc_version"],
             "runtime_version": publish["runtime_version"],
             "publish_id": publish["publish_id"],
@@ -4394,18 +4398,29 @@ def create_app(
 
     @app.get("/documents/{document_id}/web/publish")
     def get_web_publish_state(
-        document_id: str, repo: HybridRepository = Depends(repository)
+        document_id: str,
+        request: Request,
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_web_document(document)
         publish = repo.get_web_publish_for_document(document_id)
         if publish is None:
             return {"schema_version": 1, "published": False}
+        # F5/R-F5-1: the site's public address, config-sourced. `request` supplies only the
+        # interim fallback origin — the workspace still comes from the store, and a configured
+        # host suffix ignores the request entirely.
+        address = publish_site_address(
+            repo, publish["slug"], request_base_url=str(request.base_url).rstrip("/")
+        )
+        pages = repo.list_web_publish_pages(publish["slug"])
+        # A pre-F5 publish has no page rows and still serves its one page at `/`.
+        routes = [page["route"] for page in pages] or ["/"]
         return {
             "schema_version": 1,
             "published": True,
             "slug": publish["slug"],
-            "url": public_publish_path(repo, publish["slug"]),
+            "url": address.page_url("/"),
             "doc_version": publish["doc_version"],
             "status": publish["status"],
             "publish_id": publish.get("publish_id"),
@@ -4417,7 +4432,11 @@ def create_app(
             # F5: the routes the SITE currently serves — route/page_id/html_digest, no markup.
             # A pre-F5 publish has no page rows and answers with an empty list; it still serves
             # its single page at `/` from the publish row's own html.
-            "pages": repo.list_web_publish_pages(publish["slug"]),
+            "pages": pages,
+            # F5: the absolute address of EVERY route this site serves. The editor shows exactly
+            # these — there is no host constant on the client, so a deployment that moves the
+            # public origin moves the links the marketer copies with it.
+            "page_urls": {route: address.page_url(route) for route in routes},
         }
 
     def _publish_not_found(slug: str) -> HTTPException:
@@ -5282,7 +5301,9 @@ def create_app(
                     repo, derived, slug=slug, public_base=public_base, noindex=abm
                 )
                 row["slug"] = slug
-                row["url"] = public_publish_path(repo, slug)
+                row["url"] = publish_site_address(
+                    repo, slug, request_base_url=public_base
+                ).page_url("/")
                 row["noindex"] = abm
                 row["status"] = "published"
             return row
@@ -7420,14 +7441,24 @@ def store_workspace_id(repo: HybridRepository) -> str:
     return repo.workspace_id
 
 
-def public_publish_path(repo: HybridRepository, slug: str) -> str:
-    """The ONE builder for a publish's public path — O6b interim scheme.
+def publish_site_address(
+    repo: HybridRepository, slug: str, *, request_base_url: str
+) -> PublicSiteAddress:
+    """The ONE builder for a publish's public address (founder ruling R-F5-1).
 
-    Publish slugs are workspace-local (O6), so every minted link carries the tenant in the
-    path. The workspace comes from the STORE the publish row lives in, never from the request
-    URL. Part-IV item 5 (design-integration-master-plan.md) replaces this scheme wholesale.
+    Replaces the old ``public_publish_path``, which could only ever answer with the interim
+    ``/w/{workspace}/p/{slug}`` path and answered it RELATIVELY — a URL nobody outside this API
+    could use, and a shape that cannot survive a site moving onto its own host. The workspace
+    still comes from the STORE the publish row lives in, never from the request URL; the
+    request only supplies the fallback origin, and only while no host suffix is configured.
     """
-    return f"/w/{store_workspace_id(repo)}/p/{slug}"
+    return public_site_address(
+        request_base_url=request_base_url,
+        workspace_id=store_workspace_id(repo),
+        slug=slug,
+        # F5 T14 supplies the workspace handle
+        handle=None,
+    )
 
 
 def require_document(repo: HybridRepository, document_id: str) -> JsonObject:
