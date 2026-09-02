@@ -26,6 +26,19 @@ import type { EngineApplyOutcome } from "../engine/scene/wasmEngine";
  * travel-then-draw clock has elapsed, so the design appears to draw itself in
  * one element at a time.
  *
+ * ── A LATE JOIN CANNOT DOUBLE-APPLY (task 10, fix round 2) ────────────────
+ * A canvas that opens mid-run catches up on the operations the stream already
+ * carried, which is the one place this pump could show the same operation
+ * twice. It cannot, for three reasons that hold together. On a fresh mount the
+ * pump has applied NOTHING before its first join. On a re-seed within one mount
+ * the `seed` action re-seats the pump on the freshly loaded document first
+ * (`join` → `rebase`: the queue, the held scene and the dirty latch all go and
+ * the override drops), so nothing it had drawn survives into the catch-up. And
+ * what is replayed is filtered by the cursor's contiguity rule against the
+ * SEEDED position (`replaySceneStreamJoin`): every batch at or below the
+ * position the loaded document holds is dropped rather than shown, which is
+ * exactly the reload-at-a-checkpoint case.
+ *
  * ── DISPLAY STATE ONLY. THIS MODULE WRITES NOTHING. ───────────────────────
  * Every scene it produces is a picture, never a document. It NEVER enqueues
  * into `editQueue`, never calls `applyOps` / `persistAppliedOps`, never touches
@@ -417,20 +430,19 @@ export class SceneRevealPump {
   }
 
   /**
-   * End of one consume pass: if this pump is still catching up from a join and
-   * that pass brought it work, show all of it at once and declare the join
-   * over — from the next pass on, the reveal paces normally.
+   * End of the consume pass a join happened in: show everything it brought at
+   * once, and the join is over.
    *
-   * The join latch outlives an EMPTY pass on purpose. The document load and the
-   * replayed frames race: the load can win by a tick or two, and a backlog that
-   * animated because it arrived one commit after the seed would be exactly the
-   * five-minute re-draw the join exists to skip. A pass that brings nothing
-   * therefore leaves the latch standing, and the first pass that brings a batch
-   * spends it.
+   * Pass-scoped, and it can be (fix round 2) because the catch-up no longer
+   * races the document load. The fold replays the run's logged backlog into the
+   * seed's OWN pass (`seedSceneStreamState` → `replaySceneStreamJoin`), so
+   * whatever a join has to catch up on is already queued behind it here.
+   * Anything arriving after that is live by definition and draws itself in —
+   * which matters most on the ordinary path, where a tab sits open, a run
+   * starts, and its first batch must be a reveal rather than a snap.
    */
   settleJoin(): void {
     if (!this.joining || !this.active) return;
-    if (this.queue.length === 0 && this.pendingDisplay === null) return;
     this.fastForward();
     this.joining = false;
   }

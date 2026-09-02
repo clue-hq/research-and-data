@@ -104,7 +104,10 @@ export type SceneStreamFrame =
 /**
  * What one frame means for the open canvas.
  *
- * - `apply` — the batch begins exactly at the cursor; render it.
+ * - `apply` — the batch begins exactly at the cursor; render it. It carries the
+ *   ledger position it ENDS at, so a canvas that joins later can re-run the
+ *   log's applies through its own seeded position instead of throwing them
+ *   away (fix round 2).
  * - `drop` — nothing to do: already reflected, another document's, or the
  *   cursor is dirty and waiting for an anchor.
  * - `dirty` — this frame cannot be applied, and neither can the ones behind it
@@ -123,7 +126,12 @@ export type SceneStreamFrame =
  *   to it before the first batch of the new run lands on top.
  */
 export type SceneStreamAction =
-  | { action: "apply"; operations: readonly Operation[] }
+  | {
+      action: "apply";
+      operations: readonly Operation[];
+      /** Where the batch ENDS in the run's ledger — `operations_total`. */
+      operationsTotal: number;
+    }
   | { action: "drop" }
   | { action: "dirty" }
   | { action: "anchor"; version: number | null; inSync: boolean }
@@ -403,7 +411,7 @@ function advanceWithinTurn(
         position: total,
         dirty: false,
       },
-      action: { action: "apply", operations },
+      action: { action: "apply", operations, operationsTotal: total },
     };
   }
   return {
@@ -512,6 +520,103 @@ function withAction(
   };
 }
 
+/** What a join found in the log, ready to be shown in one apply. */
+export interface SceneStreamJoinReplay {
+  /** Every backlog operation the canvas may catch up on, in ledger order. */
+  operations: readonly Operation[];
+  /** Where the cursor stands afterwards. */
+  position: number;
+  /** True when the log could not be trusted the rest of the way. */
+  dirty: boolean;
+}
+
+const NO_OPERATIONS: readonly Operation[] = [];
+
+/**
+ * Re-run one turn's logged applies through a joining canvas's position
+ * (task 10, fix round 2).
+ *
+ * A mid-run reload loses the race the other way round from a first open: the
+ * stream re-attaches and replays the run's op frames SECONDS before the
+ * document has finished loading, so those frames are folded into the log while
+ * no canvas exists to draw them. A join that simply started live from the log's
+ * end threw them away, and the tab then sat on the committed base until the
+ * next checkpoint reloaded it — the exact wait rung B exists to remove, caught
+ * on a live walk.
+ *
+ * So the join re-reads them. It finds where the in-flight run STARTED in the
+ * log (its most recent `rebase`) and walks forward through that run's applies
+ * with the same arithmetic a live frame gets, measured from the position the
+ * seed says the loaded document holds:
+ *
+ * - `operationsTotal <= position` — already in the loaded document. Dropped,
+ *   which is the whole of the reload-at-a-checkpoint case: the reload landed
+ *   the version those batches produced, so re-applying them would double them.
+ * - contiguous — collected, and the position advances.
+ * - anything else — a hole. The contiguous prefix is kept (it is exactly what
+ *   the canvas would have been shown) and the cursor goes dirty from there, so
+ *   nothing lands over the hole until the next anchor.
+ *
+ * Two refusals, both erring the same way. A `rebase` for ANOTHER run after the
+ * start means the log knows a newer run than the seed does, so the join cannot
+ * place itself. And if the run's start is not in the log at all, the answer
+ * depends on whether the log has been TRIMMED (its oldest entry is no longer
+ * sequence 1): trimmed means the start may be among the entries the 64-entry
+ * bound evicted, so the join goes dirty; untrimmed means this run has simply
+ * not streamed anything yet — the ordinary tab-open-at-run-start path — and
+ * there is nothing to replay, so the canvas stays clean and its live frames
+ * draw themselves in as usual.
+ */
+export function replaySceneStreamJoin({
+  actions,
+  documentId,
+  turnId,
+  position,
+}: {
+  actions: readonly SceneStreamActionRecord[];
+  documentId: string;
+  turnId: string | null;
+  position: number;
+}): SceneStreamJoinReplay {
+  let start = -1;
+  for (let index = actions.length - 1; index >= 0; index -= 1) {
+    const record = actions[index];
+    if (record.documentId !== documentId) continue;
+    if (record.action.action === "rebase" && record.action.turnId === turnId) {
+      start = index;
+      break;
+    }
+  }
+  if (start === -1) {
+    const trimmed = (actions[0]?.sequence ?? 1) > 1;
+    return { operations: NO_OPERATIONS, position, dirty: trimmed };
+  }
+  const operations: Operation[] = [];
+  let at = position;
+  let dirty = false;
+  for (let index = start + 1; index < actions.length; index += 1) {
+    const record = actions[index];
+    if (record.documentId !== documentId) continue;
+    const action = record.action;
+    if (action.action === "rebase") {
+      // A run newer than the one this join believes is in flight.
+      dirty = true;
+      break;
+    }
+    if (action.action !== "apply") continue;
+    if (action.operationsTotal <= at) continue;
+    if (action.operationsTotal - action.operations.length === at) {
+      operations.push(...action.operations);
+      at = action.operationsTotal;
+      continue;
+    }
+    at = Math.max(at, action.operationsTotal);
+    dirty = true;
+    break;
+  }
+  return { operations, position: at, dirty };
+}
+
 /**
  * A canvas finished loading `documentId` at `documentVersion` (task 10).
  *
@@ -522,22 +627,63 @@ function withAction(
  * everything it was holding stops being true. It is appended on every load —
  * including a reload that lands the same version — because the LOAD is the
  * event, not the number.
+ *
+ * Fix round 2: the seed also REPLAYS the in-flight run's logged applies through
+ * the seeded position (`replaySceneStreamJoin`) and emits them as one further
+ * `apply` the canvas catches up on at once. It happens here rather than in the
+ * pump because the cursor and the canvas have to agree: a pump that caught up
+ * privately would leave this cursor at the seed position, and the very next
+ * live frame would then look like a gap and go dirty.
+ *
+ * Nothing can be applied twice by it. On a fresh mount the pump has drawn
+ * nothing before its first join; on a re-seed within one mount the `seed`
+ * action re-seats the pump on the loaded document before anything replays
+ * (`SceneRevealPump.join` → `rebase`). What stops the replay itself from
+ * re-applying the run's own committed work is the contiguity rule against the
+ * SEED position: everything at or below it is already in the document that was
+ * just loaded, and is dropped.
  */
 export function seedSceneStreamState(
   state: SceneStreamState,
   seed: { documentId: string; documentVersion: number; turnId: string | null },
 ): SceneStreamState {
-  const cursor = seedSceneStreamCursor({
+  const seeded = seedSceneStreamCursor({
     ...seed,
     backlogCheckpoints: state.checkpoints,
   });
+  // A dirty seed replays nothing: nothing may be applied over a position that
+  // is not known, and a join is no exception to that.
+  const replay: SceneStreamJoinReplay = seeded.dirty
+    ? { operations: NO_OPERATIONS, position: seeded.position, dirty: true }
+    : replaySceneStreamJoin({
+        actions: state.actions,
+        documentId: seed.documentId,
+        turnId: seed.turnId,
+        position: seeded.position,
+      });
+  const cursor: SceneStreamCursor = {
+    ...seeded,
+    position: replay.position,
+    dirty: seeded.dirty || replay.dirty,
+  };
   const cursors = new Map(state.cursors);
   cursors.set(seed.documentId, cursor);
-  return withAction(state, state.checkpoints, cursors, seed.documentId, {
+  let next = withAction(state, state.checkpoints, cursors, seed.documentId, {
     action: "seed",
     position: cursor.position,
     dirty: cursor.dirty,
   });
+  if (replay.operations.length > 0) {
+    // The batches are contiguous from the seed, so the caught-up position is
+    // simply the seed plus what was collected — NOT `replay.position`, which a
+    // gap can carry past the last operation that may actually be shown.
+    next = withAction(next, state.checkpoints, cursors, seed.documentId, {
+      action: "apply",
+      operations: replay.operations,
+      operationsTotal: seeded.position + replay.operations.length,
+    });
+  }
+  return next;
 }
 
 function frameDocumentId(frame: SceneStreamFrame): string | null {

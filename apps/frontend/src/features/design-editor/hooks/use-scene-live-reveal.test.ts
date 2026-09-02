@@ -515,6 +515,14 @@ test("reduced motion collapses the theater to one fast beat", () => {
  * sequence it consumed and walks every newer entry in order.
  * ------------------------------------------------------------------------ */
 
+/** A logged apply. `operationsTotal` is the fold's, and the pump never reads it. */
+function appliedBatch(
+  operations: Operation[],
+  operationsTotal = operations.length,
+): SceneStreamActionRecord["action"] {
+  return { action: "apply", operations, operationsTotal };
+}
+
 function record(
   sequence: number,
   documentId: string,
@@ -529,9 +537,9 @@ test("every action newer than the cursor is consumed, in order — never just th
     const { engine, pump } = harness();
 
     const log: SceneStreamActionRecord[] = [
-      record(1, "doc_1", { action: "apply", operations: [insertNode("n1")] }),
-      record(2, "doc_1", { action: "apply", operations: [insertNode("n2")] }),
-      record(3, "doc_1", { action: "apply", operations: [insertNode("n3")] }),
+      record(1, "doc_1", appliedBatch([insertNode("n1")])),
+      record(2, "doc_1", appliedBatch([insertNode("n2")])),
+      record(3, "doc_1", appliedBatch([insertNode("n3")])),
     ];
     const next = consumeSceneStreamActions(pump, log, "doc_1", 0);
     assert.equal(next, 3);
@@ -558,8 +566,8 @@ test("actions naming another document advance the cursor but never touch the pum
     const { engine, pump } = harness();
 
     const log: SceneStreamActionRecord[] = [
-      record(1, "doc_other", { action: "apply", operations: [insertNode("x")] }),
-      record(2, "doc_1", { action: "apply", operations: [insertNode("n1")] }),
+      record(1, "doc_other", appliedBatch([insertNode("x")])),
+      record(2, "doc_1", appliedBatch([insertNode("n1")])),
     ];
     assert.equal(consumeSceneStreamActions(pump, log, "doc_1", 0), 2);
     clock.advance(FIRST_LEAD);
@@ -576,7 +584,7 @@ test("an anchor in the log reaches the pump with its inSync verdict", () => {
 
     consumeSceneStreamActions(
       pump,
-      [record(1, "doc_1", { action: "apply", operations: [insertNode("n1")] })],
+      [record(1, "doc_1", appliedBatch([insertNode("n1")]))],
       "doc_1",
       0,
     );
@@ -610,7 +618,7 @@ test("a cursor `dirty` action leaves the drawn scene alone — it is a waiting r
 
     consumeSceneStreamActions(
       pump,
-      [record(1, "doc_1", { action: "apply", operations: [insertNode("n1")] })],
+      [record(1, "doc_1", appliedBatch([insertNode("n1")]))],
       "doc_1",
       0,
     );
@@ -652,8 +660,8 @@ test("a join fast-forwards the backlog that arrives with it — no animation", (
       pump,
       [
         seed(1, "doc_1", 40),
-        record(2, "doc_1", { action: "apply", operations: [insertNode("n1")] }),
-        record(3, "doc_1", { action: "apply", operations: [insertNode("n2")] }),
+        record(2, "doc_1", appliedBatch([insertNode("n1")])),
+        record(3, "doc_1", appliedBatch([insertNode("n2")])),
       ],
       "doc_1",
       0,
@@ -672,31 +680,36 @@ test("a join fast-forwards the backlog that arrives with it — no animation", (
   });
 });
 
-test("a backlog arriving after the join still fast-forwards; the pass behind it animates", () => {
+test("what arrives AFTER the join's own pass is live, and draws itself in", () => {
   onFakeClock(() => {
     const clock = steppedClock();
     const { engine, displays, pump } = harness();
 
-    // The document loaded first; the replayed op frames land a tick later. The
-    // join itself hands the canvas back to the document it loaded (one null).
+    // A join with nothing to catch up on — the tab-open-at-run-start path. The
+    // join hands the canvas back to the document it loaded (one null) and is
+    // spent in that same pass, because fix round 2 delivers a join's backlog
+    // WITH it rather than a tick or two behind it.
     consumeSceneStreamActions(pump, [seed(1, "doc_1", 40)], "doc_1", 0);
     assert.equal(engine.batches.length, 0);
     assert.equal(displays.length, 1);
     assert.equal(displays.at(-1), null, "the join hands the canvas back first");
 
+    // The run's first batch is LIVE, and a live batch is a reveal, not a snap.
     consumeSceneStreamActions(
       pump,
-      [record(2, "doc_1", { action: "apply", operations: [insertNode("n1")] })],
+      [record(2, "doc_1", appliedBatch([insertNode("n1")]))],
       "doc_1",
       1,
     );
-    assert.equal(displays.length, 2, "the backlog snaps — no clock ran");
+    assert.equal(displays.length, 1, "held back on the clock, not shown at once");
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.equal(displays.length, 2);
     assert.ok(displays.at(-1)?.nodes.n1);
 
-    // Caught up: the next batch is LIVE, and it draws itself in.
+    // …and so is the one behind it.
     consumeSceneStreamActions(
       pump,
-      [record(3, "doc_1", { action: "apply", operations: [insertNode("n2")] })],
+      [record(3, "doc_1", appliedBatch([insertNode("n2")]))],
       "doc_1",
       2,
     );
@@ -716,7 +729,7 @@ test("a join hands the canvas back to the document it just loaded", () => {
 
     consumeSceneStreamActions(
       pump,
-      [record(1, "doc_1", { action: "apply", operations: [insertNode("n1")] })],
+      [record(1, "doc_1", appliedBatch([insertNode("n1")]))],
       "doc_1",
       0,
     );
@@ -748,11 +761,12 @@ test("a join clears the engine-refusal latch — the reloaded document is the ne
 
     consumeSceneStreamActions(
       pump,
-      [record(2, "doc_1", { action: "apply", operations: [insertNode("n2")] })],
+      [record(2, "doc_1", appliedBatch([insertNode("n2")]))],
       "doc_1",
       1,
     );
-    assert.ok(engine.batches.flat().some((operation) => operation === undefined) === false);
+    // Live again: the batch is paced, so it reaches the engine on the clock.
+    clock.advance(FIRST_LEAD);
     assert.deepEqual(engine.batches.at(-1), [insertNode("n2")]);
 
     pump.stop();
@@ -766,7 +780,7 @@ test("a join naming another document never touches this pump", () => {
 
     consumeSceneStreamActions(
       pump,
-      [record(1, "doc_1", { action: "apply", operations: [insertNode("n1")] })],
+      [record(1, "doc_1", appliedBatch([insertNode("n1")]))],
       "doc_1",
       0,
     );
@@ -787,7 +801,7 @@ test("an eviction gap in the action log stops the pump until the next anchor", (
 
     consumeSceneStreamActions(
       pump,
-      [record(1, "doc_1", { action: "apply", operations: [insertNode("n1")] })],
+      [record(1, "doc_1", appliedBatch([insertNode("n1")]))],
       "doc_1",
       0,
     );
@@ -800,7 +814,7 @@ test("an eviction gap in the action log stops the pump until the next anchor", (
     // with what did not, which is precisely why it may not be applied here.
     consumeSceneStreamActions(
       pump,
-      [record(70, "doc_1", { action: "apply", operations: [insertNode("n9")] })],
+      [record(70, "doc_1", appliedBatch([insertNode("n9")]))],
       "doc_1",
       1,
     );
@@ -832,9 +846,9 @@ test("a jump in sequence WITHIN one log read is not a gap — other documents st
     consumeSceneStreamActions(
       pump,
       [
-        record(1, "doc_other", { action: "apply", operations: [insertNode("x")] }),
+        record(1, "doc_other", appliedBatch([insertNode("x")])),
         record(2, "doc_other", { action: "dirty" }),
-        record(3, "doc_1", { action: "apply", operations: [insertNode("n1")] }),
+        record(3, "doc_1", appliedBatch([insertNode("n1")])),
       ],
       "doc_1",
       0,
@@ -858,7 +872,7 @@ test("a rebase re-seats the canvas on the document, and the new run's first batc
 
     consumeSceneStreamActions(
       pump,
-      [record(1, "doc_1", { action: "apply", operations: [insertNode("n1")] })],
+      [record(1, "doc_1", appliedBatch([insertNode("n1")]))],
       "doc_1",
       0,
     );
@@ -872,7 +886,7 @@ test("a rebase re-seats the canvas on the document, and the new run's first batc
       pump,
       [
         record(2, "doc_1", { action: "rebase", turnId: "turn-b" }),
-        record(3, "doc_1", { action: "apply", operations: [insertNode("n2")] }),
+        record(3, "doc_1", appliedBatch([insertNode("n2")])),
       ],
       "doc_1",
       1,
@@ -919,7 +933,7 @@ test("another document's rebase never re-seats this canvas", () => {
 
     consumeSceneStreamActions(
       pump,
-      [record(1, "doc_1", { action: "apply", operations: [insertNode("n1")] })],
+      [record(1, "doc_1", appliedBatch([insertNode("n1")]))],
       "doc_1",
       0,
     );

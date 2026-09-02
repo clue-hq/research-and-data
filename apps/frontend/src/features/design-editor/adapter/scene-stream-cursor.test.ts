@@ -8,9 +8,11 @@ import {
   applySceneStreamFrame,
   newSceneStreamCursor,
   operationsFromStreamFrame,
+  replaySceneStreamJoin,
   seedSceneStreamCursor,
   seedSceneStreamState,
   type SceneCheckpointRecord,
+  type SceneStreamActionRecord,
   type SceneStreamFrame,
 } from "./scene-stream-cursor";
 
@@ -82,6 +84,7 @@ test("a contiguous batch applies and advances the cursor to its ledger position"
   assert.deepEqual(action, {
     action: "apply",
     operations: [op("a"), op("b")],
+    operationsTotal: 2,
   });
   assert.deepEqual(cursor, { documentId: DOC, turnId: null, position: 2, dirty: false });
 });
@@ -743,6 +746,7 @@ test("a frame from a NEW turn resets the ledger, and its first batch applies", (
   assert.deepEqual(next.actions.at(-1)?.action, {
     action: "apply",
     operations: [op("a")],
+    operationsTotal: 1,
   });
   assert.deepEqual(next.cursors.get(DOC), {
     documentId: DOC,
@@ -853,4 +857,231 @@ test("within the in-flight turn the exact-version rule still stands", () => {
     }),
     { documentId: DOC, turnId: TURN_B, position: 96, dirty: true },
   );
+});
+
+/* ---------------------------------------------------------------------------
+ * The join replay (task 10, fix round 2).
+ *
+ * A mid-run reload loses the race the other way round: the stream re-attaches
+ * and replays the run's op frames SECONDS before the document finishes loading.
+ * Those frames are folded into the log while no canvas is there to draw them,
+ * and a join that seeks past the log to start live throws them away — the tab
+ * then shows the committed base until the next checkpoint reloads it, which is
+ * exactly the wait rung B exists to remove.
+ *
+ * So a join replays its own turn's logged applies through the SEEDED position,
+ * with the same contiguity arithmetic every live frame goes through.
+ * ------------------------------------------------------------------------ */
+
+function loggedApply(
+  sequence: number,
+  operations: readonly ReturnType<typeof op>[],
+  operationsTotal: number,
+  documentId = DOC,
+): SceneStreamActionRecord {
+  return {
+    sequence,
+    documentId,
+    action: { action: "apply", operations: operations as never, operationsTotal },
+  };
+}
+
+function loggedRebase(
+  sequence: number,
+  turnId: string | null,
+  documentId = DOC,
+): SceneStreamActionRecord {
+  return { sequence, documentId, action: { action: "rebase", turnId } };
+}
+
+test("a join replays the in-flight turn's backlog through the seeded position", () => {
+  // THE LIVE DEFECT. The reload's SSE re-attach replayed turn B's first batch
+  // before the document had loaded; the canvas showed the base and never drew
+  // it. Now the seed replays it.
+  let state = applySceneStreamFrame(
+    NO_SCENE_STREAM,
+    opBatch({ turnId: TURN_B, operations: [op("a")], operationsTotal: 1 }),
+  );
+  state = seedSceneStreamState(state, {
+    documentId: DOC,
+    documentVersion: 123,
+    turnId: TURN_B,
+  });
+  assert.deepEqual(state.cursors.get(DOC), {
+    documentId: DOC,
+    turnId: TURN_B,
+    position: 1,
+    dirty: false,
+  });
+  assert.deepEqual(state.actions.at(-2)?.action, {
+    action: "seed",
+    position: 1,
+    dirty: false,
+  });
+  assert.deepEqual(state.actions.at(-1)?.action, {
+    action: "apply",
+    operations: [op("a")],
+    operationsTotal: 1,
+  });
+});
+
+test("a reload AT a checkpoint replays nothing — the document already holds it", () => {
+  let state = applySceneStreamFrame(
+    NO_SCENE_STREAM,
+    opBatch({ turnId: TURN_B, operations: [op("a")], operationsTotal: 1 }),
+  );
+  state = applySceneStreamFrame(
+    state,
+    opBatch({ turnId: TURN_B, operations: [op("b")], operationsTotal: 2 }),
+  );
+  state = applySceneStreamFrame(
+    state,
+    checkpoint({ turnId: TURN_B, version: 123, operations: 2 }),
+  );
+  const beforeJoin = state.actions.length;
+
+  state = seedSceneStreamState(state, {
+    documentId: DOC,
+    documentVersion: 123,
+    turnId: TURN_B,
+  });
+  // Both logged applies are already in the loaded document: dropped, not drawn.
+  assert.equal(state.actions.length, beforeJoin + 1, "the seed, and nothing else");
+  assert.deepEqual(state.actions.at(-1)?.action, {
+    action: "seed",
+    position: 2,
+    dirty: false,
+  });
+
+  // …and the next live batch continues from there.
+  const next = applySceneStreamFrame(
+    state,
+    opBatch({ turnId: TURN_B, operations: [op("c")], operationsTotal: 3 }),
+  );
+  assert.equal(next.actions.at(-1)?.action.action, "apply");
+});
+
+test("the replay is pure arithmetic over the log — contiguous batches, in order", () => {
+  const replay = replaySceneStreamJoin({
+    actions: [
+      loggedRebase(1, TURN_A),
+      loggedApply(2, [op("old")], 40),
+      loggedRebase(3, TURN_B),
+      loggedApply(4, [op("a")], 1),
+      loggedApply(5, [op("b"), op("c")], 3),
+      loggedApply(6, [op("x")], 9, OTHER),
+    ],
+    documentId: DOC,
+    turnId: TURN_B,
+    position: 0,
+  });
+  assert.deepEqual(replay, {
+    operations: [op("a"), op("b"), op("c")],
+    position: 3,
+    dirty: false,
+  });
+});
+
+test("the replay drops what the loaded document already holds", () => {
+  const replay = replaySceneStreamJoin({
+    actions: [
+      loggedRebase(1, TURN_B),
+      loggedApply(2, [op("a")], 1),
+      loggedApply(3, [op("b")], 2),
+      loggedApply(4, [op("c")], 3),
+    ],
+    documentId: DOC,
+    turnId: TURN_B,
+    position: 2,
+  });
+  assert.deepEqual(replay, {
+    operations: [op("c")],
+    position: 3,
+    dirty: false,
+  });
+});
+
+test("a gap in the replayed applies goes dirty, keeping the contiguous prefix", () => {
+  const replay = replaySceneStreamJoin({
+    actions: [
+      loggedRebase(1, TURN_B),
+      loggedApply(2, [op("a")], 1),
+      loggedApply(3, [op("z")], 5),
+    ],
+    documentId: DOC,
+    turnId: TURN_B,
+    position: 0,
+  });
+  assert.deepEqual(replay, {
+    operations: [op("a")],
+    position: 5,
+    dirty: true,
+  });
+});
+
+test("an EVICTED turn start is a gap — the replay refuses rather than guesses", () => {
+  const replay = replaySceneStreamJoin({
+    // The log has been trimmed (it no longer starts at sequence 1), so the
+    // turn's own start may be among the entries that were evicted.
+    actions: [loggedApply(70, [op("a")], 12)],
+    documentId: DOC,
+    turnId: TURN_B,
+    position: 0,
+  });
+  assert.deepEqual(replay, { operations: [], position: 0, dirty: true });
+});
+
+test("a turn that has streamed nothing yet replays nothing and stays clean", () => {
+  // The tab-open-at-run-start path: the join happens BEFORE the run's first
+  // frame, and an untrimmed log proves nothing was lost. Live frames then draw
+  // themselves in as usual.
+  const replay = replaySceneStreamJoin({
+    actions: [loggedRebase(1, TURN_A), loggedApply(2, [op("old")], 40)],
+    documentId: DOC,
+    turnId: TURN_B,
+    position: 0,
+  });
+  assert.deepEqual(replay, { operations: [], position: 0, dirty: false });
+});
+
+test("a join into a turn the log has already moved past goes dirty", () => {
+  const replay = replaySceneStreamJoin({
+    actions: [
+      loggedRebase(1, TURN_B),
+      loggedApply(2, [op("a")], 1),
+      // A newer run began after the one the seed believes is in flight.
+      loggedRebase(3, "turn-c"),
+      loggedApply(4, [op("c")], 1),
+    ],
+    documentId: DOC,
+    turnId: TURN_B,
+    position: 0,
+  });
+  assert.deepEqual(replay.dirty, true);
+});
+
+test("a DIRTY seed replays nothing at all", () => {
+  // Nothing may be applied over an unknown position, and the join is no
+  // exception to that.
+  let state = applySceneStreamFrame(
+    NO_SCENE_STREAM,
+    opBatch({ turnId: TURN_B, operations: [op("a")], operationsTotal: 1 }),
+  );
+  state = applySceneStreamFrame(
+    state,
+    checkpoint({ turnId: TURN_B, version: 120, operations: 1 }),
+  );
+  const beforeJoin = state.actions.length;
+  // v123 is not the version that mark committed: the position is unknown.
+  state = seedSceneStreamState(state, {
+    documentId: DOC,
+    documentVersion: 123,
+    turnId: TURN_B,
+  });
+  assert.equal(state.actions.length, beforeJoin + 1);
+  assert.deepEqual(state.actions.at(-1)?.action, {
+    action: "seed",
+    position: 1,
+    dirty: true,
+  });
 });
