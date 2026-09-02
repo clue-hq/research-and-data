@@ -720,6 +720,8 @@ def test_dispatch_freshcontext_replay(monkeypatch):
     assert header.cell == "light_lockup"
     assert header.evidence["competed_for"] == "light_lockup"
     assert header.evidence["reason"].startswith("lost on completeness, format or size")
+    # Every alternative says what its ink MEASURED, never only what a label claimed.
+    assert all(p.evidence.get("measured_verdict") for p in outcome.alternatives)
 
 
 # --------------------------------------------------------------------------- #
@@ -798,6 +800,34 @@ def test_dispatch_pools_arbiter_losers_and_vendor_extras_into_alternatives(monke
     assert icon.evidence["vendor_type"] == "icon"
     winner_id = outcome.prepared[0].asset_id
     assert winner_id not in {p.asset_id for p in outcome.alternatives}
+
+
+def test_every_alternative_carries_a_measured_ink_verdict(monkeypatch):
+    """A vendor theme LABEL is not evidence — this session's freshcontext asset was
+    labelled for dark surfaces and held dark ink. So an extra nobody measured is
+    measured here, off its own bytes, before the agent ever sees it."""
+    from lumen_agent.tools import logo_fetch
+    from lumen_ingestion.logo_family import SOURCE_BRANDFETCH, FamilyCell
+
+    icon = FamilyCell(
+        cell="", body=_svg("#ffffff"), content_type="image/svg+xml",
+        source=SOURCE_BRANDFETCH, origin_url="https://cdn.brandfetch.io/a/icon.svg",
+        # The vendor filed it as art for LIGHT surfaces; its ink says otherwise.
+        evidence={"vendor_type": "icon", "vendor_theme": "light", "theme": "dark",
+                  "competed_for": None,
+                  "reason": "vendor type 'icon' is not a family cell"},
+    )
+    monkeypatch.setattr(
+        logo_fetch, "_vendor_rung", lambda site, company: ({}, [icon], [])
+    )
+    ladder = _resolution({
+        "light": _slot(_svg(), lockup="full_lockup", variant="light"),
+    })
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: ladder)
+
+    outcome = logo_fetch.fetch_logo_family("acme.com")
+
+    assert outcome.alternatives[0].evidence["measured_verdict"] == "dark_variant"
 
 
 def test_web_fetch_logo_registers_the_alternatives_too(tmp_path, monkeypatch):

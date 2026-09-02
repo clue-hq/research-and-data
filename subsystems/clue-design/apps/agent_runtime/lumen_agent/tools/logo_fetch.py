@@ -29,7 +29,7 @@ in JavaScript comes back honestly empty rather than slowly right.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional
 
 from lumen_ingestion.logo_family import CELL_NAMES
@@ -136,7 +136,7 @@ def fetch_logo_family(
     """
     from lumen_ingestion import logo_ladder
     from lumen_ingestion.capture.net import CaptureError
-    from lumen_ingestion.logo_arbiter import choose_cells
+    from lumen_ingestion.logo_arbiter import choose_cells, measure_verdict
     from lumen_ingestion.logo_vendor import VendorCredentialsMissing, VendorLookupFailed
 
     site = logo_ladder.normalize_site_url(url_or_domain)
@@ -185,8 +185,19 @@ def fetch_logo_family(
     notes.extend(arbitration_notes)
 
     # The vetted pool: beaten candidates from either source, then the vendor's
-    # icon/other types. Never the ladder's raw ranked list.
-    alternatives_cells = losers + vendor_extras
+    # icon/other types. Never the ladder's raw ranked list. Every one of them
+    # states its MEASURED ink -- the arbiter measured its losers, and nobody has
+    # measured the vendor's extras, whose theme LABEL is not evidence (a
+    # freshcontext asset labelled for dark surfaces held dark ink).
+    alternatives_cells = [
+        cell
+        if "measured_verdict" in (cell.evidence or {})
+        else replace(
+            cell,
+            evidence={**(cell.evidence or {}), "measured_verdict": measure_verdict(cell)},
+        )
+        for cell in losers + vendor_extras
+    ]
 
     outcome = _assemble(
         cells, alternatives_cells, resolution, site, company_name, notes, vendor_notes

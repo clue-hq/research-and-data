@@ -17,10 +17,8 @@ from pathlib import Path
 
 import pytest
 from clue_storage import FsStorage
-
 from lumen_api.design_store import DesignBlobStore
 from lumen_api.main import create_app
-
 
 # --------------------------------------------------------------------------- #
 # fixtures
@@ -174,7 +172,6 @@ def test_a_cell_whose_bytes_left_custody_makes_the_whole_family_a_miss(
     import os
 
     from clue_design.storage import design_storage_key
-
     from lumen_api.agent_logo_family_cache import DurableLogoFamilyCache
 
     cache = DurableLogoFamilyCache(blobs=design_blob_store)
@@ -201,7 +198,6 @@ def test_an_alternative_whose_bytes_left_custody_makes_the_whole_family_a_miss(
     import os
 
     from clue_design.storage import design_storage_key
-
     from lumen_api.agent_logo_family_cache import DurableLogoFamilyCache
 
     cache = DurableLogoFamilyCache(blobs=design_blob_store)
@@ -223,7 +219,6 @@ def test_cache_errors_degrade_to_a_miss_and_never_raise(
     entirely broken. A read error is a miss; a write error is logged and swallowed, because the
     turn already holds the family it was going to store."""
     from clue_design import logo_family_cache as dal
-
     from lumen_api.agent_logo_family_cache import DurableLogoFamilyCache
 
     async def boom(*args, **kwargs):
@@ -250,8 +245,9 @@ def test_put_with_nothing_prepared_writes_nothing(design_blob_store: DesignBlobS
 
 
 def test_agent_runtime_config_carries_the_cache_and_client_id_fields():
-    from lumen_agent.config import AgentRuntimeConfig
     import dataclasses
+
+    from lumen_agent.config import AgentRuntimeConfig
 
     names = {f.name for f in dataclasses.fields(AgentRuntimeConfig)}
     assert "logo_family_cache" in names and "brandfetch_client_id" in names
