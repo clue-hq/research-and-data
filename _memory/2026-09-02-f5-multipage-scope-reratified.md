@@ -57,8 +57,19 @@ domain (handle, config base, host→workspace resolver table, wildcard DNS/TLS) 
 vocabulary (active page, page tools, skills text, one author delegation per page, budget reset
 per page render) · F5.5 route editor (needs a designed inspector slot — flag for dummy frontend).
 
+## Execution plan written (same day, inline by Fable — founder: no Opus scouts for planning)
+`docs/superpowers/plans/2026-09-02-f5-multipage-sites-and-publishing.md` — 22 tasks: T1–T3 engine
+(route grammar LUMW0036, AddPage/RemovePage, API round-trip), T4–T5 page-aware render, T6–T9 agent
+(active page + 4 page tools, turn-side literals, harness/prompts/skills, R-F5-8 advisory demotion),
+T10–T12 publish (revision pages + materialized current pages, per-route serving + link rewrite +
+export ZIP, PublicSiteAddress from env), T13–T16 shell publish wiring + workspace handle + Host
+sub-app, T17–T21 op builders / page switcher / route editor / in-editor nav / dev-shell parity,
+T22 CP3 walk. Env keys introduced: LUMEN_PUBLIC_PAGES_HOST_SUFFIX (blank = interim path routing),
+LUMEN_PUBLIC_PAGES_SCHEME. Infra prerequisite outside code: public ingress for the design API +
+wildcard DNS/TLS for *.pages.cluehq.ai (design API is tunnel-only today).
+
 ## Next
-Write the F5 dispatch-depth execution plan
+Founder reviews the execution plan
 (superpowers:writing-plans; SDD, Opus implementers, Fable reviews) → dispatch F5.0 first.
 Note: the SDD ledger `.superpowers/sdd/2026-08-27-clone-fidelity-master-plan/progress.md` is not
 present in this worktree (untracked on the F4 host).

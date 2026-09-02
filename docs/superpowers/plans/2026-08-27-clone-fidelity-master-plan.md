@@ -5,7 +5,8 @@
 > indexing, workspace handle default). F5 now owns the default-domain serving (Part-IV item 5
 > is no longer a gate) and the shell Publish wiring (today a timer-faked dummy). Six lanes
 > F5.0–F5.5 replace the four-blocker list; three standing assumptions await ruling at dispatch.
-> Execution plan not yet written; nothing dispatched. See the Phase F5 section.
+> Execution plan WRITTEN 2026-09-02: `docs/superpowers/plans/2026-09-02-f5-multipage-sites-and-publishing.md`
+> (22 tasks across the six lanes, engine first); awaiting founder review, nothing dispatched.
 >
 > **STATUS 2026-08-29 — PHASE F4 / CHECKPOINT 2 CLOSED (engineering); founder
 > acceptance OPEN.** Executed via SDD (Tasks 22–26 = F4.0–F4.4 + Task 27, the founder-rulings
