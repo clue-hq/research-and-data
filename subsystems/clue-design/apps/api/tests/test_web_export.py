@@ -700,3 +700,115 @@ def test_web_export_endpoints_reject_scene_documents(
     )
     assert response.status_code == 409, response.text
     assert response.json()["detail"]["code"] == "document.kind_unsupported"
+
+
+# --------------------------------------------------------------------------- #
+# F5 — multi-page publishing, per-route serving, one export folder per page    #
+# --------------------------------------------------------------------------- #
+
+
+def _empty_page(page_id: str, route: str, name: str = "Pricing") -> dict:
+    """The smallest legal WebPage: its root Container alone, no children.
+
+    Copied from ``test_web_documents.py`` rather than imported: these modules are peers, and a
+    test helper shared across them by import makes one file's refactor break the other's.
+    """
+    root = f"root_{page_id}"
+    return {
+        "id": page_id,
+        "name": name,
+        "route": route,
+        "root": root,
+        "nodes": {root: {"id": root, "kind": "container", "classes": "", "children": []}},
+    }
+
+
+def test_rewrite_site_links_touches_only_document_routes() -> None:
+    from lumen_api.web_export import rewrite_site_links
+
+    html = (
+        '<a href="/pricing">a</a><a href="/careers">b</a>'
+        '<img src="/asset-store/abc"><a href="/">home</a>'
+    )
+    out = rewrite_site_links(html, ["/", "/pricing"], "/w/ws1/p/site")
+    assert 'href="/w/ws1/p/site/pricing"' in out
+    assert 'href="/w/ws1/p/site"' in out
+    # A path that merely LOOKS like a route, and a non-href attribute, are untouched.
+    assert 'href="/careers"' in out
+    assert 'src="/asset-store/abc"' in out
+
+
+def test_publish_serves_every_page_at_its_route(
+    client: TestClient, workspace_id: str
+) -> None:
+    document = create_web_document(client)
+    added = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={"operations": [{"kind": "add_page", "page": _empty_page("pricing", "/pricing")}]},
+    )
+    assert added.status_code == 200, added.text
+
+    web_doc = client.get(f"/documents/{document['id']}").json()["scene"]
+    home_html = (
+        '<section id="hero"><h1>Home</h1>'
+        '<p><a href="/pricing">See pricing</a></p></section>'
+    )
+    seeded = client.app.state.core.web_ingest_html(web_doc, "home", home_html, None, None)[
+        "web_doc"
+    ]
+    seeded = client.app.state.core.web_ingest_html(
+        seeded, "pricing", '<section id="plans"><h1>Plans</h1></section>', None, None
+    )["web_doc"]
+    seed_content(client, document["id"], seeded)
+
+    published = client.post(
+        f"/documents/{document['id']}/web/publish", json={"slug": "multi"}
+    )
+    assert published.status_code == 200, published.text
+    assert published.json()["routes"] == ["/", "/pricing"]
+
+    home = client.get(f"/w/{workspace_id}/p/multi")
+    pricing = client.get(f"/w/{workspace_id}/p/multi/pricing")
+    assert home.status_code == 200, home.text
+    assert "Home" in home.text
+    assert pricing.status_code == 200, pricing.text
+    assert "Plans" in pricing.text
+    # The site link is rewritten to the served address of the pricing page.
+    assert f'href="/w/{workspace_id}/p/multi/pricing"' in home.text
+    # ...and each page carries its OWN canonical.
+    assert '<link rel="canonical" href="' in pricing.text
+    assert f"/w/{workspace_id}/p/multi/pricing" in pricing.text
+    assert client.get(f"/w/{workspace_id}/p/multi/nope").status_code == 404
+
+    state = client.get(f"/documents/{document['id']}/web/publish").json()
+    assert [page["route"] for page in state["pages"]] == ["/", "/pricing"]
+
+
+def test_export_zip_writes_one_folder_per_page(client: TestClient) -> None:
+    document = create_web_document(client)
+    added = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={"operations": [{"kind": "add_page", "page": _empty_page("pricing", "/pricing")}]},
+    )
+    assert added.status_code == 200, added.text
+    web_doc = client.get(f"/documents/{document['id']}").json()["scene"]
+    seeded = client.app.state.core.web_ingest_html(
+        web_doc,
+        "home",
+        '<section id="hero"><h1>Home</h1><p><a href="/pricing">Pricing</a></p></section>',
+        None,
+        None,
+    )["web_doc"]
+    seeded = client.app.state.core.web_ingest_html(
+        seeded, "pricing", '<section id="plans"><h1>Plans</h1></section>', None, None
+    )["web_doc"]
+    seed_content(client, document["id"], seeded)
+
+    files, _html, manifest = export_zip(client, document["id"])
+    assert "index.html" in files
+    assert "pricing/index.html" in files
+    assert "pricing/index.html" in manifest["files"]
+    assert [page["route"] for page in manifest["pages"]] == ["/", "/pricing"]
+    assert b"Plans" in files["pricing/index.html"]
+    # A static host serves a folder page from its directory index.
+    assert 'href="/pricing/"' in files["index.html"].decode("utf-8")

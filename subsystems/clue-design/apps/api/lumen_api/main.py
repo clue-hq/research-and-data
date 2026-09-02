@@ -4388,6 +4388,8 @@ def create_app(
             "package_digest": publish.get("package_digest"),
             "html_digest": publish.get("html_digest"),
             "previous_available": publish["previous_available"],
+            # F5: every route this publish just put on the air, in document order.
+            "routes": list(publish.get("routes") or []),
         }
 
     @app.get("/documents/{document_id}/web/publish")
@@ -4412,6 +4414,10 @@ def create_app(
             "html_digest": publish.get("html_digest"),
             "previous_available": publish["previous_html"] is not None,
             "updated_at": publish["updated_at"],
+            # F5: the routes the SITE currently serves — route/page_id/html_digest, no markup.
+            # A pre-F5 publish has no page rows and answers with an empty list; it still serves
+            # its single page at `/` from the publish row's own html.
+            "pages": repo.list_web_publish_pages(publish["slug"]),
         }
 
     def _publish_not_found(slug: str) -> HTTPException:
@@ -5524,29 +5530,41 @@ def create_app(
             },
         )
 
-    @app.get("/w/{workspace_id}/p/{slug}")
-    def serve_published_page(
-        workspace_id: str,
-        slug: str,
-        request: Request,
-        repo: HybridRepository = Depends(public_repository),
+    PUBLISH_NOT_FOUND_HTML = (
+        "<!doctype html><html><head><meta charset=\"utf-8\">"
+        "<title>Not found</title></head><body><h1>404</h1>"
+        "<p>No published page at this address.</p></body></html>"
+    )
+
+    def _serve_site_page(
+        repo: HybridRepository, slug: str, route: str, request: Request
     ) -> HTMLResponse:
+        """One published site page, by route (F5). The ONE serving body both routes share.
+
+        The publish row is the site: it must exist and be ``active``, whichever page is asked
+        for. The page itself comes from the per-route pages the last publish materialized.
+
+        A publish made before F5 has NO page rows at all, so `/` falls back to the publish row's
+        own denormalized html — that is what keeps an already-live page live across the deploy
+        that adds this. Every other route on such a publish is genuinely absent, and gets the
+        same 404 an unknown route gets.
+        """
         publish = repo.get_web_publish(slug)
         if publish is None or publish["status"] != "active":
-            return HTMLResponse(
-                content=(
-                    "<!doctype html><html><head><meta charset=\"utf-8\">"
-                    "<title>Not found</title></head><body><h1>404</h1>"
-                    "<p>No published page at this address.</p></body></html>"
-                ),
-                status_code=404,
-            )
+            return HTMLResponse(content=PUBLISH_NOT_FOUND_HTML, status_code=404)
+        page = repo.get_web_publish_page(slug, route)
+        if page is not None:
+            html, html_digest = page["html"], page["html_digest"]
+        elif route == "/":
+            html, html_digest = publish["html"], publish.get("html_digest")
+        else:
+            return HTMLResponse(content=PUBLISH_NOT_FOUND_HTML, status_code=404)
         return HTMLResponse(
-            content=publish["html"],
+            content=html,
             status_code=200,
             headers={
                 "Cache-Control": "public, max-age=60, must-revalidate",
-                "ETag": f'"sha256-{publish.get("html_digest")}"',
+                "ETag": f'"sha256-{html_digest}"',
                 "Content-Security-Policy": web_export._delivery_csp(
                     str(request.base_url).rstrip("/")
                 ),
@@ -5554,6 +5572,31 @@ def create_app(
                 "Referrer-Policy": "no-referrer",
             },
         )
+
+    @app.get("/w/{workspace_id}/p/{slug}")
+    def serve_published_page(
+        workspace_id: str,
+        slug: str,
+        request: Request,
+        repo: HybridRepository = Depends(public_repository),
+    ) -> HTMLResponse:
+        return _serve_site_page(repo, slug, "/", request)
+
+    # DECLARED AFTER `serve_publish_manifest` ON PURPOSE: this pattern also matches
+    # `/w/{ws}/p/{slug}/manifest.json`, and FastAPI matches in declaration order, so the
+    # manifest route must come first or a site could never serve its own manifest again.
+    @app.get("/w/{workspace_id}/p/{slug}/{route:path}")
+    def serve_published_site_page(
+        workspace_id: str,
+        slug: str,
+        route: str,
+        request: Request,
+        repo: HybridRepository = Depends(public_repository),
+    ) -> HTMLResponse:
+        # A trailing slash is the same page (a static host would serve the folder index), and
+        # an empty path is the site root.
+        normalized = "/" + route.strip("/")
+        return _serve_site_page(repo, slug, normalized, request)
 
     @app.post("/documents/{document_id}/export")
     def export_document(

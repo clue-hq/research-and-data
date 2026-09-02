@@ -76,6 +76,10 @@ class WebPublishRef(ToolOutput):
     package_digest: str | None
     html_digest: str | None
     previous_available: bool
+    #: F5 — the site this publish serves. ``routes`` is in document order (``/`` first for
+    #: every ordinary site), so a caller can name every address it just published.
+    page_count: int = 0
+    routes: list[str] = []
 
 
 class WebPublishStatusRef(ToolOutput):
@@ -143,6 +147,18 @@ def publish_web_document(
             "package_digest": package.package_digest,
             "runtime_version": package.runtime_version,
             "created_at": utc_now(),
+            # F5: the whole site, immutable beside the package that produced it. The DAL
+            # materializes these into the served per-route pages when the pointer swaps, so a
+            # rollback restores the routes as well as the bytes.
+            "pages": [
+                {
+                    "route": page.route,
+                    "page_id": page.page_id,
+                    "html": page.html,
+                    "html_digest": page.html_digest,
+                }
+                for page in package.pages
+            ],
         }
     )
     publish = repository.upsert_web_publish(
@@ -164,6 +180,8 @@ def publish_web_document(
         package_digest=publish.get("package_digest"),
         html_digest=publish.get("html_digest"),
         previous_available=publish["previous_html"] is not None,
+        page_count=len(package.pages),
+        routes=[page.route for page in package.pages],
     )
 
 
