@@ -119,6 +119,13 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# This is the configfile for the clue-design suites too (they run from
+# `subsystems/clue-design` but pytest walks up to this rootdir). `fastapi.testclient`
+# raises this at IMPORT, once per run, and the design suites' shared conftest imports it
+# — pre-existing third-party noise with no action for us until fastapi ships httpx2.
+filterwarnings = [
+    "ignore:Using `httpx` with `starlette.testclient`:starlette.exceptions.StarletteDeprecationWarning:fastapi.testclient",
+]
 
 # --- import-linter: the executable form of the modular-boundary rules -------
 # These five contracts ARE the M0.1 deliverable: they make "any component is replaceable without
