@@ -450,10 +450,17 @@ named follow-on (premium), designed for but not built.
   token-lawful new sections. **Multi-page CAPTURE of the client's real subpages is a separate
   follow-on on a separate branch** — never part of F5.
 
-**Open at dispatch (explained to founder 2026-09-02, ruling pending):** (iii) whether a nav
-whose every link resolves to a page of the SAME site is exempt from the F4 escape-route law
-(`ESCAPE_ROUTE_ROLES` / the campaign-shell one-anchor shape gate) — i.e. the law moves from
-"by role" to "by destination".
+- **R-F5-8 Links: structural freedom, guidance only (RULED 2026-09-02).** In the structural
+  and mechanical sense a page may link to ANY page — site-internal routes and off-site
+  destinations alike. No gate refuses a link by destination. The agent is only PROMPTED and
+  EXPLAINED (skills + tool strings) that actively linking off an ABM campaign page is not good
+  practice: one visitor, one argument, one CTA. Consequences for the F4 machinery, to land in
+  F5.4: the by-role refusal of cloned `nav`/`footer` on ABM pages (`ESCAPE_ROUTE_ROLES`, R24-1)
+  and the campaign-shell one-anchor shape gate (`fragment.shell_escape_route`, R23-3) are
+  DEMOTED from refusals to advisory notes in the tool result; the publish-manifest escape-route
+  audit stays exactly as it is (it already only reports). Unchanged: `noindex` stays durable
+  law (R-F1), the sanitizer's scheme rules (`javascript:`/`data:` still stripped) are security,
+  not policy, and stay.
 
 **The six lanes (replaces the four-blocker list):**
 - **F5.0 Engine page ops.** `AddPage` / `RemovePage` (invertible, envelope-ready, in

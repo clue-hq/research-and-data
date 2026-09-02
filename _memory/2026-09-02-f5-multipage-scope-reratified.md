@@ -44,8 +44,11 @@ premium follow-on, resolver table designed to receive them.
 
 ## Later the same day — RULED: R-F5-6 CP3 v1 = per-account ABM microsite (landing + supporting
 pages, internal nav, noindex); R-F5-7 pages from homepage library + new sections, multi-page
-capture = separate follow-on on a SEPARATE BRANCH. Still open: (iii) site-internal nav vs the
-F4 escape-route law (explained to founder; ruling pending).
+capture = separate follow-on on a SEPARATE BRANCH. R-F5-8: links are structurally FREE (any
+destination, no gate); agent guidance only. F4's by-role nav/footer refusal (R24-1) and the
+shell one-anchor shape gate (R23-3) demote to advisory in F5.4; publish audit unchanged;
+sanitizer scheme rules + noindex law unchanged. ALL F5 rulings now in (R-F5-1..8; R-F5-5 is a
+plan default to confirm at dispatch).
 
 ## Lanes fixed in the plan
 F5.0 engine page ops + route grammar · F5.1 page-aware render/preview/review · F5.2 N-page
@@ -55,7 +58,7 @@ vocabulary (active page, page tools, skills text, one author delegation per page
 per page render) · F5.5 route editor (needs a designed inspector slot — flag for dummy frontend).
 
 ## Next
-Confirm assumptions (i)–(iii) + R-F5-5 default → write the F5 dispatch-depth execution plan
+Write the F5 dispatch-depth execution plan
 (superpowers:writing-plans; SDD, Opus implementers, Fable reviews) → dispatch F5.0 first.
 Note: the SDD ledger `.superpowers/sdd/2026-08-27-clone-fidelity-master-plan/progress.md` is not
 present in this worktree (untracked on the F4 host).
