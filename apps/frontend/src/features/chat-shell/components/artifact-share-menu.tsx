@@ -12,7 +12,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { KeyboardEvent } from "react";
-import type { useArtifactSharingController } from "../hooks/use-artifact-sharing-controller";
+import {
+  pageLinkRows,
+  type useArtifactSharingController,
+} from "../hooks/use-artifact-sharing-controller";
 import { ARTIFACT_SHARE_EXPORT_FORMATS } from "../model/artifact-sharing";
 import styles from "./chat-shell.module.css";
 
@@ -252,6 +255,7 @@ function ShareAdvancedView({ controller }: { controller: ShareController }) {
     allowIndexing,
     customHtml,
     description,
+    pageUrls,
     regenerateDescriptionOnPublish,
     requestDescriptionGeneration,
     saveAdvancedSettings,
@@ -264,6 +268,7 @@ function ShareAdvancedView({ controller }: { controller: ShareController }) {
     setView,
     shareTitle,
   } = controller;
+  const pageRows = pageLinkRows(pageUrls);
 
   return (
     <>
@@ -331,6 +336,20 @@ function ShareAdvancedView({ controller }: { controller: ShareController }) {
               label="Allow search engine and AI indexing"
               onChange={setAllowIndexing}
             />
+            {/* FLAGGED F5 T16: no designed slot for per-page links; minimal neutral list pending founder/design ruling. */}
+            {pageRows.length > 1 ? (
+              <div className={styles.shareField}>
+                <span>Pages</span>
+                {pageRows.map((row) => (
+                  <small key={row.route}>
+                    {row.label}{" "}
+                    <a href={row.url} rel="noreferrer" target="_blank">
+                      {row.url}
+                    </a>
+                  </small>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : (
           <label className={`${styles.shareField} ${styles.shareCustomHtmlField}`}>

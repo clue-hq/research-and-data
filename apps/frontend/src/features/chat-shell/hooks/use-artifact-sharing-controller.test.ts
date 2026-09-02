@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createFixtureWebPublishRepository } from "../../design-editor/data/web-publish.repository";
-import { publishWithRepository } from "./use-artifact-sharing-controller";
+import {
+  pageLinkRows,
+  publishWithRepository,
+} from "./use-artifact-sharing-controller";
 
 test("publishWithRepository publishes the slug and returns the server url", async () => {
   const repo = createFixtureWebPublishRepository();
@@ -52,4 +55,32 @@ test("publishWithRepository forwards the noindex the caller asked for", async ()
   assert.equal(outcome.status, "published");
   assert.deepEqual(asked, [{ slug: "acme", noindex: true }]);
   assert.deepEqual(Object.keys(outcome.pageUrls), ["/"]);
+});
+
+test("pageLinkRows puts Home first and then the routes alphabetically", () => {
+  const rows = pageLinkRows({
+    "/pricing": "https://acme.clue.site/launch/pricing",
+    "/": "https://acme.clue.site/launch",
+    "/about": "https://acme.clue.site/launch/about",
+  });
+  assert.deepEqual(rows, [
+    { label: "Home", route: "/", url: "https://acme.clue.site/launch" },
+    {
+      label: "/about",
+      route: "/about",
+      url: "https://acme.clue.site/launch/about",
+    },
+    {
+      label: "/pricing",
+      route: "/pricing",
+      url: "https://acme.clue.site/launch/pricing",
+    },
+  ]);
+});
+
+test("pageLinkRows yields the one row a single-page site has", () => {
+  const rows = pageLinkRows({ "/": "https://acme.clue.site/launch" });
+  assert.deepEqual(rows, [
+    { label: "Home", route: "/", url: "https://acme.clue.site/launch" },
+  ]);
 });

@@ -59,6 +59,39 @@ export async function publishWithRepository(
   }
 }
 
+/** One page of a published site, as the share menu lists it. */
+export interface ArtifactPageLinkRow {
+  /** What the row reads: the site root is "Home", every other route is itself. */
+  label: string;
+  route: string;
+  url: string;
+}
+
+/**
+ * Turn the server's route → URL map into the rows to list, site root first and
+ * the rest alphabetical, so a multi-page site always reads in the same order.
+ *
+ * Pure, so the ordering is tested without a React harness. A single-entry map
+ * still yields its one row — hiding the list for a one-page site is the
+ * component's call, not this helper's.
+ */
+export function pageLinkRows(
+  pageUrls: Record<string, string>,
+): ArtifactPageLinkRow[] {
+  return Object.entries(pageUrls)
+    .sort(([left], [right]) => {
+      if (left === right) return 0;
+      if (left === "/") return -1;
+      if (right === "/") return 1;
+      return left.localeCompare(right);
+    })
+    .map(([route, url]) => ({
+      label: route === "/" ? "Home" : route,
+      route,
+      url,
+    }));
+}
+
 /** The host shown in front of the slug in the link field — read off the URL the
  * server gave us, never a constant of ours. Empty until there is one. */
 function shareHostOf(shareUrl: string): string {
