@@ -101,6 +101,14 @@ class TurnEventType(StrEnum):
     # announces a version the document ALREADY holds, it never ends or gates a turn, and losing
     # one costs a redraw — which is why the forwarder is best-effort by construction.
     DESIGN_CHECKPOINT = "design.checkpoint"
+    # Scene live-streaming rung B: the operations of a single mid-run mutation, streamed as the
+    # agent makes it, with ``operations_total`` — the position that batch ends at in the run's
+    # operation ledger, the same ledger a checkpoint frame counts. Unlike a checkpoint, an op
+    # batch announces work that is NOT yet durable: a consumer may render it optimistically and
+    # reconcile against the next checkpoint by subtracting the positions. Progress, not
+    # lifecycle, and best-effort for the same reason — a lost batch costs a frame of animation,
+    # never correctness, because the checkpoint behind it still names the durable version.
+    DESIGN_OP_BATCH = "design.op_batch"
 
 
 #: The stored vocabulary as plain strings, kept equal to the enum (and to the DB CHECK) by a test —

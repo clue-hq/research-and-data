@@ -1,4 +1,4 @@
-"""Scene live-streaming rung A, Task 2 — a design run's mid-run checkpoints reach the chat.
+"""Scene live-streaming rungs A and B — a design run's mid-run progress reaches the chat.
 
 The design agent has committed its work-in-progress mid-run since P0.4: each verified authoring
 round writes the scene through the governed tool and marks the commit with one
@@ -7,22 +7,34 @@ outbox. Nothing carried those marks onto the *thread*, so a marketer watching a 
 a spinner for minutes while the document underneath them advanced version by version.
 
 This file pins the bridge: while :class:`~clue_api.design_fleet.InlineDesignLaneDriver` drives a
-leg turn, it tails that run's outbox rows and forwards every checkpoint mark onto the leg's turn
-stream as one ``design.checkpoint`` frame.
+leg turn, it tails that run's outbox rows and forwards each of them onto the leg's turn stream —
+a checkpoint mark as one ``design.checkpoint`` frame (rung A, task 2), and each op-BEARING
+mutation between the checkpoints as one ``design.op_batch`` frame (rung B, task 7).
 
-Four properties, one per test:
+Rung A's four properties, one per test:
 
 * **Live and ordered.** Two checkpoints become exactly two frames, in event order, with the
   mapped payload — and the first frame is observable *while the handler is still running*, which
   is the whole point (a drain at the end would stream nothing).
-* **Only checkpoints.** The design vocabulary is ~60 event names wide; every other one is
-  ordinary run progress and must not become a chat frame.
+* **Only what the seam admits.** The design vocabulary is ~60 event names wide; every other one
+  is ordinary run progress and must not become a chat frame.
 * **Best-effort.** A forwarder that cannot read the outbox costs frames and nothing else: the
   drive still reaches a terminal run, and the turn's own lifecycle frames are untouched.
 * **Fenced writers never appear.** Generation fencing is enforced at the *emit* site
   (``lumen_api.run_stream.fenced_emit``), so a superseded attempt's checkpoint never becomes a
   row at all — and therefore can never be forwarded. The run_event outbox carries no generation
   column, so this is the only place the property can be asserted honestly.
+
+Rung B's four, at the bottom of the file:
+
+* **Batch and position.** An op-bearing event forwards its operations, the ledger position the
+  batch ends at, the iteration that produced it, and the leg's document.
+* **Never truncated.** A batch too large to carry forwards position-only; half an operation list
+  applied to a canvas is a corrupted document.
+* **One order.** Op frames and checkpoint frames interleave exactly as the outbox holds them,
+  because they report positions in the same operation ledger.
+* **No document, no op frames.** A checkpoint names its own document; an op batch does not, so a
+  document-less leg streams checkpoints and nothing else.
 
 Driven at the driver seam against a real database, real leases and the real emit path, for the
 same reason the neighbouring D5/P3.4 lane tests are: what needs proving is the tail-while-driving
@@ -42,7 +54,7 @@ import pytest
 from lumen_api import run_stream
 from sqlalchemy import text
 
-from clue_api import design_fleet
+from clue_api import design_event_forwarder
 from clue_api.chat.turn_events import (
     TurnEventRow,
     TurnEventType,
@@ -87,12 +99,18 @@ class _Seeds:
         return self.envelope.run_id
 
 
-async def _seed_leg_run(label: str) -> _Seeds:
+async def _seed_leg_run(label: str, *, document_id: str | None = None) -> _Seeds:
     """Workspace + project + thread + a queued design run whose envelope names the leg turn.
 
     The ``config['leg']`` block is exactly what ``DesignLegTurnRunner._envelope`` freezes onto a
     real leg turn's envelope — that frozen block IS the turn identity the forwarder announces
     under, so seeding anything else here would prove nothing about production.
+
+    ``document_id`` is the leg's pin, frozen onto the envelope by that same runner
+    (``document_id=leg.get("document_id")``). Rung B's op frames name it, because an op batch —
+    unlike a checkpoint — carries no document of its own. The design run ROW keeps a null
+    document (its column has a real foreign key and this suite inserts no ``design_document``),
+    exactly as the by-value checkpoint payload does.
     """
 
     workspace_id = f"ws_ckpt_{label}_{uuid4().hex[:8]}"
@@ -114,7 +132,7 @@ async def _seed_leg_run(label: str) -> _Seeds:
             workspace_id=workspace_id,
             run_id=run_id,
             checkpoint_thread_id=run_id,
-            document_id=None,
+            document_id=document_id,
             config={
                 "request": {"prompt": "checkpoint probe", "scene": {}},
                 "leg": {
@@ -167,6 +185,42 @@ async def _checkpoint_frames(seeds: _Seeds) -> tuple[TurnEventRow, ...]:
     async with transaction() as conn:
         rows = await list_turn_events(conn, workspace_id=seeds.workspace_id, turn_id=seeds.turn_id)
     return tuple(row for row in rows if row.event_type == TurnEventType.DESIGN_CHECKPOINT.value)
+
+
+async def _op_batch_frames(seeds: _Seeds) -> tuple[TurnEventRow, ...]:
+    """Every ``design.op_batch`` frame on this turn, in stream order."""
+
+    async with transaction() as conn:
+        rows = await list_turn_events(conn, workspace_id=seeds.workspace_id, turn_id=seeds.turn_id)
+    return tuple(row for row in rows if row.event_type == TurnEventType.DESIGN_OP_BATCH.value)
+
+
+async def _design_frames(seeds: _Seeds) -> tuple[TurnEventRow, ...]:
+    """Both design frame kinds, interleaved exactly as the stream carries them."""
+
+    design = {TurnEventType.DESIGN_CHECKPOINT.value, TurnEventType.DESIGN_OP_BATCH.value}
+    async with transaction() as conn:
+        rows = await list_turn_events(conn, workspace_id=seeds.workspace_id, turn_id=seeds.turn_id)
+    return tuple(row for row in rows if row.event_type in design)
+
+
+async def _progress_rows(seeds: _Seeds) -> int:
+    """How many PROGRESS rows this run actually left on the outbox (the terminal row rides a
+    different topic and is excluded). The guard that makes a "nothing was forwarded" assertion
+    mean "the filter refused them" rather than "nothing ever arrived to refuse"."""
+
+    async with transaction() as conn:
+        return int(
+            (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM run_event WHERE workspace_id = :ws "
+                        "AND subject_id = :run AND topic = 'design.run.event'"
+                    ),
+                    {"ws": seeds.workspace_id, "run": seeds.run_id},
+                )
+            ).scalar_one()
+        )
 
 
 async def _all_frames(seeds: _Seeds) -> tuple[str, ...]:
@@ -252,6 +306,27 @@ def _checkpoint(*, version: int, operations: int, preflight_clean: bool) -> dict
     }
 
 
+def _sink_push(
+    *, iteration: int, operations: list[Any], total: int | None = None
+) -> dict[str, Any]:
+    """The design runtime's own op-bearing sink payload.
+
+    The five base summary fields every ``event_sink`` push carries
+    (``lumen_agent.tools.substrate``), plus task 6's ``sink_extra`` pair. The frame keeps four of
+    the seven: the summaries are the design run's own stream's business, not the chat's.
+    ``total`` defaults to the batch's own length (a run whose whole ledger is this batch)."""
+
+    return {
+        "actor": "author",
+        "iteration": iteration,
+        "input_summary": "compile 1 block",
+        "output_summary": "ok",
+        "diagnostic_count": 0,
+        "operations": operations,
+        "operations_total": len(operations) if total is None else total,
+    }
+
+
 def test_mid_run_checkpoints_stream_onto_the_threads_turn_events() -> None:
     """Two committed checkpoints become two ordered ``design.checkpoint`` frames — the first
     of them while the design turn is still running, which is what "live" means here."""
@@ -300,7 +375,7 @@ def test_mid_run_checkpoints_stream_onto_the_threads_turn_events() -> None:
                 )
                 # Each row forwarded exactly once for this attempt: the tail polls many times
                 # over the turn, and a cursor-less re-read would show up here as a re-send.
-                assert driver.checkpoints_forwarded == 2
+                assert driver.frames_forwarded == 2
             finally:
                 await _cleanup(seeds)
 
@@ -308,23 +383,35 @@ def test_mid_run_checkpoints_stream_onto_the_threads_turn_events() -> None:
 
 
 def test_ordinary_design_progress_never_becomes_a_chat_frame() -> None:
-    """The design vocabulary is open and wide; only the checkpoint mark crosses the seam."""
+    """The design vocabulary is open and wide; only a checkpoint mark or an op-BEARING event
+    crosses the seam.
+
+    Rung B widened the seam by *shape*, not by name: an event forwards as ``design.op_batch``
+    when it carries a non-empty ``operations`` list. So the three events here are the three ways
+    to miss — a mutation event with no ops at all, one whose batch is empty, and an event that
+    never had ops to begin with. The outbox row count is asserted first so "no frames" can only
+    mean "the filter refused them", never "the emits silently failed" (task 2 minor)."""
 
     async def scenario() -> None:
         async with db_lifespan():
-            seeds = await _seed_leg_run("filter")
+            seeds = await _seed_leg_run("filter", document_id=_DOCUMENT_ID)
             try:
                 handler = _EmittingHandler(
                     seeds=seeds,
                     events=(
                         ("dsl_compiled", {"document_id": _DOCUMENT_ID, "version": 2}),
+                        ("asset_placed", _sink_push(iteration=4, operations=[])),
                         ("reviewer_verdict", {"verdict": "accepted"}),
                     ),
                 )
                 await asyncio.wait_for(
                     _driver(handler).drive(envelope=seeds.envelope), timeout=30.0
                 )
+                assert await _progress_rows(seeds) == 3, (
+                    "the seeded events never reached the outbox — this test would pass vacuously"
+                )
                 assert await _checkpoint_frames(seeds) == ()
+                assert await _op_batch_frames(seeds) == ()
                 assert await _all_frames(seeds) == ()
             finally:
                 await _cleanup(seeds)
@@ -365,7 +452,7 @@ def test_a_forwarder_failure_costs_frames_and_nothing_else(
                 async def _explode(*args: Any, **kwargs: Any) -> Any:
                     raise RuntimeError("the outbox read failed")
 
-                monkeypatch.setattr(design_fleet, "list_run_events", _explode)
+                monkeypatch.setattr(design_event_forwarder, "list_run_events", _explode)
                 handler = _EmittingHandler(
                     seeds=seeds,
                     events=(
@@ -435,6 +522,194 @@ def test_a_fenced_attempts_checkpoint_never_reaches_the_thread() -> None:
                     ).scalar_one()
                 assert stored == 0, "a fenced writer left a checkpoint row behind"
                 assert await _checkpoint_frames(seeds) == ()
+            finally:
+                await _cleanup(seeds)
+
+    run_async(scenario())
+
+
+# --- rung B: the per-mutation operation batches -----------------------------------------------
+
+
+def test_op_bearing_design_events_stream_their_batch_and_ledger_position() -> None:
+    """Every op-bearing mutation becomes one ``design.op_batch`` frame carrying the batch, the
+    ledger position it ends at, the iteration that produced it, and the leg's document.
+
+    Keyed on the SHAPE of the event, not its name: ``dsl_compiled`` and ``asset_placed`` are
+    merely today's two op-bearing events, and a third would stream with no code change here."""
+
+    async def scenario() -> None:
+        async with db_lifespan():
+            seeds = await _seed_leg_run("ops", document_id=_DOCUMENT_ID)
+            try:
+                compiled = [{"kind": "add_page"}, {"kind": "insert_node"}]
+                placed = [{"kind": "set_fill", "node": "hero"}]
+                handler = _EmittingHandler(
+                    seeds=seeds,
+                    events=(
+                        ("dsl_compiled", _sink_push(iteration=1, operations=compiled)),
+                        (
+                            "asset_placed",
+                            _sink_push(iteration=2, operations=placed, total=3),
+                        ),
+                    ),
+                )
+                driver = _driver(handler)
+                await asyncio.wait_for(driver.drive(envelope=seeds.envelope), timeout=30.0)
+                frames = await _op_batch_frames(seeds)
+                assert [frame.payload for frame in frames] == [
+                    {
+                        "document_id": _DOCUMENT_ID,
+                        "operations": compiled,
+                        "operations_total": 2,
+                        "iteration": 1,
+                    },
+                    {
+                        "document_id": _DOCUMENT_ID,
+                        "operations": placed,
+                        "operations_total": 3,
+                        "iteration": 2,
+                    },
+                ]
+                # The document comes from the LEG's pin, which is the only place an op batch
+                # could get one: the runtime's op events name no document at all.
+                assert "document_id" not in _sink_push(iteration=1, operations=compiled)
+                for frame in frames:
+                    assert frame.thread_id == seeds.thread_id
+                    assert frame.turn_id == seeds.turn_id
+                assert driver.frames_forwarded == 2
+
+            finally:
+                await _cleanup(seeds)
+
+    run_async(scenario())
+
+
+def test_an_oversize_batch_forwards_its_position_and_never_a_truncated_batch() -> None:
+    """A batch too large for a chat frame streams position-only.
+
+    Truncation is not on the table: half an operation list applied to a canvas is a corrupted
+    document, whereas a position with no operations is honest — the client simply waits for the
+    next checkpoint and reloads. The neighbouring small batch proves the cut is per-batch."""
+
+    async def scenario() -> None:
+        async with db_lifespan():
+            seeds = await _seed_leg_run("oversize", document_id=_DOCUMENT_ID)
+            try:
+                huge = [{"kind": "set_text", "text": "x" * 300_000}]
+                small = [{"kind": "set_fill", "node": "hero"}]
+                handler = _EmittingHandler(
+                    seeds=seeds,
+                    events=(
+                        ("dsl_compiled", _sink_push(iteration=1, operations=huge, total=9)),
+                        ("asset_placed", _sink_push(iteration=2, operations=small, total=10)),
+                    ),
+                )
+                await asyncio.wait_for(
+                    _driver(handler).drive(envelope=seeds.envelope), timeout=30.0
+                )
+                frames = await _op_batch_frames(seeds)
+                assert [frame.payload for frame in frames] == [
+                    {"document_id": _DOCUMENT_ID, "operations_total": 9, "iteration": 1},
+                    {
+                        "document_id": _DOCUMENT_ID,
+                        "operations": small,
+                        "operations_total": 10,
+                        "iteration": 2,
+                    },
+                ]
+            finally:
+                await _cleanup(seeds)
+
+    run_async(scenario())
+
+
+def test_op_batches_and_checkpoints_interleave_in_outbox_order() -> None:
+    """One tail, one cursor, one order. The two frame kinds describe positions in the SAME
+    operation ledger, so a consumer can only reconcile them if the stream preserves the order
+    the design run wrote them in."""
+
+    async def scenario() -> None:
+        async with db_lifespan():
+            seeds = await _seed_leg_run("interleave", document_id=_DOCUMENT_ID)
+            try:
+                first = [{"kind": "add_page"}, {"kind": "insert_node"}]
+                second = [{"kind": "set_text"}]
+                handler = _EmittingHandler(
+                    seeds=seeds,
+                    events=(
+                        ("dsl_compiled", _sink_push(iteration=1, operations=first, total=2)),
+                        (
+                            _SCENE_CHECKPOINT_EVENT,
+                            _checkpoint(version=2, operations=2, preflight_clean=True),
+                        ),
+                        ("dsl_compiled", _sink_push(iteration=2, operations=second, total=3)),
+                        (
+                            _SCENE_CHECKPOINT_EVENT,
+                            _checkpoint(version=3, operations=3, preflight_clean=True),
+                        ),
+                    ),
+                    settle_s=0.3,
+                )
+                await asyncio.wait_for(
+                    _driver(handler).drive(envelope=seeds.envelope), timeout=40.0
+                )
+                frames = await _design_frames(seeds)
+                assert [frame.event_type for frame in frames] == [
+                    TurnEventType.DESIGN_OP_BATCH.value,
+                    TurnEventType.DESIGN_CHECKPOINT.value,
+                    TurnEventType.DESIGN_OP_BATCH.value,
+                    TurnEventType.DESIGN_CHECKPOINT.value,
+                ]
+                # Each op batch is followed by the checkpoint that made it durable: the batch
+                # ending at ledger position N, then the checkpoint reporting N committed.
+                assert [frame.payload.get("operations_total") for frame in frames] == [
+                    2,
+                    None,
+                    3,
+                    None,
+                ]
+                assert [frame.payload.get("version") for frame in frames] == [None, 2, None, 3]
+            finally:
+                await _cleanup(seeds)
+
+    run_async(scenario())
+
+
+def test_a_document_less_leg_forwards_checkpoints_but_no_op_batches() -> None:
+    """An op batch is an edit to a document, and it carries none of its own.
+
+    A leg with no pinned document (a legacy leg, a preview-only turn) therefore streams no op
+    frames at all rather than one naming ``null``, which no consumer could route to a canvas.
+    Checkpoint frames are unaffected — the mark names its own document — and that contrast is
+    what makes this the *op* frame's rule rather than a general silence."""
+
+    async def scenario() -> None:
+        async with db_lifespan():
+            seeds = await _seed_leg_run("nodoc")
+            assert seeds.envelope.document_id is None
+            try:
+                handler = _EmittingHandler(
+                    seeds=seeds,
+                    events=(
+                        (
+                            "dsl_compiled",
+                            _sink_push(iteration=1, operations=[{"kind": "add_page"}]),
+                        ),
+                        (
+                            _SCENE_CHECKPOINT_EVENT,
+                            _checkpoint(version=1, operations=1, preflight_clean=True),
+                        ),
+                    ),
+                )
+                await asyncio.wait_for(
+                    _driver(handler).drive(envelope=seeds.envelope), timeout=30.0
+                )
+                assert await _progress_rows(seeds) == 2, (
+                    "the seeded events never reached the outbox — this test would pass vacuously"
+                )
+                assert await _op_batch_frames(seeds) == ()
+                assert len(await _checkpoint_frames(seeds)) == 1
             finally:
                 await _cleanup(seeds)
 
