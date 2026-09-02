@@ -86,6 +86,39 @@ test("the http repository posts the slug and the noindex the caller asked for", 
   });
 });
 
+test("the http repository publishes to the server's own page urls when it sends them", async () => {
+  // F5 task 14: with a workspace handle and a configured host suffix, a site is
+  // served from `https://{handle}.pages…/{slug}` — an origin the client cannot
+  // derive from anything it holds. So `page_urls` from the server WINS over the
+  // local site-root join, which would have answered the interim path.
+  const fetchImpl: typeof fetch = async () =>
+    jsonResponse(200, {
+      doc_version: 1,
+      page_urls: {
+        "/": "https://acme.pages.cluehq.ai/launch",
+        "/pricing": "https://acme.pages.cluehq.ai/launch/pricing",
+      },
+      previous_available: false,
+      routes: ["/", "/pricing"],
+      schema_version: 1,
+      slug: "launch",
+      url: "https://acme.pages.cluehq.ai/launch",
+    });
+  const repository = createHttpWebPublishRepository({
+    apiBaseUrl: "http://localhost:8002",
+    fetchImpl,
+  });
+
+  const result = await repository.publish("doc_1", {
+    slug: "launch",
+    noindex: false,
+  });
+  assert.deepEqual(result.pageUrls, {
+    "/": "https://acme.pages.cluehq.ai/launch",
+    "/pricing": "https://acme.pages.cluehq.ai/launch/pricing",
+  });
+});
+
 test("the http repository reads the server's absolute page urls", async () => {
   const fetchImpl: typeof fetch = async () =>
     jsonResponse(200, {

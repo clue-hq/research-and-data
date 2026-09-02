@@ -878,12 +878,43 @@ describe("publishWebDocument", () => {
       manifestDigest: "manifest-abc",
       packageDigest: "package-abc",
       htmlDigest: "html-abc",
-      routes: []
+      routes: [],
+      // A response carrying neither `routes` nor `page_urls` (a server older
+      // than F5) maps to empty for both — the caller falls back to joining.
+      pageUrls: {}
     });
     const [url, init] = fetchImpl.mock.calls[0];
     expect(String(url)).toBe("http://localhost:8002/documents/doc_abc123/web/publish");
     expect(init?.method).toBe("POST");
     expect(JSON.parse(String(init?.body))).toEqual({ slug: "acme" });
+  });
+
+  it("reads the absolute address the server gives every route", async () => {
+    // F5 task 14: once a workspace handle and a host suffix exist, the site is
+    // served from an origin the client cannot derive — so the publish response
+    // carries the addresses and this parses them rather than rebuilding them.
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        slug: "launch",
+        url: "https://acme.pages.cluehq.ai/launch",
+        routes: ["/", "/pricing"],
+        page_urls: {
+          "/": "https://acme.pages.cluehq.ai/launch",
+          "/pricing": "https://acme.pages.cluehq.ai/launch/pricing",
+          "/bad": 7
+        }
+      })
+    );
+    const result = await publishWebDocument(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_abc123",
+      "launch"
+    );
+    // The non-string entry is dropped, not coerced into a URL nobody can open.
+    expect(result.pageUrls).toEqual({
+      "/": "https://acme.pages.cluehq.ai/launch",
+      "/pricing": "https://acme.pages.cluehq.ai/launch/pricing"
+    });
   });
 
   it("omits the slug from the body when none is passed", async () => {

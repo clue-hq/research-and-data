@@ -1968,6 +1968,12 @@ export interface WebPublishResult {
   /** F5: every route this publish put on the air, in document order. A server
    * that predates the field answers with an empty list. */
   routes: string[];
+  /** F5/R-F5-1: the ABSOLUTE address of every one of those routes, built by the
+   * server. Empty from a server that predates the field, and only then does the
+   * caller fall back to joining `url` to `routes` itself — the addresses are the
+   * server's to compute, because only it knows whether this workspace's sites
+   * live on their own host or on the interim tenant path. */
+  pageUrls: Record<string, string>;
 }
 
 /** Publish (or republish) a website (`POST /documents/{id}/web/publish`). Pass
@@ -2014,6 +2020,7 @@ export async function publishWebDocument(
     package_digest?: unknown;
     html_digest?: unknown;
     routes?: unknown;
+    page_urls?: unknown;
   };
   return {
     schemaVersion: typeof payload.schema_version === "number" ? payload.schema_version : null,
@@ -2033,7 +2040,8 @@ export async function publishWebDocument(
     htmlDigest: typeof payload.html_digest === "string" ? payload.html_digest : null,
     routes: Array.isArray(payload.routes)
       ? payload.routes.filter((route): route is string => typeof route === "string")
-      : []
+      : [],
+    pageUrls: parseStringMap(payload.page_urls)
   };
 }
 

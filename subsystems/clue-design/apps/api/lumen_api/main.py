@@ -8,6 +8,7 @@ import inspect
 import io
 import json
 import logging
+import os
 import re
 
 # D2.5B: SQLite is DELETED from this API. `sqlite3` survives here only as the API's
@@ -145,13 +146,14 @@ from .dto import (
     scene_replaced_dto,
     snapshot_summary,
 )
-from .public_address import PublicSiteAddress, public_site_address
+from .public_address import HOST_SUFFIX_ENV, PublicSiteAddress, public_site_address
 from .web_bridge import render_bridge_script
 from .models import (
     AgentTurnPreviewRequest,
     WebTurnRequest,
     WebOperationsRequest,
     WebPublishRequest,
+    SetWorkspaceHandleRequest,
     SetAgentInstructionsRequest,
     SetLayoutManagedEditingRequest,
     SetWebNoindexRequest,
@@ -4312,7 +4314,7 @@ def create_app(
         publish is byte-identical to what it produced before this task.
         """
         try:
-            return run_design_tool(
+            published = run_design_tool(
                 "design_publish_web",
                 {
                     "document_id": document["id"],
@@ -4324,6 +4326,13 @@ def create_app(
                 idempotency_key=idempotency_key,
                 refusals=_publish_refusals(slug, document["id"]),
             )
+            # T14 / R-F5-5: something is now on the air at this workspace's handle, so the
+            # handle stops being editable. AFTER the publish and only on success — a refused
+            # publish must leave the marketer free to keep choosing. Idempotent, so the
+            # hundredth republish (and every account page of a batch) is a no-op that cannot
+            # move `locked_at` off the moment the address actually became public.
+            repo.lock_workspace_handle()
+            return published
         except web_export.WebExportUnresolvedMarkers as error:
             # R25-7: the un-derived TEMPLATE renders its `{{account.…}}` markers to a visitor.
             # A 422, not a 502: nothing broke — the wrong document was handed to publish, and the
@@ -4380,12 +4389,12 @@ def create_app(
             slug=slug,
             doc_version=publish["doc_version"],
         )
+        address = publish_site_address(repo, slug, request_base_url=public_base)
+        routes = list(publish.get("routes") or []) or ["/"]
         return {
             "schema_version": 1,
             "slug": slug,
-            "url": publish_site_address(
-                repo, slug, request_base_url=public_base
-            ).page_url("/"),
+            "url": address.page_url("/"),
             "doc_version": publish["doc_version"],
             "runtime_version": publish["runtime_version"],
             "publish_id": publish["publish_id"],
@@ -4395,6 +4404,11 @@ def create_app(
             "previous_available": publish["previous_available"],
             # F5: every route this publish just put on the air, in document order.
             "routes": list(publish.get("routes") or []),
+            # F5/R-F5-1: and their ABSOLUTE addresses, built by the ONE builder that knows where
+            # sites live. The share menu shows exactly these — joining a site root to a route is
+            # the server's job, so a deployment that moves the public origin (or a workspace
+            # that has just earned its own host) moves the links the marketer copies with it.
+            "page_urls": {route: address.page_url(route) for route in routes},
         }
 
     @app.get("/documents/{document_id}/web/publish")
@@ -4439,6 +4453,79 @@ def create_app(
             # public origin moves the links the marketer copies with it.
             "page_urls": {route: address.page_url(route) for route in routes},
         }
+
+    def workspace_handle_dto(handle: JsonObject) -> JsonObject:
+        """The wire shape of a workspace handle: the label, whether it is frozen, and — only if
+        this deployment actually has a wildcard host — the host it resolves to.
+
+        ``public_host`` is ``null`` whenever ``LUMEN_PUBLIC_PAGES_HOST_SUFFIX`` is unset, which
+        is the dev default. Reporting ``acme.pages.cluehq.ai`` for a deployment with no such DNS
+        would be a URL nobody can open, and the client owns no host constant of its own to catch
+        it with (R-F5-1) — so the honest answer is "there is no public host yet".
+        """
+        suffix = (os.environ.get(HOST_SUFFIX_ENV) or "").strip().strip("/")
+        return {
+            "schema_version": 1,
+            "handle": handle["handle"],
+            "locked": handle["locked"],
+            "locked_at": handle["locked_at"],
+            "public_host": f"{handle['handle']}.{suffix}" if suffix else None,
+        }
+
+    @app.get("/workspace/handle")
+    def get_workspace_handle(repo: HybridRepository = Depends(repository)) -> JsonObject:
+        """This workspace's publishing handle (F5 T14, ruling R-F5-5).
+
+        A GET that MINTS the default rather than answering "none yet": every workspace has an
+        address from the moment it exists, so the share surface has something to show — and a
+        publish would have derived exactly the same label a moment later anyway.
+        """
+        return workspace_handle_dto(repo.ensure_workspace_handle())
+
+    @app.put("/workspace/handle")
+    def put_workspace_handle(
+        payload: SetWorkspaceHandleRequest,
+        repo: HybridRepository = Depends(repository),
+    ) -> JsonObject:
+        """Choose the handle — until the first publish freezes it.
+
+        The three refusals are the DAL's, mapped one-for-one: 409 ``locked`` (something is
+        already on the air at this address, and a live URL's host does not move), 422 ``invalid``
+        (not a DNS label, or a name the hosting domain reserves for itself) and 409 ``taken``.
+        """
+        try:
+            return workspace_handle_dto(repo.set_workspace_handle(payload.handle))
+        except ValueError as error:
+            reason = str(error)
+            if reason == "handle_locked":
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "workspace_handle.locked",
+                        "message": (
+                            "this workspace has already published a site, so its handle is "
+                            "fixed — changing it would break every URL already shared"
+                        ),
+                    },
+                ) from error
+            if reason == "handle_taken":
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "workspace_handle.taken",
+                        "message": f"the handle {payload.handle!r} is already in use",
+                    },
+                ) from error
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "workspace_handle.invalid",
+                    "message": (
+                        f"{payload.handle!r} is not a usable handle: 3-63 lowercase letters, "
+                        "digits and inner dashes, and not a reserved name"
+                    ),
+                },
+            ) from error
 
     def _publish_not_found(slug: str) -> HTTPException:
         return HTTPException(
@@ -7452,13 +7539,18 @@ def publish_site_address(
     could use, and a shape that cannot survive a site moving onto its own host. The workspace
     still comes from the STORE the publish row lives in, never from the request URL; the
     request only supplies the fallback origin, and only while no host suffix is configured.
+
+    The handle (T14, ruling R-F5-5) is ENSURED rather than read: a workspace's first publish must
+    not have to answer "where is this site?" with the interim path merely because nobody had
+    minted its label yet. ``ensure`` never overwrites, so calling it on every address build is
+    free of consequence — and with no host suffix configured the handle changes nothing about
+    the answer anyway.
     """
     return public_site_address(
         request_base_url=request_base_url,
         workspace_id=store_workspace_id(repo),
         slug=slug,
-        # F5 T14 supplies the workspace handle
-        handle=None,
+        handle=repo.ensure_workspace_handle()["handle"],
     )
 
 

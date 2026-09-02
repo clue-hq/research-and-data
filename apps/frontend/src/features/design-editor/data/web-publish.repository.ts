@@ -109,7 +109,15 @@ export function createHttpWebPublishRepository(
         noindex,
       });
       return {
-        pageUrls: pageUrlsFor(result.url, result.routes),
+        // The server's own map wins (F5 task 14): it is the only side that
+        // knows whether this workspace's sites are served from its handle's
+        // host or from the interim tenant path, so joining a root to a route
+        // here can only ever be a guess that happens to agree. The join below
+        // survives for a server that predates `page_urls`.
+        pageUrls:
+          Object.keys(result.pageUrls).length > 0
+            ? result.pageUrls
+            : pageUrlsFor(result.url, result.routes),
         slug: result.slug,
         url: result.url,
       };
@@ -124,11 +132,12 @@ export function createHttpWebPublishRepository(
 }
 
 /**
- * The publish response carries the site root (absolute, server-built) plus the
- * routes it just put on the air; the state response carries the same addresses
- * pre-joined. This joins them the one way the server itself does — site root +
- * route, with `/` being the root — so no host, tenant path or slug shape is
- * ever invented here (R-F5-1: the client owns no public-URL constant).
+ * The FALLBACK join, for a server that answers a publish without `page_urls`.
+ *
+ * It joins them the one way the server itself does — site root + route, with
+ * `/` being the root — so no host, tenant path or slug shape is ever invented
+ * here (R-F5-1: the client owns no public-URL constant). A server that sends
+ * `page_urls` is believed instead, since it alone knows the site's real origin.
  */
 function pageUrlsFor(
   siteRootUrl: string,
