@@ -846,3 +846,94 @@ test("a jump in sequence WITHIN one log read is not a gap — other documents st
     pump.stop();
   });
 });
+
+/* ---------------------------------------------------------------------------
+ * Per-run ledgers (task 10, fix round 1) — the rebase.
+ * ------------------------------------------------------------------------ */
+
+test("a rebase re-seats the canvas on the document, and the new run's first batch draws in", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, displays, pump } = harness();
+
+    consumeSceneStreamActions(
+      pump,
+      [record(1, "doc_1", { action: "apply", operations: [insertNode("n1")] })],
+      "doc_1",
+      0,
+    );
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.equal(displays.length, 1, "the previous run drew this");
+
+    // A frame from a NEW turn: what is on screen belongs to a run that is over,
+    // and the new run's operations count from the DOCUMENT, so the override
+    // drops before its first batch lands on top.
+    consumeSceneStreamActions(
+      pump,
+      [
+        record(2, "doc_1", { action: "rebase", turnId: "turn-b" }),
+        record(3, "doc_1", { action: "apply", operations: [insertNode("n2")] }),
+      ],
+      "doc_1",
+      1,
+    );
+    assert.equal(displays.at(-1), null, "the loaded document is the new base");
+    // LIVE, not backlog: the first batch of a fresh run is drawn in, not snapped.
+    const beforeDraw = displays.length;
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.equal(displays.length, beforeDraw + 1);
+    assert.ok(displays.at(-1)?.nodes.n2);
+    assert.deepEqual(engine.batches.at(-1), [insertNode("n2")]);
+
+    pump.stop();
+  });
+});
+
+test("a rebase clears an engine-refusal latch — the new run starts from the document", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, pump } = harness();
+
+    engine.refuseWith("reject");
+    pump.enqueue([insertNode("n1")]);
+    clock.advance(FIRST_LEAD);
+    assert.equal(pump.isDirty(), true);
+
+    engine.refuseWith("no");
+    consumeSceneStreamActions(
+      pump,
+      [record(1, "doc_1", { action: "rebase", turnId: "turn-b" })],
+      "doc_1",
+      0,
+    );
+    assert.equal(pump.isDirty(), false);
+
+    pump.stop();
+  });
+});
+
+test("another document's rebase never re-seats this canvas", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { displays, pump } = harness();
+
+    consumeSceneStreamActions(
+      pump,
+      [record(1, "doc_1", { action: "apply", operations: [insertNode("n1")] })],
+      "doc_1",
+      0,
+    );
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.equal(displays.length, 1);
+
+    consumeSceneStreamActions(
+      pump,
+      [record(2, "doc_other", { action: "rebase", turnId: "turn-b" })],
+      "doc_1",
+      1,
+    );
+    assert.equal(displays.length, 1);
+
+    pump.stop();
+  });
+});

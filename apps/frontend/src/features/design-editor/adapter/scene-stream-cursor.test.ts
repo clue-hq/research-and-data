@@ -10,7 +10,7 @@ import {
   operationsFromStreamFrame,
   seedSceneStreamCursor,
   seedSceneStreamState,
-  type SceneCheckpointMark,
+  type SceneCheckpointRecord,
   type SceneStreamFrame,
 } from "./scene-stream-cursor";
 
@@ -38,9 +38,11 @@ function opBatch(batch: {
   operations?: unknown;
   operationsTotal?: number | null;
   iteration?: number | null;
+  turnId?: string | null;
 }): SceneStreamFrame {
   return {
     type: "design.op_batch",
+    turnId: batch.turnId ?? null,
     batch: {
       documentId: batch.documentId === undefined ? DOC : batch.documentId,
       operations:
@@ -56,9 +58,11 @@ function checkpoint(mark: {
   documentId?: string | null;
   version?: number | null;
   operations?: number | null;
+  turnId?: string | null;
 }): SceneStreamFrame {
   return {
     type: "design.checkpoint",
+    turnId: mark.turnId ?? null,
     checkpoint: {
       documentId: mark.documentId === undefined ? DOC : mark.documentId,
       version: mark.version === undefined ? 7 : mark.version,
@@ -79,7 +83,7 @@ test("a contiguous batch applies and advances the cursor to its ledger position"
     action: "apply",
     operations: [op("a"), op("b")],
   });
-  assert.deepEqual(cursor, { documentId: DOC, position: 2, dirty: false });
+  assert.deepEqual(cursor, { documentId: DOC, turnId: null, position: 2, dirty: false });
 });
 
 test("a second contiguous batch applies from the advanced cursor", () => {
@@ -100,7 +104,7 @@ test("contiguity is measured against the ledger POSITION, not the batch size", (
   // `operations_total` counts ledger entries that were never streamed (asset
   // and library registrations), so a batch of 2 landing at position 9 is
   // contiguous only when the cursor already stands at 7.
-  const seated = { documentId: DOC, position: 7, dirty: false };
+  const seated = { documentId: DOC, turnId: null, position: 7, dirty: false };
   assert.equal(
     advanceSceneStreamCursor(
       seated,
@@ -120,7 +124,7 @@ test("contiguity is measured against the ledger POSITION, not the batch size", (
 // --- already reflected ----------------------------------------------------
 
 test("a frame whose total is behind the cursor drops", () => {
-  const seated = { documentId: DOC, position: 6, dirty: false };
+  const seated = { documentId: DOC, turnId: null, position: 6, dirty: false };
   const { cursor, action } = advanceSceneStreamCursor(
     seated,
     opBatch({ operations: [op("a")], operationsTotal: 4 }),
@@ -130,7 +134,7 @@ test("a frame whose total is behind the cursor drops", () => {
 });
 
 test("a frame whose total equals the cursor drops — it is already reflected", () => {
-  const seated = { documentId: DOC, position: 6, dirty: false };
+  const seated = { documentId: DOC, turnId: null, position: 6, dirty: false };
   const { cursor, action } = advanceSceneStreamCursor(
     seated,
     opBatch({ operations: [op("a")], operationsTotal: 6 }),
@@ -142,22 +146,23 @@ test("a frame whose total equals the cursor drops — it is already reflected", 
 // --- gaps and unreadable payloads → dirty ---------------------------------
 
 test("a gap marks the cursor dirty and carries the position forward", () => {
-  const seated = { documentId: DOC, position: 3, dirty: false };
+  const seated = { documentId: DOC, turnId: null, position: 3, dirty: false };
   const { cursor, action } = advanceSceneStreamCursor(
     seated,
     opBatch({ operations: [op("a")], operationsTotal: 9 }),
   );
   assert.deepEqual(action, { action: "dirty" });
-  assert.deepEqual(cursor, { documentId: DOC, position: 9, dirty: true });
+  assert.deepEqual(cursor, { documentId: DOC, turnId: null, position: 9, dirty: true });
 });
 
 test("a POSITION-ONLY frame (an oversize batch) marks the cursor dirty", () => {
   // The forwarder drops `operations` past 256 KiB and keeps the position, so
   // this frame is contiguous by its numbers and still unapplicable: there is
   // nothing to apply. Dirty is the honest answer — wait for the checkpoint.
-  const seated = { documentId: DOC, position: 3, dirty: false };
+  const seated = { documentId: DOC, turnId: null, position: 3, dirty: false };
   const { cursor, action } = advanceSceneStreamCursor(seated, {
     type: "design.op_batch",
+    turnId: null,
     batch: {
       documentId: DOC,
       operations: null,
@@ -166,21 +171,21 @@ test("a POSITION-ONLY frame (an oversize batch) marks the cursor dirty", () => {
     },
   });
   assert.deepEqual(action, { action: "dirty" });
-  assert.deepEqual(cursor, { documentId: DOC, position: 4, dirty: true });
+  assert.deepEqual(cursor, { documentId: DOC, turnId: null, position: 4, dirty: true });
 });
 
 test("a frame with no readable total marks the cursor dirty and moves nothing", () => {
-  const seated = { documentId: DOC, position: 3, dirty: false };
+  const seated = { documentId: DOC, turnId: null, position: 3, dirty: false };
   const { cursor, action } = advanceSceneStreamCursor(
     seated,
     opBatch({ operationsTotal: null }),
   );
   assert.deepEqual(action, { action: "dirty" });
-  assert.deepEqual(cursor, { documentId: DOC, position: 3, dirty: true });
+  assert.deepEqual(cursor, { documentId: DOC, turnId: null, position: 3, dirty: true });
 });
 
 test("malformed operations mark the cursor dirty and never throw", () => {
-  const seated = { documentId: DOC, position: 0, dirty: false };
+  const seated = { documentId: DOC, turnId: null, position: 0, dirty: false };
   for (const operations of [
     "not-a-list",
     42,
@@ -207,7 +212,7 @@ test("malformed operations mark the cursor dirty and never throw", () => {
 // --- the dirty state ------------------------------------------------------
 
 test("a dirty cursor drops every op frame until an anchor", () => {
-  let cursor = { documentId: DOC, position: 9, dirty: true };
+  let cursor = { documentId: DOC, turnId: null, position: 9, dirty: true };
   for (const total of [10, 11, 12]) {
     const step = advanceSceneStreamCursor(
       cursor,
@@ -221,7 +226,7 @@ test("a dirty cursor drops every op frame until an anchor", () => {
 
 test("a stale frame arriving after a gap still drops", () => {
   const gapped = advanceSceneStreamCursor(
-    { documentId: DOC, position: 3, dirty: false },
+    { documentId: DOC, turnId: null, position: 3, dirty: false },
     opBatch({ operations: [op("a")], operationsTotal: 9 }),
   ).cursor;
   // The anchor clears dirty; the in-flight frame behind it is now stale.
@@ -238,14 +243,14 @@ test("a stale frame arriving after a gap still drops", () => {
 
 test("an anchor lets applies resume after a dirty spell", () => {
   const dirty = advanceSceneStreamCursor(
-    { documentId: DOC, position: 3, dirty: false },
+    { documentId: DOC, turnId: null, position: 3, dirty: false },
     opBatch({ operations: null, operationsTotal: 9 }),
   ).cursor;
   const anchored = advanceSceneStreamCursor(
     dirty,
     checkpoint({ operations: 9, version: 4 }),
   ).cursor;
-  assert.deepEqual(anchored, { documentId: DOC, position: 9, dirty: false });
+  assert.deepEqual(anchored, { documentId: DOC, turnId: null, position: 9, dirty: false });
   const { action } = advanceSceneStreamCursor(
     anchored,
     opBatch({ operations: [op("a")], operationsTotal: 10 }),
@@ -256,37 +261,37 @@ test("an anchor lets applies resume after a dirty spell", () => {
 // --- anchors --------------------------------------------------------------
 
 test("a checkpoint standing exactly at a clean cursor anchors IN SYNC", () => {
-  const seated = { documentId: DOC, position: 9, dirty: false };
+  const seated = { documentId: DOC, turnId: null, position: 9, dirty: false };
   const { cursor, action } = advanceSceneStreamCursor(
     seated,
     checkpoint({ operations: 9, version: 12 }),
   );
   assert.deepEqual(action, { action: "anchor", version: 12, inSync: true });
-  assert.deepEqual(cursor, { documentId: DOC, position: 9, dirty: false });
+  assert.deepEqual(cursor, { documentId: DOC, turnId: null, position: 9, dirty: false });
 });
 
 test("a checkpoint ahead of the cursor anchors STALE and re-seats the cursor", () => {
-  const seated = { documentId: DOC, position: 4, dirty: false };
+  const seated = { documentId: DOC, turnId: null, position: 4, dirty: false };
   const { cursor, action } = advanceSceneStreamCursor(
     seated,
     checkpoint({ operations: 9, version: 12 }),
   );
   assert.deepEqual(action, { action: "anchor", version: 12, inSync: false });
-  assert.deepEqual(cursor, { documentId: DOC, position: 9, dirty: false });
+  assert.deepEqual(cursor, { documentId: DOC, turnId: null, position: 9, dirty: false });
 });
 
 test("a checkpoint standing at a DIRTY cursor anchors stale, never in sync", () => {
-  const seated = { documentId: DOC, position: 9, dirty: true };
+  const seated = { documentId: DOC, turnId: null, position: 9, dirty: true };
   const { cursor, action } = advanceSceneStreamCursor(
     seated,
     checkpoint({ operations: 9, version: 12 }),
   );
   assert.deepEqual(action, { action: "anchor", version: 12, inSync: false });
-  assert.deepEqual(cursor, { documentId: DOC, position: 9, dirty: false });
+  assert.deepEqual(cursor, { documentId: DOC, turnId: null, position: 9, dirty: false });
 });
 
 test("a checkpoint with no readable position drops rather than re-seating blind", () => {
-  const seated = { documentId: DOC, position: 9, dirty: false };
+  const seated = { documentId: DOC, turnId: null, position: 9, dirty: false };
   const { cursor, action } = advanceSceneStreamCursor(
     seated,
     checkpoint({ operations: null, version: 12 }),
@@ -298,7 +303,7 @@ test("a checkpoint with no readable position drops rather than re-seating blind"
 // --- one cursor, one document --------------------------------------------
 
 test("an op frame naming another document drops and touches nothing", () => {
-  const seated = { documentId: DOC, position: 4, dirty: false };
+  const seated = { documentId: DOC, turnId: null, position: 4, dirty: false };
   const { cursor, action } = advanceSceneStreamCursor(
     seated,
     opBatch({ documentId: OTHER, operations: [op("a")], operationsTotal: 5 }),
@@ -308,7 +313,7 @@ test("an op frame naming another document drops and touches nothing", () => {
 });
 
 test("a checkpoint naming another document drops and does not anchor", () => {
-  const seated = { documentId: DOC, position: 4, dirty: true };
+  const seated = { documentId: DOC, turnId: null, position: 4, dirty: true };
   const { cursor, action } = advanceSceneStreamCursor(
     seated,
     checkpoint({ documentId: OTHER, operations: 4, version: 3 }),
@@ -318,7 +323,7 @@ test("a checkpoint naming another document drops and does not anchor", () => {
 });
 
 test("a frame naming NO document drops — an unattributable frame is not ours", () => {
-  const seated = { documentId: DOC, position: 4, dirty: false };
+  const seated = { documentId: DOC, turnId: null, position: 4, dirty: false };
   assert.deepEqual(
     advanceSceneStreamCursor(
       seated,
@@ -386,11 +391,13 @@ test("the fold keeps one cursor per document and logs each action in order", () 
   );
   assert.deepEqual(state.cursors.get(DOC), {
     documentId: DOC,
+    turnId: null,
     position: 2,
     dirty: false,
   });
   assert.deepEqual(state.cursors.get(OTHER), {
     documentId: OTHER,
+    turnId: null,
     position: 4,
     dirty: true,
   });
@@ -450,7 +457,7 @@ test("a dropped frame leaves the fold's state untouched — no re-render, no log
 
 test("every drop path returns the cursor it was given, unchanged by identity", () => {
   // The invariant `applySceneStreamFrame`'s shortcut above rests on.
-  const seated = { documentId: DOC, position: 6, dirty: true };
+  const seated = { documentId: DOC, turnId: null, position: 6, dirty: true };
   for (const frame of [
     opBatch({ operationsTotal: 4 }),
     opBatch({ documentId: OTHER }),
@@ -483,14 +490,16 @@ function mark(
   documentId: string | null,
   version: number | null,
   operations: number | null,
-): SceneCheckpointMark {
-  return { documentId, version, operations };
+  turnId: string | null = null,
+): SceneCheckpointRecord {
+  return { documentId, turnId, version, operations };
 }
 
 test("a late join seeds from the replayed checkpoint that committed the loaded version", () => {
   const cursor = seedSceneStreamCursor({
     documentId: DOC,
     documentVersion: 7,
+    turnId: null,
     backlogCheckpoints: [
       mark(DOC, 5, 40),
       mark(DOC, 7, 96),
@@ -499,13 +508,14 @@ test("a late join seeds from the replayed checkpoint that committed the loaded v
       mark(DOC, 8, 120),
     ],
   });
-  assert.deepEqual(cursor, { documentId: DOC, position: 96, dirty: false });
+  assert.deepEqual(cursor, { documentId: DOC, turnId: null, position: 96, dirty: false });
 });
 
 test("the seed reads only its own document's checkpoints", () => {
   const cursor = seedSceneStreamCursor({
     documentId: DOC,
     documentVersion: 7,
+    turnId: null,
     backlogCheckpoints: [
       mark(OTHER, 7, 500),
       mark(null, 7, 400),
@@ -516,13 +526,14 @@ test("the seed reads only its own document's checkpoints", () => {
       mark(DOC, 9, null),
     ],
   });
-  assert.deepEqual(cursor, { documentId: DOC, position: 96, dirty: false });
+  assert.deepEqual(cursor, { documentId: DOC, turnId: null, position: 96, dirty: false });
 });
 
 test("a version-0 document with no checkpoint in the backlog seeds at 0 — task 8's default", () => {
   const cursor = seedSceneStreamCursor({
     documentId: DOC,
     documentVersion: 0,
+    turnId: null,
     backlogCheckpoints: [mark(OTHER, 3, 50)],
   });
   assert.deepEqual(cursor, newSceneStreamCursor(DOC));
@@ -535,9 +546,10 @@ test("a document AHEAD of every replayed checkpoint seeds dirty at the highest k
   const cursor = seedSceneStreamCursor({
     documentId: DOC,
     documentVersion: 9,
+    turnId: null,
     backlogCheckpoints: [mark(DOC, 3, 20), mark(DOC, 5, 40)],
   });
-  assert.deepEqual(cursor, { documentId: DOC, position: 40, dirty: true });
+  assert.deepEqual(cursor, { documentId: DOC, turnId: null, position: 40, dirty: true });
 });
 
 test("a version no checkpoint describes seeds dirty, even with marks on both sides of it", () => {
@@ -549,18 +561,24 @@ test("a version no checkpoint describes seeds dirty, even with marks on both sid
   const cursor = seedSceneStreamCursor({
     documentId: DOC,
     documentVersion: 6,
+    turnId: null,
     backlogCheckpoints: [mark(DOC, 5, 40), mark(DOC, 8, 120)],
   });
-  assert.deepEqual(cursor, { documentId: DOC, position: 120, dirty: true });
+  assert.deepEqual(cursor, { documentId: DOC, turnId: null, position: 120, dirty: true });
 });
 
-test("a loaded document with NO checkpoints at all seeds dirty at 0", () => {
+test("a run with NO checkpoints of its own starts its ledger at 0 on the loaded base", () => {
+  // Fix round 1: an empty backlog is not an unknown position, it is a run that
+  // has committed nothing — and a run's ledger counts from zero over whatever
+  // the document already is. (Before the per-run scoping this seeded dirty,
+  // which is what kept the first batch of a fresh run off the canvas.)
   const cursor = seedSceneStreamCursor({
     documentId: DOC,
     documentVersion: 4,
+    turnId: null,
     backlogCheckpoints: [],
   });
-  assert.deepEqual(cursor, { documentId: DOC, position: 0, dirty: true });
+  assert.deepEqual(cursor, { documentId: DOC, turnId: null, position: 0, dirty: false });
 });
 
 test("the fold keeps the readable checkpoint marks the seed reads, bounded", () => {
@@ -588,9 +606,14 @@ test("seeding the fold re-seats the document's cursor and logs the join", () => 
   state = applySceneStreamFrame(state, checkpoint({ version: 7, operations: 96 }));
   const beforeSeed = state.actions.length;
 
-  state = seedSceneStreamState(state, { documentId: DOC, documentVersion: 5 });
+  state = seedSceneStreamState(state, {
+    documentId: DOC,
+    documentVersion: 5,
+    turnId: null,
+  });
   assert.deepEqual(state.cursors.get(DOC), {
     documentId: DOC,
+    turnId: null,
     position: 40,
     dirty: false,
   });
@@ -610,7 +633,11 @@ test("the seed re-seats a cursor the stream had already carried past the loaded 
   state = applySceneStreamFrame(state, checkpoint({ version: 7, operations: 96 }));
   assert.equal(state.cursors.get(DOC)?.position, 96);
 
-  state = seedSceneStreamState(state, { documentId: DOC, documentVersion: 5 });
+  state = seedSceneStreamState(state, {
+    documentId: DOC,
+    documentVersion: 5,
+    turnId: null,
+  });
   const next = applySceneStreamFrame(
     state,
     opBatch({ operations: [op("a"), op("b")], operationsTotal: 98 }),
@@ -630,7 +657,11 @@ test("the seed leaves every other document's cursor alone", () => {
   );
   state = applySceneStreamFrame(state, checkpoint({ version: 5, operations: 40 }));
   const other = state.cursors.get(OTHER);
-  state = seedSceneStreamState(state, { documentId: DOC, documentVersion: 5 });
+  state = seedSceneStreamState(state, {
+    documentId: DOC,
+    documentVersion: 5,
+    turnId: null,
+  });
   assert.equal(state.cursors.get(OTHER), other);
 });
 
@@ -639,13 +670,22 @@ test("a mid-run reload is the same path: the second load re-seats to its own ver
   // client to make this work — the durable version the canvas loaded, and the
   // checkpoints the stream replays on re-attach, are the whole mechanism.
   let state = applySceneStreamFrame(NO_SCENE_STREAM, checkpoint({ version: 5, operations: 40 }));
-  state = seedSceneStreamState(state, { documentId: DOC, documentVersion: 5 });
+  state = seedSceneStreamState(state, {
+    documentId: DOC,
+    documentVersion: 5,
+    turnId: null,
+  });
   assert.equal(state.cursors.get(DOC)?.position, 40);
 
   state = applySceneStreamFrame(state, checkpoint({ version: 6, operations: 71 }));
-  state = seedSceneStreamState(state, { documentId: DOC, documentVersion: 6 });
+  state = seedSceneStreamState(state, {
+    documentId: DOC,
+    documentVersion: 6,
+    turnId: null,
+  });
   assert.deepEqual(state.cursors.get(DOC), {
     documentId: DOC,
+    turnId: null,
     position: 71,
     dirty: false,
   });
@@ -655,4 +695,162 @@ test("a mid-run reload is the same path: the second load re-seats to its own ver
     opBatch({ operations: [op("a")], operationsTotal: 72 }),
   );
   assert.equal(next.actions.at(-1)?.action.action, "apply");
+});
+
+/* ---------------------------------------------------------------------------
+ * Per-RUN ledgers (task 10, fix round 1).
+ *
+ * `operations_total` counts a RUN's ledger, not a document's history. A
+ * document outlives many runs, so a cursor that carried one turn's position
+ * into the next measures the new run's frames against an origin that has
+ * nothing to do with them — which is exactly what a live walk caught: a tab
+ * open at v122 saw the PREVIOUS turn's replayed checkpoint (v121, 2
+ * operations), seeded there, and then dropped the new run's first batch
+ * (`operations_total` 1) as "already reflected". The reveal could never start.
+ *
+ * So the cursor is scoped to `(document, turn)`: a frame from another turn is a
+ * new ledger whose base is the document as loaded, and the cursor resets to 0
+ * before that frame's own rule runs.
+ * ------------------------------------------------------------------------ */
+
+const TURN_A = "turn-a";
+const TURN_B = "turn-b";
+
+test("a frame from a NEW turn resets the ledger, and its first batch applies", () => {
+  // The live scenario, end to end: the previous run's checkpoint is replayed,
+  // the canvas joins at a version that checkpoint does not describe, and the
+  // NEW run's first batch must draw rather than be dropped as stale.
+  let state = applySceneStreamFrame(
+    NO_SCENE_STREAM,
+    checkpoint({ turnId: TURN_A, version: 121, operations: 2 }),
+  );
+  state = seedSceneStreamState(state, {
+    documentId: DOC,
+    documentVersion: 122,
+    turnId: TURN_B,
+  });
+  assert.deepEqual(state.cursors.get(DOC), {
+    documentId: DOC,
+    turnId: TURN_B,
+    position: 0,
+    dirty: false,
+  });
+
+  const next = applySceneStreamFrame(
+    state,
+    opBatch({ turnId: TURN_B, operations: [op("a")], operationsTotal: 1 }),
+  );
+  assert.deepEqual(next.actions.at(-1)?.action, {
+    action: "apply",
+    operations: [op("a")],
+  });
+  assert.deepEqual(next.cursors.get(DOC), {
+    documentId: DOC,
+    turnId: TURN_B,
+    position: 1,
+    dirty: false,
+  });
+});
+
+test("a new turn's frame resets a cursor that was carried far past it", () => {
+  const carried = {
+    documentId: DOC,
+    turnId: TURN_A,
+    position: 96,
+    dirty: true,
+  };
+  const { cursor, action } = advanceSceneStreamCursor(
+    carried,
+    opBatch({ turnId: TURN_B, operations: [op("a"), op("b")], operationsTotal: 2 }),
+  );
+  assert.equal(action.action, "apply");
+  assert.deepEqual(cursor, {
+    documentId: DOC,
+    turnId: TURN_B,
+    position: 2,
+    dirty: false,
+  });
+});
+
+test("the fold announces the turn change before the frame's own action", () => {
+  let state = applySceneStreamFrame(
+    NO_SCENE_STREAM,
+    opBatch({ turnId: TURN_A, operations: [op("a")], operationsTotal: 1 }),
+  );
+  state = applySceneStreamFrame(
+    state,
+    opBatch({ turnId: TURN_B, operations: [op("b")], operationsTotal: 1 }),
+  );
+  assert.deepEqual(
+    state.actions.map((entry) => entry.action.action),
+    ["rebase", "apply", "rebase", "apply"],
+  );
+  assert.deepEqual(state.actions.at(-2)?.action, {
+    action: "rebase",
+    turnId: TURN_B,
+  });
+});
+
+test("a same-turn frame never rebases — the matrix is untouched", () => {
+  let state = applySceneStreamFrame(
+    NO_SCENE_STREAM,
+    opBatch({ turnId: TURN_A, operations: [op("a")], operationsTotal: 1 }),
+  );
+  state = applySceneStreamFrame(
+    state,
+    opBatch({ turnId: TURN_A, operations: [op("b")], operationsTotal: 2 }),
+  );
+  assert.deepEqual(
+    state.actions.map((entry) => entry.action.action),
+    ["rebase", "apply", "apply"],
+  );
+});
+
+test("the seed reads only the in-flight turn's marks", () => {
+  // The live case: the backlog holds only the PREVIOUS turn's checkpoint. It
+  // says nothing about where the run now in flight stands, so it is ignored and
+  // the new run's ledger starts at 0 on the document as loaded.
+  const cursor = seedSceneStreamCursor({
+    documentId: DOC,
+    documentVersion: 122,
+    turnId: TURN_B,
+    backlogCheckpoints: [
+      { documentId: DOC, turnId: TURN_A, version: 121, operations: 2 },
+      { documentId: DOC, turnId: TURN_A, version: 122, operations: 9 },
+    ],
+  });
+  assert.deepEqual(cursor, {
+    documentId: DOC,
+    turnId: TURN_B,
+    position: 0,
+    dirty: false,
+  });
+});
+
+test("within the in-flight turn the exact-version rule still stands", () => {
+  const marks = [
+    { documentId: DOC, turnId: TURN_A, version: 130, operations: 999 },
+    { documentId: DOC, turnId: TURN_B, version: 128, operations: 40 },
+    { documentId: DOC, turnId: TURN_B, version: 130, operations: 96 },
+  ];
+  assert.deepEqual(
+    seedSceneStreamCursor({
+      documentId: DOC,
+      documentVersion: 130,
+      turnId: TURN_B,
+      backlogCheckpoints: marks,
+    }),
+    { documentId: DOC, turnId: TURN_B, position: 96, dirty: false },
+  );
+  // A version this turn has marks for but did not commit: still dirty, and the
+  // highest position it knows is this TURN's, never another's.
+  assert.deepEqual(
+    seedSceneStreamCursor({
+      documentId: DOC,
+      documentVersion: 129,
+      turnId: TURN_B,
+      backlogCheckpoints: marks,
+    }),
+    { documentId: DOC, turnId: TURN_B, position: 96, dirty: true },
+  );
 });

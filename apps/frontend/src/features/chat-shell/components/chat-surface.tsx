@@ -244,9 +244,34 @@ export function ChatSurface({
   const joinedDocumentId = joinedDocument?.documentId ?? null;
   const joinedVersion = joinedDocument?.version ?? null;
   const joinedGeneration = joinedDocument?.loadGeneration ?? null;
+  /**
+   * WHICH RUN the canvas is joining (fix round 1) — the thread's running turn.
+   *
+   * That fact rather than the newest turn among the streamed frames, for two
+   * reasons. It exists on a COLD LOAD, before a single frame has arrived, which
+   * is the whole situation a late join is: the durable turn read already says
+   * which turn is running, and the lock's own floor (`threadBusy`) is derived
+   * from the same queue, so the seed and the lock can never disagree about
+   * which run is in flight. And it stays current through the stream, because
+   * the queue is computed over the turns with the streamed state overrides
+   * applied. The newest turn among replayed design frames would have been
+   * exactly the wrong answer for the defect this fixes — that newest frame can
+   * be the PREVIOUS run's checkpoint.
+   *
+   * Read through a ref, and deliberately NOT a dependency: the seed is keyed on
+   * the LOAD. A run that starts while the tab sits open must not re-seed, or the
+   * new run's first batch would be caught up on instead of drawn in — the frames
+   * themselves carry that transition (the cursor's per-turn reset), and the pump
+   * re-seats on it.
+   */
+  const runningTurnId = chat.runningTurn?.turnId ?? null;
+  const runningTurnIdRef = useRef(runningTurnId);
+  useEffect(() => {
+    runningTurnIdRef.current = runningTurnId;
+  });
   useEffect(() => {
     if (joinedDocumentId === null || joinedVersion === null) return;
-    seedSceneStream(joinedDocumentId, joinedVersion);
+    seedSceneStream(joinedDocumentId, joinedVersion, runningTurnIdRef.current);
   }, [joinedDocumentId, joinedGeneration, joinedVersion, seedSceneStream]);
   const designReferencesEnabled =
     chat.designLegOpen &&

@@ -196,8 +196,17 @@ export interface ProjectChatController {
    *
    * Called on every LOAD, including a reload that lands the same version: the
    * load is the event, because it replaces whatever the canvas was showing.
+   *
+   * `turnId` is the run in flight over that document — the ledger the canvas is
+   * joining. Only that run's checkpoints can say where the loaded version
+   * stands, because a ledger position belongs to a run, not to a document
+   * (fix round 1).
    */
-  seedSceneStream: (documentId: string, documentVersion: number) => void;
+  seedSceneStream: (
+    documentId: string,
+    documentVersion: number,
+    turnId: string | null,
+  ) => void;
   submitting: boolean;
   gateFor(part: ChatGatePart): GateCardModel | null;
   gateAnswerForTurn(turnId: string): GateAnswerDisplay | null;
@@ -321,10 +330,11 @@ export function useProjectChatController({
    * updater's result is not readable until the commit after.
    */
   const seedSceneStream = useCallback(
-    (documentId: string, documentVersion: number) => {
+    (documentId: string, documentVersion: number, turnId: string | null) => {
       const next = seedSceneStreamState(sceneStreamRef.current, {
         documentId,
         documentVersion,
+        turnId,
       });
       sceneStreamRef.current = next;
       setSceneStream(next);
@@ -625,11 +635,23 @@ export function useProjectChatController({
           // user can see, and would interrupt a reveal to do it.
           let anchorReload: boolean | null = null;
           if (event.threadId === threadId) {
+            // The TURN rides along (task 10 fix 1): `operations_total` counts
+            // ONE RUN's ledger, so a cursor that did not know which run a frame
+            // belonged to measured the next run's frames against the last
+            // one's origin — and dropped a fresh run's first batch as stale.
             const sceneFrame: SceneStreamFrame | null =
               event.opBatch !== null
-                ? { type: "design.op_batch", batch: event.opBatch }
+                ? {
+                    type: "design.op_batch",
+                    turnId: event.turnId,
+                    batch: event.opBatch,
+                  }
                 : event.checkpoint !== null
-                  ? { type: "design.checkpoint", checkpoint: event.checkpoint }
+                  ? {
+                      type: "design.checkpoint",
+                      turnId: event.turnId,
+                      checkpoint: event.checkpoint,
+                    }
                   : null;
             if (sceneFrame !== null) {
               const next = applySceneStreamFrame(

@@ -390,11 +390,29 @@ export class SceneRevealPump {
    */
   join(): void {
     if (!this.active) return;
+    this.rebase();
+    this.joining = true;
+  }
+
+  /**
+   * A NEW RUN's ledger began over this document (task 10, fix round 1).
+   *
+   * `operations_total` counts one run's operations, and the next run counts its
+   * own from zero over whatever the document then is — so the moment a frame
+   * from another turn arrives, everything this pump is holding describes a run
+   * that is over. The queue, the held scene and the refusal latch all go, and
+   * the override drops so the canvas renders the DOCUMENT, which is exactly the
+   * base the new run's first batch is measured against.
+   *
+   * Unlike a join, no catch-up latch: the first batch of a run that is starting
+   * now is live, and live batches draw themselves in.
+   */
+  rebase(): void {
+    if (!this.active) return;
     this.cancelTimer();
     this.queue = [];
     this.pendingDisplay = null;
     this.dirtyUntilAnchor = false;
-    this.joining = true;
     this.emit(null);
   }
 
@@ -705,6 +723,11 @@ export function consumeSceneStreamActions(
         break;
       case "anchor":
         pump.anchor(record.action.inSync);
+        break;
+      case "rebase":
+        // A frame from another turn: a new run's ledger, whose base is the
+        // document rather than anything this pump has drawn.
+        pump.rebase();
         break;
       case "seed":
         // Task 10: a canvas loaded this document at a durable version and the

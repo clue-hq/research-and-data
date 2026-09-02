@@ -83,10 +83,23 @@ export interface SceneCheckpointMark {
   operations: number | null;
 }
 
-/** The two frames the cursor understands. Every other frame stays away. */
+/**
+ * The two frames the cursor understands. Every other frame stays away.
+ *
+ * `turnId` rides on the FRAME rather than inside the payloads because it is the
+ * envelope's fact, not the design event's: every parsed stream frame carries
+ * `turn_id`, and the payload shapes above are what the repository reads off the
+ * design event itself. It is `string | null` for the same reason every other
+ * field here is nullable — the wire is read leniently, and this module does its
+ * own checking rather than trusting a type that came off it.
+ */
 export type SceneStreamFrame =
-  | { type: "design.op_batch"; batch: SceneOpBatch }
-  | { type: "design.checkpoint"; checkpoint: SceneCheckpointMark };
+  | { type: "design.op_batch"; turnId: string | null; batch: SceneOpBatch }
+  | {
+      type: "design.checkpoint";
+      turnId: string | null;
+      checkpoint: SceneCheckpointMark;
+    };
 
 /**
  * What one frame means for the open canvas.
@@ -103,13 +116,19 @@ export type SceneStreamFrame =
  *   a durable version. It is not a frame; it is the surface reporting a load,
  *   folded into the same ordered log so the pump learns of it exactly where it
  *   happened relative to the frames around it.
+ * - `rebase` — task 10 fix 1: a frame from ANOTHER TURN arrived, so a new run's
+ *   ledger has begun and this document's cursor was reset to its start. What
+ *   the canvas is showing was drawn from the previous run's frames, and the new
+ *   run's operations are measured from the DOCUMENT, so the display goes back
+ *   to it before the first batch of the new run lands on top.
  */
 export type SceneStreamAction =
   | { action: "apply"; operations: readonly Operation[] }
   | { action: "drop" }
   | { action: "dirty" }
   | { action: "anchor"; version: number | null; inSync: boolean }
-  | { action: "seed"; position: number; dirty: boolean };
+  | { action: "seed"; position: number; dirty: boolean }
+  | { action: "rebase"; turnId: string | null };
 
 const DROP: SceneStreamAction = { action: "drop" };
 const DIRTY: SceneStreamAction = { action: "dirty" };
@@ -118,6 +137,20 @@ const DIRTY: SceneStreamAction = { action: "dirty" };
 export interface SceneStreamCursor {
   /** The document this cursor is for; a frame naming any other is dropped. */
   documentId: string;
+  /**
+   * The TURN whose ledger `position` counts — the run, not the document.
+   *
+   * `operations_total` is a position in ONE RUN's operation ledger, and a
+   * document outlives many runs: the next run starts its ledger at zero over
+   * whatever the document then is. A cursor that carried a turn's position into
+   * the next turn would measure the new run's frames against an origin that has
+   * nothing to do with them, which is exactly the defect a live walk caught (a
+   * tab open at v122 seeded from the previous turn's checkpoint at position 2,
+   * then dropped the new run's first batch, `operations_total` 1, as already
+   * reflected — the reveal could never start). `null` until a frame has said
+   * which turn this is.
+   */
+  turnId: string | null;
   /** The ledger position the canvas has been shown up to. */
   position: number;
   /** True once a frame could not be applied, until an anchor clears it. */
@@ -126,7 +159,13 @@ export interface SceneStreamCursor {
 
 /** A cursor for a document nothing has been streamed for yet. */
 export function newSceneStreamCursor(documentId: string): SceneStreamCursor {
-  return { documentId, position: 0, dirty: false };
+  return { documentId, turnId: null, position: 0, dirty: false };
+}
+
+/** A `design.checkpoint` mark, kept with the turn whose run committed it. */
+export interface SceneCheckpointRecord extends SceneCheckpointMark {
+  /** The run that committed it. Marks from other runs are another ledger. */
+  turnId: string | null;
 }
 
 /** What a canvas reports when it finishes loading a document. */
@@ -134,8 +173,17 @@ export interface SceneStreamSeed {
   documentId: string;
   /** The durable version the canvas actually loaded. */
   documentVersion: number;
+  /**
+   * The turn whose run is in flight over this document — the ledger the canvas
+   * is joining, and the ONLY one whose marks mean anything to it.
+   *
+   * `null` (no run is known to be in flight, or the surface cannot name it) is
+   * not a guess: no mark matches it, so the seed starts the ledger at 0 on the
+   * loaded document, which is where any run's first frame would put it anyway.
+   */
+  turnId: string | null;
   /** The `design.checkpoint` marks seen so far — the fold keeps them. */
-  backlogCheckpoints: readonly SceneCheckpointMark[];
+  backlogCheckpoints: readonly SceneCheckpointRecord[];
 }
 
 /**
@@ -151,17 +199,23 @@ export interface SceneStreamSeed {
  * one says "version V holds N operations", so the loaded version picks the
  * position. Three cases, and they are the whole function:
  *
- * 1. **a replayed checkpoint committed exactly this version** — its position IS
- *    what the document holds. Clean: the next contiguous frame animates, and
- *    the backlog beyond it fast-forwards.
- * 2. **version 0 and nothing in the backlog** — a document born into this run
- *    and not yet committed. Position 0, clean; task 8's default, unchanged.
- * 3. **no checkpoint describes this version** — either the loaded version is
- *    ahead of every replayed mark (the backlog horizon did not reach it) or it
- *    sits between two of them. Its position is UNKNOWN, so the cursor seeds
- *    DIRTY at the highest position it does know and every frame drops until the
- *    next checkpoint re-anchors. The canvas honestly shows the document it
- *    loaded meanwhile; nothing is applied over a hole.
+ * Only the IN-FLIGHT TURN's marks are read (fix round 1). A ledger belongs to a
+ * run: the previous turn's checkpoint says where THAT run stood, which is no
+ * evidence at all about where this one does, and treating it as evidence is
+ * what made a live tab drop the new run's very first batch as stale.
+ *
+ * 1. **this turn committed exactly this version** — its mark's position IS what
+ *    the document holds. Clean: the next contiguous frame animates, and the
+ *    backlog beyond it fast-forwards.
+ * 2. **this turn has no marks at all** — the run has committed nothing yet (or
+ *    it only ever streamed), so its ledger starts at 0 on the document exactly
+ *    as loaded. Position 0, clean, which is also task 8's default.
+ * 3. **this turn has marks, but none for this version** — the loaded version is
+ *    either ahead of every one of them (the backlog horizon did not reach it)
+ *    or sits between two. Its position is UNKNOWN, so the cursor seeds DIRTY at
+ *    the highest position this turn is known to have reached and every frame
+ *    drops until the next checkpoint re-anchors. The canvas honestly shows the
+ *    document it loaded meanwhile; nothing is applied over a hole.
  *
  * **Why case 1 wants the EXACT version, not "the newest mark at or below it".**
  * A mark below the loaded version is a LOWER BOUND, never a position: the
@@ -182,6 +236,7 @@ export interface SceneStreamSeed {
 export function seedSceneStreamCursor({
   documentId,
   documentVersion,
+  turnId,
   backlogCheckpoints,
 }: SceneStreamSeed): SceneStreamCursor {
   let exact: number | null = null;
@@ -189,6 +244,8 @@ export function seedSceneStreamCursor({
   let sawMark = false;
   for (const mark of backlogCheckpoints) {
     if (mark.documentId !== documentId) continue;
+    // Another run's ledger. Not weaker evidence — no evidence.
+    if (mark.turnId !== turnId) continue;
     const version = readPosition(mark.version);
     const position = readPosition(mark.operations);
     if (version === null || position === null) continue;
@@ -199,14 +256,21 @@ export function seedSceneStreamCursor({
     // the stream currently stands behind.
     if (version === documentVersion) exact = position;
   }
-  if (exact !== null) return { documentId, position: exact, dirty: false };
-  if (documentVersion <= 0 && !sawMark) return newSceneStreamCursor(documentId);
-  return { documentId, position: highestKnown, dirty: true };
+  if (exact !== null) return { documentId, turnId, position: exact, dirty: false };
+  if (!sawMark) return { documentId, turnId, position: 0, dirty: false };
+  return { documentId, turnId, position: highestKnown, dirty: true };
 }
 
 export interface SceneStreamAdvance {
   cursor: SceneStreamCursor;
   action: SceneStreamAction;
+  /**
+   * The frame belonged to a DIFFERENT RUN, so the cursor was reset to the start
+   * of that run's ledger before the frame's own rule ran. The fold turns this
+   * into a `rebase` action, which is how the reveal learns that what it has
+   * drawn belongs to a run that is over.
+   */
+  turnChanged: boolean;
 }
 
 function isOperationRecord(value: unknown): boolean {
@@ -249,6 +313,13 @@ function readPosition(value: number | null): number | null {
  *
  * Order matters and is the order of the rules:
  *
+ * 0. **the run** (fix round 1) — a frame naming a turn other than the cursor's
+ *    is a NEW LEDGER: that run counts its operations from zero over whatever
+ *    the document is now, so the cursor resets to `{turn, 0, clean}` and the
+ *    rules below then run against THAT. Nothing else about them changes, which
+ *    is why a same-turn stream behaves exactly as it did. A frame carrying no
+ *    turn at all cannot be attributed to another run, so it does not reset —
+ *    it is simply read against the cursor as it stands.
  * 1. **the document** — a frame for any other document, or a frame naming no
  *    document at all, drops untouched. One cursor is one document's truth, and
  *    an unattributable frame cannot be proven to be this one's.
@@ -272,13 +343,38 @@ export function advanceSceneStreamCursor(
   cursor: SceneStreamCursor,
   frame: SceneStreamFrame,
 ): SceneStreamAdvance {
+  if (frameDocumentId(frame) !== cursor.documentId) {
+    return { cursor, action: DROP, turnChanged: false };
+  }
+  const turnChanged = frame.turnId !== null && frame.turnId !== cursor.turnId;
+  const active: SceneStreamCursor = turnChanged
+    ? {
+        documentId: cursor.documentId,
+        turnId: frame.turnId,
+        position: 0,
+        dirty: false,
+      }
+    : cursor;
+  return { ...advanceWithinTurn(active, frame), turnChanged };
+}
+
+/** Rules 1–6, against a cursor already known to be on the frame's own run. */
+function advanceWithinTurn(
+  cursor: SceneStreamCursor,
+  frame: SceneStreamFrame,
+): { cursor: SceneStreamCursor; action: SceneStreamAction } {
   if (frame.type === "design.checkpoint") {
     const mark = frame.checkpoint;
     if (mark.documentId !== cursor.documentId) return { cursor, action: DROP };
     const position = readPosition(mark.operations);
     if (position === null) return { cursor, action: DROP };
     return {
-      cursor: { documentId: cursor.documentId, position, dirty: false },
+      cursor: {
+        documentId: cursor.documentId,
+        turnId: cursor.turnId,
+        position,
+        dirty: false,
+      },
       action: {
         action: "anchor",
         version: mark.version,
@@ -301,13 +397,19 @@ export function advanceSceneStreamCursor(
   const operations = operationsFromStreamFrame(batch);
   if (operations !== null && total - operations.length === cursor.position) {
     return {
-      cursor: { documentId: cursor.documentId, position: total, dirty: false },
+      cursor: {
+        documentId: cursor.documentId,
+        turnId: cursor.turnId,
+        position: total,
+        dirty: false,
+      },
       action: { action: "apply", operations },
     };
   }
   return {
     cursor: {
       documentId: cursor.documentId,
+      turnId: cursor.turnId,
       position: Math.max(cursor.position, total),
       dirty: true,
     },
@@ -357,16 +459,17 @@ export interface SceneStreamState {
    *
    * A cursor remembers only WHERE it stands, which is all a frame needs. A
    * canvas joining mid-run needs the other half of the mapping — which VERSION
-   * that position belongs to — and the only place it exists is the checkpoint
-   * frames themselves. Keeping them here rather than in the controller means
-   * the seed is folded and tested with everything else it has to agree with.
+   * that position belongs to, and in WHICH RUN — and the only place it exists
+   * is the checkpoint frames themselves. Keeping them here rather than in the
+   * controller means the seed is folded and tested with everything else it has
+   * to agree with.
    */
-  checkpoints: readonly SceneCheckpointMark[];
+  checkpoints: readonly SceneCheckpointRecord[];
 }
 
 const NO_CURSORS: ReadonlyMap<string, SceneStreamCursor> = new Map();
 const NO_ACTIONS: readonly SceneStreamActionRecord[] = [];
-const NO_CHECKPOINTS: readonly SceneCheckpointMark[] = [];
+const NO_CHECKPOINTS: readonly SceneCheckpointRecord[] = [];
 
 /** Nothing streamed yet. */
 export const NO_SCENE_STREAM: SceneStreamState = {
@@ -389,7 +492,7 @@ export const SCENE_STREAM_CHECKPOINT_LOG_LIMIT = 32;
 
 function withAction(
   state: SceneStreamState,
-  checkpoints: readonly SceneCheckpointMark[],
+  checkpoints: readonly SceneCheckpointRecord[],
   cursors: ReadonlyMap<string, SceneStreamCursor>,
   documentId: string,
   action: SceneStreamAction,
@@ -422,7 +525,7 @@ function withAction(
  */
 export function seedSceneStreamState(
   state: SceneStreamState,
-  seed: { documentId: string; documentVersion: number },
+  seed: { documentId: string; documentVersion: number; turnId: string | null },
 ): SceneStreamState {
   const cursor = seedSceneStreamCursor({
     ...seed,
@@ -464,20 +567,39 @@ export function applySceneStreamFrame(
   if (documentId === null) return state;
   const current =
     state.cursors.get(documentId) ?? newSceneStreamCursor(documentId);
-  const { cursor, action } = advanceSceneStreamCursor(current, frame);
-  if (action.action === "drop") return state;
+  const { cursor, action, turnChanged } = advanceSceneStreamCursor(
+    current,
+    frame,
+  );
+  // A dropped frame is nothing for a consumer to do — unless it also crossed a
+  // run boundary, in which case the reset it caused is real and must be kept.
+  if (action.action === "drop" && !turnChanged) return state;
   const cursors = new Map(state.cursors);
   cursors.set(documentId, cursor);
-  // Task 10: keep the mark behind an anchor, so a canvas that loads later can
-  // translate its version into a ledger position. Only anchors get here — an
-  // unreadable checkpoint dropped above, and it would tell the seed nothing.
+  // Task 10: keep the mark behind an anchor, WITH the run that committed it, so
+  // a canvas that loads later can translate its version into a position in the
+  // right ledger. Only anchors get here — an unreadable checkpoint dropped
+  // above, and it would tell the seed nothing.
   let checkpoints = state.checkpoints;
   if (action.action === "anchor" && frame.type === "design.checkpoint") {
-    const kept = [...checkpoints, frame.checkpoint];
+    const kept = [...checkpoints, { ...frame.checkpoint, turnId: frame.turnId }];
     checkpoints =
       kept.length > SCENE_STREAM_CHECKPOINT_LOG_LIMIT
         ? kept.slice(kept.length - SCENE_STREAM_CHECKPOINT_LOG_LIMIT)
         : kept;
   }
-  return withAction(state, checkpoints, cursors, documentId, action);
+  // The rebase is logged BEFORE the frame's own action, because that is the
+  // order they happened in: the previous run's picture stops being the base,
+  // and only then does this frame land on the document underneath it.
+  let next = state;
+  if (turnChanged) {
+    next = withAction(next, checkpoints, cursors, documentId, {
+      action: "rebase",
+      turnId: cursor.turnId,
+    });
+  }
+  if (action.action !== "drop") {
+    next = withAction(next, checkpoints, cursors, documentId, action);
+  }
+  return next;
 }
