@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 from urllib.parse import urlsplit
 
-from clue_design.storage import SOURCE_KEY_PUBLISH_ASSET
+from clue_design.storage import SOURCE_KEY_ASSET, SOURCE_KEY_PUBLISH_ASSET
 
 from .asset_custody import read_asset_bytes
 from .custom_component_runtime import (
@@ -43,6 +43,12 @@ from .custom_component_runtime import (
 )
 from .database import NotFoundError
 from .design_store import CustodyState, DesignBlobStore
+from .font_containers import (
+    SFNT_MIME,
+    FontContainerError,
+    encode_woff2,
+    sniff_font_container,
+)
 from .fragments.abm_page import unresolved_account_markers
 from .fragments.render import (
     build_fragment_render_package,
@@ -364,6 +370,33 @@ class _FontGate(NamedTuple):
     warnings: List[str]
 
 
+def _web_face_bytes(
+    blobs: DesignBlobStore, digest: str, data: bytes
+) -> Tuple[bytes, str, str, Optional[str]]:
+    """``(bytes_to_ship, ext, digest_to_name, warning)`` for one face on a web page.
+
+    Option A (2026-09-02) keeps every stored font as sfnt; a page wants the compressed wrapper
+    back. The re-encode is byte-deterministic, so registering it content-addressed is idempotent
+    across publishes, and the hosted page's ``/asset-store/{digest}`` then names the WOFF2 blob
+    (that route serves any registered digest). Bytes that are not sfnt — a legacy face the
+    backfill has not reached, or a test's fake payload — pass through untouched; an encode
+    failure ships the sfnt with a warning rather than dropping the face.
+    """
+    if sniff_font_container(data) not in SFNT_MIME:
+        return data, _font_ext(data), digest, None
+    try:
+        woff2 = encode_woff2(data)
+    except FontContainerError as error:
+        return (
+            data,
+            _font_ext(data),
+            digest,
+            f"font face {digest[:12]} shipped as {_font_ext(data)}: WOFF2 encode failed ({error})",
+        )
+    blobs.register(woff2, media_type="font/woff2", source_key=SOURCE_KEY_ASSET)
+    return woff2, "woff2", hashlib.sha256(woff2).hexdigest(), None
+
+
 def _gather_fonts(
     brand_kit: Optional[JsonObject],
     repo: Any,
@@ -421,13 +454,16 @@ def _gather_fonts(
                 )
                 continue
             seen.add(digest)
+            data, ext, shipped_digest, note = _web_face_bytes(blobs, digest, data)
+            if note is not None:
+                warnings.append(note)
             faces.append(
                 _FontFace(
-                    digest=digest,
+                    digest=shipped_digest,
                     family=family,
                     weight=_valid_weight(face.get("weight")),
                     style=_valid_style(face.get("style")),
-                    ext=_font_ext(data),
+                    ext=ext,
                     data=data,
                 )
             )

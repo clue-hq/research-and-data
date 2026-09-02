@@ -11,11 +11,14 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import re
 import zipfile
+from io import BytesIO
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from fontTools.ttLib import TTFont
 
 from clue_design.storage import SOURCE_KEY_ASSET
 
@@ -29,6 +32,7 @@ from lumen_api.web_export import _CompiledTheme, _build_input_css
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ACME_KIT_PATH = REPO_ROOT / "crates/lumen-core/fixtures/brand_kits/acme_full.json"
+INTER_TTF_PATH = REPO_ROOT / "fonts" / "Inter-Regular.ttf"
 
 SAMPLE_HTML = """
 <header id="site_header" class="bg-light border-b border-border">
@@ -372,11 +376,14 @@ def test_export_copies_and_rewrites_image_assets(client: TestClient) -> None:
 # --- (c) font license gate --------------------------------------------------
 
 
-def seed_font_asset(client: TestClient, asset_id: str, data: bytes) -> str:
+def seed_font_asset(
+    client: TestClient, asset_id: str, data: bytes, mime_type: str = "font/woff2"
+) -> str:
     # D4: the export reads face bytes from DURABLE storage, so seed them through the seam.
     digest = make_blob_store(client.app).register(
-        data, media_type="font/woff2", source_key=SOURCE_KEY_ASSET
+        data, media_type=mime_type, source_key=SOURCE_KEY_ASSET
     ) and hashlib.sha256(data).hexdigest()
+    ext = mime_type.rsplit("/", 1)[-1]
     record = {
         "id": asset_id,
         "label": asset_id,
@@ -384,9 +391,9 @@ def seed_font_asset(client: TestClient, asset_id: str, data: bytes) -> str:
         "status": "ready",
         "source": {"kind": "uploaded"},
         "media": {
-            "mime_type": "font/woff2",
+            "mime_type": mime_type,
             "digest": {"algorithm": "sha256", "value": digest},
-            "filename": f"{asset_id}.woff2",
+            "filename": f"{asset_id}.{ext}",
             "byte_length": len(data),
             "location": None,
         },
@@ -543,6 +550,66 @@ def test_the_publish_manifest_names_the_basis_a_family_embeds_under(
         "basis": "platform-terms",
     } in manifest["font_embed_bases"]
     assert f"fonts/{digest[:12]}.woff2" in _files
+
+
+def _glyph_order(data: bytes) -> list[str]:
+    return TTFont(BytesIO(data)).getGlyphOrder()
+
+
+def test_export_ships_a_stored_sfnt_face_as_woff2(client: TestClient) -> None:
+    """Option A (2026-09-02): the store keeps sfnt; the page gets WOFF2 back, content-addressed."""
+    inter = INTER_TTF_PATH.read_bytes()
+    seed_font_asset(client, "asset_font_sfnt", inter, mime_type="font/ttf")
+    seed_font_asset(client, "asset_font_sfnt_locked", b"wOF2" + b"\x11" * 96)
+    create_font_kit(client, "asset_font_sfnt", "asset_font_sfnt_locked")
+
+    document = create_web_document(
+        client, brand_kit_ref={"id": "kit_export_fonts", "version": 1}
+    )
+    seed_content(client, document["id"], ingest_content(client, document["id"]))
+    files, html, manifest = export_zip(client, document["id"])
+
+    shipped = [name for name in files if name.startswith("fonts/")]
+    assert len(shipped) == 1, shipped
+    assert shipped[0].endswith(".woff2"), shipped
+    data = files[shipped[0]]
+    assert data[:4] == b"wOF2"
+    assert len(data) < len(inter)
+    back = TTFont(BytesIO(data))
+    back.flavor = None
+    out = BytesIO()
+    back.save(out)
+    assert _glyph_order(out.getvalue()) == _glyph_order(inter)
+    assert shipped[0] == f"fonts/{hashlib.sha256(data).hexdigest()[:12]}.woff2"
+    assert "Export Sans" in manifest["font_families_included"]
+
+
+def test_publish_names_the_woff2_blob_on_the_digest_route(
+    client: TestClient, workspace_id: str
+) -> None:
+    inter = INTER_TTF_PATH.read_bytes()
+    seed_font_asset(client, "asset_font_pub_sfnt", inter, mime_type="font/ttf")
+    seed_font_asset(client, "asset_font_pub_sfnt_locked", b"wOF2" + b"\x11" * 96)
+    create_font_kit(client, "asset_font_pub_sfnt", "asset_font_pub_sfnt_locked")
+    document = create_web_document(
+        client, brand_kit_ref={"id": "kit_export_fonts", "version": 1}
+    )
+    seed_content(client, document["id"], ingest_content(client, document["id"]))
+    published = client.post(
+        f"/documents/{document['id']}/web/publish", json={"slug": "sfnt-to-woff2"}
+    )
+    assert published.status_code == 200, published.text
+
+    served = client.get(f"/w/{workspace_id}/p/sfnt-to-woff2")
+    assert served.status_code == 200, served.text
+    sha_of_ttf = hashlib.sha256(inter).hexdigest()
+    assert f"/asset-store/{sha_of_ttf}" not in served.text
+    match = re.search(r'src:url\("/asset-store/([0-9a-f]{64})"\)', served.text)
+    assert match is not None, served.text[:2000]
+    woff2_digest = match.group(1)
+    blob = make_blob_store(client.app).read(woff2_digest)
+    assert blob[:4] == b"wOF2"
+    assert hashlib.sha256(blob).hexdigest() == woff2_digest
 
 
 # --- (d) SEO ----------------------------------------------------------------
