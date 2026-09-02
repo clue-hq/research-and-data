@@ -1341,6 +1341,25 @@ class HybridRepository:
             )
         )
 
+    def get_web_publish_page(self, slug: str, route: str) -> Optional[JsonObject]:
+        """One served route of a multi-page site (F5), or ``None``.
+
+        ``None`` also covers a pre-F5 publish, which has no page rows at all — the caller falls
+        back to the publish row's own ``html`` for ``/`` and 404s elsewhere."""
+        return self._bridge._run(
+            lambda conn: design_publishes.get_web_publish_page(
+                conn, workspace_id=self.workspace_id, slug=slug, route=route
+            )
+        )
+
+    def list_web_publish_pages(self, slug: str) -> list[JsonObject]:
+        """Every route the site currently serves (route/page_id/html_digest, no html)."""
+        return self._bridge._run(
+            lambda conn: design_publishes.list_web_publish_pages(
+                conn, workspace_id=self.workspace_id, slug=slug
+            )
+        )
+
     # --- custom-component registry (D2.4B) ----------------------------------------------------
 
     def register_custom_component_artifact(self, artifact: JsonObject) -> JsonObject:
