@@ -73,15 +73,20 @@ export function AssetLibraryPanel({ library, onUploadFile }: {
       </div>
       <div className={styles.assetLibraryTools}>
         <input aria-label="Search assets" className={styles.assetLibrarySearch} onChange={(event) => library.setQuery(event.target.value)} placeholder="Search" value={library.query} />
-        <InspectorSelect
-          label="Filter assets by type"
-          onChange={(label) => {
-            const chosen = ASSET_LIBRARY_CATEGORIES.find((option) => option.label === label);
-            if (chosen) library.setCategory(chosen.value);
-          }}
-          options={ASSET_LIBRARY_CATEGORIES.map((option) => option.label)}
-          value={categoryLabel}
-        />
+        {/* The shared select's control is `width: 100%`, so it is given a fixed
+            share of the toolbar rather than the whole row — the search box
+            keeps its `flex: 1`. */}
+        <div className={styles.assetLibraryCategory}>
+          <InspectorSelect
+            label="Filter assets by type"
+            onChange={(label) => {
+              const chosen = ASSET_LIBRARY_CATEGORIES.find((option) => option.label === label);
+              if (chosen) library.setCategory(chosen.value);
+            }}
+            options={ASSET_LIBRARY_CATEGORIES.map((option) => option.label)}
+            value={categoryLabel}
+          />
+        </div>
       </div>
       {library.error ? (
         <div className={styles.assetLibraryError} role="alert">{library.error} <button className={styles.assetLibraryRetry} onClick={library.refresh} type="button">Retry</button></div>

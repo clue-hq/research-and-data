@@ -3233,6 +3233,7 @@
 .assetLibraryClose { border: 0; background: none; color: var(--chat-shell-subtle); cursor: pointer; font: inherit; }
 .assetLibraryTools { display: flex; gap: 8px; padding: 10px 14px; border-bottom: 0.5px solid var(--chat-shell-subtle-border); }
 .assetLibrarySearch { flex: 1; min-width: 0; height: 30px; padding: 0 10px; border: 0.5px solid var(--chat-shell-border); border-radius: 8px; background: var(--chat-shell-neutral); font: inherit; }
+.assetLibraryCategory { flex: 0 0 148px; min-width: 0; }
 .assetLibraryBody { overflow-y: auto; padding-bottom: 8px; }
 .assetLibrarySection { padding: 10px 14px 0; font-size: 11px; color: var(--chat-shell-subtle); text-transform: uppercase; letter-spacing: 0.02em; }
 .assetLibraryGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 8px 14px 6px; }
