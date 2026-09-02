@@ -74,3 +74,35 @@ def test_has_existing_content_without_a_page_means_any_page(tmp_path):
     page["nodes"][page["root"]]["children"] = ["sec"]
     assert has_existing_content(tools.web_doc) is True
     assert has_existing_content(tools.web_doc, "home") is False
+
+
+def test_every_skill_frontmatter_parses_as_yaml():
+    """The skills loader is `yaml.safe_load` and it SKIPS a skill whose
+    frontmatter does not parse (deepagents `middleware/skills.py`), so an
+    unquoted colon in a `description:` makes a whole skill invisible to the
+    agent with nothing but a log line to say so."""
+    import yaml
+
+    skills_dir = REPO_ROOT / "apps/agent_runtime/knowledge_docs/skills"
+    for skill in sorted(p for p in skills_dir.iterdir() if (p / "SKILL.md").is_file()):
+        front = (skill / "SKILL.md").read_text(encoding="utf-8").split("---")[1]
+        meta = yaml.safe_load(front)
+        assert isinstance(meta, dict), skill.name
+        assert meta["name"] == skill.name
+
+
+def test_orchestrator_prompt_teaches_one_brief_per_page():
+    from lumen_agent.prompts_web import build_web_orchestrator_prompt
+
+    text = build_web_orchestrator_prompt(
+        doc_title="Site",
+        has_existing_content=False,
+        brand_card="",
+        review_cap=6,
+        author_cap=4,
+        account_card=None,
+        page_routes=["/", "/pricing"],
+    )
+    assert "ONE AUTHOR BRIEF PER PAGE" in text
+    assert "add_page" in text and "switch_page" in text
+    assert "/pricing" in text

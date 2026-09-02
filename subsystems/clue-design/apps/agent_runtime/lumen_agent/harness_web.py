@@ -37,7 +37,6 @@ from .prompts_web import (
     build_web_reviewer_prompt,
 )
 from .tools.web_substrate import (
-    HOME_PAGE_ID,
     LumenWebTools,
     has_existing_content,
     make_web_view_tool,
@@ -346,6 +345,11 @@ def create_web_deepagent(
                 tools.write_custom_component_source,
                 tools.compile_custom_component,
                 tools.place_custom_component,
+                # F5 task 8: a READ, and only the read. The author writes the page the
+                # director switched to, so it needs to know which page that is (and what
+                # routes its sibling pages answer on, to link between them) — but creating,
+                # dropping and switching pages is the director's plan, not the author's.
+                tools.list_pages,
             ],
             "skills": workspace_skills,
         },
@@ -412,6 +416,14 @@ def create_web_deepagent(
         # weighs rather than markup an author edits. The reviewer subagent, when it exists, reads
         # the gate's captures through the director's brief exactly as it reads the previews.
         tools.review_cloned_page,
+        # F5 task 8: the site's page shape is the DIRECTOR's plan. It creates every page the
+        # plan names before the first delegation and switches to each one in turn, because
+        # the author always writes the ACTIVE page and one author brief covers exactly one
+        # page. None of these four write page content.
+        tools.list_pages,
+        tools.add_page,
+        tools.remove_page,
+        tools.switch_page,
         tools.finalize_web_run,
     ]
 
@@ -423,13 +435,21 @@ def create_web_deepagent(
         tools=orchestrator_tools,
         system_prompt=build_web_orchestrator_prompt(
             doc_title=doc_title,
-            has_existing_content=has_existing_content(initial_web_doc, HOME_PAGE_ID),
+            # F5 task 8: ANY page having content makes this a continuation, not a fresh
+            # site — a second page authored last turn is standing work the director must
+            # not treat as an empty document.
+            has_existing_content=has_existing_content(initial_web_doc),
             brand_card=tools.brand_card_text,
             review_cap=WEB_REVIEW_DELEGATION_CAP,
             author_cap=WEB_AUTHOR_DELEGATION_CAP,
             account_card=tools.account_card_text,
             # D-F7: the same rubric either way; only who applies it moves.
             web_reviewer=runtime_config.web_reviewer_enabled,
+            page_routes=[
+                page["route"]
+                for page in initial_web_doc.get("pages") or []
+                if isinstance(page, dict) and page.get("route")
+            ],
         ),
         subagents=subagents,
         # G4/G6: the delegation budgets ride as ordinary tool-call middleware on the
