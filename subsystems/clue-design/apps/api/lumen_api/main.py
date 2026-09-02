@@ -44,6 +44,7 @@ from fastapi.responses import (
     Response,
     StreamingResponse,
 )
+from starlette.routing import Host
 
 from . import ad_runtime, document_thumbnails, image_cache, image_provider, web_export
 from .asset_custody import (
@@ -147,6 +148,7 @@ from .dto import (
     snapshot_summary,
 )
 from .public_address import HOST_SUFFIX_ENV, PublicSiteAddress, public_site_address
+from .public_pages import PUBLISH_NOT_FOUND_HTML, build_public_pages_app
 from .web_bridge import render_bridge_script
 from .models import (
     AgentTurnPreviewRequest,
@@ -5639,16 +5641,10 @@ def create_app(
             },
         )
 
-    PUBLISH_NOT_FOUND_HTML = (
-        "<!doctype html><html><head><meta charset=\"utf-8\">"
-        "<title>Not found</title></head><body><h1>404</h1>"
-        "<p>No published page at this address.</p></body></html>"
-    )
-
     def _serve_site_page(
-        repo: HybridRepository, slug: str, route: str, request: Request
+        repo: HybridRepository, slug: str, route: str, csp_origin: str
     ) -> HTMLResponse:
-        """One published site page, by route (F5). The ONE serving body both routes share.
+        """One published site page, by route (F5). The ONE serving body every route shares.
 
         The publish row is the site: it must exist and be ``active``, whichever page is asked
         for. The page itself comes from the per-route pages the last publish materialized.
@@ -5657,6 +5653,12 @@ def create_app(
         own denormalized html — that is what keeps an already-live page live across the deploy
         that adds this. Every other route on such a publish is genuinely absent, and gets the
         same 404 an unknown route gets.
+
+        ``csp_origin`` is the origin the page is actually being served from, and is the one
+        thing the two ADDRESSES disagree on (T15): the interim routes pass the request's own
+        base url, the public host app passes the site's ``PublicSiteAddress.origin``. Passed in
+        rather than re-derived from the request, so the delivery CSP names the origin the site's
+        own stylesheet and fonts are loaded from in either mode.
         """
         publish = repo.get_web_publish(slug)
         if publish is None or publish["status"] != "active":
@@ -5674,9 +5676,7 @@ def create_app(
             headers={
                 "Cache-Control": "public, max-age=60, must-revalidate",
                 "ETag": f'"sha256-{html_digest}"',
-                "Content-Security-Policy": web_export._delivery_csp(
-                    str(request.base_url).rstrip("/")
-                ),
+                "Content-Security-Policy": web_export._delivery_csp(csp_origin),
                 "X-Content-Type-Options": "nosniff",
                 "Referrer-Policy": "no-referrer",
             },
@@ -5689,7 +5689,7 @@ def create_app(
         request: Request,
         repo: HybridRepository = Depends(public_repository),
     ) -> HTMLResponse:
-        return _serve_site_page(repo, slug, "/", request)
+        return _serve_site_page(repo, slug, "/", str(request.base_url).rstrip("/"))
 
     # DECLARED AFTER `serve_publish_manifest` ON PURPOSE: this pattern also matches
     # `/w/{ws}/p/{slug}/manifest.json`, and FastAPI matches in declaration order, so the
@@ -5705,7 +5705,70 @@ def create_app(
         # A trailing slash is the same page (a static host would serve the folder index), and
         # an empty path is the site root.
         normalized = "/" + route.strip("/")
-        return _serve_site_page(repo, slug, normalized, request)
+        return _serve_site_page(
+            repo, slug, normalized, str(request.base_url).rstrip("/")
+        )
+
+    # --- T15: the PUBLIC ORIGIN — `{handle}.<suffix>/{slug}{route}` -------------------------- #
+    # The routes above are the interim, tenant-in-the-path scheme. This is the real address a
+    # published site is shared at, and it reuses the four bodies above verbatim — one publish
+    # read, one 404 page, one CSP. See `public_pages.py` for the custom-domain seam.
+
+    def resolve_workspace_for_handle(handle: str) -> Optional[str]:
+        """``handle -> workspace_id``. Cross-workspace by nature: it answers *which* tenant a
+        hostname belongs to. ``ensure_workspace=False`` (and a router-only placeholder tenant)
+        so a stranger's hostname reads nothing and mints nothing."""
+        return HybridRepository(
+            workspace_id="ws_public_host_router", ensure_workspace=False
+        ).get_workspace_by_handle(handle)
+
+    def host_serve_site_page(
+        *,
+        workspace_id: str,
+        handle: str,
+        slug: str,
+        route: str,
+        request_base_url: str,
+    ) -> HTMLResponse:
+        address = public_site_address(
+            request_base_url=request_base_url,
+            workspace_id=workspace_id,
+            slug=slug,
+            handle=handle,
+        )
+        return _serve_site_page(
+            public_repository(workspace_id), slug, route, address.origin
+        )
+
+    suffix = (os.environ.get(HOST_SUFFIX_ENV) or "").strip().strip("/")
+    if suffix:
+        # Read ONCE, here: a `Host` pattern is compiled into the route table, so changing the
+        # suffix needs a restart (documented in DEV_STACK.md). Blank mounts nothing and every
+        # route above behaves exactly as it did before this existed.
+        #
+        # INSERTED FIRST so a request whose Host header matches the wildcard is served as a
+        # published site before any path route can claim it; every other host falls through the
+        # host route (Match.NONE) into the API's own routes, unchanged.
+        app.router.routes.insert(
+            0,
+            Host(
+                f"{{handle}}.{suffix}",
+                app=build_public_pages_app(
+                    resolve_workspace_for_handle=resolve_workspace_for_handle,
+                    serve_site_page=host_serve_site_page,
+                    serve_publish_manifest=lambda workspace_id, slug: (
+                        serve_publish_manifest(
+                            workspace_id, slug, public_repository(workspace_id)
+                        )
+                    ),
+                    serve_publish_asset=serve_publish_asset,
+                    # A thunk, not the function object: `get_asset_store_bytes` is defined
+                    # further down this factory, so binding it eagerly here is a NameError. The
+                    # closure cell is filled long before any request arrives.
+                    serve_asset_store=lambda digest: get_asset_store_bytes(digest),
+                ),
+            ),
+        )
 
     @app.post("/documents/{document_id}/export")
     def export_document(

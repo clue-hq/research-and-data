@@ -41,6 +41,35 @@ Then open **http://localhost:3020** and sign in:
 | `LUMEN_API_BASE_URL=http://127.0.0.1:8010` — in **`apps/frontend/.env.local`**, not `.env` | The frontend's design proxy (`/api/clue/design/*`) needs it. Missing → every design render 500s: **grey gallery thumbnails, editor canvas never renders** — while chat and generation work fine, which makes it look like the design finished "invisibly". Found live 2026-08-29 (was an ad-hoc shell export that evaporated at a stack rebuild). |
 | Model pins: grok-4.6 everywhere | Env alone is NOT enough — catalog profile (head-of-abm v40), registry promotion, composer pins, and the gateway chat-completions flag all matter. GPT-5.6-terra in the picker → `missing_finalize` step failures. |
 
+## Public pages host (published sites on their own hostname) — OFF by default
+
+A published site is normally served from the design API's own origin at the interim path
+`http://127.0.0.1:8010/w/{workspace}/p/{slug}`. Set **`LUMEN_PUBLIC_PAGES_HOST_SUFFIX`** (and
+optionally `LUMEN_PUBLIC_PAGES_SCHEME`, default `https`) and the same site is addressed AND
+served at `{handle}.<suffix>/{slug}{route}`, where `{handle}` is the workspace handle
+(`GET /workspace/handle`, frozen at first publish).
+
+| Key | Value | Notes |
+|---|---|---|
+| `LUMEN_PUBLIC_PAGES_HOST_SUFFIX` | blank (default) | Interim path serving; no host route is mounted at all. |
+| | `pages.cluehq.ai` | Host mode: publish URLs, canonical/og:url and the serving routes all move to the wildcard host. |
+| `LUMEN_PUBLIC_PAGES_SCHEME` | `https` (default) / `http` | Only lower it for a local wildcard host with no certificate. |
+
+**Changing the suffix needs an API restart.** The `Host` route is compiled into the route table
+when the app is built, so a running process keeps whatever suffix it started with.
+
+Operator prerequisites before turning it on anywhere real — the founder owns all three:
+
+- **A public ingress for the design API.** It is reached through a tunnel on 8060 today
+  (`_memory/2026-08-27-railway-frontend-deployment.md`); a published site's visitors must reach
+  the API directly.
+- **Wildcard DNS** `*.pages.cluehq.ai` → that ingress.
+- **Wildcard TLS** for the same name (Cloudflare proxy, or the ingress's ACME wildcard).
+
+Locally you can exercise it without DNS: point a hostname at 127.0.0.1 in `/etc/hosts`
+(`127.0.0.1 acme.pages.local`), start the API with `LUMEN_PUBLIC_PAGES_HOST_SUFFIX=pages.local`
+and `LUMEN_PUBLIC_PAGES_SCHEME=http`, set that workspace's handle to `acme`, and publish.
+
 ## One-time machine prerequisites
 
 - Postgres running locally; dev DB `clue_istanbul_dev` at head (`alembic upgrade head`).
