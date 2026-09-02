@@ -4,6 +4,7 @@ import {
   DESIGN_CHECKPOINT_EVENT_TYPE,
   DESIGN_GENERATION_WAIT_NOTICE,
   DESIGN_LEG_EVENT_TYPES,
+  DESIGN_OP_BATCH_EVENT_TYPE,
   designLegNotice,
   designRefreshForEvent,
   designTurnFailureNotice,
@@ -214,4 +215,20 @@ test("a checkpoint for another thread refreshes nothing", () => {
     ),
     { refetchFeed: false, reloadCanvas: false },
   );
+});
+
+test("an op batch refreshes nothing — it announces nothing durable", () => {
+  // Rung B streams operations BEFORE they are committed. Reloading the canvas
+  // here would re-read the durable document to show it a version it does not
+  // have yet, several times a second. The optimistic render is the cursor's
+  // and the reveal pump's business, never a refresh counter's.
+  for (const context of [activeThread, { activeThreadId: null }]) {
+    assert.deepEqual(
+      designRefreshForEvent(
+        { type: DESIGN_OP_BATCH_EVENT_TYPE, threadId: "thr-1" },
+        context,
+      ),
+      { refetchFeed: false, reloadCanvas: false },
+    );
+  }
 });

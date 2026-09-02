@@ -53,6 +53,13 @@ export const ChatStreamEventTypeSchema = z.enum([
   // transition and writes nothing to the transcript — it exists so an open
   // canvas can catch up with a version the document already has.
   "design.checkpoint",
+  // Scene live-streaming rung B: the operations of a single mutation, streamed
+  // as the design agent makes them, with the position that batch ends at in the
+  // run's operation ledger. Unlike a checkpoint it announces work that is NOT
+  // yet durable — the canvas may render it optimistically and reconciles
+  // against the checkpoint behind it, which is why both frames report positions
+  // in the same ledger.
+  "design.op_batch",
   "stream.hello",
   "stream.reset",
 ]);
@@ -115,6 +122,34 @@ export interface DesignCheckpoint {
   preflightClean: boolean | null;
 }
 
+/**
+ * One `design.op_batch` payload — a mutation's operations, mid-run.
+ *
+ * Read leniently for the same reason {@link DesignCheckpoint} is: the forwarder
+ * copies across only the keys the design event carried, and it deliberately
+ * drops `operations` (keeping `operations_total`) once a batch exceeds its size
+ * ceiling. A POSITION-ONLY frame is therefore an ordinary frame, not a broken
+ * one, and refusing it would cost the consumer the position it needs to know it
+ * has fallen behind.
+ *
+ * `operations` is validated as a whole or read as absent — never filtered. Half
+ * a batch applied to a canvas is a corrupted document, which is exactly why the
+ * platform sends a bare position rather than a truncated list; a member this
+ * build cannot read costs the batch, and the cursor waits for the next
+ * checkpoint. The members stay untyped records here: the `Operation` contract
+ * belongs to the design editor, and this is the chat stream's boundary.
+ */
+export interface DesignOpBatch {
+  /** The design document these operations edit (the leg's pinned document). */
+  documentId: string | null;
+  /** The batch, or `null` when it was absent, oversize, or unreadable. */
+  operations: readonly Record<string, unknown>[] | null;
+  /** Where this batch ENDS in the run's operation ledger. A position. */
+  operationsTotal: number | null;
+  /** The authoring iteration that produced it. */
+  iteration: number | null;
+}
+
 const CommonIdentitySchema = z.object({
   project_id: z.string().min(1),
   thread_id: z.string().min(1),
@@ -140,6 +175,8 @@ export interface ChatStreamEvent {
   legId: string | null;
   /** Present on `design.checkpoint`; null on every other frame. */
   checkpoint: DesignCheckpoint | null;
+  /** Present on `design.op_batch`; null on every other frame. */
+  opBatch: DesignOpBatch | null;
   type: ChatStreamEventType;
   /** Present on `part.created|updated|completed|failed`. */
   part: ChatPart | null;
@@ -176,6 +213,35 @@ function readCheckpoint(raw: Record<string, unknown>): DesignCheckpoint {
     version: optionalNumber(raw.version),
     operations: optionalNumber(raw.operations),
     preflightClean: optionalBoolean(raw.preflight_clean),
+  };
+}
+
+/**
+ * The streamed operations, or `null` when the frame carried none this build can
+ * read. All-or-nothing on purpose; see {@link DesignOpBatch}.
+ */
+function readOperations(
+  value: unknown,
+): readonly Record<string, unknown>[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  for (const entry of value) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      return null;
+    }
+    if (typeof (entry as Record<string, unknown>).kind !== "string") {
+      return null;
+    }
+  }
+  return value as readonly Record<string, unknown>[];
+}
+
+/** Read an op batch's payload member-by-member; see {@link DesignOpBatch}. */
+function readOpBatch(raw: Record<string, unknown>): DesignOpBatch {
+  return {
+    documentId: optionalString(raw.document_id),
+    operations: readOperations(raw.operations),
+    operationsTotal: optionalNumber(raw.operations_total),
+    iteration: optionalNumber(raw.iteration),
   };
 }
 
@@ -268,6 +334,8 @@ export function parseChatStreamEvent(
       legId: envelope.data.leg_id ?? null,
       checkpoint:
         envelope.data.type === "design.checkpoint" ? readCheckpoint(raw) : null,
+      opBatch:
+        envelope.data.type === "design.op_batch" ? readOpBatch(raw) : null,
       type: envelope.data.type,
       part,
       delta: typeof raw.delta === "string" ? raw.delta : null,

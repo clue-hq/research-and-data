@@ -1005,3 +1005,97 @@ test("a checkpoint writes no transcript line and moves no turn state", () => {
   assert.equal(turn.legNotices.size, 0);
   assert.equal(state.designLeg.open, false);
 });
+
+// --- streamed op batches (scene live-streaming rung B) --------------------
+
+test("an op batch parses the operations, the ledger position, and the iteration", () => {
+  const event = legFrame({
+    type: "design.op_batch",
+    document_id: "doc-7",
+    operations: [{ kind: "remove_node", node_id: "n1" }],
+    operations_total: 44,
+    iteration: 3,
+  });
+  assert.equal(event.type, "design.op_batch");
+  assert.deepEqual(event.opBatch, {
+    documentId: "doc-7",
+    operations: [{ kind: "remove_node", node_id: "n1" }],
+    operationsTotal: 44,
+    iteration: 3,
+  });
+});
+
+test("a POSITION-ONLY op batch parses with its operations absent", () => {
+  // The forwarder drops an oversize `operations` and keeps the position, on
+  // purpose: half a batch applied to a canvas is a corrupted document, a bare
+  // position is honest. The reader must carry that shape through, not refuse it.
+  const event = legFrame({
+    type: "design.op_batch",
+    document_id: "doc-7",
+    operations_total: 44,
+    iteration: 3,
+  });
+  assert.deepEqual(event.opBatch, {
+    documentId: "doc-7",
+    operations: null,
+    operationsTotal: 44,
+    iteration: 3,
+  });
+});
+
+test("an op batch with an unreadable payload is read as absent, never dropped", () => {
+  // Same discipline as the checkpoint above: a malformed member must not break
+  // the stream. It reads as no operations, which the cursor turns into a wait
+  // for the next checkpoint — never into a guess at what was meant.
+  for (const operations of [
+    "not-a-list",
+    7,
+    {},
+    [],
+    [null],
+    [{ node_id: "n1" }],
+    [{ kind: "remove_node" }, "second"],
+  ]) {
+    const parsed = parseChatStreamEvent({
+      schema_version: "1",
+      event_id: 9101,
+      project_id: "p1",
+      thread_id: "t1",
+      turn_id: TURN,
+      type: "design.op_batch",
+      document_id: "doc-7",
+      operations,
+      operations_total: 44,
+    });
+    assert.ok(parsed.ok, "a malformed op batch must not drop the frame");
+    assert.deepEqual(parsed.event.opBatch, {
+      documentId: "doc-7",
+      operations: null,
+      operationsTotal: 44,
+      iteration: null,
+    });
+  }
+});
+
+test("only an op-batch frame carries an op batch", () => {
+  assert.equal(legFrame({ type: "design.checkpoint", document_id: "d" }).opBatch, null);
+  assert.equal(frame({ type: "turn.started" }).opBatch, null);
+});
+
+test("an op batch writes no transcript line and moves no turn state", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({ type: "turn.started" }),
+    legFrame({
+      type: "design.op_batch",
+      document_id: "doc-7",
+      operations: [{ kind: "remove_node", node_id: "n1" }],
+      operations_total: 1,
+    }),
+  ]);
+  const turn = state.turns.get(TURN);
+  assert.ok(turn);
+  assert.equal(turn.state, "running");
+  assert.equal(turn.parts.length, 0);
+  assert.equal(turn.legNotices.size, 0);
+  assert.equal(state.designLeg.open, false);
+});

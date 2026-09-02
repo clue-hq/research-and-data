@@ -52,6 +52,12 @@ import {
   designRefreshForEvent,
 } from "../model/design-leg";
 import {
+  NO_SCENE_STREAM,
+  applySceneStreamFrame,
+  type SceneStreamFrame,
+  type SceneStreamState,
+} from "@/features/design-editor/adapter/scene-stream-cursor";
+import {
   deriveThreadStatus,
   threadLabel,
   threadRouteHref,
@@ -145,6 +151,17 @@ export interface ProjectChatController {
    * surface that holds all three facts.
    */
   agentRunLock: AgentRunLockState;
+  /**
+   * Task 8 (scene live-streaming rung B): the streamed operation batches, per
+   * design document, folded through the cursor algebra.
+   *
+   * The raw observation again, not a verdict — the controller cannot see which
+   * document the editor has open (that is the chat surface's state, and this
+   * whole controller is a prop of it), so it keys a cursor on the document each
+   * frame names and lets the surface read the one it cares about. What to DO
+   * with an `apply` is the reveal pump's business, not this hook's.
+   */
+  sceneStream: SceneStreamState;
   submitting: boolean;
   gateFor(part: ChatGatePart): GateCardModel | null;
   gateAnswerForTurn(turnId: string): GateAnswerDisplay | null;
@@ -224,6 +241,12 @@ export function useProjectChatController({
   // busy stream costs no extra renders here.
   const [agentRunLock, setAgentRunLock] =
     useState<AgentRunLockState>(NO_AGENT_RUN);
+  // Task 8: the op-frame cursors. Deliberately NOT cleared on `stream.reset`,
+  // unlike the lock above — the backlog that follows a reset replays frames the
+  // cursor has already passed, and they drop as stale exactly because it kept
+  // its position. Zeroing it would turn every one of them into a gap.
+  const [sceneStream, setSceneStream] =
+    useState<SceneStreamState>(NO_SCENE_STREAM);
   const [optimistic, setOptimistic] = useState<OptimisticTurn[]>([]);
   const [access, setAccess] = useState<ChatAccessState | null>(null);
   const [route, setRoute] = useState<ChatRouteState | null>(null);
@@ -506,6 +529,24 @@ export function useProjectChatController({
               type: event.type,
             }),
           );
+          // Task 8 (scene live-streaming rung B): the same frames, through the
+          // cursor algebra, so a streamed batch can never be applied twice or
+          // applied over a hole. Scoped to the active thread exactly as the
+          // refresh decision below is; the cursor itself then drops anything
+          // naming a document other than its own.
+          if (event.threadId === threadId) {
+            const sceneFrame: SceneStreamFrame | null =
+              event.opBatch !== null
+                ? { type: "design.op_batch", batch: event.opBatch }
+                : event.checkpoint !== null
+                  ? { type: "design.checkpoint", checkpoint: event.checkpoint }
+                  : null;
+            if (sceneFrame !== null) {
+              setSceneStream((current) =>
+                applySceneStreamFrame(current, sceneFrame),
+              );
+            }
+          }
           // Genweb slice 3 (founder requirements 1 + 6): the gallery and any
           // open canvas refresh exactly when a durable design-leg transition
           // says the document moved — the frame IS the signal, so there is no
@@ -989,6 +1030,7 @@ export function useProjectChatController({
     designLegOpen: stream.designLeg.open,
     designLeg,
     agentRunLock,
+    sceneStream,
     submitting,
     gateFor,
     gateAnswerForTurn,

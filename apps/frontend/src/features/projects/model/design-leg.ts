@@ -45,6 +45,18 @@ export function isDesignLegEvent(type: string): type is DesignLegEventType {
 export const DESIGN_CHECKPOINT_EVENT_TYPE = "design.checkpoint";
 
 /**
+ * One streamed batch of operations, mid-mutation (scene live-streaming rung B).
+ *
+ * Weaker than a checkpoint and deliberately so: it announces work that is NOT
+ * yet durable, so it refreshes NOTHING here. A canvas may render it
+ * optimistically — that decision, and the cursor arithmetic that makes it safe,
+ * live in `design-editor/adapter/scene-stream-cursor`. Refreshing the feed or
+ * reloading the canvas on one would re-read the durable document several times
+ * a second to show it a version it does not yet have.
+ */
+export const DESIGN_OP_BATCH_EVENT_TYPE = "design.op_batch";
+
+/**
  * The honest wait sentence (founder requirement 4, verbatim).
  *
  * Generation is minutes long and its duration is genuinely unknown, so the
@@ -178,6 +190,11 @@ export function designRefreshForEvent(
       // have changed. The reload itself is throttled by the consumer — the
       // rate is transport, this is the policy.
       return { refetchFeed: false, reloadCanvas: true };
+    case DESIGN_OP_BATCH_EVENT_TYPE:
+      // Nothing. Stated as a case rather than left to fall through `default`,
+      // because "an op batch refreshes nothing" is a DECISION (see the
+      // constant's docstring), not an unhandled frame.
+      return NO_REFRESH;
     default:
       return NO_REFRESH;
   }
