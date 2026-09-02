@@ -178,13 +178,15 @@ function fakeEngine() {
 function harness(reducedMotion = false) {
   const engine = fakeEngine();
   const displays: (Scene | null)[] = [];
+  const available = { value: true };
   const pump = new SceneRevealPump({
     apply: (operations) => engine.apply(operations),
+    engineAvailable: () => available.value,
     onDisplayScene: (scene) => displays.push(scene),
     reducedMotion,
   });
   pump.start();
-  return { engine, displays, pump };
+  return { available, engine, displays, pump };
 }
 
 /** The lead before the first step, and the hold before its content lands. */
@@ -364,7 +366,7 @@ test("an engine refusal shows NOTHING and latches until the next anchor", () => 
   });
 });
 
-test("an IN-SYNC anchor does not rescue a dirty pump — the cursor cannot see the engine", () => {
+test("a dirty pump is not clean, so its in-sync anchor is decided stale and re-seats", () => {
   onFakeClock(() => {
     const clock = steppedClock();
     const { engine, displays, pump } = harness();
@@ -373,27 +375,51 @@ test("an IN-SYNC anchor does not rescue a dirty pump — the cursor cannot see t
     pump.enqueue([insertNode("n1")]);
     clock.advance(FIRST_LEAD + 1);
     assert.equal(pump.isDirty(), true);
+    assert.equal(pump.isClean(), false, "a latched pump is not clean");
 
-    // The CURSOR is clean — it never learns that the engine refused — so it
-    // will keep reporting in sync. The pump refuses the reassurance: it hands
-    // the canvas back to the document rather than resume drawing on a hole.
+    // The CURSOR never learns the engine refused, so it goes on reporting in
+    // sync. `isClean()` is the other half of the composite decision — the same
+    // fact the controller reads to decide the reload — and it says no, so this
+    // anchor is a STALE one: the reload fires, the override drops, and the
+    // latch clears because that reload re-seats the engine.
     engine.refuseWith("no");
     pump.anchor(true);
-    assert.equal(pump.isDirty(), true, "an unreloaded canvas is still behind");
-    assert.deepEqual(displays.at(-1), null);
+    assert.equal(pump.isDirty(), false, "the reload re-seats it");
+    assert.deepEqual(displays.at(-1), null, "the reloaded document wins");
 
     pump.enqueue([insertNode("n2")]);
-    clock.advance(10_000);
-    assert.equal(engine.batches.length, 1, "still latched");
-
-    // Only the anchor that actually reloads (and so re-seats the engine) lets
-    // the pump draw again.
-    pump.anchor(false);
-    pump.enqueue([insertNode("n3")]);
     clock.advance(FIRST_LEAD + NODE_HOLD);
-    assert.equal(engine.batches.length, 2);
+    assert.equal(engine.batches.length, 2, "and the reveal resumes");
 
     pump.stop();
+  });
+});
+
+test("a pump with no engine is never clean, so its anchors never suppress", () => {
+  onFakeClock(() => {
+    const { available, displays, pump } = harness();
+    // D9 read-only: `applyStreamedOperations` returns null for every batch, so
+    // this canvas can render nothing at all. Rung A's reload is the ONLY thing
+    // keeping it current, and it must not be suppressed away.
+    available.value = false;
+    assert.equal(pump.isClean(), false);
+
+    pump.anchor(true);
+    assert.deepEqual(displays.at(-1), null);
+
+    available.value = true;
+    assert.equal(pump.isClean(), true);
+
+    pump.stop();
+  });
+});
+
+test("a stopped pump is never clean", () => {
+  onFakeClock(() => {
+    const { pump } = harness();
+    assert.equal(pump.isClean(), true);
+    pump.stop();
+    assert.equal(pump.isClean(), false, "unknown-to-absent is never healthy");
   });
 });
 

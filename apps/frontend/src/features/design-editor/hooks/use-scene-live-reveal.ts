@@ -276,6 +276,17 @@ export type SceneRevealApply = (
 
 export interface SceneRevealPumpOptions {
   apply: SceneRevealApply;
+  /**
+   * Could a batch land right now — i.e. is the live engine available? The
+   * canvas's own `canApply()`, asked live rather than remembered, because the
+   * engine arrives after the first paint and can be absent for the whole
+   * session (D9 read-only).
+   *
+   * It is separate from `apply` returning null because the pump has to answer
+   * "am I healthy?" BEFORE it has a batch to try — the reload decision at an
+   * anchor asks exactly that. Defaults to available.
+   */
+  engineAvailable?: () => boolean;
   /** The display override. `null` hands the canvas back to the document. */
   onDisplayScene: (scene: Scene | null) => void;
   /** Defaults to the OS preference, read once when the pump is built. */
@@ -295,6 +306,7 @@ export interface SceneRevealPumpOptions {
  */
 export class SceneRevealPump {
   private readonly apply: SceneRevealApply;
+  private readonly engineAvailable: () => boolean;
   private readonly emit: (scene: Scene | null) => void;
   private readonly reducedMotion: boolean;
 
@@ -313,12 +325,31 @@ export class SceneRevealPump {
 
   constructor(options: SceneRevealPumpOptions) {
     this.apply = options.apply;
+    this.engineAvailable = options.engineAvailable ?? (() => true);
     this.emit = options.onDisplayScene;
     this.reducedMotion = options.reducedMotion ?? prefersReducedMotion();
   }
 
   isDirty(): boolean {
     return this.dirtyUntilAnchor;
+  }
+
+  /**
+   * Is this pump actually rendering the stream right now?
+   *
+   * The pump half of the composite anchor decision
+   * (`projects/model/design-anchor-reload`), and the ONLY definition of it:
+   * both consumers — this pump's own `anchor()` and the controller's reload
+   * bump, through the surface's health probe — read this one method, so they
+   * cannot answer the same question differently.
+   *
+   * Three ways to be unhealthy, and each is a reason the canvas needs rung A's
+   * reload rather than a suppression: the pump is not streaming this document
+   * at all; the engine is unavailable, so nothing can ever be applied (D9
+   * read-only); or an apply was refused and the picture is missing a batch.
+   */
+  isClean(): boolean {
+    return this.active && !this.dirtyUntilAnchor && this.engineAvailable();
   }
 
   /** Begin streaming onto the canvas (the lock engaged over an open document). */
@@ -346,36 +377,31 @@ export class SceneRevealPump {
   }
 
   /**
-   * A durable checkpoint landed.
+   * A durable checkpoint landed. `cursorInSync` is task 8's arithmetic over the
+   * frames — half of the decision, never all of it.
    *
-   * `inSync` is task 8's arithmetic: the streamed cursor stands exactly where
-   * the checkpoint's version does, so what is on screen IS that version. Then
-   * there is nothing to repair — the working scene is kept and the canvas is
-   * not flickered through a reload it does not need (the controller suppresses
-   * the reload on the same fact).
+   * The anchor is treated as IN SYNC only when the cursor says so AND this pump
+   * is clean, which is the same composite the controller computes for the
+   * reload (`anchorReloadDecision`) off the same `isClean()`. So the two moves
+   * always agree: **an anchor that reloads is an anchor this pump treats as
+   * stale**, and vice versa.
    *
-   * Otherwise the reload fires and its document becomes the new base, so the
-   * override drops: whatever the pump was showing is no longer provably right,
-   * and the document always is. That reload is also what re-seats the engine,
-   * which is why it — and only it — clears the dirty latch.
+   * In sync: nothing to repair. The working scene is kept and the canvas is not
+   * flickered through a reload it does not need.
    *
-   * ── THE ONE PLACE THE CURSOR CAN BE WRONG ABOUT THIS PUMP ───────────────
-   * `inSync` is computed from the FRAMES, not from what the engine did with
-   * them, and those two part company in exactly one case: a batch the cursor
-   * cleared that the engine then refused. The cursor stays clean and reports
-   * in sync; this pump knows its picture is missing that batch. So a dirty
-   * pump refuses the reassurance — it drops the override and keeps the latch,
-   * and the canvas shows the DOCUMENT until a reload re-seats the engine
-   * (rung A's terminal `leg.awaiting_user` reload always does). Stale and
-   * honest, never a picture built on a hole.
+   * Stale — a gap in the stream, a refused apply, an unavailable engine: the
+   * reload fires, and its document is the new base. The override drops (the
+   * document is always right; a streamed picture is only sometimes) and the
+   * dirty latch clears, because that same reload re-seats the engine the latch
+   * was protecting.
    */
-  anchor(inSync: boolean): void {
+  anchor(cursorInSync: boolean): void {
     if (!this.active) return;
-    if (inSync && !this.dirtyUntilAnchor) return;
-    if (!inSync) this.dirtyUntilAnchor = false;
+    if (cursorInSync && this.isClean()) return;
     this.cancelTimer();
     this.queue = [];
     this.pendingDisplay = null;
+    this.dirtyUntilAnchor = false;
     this.emit(null);
   }
 
@@ -607,6 +633,19 @@ export function consumeSceneStreamActions(
  * The hook — a thin adapter over the pump above.
  * ------------------------------------------------------------------------ */
 
+/**
+ * "Is the live reveal healthy for this document right now?" — the boolean the
+ * chat surface publishes to the chat controller so the checkpoint reload can
+ * compose it with the cursor's own verdict (`anchorReloadDecision`).
+ *
+ * A probe rather than a snapshot on purpose: both facts behind it — whether an
+ * apply was refused, and whether the engine is available — are imperative and
+ * change without a render, so a value published on the last commit could be
+ * stale by the time a frame arrives. The controller calls this at frame time
+ * and gets the truth then.
+ */
+export type SceneRevealHealthProbe = (documentId: string) => boolean;
+
 export interface UseSceneLiveRevealOptions {
   /** The design document the editor has open, or null. */
   documentId: string | null;
@@ -620,6 +659,11 @@ export interface UseSceneLiveRevealOptions {
    * changing callback cannot strand a beat.
    */
   apply: SceneRevealApply;
+  /**
+   * Could the canvas apply a batch right now (its `canApply()`)? Absent means
+   * "assume yes", which is only right for a caller with no engine to lose.
+   */
+  engineAvailable?: () => boolean;
   /** Test seam; production reads the OS preference. */
   reducedMotion?: boolean;
 }
@@ -632,6 +676,12 @@ export interface SceneLiveReveal {
   displayScene: Scene | null;
   /** Show everything pending at once, with no animation. */
   fastForward: () => void;
+  /**
+   * The health probe to publish to the chat controller. Stable identity, and
+   * false for any document this pump is not currently streaming — including
+   * when it is not streaming at all.
+   */
+  isClean: SceneRevealHealthProbe;
 }
 
 export function useSceneLiveReveal({
@@ -639,6 +689,7 @@ export function useSceneLiveReveal({
   locked,
   actions,
   apply,
+  engineAvailable,
   reducedMotion,
 }: UseSceneLiveRevealOptions): SceneLiveReveal {
   const [displayScene, setDisplayScene] = useState<Scene | null>(null);
@@ -647,8 +698,10 @@ export function useSceneLiveReveal({
   // beat fires from a timer, long after the render that handed the callback
   // over, so it must read the current one rather than the one it closed on.
   const applyRef = useRef(apply);
+  const engineAvailableRef = useRef(engineAvailable);
   useEffect(() => {
     applyRef.current = apply;
+    engineAvailableRef.current = engineAvailable;
   });
 
   // ONE pump for the life of the surface, built in an effect. It holds a
@@ -661,6 +714,7 @@ export function useSceneLiveReveal({
   useEffect(() => {
     const pump = new SceneRevealPump({
       apply: (operations) => applyRef.current(operations),
+      engineAvailable: () => engineAvailableRef.current?.() ?? true,
       onDisplayScene: setDisplayScene,
       reducedMotion,
     });
@@ -712,5 +766,14 @@ export function useSceneLiveReveal({
     pumpRef.current?.fastForward();
   }, []);
 
-  return { displayScene, fastForward };
+  // Stable, so the surface's publish effect runs once rather than on every
+  // render; every fact it reports is read live inside it.
+  const isClean = useCallback<SceneRevealHealthProbe>(
+    (documentId) =>
+      sessionRef.current === documentId &&
+      (pumpRef.current?.isClean() ?? false),
+    [],
+  );
+
+  return { displayScene, fastForward, isClean };
 }

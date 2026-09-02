@@ -193,12 +193,33 @@ export function ChatSurface({
       ) ?? null,
     [sceneSession.canvasControls],
   );
+  // The canvas's own "could a batch land right now" (D9 read-only answers no),
+  // asked LIVE: the engine arrives after the first paint, and a pump that can
+  // apply nothing must never be mistaken for a healthy one.
+  const engineAvailableForScene = useCallback(
+    () => sceneSession.canvasControls.current?.canApply() ?? false,
+    [sceneSession.canvasControls],
+  );
   const sceneReveal = useSceneLiveReveal({
     actions: chat.sceneStream.actions,
     apply: applyStreamedToEngine,
+    engineAvailable: engineAvailableForScene,
     documentId: sceneSession.activeDocumentId,
     locked: sceneLocked,
   });
+  /**
+   * Task 9 (fix 1): publish the reveal's health to the controller.
+   *
+   * The controller decides the checkpoint reload but cannot see this canvas, so
+   * the two facts that decision needs meet here — its cursor verdict, and this
+   * probe. Publishing `null` on teardown is what makes the default rung A's
+   * shipped behaviour: unknown health always reloads.
+   */
+  const publishSceneRevealHealth = chat.publishSceneRevealHealth;
+  useEffect(() => {
+    publishSceneRevealHealth(sceneReveal.isClean);
+    return () => publishSceneRevealHealth(null);
+  }, [publishSceneRevealHealth, sceneReveal.isClean]);
   const designReferencesEnabled =
     chat.designLegOpen &&
     shell.artifactKind === "ad" &&

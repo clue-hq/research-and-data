@@ -47,6 +47,16 @@ import {
   DESIGN_CHECKPOINT_CANVAS_RELOAD_MIN_INTERVAL_MS,
   throttleTrailing,
 } from "../model/design-checkpoint-throttle";
+import { anchorReloadDecision } from "../model/design-anchor-reload";
+
+/**
+ * Task 9 (fix 1): "is the live reveal healthy for this document right now?"
+ *
+ * Structurally identical to the design editor's own `SceneRevealHealthProbe`,
+ * and declared here rather than imported so nothing about the reveal pump —
+ * not even a type — reaches this controller. One boolean is the whole seam.
+ */
+type SceneRevealHealthProbe = (documentId: string) => boolean;
 import {
   DESIGN_CHECKPOINT_EVENT_TYPE,
   designRefreshForEvent,
@@ -162,6 +172,17 @@ export interface ProjectChatController {
    * with an `apply` is the reveal pump's business, not this hook's.
    */
   sceneStream: SceneStreamState;
+  /**
+   * Task 9 (fix 1): the surface that mounts the reveal pump publishes a health
+   * probe here — "is the live reveal healthy for this document right now?" —
+   * and the checkpoint reload composes it with the cursor's own verdict.
+   *
+   * An INPUT to the controller, unlike everything else on this interface, and
+   * deliberately the narrowest one possible: a function returning a boolean,
+   * carrying no pump type and no scene. Publish `null` on teardown; unknown
+   * health always reloads, which is rung A's shipped behaviour.
+   */
+  publishSceneRevealHealth: (probe: SceneRevealHealthProbe | null) => void;
   submitting: boolean;
   gateFor(part: ChatGatePart): GateCardModel | null;
   gateAnswerForTurn(turnId: string): GateAnswerDisplay | null;
@@ -256,6 +277,25 @@ export function useProjectChatController({
   // publishes it; a side effect inside the updater would be the alternative,
   // and StrictMode double-invokes those.
   const sceneStreamRef = useRef<SceneStreamState>(NO_SCENE_STREAM);
+  /**
+   * Task 9 (fix 1): "is the live reveal healthy for this document?", published
+   * by the surface that owns the pump.
+   *
+   * The controller cannot see the canvas — that is the whole shape of this
+   * hook, and task 8 said so — but the checkpoint reload decision needs the
+   * canvas's health as well as the cursor's verdict, so the surface reports it
+   * as ONE boolean through the setter below. Nothing about the reveal machinery
+   * crosses in. Null (nothing published, no pump mounted, another tab) is
+   * UNKNOWN, and unknown always reloads: rung A's shipped behaviour is the
+   * default this can only be an exception to.
+   */
+  const sceneRevealHealthRef = useRef<SceneRevealHealthProbe | null>(null);
+  const publishSceneRevealHealth = useCallback(
+    (probe: SceneRevealHealthProbe | null) => {
+      sceneRevealHealthRef.current = probe;
+    },
+    [],
+  );
   const [optimistic, setOptimistic] = useState<OptimisticTurn[]>([]);
   const [access, setAccess] = useState<ChatAccessState | null>(null);
   const [route, setRoute] = useState<ChatRouteState | null>(null);
@@ -548,7 +588,7 @@ export function useProjectChatController({
           // frame, that the canvas already stands at the checkpoint's version?
           // Then the reload below is a remount that would change nothing a
           // user can see, and would interrupt a reveal to do it.
-          let anchoredInSync = false;
+          let anchorReload: boolean | null = null;
           if (event.threadId === threadId) {
             const sceneFrame: SceneStreamFrame | null =
               event.opBatch !== null
@@ -565,8 +605,24 @@ export function useProjectChatController({
                 sceneStreamRef.current = next;
                 setSceneStream(next);
                 const decided = next.actions[next.actions.length - 1]?.action;
-                anchoredInSync =
-                  decided?.action === "anchor" && decided.inSync;
+                if (
+                  decided?.action === "anchor" &&
+                  sceneFrame.type === "design.checkpoint"
+                ) {
+                  // BOTH facts, composed where both exist. The cursor's
+                  // `inSync` is computed from the frames and says nothing about
+                  // whether the canvas managed to render them; a pump whose
+                  // engine refused a batch — or a canvas with no engine at all
+                  // — reports unhealthy here, and rung A's reload goes ahead.
+                  const documentId = sceneFrame.checkpoint.documentId;
+                  anchorReload = anchorReloadDecision({
+                    cursorInSync: decided.inSync,
+                    pumpClean:
+                      documentId === null
+                        ? null
+                        : (sceneRevealHealthRef.current?.(documentId) ?? null),
+                  }).reloadCanvas;
+                }
               }
             }
           }
@@ -585,15 +641,19 @@ export function useProjectChatController({
             // trailing edge always fires, so the version the canvas settles on
             // is the last one that was committed, never a skipped one.
             //
-            // Task 9 (rung B) adds the one exception the cursor earned: when
-            // the anchor is IN SYNC the streamed canvas provably holds exactly
-            // the version this checkpoint committed, so reloading it would
-            // replace the picture with an identical one — and interrupt the
-            // reveal to do it. Out of sync (a gap, a dirty cursor, a document
-            // the stream never reached), the anchor wins and the reload fires
-            // exactly as rung A shipped it: the document is always right, and
-            // whatever was streamed no longer provably is.
-            if (refresh.reloadCanvas && !anchoredInSync) bumpCanvasForCheckpoint();
+            // Task 9 (rung B) adds the one exception the reveal earned: when
+            // the cursor is in sync AND the pump is healthy, the streamed
+            // canvas provably holds exactly the version this checkpoint
+            // committed, so reloading it would replace the picture with an
+            // identical one — and interrupt the reveal to do it. Anything else
+            // — a gap, a dirty cursor, a refused apply, no engine, no pump —
+            // reloads exactly as rung A shipped it, because the document is
+            // always right and a streamed picture is only sometimes.
+            // `anchorReload === null` means this frame produced no anchor at
+            // all, which is rung A untouched.
+            if (refresh.reloadCanvas && anchorReload !== false) {
+              bumpCanvasForCheckpoint();
+            }
           } else if (refresh.refetchFeed || refresh.reloadCanvas) {
             setDesignRefresh((current) => ({
               feedRevision: current.feedRevision + (refresh.refetchFeed ? 1 : 0),
@@ -1063,6 +1123,7 @@ export function useProjectChatController({
     designLeg,
     agentRunLock,
     sceneStream,
+    publishSceneRevealHealth,
     submitting,
     gateFor,
     gateAnswerForTurn,
