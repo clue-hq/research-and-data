@@ -126,6 +126,16 @@ class Settings(BaseSettings):
     # editor, never publish, never fragment isolation. See `lumen_api/qa_render_ua.py`.
     lumen_qa_render_ua_override: bool = True
 
+    # Whether the in-house logo ladder (the target-logo scrape that runs as the second rung
+    # behind Brandfetch) fetches with a real Chrome TLS/HTTP fingerprint — curl_cffi
+    # `impersonate="chrome"`, the engine under scrapling's Fetcher. Cloudflare-walled sites
+    # score the TLS/HTTP2 handshake, not the User-Agent string, so plain httpx gets a 403
+    # challenge page (openai.com) and the rung reports "blocked" no matter what UA we send.
+    # FOUNDER DECISION (2026-09-02): default ON; `0` restores the plain httpx transport.
+    # It reaches the LADDER's own client only — the brand-kit ingestion capture keeps httpx.
+    # See `lumen_ingestion/capture/impersonate.py`.
+    lumen_ladder_impersonate_chrome: bool = True
+
     # --- Image generation (image_provider) ---
     # Blank base_url/api_key → /assets/generate returns a clean 503.
     image_model_base_url: str = ""
