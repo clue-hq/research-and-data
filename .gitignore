@@ -38,3 +38,6 @@ htmlcov/
 
 # Design-API runtime byproduct (asset blobs written during live editor browser sessions)
 .artifacts/
+
+# gstack/superpowers scratch (brainstorm mockups, SDD ledgers)
+.superpowers/
