@@ -1085,3 +1085,100 @@ test("a DIRTY seed replays nothing at all", () => {
     dirty: true,
   });
 });
+
+/* ---------------------------------------------------------------------------
+ * The live sequence (task 10, fix round 3).
+ *
+ * Taken frame-for-frame from `agent_turn_event_stream` for turn
+ * `7addaeaf-75ee-514d-b474-0dd3e42cd312` (Apollo document
+ * `doc_1c35a98d45435c7bb8d19408bb9e03e8`), the run a controller walk found
+ * reloading the canvas at a checkpoint it should have suppressed:
+ *
+ *   turn.accepted, turn.started, design.op_batch{operations_total: 1},
+ *   design.checkpoint{version: 126, operations: 1}
+ *
+ * with a page reload between the op batch and the checkpoint, and the document
+ * loading at version 125. Both design frames carry the SAME `turn_id` and the
+ * SAME `document_id` (verified in the database), and the two ledger numbers
+ * agree — so the anchor MUST come out in sync.
+ * ------------------------------------------------------------------------ */
+
+const LIVE_TURN = "7addaeaf-75ee-514d-b474-0dd3e42cd312";
+
+test("the live late-join sequence anchors IN SYNC — the checkpoint must not reload", () => {
+  // (i) the run's op batch replays over SSE before the document has loaded.
+  let state = applySceneStreamFrame(
+    NO_SCENE_STREAM,
+    opBatch({ turnId: LIVE_TURN, operations: [op("cta")], operationsTotal: 1 }),
+  );
+  // (ii) the document finishes loading at v125 — no checkpoint of this run's yet.
+  state = seedSceneStreamState(state, {
+    documentId: DOC,
+    documentVersion: 125,
+    turnId: LIVE_TURN,
+  });
+  assert.deepEqual(state.cursors.get(DOC), {
+    documentId: DOC,
+    turnId: LIVE_TURN,
+    position: 1,
+    dirty: false,
+  });
+  // (iii) the checkpoint that committed v126 — one operation, the one streamed.
+  const next = applySceneStreamFrame(
+    state,
+    checkpoint({ turnId: LIVE_TURN, version: 126, operations: 1 }),
+  );
+  assert.deepEqual(next.actions.at(-1)?.action, {
+    action: "anchor",
+    version: 126,
+    inSync: true,
+  });
+});
+
+test("a seed that cannot name the run keeps the run the STREAM named", () => {
+  // THE DEFECT. `runningTurn` is null for the renders between a replayed
+  // `turn.accepted` (which maps to "queued") and the `turn.started` behind it,
+  // and a document that finishes loading in that window used to seed with no
+  // turn at all — which reset a cursor the stream had already carried to 1 back
+  // to `{turn: null, position: 0}`. The next checkpoint then read as a NEW run
+  // (rebase) standing at a position the canvas had never reached, so it
+  // reloaded: rung A's flicker, at every checkpoint, for the rest of the run.
+  let state = applySceneStreamFrame(
+    NO_SCENE_STREAM,
+    opBatch({ turnId: LIVE_TURN, operations: [op("cta")], operationsTotal: 1 }),
+  );
+  state = seedSceneStreamState(state, {
+    documentId: DOC,
+    documentVersion: 125,
+    turnId: null,
+  });
+  assert.deepEqual(state.cursors.get(DOC), {
+    documentId: DOC,
+    turnId: LIVE_TURN,
+    position: 1,
+    dirty: false,
+  });
+  const next = applySceneStreamFrame(
+    state,
+    checkpoint({ turnId: LIVE_TURN, version: 126, operations: 1 }),
+  );
+  assert.deepEqual(next.actions.at(-1)?.action, {
+    action: "anchor",
+    version: 126,
+    inSync: true,
+  });
+});
+
+test("a turn-less seed onto a document nothing has streamed still starts at 0", () => {
+  const state = seedSceneStreamState(NO_SCENE_STREAM, {
+    documentId: DOC,
+    documentVersion: 125,
+    turnId: null,
+  });
+  assert.deepEqual(state.cursors.get(DOC), {
+    documentId: DOC,
+    turnId: null,
+    position: 0,
+    dirty: false,
+  });
+});

@@ -515,12 +515,26 @@ test("reduced motion collapses the theater to one fast beat", () => {
  * sequence it consumed and walks every newer entry in order.
  * ------------------------------------------------------------------------ */
 
-/** A logged apply. `operationsTotal` is the fold's, and the pump never reads it. */
+/**
+ * A logged apply, with the ledger position the fold stamps on it.
+ *
+ * The default keeps a RUNNING total across the calls a test makes, because that
+ * is what `operations_total` is: where a batch ends in its run's ledger, never
+ * its own length. The pump reads it to refuse a range it has already drawn
+ * (fix round 3), so batches that all claimed to end at 1 would describe one
+ * operation streamed over and over.
+ */
+let loggedLedger = 0;
 function appliedBatch(
   operations: Operation[],
-  operationsTotal = operations.length,
+  operationsTotal?: number,
 ): SceneStreamActionRecord["action"] {
-  return { action: "apply", operations, operationsTotal };
+  loggedLedger += operations.length;
+  return {
+    action: "apply",
+    operations,
+    operationsTotal: operationsTotal ?? loggedLedger,
+  };
 }
 
 function record(
@@ -947,6 +961,124 @@ test("another document's rebase never re-seats this canvas", () => {
       1,
     );
     assert.equal(displays.length, 1);
+
+    pump.stop();
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * Never twice (task 10, fix round 3).
+ * ------------------------------------------------------------------------ */
+
+test("a join never re-applies a ledger range the pump has already drawn", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, pump } = harness();
+
+    // The backlog reached this pump LIVE — the lock and the open document are
+    // both known before the document finishes loading, so the session was
+    // already streaming when the replayed frames landed.
+    consumeSceneStreamActions(
+      pump,
+      [record(1, "doc_1", appliedBatch([insertNode("n1")], 1))],
+      "doc_1",
+      0,
+    );
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.deepEqual(engine.batches, [[insertNode("n1")]]);
+
+    // …and only then did the document load, so the join replays the SAME ledger
+    // range. Applying it again would put the operation into the engine twice —
+    // for an insert, the engine refuses and the pump latches dirty, which makes
+    // every checkpoint from then on reload a canvas that was perfectly in sync.
+    consumeSceneStreamActions(
+      pump,
+      [
+        record(2, "doc_1", { action: "seed", position: 0, dirty: false }),
+        record(3, "doc_1", appliedBatch([insertNode("n1")], 1)),
+      ],
+      "doc_1",
+      1,
+    );
+    assert.equal(engine.batches.length, 1, "the same range is applied once");
+    assert.equal(pump.isDirty(), false);
+
+    // The live batch behind it still lands, in full.
+    consumeSceneStreamActions(
+      pump,
+      [record(4, "doc_1", appliedBatch([insertNode("n2")], 2))],
+      "doc_1",
+      3,
+    );
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.deepEqual(engine.batches.at(-1), [insertNode("n2")]);
+
+    pump.stop();
+  });
+});
+
+test("a join applies only the TAIL of a range the pump is partway through", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, pump } = harness();
+
+    consumeSceneStreamActions(
+      pump,
+      [record(1, "doc_1", appliedBatch([insertNode("n1")], 1))],
+      "doc_1",
+      0,
+    );
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+
+    // The join's catch-up covers (0, 3] — the first operation of which the pump
+    // already drew.
+    consumeSceneStreamActions(
+      pump,
+      [
+        record(2, "doc_1", { action: "seed", position: 0, dirty: false }),
+        record(
+          3,
+          "doc_1",
+          appliedBatch([insertNode("n1"), insertNode("n2"), insertNode("n3")], 3),
+        ),
+      ],
+      "doc_1",
+      1,
+    );
+    assert.deepEqual(engine.batches.at(-1), [insertNode("n2"), insertNode("n3")]);
+    assert.equal(pump.isDirty(), false);
+
+    pump.stop();
+  });
+});
+
+test("a NEW run's ledger starts over — a rebase forgets what was applied", () => {
+  onFakeClock(() => {
+    const clock = steppedClock();
+    const { engine, pump } = harness();
+
+    consumeSceneStreamActions(
+      pump,
+      [record(1, "doc_1", appliedBatch([insertNode("n1")], 1))],
+      "doc_1",
+      0,
+    );
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.equal(engine.batches.length, 1);
+
+    // Position 1 of the NEXT run is a different operation entirely, so the
+    // already-applied bookkeeping cannot survive the run boundary.
+    consumeSceneStreamActions(
+      pump,
+      [
+        record(2, "doc_1", { action: "rebase", turnId: "turn-b" }),
+        record(3, "doc_1", appliedBatch([insertNode("n9")], 1)),
+      ],
+      "doc_1",
+      1,
+    );
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.deepEqual(engine.batches.at(-1), [insertNode("n9")]);
 
     pump.stop();
   });

@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { anchorReloadDecision } from "./design-anchor-reload";
+import {
+  NO_SCENE_STREAM,
+  applySceneStreamFrame,
+  seedSceneStreamState,
+} from "@/features/design-editor/adapter/scene-stream-cursor";
 
 /**
  * The composite anchor decision (scene live-streaming rung B, task 9 fix 1).
@@ -63,4 +68,101 @@ test("the two outputs are always exact opposites", () => {
       );
     }
   }
+});
+
+/* ---------------------------------------------------------------------------
+ * The live late-join walk (task 10, fix round 3).
+ *
+ * The composed decision, over the frames a controller walk actually saw
+ * (`agent_turn_event_stream`, turn 7addaeaf…, document doc_1c35a98d…): a run
+ * whose single op batch ended at ledger position 1, a page reload, a document
+ * that loaded at v125, and the checkpoint that committed v126 carrying
+ * `operations: 1`. The canvas reloaded. It should not have.
+ * ------------------------------------------------------------------------ */
+
+test("a canvas that caught up on the join is left alone by the checkpoint behind it", () => {
+  const LIVE_TURN = "7addaeaf-75ee-514d-b474-0dd3e42cd312";
+  const DOCUMENT = "doc_1c35a98d45435c7bb8d19408bb9e03e8";
+  const op = { kind: "update_node", node_id: "cta_label" };
+
+  // The replayed backlog, then the load that joins it, then the checkpoint.
+  let state = applySceneStreamFrame(NO_SCENE_STREAM, {
+    type: "design.op_batch",
+    turnId: LIVE_TURN,
+    batch: {
+      documentId: DOCUMENT,
+      operations: [op],
+      operationsTotal: 1,
+      iteration: 1,
+    },
+  });
+  state = seedSceneStreamState(state, {
+    documentId: DOCUMENT,
+    documentVersion: 125,
+    turnId: LIVE_TURN,
+  });
+  state = applySceneStreamFrame(state, {
+    type: "design.checkpoint",
+    turnId: LIVE_TURN,
+    checkpoint: {
+      documentId: DOCUMENT,
+      version: 126,
+      operations: 1,
+    },
+  });
+
+  const decided = state.actions[state.actions.length - 1]?.action;
+  assert.equal(decided?.action, "anchor");
+  assert.deepEqual(
+    anchorReloadDecision({
+      cursorInSync: decided?.action === "anchor" ? decided.inSync : false,
+      // The pump applied the join's catch-up and nothing has refused since.
+      pumpClean: true,
+    }),
+    { reloadCanvas: false, anchorInSync: true },
+  );
+});
+
+test("the same walk, with the seed unable to name the run, still does not reload", () => {
+  // Fix round 3: `runningTurn` is null between a replayed `turn.accepted` and
+  // the `turn.started` behind it. A load that finished in that window used to
+  // seed with no run, undoing the cursor — and this checkpoint then reloaded a
+  // canvas that was exactly in sync.
+  const LIVE_TURN = "7addaeaf-75ee-514d-b474-0dd3e42cd312";
+  const DOCUMENT = "doc_1c35a98d45435c7bb8d19408bb9e03e8";
+  const op = { kind: "update_node", node_id: "cta_label" };
+
+  let state = applySceneStreamFrame(NO_SCENE_STREAM, {
+    type: "design.op_batch",
+    turnId: LIVE_TURN,
+    batch: {
+      documentId: DOCUMENT,
+      operations: [op],
+      operationsTotal: 1,
+      iteration: 1,
+    },
+  });
+  state = seedSceneStreamState(state, {
+    documentId: DOCUMENT,
+    documentVersion: 125,
+    turnId: null,
+  });
+  state = applySceneStreamFrame(state, {
+    type: "design.checkpoint",
+    turnId: LIVE_TURN,
+    checkpoint: {
+      documentId: DOCUMENT,
+      version: 126,
+      operations: 1,
+    },
+  });
+
+  const decided = state.actions[state.actions.length - 1]?.action;
+  assert.deepEqual(
+    anchorReloadDecision({
+      cursorInSync: decided?.action === "anchor" ? decided.inSync : false,
+      pumpClean: true,
+    }),
+    { reloadCanvas: false, anchorInSync: true },
+  );
 });

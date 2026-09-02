@@ -265,14 +265,48 @@ export function ChatSurface({
    * re-seats on it.
    */
   const runningTurnId = chat.runningTurn?.turnId ?? null;
-  const runningTurnIdRef = useRef(runningTurnId);
-  useEffect(() => {
-    runningTurnIdRef.current = runningTurnId;
-  });
+  /**
+   * The second source, and the reason there are two (fix round 3): the durable
+   * queue reads "running" from the TURN LIST, and a replayed `turn.accepted`
+   * marks that same turn "queued" for the renders before the `turn.started`
+   * behind it lands — a window in which `runningTurn` is null while a run is
+   * plainly in flight. The lock's own fold is not fooled by it: it holds the
+   * turns the stream has seen ACCEPTED OR STARTED and not yet seen settle. One
+   * such turn is an unambiguous answer; two are not, and are left to the
+   * durable one.
+   */
+  const observedRunTurnIds = chat.agentRunLock.activeTurnIds;
+  const joinTurnId =
+    runningTurnId ??
+    (observedRunTurnIds.size === 1
+      ? ([...observedRunTurnIds][0] ?? null)
+      : null);
+  /**
+   * One seed per LOAD, and never one that cannot name the run.
+   *
+   * A seed carries the run whose ledger the loaded version is a position in, so
+   * seeding with no run at all is not a weaker seed — it is a wrong one, and it
+   * used to undo a cursor the stream had already carried forward. So a load
+   * that lands before anything names the run WAITS, and this effect re-runs
+   * when one does (`joinTurnId` is a dependency). The ref is what keeps that
+   * dependency from re-seeding a load that has already joined: a run starting
+   * while the tab sits open must not fast-forward its first batch.
+   */
+  const seededLoadRef = useRef<string | null>(null);
   useEffect(() => {
     if (joinedDocumentId === null || joinedVersion === null) return;
-    seedSceneStream(joinedDocumentId, joinedVersion, runningTurnIdRef.current);
-  }, [joinedDocumentId, joinedGeneration, joinedVersion, seedSceneStream]);
+    const load = `${joinedDocumentId}@${joinedGeneration}@${joinedVersion}`;
+    if (seededLoadRef.current === load) return;
+    if (joinTurnId === null) return;
+    seededLoadRef.current = load;
+    seedSceneStream(joinedDocumentId, joinedVersion, joinTurnId);
+  }, [
+    joinTurnId,
+    joinedDocumentId,
+    joinedGeneration,
+    joinedVersion,
+    seedSceneStream,
+  ]);
   const designReferencesEnabled =
     chat.designLegOpen &&
     shell.artifactKind === "ad" &&

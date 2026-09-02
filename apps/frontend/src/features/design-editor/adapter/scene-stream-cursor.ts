@@ -628,6 +628,12 @@ export function replaySceneStreamJoin({
  * including a reload that lands the same version — because the LOAD is the
  * event, not the number.
  *
+ * Fix round 3: `turnId` may be `null` when the surface cannot yet name the run
+ * in flight. It is then taken from the document's own cursor — what the STREAM
+ * has already proven about which run is streaming — rather than treated as a
+ * run of its own, which would undo the cursor and make the next checkpoint
+ * anchor stale against a position the canvas really had reached.
+ *
  * Fix round 2: the seed also REPLAYS the in-flight run's logged applies through
  * the seeded position (`replaySceneStreamJoin`) and emits them as one further
  * `apply` the canvas catches up on at once. It happens here rather than in the
@@ -647,8 +653,23 @@ export function seedSceneStreamState(
   state: SceneStreamState,
   seed: { documentId: string; documentVersion: number; turnId: string | null },
 ): SceneStreamState {
+  // Fix round 3: a seed that cannot NAME the run in flight must not throw away
+  // what the stream has already proven about it. `runningTurn` is null for the
+  // renders between a replayed `turn.accepted` (which reads as "queued") and
+  // the `turn.started` behind it, and a document finishing its load in that
+  // window used to seed with no turn — resetting a cursor the stream had
+  // carried to the run's live position back to `{turn: null, position: 0}`. The
+  // next checkpoint then arrived as a DIFFERENT run (rebase to 0) and anchored
+  // stale at a position the canvas had in fact reached, so it reloaded a canvas
+  // that was exactly in sync — rung A's flicker, at every checkpoint, for the
+  // rest of the run. The cursor's own turn is the stream's evidence and is
+  // strictly better than none; if it later turns out to be an older run, that
+  // run's next frame rebases the cursor anyway.
+  const known = state.cursors.get(seed.documentId);
+  const turnId = seed.turnId ?? known?.turnId ?? null;
   const seeded = seedSceneStreamCursor({
     ...seed,
+    turnId,
     backlogCheckpoints: state.checkpoints,
   });
   // A dirty seed replays nothing: nothing may be applied over a position that
@@ -658,7 +679,7 @@ export function seedSceneStreamState(
     : replaySceneStreamJoin({
         actions: state.actions,
         documentId: seed.documentId,
-        turnId: seed.turnId,
+        turnId,
         position: seeded.position,
       });
   const cursor: SceneStreamCursor = {

@@ -332,6 +332,20 @@ export class SceneRevealPump {
    * run already streamed — and they land at once instead of being drawn in.
    */
   private joining = false;
+  /**
+   * How far into the CURRENT run's ledger this pump has actually applied
+   * (task 10, fix round 3), or `null` when it has applied nothing of it.
+   *
+   * The pump's one memory, and it exists for exactly one hazard: a canvas can
+   * be streaming a run LIVE before its document has finished loading (the lock
+   * and the open document are both known first), and the join that follows the
+   * load replays that same run's logged batches. Without this, the join would
+   * hand the engine operations it already holds — an insert applied twice is
+   * refused, the pump latches dirty, and every checkpoint from then on reloads
+   * a canvas that was in sync. A ledger position is per RUN, so `rebase` — and
+   * only `rebase` — forgets it.
+   */
+  private appliedThrough: number | null = null;
   private queue: RevealStep[] = [];
   private compression = 1;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -351,6 +365,21 @@ export class SceneRevealPump {
 
   isDirty(): boolean {
     return this.dirtyUntilAnchor;
+  }
+
+  /**
+   * Is this pump streaming at all — i.e. has it been started and not stopped?
+   *
+   * Its consumer is the hook's session effect, which starts a pump when the
+   * lock closes over an open document. That effect keys on the SESSION, so a
+   * pump rebuilt underneath an unchanged session (React's StrictMode does
+   * exactly this on mount) would never be started: it would apply nothing and
+   * report unclean for the rest of the session, which reloads the canvas at
+   * every checkpoint. Asking the pump itself is what makes the effect
+   * idempotent (fix round 3).
+   */
+  isStreaming(): boolean {
+    return this.active;
   }
 
   /**
@@ -377,6 +406,7 @@ export class SceneRevealPump {
     this.active = true;
     this.dirtyUntilAnchor = false;
     this.joining = false;
+    this.appliedThrough = null;
     this.queue = [];
     this.compression = 1;
     this.pendingDisplay = null;
@@ -403,7 +433,7 @@ export class SceneRevealPump {
    */
   join(): void {
     if (!this.active) return;
-    this.rebase();
+    this.reseat();
     this.joining = true;
   }
 
@@ -422,6 +452,15 @@ export class SceneRevealPump {
    */
   rebase(): void {
     if (!this.active) return;
+    this.reseat();
+    // A NEW run counts its operations from zero, so a position in the previous
+    // run's ledger says nothing about this one. A JOIN deliberately keeps it:
+    // same run, same ledger, and the engine still holds what it applied.
+    this.appliedThrough = null;
+  }
+
+  /** The move `join` and `rebase` share: drop everything held, show the document. */
+  private reseat(): void {
     this.cancelTimer();
     this.queue = [];
     this.pendingDisplay = null;
@@ -457,6 +496,7 @@ export class SceneRevealPump {
     this.active = false;
     this.dirtyUntilAnchor = false;
     this.joining = false;
+    this.appliedThrough = null;
     this.queue = [];
     this.pendingDisplay = null;
     this.emit(null);
@@ -505,11 +545,10 @@ export class SceneRevealPump {
   anchor(cursorInSync: boolean): void {
     if (!this.active) return;
     if (cursorInSync && this.isClean()) return;
-    this.cancelTimer();
-    this.queue = [];
-    this.pendingDisplay = null;
-    this.dirtyUntilAnchor = false;
-    this.emit(null);
+    this.reseat();
+    // The reload builds a NEW engine from the document, so nothing this pump
+    // applied is in it any more.
+    this.appliedThrough = null;
   }
 
   /**
@@ -522,8 +561,24 @@ export class SceneRevealPump {
    * because the batch behind it always collapses the one in front. Replayed
    * frames after a reconnect therefore fast-forward for free.
    */
-  enqueue(operations: readonly Operation[]): void {
+  enqueue(operations: readonly Operation[], operationsTotal?: number): void {
     if (!this.active || this.dirtyUntilAnchor) return;
+    // Fix round 3: never hand the engine a ledger range it already holds. The
+    // batch ends at `operationsTotal` and, being contiguous, begins at
+    // `operationsTotal - operations.length`; anything at or below what this
+    // pump has already applied is dropped, and a batch that straddles the mark
+    // applies only its tail.
+    if (operationsTotal !== undefined) {
+      if (this.appliedThrough !== null) {
+        if (operationsTotal <= this.appliedThrough) return;
+        const begins = operationsTotal - operations.length;
+        if (begins < this.appliedThrough) {
+          operations = operations.slice(this.appliedThrough - begins);
+        }
+      }
+      this.appliedThrough = operationsTotal;
+    }
+    if (operations.length === 0) return;
     if (this.queue.length > 0) {
       // A step already applied to the engine but still mid-draw is covered too:
       // its ops are in the engine, so the cumulative scene this shows includes
@@ -731,7 +786,7 @@ export function consumeSceneStreamActions(
     if (documentId === null || record.documentId !== documentId) continue;
     switch (record.action.action) {
       case "apply":
-        pump.enqueue(record.action.operations);
+        pump.enqueue(record.action.operations, record.action.operationsTotal);
         break;
       case "anchor":
         pump.anchor(record.action.inSync);
@@ -877,7 +932,9 @@ export function useSceneLiveReveal({
     const pump = pumpRef.current;
     if (!pump) return;
     const session = locked && documentId !== null ? documentId : null;
-    if (sessionRef.current !== session) {
+    // A session change — or a pump that is not streaming the session it should
+    // be (a rebuilt pump under an unchanged session; fix round 3).
+    if (sessionRef.current !== session || (session !== null && !pump.isStreaming())) {
       sessionRef.current = session;
       lastSequenceRef.current = actions[actions.length - 1]?.sequence ?? 0;
 
