@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { InspectorEventAddressing } from "@/features/chat-shell/hooks/use-inspector-controller";
 import {
+  kitLibraryEntries,
+  type KitLibraryEntry,
+} from "../adapter/scene-asset-library";
+import {
   hydrateSceneSelectionState,
   rootFrameId,
   sceneSelectionFor,
@@ -25,6 +29,7 @@ import { fetchBrandKitDetail } from "../engine/scene/documentStore";
 import { collectKitFontFaceRefs } from "../engine/scene/kitFonts";
 import { fetchFontLibrary } from "../engine/scene/libraryFonts";
 import { useSceneArrange } from "./use-scene-arrange";
+import { useSceneAssetLibrary } from "./use-scene-asset-library";
 import { useSceneClipboard } from "./use-scene-clipboard";
 import type { SceneDocumentHistory } from "./use-scene-document";
 import { useSceneExport } from "./use-scene-export";
@@ -77,6 +82,9 @@ import { useSceneReplaceImage } from "./use-scene-replace-image";
 export type SceneEditingSession = ReturnType<typeof useSceneEditingSession>;
 
 const NO_ROWS: SceneLayerRow[] = [];
+/** One identity, so a kitless document does not re-derive the asset library on
+ * every render (`NO_ROWS`' reason exactly). */
+const NO_KIT_ENTRIES: KitLibraryEntry[] = [];
 
 interface LoadedScene {
   forDocumentId: string;
@@ -339,6 +347,13 @@ export function useSceneEditingSession({
       : null;
   const [libraryFamilies, setLibraryFamilies] = useState<string[]>([]);
   const [kitFamilies, setKitFamilies] = useState<string[]>([]);
+  // Replace-image lane: the kit's own pictures, which the asset library pins
+  // first. Read off the SAME kit fetch as the fonts and the palette below — one
+  // fetch, now three vocabularies. A document with NO kit attached pins
+  // nothing, DERIVED rather than reset in an effect (the palette's discipline
+  // below, and `react-hooks/set-state-in-effect` forbids the effect form).
+  const [fetchedKitEntries, setFetchedKitEntries] = useState<KitLibraryEntry[]>([]);
+  const kitEntries = brandKitId ? fetchedKitEntries : NO_KIT_ENTRIES;
   // STAMPED with the kit it was fetched for and DERIVED against the current
   // one, the discipline the scene, the selection, the zoom and the history all
   // follow here. Without it, opening a second ad would keep offering the
@@ -405,6 +420,7 @@ export function useSceneEditingSession({
           forBrandKitRef: brandKitRef,
           palette: buildScenePalette(detail),
         });
+        setFetchedKitEntries(kitLibraryEntries(detail));
       })
       .catch(() => undefined);
     return () => {
@@ -524,6 +540,18 @@ export function useSceneEditingSession({
     node: primaryNode ?? null,
     onError: writes.reportError,
   });
+
+  // Replace-image lane: the asset-library picker. Same deps as the upload above — a pick IS a
+  // replace with the upload step removed (spec §4.2) — plus the kit's own asset ids for pinning.
+  const assetLibraryBinding = useSceneAssetLibrary({
+    applyOps: writes.applyOps,
+    canApply: writes.canApply,
+    documentId: activeDocumentId,
+    kitEntries,
+    node: primaryNode ?? null,
+    onError: writes.reportError,
+  });
+  const assetLibrary = activeDocumentId && scene ? assetLibraryBinding : undefined;
 
   // AD4.A step 3 (§1.3 row 2): the AI image suite — generate / edit / remove
   // background / candidate review. Same seam as Replace image above and for the
@@ -688,6 +716,10 @@ export function useSceneEditingSession({
      * `undefined` until a document is actually loaded — the same gate `imageAi`
      * takes, which is what keeps the buttons inert on the fixture path. */
     arrange,
+    /** The Replace-image lane's asset-library picker — open/close, the filtered
+     * items and `pick`. `undefined` until a document is loaded, the same gate
+     * `arrange` and `imageAi` take. */
+    assetLibrary,
     canvasControls,
     /** AD4.D step 3 (§1.11): the render the export menu's designed preview
      * region shows and the element that hosts it, or `null` when there is
