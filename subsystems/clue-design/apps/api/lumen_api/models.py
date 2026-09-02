@@ -262,6 +262,12 @@ class WebPublishRequest(BaseModel):
     public-slug charset by the endpoint."""
 
     slug: Optional[str] = None
+    #: F5 task 13 (ruling R-F1): ask for the robots ``noindex`` meta on this publish's pages.
+    #: Defaults OFF, so an ordinary publish is byte-identical to what it produced before this
+    #: field existed. It can only ADD noindex: the publish tool ORs the document's DURABLE
+    #: ABM noindex, so ``false`` from a share menu can never take an ABM account page back
+    #: into the index.
+    noindex: bool = False
 
 
 class SetAgentInstructionsRequest(BaseModel):

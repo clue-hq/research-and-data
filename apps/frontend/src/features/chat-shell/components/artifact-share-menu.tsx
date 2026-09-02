@@ -122,10 +122,15 @@ function ShareMainView({ controller }: { controller: ShareController }) {
     setView,
     shareHost,
     slug,
+    slugDirty,
     slugDraft,
   } = controller;
   const published = publishStatus === "published";
   const publishing = publishStatus === "publishing";
+  // A published site with a pending change (a new slug, new settings) shows the
+  // publish button again, reading "Republish" — the live site keeps serving its
+  // current address until it is pressed.
+  const showingPublishButton = !published || slugDirty;
   const handleSlugKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") saveSlug();
   };
@@ -146,7 +151,9 @@ function ShareMainView({ controller }: { controller: ShareController }) {
 
         <div className={styles.shareLinkField}>
           <ShareMenuIcon name="link" />
-          <span className={styles.shareLinkHost}>{shareHost}/</span>
+          {shareHost ? (
+            <span className={styles.shareLinkHost}>{shareHost}/</span>
+          ) : null}
           {editingSlug ? (
             <input
               aria-label="Publishing link path"
@@ -169,7 +176,7 @@ function ShareMainView({ controller }: { controller: ShareController }) {
           </button>
         </div>
 
-        {published ? (
+        {!showingPublishButton ? (
           <div className={styles.sharePublishedActions}>
             <button
               className={styles.shareSecondaryButton}
@@ -192,10 +199,14 @@ function ShareMainView({ controller }: { controller: ShareController }) {
           <button
             className={styles.sharePrimaryButtonWide}
             disabled={publishing}
-            onClick={publishAsset}
+            onClick={() => void publishAsset()}
             type="button"
           >
-            {publishing ? "Publishing…" : "Publish asset"}
+            {publishing
+              ? "Publishing…"
+              : slugDirty
+                ? "Republish"
+                : "Publish asset"}
           </button>
         )}
 

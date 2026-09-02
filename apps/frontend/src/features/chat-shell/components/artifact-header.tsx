@@ -47,6 +47,7 @@ const ZOOM_LEVELS = Array.from({ length: 29 }, (_, index) => `${10 + index * 5}%
 
 export function ArtifactHeader({
   device,
+  documentId,
   editing,
   exportPreview,
   exportStatus,
@@ -65,6 +66,10 @@ export function ArtifactHeader({
    * value (it also drives the web canvas viewport width); absent leaves the
    * toolbar controller's own local value. */
   device?: ArtifactPreviewDevice | null;
+  /** F5 task 13: the design document behind the artifact — what the Share
+   * menu publishes. Absent while the stage has no document, which leaves
+   * publishing unavailable rather than faked. */
+  documentId?: string | null;
   editing: boolean;
   /** AD4.D step 3: the ad session's render for the export menu's designed
    * preview region, with the element that hosts it. Absent on every other
@@ -123,7 +128,7 @@ export function ArtifactHeader({
   const {
     controller: sharingController,
     menuRef: sharingMenuRef,
-  } = useArtifactSharingController({ kind, title });
+  } = useArtifactSharingController({ documentId, kind, title });
   const {
     controller: imageExportController,
     menuRef: imageExportMenuRef,

@@ -4370,6 +4370,7 @@ def create_app(
             slug=slug,
             public_base=public_base,
             idempotency_key=idempotency_key,
+            noindex=payload.noindex,
         )
         log_event(
             api_logger,

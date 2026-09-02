@@ -1848,6 +1848,14 @@ export function suggestPublishSlug(title: string, documentId: string): string {
   return slug;
 }
 
+/** One route the published site currently serves (F5). No markup — the route,
+ * the page it came from, and that page's html digest. */
+export interface WebPublishPage {
+  route: string;
+  pageId: string | null;
+  htmlDigest: string | null;
+}
+
 /** The document's current publish state (`GET /documents/{id}/web/publish`).
  * `published: false` is the unpublished case; the slug/url/version fields carry
  * values only when `published` is true. */
@@ -1863,6 +1871,12 @@ export interface WebPublishState {
   manifestDigest: string | null;
   packageDigest: string | null;
   htmlDigest: string | null;
+  /** F5: the routes the site serves, in document order. Empty on a pre-F5
+   * publish, which still serves its single page at `/`. */
+  pages: WebPublishPage[];
+  /** F5: the ABSOLUTE address of every route, computed by the server (R-F5-1).
+   * The client never builds a public URL from a host constant of its own. */
+  pageUrls: Record<string, string>;
 }
 
 /** Read the document's publish state. Throws (with the server message) on any
@@ -1891,6 +1905,8 @@ export async function fetchWebPublishInfo(
     manifest_digest?: unknown;
     package_digest?: unknown;
     html_digest?: unknown;
+    pages?: unknown;
+    page_urls?: unknown;
   };
   return {
     published: payload.published === true,
@@ -1903,8 +1919,38 @@ export async function fetchWebPublishInfo(
     publishId: typeof payload.publish_id === "string" ? payload.publish_id : null,
     manifestDigest: typeof payload.manifest_digest === "string" ? payload.manifest_digest : null,
     packageDigest: typeof payload.package_digest === "string" ? payload.package_digest : null,
-    htmlDigest: typeof payload.html_digest === "string" ? payload.html_digest : null
+    htmlDigest: typeof payload.html_digest === "string" ? payload.html_digest : null,
+    pages: parseWebPublishPages(payload.pages),
+    pageUrls: parseStringMap(payload.page_urls)
   };
+}
+
+/** The `pages` array of a publish state — anything that is not a route-bearing
+ * object is dropped rather than guessed at. */
+function parseWebPublishPages(raw: unknown): WebPublishPage[] {
+  if (!Array.isArray(raw)) return [];
+  const pages: WebPublishPage[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const page = entry as { route?: unknown; page_id?: unknown; html_digest?: unknown };
+    if (typeof page.route !== "string") continue;
+    pages.push({
+      route: page.route,
+      pageId: typeof page.page_id === "string" ? page.page_id : null,
+      htmlDigest: typeof page.html_digest === "string" ? page.html_digest : null
+    });
+  }
+  return pages;
+}
+
+/** A `{ route: url }` wire map, keeping only the string-to-string entries. */
+function parseStringMap(raw: unknown): Record<string, string> {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
+  const map: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === "string") map[key] = value;
+  }
+  return map;
 }
 
 /** The result of a `POST /documents/{id}/web/publish`. */
@@ -1919,20 +1965,31 @@ export interface WebPublishResult {
   manifestDigest: string | null;
   packageDigest: string | null;
   htmlDigest: string | null;
+  /** F5: every route this publish put on the air, in document order. A server
+   * that predates the field answers with an empty list. */
+  routes: string[];
 }
 
 /** Publish (or republish) a website (`POST /documents/{id}/web/publish`). Pass
  * the desired slug; omit it to let the server keep the current one. A 422 (bad
  * slug) or 409 (slug taken by another document) throws with the server's
- * message so the dialog can surface it inline. */
+ * message so the dialog can surface it inline.
+ *
+ * `noindex` (R-F1) asks the server to serve the pages with a robots `noindex`
+ * meta. Omitted, the server keeps its own default — and it ORs the document's
+ * durable ABM `noindex`, so passing `false` can never un-noindex an ABM page. */
 export async function publishWebDocument(
   { apiBaseUrl, fetchImpl = defaultDesignFetch }: WebDocumentOptions,
   documentId: string,
-  slug?: string
+  slug?: string,
+  options: { noindex?: boolean } = {}
 ): Promise<WebPublishResult> {
   const body: Record<string, unknown> = {};
   if (slug != null && slug.length > 0) {
     body.slug = slug;
+  }
+  if (typeof options.noindex === "boolean") {
+    body.noindex = options.noindex;
   }
   const response = await fetchImpl(
     new URL(`/documents/${encodeURIComponent(documentId)}/web/publish`, apiBaseUrl),
@@ -1956,6 +2013,7 @@ export async function publishWebDocument(
     manifest_digest?: unknown;
     package_digest?: unknown;
     html_digest?: unknown;
+    routes?: unknown;
   };
   return {
     schemaVersion: typeof payload.schema_version === "number" ? payload.schema_version : null,
@@ -1972,7 +2030,10 @@ export async function publishWebDocument(
     publishId: typeof payload.publish_id === "string" ? payload.publish_id : null,
     manifestDigest: typeof payload.manifest_digest === "string" ? payload.manifest_digest : null,
     packageDigest: typeof payload.package_digest === "string" ? payload.package_digest : null,
-    htmlDigest: typeof payload.html_digest === "string" ? payload.html_digest : null
+    htmlDigest: typeof payload.html_digest === "string" ? payload.html_digest : null,
+    routes: Array.isArray(payload.routes)
+      ? payload.routes.filter((route): route is string => typeof route === "string")
+      : []
   };
 }
 

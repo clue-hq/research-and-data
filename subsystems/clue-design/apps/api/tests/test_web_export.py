@@ -638,6 +638,26 @@ def test_publish_serve_republish_rollback(client: TestClient, workspace_id: str)
     assert client.get(f"/w/{workspace_id}/p/{slug}").status_code == 404
 
 
+def test_publish_noindex_option_reaches_the_served_page(
+    client: TestClient, workspace_id: str
+) -> None:
+    """F5 task 13: the share menu's indexing toggle is a real publish option.
+
+    `noindex` defaults off (the neighbouring publish tests pin that an ordinary publish carries
+    no robots meta), and asking for it puts the meta on the page the visitor is served.
+    """
+
+    document = seed_document(client)
+    published = client.post(
+        f"/documents/{document['id']}/web/publish",
+        json={"slug": "hidden-page", "noindex": True},
+    )
+    assert published.status_code == 200, published.text
+    served = client.get(f"/w/{workspace_id}/p/hidden-page")
+    assert served.status_code == 200, served.text
+    assert '<meta name="robots" content="noindex">' in served.text
+
+
 def test_publish_slug_validation(client: TestClient) -> None:
     document = seed_document(client)
     response = client.post(

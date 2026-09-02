@@ -262,6 +262,7 @@ export function ArtifactStage({
         <>
           <ArtifactHeader
             device={previewDevice}
+            documentId={activeDocumentId}
             editing={editing}
             exportPreview={exportPreview}
             exportStatus={exportStatus}

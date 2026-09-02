@@ -796,7 +796,43 @@ describe("fetchWebPublishInfo", () => {
       publishId: "webpub_abc",
       manifestDigest: "manifest-abc",
       packageDigest: "package-abc",
-      htmlDigest: "html-abc"
+      htmlDigest: "html-abc",
+      pages: [],
+      pageUrls: {}
+    });
+  });
+
+  it("maps the F5 route index and its absolute page urls", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        published: true,
+        slug: "acme",
+        url: "https://sites.example/w/ws_1/p/acme",
+        status: "active",
+        previous_available: false,
+        pages: [
+          { route: "/", page_id: "page_home", html_digest: "aaa" },
+          { route: "/pricing", page_id: "page_pricing", html_digest: "bbb" },
+          "not-a-page"
+        ],
+        page_urls: {
+          "/": "https://sites.example/w/ws_1/p/acme",
+          "/pricing": "https://sites.example/w/ws_1/p/acme/pricing",
+          "/broken": 7
+        }
+      })
+    );
+    const info = await fetchWebPublishInfo(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_abc123"
+    );
+    expect(info.pages).toEqual([
+      { route: "/", pageId: "page_home", htmlDigest: "aaa" },
+      { route: "/pricing", pageId: "page_pricing", htmlDigest: "bbb" }
+    ]);
+    expect(info.pageUrls).toEqual({
+      "/": "https://sites.example/w/ws_1/p/acme",
+      "/pricing": "https://sites.example/w/ws_1/p/acme/pricing"
     });
   });
 
@@ -841,7 +877,8 @@ describe("publishWebDocument", () => {
       publishId: "webpub_abc",
       manifestDigest: "manifest-abc",
       packageDigest: "package-abc",
-      htmlDigest: "html-abc"
+      htmlDigest: "html-abc",
+      routes: []
     });
     const [url, init] = fetchImpl.mock.calls[0];
     expect(String(url)).toBe("http://localhost:8002/documents/doc_abc123/web/publish");
@@ -855,6 +892,33 @@ describe("publishWebDocument", () => {
       .mockResolvedValue(jsonResponse(200, { slug: "acme", url: "/p/acme" }));
     await publishWebDocument({ apiBaseUrl: "http://localhost:8002", fetchImpl }, "doc_abc123");
     expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toEqual({});
+  });
+
+  it("sends noindex only when the caller asks for it, and maps the routes", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, { slug: "acme", url: "/p/acme", routes: ["/", "/pricing", 3] })
+    );
+    const result = await publishWebDocument(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_abc123",
+      "acme",
+      { noindex: true }
+    );
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toEqual({
+      slug: "acme",
+      noindex: true
+    });
+    expect(result.routes).toEqual(["/", "/pricing"]);
+
+    const withoutOption = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(200, { slug: "acme", url: "/p/acme" }));
+    await publishWebDocument(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl: withoutOption },
+      "doc_abc123",
+      "acme"
+    );
+    expect(JSON.parse(String(withoutOption.mock.calls[0][1]?.body))).toEqual({ slug: "acme" });
   });
 
   it("surfaces the 422 bad-slug message", async () => {
