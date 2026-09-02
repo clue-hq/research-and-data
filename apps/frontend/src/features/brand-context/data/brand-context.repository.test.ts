@@ -5,6 +5,8 @@ import {
   getBrandContextRepository,
   httpBrandContextRepository,
 } from "./brand-context.repository";
+import { brandKitAssetIds } from "../model/brand-context-mapping";
+import { BrandKitDetailSchema } from "../model/brand-kit";
 import { HARVESTED_ASSET_RECORDS, HARVESTED_BRAND_KIT } from "./__fixtures__/harvest";
 
 const KIT_ID = "brand_kit_ing_813df4f30f2d429a853dbccae2277a5a";
@@ -168,4 +170,95 @@ test("with a configured transport the page reads the real store", async () => {
     if (configured === undefined) delete process.env.CLUE_API_BASE_URL;
     else process.env.CLUE_API_BASE_URL = configured;
   }
+});
+
+/**
+ * `GET /assets` per image kind — the workspace registry read the Assets section
+ * unions with the kit. The stub matches on the EXACT path, so these keys are
+ * the exact query strings the repository asks for.
+ */
+// The harvest is exported as `unknown` on purpose — a raw wire capture is
+// parsed, never trusted — so these two tests read it through its own schema.
+const HARVESTED_KIT = BrandKitDetailSchema.parse(HARVESTED_BRAND_KIT);
+
+function registryRoutes(records: unknown[]): Record<string, { body: unknown }> {
+  const page = (kind: string) => ({
+    body: {
+      assets: records.filter((r) => (r as { kind: string }).kind === kind),
+      count: 0,
+      limit: 200,
+      offset: 0,
+    },
+  });
+  return {
+    "/assets?kind=raster_image&include_archived=false&limit=200&offset=0": page("raster_image"),
+    "/assets?kind=vector&include_archived=false&limit=200&offset=0": page("vector"),
+    "/assets?kind=logo&include_archived=false&limit=200&offset=0": page("logo"),
+  };
+}
+
+test("the Assets section lists the kit's items plus workspace uploads, deduped, categorized", async () => {
+  const upload = {
+    id: "asset_upl_1",
+    kind: "raster_image",
+    label: "team.jpg",
+    status: "ready",
+    source: { kind: "uploaded", filename: "team.jpg", uploaded_by: null },
+    media: { mime_type: "image/jpeg", byte_length: 1234, filename: "team.jpg" },
+    provenance: { created_at: "2026-09-01T10:00:00Z" },
+  };
+  const generated = {
+    id: "asset_gen_1",
+    kind: "raster_image",
+    label: "generated hero",
+    status: "ready",
+    source: { kind: "generated", request_id: null, model: "x" },
+  };
+  const kitLogoId = brandKitAssetIds(HARVESTED_KIT)[0];
+  assert.ok(kitLogoId, "the harvested kit must carry at least one asset");
+  const kitDup = {
+    id: kitLogoId,
+    kind: "logo",
+    label: "dup of kit logo",
+    status: "ready",
+    source: { kind: "uploaded", filename: null, uploaded_by: null },
+  };
+  const { fetchImpl } = stubDesignApi({
+    "/brand-kits": { body: [HARVESTED_KIT.brand_kit] },
+    [`/brand-kits/${KIT_ID}`]: { body: HARVESTED_BRAND_KIT },
+    ...assetRoutes(),
+    ...registryRoutes([upload, generated, kitDup]),
+  });
+
+  const { workspace } = await httpBrandContextRepository({
+    designFetch: () => fetchImpl,
+  }).getWorkspace();
+
+  const byId = new Map(workspace.assets.map((a) => [a.id, a]));
+  assert.equal(byId.get("asset_upl_1")?.category, "upload");
+  assert.equal(byId.get("asset_upl_1")?.origin, "registry");
+  assert.equal(byId.get("asset_upl_1")?.name, "team.jpg");
+  assert.equal(byId.get("asset_gen_1")?.category, "ai-generated");
+  // The kit wins the dedupe: one row, still badged as the brand's own.
+  assert.equal(byId.get(kitLogoId)?.origin, "kit");
+  assert.equal(workspace.assets.filter((a) => a.id === kitLogoId).length, 1);
+  assert.ok(
+    workspace.assets.findIndex((a) => a.origin === "kit") <
+      workspace.assets.findIndex((a) => a.id === "asset_upl_1"),
+  );
+});
+
+test("a failed registry read leaves the kit's assets intact", async () => {
+  const { fetchImpl } = stubDesignApi({
+    "/brand-kits": { body: [HARVESTED_KIT.brand_kit] },
+    [`/brand-kits/${KIT_ID}`]: { body: HARVESTED_BRAND_KIT },
+    ...assetRoutes(),
+  });
+
+  const { workspace } = await httpBrandContextRepository({
+    designFetch: () => fetchImpl,
+  }).getWorkspace();
+
+  assert.ok(workspace.assets.length > 0);
+  assert.ok(workspace.assets.every((a) => a.origin === "kit"));
 });

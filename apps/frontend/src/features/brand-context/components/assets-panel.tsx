@@ -230,7 +230,10 @@ export function AssetsPanel({ controller }: { controller: BrandContextController
           {controller.filteredAssets.map((asset) => (
             <article className={`${styles.assetCard} ${controller.assetMenuId === asset.id ? styles.assetCardMenuOpen : ""}`} key={asset.id}>
               <button aria-label={`Open ${asset.name}`} className={styles.assetCardOpen} onClick={() => controller.openAsset(asset.id)} type="button">
-                <span className={styles.assetCardPreview}><AssetVisual asset={asset} /></span>
+                <span className={styles.assetCardPreview}>
+                  <AssetVisual asset={asset} />
+                  {asset.origin === "kit" ? <span className={styles.assetCardBadge}>Brand</span> : null}
+                </span>
               </button>
               <div className={styles.assetCardMeta}>
                 <AssetNameEditor asset={asset} controller={controller} />
