@@ -290,11 +290,21 @@ created and dropped in the same step, with the DSN override proven to take effec
 downgrade ran. Never run it against the dev DB in `.env`: `downgrade base` would destroy this
 workspace's data.
 
-## 7. Session close (2026-09-02)
+## 7. D11 resolved — the QA-render User-Agent override (founder decision 2026-09-02)
 
-Final HEAD carries Tasks 1–14 plus the final-review fix. Open founder decisions: **D11** (headless
-render UA override — accept empty decorative logos in thumbnails/review renders, or set a
-non-headless UA at the three Playwright sites) and, outside this plan, the 28 baseline api failures
+Later the same day the founder ruled: the two automated QA renderers present a normal Chrome
+User-Agent so the review agent sees hotlinked logos as a visitor would. Shipped in `7f0b7ecd5`
+behind **`LUMEN_QA_RENDER_UA_OVERRIDE`** (default ON; set `0` to restore the headless UA — the switch
+to reach for if Brandfetch objects). Constant + helper: `apps/api/lumen_api/qa_render_ua.py`; applied
+only at the thumbnail and clone-review `new_context` calls. Verified on the shipped code: flag on →
+CDN 200 and the logo paints in both renderers; flag off → 302 `automated_traffic`. The vendor's
+guidelines still say programmatic access "may result in rate limiting or blocking" and that
+server-side use needs "a custom setup" — the founder accepted that risk knowingly; asking Brandfetch
+for a sanctioned setup remains the clean long-term answer.
+
+## 8. Session close (2026-09-02)
+
+Final HEAD carries Tasks 1–14 plus the final-review fix. D11 is resolved (§7). Still open, outside this plan: the 28 baseline api failures
 (§5; the image-model fixture's missing `image_model_api_style` pin is the cheapest of them).
 Deferred items D12–D15 have named owners in the plan's ledger. Nothing pushed.
 
