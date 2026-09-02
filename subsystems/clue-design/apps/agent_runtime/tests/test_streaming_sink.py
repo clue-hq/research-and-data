@@ -149,3 +149,125 @@ def test_non_mutating_event_sink_push_is_unchanged(tmp_path, monkeypatch):
     assert len(viewed) == 1
     assert set(viewed[0]) == BASE_SINK_KEYS
     assert "operations" not in viewed[0]
+
+
+# --- (e) rung B: op-bearing frames carry their ledger position --------------
+#
+# The frontend de-duplicates streamed op batches against the version it last
+# reloaded from a `design.checkpoint` frame (which carries `operations` = the
+# COUNT of ledger ops committed so far). For that subtraction to be arithmetic
+# rather than guesswork, every op-bearing sink frame states where its batch ends
+# in the SAME ledger: `operations_total` is the length of `operations_ledger`
+# AFTER this batch was appended. A checkpoint frame with `operations == N` and an
+# op frame with `operations_total == N` therefore describe the same point.
+
+
+class _ThreeOpCore(FakeCoreClient):
+    """A clean compile that applies three operations (the base fake applies two)."""
+
+    def compile_dsl_into_scene(self, scene, source, dsl_session=None, protected_node_ids=None):
+        response = super().compile_dsl_into_scene(
+            scene, source, dsl_session=dsl_session, protected_node_ids=protected_node_ids
+        )
+        response["applied_operations"] = 3
+        response["dsl"]["compile_output"]["operations"] = [
+            {"kind": "add_page"},
+            {"kind": "insert_node"},
+            {"kind": "set_text"},
+        ]
+        return response
+
+
+def _seed_ledger(tools, count):
+    """Stand in for `count` operations already committed earlier in the run,
+    in the exact entry shape `_log_scene_operations` writes."""
+    tools.operations_ledger.extend(
+        {"iteration": 0, "source": "seed", "operation": {"kind": "seed", "n": index}}
+        for index in range(count)
+    )
+
+
+def test_clean_compile_sink_push_carries_ledger_position(tmp_path, monkeypatch):
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", _ThreeOpCore)
+    from lumen_agent.tools.substrate import LumenDesignTools
+
+    tools = LumenDesignTools(runtime_config(tmp_path), "design a launch poster")
+    _seed_ledger(tools, 8)
+    pushes = _attach_sink(tools)
+
+    tools.compile_dsl_block('page Test\n  text "Plan"')
+
+    push = _pushes_for(pushes, "dsl_compiled")[0]
+    assert len(push["operations"]) == 3, "this compile applied a three-op batch"
+    # 8 already on the ledger + this batch's 3 = the batch ends at position 11.
+    assert push["operations_total"] == 11
+    assert push["operations_total"] == len(tools.operations_ledger)
+
+
+def test_failed_compile_sink_push_has_no_ledger_position(tmp_path, monkeypatch):
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", _RaisingCore)
+    from lumen_agent.tools.substrate import LumenDesignTools
+
+    tools = LumenDesignTools(runtime_config(tmp_path), "design a poster")
+    _seed_ledger(tools, 8)
+    pushes = _attach_sink(tools)
+
+    tools.compile_dsl_block("page Broken\n  text")
+
+    push = _pushes_for(pushes, "dsl_compile_failed")[0]
+    # A refused draft streams neither half of the pair: no ops, and no position
+    # for ops that were never committed.
+    assert set(push) == BASE_SINK_KEYS
+    assert "operations_total" not in push
+
+
+def test_rejected_duplicate_page_sink_push_has_no_ledger_position(tmp_path, monkeypatch):
+    seeded = {
+        "meta": {"id": "doc", "title": "t"},
+        "pages": {"hero_page": {"id": "hero_page", "children": []}},
+        "nodes": {},
+        "slots": {},
+        "assets": {},
+    }
+    tools = _build_tools(tmp_path, monkeypatch, initial_scene=seeded)
+    _seed_ledger(tools, 8)
+    pushes = _attach_sink(tools)
+
+    tools.compile_dsl_block("page hero_page\n  text \"again\"")
+
+    push = _pushes_for(pushes, "dsl_compile_rejected")[0]
+    assert set(push) == BASE_SINK_KEYS
+    assert "operations_total" not in push
+
+
+def test_asset_placement_sink_push_carries_ledger_position(tmp_path, monkeypatch):
+    tools = _build_tools(tmp_path, monkeypatch, prompt="place a hero image")
+    _seed_ledger(tools, 4)
+    pushes = _attach_sink(tools)
+
+    tools.place_asset_in_node("hero", "asset_img_abc", fit="cover", focal_x=0.5, focal_y=0.42)
+
+    push = _pushes_for(pushes, "asset_placed")[0]
+    assert len(push["operations"]) == 1
+    # 4 already on the ledger + this single placement op = position 5.
+    assert push["operations_total"] == 5
+    assert push["operations_total"] == len(tools.operations_ledger)
+
+
+def test_failed_asset_placement_sink_push_has_no_ledger_position(tmp_path, monkeypatch):
+    class _RefusingCore(FakeCoreClient):
+        def apply_operations(self, scene, operations, scope=None):
+            raise CoreError("op.asset_missing", "no such asset")
+
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", _RefusingCore)
+    from lumen_agent.tools.substrate import LumenDesignTools
+
+    tools = LumenDesignTools(runtime_config(tmp_path), "place a hero image")
+    _seed_ledger(tools, 4)
+    pushes = _attach_sink(tools)
+
+    tools.place_asset_in_node("hero", "asset_img_abc", fit="cover", focal_x=0.5, focal_y=0.42)
+
+    push = _pushes_for(pushes, "asset_placement_failed")[0]
+    assert set(push) == BASE_SINK_KEYS
+    assert "operations" not in push and "operations_total" not in push

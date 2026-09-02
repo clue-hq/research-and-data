@@ -682,8 +682,21 @@ class LumenDesignTools:
             # ride the proposal ledger above. A blocking-diagnostic (or rejected/
             # failed) compile streams nothing to the canvas: the user never
             # watches a draft that got refused (D1).
+            #
+            # Rung B: an op-bearing frame also states WHERE its batch sits in the
+            # run's operation ledger — `operations_total` is the ledger length
+            # AFTER `_log_scene_operations` appended this batch (the append is
+            # immediately above, so reading it here is post-append). It is the
+            # same quantity `checkpoint_scene` puts on a `design.checkpoint`
+            # frame, so a checkpoint at N and an op frame at N describe the same
+            # point and the client can drop already-committed batches by
+            # subtraction. Refused compiles push neither key — there is no
+            # position for operations that never joined the ledger.
             sink_extra=(
-                {"operations": compile_output.get("operations", [])}
+                {
+                    "operations": compile_output.get("operations", []),
+                    "operations_total": len(self.operations_ledger),
+                }
                 if summary.status == ToolStatus.ok
                 else None
             ),
@@ -1845,7 +1858,15 @@ class LumenDesignTools:
             # single op logged to the proposal ledger via
             # `_replace_scene_from_core_response(..., [operation])` above — rides
             # the sink so the canvas can render the asset dropping into its node.
-            sink_extra={"operations": [operation]},
+            # Rung B: `operations_total` is the ledger length AFTER that append
+            # (the append is above), i.e. the position this batch ends at — the
+            # same counter a `design.checkpoint` frame reports, so the client can
+            # drop batches an already-reloaded checkpoint version covers. A
+            # refused placement returns early above and pushes neither key.
+            sink_extra={
+                "operations": [operation],
+                "operations_total": len(self.operations_ledger),
+            },
         )
         return json.dumps(payload, indent=2)
 
