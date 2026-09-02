@@ -2,12 +2,11 @@
 
 
 def test_web_prompts_name_the_four_cells_and_never_the_old_slots():
-    from lumen_agent import prompts_web
-
-    text = prompts_web.build_web_author_prompt.__doc__ or ""
     # Assert against the SOURCE, not a rendered prompt (rendering needs a full
     # config): the vocabulary must appear in the module.
     import inspect
+
+    from lumen_agent import prompts_web
 
     source = inspect.getsource(prompts_web)
     for cell in ("light_lockup", "dark_lockup", "light_mark", "dark_mark"):

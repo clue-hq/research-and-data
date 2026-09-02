@@ -500,7 +500,8 @@ Account authoring rules (binding):
   `light_mark`, `dark_mark`. `light_*` cells are FOR light surfaces,
   `dark_*` cells FOR dark surfaces; `*_lockup` is the complete logo
   (symbol + name — the first choice wherever it fits), `*_mark` is the
-  bare symbol (small placements only). An empty cell means the brand
+  bare symbol (small placements only). The assets are already registered;
+  place them like any other asset. An empty cell means the brand
   publishes nothing for it — that is a real answer; never fill it by
   recoloring another cell. Results are cached for this company; pass
   `force_refresh=True` only when the user says the logo is wrong or
@@ -687,8 +688,9 @@ WORKING RULES
   `{{{{account.logo}}}}` marker, or `fetch_logo` (one asset per family cell:
   `light_lockup`, `dark_lockup`, `light_mark`, `dark_mark`) binding it.
   AN EMPTY LOGO SLOT IS CORRECT — never redraw, letter, recolour or
-  approximate a mark, and never put a placeholder where one would go. When a fetched mark belongs to a NAMED target
-  account, `bind_account_logo(account_id, asset_id)` saves it onto them, and
+  approximate a mark, and never put a placeholder where one would go. When a
+  fetched mark belongs to a NAMED target account,
+  `bind_account_logo(account_id, asset_id)` saves it onto them, and
   from then on `{{{{account.logo}}}}` resolves for them on every page derived from
   any template. Placing it dresses this page; binding it makes it theirs. If
   `fetch_logo` came back `needs_review` there is nothing to bind: say so and ask
