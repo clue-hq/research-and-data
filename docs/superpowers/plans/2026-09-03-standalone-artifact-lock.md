@@ -37,7 +37,7 @@
 - Consumes: `require_document(repo, document_id)` (raises the 404 the other document routes raise), `HybridRepository.active_design_run_for_document(document_id) -> str | None`, the seeding helpers `create_document`, `start_leg_run`, `finish_run` from `tests/test_agent_run_write_lock.py` (importable: the tests directory is on `sys.path`, as `from conftest import …` shows).
 - Produces: `GET /documents/{document_id}/agent-run` → `{"schema_version": 1, "document_id": str, "active": bool, "run_id": str | null, "current_version": int}`; 404 for an unknown document (same shape as the document GET's 404).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `subsystems/clue-design/apps/api/tests/test_document_agent_run_read.py`:
 
@@ -121,12 +121,12 @@ def test_an_unknown_document_is_a_404(client: TestClient) -> None:
     assert response.status_code == 404, response.text
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd subsystems/clue-design && set -a; source ../../.env; set +a; PYTHONPATH=.:apps/api:apps/agent_runtime ../../.venv/bin/python -m pytest apps/api/tests/test_document_agent_run_read.py -v`
 Expected: the three 200-path tests fail with `404` (route missing); the 404 test passes trivially. If `from test_agent_run_write_lock import …` fails to import, check that suite's own fixture name for the embedded-worker env var and copy its exact `monkeypatch.setenv` line; report what you found.
 
-- [ ] **Step 3: Add the route**
+- [x] **Step 3: Add the route**
 
 In `main.py`, directly after the `get_document` handler:
 
@@ -154,11 +154,11 @@ In `main.py`, directly after the `get_document` handler:
         }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass, plus the write-lock suite**
+- [x] **Step 4: Run the tests to verify they pass, plus the write-lock suite**
 
 Run the new file, then `apps/api/tests/test_agent_run_write_lock.py` (it must be unaffected). Expected: 4 passed; write-lock suite all passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```
 git add subsystems/clue-design/apps/api/lumen_api/main.py subsystems/clue-design/apps/api/tests/test_document_agent_run_read.py
@@ -187,7 +187,7 @@ poller can reload the canvas when the run's commits move the document."
   - `reduceAgentRunPoll(previous: AgentRunPollState, next: DocumentAgentRun): AgentRunPollState` where `AgentRunPollState = { active: boolean; runId: string | null; currentVersion: number | null; reloadNonce: number }` and `INITIAL_AGENT_RUN_POLL: AgentRunPollState`. Rule: `reloadNonce` increments iff `previous.currentVersion !== null && next.currentVersion !== previous.currentVersion`; `active`/`runId`/`currentVersion` are copied from `next`.
   - `useDocumentAgentRun({ documentId, enabled, intervalMs = 4000 }): AgentRunPollState` — polls while `enabled && documentId` and `document.visibilityState === "visible"`; first poll immediately on mount/`documentId` change; resets to `INITIAL_AGENT_RUN_POLL` when `documentId` changes; a failed poll keeps the previous state (the lock errs toward its last known answer, and the next tick retries); clears its interval on unmount.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `apps/frontend/src/features/design-editor/hooks/document-agent-run.test.ts`:
 
@@ -245,11 +245,11 @@ it("rejects a non-200 and a malformed body", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 From `apps/frontend`: `npx tsx --test src/features/design-editor/hooks/document-agent-run.test.ts` → module-not-found failures.
 
-- [ ] **Step 3: Write the data read**
+- [x] **Step 3: Write the data read**
 
 Create `apps/frontend/src/features/design-editor/data/document-agent-run.ts`:
 
@@ -295,7 +295,7 @@ export async function fetchDocumentAgentRun(
 
 (If `defaultDesignFetch` lives elsewhere than `../engine/config`, import it from where `documentStore.ts` does and say so.)
 
-- [ ] **Step 4: Write the pure poll reducer**
+- [x] **Step 4: Write the pure poll reducer**
 
 Create `apps/frontend/src/features/design-editor/hooks/document-agent-run.logic.ts`:
 
@@ -338,7 +338,7 @@ export function reduceAgentRunPoll(
 }
 ```
 
-- [ ] **Step 5: Write the hook**
+- [x] **Step 5: Write the hook**
 
 Create `apps/frontend/src/features/design-editor/hooks/use-document-agent-run.ts`:
 
@@ -412,7 +412,7 @@ export function useDocumentAgentRun({
 }
 ```
 
-- [ ] **Step 6: Wire the editor surface**
+- [x] **Step 6: Wire the editor surface**
 
 In `editor-surface.tsx`:
 
@@ -435,11 +435,11 @@ In `editor-surface.tsx`:
 
 The agent-working chip needs nothing: it already renders from `editDisabled`.
 
-- [ ] **Step 7: Tests and gate**
+- [x] **Step 7: Tests and gate**
 
 From `apps/frontend`: `npx tsx --test src/features/design-editor/hooks/document-agent-run.test.ts` → 5 pass. Then `npm run design-system:build && npm run lint && npm run build` (lint: only the two pre-existing `canvasOperations.ts` warnings). Then the chat-shell + design-editor suites: `find src/features/chat-shell src/features/design-editor \( -name "*.test.ts" -o -name "*.test.tsx" \) -print0 | xargs -0 npx tsx --test` → all pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```
 git add apps/frontend/src/features/design-editor/data/document-agent-run.ts apps/frontend/src/features/design-editor/hooks/document-agent-run.logic.ts apps/frontend/src/features/design-editor/hooks/use-document-agent-run.ts apps/frontend/src/features/design-editor/hooks/document-agent-run.test.ts apps/frontend/src/features/chat-shell/components/editor-surface.tsx
