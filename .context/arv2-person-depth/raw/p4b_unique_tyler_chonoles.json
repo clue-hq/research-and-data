@@ -1,0 +1,57 @@
+{
+  "id": "gen-1788330123-ABeijajTITtpC8hoIjYZ",
+  "object": "chat.completion",
+  "created": 1788330123,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"unique_insight\": {\n    \"text\": \"Tyler Chonoles is the curator of 'The Frequency,' Harmonic Security\u2019s AI security and governance newsletter \u2014 a named content initiative he says he 'gets to curate and shape.' This is a personal content ownership role beyond a standard marketing title.\",\n    \"evidence_quote\": \"I get to curate and shape what goes into The Frequency, Harmonic\u2019s new AI security and governance newsletter\",\n    \"source_url\": \"https://www.linkedin.com/posts/tyler-chonoles-106405a0_been-heads-down-building-something-im-really-activity-7480653138769661953-LZ8j\",\n    \"why_generic_tools_miss_it\": \"Generic enrichment tools index jobs and titles but typically don't capture named internal content projects and the individual's stated ownership of them.\",\n    \"outreach_safe\": true\n  },\n  \"extra_life_claims\": [\n    {\n      \"field_key\": \"contact.facet.stated_interests\",\n      \"value\": [\n        \"playing guitar\",\n        \"skiing\",\n        \"played basketball in school\"\n      ],\n      \"evidence_quote\": \"Off the course, Tyler enjoys playing guitar and skiing\",\n      \"source_url\": \"https://athletics.bowdoin.edu/sports/mens-golf/roster/tyler-chonoles/1896\",\n      \"charter_category\": \"life_outside_work\",\n      \"priority\": \"P2\",\n      \"use_class\": \"personal-public-non-sensitive\",\n      \"outreach_safe\": true\n    }\n  ]\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABql8CMPT88yUr-Yc6xEbmGqaYgeBeW_UUraYrGbIhwglbvdXnqaKsE2BFksAKwFlMNFth-kfvcrgbCF30-C-M29OvVwqPkQNGRG1UP3QBfdCjhOMCuy9UJOzvbzXkkWe12bSUMUSId40XoJJ6SvUFWM7_jFMYev6f4q44Qw3kIAWn0HDZJ_I0zfBxuYkiAhhTkKLEoiN0-LSBeOG2AOWIYRHRHoK8LzL-TU-p2NB2mWXoYE2DS1DGq72TpUlERIOcdKW6vObFZKNgXxjrbI_wb90k9QB3A8PiBi_N9YW2DsnDf5X-8iSCfaLzktdAeFcj5T56k9F3QWyrxNqFhvp8RVzTRzhT55Y60fGuArhD1FE4sBwVgnrywMnjkxfZOC3bdBQn-w5zDi_AlWSxDGI7KO5fS5DYWyvQcvfwSq1O_-2NiExRiSSQEac0EnZTFSAwmyZ8Gcb8Vrl9XufVNZU3--zXygkHmSToOSpTB4q3qsjvfJHMct9Lfp8z_SEEu8osVM4c4hcAY9tnZVB8g1Z-YSpg2cvE19QSRVZ1m7IAQ1IB4gQv5Oxc_sjDYuR44vX9phZt5u0llxBDMkry_egiaI6z1DQBjfvUi9J-NlViEDlOtqZmY4krl_Upf4C_tbu8XC7P0Jk1fFkM3To-gvzrUhR_QTmuIPNTcmpJhDFHEc1gr00UzsoCMDFxvLlMNLpfmNsGkH7oVpq-IS_zZLnBbm8lVrp19LsZCcTK89LShQo87JvZlMjS4Hh3lZdsxi9UtA5Hwsh38nE55Op_icI3g7tsmMEsugd1eCLZC-oPSa3LlPEm0ZOrFe_Db47439-LIUj1-aiUgXQQlXjErYVCTr-GeIgXZKrwBAKj7CIxCa7Io4T2zb6InLKvroMwqYGrcqUbXHNRQVcDk4GqQ6wK7f9LwAcUcmrJwt0VfqGpf34CxKItz57b6kM9-m0TS0-j6aO2-M_HgcFkmwFR5Y12txoARilB0rUIoFw7INb4m4-uzQvJE_bTX2NZk9Nbz9vvXItx5cXKCj1h2ylIVw-T6p4LKzzikobQcTCU4R_SlxfTXUh70TiTsE1kyXzvAg4KIl0aTi6hqQy0nvxLsQZzkn7aY6LcFlL8lmQglAysjU_zvkTYyBXd9Ef_RgWCbHGv9rs9ShofMFHK0IXaiR9TLbQGoo0M2GUa7BwOyiPXsPW8FUBDL3DlFZcj1mR293f9Y2XfaN-Fpsls-JgAot1EmRpckItW3C5pVt9HBxyubmJ1Krc_kTLD5xeos5nUCWuO-gkwNq5bQtWRhoTpZ_Bub1rvX8VdMmw4TbbtbYUKZuPCfsgbfAstp0gSPTPdmqw6oLVdy_wKqprTCBGm5iDfhVH2iR_M7htmApOPaIpR1o6pNPO4UmqFuin9Q5DoDinzBwWnia6dnWIUBSaFxc69GM1rNUg==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_0a931aad81ac0703016a97c08ca42887d0916071eb8d1adf17",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 2946,
+    "completion_tokens": 348,
+    "total_tokens": 3294,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0014325,
+      "upstream_inference_prompt_cost": 0.0007365,
+      "upstream_inference_completions_cost": 0.000696
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 3.91
+}

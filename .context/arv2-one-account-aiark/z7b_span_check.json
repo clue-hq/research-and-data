@@ -1,0 +1,169 @@
+{
+  "verbatim": 36,
+  "not_verbatim": 20,
+  "failures": [
+    {
+      "bucket": "account_claims",
+      "field": "account.total_funding",
+      "span": "This round brings the company\u2019s total funding to $130 million. CTech says it extended the $60M round. CTech says \"The size of Cisco\u2019s investment was not disclosed\" and estimates it could take total fu",
+      "failed_fragments": [
+        "this round brings the company's total funding to $130 million. ctech says it extended the $60m round. ctech says \"the si"
+      ]
+    },
+    {
+      "bucket": "account_claims",
+      "field": "account.operational_pain",
+      "span": "The new capital will accelerate product innovation and global expansion as Zafran advances its mission... hiring will span engineering, sales, customer success, and core infrastructure. \"The developme",
+      "failed_fragments": [
+        "hiring will span engineering, sales, customer success, and core infrastructure. \"the development in ai is very fast, and"
+      ]
+    },
+    {
+      "bucket": "account_claims",
+      "field": "core.annual_revenue",
+      "span": "CTech reported industry estimates that Zafran had \"spent the past year generating annual recurring revenue of roughly $20 million\". Company claims \"more than tripled\" ARR and growth.",
+      "failed_fragments": [
+        "ctech reported industry estimates that zafran had \"spent the past year generating annual recurring revenue of roughly $2"
+      ]
+    },
+    {
+      "bucket": "account_claims",
+      "field": "core.hq_location",
+      "span": "New York, New York \u2013 December 2, 2025 \u2013 Zafran Security... But also company founded by Israeli leaders and press coverage in Israeli outlets",
+      "failed_fragments": [
+        "but also company founded by israeli leaders and press coverage in israeli outlets"
+      ]
+    },
+    {
+      "bucket": "account_claims",
+      "field": "account.recent_funding",
+      "span": "Zafran announced a \"strategic investment from Cisco Investments\"... Globes reported \"Cisco investing in, not acquiring Zafran Security\" and quoted Yashar: \"Zafran is not being sold to Cisco but is abo",
+      "failed_fragments": [
+        "zafran announced a \"strategic investment from cisco investments\"",
+        "globes reported \"cisco investing in, not acquiring zafran security\" and quoted yashar: \"zafran is not being sold to cisc"
+      ]
+    },
+    {
+      "bucket": "account_claims",
+      "field": "account.recent_funding",
+      "span": "Zafran announced a \"strategic investment from Amex Ventures.\" CTech reports the amount only as \"estimated at several million dollars,\" and says it extended the $60M round.",
+      "failed_fragments": [
+        "zafran announced a \"strategic investment from amex ventures.\" ctech reports the amount only as \"estimated at several mil"
+      ]
+    },
+    {
+      "bucket": "account_claims",
+      "field": "account.resonance.public_frustrations",
+      "span": "reduced remediation \"from weeks to hours\" ... Zafran's RemOps content claims a Zafran Remediation Item reduces time per vulnerability by \"87%,\" with modeled/claimed annual savings from \"$169K to over ",
+      "failed_fragments": [
+        "reduced remediation \"from weeks to hours\""
+      ]
+    },
+    {
+      "bucket": "account_claims",
+      "field": "core.primary_tech_stack",
+      "span": "Agentic Exposure Management... Exposure Graph ... integrates with the scanners, endpoint agents, and cloud security tools you already own ... routes the result as \"a single ticket\" to an owner through",
+      "failed_fragments": [
+        "integrates with the scanners, endpoint agents, and cloud security tools you already own"
+      ]
+    },
+    {
+      "bucket": "account_claims",
+      "field": "account.resonance.public_frustrations",
+      "span": "\"Trusted by Fortune 500 and high-growth companies\" and testimonials naming Ricardo Lafosse (CISO, Kraft Heinz), Dave Estlick (CISO, Chipotle), James Robinson (CISO, Netskope), Robert Schuetter (CISO, ",
+      "failed_fragments": [
+        "\"trusted by fortune 500 and high-growth companies\" and testimonials naming ricardo lafosse (ciso, kraft heinz), dave est"
+      ]
+    },
+    {
+      "bucket": "contact_claims",
+      "field": "contact.facet.career_history",
+      "span": "I was a part of maybe the best cybersecurity services in the world... The name is Mandiant. ... I was always the different one. I was born and raised in Iran... Moving forward ... to Israel... and the",
+      "failed_fragments": [
+        "i was always the different one. i was born and raised in iran"
+      ]
+    },
+    {
+      "bucket": "contact_claims",
+      "field": "contact.facet.recent_post",
+      "span": "\"we revealed how 96% of vulnerabilities didn\u2019t require patching and can be mitigated using existing controls.\"",
+      "failed_fragments": [
+        "\"we revealed how 96% of vulnerabilities didn't require patching and can be mitigated using existing controls.\""
+      ]
+    },
+    {
+      "bucket": "contact_claims",
+      "field": "contact.facet.communication_style",
+      "span": "\"It is a a side hobby for me and uh one that is quite expensive and time consuming.\" \"I want to make sure I can continue to do this and put out a regular cadence of videos\"",
+      "failed_fragments": [
+        "\"it is a a side hobby for me and uh one that is quite expensive and time consuming.\" \"i want to make sure i can continue"
+      ]
+    },
+    {
+      "bucket": "contact_claims",
+      "field": "contact.role_on_committee",
+      "span": "Tom Anthony \u2014 \u201cSVP, Global Sales.\u201d \"Drive pipeline generation campaigns\" (AVP Sales role description references sales motion).",
+      "failed_fragments": [
+        "tom anthony - \"svp, global sales.\" \"drive pipeline generation campaigns\" (avp sales role description references sales mo"
+      ]
+    },
+    {
+      "bucket": "contact_claims",
+      "field": "contact.facet.recent_post",
+      "span": "\"we revealed how 96% of vulnerabilities didn\u2019t require patching and can be mitigated using existing controls.\"",
+      "failed_fragments": [
+        "\"we revealed how 96% of vulnerabilities didn't require patching and can be mitigated using existing controls.\""
+      ]
+    },
+    {
+      "bucket": "contact_claims",
+      "field": "contact.facet.publications",
+      "span": "So, we started with the threat risk. We understand the asset, and then we understand the context of the asset... we check which of these assets are actually exposed to the internet or not.",
+      "failed_fragments": [
+        "so, we started with the threat risk. we understand the asset, and then we understand the context of the asset"
+      ]
+    },
+    {
+      "bucket": "proposed_fields",
+      "field": "account.claimed_customer_logos",
+      "span": "\"Trusted by Fortune 500 and high-growth companies\" and testimonials naming Ricardo Lafosse... Dave Estlick... James Robinson... Robert Schuetter... \"OpenAI Selects Zafran for Trusted Access for Cyber.",
+      "failed_fragments": [
+        "\"trusted by fortune 500 and high-growth companies\" and testimonials naming ricardo lafosse",
+        "\"openai selects zafran for trusted access for cyber.\" \"as seconds, agentic ai can reveal"
+      ]
+    },
+    {
+      "bucket": "proposed_fields",
+      "field": "account.claimed_outcomes_metrics",
+      "span": "Zafran uses your existing security tools to prove that 99% of critical vulnerabilities are not exploitable... de-risks 90% of critical vulnerabilities overnight... Zafran Remediation Item reduces time",
+      "failed_fragments": [
+        "zafran remediation item reduces time per vulnerability by \"87%\""
+      ]
+    },
+    {
+      "bucket": "negatives_and_risks",
+      "field": "Cisco acquisition rumor (July 2026) \u2014 acquisition claim",
+      "span": "Zafran announced a \"strategic investment from Cisco Investments\"... Globes reported \"Cisco investing in, not acquiring Zafran Security\" and quoted Yashar: \"Zafran is not being sold to Cisco but is abo",
+      "failed_fragments": [
+        "zafran announced a \"strategic investment from cisco investments\"",
+        "globes reported \"cisco investing in, not acquiring zafran security\" and quoted yashar: \"zafran is not being sold to cisc"
+      ]
+    },
+    {
+      "bucket": "negatives_and_risks",
+      "field": "CTech/third-party claim of roughly $20M ARR and competitive struggles / high burn",
+      "span": "CTech reported industry estimates that Zafran had \"spent the past year generating annual recurring revenue of roughly $20 million\" and quoted an unnamed cybersecurity executive saying the product \"has",
+      "failed_fragments": [
+        "ctech reported industry estimates that zafran had \"spent the past year generating annual recurring revenue of roughly $2"
+      ]
+    },
+    {
+      "bucket": "negatives_and_risks",
+      "field": "Founder / CPO Snir Havdala departure to NVIDIA",
+      "span": "CTech reported that co-founder/CPO Snir Havdala joined NVIDIA as \"Director of Engineering\"... Zafran responded: \"Snir Havdala's transition to his next professional chapter was planned and coordinated ",
+      "failed_fragments": [
+        "ctech reported that co-founder/cpo snir havdala joined nvidia as \"director of engineering\""
+      ]
+    }
+  ]
+}

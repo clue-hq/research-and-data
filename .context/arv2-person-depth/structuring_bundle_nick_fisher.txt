@@ -1,0 +1,167 @@
+SUBJECT (identity already locked, do not re-derive):
+  name: Nick Fisher (aka Nicholas Fisher, Nicholas T. Fisher)
+  title: VP Marketing
+  company: Zafran Security (zafran.io)
+  linkedin: https://www.linkedin.com/in/nicholastfisher
+
+CLOSED FIELD-KEY LIST — use ONLY these:
+  contact.facet.career_history
+  contact.facet.alma_mater
+  contact.facet.stated_interests
+  contact.facet.communication_style
+  contact.facet.public_appearances
+  contact.facet.publications
+  contact.facet.recent_post
+  contact.facet.nickname
+  contact.facet.hobby
+  contact.facet.recent_award
+  contact.facet.conference_talk
+  contact.facet.causes
+  contact.facet.hooks   [PROPOSED — new field]
+  contact.facet.openers   [PROPOSED — new field]
+  contact.facet.voice_quote   [PROPOSED — new field]
+
+CHARTER CATEGORIES for `charter_category`: background, life_outside_work, voice, professional_identity, unique_insight, opener
+
+Return STRICT JSON, no prose, shaped exactly:
+{
+  "claims": [
+    {"field_key": "<one of the closed list>",
+      "value": <string, or array of strings, or object — whatever suits the field>,
+      "evidence_quote": "<VERBATIM, copied exactly from the material below>",
+      "source_url": "<a URL that appears in the material>",
+      "source_timestamp": "<MM:SS or null>",
+      "source_type": "<linkedin_profile|linkedin_post|youtube_transcript|podcast_transcript|podcast_shownotes|press|company_site|university|blog|directory|other>",
+      "charter_category": "<one of the charter categories>",
+      "priority": "P1|P2|P3",
+      "use_class": "professional-public|personal-public-non-sensitive",
+      "identity_binding": "STRONG",
+      "outreach_safe": true,
+      "note": "<optional short caveat, or empty>"}
+  ],
+  "unique_insight": {"text": "<one paragraph, or 'NOT FOUND — thin public footprint'>",
+                      "evidence_quote": "<verbatim or empty>", "source_url": "<or empty>"},
+  "not_found": ["<charter category or sub-item that came back empty>", "..."],
+  "same_name_contamination": ["<url — why it was ruled out>", "..."]
+}
+
+=== MATERIAL 1: DEEP-RESEARCH DOSSIER (Exa deep-reasoning, personal charter) ===
+Subject identification: Nick Fisher, also presented as Nicholas Fisher/Nicholas T. Fisher, is the person at the supplied LinkedIn URL. The indexed profile states "VP Marketing at Zafran Security" and "New York, New York, United States (US)"; URL: https://www.linkedin.com/in/nicholastfisher. Zafran’s official About page lists "Nick Fisher" as "VP Marketing"; URL: https://www.zafran.io/about. Same-name profiles and results were excluded. 1. BACKGROUND • Hometown / where they grew up: NOT FOUND. • Alma mater(s): The indexed LinkedIn profile states "MBA at Columbia Business School" with dates "2011 - 2013" and "MBA Exchange at University of California, Berkeley, Haas School of Business" with date "2012"; URL: https://www.linkedin.com/in/nicholastfisher. The available evidence does not state the MBA subject/concentration, student activities, societies, sports teams, or awards. Those fields: NOT FOUND. • Early career and entry into the field: The indexed profile’s earliest listed employment is "Director - Product Marketing & Analytics, Capital Markets - Ipreo" with dates "Jul 2006 - Jun 2011"; URL: https://www.linkedin.com/in/nicholastfisher. The same profile then lists "Product Manager MBA Intern - Zynga" with dates "Jun 2012 - Aug 2012," "Senior Product Marketing Manager - Huddle" with dates "Aug 2013 - Aug 2014," "Director, Enterprise Product Marketing - Lookout" with dates "Sep 2014 - Jan 2018," "Senior Director Product Marketing - Okta, Inc." with dates "Feb 2018 - Aug 2021," "Vice President Product Marketing - Sysdig" with dates "Sep 2021 - Apr 2024," and "VP of Marketing - Zafran Security" beginning "Apr 2024"; URL: https://www.linkedin.com/in/nicholastfisher. A first job before Ipreo, or a first-person account of how they entered marketing/security, is NOT FOUND. • Their own explanation of joining Zafran: In a first-person LinkedIn article, Fisher wrote, "For me, the decision to join a startup comes down to 3 basic criteria" and identified the criteria as "Is this a market with a massive unsolved problem at the center?"; "Is the product poised to solve it in a unique and valuable way?"; and "Do the people bring something special in creating a world-class company?" He added, "I'm honored to be leading the marketing team." URL: https://www.linkedin.com/pulse/why-i-joined-zafran-security-nick-fisher-jqinf. • Military, competitive sport, music/arts, or other non-corporate background: NOT FOUND. No qualifying military, competitive-sport, or arts background was located in the reviewed target-matched sources. • Languages they speak: NOT FOUND. Language claims in same-name profiles were excluded because they do not match the target’s confirmed LinkedIn identity. 2. LIFE OUTSIDE WORK — ONLY AS THEY THEMSELVES STATE IT • Hobbies and sports: Fisher personally wrote, "If we've worked together you may have discovered my little side hobby as a cocktail YouTuber" and said he had been "slowly winding it down." He also wrote, "today I'm celebrating a milestone that I set out to achieve when starting the channel over 6 years ago: publishing a book!" The post identifies the book as "Cocktail Chemistry: The Art and Science of Drinks from Iconic TV Shows and Movies" and says, "The photo shoot was also one of the most fun experiences of my life as we recreated movie scenes with famous cocktails." URL: https://www.linkedin.com/posts/nicholastfisher_if-weve-worked-together-you-may-have-discovered-activity-6932337822636937217-ptV7. Other hobbies or sports, including running, climbing, cooking, or gaming: NOT FOUND. • Pets: NOT FOUND. • Self-announced milestones: Fisher personally announced his Zafran move in the first-person article, writing, "I'm honored to be leading the marketing team"; URL: https://www.linkedin.com/pulse/why-i-joined-zafran-security-nick-fisher-jqinf. He personally announced the publication milestone, writing, "today is publication day" of his cocktail book; URL: https://www.linkedin.com/posts/nicholastfisher_if-weve-worked-together-you-may-have-discovered-activity-6932337822636937217-ptV7. Wedding, relocation, and work-anniversary announcements: NOT FOUND. • Causes, volunteering, boards, mentoring, pledges, alumni service: NOT FOUND. Evidence boundary: The Humantic profile describes Fisher as a "B2B marketing leader at Zafran Security" and says he has "an MBA from Columbia Business School," but its statements that "colleagues describe him" are not treated as Fisher’s own self-statements; URL: https://humantic.ai/public-profile/nick-fisher-32e8fa7d447b97e1. The Org independently labels him "VP Of Marketing at Zafran Security" and gives location "New York, New York, United States," but does not provide additional verified personal-life detail; URL: https://theorg.com/org/zafran-security/org-chart/nick-fisher.
+
+=== MATERIAL 2: LINKEDIN PROFILE (indexed copy) ===
+# Nick Fisher
+
+VP Marketing at Zafran Security
+
+New York, New York, United States (US)
+
+500 connections • 6,997 followers
+
+## About
+
+Full-stack B2B marketing leader / storyteller with experience building teams for early stage growth and post-IPO scale
+
+Total Experience: 17 years and 11 months
+
+## Experience
+
+### VP of Marketing - [Zafran Security](https://www.linkedin.com/company/zafran-security) (Current)
+
+Apr 2024 - Present (2 years and 4 months) in New York, New York, United States
+
+Department: Marketing • Level: President/Vice President
+
+Zafran Security is a Computer and Network Security company. Zafran is an AI-Native Threat Exposure Management Platform that helps security teams buried in vulnerabilities and manual work to unify vulnerability findings and create a unified view of exposure across their existing tools. Zafran Security has 100-150 employees (+50% YoY). Headquartered in New York, New York, United States. Its workforce is distributed across United States, Israel, and Germany. Has $136M in total funding, with 4 prior funding rounds.
+
+### Vice President Product Marketing - [Sysdig](https://www.linkedin.com/company/sysdig)
+
+Sep 2021 - Apr 2024 (2 years and 7 months) in San Francisco Bay Area
+
+Lead product, tech, and alliance marketing across Sysdig’s portfolio of cloud security and DevOps solutions, powered by Sage GenAI
+
+Department: Marketing • Level: President/Vice President
+
+Sysdig is a Computer and Network Security company. Sysdig is a cloud security company that provides runtime insights to help businesses protect their cloud, containers, and workloads. They offer solutions back real-time cloud security, cloud-native application protection platform (cnapp), unified cloud security, and threat detection & response (cdr) to protect cloud, containers, and workloads. They also provide vulnerability management, cloud security posture management, and cloud infrastructure. Sysdig has 500-600 employees and has annual revenue in the $200M-$300M range, founded in 2013. Headquartered in San Francisco, California, United States, operates in 5 countries (including Italy, Serbia, Spain, and Costa Rica). Its workforce is distributed across 26 countries (including United States, Italy, Spain, United Kingdom, and Serbia). Has $729.5M in total funding, with 8 prior funding rounds.
+
+### Senior Director Product Marketing - [Okta, Inc.](https://www.linkedin.com/company/okta-inc-)
+
+Feb 2018 - Aug 2021 (3 years and 6 months) in San Francisco Bay Area
+
+Lead a team focused on identity security, industry verticals, and business value
+
+Department: Marketing • Level: Director
+
+Okta (OKTA) is a Software Development company. Okta has 5,000-6,000 employees and has annual revenue in the $2B-$3B range, founded in 2009. Headquartered in San Francisco, California, United States, with presence in Australia, United Kingdom, and Netherlands. Its workforce is distributed across 46 countries (including United States, India, Canada, Australia, and United Kingdom). Has $1.4B in total funding, with 9 prior funding rounds.
+
+### Director, Enterprise Product Marketing - [Lookout](https://www.linkedin.com/company/lookout)
+
+Sep 2014 - Jan 2018 (3 years and 4 months) in San Francisco Bay Area
+
+Department: Marketing • Level: Director
+
+Lookout is a Computer and Network Security company. Lookout is an AI-powered platform that defends against phishing, social engineering, and account takeovers. They provide visibility and control that traditional security tools miss. Lookout has 200-300 employees and has annual revenue in the $80M-$90M range, founded in 2007. Headquartered in Boston, Massachusetts, United States, with an office in San Francisco. Its workforce is distributed across 16 countries (including United States, India, Canada, United Kingdom, and Netherlands). Has $512.8M in total funding, with 15 prior funding rounds.
+
+### Senior Product Marketing Manager - [Huddle](https://www.linkedin.com/company/huddle)
+
+Aug 2013 - Aug 2014 (1 year) in San Francisco Bay Area
+
+Department: Marketing • Level: Manager
+
+Ideagen Huddle™ is a Software Development company. The company provides secure document collaboration software with cloud-based portals. Ideagen Huddle™ has 10-20 employees (5-6% YoY decline) and has annual revenue in the GBP1M-GBP10M range, founded in 2006. Headquartered in Nottingham, United Kingdom, with presence in United States. Its workforce is distributed across United Kingdom, Argentina, Nigeria, and United States. Has $183.2M in total funding, with 7 prior funding rounds.
+
+### Product Manager MBA Intern - [Zynga](https://www.linkedin.com/company/zynga)
+
+Jun 2012 - Aug 2012 (2 months) in San Francisco Bay Area
+
+Department: Product • Level: Intern
+
+Zynga (ZNGA) is a Computer Games company. zynga is a company that provides games and support services. They offer career opportunities, job openings, and support for players. They also have a blog and a blog. Zynga has 1,000-2,000 employees (9-10% YoY decline) and has annual revenue in the $2B-$3B range, founded in 2007. Headquartered in San Francisco, California, United States, operates in 9 countries (including Türkiye, United Kingdom, Spain, China, and Finland). Its workforce is distributed across 27 countries (including United States, India, Canada, Turkey, and United Kingdom). Has a market cap in the $9B-$10B range. IPO 2011.
+
+### Director - Product Marketing & Analytics, Capital Markets - [Ipreo](https://www.linkedin.com/company/ipreo)
+
+Jul 2006 - Jun 2011 (4 years and 11 months) in New York City Metropolitan Area
+
+Department: Marketing • Level: Director
+
+Ipreo is a Financial Services company. Ipreo has 60-70 employees and has annual revenue in the $400M-$500M range, founded in 2006. Headquartered in New York, New York, United States, with presence in United Kingdom, Hong Kong, and Japan. Its workforce is distributed across 7 countries (including United States, South Africa, United Kingdom, India, and Hong Kong). Has $6M in total funding.
+
+## Education
+
+### MBA at [Columbia Business School](https://www.linkedin.com/school/columbia-business-school)
+
+2011 - 2013 (2 years) in New York, New York, United States
+
+Columbia Business School is a higher education institution. Columbia Business School is a school that has been helping develop leaders who create value for business and society for over 100 years. Columbia Business School has 1,000-2,000 employees (2-3% YoY decline), founded in 1916. Headquartered in New York, New York, United States, with an office in Manhattan. Its workforce is distributed across 34 countries (including United States, United Kingdom, Brazil, Chile, and Spain).
+
+### MBA Exchange at [University of California, Berkeley, Haas School of Business](https://www.linkedin.com/school/berkeley-haas)
+
+2012 - 2012 in Berkeley, California, United States
+
+University of California, Berkeley, Haas School of Business is a higher education institution. Haas School of Business, University of California Berkeley offers full-time and part-time MBA and PhD degrees, executive education, Masters in financial engineering, and undergraduate programs. University of California, Berkeley, Haas School of Business has 1,000-2,000 employees (+7-8% YoY). Headquartered in Berkeley, California, United States. Its workforce is distributed across 43 countries (including United States, India, Canada, China, and United Kingdom).
+
+## Licenses & Certifications
+
+### Learning Kubernetes by [LinkedIn](https://linkedin.com/company/linkedin)
+
+Issued: Sep 2021
+
+[View Certificate](https://linkedin.com/learning/certificates/80757c8c20433a3f479372a43bf5769f80181f5c4bf643cda99f44f39b84d09f?trk=public_profile_certification-title)
+
+## Skills
+
+.net • a/b testing • across • advanced excel • alliance management • alliance marketing • analysis • analyst • analytics • b2b • b2b marketing • b2b product management • briefings • business value • buyer • buyer personas • campaigns • capital markets • case (computer-aided software engineering) • case studies • chatgpt • client service • cloud computing • cloud security • collaboration • collateral • communication • competitive analysis • contract management • customer needs • customer reference • customer research • customer success • cybersecurity • data • data analysis • deals • design • devops • devsecops • director • early stage • early stage growth • effective collaboration • engineering • enterprise software • enterprise technology sales • entrepreneurship • excel • excel macros • executing • feedback • financial modeling • full-stack development • gartner • genai • generative ai • go-to-market • go-to-market (gtm) • go-to-market campaigns • go-to-market strategy • guiding • html • idc • identity • investor • kubernetes • launches • leadership • leading • led • live demos • macros • management • market analysis • market data • market insights • market reporting • market reports • marketing • marketing campaigns • marketing director • marketing leadership • marketing management • marketsc
+
+=== MATERIAL 3: LONG-FORM MEDIA TRANSCRIPTS (where this person verifiably speaks) ===
+NONE — no long-form media in which this person verifiably speaks was located.
+
+=== MATERIAL 4: CONFIRMED SOURCE URLS FROM THE SWEEP ===
+- https://www.linkedin.com/in/nicholastfisher (Nick Fisher)
+- https://www.bloomberg.com/profile/person/25052021 (Nick Fisher, Zafran Security Ltd: Profile and Biography - Bloomberg Markets)
+- https://www.linkedin.com/posts/nicholastfisher_zafran-announces-strategic-investment-from-activity-7485685216057946113-KrlW (First Amex Ventures, and now Splunk/Cisco. These strategic investments are great)
+- https://www.linkedin.com/posts/zafran-security_gartnersec-activity-7466109352110837760-U5rq (Meet our executive leadership team next week at Gartner Security & Risk Manageme)
+- https://humantic.ai/public-profile/nick-fisher-32e8fa7d447b97e1 (Humantic AI Profile for Nick Fisher, VP of Marketing, Zafran Security)
+- https://www.linkedin.com/posts/nicholastfisher_we-built-a-comic-store-at-black-hat-no-booth-activity-7492931621747126272-SMEf (We built a comic store at Black Hat. No booth messaging. Nostalgia vibes. Custom)
+- https://www.linkedin.com/posts/nicholastfisher_now-hiring-at-zafran-security-ai-first-gtm-activity-7431695607255281664-sjl3 (Now hiring at Zafran Security: AI-First GTM Ops | Nick Fisher)
+- https://theorg.com/org/zafran-security/org-chart/nick-fisher (Nick Fisher - VP Of Marketing at Zafran Security | The Org)
+- https://www.linkedin.com/posts/nicholastfisher_zafran-at-rsa-2024-activity-7198350194415968256-ajzu (Nick Fisher’s Post)
+- https://www.linkedin.com/posts/nicholastfisher_have-we-entered-cybersecuritys-manhattan-activity-7447673632509771776-89iG (Have we entered cybersecurity's "Manhattan Project" moment with Mythos? | Nick F)

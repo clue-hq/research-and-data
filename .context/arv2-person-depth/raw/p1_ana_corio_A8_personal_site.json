@@ -1,0 +1,277 @@
+{
+  "requestId": "af42730942c8b03cf4c50c32d5c800c7",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/hy1tf1rw2lg",
+      "title": "Ana Corio",
+      "url": "https://www.linkedin.com/in/anastasiacorio",
+      "publishedDate": "2026-08-28T03:09:00.000Z",
+      "text": "# Ana Corio\n\nBr0k3n_1337\n\nSan Francisco, California, United States (US)\n\n500 connections \u2022 2,444 followers\n\n## About\n\nGrowth and demand gen marketing nerd in the B2B cybersecurity space, based in SF\u2026\n\nTotal Experience: 15 years and 8 months\n\n## Experience\n\n### Director of Demand Generation - [Harmonic Security](https://www.linkedin.com/company/harmonic-security) (Current)\n\nSep 2024 - Present (1 year and 11 months)\n\nKicking off demand generation and growth marketing at Harmonic: the easy button for enabling AI safely.\n\nDepartment: Marketing \u2022 Level: Director\n\nHarmonic Security is a Technology, Information and Internet company. Harmonic Security has 50-60 employees and has annual revenue in the $1M-$10M range, founded in 2023. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and United Kingdom. Has $24.5M in total funding, with 2 prior funding rounds.\n\n### Director of Demand Generation - [Material Security](https://www.linkedin.com/company/materialsecurity)\n\nJul 2021 - Sep 2024 (3 years and 2 months) in San Francisco Bay Area\n\nFirst marketing hire focused on demand generation and growth. Built out intent and signal-based demand generation motions to drive top of funnel for the sales team.\n- Built out all early stage functions including content strategy & an inbound motion, paid advertising, analyst relations, search, events, gifting, review sites, and more.\n- Inbound: Ran a variety of security community sponsorships (p",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQGUxfNjNwRy6A/profile-displayphoto-scale_200_200/B4EZ.G._fxHAAc-/0/1784676089859?e=2147483647&v=beta&t=mokxau2m35ZQqZGmFuMFA3TaJNbH54OA80vsR8AUcY0",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/hy1tf1rw2lg",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Ana Corio",
+            "firstName": "Ana",
+            "lastName": "Corio",
+            "location": "San Francisco, California, United States",
+            "workHistory": [
+              {
+                "title": "Director of Demand Generation",
+                "location": null,
+                "dates": {
+                  "from": "2024-09-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9j6bkrfw0m4",
+                  "name": "Harmonic Security"
+                }
+              },
+              {
+                "title": "Director of Demand Generation",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2021-07-01",
+                  "to": "2024-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9qjtt6h5xy3",
+                  "name": "Material Security"
+                }
+              },
+              {
+                "title": "Growth Marketing Strategist",
+                "location": null,
+                "dates": {
+                  "from": "2020-07-01",
+                  "to": "2021-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/kf3nk8szf1w",
+                  "name": "CrowdStrike"
+                }
+              },
+              {
+                "title": "Senior Content Marketing & Digital Strategy Manager",
+                "location": "San Francisco",
+                "dates": {
+                  "from": "2015-12-01",
+                  "to": "2020-06-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Digital Shadows (Acquired by Reliaquest)"
+                }
+              },
+              {
+                "title": "Security Marketing Project Specialist and Social Media Channel Manager",
+                "location": "San Jose, CA",
+                "dates": {
+                  "from": "2013-06-01",
+                  "to": "2015-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/b03hcwlq9p4",
+                  "name": "Cisco"
+                }
+              },
+              {
+                "title": "Marketing Intern",
+                "location": "San Jose, CA",
+                "dates": {
+                  "from": "2012-06-01",
+                  "to": "2013-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/z6psz8m47rz",
+                  "name": "Malwarebytes"
+                }
+              },
+              {
+                "title": "Event Planning Intern",
+                "location": "San Diego",
+                "dates": {
+                  "from": "2011-08-01",
+                  "to": "2011-08-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "First Allied Securities"
+                }
+              },
+              {
+                "title": "Event Planning Intern",
+                "location": "Redondo Beach, CA",
+                "dates": {
+                  "from": "2011-07-01",
+                  "to": "2011-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pcdfw9vhf6s",
+                  "name": "Choura Events"
+                }
+              },
+              {
+                "title": "Promo Team Member",
+                "location": "Santa Clara",
+                "dates": {
+                  "from": "2010-09-01",
+                  "to": "2011-06-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Santa Clara University Activities Programming Board"
+                }
+              },
+              {
+                "title": "Special Events Coordinator",
+                "location": "Palos Verdes",
+                "dates": {
+                  "from": "2009-09-01",
+                  "to": "2010-06-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Palos Verdes High School Associated Student Body"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelors, Marketing",
+                "dates": {
+                  "from": "2010",
+                  "to": "2014"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/905zmgnfzpy",
+                  "name": "Santa Clara University - Leavey School of Business"
+                }
+              },
+              {
+                "degree": null,
+                "dates": {
+                  "from": "2019",
+                  "to": "2019"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Reforge Growth Series"
+                }
+              },
+              {
+                "degree": null,
+                "dates": {
+                  "from": "2012",
+                  "to": "2012"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "International Institute, Madrid, Spain"
+                }
+              },
+              {
+                "degree": null,
+                "dates": {
+                  "from": "2006",
+                  "to": "2010"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Palos Verdes High School"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/anastasiacorio_hiring-post-im-hiring-an-abm-account-activity-7490847280472879104-iDH9",
+      "title": "Hiring post! \ud83d\udce3 I'm hiring an ABM (account based marketing) manager for our most strategic accounts. | Ana Corio",
+      "url": "https://www.linkedin.com/posts/anastasiacorio_hiring-post-im-hiring-an-abm-account-activity-7490847280472879104-iDH9",
+      "publishedDate": "2026-08-05T19:12:44.000Z",
+      "author": "Ana Corio",
+      "text": "Hiring post! \ud83d\udce3 I'm hiring an ABM (account based marketing) manager for our most strategic accounts. https://lnkd.in/gH9DJVPY There'll be the classic stuff: account mapping, outreach, direct\u2026 | Ana Corio\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\n# Ana Corio\u2019s Post\n\nMaking AI adoption safe | Growth and Demand Gen @ Harmonic Security\n\n2w\n\nHiring post! \ud83d\udce3 I'm hiring an ABM (account based marketing) manager for our most strategic accounts. https://lnkd.in/gH9DJVPY There'll be the classic stuff: account mapping, outreach, direct mail, events + some weird creative stuff nobody's tried yet \ud83e\udd13 Whatever gets Harmonic Security in front of the right folks. \ud83d\udc9a If that sounds more fun than another boring nurture campaign, let's chat. p.s. anddddd you get to work with all these fun folks Michael Marriott Mariana Padilla Lexy Marchbank Tyler Chonoles Maya Smith Jackson Harrower+ many more!\n\nWho would not want to work on that team.\n\nReply 2 Reactions 3 Reactions\n\nMarketing Operations Leader | Corgi Mom\n\n2w\n\nDemand Gen folks, don't miss this one! Great role with an incredible team. \u2728\n\nReply 2 Reactions 3 Reactions\n\nGovern AI wherever your workforce runs it \u2728\n\n2w\n\nDream team \u2728 Join meow \ud83d\ude3b\n\nReply 1 Reaction 2 Reactions\n\nEcosystem Builder \u2014 exMeta, exOkta, exVMware\n\n2w\n\nSolid humans in this pic. Donde esta UK Ben?\n\nTo view or add a comment, sign in\n\n2,429 followers\n\n## Explore content categories\n\n",
+      "image": "https://media.licdn.com/dms/image/v2/D5622AQHL-4VXbAV0xg/feedshare-shrink_800/B56Z_TV53WJ0Ac-/0/1785957163453?e=2147483647&v=beta&t=Pc6TrS9XYnBL4IXGvPbovxWh4Fym55G2vulePkUqvS4",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/anastasiacorio_linkedin-do-your-thing-im-hiring-activity-7427403844734799873-R1Ie",
+      "title": "LinkedIn, do your thing. \ud83d\udd0e | Ana Corio",
+      "url": "https://www.linkedin.com/posts/anastasiacorio_linkedin-do-your-thing-im-hiring-activity-7427403844734799873-R1Ie",
+      "publishedDate": "2026-02-11T17:31:11.000Z",
+      "author": "Ana Corio",
+      "text": "LinkedIn, do your thing. \ud83d\udd0e I'm hiring a Growth Marketing Manager (SF preferred) at Harmonic Security. Growth is broad, but this person's main role will be to own our paid search, paid social, and\u2026 | Ana Corio\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\n# Ana Corio\u2019s Post\n\nMaking AI adoption safe | Growth and Demand Gen @ Harmonic Security\n\n6mo\n\nLinkedIn, do your thing. \ud83d\udd0e I'm hiring a Growth Marketing Manager (SF preferred) at Harmonic Security. Growth is broad, but this person's main role will be to own our paid search, paid social, and SEO/AEO strategy. You'll be hands-on keyboard across Google, Reddit, LinkedIn, and more, and have full autonomy to test ideas and move fast. What makes a good fit: \u26a1 You have an insane hunger for growth, experimentation, and learning \ud83e\udd16 You embrace AI tools to work smarter, optimizing campaigns and workflows \ud83e\udd11 You want to drive measurable pipeline and have direct impact \ud83c\udfe2 You have experience in B2B environments (cybersecurity \u2795 ) \ud83c\udf74 You love snacks (jk, but you'll have to deal with my love of food) Andddddd you'll get to work with some pretty FUN folks like Michael Marriott, Maya Smith, Mariana Padilla, Lexy Marchbank, and more! If you know someone that could be a fit, I'd love an intro! DM me or drop a comment.\n\nMaking AI adoption safe | Growth and Demand Gen @ Harmonic Security\n\n6mo\n\nMarketing Operations Leader | Corgi Mom\n\n6mo\n\nCommenting fo",
+      "image": "https://media.licdn.com/dms/image/v2/D5622AQFQNWPdvJNgGg/feedshare-shrink_800/B56ZxNwcGrJsAg-/0/1770831070168?e=2147483647&v=beta&t=ZmBtt0azxvpQxuHWdgxof2STsSlx20IrkitLXJfYkss",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/harmonic-security_welcome-to-the-team-activity-7241817592636563456--L83",
+      "title": "Harmonic Security\u2019s Post",
+      "url": "https://www.linkedin.com/posts/harmonic-security_welcome-to-the-team-activity-7241817592636563456--L83",
+      "publishedDate": "2024-09-17T14:37:40.000Z",
+      "text": "Welcome to the team! | Harmonic Security\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\n# Harmonic Security\u2019s Post\n\n9,640 followers\n\n1y\n\n\ud83d\udc4b Excited to welcome Ana Alessandra (Corio) and Duncan Hanson to the Harmonic team! Ana is our Director of Demand Generation and Duncan joins as our first-ever sales hire. Welcome on board, both!\n\nCEO and Co-Founder of Harmonic | Enabling Secure AI Use\n\n1y\n\nWhat a milestone week for Harmonic Security with these big hitters joining the team! Welcome Duncan Hanson and Ana Alessandra (Corio)- great times ahead\n\nReply 5 Reactions 6 Reactions\n\nCyber Security CFO\n\n1y\n\nCongratulations Duncan & Ana! Great people collecting more great people. It\u2019s the recipe for good things ahead. Go Harmonic!!\n\nReply 2 Reactions 3 Reactions\n\nMaking AI adoption safe | Growth and Demand Gen @ Harmonic Security\n\n1y\n\ngetting the gang back together! \u2764\ufe0f \ud83d\ude80\n\nReply 2 Reactions 3 Reactions\n\nVP Product at Harmonic Security\n\n1y\n\nWelcome Ana Alessandra (Corio) and Duncan Hanson! Hyped to have you both on the team\n\nReply 2 Reactions 3 Reactions\n\nTo view or add a comment, sign in\n\n9,640 followers\n\n## Explore content categories\n\nShow more Show less",
+      "image": "https://static.licdn.com/aero-v1/sc/h/c45fy346jw096z9pbphyyhdz7",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/anastasiacorio_growing-the-marketing-team-over-here-at-material-activity-6955599827338502144-8EfW",
+      "title": "Growing the marketing team over here at Material Security \ud83d\ude80 | Ana Corio",
+      "url": "https://www.linkedin.com/posts/anastasiacorio_growing-the-marketing-team-over-here-at-material-activity-6955599827338502144-8EfW",
+      "publishedDate": "2022-07-20T00:00:00.000Z",
+      "author": "Ana Corio",
+      "text": "# Growing the marketing team over here at Material Security \ud83d\ude80 | Ana Corio \u00b7 LinkedIn \u00b7 2022-07-20\n\n**Ana Corio**: Director of Demand Generation at Harmonic Security for 1 year 11 months with 15 years 8 months of total professional experience. Previous roles include Director of Demand Generation at Material Security, Growth Marketing Strategist at CrowdStrike, and Senior Content Marketing & Digital Strategy Manager at Digital Shadows (Acquired by Reliaquest). Based in San Francisco, California, United States [US].\n\n---\n\nGrowing the marketing team over here at [Material Security](https://linkedin.com/company/materialsecurity) \ud83d\ude80\n\nNext up: social media manager \ud83d\udce3\n\nLooking for someone who can create snackable social content to help us spread the word on what we're building in the email & data security space.\n\nIf you know someone that's a good fit for our early, fast growing marketing team (let's go [Lexy Marchbank](https://linkedin.com/in/lexymarchbank)!), message me \u270c\ufe0f\n\n(And I promise our marketing skillz are much better than [Hannah Li](https://linkedin.com/in/hannah-li-higgins)'s and my bowling skillz \ud83d\ude09)\n\n## Comments\n\n**[Jesse Johnson](https://linkedin.com/in/devnullify)** \u00b7 2022-07-20 \u00b7 4 reactions\n> Are those lanes regulation? They don't seem regulation.\n\n**[Michael Hewitt](https://linkedin.com/in/michaelhewitt23)** \u00b7 2022-07-20 \u00b7 2 reactions\n> nailed it\n\n**[Jebin Joy](https://linkedin.com/in/jebin-joy-2b615b42)** \u00b7 2022-07-20\n> Do share some bowling tips \ud83d\ude01\n\n**[Yehuda Str"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/anastasiacorio_one-of-my-favorite-parts-of-this-job-is-watching-activity-7480647440614936576-Y6BK",
+      "title": "One of my favorite parts of this job is watching someone on the team turn \"we should really do this\" into an actual thing. \ud83d\udcf0 | Ana Corio",
+      "url": "https://www.linkedin.com/posts/anastasiacorio_one-of-my-favorite-parts-of-this-job-is-watching-activity-7480647440614936576-Y6BK",
+      "publishedDate": "2026-07-08T00:00:00.000Z",
+      "author": "Ana Corio",
+      "text": "# One of my favorite parts of this job is watching someone on the team turn \"we should really do this\" into an actual thing. \ud83d\udcf0 | Ana Corio \u00b7 LinkedIn \u00b7 2026-07-08\n\n**Ana Corio**: Director of Demand Generation at Harmonic Security for 1 year 11 months with 15 years 8 months of total professional experience. Previous roles include Director of Demand Generation at Material Security, Growth Marketing Strategist at CrowdStrike, and Senior Content Marketing & Digital Strategy Manager at Digital Shadows (Acquired by Reliaquest). Based in San Francisco, California, United States [US].\n\n---\n\nOne of my favorite parts of this job is watching someone on the team turn \"we should really do this\" into an actual thing. \ud83d\udcf0\n\nThere is SO much AI security content out there right now, and most of it is a vendor pitch in disguise. Security teams don't need more noise, they need to know what's actually changing and what to prioritize.\n\nSo... we built \"The Frequency\". Monthly (to start), 5 min read, zero fluff:\n\n\u2705 What's Trending \u2013 a practical, actionable guide on AI governance\n\u2705 Industry Map \u2013 what's shifting and what it means for you\n\u2705 On the Record \u2013 a practitioner spotlight on real AI builds\n\u2705 The B-Side \u2013 what the team's listening to (our founders [Bryan](https://linkedin.com/in/bwoolgaroneil) and [Alastair](https://linkedin.com/in/alastair-paterson-2586445) did start as a band, after all \ud83c\udfb8)\n\nHuge shoutout to [Tyler Chonoles](https://linkedin.com/in/tyler-chonoles-106405a0) for spearheading t",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQGIkyFO0dkiMg/feedshare-shrink_1280/B4EZ9CZNROJYAM-/0/1783525332291?e=2147483647&v=beta&t=95uKvvnKhIZURcM8ahU5pgUA8Ig-mYGDnr4tG3hT-8w"
+    },
+    {
+      "id": "https://theorg.com/org/harmonic-security/offices/hq",
+      "title": "Harmonic Security - HQ | The Org",
+      "url": "https://theorg.com/org/harmonic-security/offices/hq",
+      "text": "Harmonic Security - HQ | The Org\n\n\u200c\n\nUnverified\n\nHQ\n\n3 people \u00b7 0 jobs\n\nHarmonic Security's headquarters in San Francisco, CA, United States\n\n---\n\n## People (3)\n\nAlastair Paterson\n\nChief Executive Officer\n\nMaya Smith\n\nBrand Director\n\nAna Corio\n\nDirector of Demand Generation\n\n---\n\n## Jobs (0)\n\nNo jobs in this office\n\n---\n\n## Other offices\n\nView all offices\n\nNo other offices",
+      "image": "https://theorg.com/_next/static/media/share_image.4dbc4804.png"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/anastasiacorio_grateful-to-be-back-in-office-in-sf-with-activity-7407563195416190976-Q4Tt",
+      "title": "Grateful to be back in office in SF with this fun, festive, slightly-too-excited-about-holiday-sweaters team. \ud83d\ude04\ud83c\udf84 | Ana Corio",
+      "url": "https://www.linkedin.com/posts/anastasiacorio_grateful-to-be-back-in-office-in-sf-with-activity-7407563195416190976-Q4Tt",
+      "publishedDate": "2025-12-18T00:00:00.000Z",
+      "author": "Ana Corio",
+      "text": "# Grateful to be back in office in SF with this fun, festive, slightly-too-excited-about-holiday-sweaters team. \ud83d\ude04\ud83c\udf84 | Ana Corio \u00b7 LinkedIn \u00b7 2025-12-18\n\n**Ana Corio**: Director of Demand Generation at Harmonic Security for 1 year 11 months with 15 years 8 months of total professional experience. Previous roles include Director of Demand Generation at Material Security, Growth Marketing Strategist at CrowdStrike, and Senior Content Marketing & Digital Strategy Manager at Digital Shadows (Acquired by Reliaquest). Based in San Francisco, California, United States [US].\n\n---\n\nGrateful to be back in office in SF with this fun, festive, slightly-too-excited-about-holiday-sweaters team. \ud83d\ude04\ud83c\udf84\n\nHappy holidays from the [Harmonic Security](https://linkedin.com/company/harmonic-security) crew!\n\n![Grateful to be back in office in SF with this fun, festive, slightly-too-excited-about-holiday-sweaters team. \ud83d\ude04\ud83c\udf84 | Ana Corio image](https://media.licdn.com/dms/image/v2/D5622AQH7xVmGenvhhw/feedshare-shrink_2048_1536/B56ZszzdtSHkAw-/0/1766100689283?e=2147483647&v=beta&t=pXYNVfzIamULgRdmZyK2PJt7wvQfzsoD1EtoFRFvtgs)\n\n## Comments\n\n**[Randi Fuchs](https://linkedin.com/in/randifuchs)** \u00b7 2025-12-19\n> I love the cozy koozies \ud83e\udd17\n\n**[Mariana Padilla](https://linkedin.com/in/heretoshakeshitup)** \u00b7 2025-12-18 \u00b7 1 reaction\n> Yasss!!! Go team!\n\n## Engagement\n\n- Reactions: 58",
+      "image": "https://media.licdn.com/dms/image/v2/D5622AQH7xVmGenvhhw/feedshare-shrink_2048_1536/B56ZszzdtSHkAw-/0/1766100689283?e=2147483647&v=beta&t=pXYNVfzIamULgRdmZyK2PJt7wvQfzsoD1EtoFRFvtgs"
+    }
+  ],
+  "searchTime": 931.1,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.04,
+  "_request": {
+    "query": "\"Ana Corio\" personal website portfolio github about me",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

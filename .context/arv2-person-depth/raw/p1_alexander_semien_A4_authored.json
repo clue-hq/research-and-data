@@ -1,0 +1,204 @@
+{
+  "requestId": "fa4b08c2f9d02bb73894787666e1934f",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://www.cogent.com/blog/the-question-mythos-and-daybreak-don-t-answer",
+      "title": "The Question Mythos and Daybreak Don't Answer - Blog",
+      "url": "https://www.cogent.com/blog/the-question-mythos-and-daybreak-don-t-answer",
+      "publishedDate": "2026-05-13T00:00:00.000Z",
+      "text": "---\ntitle: \"The Question Mythos and Daybreak Don't Answer - Blog | Cogent\"\ndescription: \"OpenAI and Google built AI that finds vulnerabilities. Nobody's answered the operational question: who runs these across 10,000 assets?\"\npublished: \"Aug 19, 2026, 8:34 PM UTC\"\n---\n\n[Blog](../blog)\n\nSecurity\n\n# The Question Mythos and Daybreak Don't Answer\n\nOpenAI and Google built AI that finds vulnerabilities. Nobody's answered the operational question: who runs these across 10,000 assets?\n\nMay 13, 2026, 2 min read, Alexander Semien, Head of Growth\n\nOpenAI shipped Daybreak on Sunday, a frontier-model harness built on GPT-5.5 and Codex. Pointed at a code repository, it produces an editable threat model, runs candidate vulnerabilities in an isolated environment, and proposes fixes. My initial reaction was that frontier models have been able to do this for over a year, and what OpenAI actually shipped is a domain-specific harness with distinct marketing around it.\n\nThat marketing is anchored with launch partners - Akamai, Cisco, Cloudflare, CrowdStrike, Fortinet, Oracle, Palo Alto Networks, and Zscaler - eight of the biggest names in cybersecurity lined up for day one, with a press cycle to match. Daybreak isn't really a cybersecurity product launch so much as a positioning play: OpenAI claiming the role of premier AI partner to cybersecurity, oriented around defense and distributed through the established security stack, with a pitch that boils down to **what the model can do for you**.\n\nAn"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/cogentsecurity_cogents-head-of-growth-alexander-semien-activity-7460432880989712385-GM3b",
+      "title": "Cogent's Head of Growth, Alexander Semien, breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs. | Cogent",
+      "url": "https://www.linkedin.com/posts/cogentsecurity_cogents-head-of-growth-alexander-semien-activity-7460432880989712385-GM3b",
+      "publishedDate": "2026-05-13T00:00:00.000Z",
+      "author": "Cogent",
+      "text": "# Cogent's Head of Growth, Alexander Semien, breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs. | Cogent \u00b7 LinkedIn \u00b7 2026-05-13\n\n**Cogent**: Cogent has 40-50 employees, founded in 2024. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and India. Has $53M in total funding, with 2 prior funding rounds.\n\n---\n\n[Cogent](https://linkedin.com/company/cogentsecurity)'s Head of Growth, [Alexander Semien](https://linkedin.com/in/alexander-semien), breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs.\n\nYesterday's announcement from [OpenAI](https://linkedin.com/company/openai) positioned Daybreak as a defensive partnership story with legacy cybersecurity companies. [Anthropic](https://linkedin.com/company/anthropicresearch)'s Mythos, however, landed as offensive proof of maturing models - with early access given exclusively to mega-enterprises.\n\nBoth rest on the same underlying capabilities, and both stop short of the actual hard part: turning findings into fixes, on the time scale modern adversaries operate on.\n\nCheck out the original post and comments for the link!\n\n![Cogent's Head of Growth, Alexander Semien, breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs. | Cogent image](https://media.licdn.com/dms/image/v2/D4E22AQFpqocLkmt_CA/feedshare-image-high-res/B4EZ4jFer5KgAU-/0/1778705099953?e=2147483647&v=beta",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQFpqocLkmt_CA/feedshare-image-high-res/B4EZ4jFer5KgAU-/0/1778705099953?e=2147483647&v=beta&t=5oMEgNHpNKXgQl7cnqWIc0DXWqY2Te6SvEhFwBLlxwU"
+    },
+    {
+      "id": "https://exa.ai/library/person/nw4myqxy85p",
+      "title": "Alexander Semien",
+      "url": "https://www.linkedin.com/in/alexander-semien",
+      "publishedDate": "2026-08-24T14:35:50.000Z",
+      "text": "# Alexander Semien\n\nHead of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps\n\nNew York, New York, United States (US)\n\n500 connections \u2022 2,770 followers\n\n## About\n\nHey \ud83d\udc4b I\u2019m Alex. I like the early stages; no playbook, just a vision and a lot to figure out. I\u2019m a marketer by title but a builder at heart. I've worked across product, strategy, and analytics to architect GTM motions that actually work. That usually means finding the story that resonates, turning it into programs that drive traction, and leveraging data to stay focused on what matters. Most of my experience is in cybersecurity, helping startups grow from $0 to over $100M in ARR. I\u2019ve done the work\u2014positioning, launches, demand, partnerships, analyst relations. But, my alpha is bringing clarity in the chaos, and creating momentum where there was none.\n\nTotal Experience: 10 years and 1 month\n\n## Experience\n\n### Marketing - [Cogent Security](https://www.linkedin.com/company/cogentsecurity) (Current)\n\nAug 2025 - Present (1 year)\n\nDepartment: Marketing\n\nCogent is a Computer and Network Security company. Cogent has 40-50 employees, founded in 2024. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and India. Has $53M in total funding, with 2 prior funding rounds.\n\n### VP, Product Marketing - [Sevco Security](https://www.linkedin.com/company/sevcosecurity)\n\nAug 2023 - Aug",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQHtneuJcyH0zw/profile-displayphoto-scale_200_200/B4EZ.BYoQIJEAc-/0/1784582147445?e=2147483647&v=beta&t=er1xkwURitjocOsoGenskCtILyW2bUqL3SwhX1Q5TRk",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/nw4myqxy85p",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Alexander Semien",
+            "firstName": "Alexander",
+            "lastName": "Semien",
+            "location": "New York, New York, United States",
+            "workHistory": [
+              {
+                "title": "Marketing",
+                "location": null,
+                "dates": {
+                  "from": "2025-08-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/p5c1zdbdxyc",
+                  "name": "Cogent Security"
+                }
+              },
+              {
+                "title": "VP, Product Marketing",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2023-08-01",
+                  "to": "2025-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/ngl5g2pj795",
+                  "name": "Sevco Security"
+                }
+              },
+              {
+                "title": "Director, Strategy & Analytics",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2020-08-01",
+                  "to": "2023-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/wp1tjg4fdtv",
+                  "name": "Abnormal Security"
+                }
+              },
+              {
+                "title": "Manager, Finance & Operations",
+                "location": "San Francisco, California, United States",
+                "dates": {
+                  "from": "2019-11-01",
+                  "to": "2020-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/nz8gl9w3hf5",
+                  "name": "Zyper (Acquired by Discord)"
+                }
+              },
+              {
+                "title": "Associate",
+                "location": "San Francisco, California, United States",
+                "dates": {
+                  "from": "2018-11-01",
+                  "to": "2019-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/w9qcxlghrmt",
+                  "name": "Forward"
+                }
+              },
+              {
+                "title": "Senior Analyst",
+                "location": null,
+                "dates": {
+                  "from": "2017-12-01",
+                  "to": "2018-11-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/78mr3snf7zv",
+                  "name": "Accenture"
+                }
+              },
+              {
+                "title": "Analyst",
+                "location": null,
+                "dates": {
+                  "from": "2016-07-01",
+                  "to": "2017-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/78mr3snf7zv",
+                  "name": "Accenture"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor of Arts (B.A.) Public Policy Analysis Psychology",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/s4zwkrq85l0",
+                  "name": "Duke University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/alexander-semien_cue-the-unnecessary-panic-google-threat-activity-7461086749440745473-QdcE",
+      "title": "Cue the (unnecessary) panic! Google Threat Intelligence Group attributed a zero-day to AI-assisted development. So, naturally, i'm back with another take on viral cyber news. | Alexander Semien",
+      "url": "https://www.linkedin.com/posts/alexander-semien_cue-the-unnecessary-panic-google-threat-activity-7461086749440745473-QdcE",
+      "publishedDate": "2026-05-15T00:00:00.000Z",
+      "author": "Alexander Semien",
+      "text": "# Cue the (unnecessary) panic! Google Threat Intelligence Group attributed a zero-day to AI-assisted development. So, naturally, i'm back with another take on viral cyber news. | Alexander Semien \u00b7 LinkedIn \u00b7 2026-05-15\n\n**Alexander Semien**: Marketing at Cogent Security for 1 year with 10 years of total professional experience. Previous roles include VP, Product Marketing at Sevco Security, Director, Strategy & Analytics at Abnormal Security, and Manager, Finance & Operations at Zyper (Acquired by Discord). Based in New York, New York, United States [US].\n\n---\n\nCue the (unnecessary) panic! Google Threat Intelligence Group attributed a zero-day to AI-assisted development. So, naturally, i'm back with another take on viral cyber news.\n\nAnyone who's been watching the AI x Security space recently is thoroughly unsurprised in the model capability. That said, the in-the-wild attribution and bug class are worth slowing down on.\n\nGTIG calls it a semantic logic flaw. In plain terms: code that does what it was coded to do while quietly contradicting what it was supposed to do. The flaw lives in the gap between two functions that each look reasonable on their own. In this case, 2FA got bypassed and the adversary had an exploitable path in.\n\nSAST and DAST aren't going to catch that. They're coded to look for specific things. Frontier LLMs were trained for cognition.\n\nGood news: the next generation of security tooling is built for exactly this ([Cogent](https://linkedin.com/company/cogen",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQG_Qt5loo_QLg/feedshare-image-high-res/B4EZ4sILU3HQAY-/0/1778856801905?e=2147483647&v=beta&t=21WkeijBJYr6OIbX9WkQrJ1pg90dKEhf5l4eUTbXoqs"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/cogentsecurity_growth-worked-ot-this-week-trying-to-keep-activity-7461090900417585152-6orO",
+      "title": "Google Threat Intelligence Group's AI-assisted zero-day ...",
+      "url": "https://www.linkedin.com/posts/cogentsecurity_growth-worked-ot-this-week-trying-to-keep-activity-7461090900417585152-6orO",
+      "publishedDate": "2026-06-02T06:01:54.061Z",
+      "author": "Cogent",
+      "text": "# Growth worked OT this week trying to keep up with the news! Today, Alexander Semien covers Google Threat Intelligence Group's new zero-day attribution to AI-assisted development. | Cogent \u00b7 LinkedIn \u00b7 2026-05-15\n\n**Cogent**: Cogent has 40-50 employees, founded in 2024. Headquartered in San Francisco, California, United States, with presence in India. Has $53M in total funding, with 2 prior funding rounds.\n\n---\n\nGrowth worked OT this week trying to keep up with the news! Today, [Alexander Semien](https://linkedin.com/in/alexander-semien) covers Google Threat Intelligence Group's new zero-day attribution to AI-assisted development.\n\nThe real news isn't the capability. Rather, it's the in-the-wild attribution. GTIG named the bug class (semantic logic flaws) and explained why existing tools can't identify it.\n\nRead: they're coded for specific things. Whereas: frontier LLMs were trained for cognition.\n\nHis full take is linked in the original post!\n\n![Growth worked OT this week trying to keep up with the news! Today, Alexander Semien covers Google Threat Intelligence Group's new zero-day attribution to AI-assisted development. | Cogent image](https://media.licdn.com/dms/image/v2/D4E22AQG_Qt5loo_QLg/feedshare-image-high-res/B4EZ4sILU3HQAY-/0/1778856801905?e=2147483647&v=beta&t=21WkeijBJYr6OIbX9WkQrJ1pg90dKEhf5l4eUTbXoqs)\n\n**Reshared from [Alexander Semien](https://linkedin.com/in/alexander-semien):**\n> Cue the (unnecessary) panic! Google Threat Intelligence Group attributed a zero",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQG_Qt5loo_QLg/feedshare-image-high-res/B4EZ4sILU3HQAY-/0/1778856801905?e=2147483647&v=beta&t=21WkeijBJYr6OIbX9WkQrJ1pg90dKEhf5l4eUTbXoqs"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/alexander-semien_when-i-describe-cogent-i-always-say-that-activity-7458221350793576448-2xNq",
+      "title": "Alexander Semien's Post",
+      "url": "https://www.linkedin.com/posts/alexander-semien_when-i-describe-cogent-i-always-say-that-activity-7458221350793576448-2xNq",
+      "publishedDate": "2026-06-02T06:01:54.061Z",
+      "text": "When I describe Cogent, I always say that we're an AI company with a focus on cybersecurity. This is exactly why. We're proud to (publicly) announce Cogent Research - our applied AI research lab\u2026 | Alexander Semien\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\n# Alexander Semien\u2019s Post\n\nHead of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps\n\n1mo\n\nWhen I describe Cogent, I always say that we're an AI company with a focus on cybersecurity. This is exactly why. We're proud to (publicly) announce Cogent Research - our applied AI research lab. Candidly, the security industry needs this: not another product, but a dedicated research team that exists to improve outcomes for an AI-enabled defense. The team behind this has some insane credentials, and I'm excited to see how they continue to push the boundaries of what's possible.\n\nCo-founder & CTO @ Cogent Security | ex-Abnormal AI\n\n1mo\n\nToday we're launching Cogent Research, an applied AI research lab focused on the hardest unsolved problems in AI-driven security. We\u2019ve reached the point where AI is necessary to defend against AI. The step-function improvements defenders need to keep pace will require dedicated, sustained research, not just better products. There's a structural gap between where frontier AI talent sits and where the richest securi",
+      "image": "https://dms.licdn.com/playlist/vid/v2/D5605AQG1rEn_Vn8mdg/thumbnail-with-play-button-overlay-high/B56Z4DmzDLIQC0-/0/1778176980297?e=2147483647&v=beta&t=Ic7W6yTZEcx2nFkPKV2VMyY_mm-1-xodyZZhsiHkn0Y",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/alexander-semien_yesterday-openais-marketing-team-made-a-activity-7460429923153948672-kV7K",
+      "title": "Yesterday, OpenAI's marketing team made a great play: they annouced Daybreak alongside some of the biggest names in cybersecurity. | Alexander Semien",
+      "url": "https://www.linkedin.com/posts/alexander-semien_yesterday-openais-marketing-team-made-a-activity-7460429923153948672-kV7K",
+      "publishedDate": "2026-05-13T00:00:00.000Z",
+      "author": "Alexander Semien",
+      "text": "# Yesterday, OpenAI's marketing team made a great play: they annouced Daybreak alongside some of the biggest names in cybersecurity. | Alexander Semien \u00b7 LinkedIn \u00b7 2026-05-13\n\n**Alexander Semien**: Marketing at Cogent Security for 1 year with 10 years of total professional experience. Previous roles include VP, Product Marketing at Sevco Security, Director, Strategy & Analytics at Abnormal Security, and Manager, Finance & Operations at Zyper (Acquired by Discord). Based in New York, New York, United States [US].\n\n---\n\nYesterday, [OpenAI](https://linkedin.com/company/openai)'s marketing team made a great play: they annouced Daybreak alongside some of the biggest names in cybersecurity.\n\nThis positions [OpenAI](https://linkedin.com/company/openai) as the leading AI partner to the security industry, with a pitch that boils down to what the model can do for you. The underlying capability isn't new - frontier models have been able to do this for over a year. The marketing, however, is novel.\n\n[Anthropic](https://linkedin.com/company/anthropicresearch) ran the opposite play three weeks ago with Mythos: an offensive disclosure framed as what the model could do to you, paired with an exclusive rollout to banks, federal agencies, and major American companies. The two giants posses the same general capabilities, but approach the narrative of AI-in-security in fundamentally different ways.\n\nHere's the question neither lab is answering: now that AI has made discovery trivial for both at",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQFpqocLkmt_CA/feedshare-image-high-res/B4EZ4jFer5KgAU-/0/1778705099953?e=2147483647&v=beta&t=5oMEgNHpNKXgQl7cnqWIc0DXWqY2Te6SvEhFwBLlxwU"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/cogentsecurity_your-scanner-reports-25-cves-your-engineer-activity-7460051422299070464-w57A",
+      "title": "Your scanner reports 25 CVEs. Your engineer needs to install one KB patch on 40 servers. | Cogent",
+      "url": "https://www.linkedin.com/posts/cogentsecurity_your-scanner-reports-25-cves-your-engineer-activity-7460051422299070464-w57A",
+      "publishedDate": "2026-05-12T00:00:00.000Z",
+      "author": "Cogent",
+      "text": "# Your scanner reports 25 CVEs. Your engineer needs to install one KB patch on 40 servers. | Cogent \u00b7 LinkedIn \u00b7 2026-05-12\n\n**Cogent**: Cogent has 40-50 employees, founded in 2024. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and India. Has $53M in total funding, with 2 prior funding rounds.\n\n---\n\nYour scanner reports 25 CVEs. Your engineer needs to install one KB patch on 40 servers.\n\nThose are two very different units of work, and most VM programs force the security team to bridge that gap manually. Write up the remediation instructions, guess at the Jira project and assignee, follow up when the ticket goes stale, take the engineer's word when they mark it done.\n\nThe new Cogent Action Queue introduces Work Items: findings grouped by their shared remediation action, scoped to affected assets, with ownership resolved and instructions attached. One unit an engineer can execute without additional research.\n\n[Haris Sohail](https://linkedin.com/in/haris-sohail) wrote up the full release on the blog (link in comments).\n\n![Your scanner reports 25 CVEs. Your engineer needs to install one KB patch on 40 servers. | Cogent image](https://media.licdn.com/dms/image/v2/D5622AQGbotASegAg2A/feedshare-image-high-res/B56Z4dtPUpH8AU-/0/1778614859277?e=2147483647&v=beta&t=HuIvEi9yNwTyjDqdt50XTj4LFq5zw56R9PoAqwS-_Dk)\n\n## Comments\n\n**[Alexander Semien](https://linkedin.com/in/alexander-semien)** \u00b7 2026-05-12\n> Concise, context rich,",
+      "image": "https://media.licdn.com/dms/image/v2/D5622AQGbotASegAg2A/feedshare-image-high-res/B56Z4dtPUpH8AU-/0/1778614859277?e=2147483647&v=beta&t=HuIvEi9yNwTyjDqdt50XTj4LFq5zw56R9PoAqwS-_Dk"
+    }
+  ],
+  "searchTime": 2370.3,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 2.46,
+  "_request": {
+    "query": "\"Alexander Semien\" article blog post author byline Cogent Security",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

@@ -1,0 +1,472 @@
+{
+  "requestId": "98e6c31eb16719b15421c0fb9a6b08fe",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/09npdz4z8z2",
+      "title": "Vari Kaur",
+      "url": "https://www.linkedin.com/in/vari-kaur-95a176102",
+      "publishedDate": "2026-08-13T07:45:39.000Z",
+      "text": "# Vari Kaur\n\nExperienced Office & Accounts Administrator/Operations Manager\n\nPerth, Western Australia, Australia (AU)\n\n335 connections \u2022 334 followers\n\n## About\n\nExperienced Administrator with a demonstrated history of working in the Education and Telecommunications industry. Skilled in Teaching, Communication, Administration, Multi tasking and Time Management. Having professional Degree of MBA in Finance and Marketing, a team player who is willing to lead or follow, eager to learn and self-motivated. A dedicated, approachable and reliable person who finds enjoyment in helping people and organizations become successful.\n\nTotal Experience: 14 years and 11 months\n\n## Experience\n\n### Office and Accounts Administrator - Etherington (Current)\n\nFeb 2023 - Present (3 years and 6 months) in Perth, Western Australia, Australia\n\nDepartment: Administrative \u2022 Level: Specialist\n\n### Office Administrator - [IMI Precision Engineering](https://www.linkedin.com/company/norgren)\n\nDec 2021 - Apr 2022 (4 months) in Auckland, New Zealand\n\nDepartment: Administrative \u2022 Level: Specialist\n\nIMI Industrial Automation is a Automation Machinery Manufacturing company. IMI Industrial Automation has 1,000-2,000 employees. Headquartered in Birmingham, United Kingdom, operates in 11 countries (including United States, Australia, Brazil, Italy, and Mexico). Its workforce is distributed across 41 countries (including United States, Mexico, Czechia, United Kingdom, and Germany).\n\n### [Harvey Norman New Zealand](",
+      "image": "https://media.licdn.com/dms/image/v2/C5603AQEmV7thnrskeQ/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1517033926460?e=2147483647&v=beta&t=lFFeM3XBt6tyoMRr1kQFU32pnZYwIIoDsa943HTEzVQ",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/09npdz4z8z2",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Vari Kaur",
+            "firstName": "Vari",
+            "lastName": "Kaur",
+            "location": "Perth, Western Australia, Australia",
+            "workHistory": [
+              {
+                "title": "Office and Accounts Administrator",
+                "location": "Perth, Western Australia, Australia",
+                "dates": {
+                  "from": "2023-02-01",
+                  "to": null
+                },
+                "company": {
+                  "id": null,
+                  "name": "Etherington"
+                }
+              },
+              {
+                "title": "Office Administrator",
+                "location": "Auckland, New Zealand",
+                "dates": {
+                  "from": "2021-12-01",
+                  "to": "2022-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pmn64csghsm",
+                  "name": "IMI Precision Engineering"
+                }
+              },
+              {
+                "title": "Operations Manager",
+                "location": null,
+                "dates": {
+                  "from": "2021-05-01",
+                  "to": "2021-11-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/n54yj7cl0vb",
+                  "name": "Harvey Norman New Zealand"
+                }
+              },
+              {
+                "title": "Operations Assistant",
+                "location": "Auckland, New Zealand",
+                "dates": {
+                  "from": "2020-03-01",
+                  "to": "2021-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/n54yj7cl0vb",
+                  "name": "Harvey Norman New Zealand"
+                }
+              },
+              {
+                "title": "Administrator",
+                "location": "Auckland, New Zealand",
+                "dates": {
+                  "from": "2019-06-01",
+                  "to": "2019-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/y0vhqqkxrpg",
+                  "name": "Spark New Zealand"
+                }
+              },
+              {
+                "title": "Communication Consultant 3IC",
+                "location": "Queen street, Auckland",
+                "dates": {
+                  "from": "2017-12-01",
+                  "to": "2019-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/y0vhqqkxrpg",
+                  "name": "Spark New Zealand"
+                }
+              },
+              {
+                "title": "Communication Consultant",
+                "location": "Auckland, New Zealand",
+                "dates": {
+                  "from": "2015-12-01",
+                  "to": "2017-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/y0vhqqkxrpg",
+                  "name": "Spark New Zealand"
+                }
+              },
+              {
+                "title": "Administrator",
+                "location": null,
+                "dates": {
+                  "from": "2013-07-01",
+                  "to": "2014-09-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Aryans Group of Colleges"
+                }
+              },
+              {
+                "title": "Head Of Department",
+                "location": null,
+                "dates": {
+                  "from": "2012-05-01",
+                  "to": "2013-07-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Aryans Group of Colleges"
+                }
+              },
+              {
+                "title": "Assistant Professor",
+                "location": null,
+                "dates": {
+                  "from": "2009-06-01",
+                  "to": "2012-05-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Aryans Group of Colleges"
+                }
+              },
+              {
+                "title": "Management Trainee",
+                "location": "New Delhi Area, India",
+                "dates": {
+                  "from": "2008-05-01",
+                  "to": "2008-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/lnjfyr5rwgs",
+                  "name": "PUNJAB NATIONAL BANK"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "PGDM, Finance and Marketing",
+                "dates": {
+                  "from": "2007",
+                  "to": "2009"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/bwmjtvjp5vb",
+                  "name": "New Delhi Institute Of Management"
+                }
+              },
+              {
+                "degree": "Bachelor\u2019s Degree, B.Com",
+                "dates": {
+                  "from": "2004",
+                  "to": "2007"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/bz99ym4sgb3",
+                  "name": "Panjab University"
+                }
+              },
+              {
+                "degree": "Bachelor\u2019s Degree, Education",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/58t395h6q9x",
+                  "name": "Punjabi University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/k8v7k1nq9rk",
+      "title": "Vari Kaur",
+      "url": "https://www.linkedin.com/in/varinderkaur",
+      "publishedDate": "2026-08-22T05:43:02.000Z",
+      "text": "# Vari Kaur\n\nDemand Generation & ABM Expert | B2B SaaS Marketing Leader | GTM Strategist | Pipeline Acceleration, and Revenue Growth\n\nEaston, Pennsylvania, United States (US)\n\n500 connections \u2022 2,553 followers\n\n## About\n\nResults-driven marketing leader with expertise in building and scaling demand generation, account-based marketing (ABM), and digital marketing programs for B2B SaaS companies across industries, including cybersecurity, healthcare, enterprise software, and AI. Strong track record in aligning marketing with sales to drive pipeline, revenue growth, and customer acquisition. I specialize in full-funnel strategy development\u2014from top-of-funnel lead acquisition to pipeline acceleration and sales enablement. Skilled in managing paid media (LinkedIn, Google, programmatic), email nurture, lead scoring, lifecycle marketing, and intent-based targeting. Hands-on experience with tools like Marketo, HubSpot, Salesforce, 6sense, Demandbase, ZoomInfo, Google Ads, LinkedIn Campaign Manager, and more. Passionate about using AI and automation to optimize performance, enhance personalization, and improve campaign ROI.\n\nTotal Experience: 20 years and 1 month\n\n## Experience\n\n### Head of Growth Marketing - [Zafran Security](https://www.linkedin.com/company/zafran-security) (Current)\n\nMay 2025 - Present (1 year and 3 months) in New York, United States\n\nDepartment: Research\n\nZafran Security is a Computer and Network Security company. Zafran is an AI-Native Threat Exposure Management P",
+      "image": "https://media.licdn.com/dms/image/v2/D4D03AQGz4bKms87erA/profile-displayphoto-scale_200_200/B4DZzTH0kzKYAc-/0/1773068569609?e=2147483647&v=beta&t=WNZOGn9BIQgmMJFT81R3j4OAeH-qcq9IRj46ytsSeHQ",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/k8v7k1nq9rk",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Vari Kaur",
+            "firstName": "Vari",
+            "lastName": "Kaur",
+            "location": "Easton, Pennsylvania, United States",
+            "workHistory": [
+              {
+                "title": "Head of Growth Marketing",
+                "location": "New York, United States",
+                "dates": {
+                  "from": "2025-05-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/h5w450p0h1f",
+                  "name": "Zafran Security"
+                }
+              },
+              {
+                "title": "Director, Demand Generation & Technology",
+                "location": null,
+                "dates": {
+                  "from": "2022-06-01",
+                  "to": "2025-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/sjv34jtkp38",
+                  "name": "Secureworks"
+                }
+              },
+              {
+                "title": "Director Demand Generation",
+                "location": "New York, United States",
+                "dates": {
+                  "from": "2021-04-01",
+                  "to": "2022-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/wk8smddfsny",
+                  "name": "ReSource Pro"
+                }
+              },
+              {
+                "title": "Director Demand Generation and Technology",
+                "location": "New York",
+                "dates": {
+                  "from": "2019-01-01",
+                  "to": "2021-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/dw23h2b0f43",
+                  "name": "Axiom"
+                }
+              },
+              {
+                "title": "Director Digital Marketing",
+                "location": "Parsippany, NJ",
+                "dates": {
+                  "from": "2018-03-01",
+                  "to": "2019-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/3lpyggky4c8",
+                  "name": "Tangoe"
+                }
+              },
+              {
+                "title": "Senior Manager, Global Marketing Operations",
+                "location": "Salt Lake City Metropolitan Area",
+                "dates": {
+                  "from": "2017-01-01",
+                  "to": "2018-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hrxdz3mbjxl",
+                  "name": "Ivanti"
+                }
+              },
+              {
+                "title": "Senior Manager, Global Marketing Operations",
+                "location": "Greater Philadelphia",
+                "dates": {
+                  "from": "2015-03-01",
+                  "to": "2017-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hrxdz3mbjxl",
+                  "name": "Ivanti"
+                }
+              },
+              {
+                "title": "Manager, Global Marketing",
+                "location": "Greater Philadelphia",
+                "dates": {
+                  "from": "2013-01-01",
+                  "to": "2015-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hrxdz3mbjxl",
+                  "name": "Ivanti"
+                }
+              },
+              {
+                "title": "Online Marketing Manager",
+                "location": null,
+                "dates": {
+                  "from": "2011-02-01",
+                  "to": "2013-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hrxdz3mbjxl",
+                  "name": "Ivanti"
+                }
+              },
+              {
+                "title": "Online Marketing Manager",
+                "location": null,
+                "dates": {
+                  "from": "2008-01-01",
+                  "to": "2011-01-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Grazitti"
+                }
+              },
+              {
+                "title": "SEO Analyst and Content Writer",
+                "location": null,
+                "dates": {
+                  "from": "2006-01-01",
+                  "to": "2008-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/yq7klqngdfs",
+                  "name": "Milestone Global Solutions"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Master of Business Administration (M.B.A) Marketing",
+                "dates": {
+                  "from": "2008",
+                  "to": "2010"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/y2f9xxsbx1p",
+                  "name": "Punjab Technical University"
+                }
+              },
+              {
+                "degree": "Master of Computer Application (M.C.A)",
+                "dates": {
+                  "from": "2001",
+                  "to": "2004"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/y2f9xxsbx1p",
+                  "name": "Punjab Technical University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/vari-kaur-95a176102_auckland-to-perth-yes-it-was-a-big-activity-7017437995486101504-8xKm",
+      "title": "Auckland to Perth \ud83d\udeeb Yes, it was a big move for us, but things are settling down gradually. | Vari Kaur",
+      "url": "https://www.linkedin.com/posts/vari-kaur-95a176102_auckland-to-perth-yes-it-was-a-big-activity-7017437995486101504-8xKm",
+      "publishedDate": "2023-01-07T00:00:00.000Z",
+      "author": "Vari Kaur",
+      "text": "# Auckland to Perth \ud83d\udeeb Yes, it was a big move for us, but things are settling down gradually. | Vari Kaur \u00b7 LinkedIn \u00b7 2023-01-07\n\n**Vari Kaur**: Office and Accounts Administrator at Etherington for 3 years 6 months with 14 years 11 months of total professional experience. Previous roles include Office Administrator at IMI Precision Engineering, Operations Manager at Harvey Norman New Zealand, and Operations Assistant at Harvey Norman New Zealand. Based in Perth, Western Australia, Australia [AU].\n\n---\n\nAuckland to Perth \ud83d\udeeb\n\nYes, it was a big move for us, but things are settling down gradually.\n\nHome, vehicles, household items, licences, paperwork and most importantly school of my daughter \u2013 Everything is almost sorted now.\n\nNow its time for me to jump into the job market of Perth. \ud83e\udd1e\n\nMy husband\u2019s experience was not too bad in searching and landing on the right job. Now its my turn to start exploring in my field.\n\nAs excited as I was when I moved here \ud83d\ude0a\n\nNew Country\u2026New Environment\u2026New Dreams\u2026\nLet's gooooo \ud83e\udd29\n\n## Comments\n\n**[Sumit Das](https://linkedin.com/in/sumit-das-252aa49b)** \u00b7 2023-01-07 \u00b7 1 reaction\n> Wish you all the best Vari\n\n**[Shah Ahmed](https://linkedin.com/in/ahmed-shaha)** \u00b7 2023-01-11 \u00b7 1 reaction\n> I wish you all the best, , for your new start. So glad to hear that everything is sorted for you all, especially your daughter's school. Good luck with your job hunting.\n\n**[MANOJ KUMAR SHARMA](https://linkedin.com/in/manoj-kumar-sharma-aa3a5548)** \u00b7 2023-01-12"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X",
+      "title": "Our marketing team at Zafran Security is expanding! \ud83d\ude80 I'm hiring a Senior Manager, ABM & Integrated Campaigns.  \n\nLooking for someone who loves building ABM end-to-end, lead our integrated campaign\u2026 | Vari Kaur",
+      "url": "https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X",
+      "publishedDate": "2026-05-18T00:00:00.000Z",
+      "author": "Vari Kaur",
+      "text": "# Our marketing team at Zafran Security is expanding! \ud83d\ude80 I'm hiring a Senior Manager, ABM & Integrated Campaigns. | Vari Kaur \u00b7 LinkedIn \u00b7 2026-05-18\n\n**Vari Kaur**: Head of Growth Marketing at Zafran Security for 1 year 3 months with 20 years of total professional experience. Previous roles include Director, Demand Generation & Technology at Secureworks, Director Demand Generation at ReSource Pro, and Director Demand Generation and Technology at Axiom. Based in Easton, Pennsylvania, United States [US].\n\n---\n\nOur marketing team at [Zafran Security](https://linkedin.com/company/zafran-security) is expanding! \ud83d\ude80 I'm hiring a Senior Manager, ABM & Integrated Campaigns.\n\nLooking for someone who loves building ABM end-to-end, lead our integrated campaign strategy, and work shoulder-to-shoulder with Sales to go after the accounts that matter most.\nIf that's you, let's talk.\n\nExcellent opportunity to join one of the fastest-growing companies in cybersecurity, backed by Sequoia Capital and Cyberstarts, on a mission to stop the exploitation of vulnerabilities everywhere.\nhttps://lnkd.in/eWYbq_Mw\n\n## Comments\n\n**[Jaime Oliver](https://linkedin.com/in/jmwheeler11)** \u00b7 2026-05-18\n> Exciting times Vari!!! Sounds like everything is going well!!\n\n**[CyberExecConnect](https://linkedin.com/company/cyberexecconnect)** \u00b7 2026-05-27\n> Exciting growth at Zafran Security. The alignment between ABM, integrated campaigns, and sales execution continues to become increasingly important for cybersecuri"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/vari-kaur-95a176102_spark-halo-team-activity-6565152323079929856-uk2T",
+      "title": "SPARK HALO TEAM \ud83d\udcaa\ud83c\udffb | Vari Kaur",
+      "url": "https://www.linkedin.com/posts/vari-kaur-95a176102_spark-halo-team-activity-6565152323079929856-uk2T",
+      "publishedDate": "2019-08-08T00:00:00.000Z",
+      "author": "Vari Kaur",
+      "text": "# SPARK HALO TEAM \ud83d\udcaa\ud83c\udffb | Vari Kaur \u00b7 LinkedIn \u00b7 2019-08-08\n\n**Vari Kaur**: Office and Accounts Administrator at Etherington for 3 years 6 months with 14 years 11 months of total professional experience. Previous roles include Office Administrator at IMI Precision Engineering, Operations Manager at Harvey Norman New Zealand, and Operations Assistant at Harvey Norman New Zealand. Based in Perth, Western Australia, Australia [AU].\n\n---\n\nSPARK HALO TEAM \ud83d\udcaa\ud83c\udffb\n\n![SPARK HALO TEAM \ud83d\udcaa\ud83c\udffb | Vari Kaur image](https://media.licdn.com/dms/image/v2/C5622AQHY8DUFpImsfA/feedshare-shrink_800/feedshare-shrink_800/0/1565254287320?e=2147483647&v=beta&t=bP4s1tGHFCF2M5J9W3ktDVqrG047IfCKzEq64z3Akko)\n\n## Comments\n\n**[Stuart Little](https://linkedin.com/in/stuart-little)** \u00b7 2019-08-12 \u00b7 1 reaction\n> Time to blow some minds! - Congratulations team, go nail this!\n\n**[Nick Mackeson-Smith](https://linkedin.com/in/nickmackesonsmith)** \u00b7 2019-08-11 \u00b7 1 reaction\n> You guys are the best!\n\n**[Cam Hill](https://linkedin.com/in/cam-hill-712372a4)** \u00b7 2019-08-10 \u00b7 1 reaction\n> Good luck team Halo!! We know you will smash it out of the park!\n\n## Engagement\n\n- Reactions: 54",
+      "image": "https://media.licdn.com/dms/image/v2/C5622AQHY8DUFpImsfA/feedshare-shrink_800/feedshare-shrink_800/0/1565254287320?e=2147483647&v=beta&t=bP4s1tGHFCF2M5J9W3ktDVqrG047IfCKzEq64z3Akko"
+    },
+    {
+      "id": "https://exa.ai/library/person/1fdcbk80wn7",
+      "title": "Vari Kaur",
+      "url": "https://www.linkedin.com/in/vari-kaur-552567210",
+      "publishedDate": "2026-07-22T20:45:25.000Z",
+      "text": "# Vari Kaur\n\nQuality control officer at Peppercorn food company\n\nAustralia (AU)\n\n14 connections \u2022 15 followers\n\n## About\n\nQuality control officer at Peppercorn food company\n\nTotal Experience: 8 years and 7 months\n\n## Experience\n\n### Quality Control Officer - Peppercorn food company (Current)\n\nJan 2018 - Present (8 years and 6 months)\n\nDepartment: Operations\n\n## Skills\n\nquality control \u2022 quality management\n\n## Social\n\n### Linkedin\n\n- [2023-06-30 \u00b7 Vari Kaur liked this] [That someone special](https://www.linkedin.com/posts/mathew-m-5a9403130_that-someone-special-activity-7080683204923310080-3fQ-): That someone special",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/1fdcbk80wn7",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Vari Kaur",
+            "firstName": "Vari",
+            "lastName": "Kaur",
+            "location": "Australia",
+            "workHistory": [
+              {
+                "title": "Quality Control Officer",
+                "location": null,
+                "dates": {
+                  "from": "2018-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": null,
+                  "name": "Peppercorn food company"
+                }
+              }
+            ],
+            "educationHistory": [],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/varinderkaur_great-opportunity-for-aes-looking-to-join-activity-7341868030299127808-Z2ln",
+      "title": "Great opportunity for AEs looking to join a stellar company and work with an exceptional sales leader. If you're curious or know someone who might be a fit, I am happy to \u2026 | Varinder Kaur",
+      "url": "https://www.linkedin.com/posts/varinderkaur_great-opportunity-for-aes-looking-to-join-activity-7341868030299127808-Z2ln",
+      "publishedDate": "2025-06-20T00:00:00.000Z",
+      "author": "Varinder Kaur",
+      "text": "# Great opportunity for AEs looking to join a stellar company and work with an exceptional sales leader. If you're curious or know someone who might be a fit, I am happy to \u2026 | Varinder Kaur \u00b7 LinkedIn \u00b7 2025-06-20\n\n**Varinder Kaur**: Vari Kaur currently works as Head of Growth Marketing at Zafran Security for 1 year 3 months with 20 years of total professional experience. Previous roles include Director, Demand Generation & Technology at Secureworks, Director Demand Generation at ReSource Pro, and Director Demand Generation and Technology at Axiom. Based in Easton, Pennsylvania, United States [US].\n\n---\n\nGreat opportunity for AEs looking to join a stellar company and work with an exceptional sales leader. If you're curious or know someone who might be a fit, I am happy to make an intro.\n\ud83d\udca5 Zafran Security is hiring Account Executives!\ud83d\udca5\n\nNYC \u2022 Pacific Northwest \u2022 SoCal \u2022 TOLA \u2022 Georgia/Alabama\n\nLooking to join a company with real leadership, real momentum, and real opportunity?\n\nZafran is building something special: a category-defining cybersecurity platform\u00a0and team where AEs can thrive. Here\u2019s what you can expect:\n\n\ud83d\udcbc Seasoned leadership that invests in your growth\n\ud83d\udcc8 Clear path to success, in a high-growth market\n\ud83e\udd1d A supportive, no-ego sales culture that wins as a team\n\ud83d\ude80 A product that cuts through security noise and solves real customer pain\n\nWe\u2019re growing fast and hiring top talent who want to grow with us. If you\u2019re hungry, curious, and ready to win, let\u2019s talk.\n\nAda",
+      "image": "https://media.licdn.com/dms/image/v2/D5622AQHHOhr4FlHbmQ/feedshare-shrink_800/B56ZeK.TuFGoAk-/0/1750383281594?e=2147483647&v=beta&t=tfgyL_5ogTZHqN6xfD0g1wmoqqBD3D8SqbdPT4Bq9KU"
+    },
+    {
+      "id": "https://allpeople.info/vari+kaur_bramalea-bottle-ca",
+      "title": "Vari Kaur - Bramalea Bottle, Brampton",
+      "url": "https://allpeople.info/vari+kaur_bramalea-bottle-ca",
+      "text": "Vari Kaur - Bramalea Bottle, Brampton\n\nBramalea Bottle Contact in Brampton Canada Edit| Remove\n\n# Vari Kaur\n\nPlastics at Bramalea Bottle \u00b7 Brampton\n\nVari Kaur was associated with Bramalea Bottle in 2023. They may have been associated with this organization before or after this year as well.\n\n## Bramalea Bottle Business Data\n\n50 Westcreek Blvd, Brampton, ON L6T 5W3, Canada, Ontario\n\n## Vari Kaur Coworkers at Bramalea Bottle (2)\n\nOwner at Bramalea Bottle \u00b7 Brampton\n\nBramalea Bottle \u00b7 Brampton\n\n## (22) Industry Contacts\n\nGeneral chemical wholesale\n\nOwner at Spectrum Ink Corp \u00b7 Brampton\n\nPresident at Copeland Labs \u00b7 Brampton\n\nStirling Chemicals Inc Contacts\n\nOwner at Stirling Chemicals Inc \u00b7 Brampton\n\nChemicals at Stirling Chemicals Inc \u00b7 Brampton\n\nNatpro Contacts\n\nEngineer, General at Natpro \u00b7 Brampton\n\nTECHNICAL SALES ENGINEER at Natpro \u00b7 Brampton\n\nManager National Procurement at Natpro \u00b7 Brampton\n\nInformation Technology Coordinator at Natpro \u00b7 Brampton\n\nNetwork Administrator at Natpro \u00b7 Brampton\n\nAdmiral Inc Contacts\n\nChief Executive Officer at Admiral Inc \u00b7 Etobicoke\n\nAdmiral Inc \u00b7 Etobicoke\n\n## (22) Industry Contacts\n\nWholesale of construction supplies\n\nOwner at Bernie's Box & Pallet Ltd \u00b7 Brampton\n\nOwner at DeCourcy Steel \u00b7 Brampton\n\nPraxair Canada Inc. Contacts\n\nPraxair Canada Inc. \u00b7 Brampton\n\nfront counter at Praxair Canada Inc. \u00b7 Brampton\n\nPraxair Canada Inc. \u00b7 Brampton\n\nPraxair Canada Inc. \u00b7 Brampton\n\nDiamond Granite Countertops Inc. Contacts\n\nInstaller at Diamond Grani",
+      "image": "https://d1cs4jq1fdiv1p.cloudfront.net/lyra011/satellite/allpeople.info/logo.png",
+      "favicon": "https://d1cs4jq1fdiv1p.cloudfront.net/lyra011/satellite/allpeople.info/favicon.ico"
+    }
+  ],
+  "searchTime": 9.8,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 0.1,
+  "_request": {
+    "query": "\"Vari Kaur\" university college alumni degree graduated studied",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

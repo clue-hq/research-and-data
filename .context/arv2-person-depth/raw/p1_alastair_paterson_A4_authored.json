@@ -1,0 +1,146 @@
+{
+  "requestId": "ce02e6a2d3cb5334fa32e1cf91804d70",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://www.harmonic.security/authors/alastair-paterson",
+      "title": "Harmonic Security - Alastair Paterson",
+      "url": "https://www.harmonic.security/authors/alastair-paterson",
+      "text": "Harmonic Security | AI Governance & Control Platform\n\n# Govern AI wherever your workforce runs it\n\nEvery employee. Every agent. Every interaction.\n\nAI is everywhere your employees work: in approved tools, shadow apps, and the agents they're spinning up on their own. Harmonic Security sits at that layer, understands the intent behind every interaction, and governs it in real time.\n\nBook a demo \u2197\n\n1,000+AI surfaces covered\n\n<200msInline decisions\n\nSOC 2EU & US-hosted\n\n01 / 04\n\nIdentify Shadow AI and understand the associated use cases and exposures\n\n\u2039\n\n\u203a\n\nWho We Work With \u2013 Harmonic Security\n\nWho we work with\n\nThe worldview we exist to replace\n\n\"AI is just another SaaS app.\"\n\nThat assumption shaped a generation of security stacks. Find the URL, inspect the request. It worked when AI lived on a website. It stopped the moment Claude moved onto the laptop.\n\nClaude is on the desktop. Every SaaS tool ships with AI embedded. Engineers spin up local MCP servers in minutes. Data moves between systems with no audit trail and no single point to govern.\n\nThe Harmonic Security answer\n\nGovern it where it actually lives. On the device, inside the interaction, at the moment of action.\n\nWhat the network sees\n\nBrowser\n\nuser\n\n\u2192\n\nproxy\n\n\u2192\n\nchatgpt.com\n\nSEEN\n\nDesktop AI\n\nuser\n\n\u2192\n\nChatGPT Desktop\n\nMISSED\n\nAgent + MCP\n\nagent\n\n\u2192\n\nlocalhost:3000\n\nMISSED\n\nEmbedded AI\n\nuser\n\n\u2192\n\ncanva.com\n\nMISSED\n\nWith Harmonic Security\n\nWe sit on the device, beside the agent, and inside the AI surface itself. Every inte",
+      "image": "https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/695c2875110af64a202e3913_harmonic-1200x630.png",
+      "favicon": "https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6938ea08b29d819485a29dd9_Harmonic-Favicon.png"
+    },
+    {
+      "id": "https://councils.forbes.com/executive-spotlight/alastair-paterson-is-making-sure-the-ai-revolution-doesnt-come-at-the-cost-of-company-data",
+      "title": "Alastair Paterson Is Making Sure the AI Revolution Doesn't Come at the Cost of Company Data",
+      "url": "https://councils.forbes.com/executive-spotlight/alastair-paterson-is-making-sure-the-ai-revolution-doesnt-come-at-the-cost-of-company-data",
+      "publishedDate": "2026-07-24T15:00:01.000Z",
+      "text": "Alastair Paterson Is Making Sure the AI Revolution Doesn't Come at the Cost of Company Data\n\n# Alastair Paterson Is Making Sure the AI Revolution Doesn't Come at the Cost of Company Data\n\n \n\nEnterprises are racing to adopt AI, but the path is largely unsecured. Forbes Technology Council member Alastair Paterson, CEO and co-founder of Harmonic Security, has spent his career watching companies leak data they didn't know was leaving. Now, he's built a platform designed to make sure AI doesn't make that problem catastrophically worse.\n\nPaterson has seen this movie before. The tools change, the urgency escalates, and somewhere in the rush to stay competitive, a company exposes data it can't get back. He spent more than a decade at Digital Shadows watching that pattern play out at enterprise scale before selling the company to ReliaQuest for $160 million in 2022.\n\n## From Threat Intelligence to the AI Governance Gap\n\nDigital Shadows gave Paterson a front-row seat to how companies lose data. Not always through sophisticated attacks, but through carelessness, speed, and the gap between what IT departments approve and what employees actually use.\n\n\"In 2011, I co-founded Digital Shadows,\" Paterson explains. \"We learned about the sheer volume of data companies can leak out of their businesses \u2014 whether accidentally or via threat actors. AI has exacerbated all of this.\"\n\nHe co-founded Harmonic Security in 2023 to address what he saw as a fundamental mismatch: data loss prevention tools w",
+      "image": "https://councils.forbes.com/hubfs/ftc-success-stories-alastair-paterson.jpg"
+    },
+    {
+      "id": "https://www.bankinfosecurity.com/balancing-ai-innovation-data-privacy-security-a-25446",
+      "title": "Balancing AI Innovation With Data Privacy and Security",
+      "url": "https://www.bankinfosecurity.com/balancing-ai-innovation-data-privacy-security-a-25446",
+      "text": "Balancing AI Innovation With Data Privacy and Security\n\nTRENDING:\n\n- Join us at Black Hat USA 2026\u2022\n- Webinar | What It Takes to Make AI Trustworthy in Healthcare\u2022\n\nData Privacy, Events, Governance & Risk Management\n\n# Balancing AI Innovation With Data Privacy and Security\n\nHarmonic Security CEO Alastair Paterson on AI Adoption and Privacy Challenges Mathew J. Schwartz(euroinfosec) \u2022 June 12, 2024 https://www.bankinfosecurity.com/future-digital-security-by-design-a-25446#disqus_thread\n\n- Credit Eligible\n- As a BankInfoSecurity.com annual member, this content can be used toward your membership credits and transcript tracking.\n- Get Permission\n\nAlastair Paterson, CEO and co-founder, Harmonic Security\n\nArtificial intelligence offers significant business benefits, but it also introduces data privacy risks. According to Harmonic Security's CEO Alastair Paterson, many CISOs worry about sensitive data shared with third-party applications. Harmonic Security aims to help companies embrace generative AI while addressing these concerns, Paterson said.\n\nSee Also: How TransUnion Unified Its Engineering Platform with Harness and What It Unlocked\n\nHarmonic Security recently became a finalist in the RSA Innovation Sandbox, showcasing its innovative approach to AI and data protection. Paterson shared how Harmonic Security approaches data security, tailored to the generative AI era.\n\n\"Our approach is certainly security for AI, and we help you adopt generative AI by stopping sensitive material ",
+      "image": "https://ismg-cdn.nyc3.cdn.digitaloceanspaces.com/articles/balancing-ai-innovation-data-privacy-security-showcase_image-5-a-25446.jpg",
+      "favicon": "https://www.bankinfosecurity.com/images/favicons/favicon_BIS.ico"
+    },
+    {
+      "id": "https://expertinsights.com/ai-security/interview-alastair-paterson-harmonic-security",
+      "title": "How Organizations Can Embrace GenAI Without Compromising Security",
+      "url": "https://expertinsights.com/ai-security/interview-alastair-paterson-harmonic-security",
+      "publishedDate": "2024-11-01T09:03:21.000Z",
+      "author": "Caitlin Harris",
+      "text": "How Organizations Can Embrace GenAI Without Compromising Security\n\n# How Organizations Can Embrace GenAI Without Compromising Security\n\n## Expert Insights interviews Alastair Paterson, CEO and Co-Founder at Harmonic Security.\n\nLast updated on May 28, 2026\n\nWritten by Caitlin Harris\n\nThe data privacy concerns surrounding GenAI tools are part of a wider data privacy issue, Alastair Paterson, CEO and Co-Founder at Harmonic Security, tells Expert Insights. But there is a way for organizations to embrace new technologies without sensitive data leaving the business\u2014whether that\u2019s via ChatGPT or any of the other thousands of GenAI tools in use.\n\nWe caught up with Paterson on this month\u2019s episode of the Expert Insights Podcast. Read on for the highlights, and you can listen to the full episode here.\n\nThe Big Picture: The use of GenAI has exploded in recent years, with many users embracing these technologies to help them work more efficiently, reduce operational costs, and free up their time for more creative work. However, not all organizations are ready to embrace GenAI; in fact, 58% of CISOs believe that the risks of AI outweigh its potential benefit.\n\nDriving The Issue: 77% of organizations say data privacy is one of the biggest barriers to their adoption of GenAI. There are two reasons for this: the first is that GenAI models may store prompt data or input data in an unsecure or non-compliant way. This is a challenge that most organizations using third-party apps will be familiar",
+      "image": "https://expertinsights.com/wp-content/uploads/2024/11/FeaturedImage_HarmonicSecurity-1024x576.png",
+      "favicon": "https://b3953882.smushcdn.com/3953882/wp-content/themes/expertinsights-wp-theme-1.2.10/assets/favicon/favicon-96x96.png?lossy=1&strip=1&avif=1"
+    },
+    {
+      "id": "https://exa.ai/library/person/gz3qy2t1l07",
+      "title": "Alastair Paterson - Harmonic Security | LinkedIn",
+      "url": "https://www.linkedin.com/in/alastair-paterson-2586445",
+      "publishedDate": "2026-08-24T15:29:39.000Z",
+      "text": "# Alastair Paterson\n\nCEO and Co-Founder of Harmonic | Enabling Secure AI Use\n\nSan Francisco, California, United States (US)\n\n500 connections \u2022 11,015 followers\n\n## About\n\nCEO and Co-Founder of Harmonic | Enabling Secure AI Use\n\nTotal Experience: 3 years and 2 months\n\n## Experience\n\n### Chief Executive Officer - [Harmonic Security](https://www.linkedin.com/company/harmonic-security) (Current)\n\nAug 2023 - Present (3 years) in San Francisco Bay Area\n\nDepartment: General Management \u2022 Level: C-Level\n\nHarmonic Security is a Technology, Information and Internet company. Harmonic Security has 50-60 employees and has annual revenue in the $1M-$10M range, founded in 2023. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and United Kingdom. Has $24.5M in total funding, with 2 prior funding rounds.\n\n### Board Member - GBx (Current)\n\nJul 2023 - Present (2 months)\n\nDepartment: Other\n\n## Education\n\n### Master\u2019s Degree at University of Bristol\n\n2000 - 2004 (4 years)\n\n## Skills\n\nboard \u2022 board governance \u2022 chief executive \u2022 chief executive officer \u2022 chief executive officer (ceo) \u2022 executive leadership \u2022 executive officer\n\n## Honors & Awards\n\n### FinTech 40 2015\n\nIssued by: Financial News\n\nJun 2015\n\n### FinTech Power List 2015\n\nIssued by: City AM\n\nMar 2015\n\n### Computer Weekly UKtech50: Rising stars 2013\n\nIssued by: Computer Weekly\n\nDec 2013\n\n## Recommendations\n\n[Nevin Grieve](https://www.linkedin.com/in/nevingrieve)\n\n\u201cAl and I worked ",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/gz3qy2t1l07",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Alastair Paterson",
+            "firstName": "Alastair",
+            "lastName": "Paterson",
+            "location": "San Francisco, California, United States",
+            "workHistory": [
+              {
+                "title": "Chief Executive Officer",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2023-08-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9j6bkrfw0m4",
+                  "name": "Harmonic Security"
+                }
+              },
+              {
+                "title": "Board Member",
+                "location": null,
+                "dates": {
+                  "from": "2023-07-01",
+                  "to": null
+                },
+                "company": {
+                  "id": null,
+                  "name": "GBx"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Master\u2019s Degree",
+                "dates": {
+                  "from": "2000",
+                  "to": "2004"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "University of Bristol"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.klogixsecurity.com/blog/profile-alastair-paterson-ceo-and-co-founder-harmonic-security",
+      "title": "Profile: Alastair Paterson, CEO and Co-Founder, Harmonic Security",
+      "url": "https://www.klogixsecurity.com/blog/profile-alastair-paterson-ceo-and-co-founder-harmonic-security",
+      "publishedDate": "2026-06-22T18:24:46.000Z",
+      "text": "Profile: Alastair Paterson, CEO and Co-Founder, Harmonic Security\n\n## Blog\n\nFor Alastair (Al) Paterson, building security companies has never been about reaching the destination. It is about the challenge of creating something that helps organizations solve real problems during periods of major change.As a serial entrepreneur and cybersecurity leader, Al previously founded Digital Shadows, a threat intelligence company that grew to more than 500 enterprise customers before being acquired in 2022. After the acquisition, he found himself in an unfamiliar position.\u201cI\u2019d gone from managing 160 people to zero,\u201d he recalls. \u201cI thought the acquisition and destination was where I wanted to get. But I realized that I\u2019d enjoyed building it, and that was where the real fun was. It\u2019s the journey as much as anything else.\u201dThat realization coincided with another major event. Just months after the acquisition, ChatGPT was released and organizations around the world began racing to understand what AI would mean for their businesses. For Al, the opportunity was immediately obvious.\u201cI became very passionate about the AI era very quickly,\u201d he explains. \u201cMy immediate reaction, given all my security heritage, was no enterprise is just going to roll this stuff out. They\u2019re going to need to get it live for competitive reasons, but there\u2019s going to be a whole host of security, legal, and compliance challenges around this.\u201dThat observation became the foundation for Harmonic Security. Founded in 2023, ",
+      "image": "https://www.klogixsecurity.com/hubfs/Feats%20Q2%202026/Alastair%20Paterson%20Harmonic%20Security.png",
+      "favicon": "https://www.klogixsecurity.com/hubfs/Klogixsecurity_June2016_Theme/Images/favicon.png"
+    },
+    {
+      "id": "https://www.securityweek.com/contributors/alastair-paterson/",
+      "title": "Alastair Paterson, CEO and co-founder of Harmonic Security,",
+      "url": "https://www.securityweek.com/contributors/alastair-paterson/",
+      "author": "Eduard Kovacs",
+      "text": "Alastair Paterson, CEO and co-founder of Harmonic Security,\n\n## Is AI Use in the Workplace Out of Control?\n\nTrying to block AI tools outright is a losing strategy. SaaS and AI are increasingly inseparable, and AI isn\u2019t limited to tools like ChatGPT...\n\nMay 14, 2025\n\n## AI Asset Inventories: The Only Way to Stay on Top of a Lightning-fast Landscape\n\nUnauthorized AI usage is a ticking time bomb. A tool that wasn\u2019t considered a risk yesterday may introduce new AI-powered features overnight.\n\nMarch 4, 2025\n\n## AI Regulation Gets Serious in 2025 \u2013 Is Your Organization Ready?\n\nWhile the challenges are significant, organizations have an opportunity to build scalable AI governance frameworks that ensure compliance while enabling responsible AI innovation.\n\nDecember 18, 2024\n\n## The AI Wild West: Unraveling the Security and Privacy Risks of GenAI Apps\n\nGenAI users are uploading data to over eight apps every month \u2013 what are the security and privacy concerns?\n\nSeptember 5, 2024\n\n## When Vendors Overstep \u2013 Identifying the AI You Don\u2019t Need\n\nAI models are nothing without vast data sets to train them and vendors will be increasingly tempted to harvest as much data as they...\n\nJune 12, 2024\n\n## Why Using Microsoft Copilot Could Amplify Existing Data Quality and Privacy Issues\n\nMicrosoft provides an easy and logical first step into GenAI for many organizations, but beware of the pitfalls.\n\nApril 30, 2024\n\n## Shadow AI \u2013 Should I be Worried?\n\nOverzealous policies and blanket bans on AI tools",
+      "image": "https://secure.gravatar.com/avatar/6fa8eaf83a3acd755529fbde19da4ac9?s=500&d=mm&r=g",
+      "favicon": "https://www.securityweek.com/wp-content/uploads/2023/01/cropped-SecurityWeek-Icon-32x32.jpeg"
+    },
+    {
+      "id": "https://www.interactivebrokers.com/campus/traders-insight/securities/macro/human-like-decisions-but-better/",
+      "title": "\u201cHuman-like decisions, but better\u201d | Traders' Insight",
+      "url": "https://www.interactivebrokers.com/campus/traders-insight/securities/macro/human-like-decisions-but-better/",
+      "publishedDate": "2024-07-17T14:30:00.000Z",
+      "author": "Alexander Gunz",
+      "text": "\u201cHuman-like decisions, but better\u201d | Traders' Insight\n\n# \u201cHuman-like decisions, but better\u201d\n\nPosted July 17, 2024 at 10:30 am\n\n \n\nAlexander Gunz\n\nEquity Fund Manager\n\nHeptagon Capital\n\nAlexander Gunz\n\n \n\nHeptagon Capital\n\n www.heptagon-capital.com\n\nHeptagon Capital\n\nThis was the expression used to describe the power embedded within generative AI by the CEO and co-founder of Harmonic Security, Alastair Paterson, with whom your author caught up recently. Alastair is well-known within the industry, having previously co-founded Digital Shadows (featured in a prior 2021 Blog post). Our wide-ranging conversation over Zoom discussed everything from AI to cyber with the intention of gaining novel insights into many key future trends.\n\nListening to Alastair speak, it is hard not to be excited about how AI can improve outcomes. For him, \u201ceveryone [in Silicon Valley] was blown away at the start\u201d, when Chat-GPT initially appeared. AI is \u201clike another Industrial Revolution.\u201d Think of it as \u201cthe start of a new era.\u201d However, Alastair also cautioned that we are \u201cin a bubble\u201d and that \u201chype is at a crescendo.\u201d\n\nWe have sought to reconcile these potentially opposing viewpoints in our own work (see here and here), but Alastair\u2019s way through is a logical one: identify what the problem is and then ask the question of whether AI will genuinely be able to help solve it. For Harmonic, the use-case is very simple. Corporate data has always represented one of the biggest moats for any business, and s"
+    }
+  ],
+  "searchTime": 877.5,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 0.96,
+  "_request": {
+    "query": "\"Alastair Paterson\" article blog post author byline Harmonic Security",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

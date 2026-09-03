@@ -268,3 +268,69 @@ quotes flagged not hidden -> verify_links audit earns its place; (5) Series-A ru
 cybersecurity unprompted; healthcare = build-mode, zero GTM hiring. 203-claim sample DB, 0
 unregistered fields. Sample DB + report ready as ARV2 acceptance evidence for wiring the new
 toolbelt into Head of ABM.
+
+## Addendum 2026-08-31b — Person-Depth run COMPLETE ($1.29, 8.8 min, 10 people)
+
+Founder correction: the smoke test omitted the personal-hooks charter (planner's omission). Re-run
+with the full dossier charter + Google media layer: .context/arv2-person-depth/PERSON-DEPTH-REPORT.md.
+**Results:** avg depth 61/100, avg 7.2 hooks/person, **8/10 at or above the Insight-Health bar
+(~5 hooks)**; alma mater 10/10, unique insight 10/10, hobby/book/side-project 7/10, long-form
+spoken voice 3/10 (all CEOs — the marketing buyers are the least researchable). Standouts: Nick
+Fisher = cocktail YouTuber with a published book; Sanaz Yashar = 15y Unit 8200 + Thai boxing;
+Vineet Edupuganti = 2016 Siemens Grand Prize (full transcript); Tyler Chonoles = Bowdoin golf
+roster (guitar/skiing); Alastair Paterson = $160M ReliaQuest exit + school-band concert at 15.
+5/10 zero hometown; 0/10 any X/Bluesky/Threads/Reddit presence.
+**Media layer:** NO Gemini key present (checked twice). Hard finding: YouTube public timedtext
+endpoint is DEAD (200/0 bytes across 7 request forms) — delete that path. Rescue: **Exa /contents
+on the YouTube watch URL returns the full ASR transcript for 4/5 videos at ~$0.001-0.004, no
+timestamps**. Exact Gemini math for the 12 items (5.04h audio): transcribe $0.20 + embed text
+$0.014 + raw-audio-embed 2 short clips $0.036 = **$0.25 total = $0.04/hour**; raw-audio-embedding
+everything = $2.90 (13.5x). Ruling confirmed: transcribe with Flash-Lite, embed text with
+embedding-2, raw audio only <3 min. gemini-embedding-2 IS multimodal (correction to earlier
+sessions). Key still needed for timestamps + the two CEO podcast interviews.
+**Money:** $1.286 (Exa $1.188 = 133 searches $0.924 + 11 deep $0.241 + contents; OpenRouter
+$0.098); **$0.129/person, trimmed recipe $0.07/person** (400-person sweep ≈ $28). 0 AI Ark credits.
+**Angles:** winners = prior-employer+long-form-voice, podcast, authored, alumni; CUT video-search,
+podcast-directories, Substack/Medium, awards, social = 27% of cost, zero unique yield.
+`includeDomains` is a trap (forces same-name strangers).
+**Surprises:** (1) the deep call beats the sweep feeding it — 16% of cited URLs unseen by 120
+sweep queries, incl. the best hook; (2) Exa deep-reasoning fails SILENTLY — signature = 9
+results/$0.015 vs 18-20/$0.023 — add an auto-retry guard; (3) structuring conservatism said
+"thin footprint" for 7/10 people whose dossiers held gold — one narrow $0.002 question per person
+fixed it 3/10 → 10/10.
+**Governance in code:** minors clause stripped a self-published post mentioning a CEO's children;
+Yashar's first-person intelligence-origin line barred from hooks (`outreach_safe: false`) while
+career kept as background; 2 quote-less rows auto-purged; 119 claims, 0 missing quote/URL.
+Recommend `outreach_safe` as a permanent facet field (accuracy ≠ appropriateness).
+
+## Addendum 2026-09-02 — ONE-account run (Zafran): AI Ark-only data + real Gemini media layer
+
+Founder ruling restated: Apollo is NOT used (recent runs had 0 Apollo calls; the 12 Apollo credits
+in the cost history are from the three pre-AI-Ark runs on Aug 25-26). Gemini project fixed
+(new key, billing on; project 211576727430) — text gen, gemini-embedding-2 (768d), YouTube ingest
+all verified. Report: .context/arv2-one-account-aiark/ONE-ACCOUNT-REPORT.md (174 claims).
+**Spend $0.166 cash + 11.6 AI Ark cr, 65 calls, 0 Apollo (provable — no helper exists).**
+Full recipe $0.166+11.6cr/account; **trimmed $0.072+4.1cr** (drop domain roster, 2 emails, one
+short media item, ASR model primary) ≈ $0.154/account at $0.02/cr.
+**AI Ark field inventory:** valuable = legal_name, funding.rounds[] w/ dates/amounts/investors
+(found a $40M Series B 2024-09-08 no prior run had), staff.total 167, technologies[], and on
+people **certifications[] = the single best field** (Vari Kaur: 6sense + 2x Demandbase certified —
+both deep-research runs had said NOT FOUND), awards[], department, position_groups, badges.
+Empty: non-LinkedIn socials, SIC/NAICS absent, /v1/credit 401. Wire: **name filter works
+(0.5cr exact) while title filter is broken; domain roster (6cr) returned 10 sales/CS/finance
+seats** → name-scoped only. Email verification served from cache but still billed.
+**Gemini media (real):** 3 items, 48.6 min, $0.029 (+$0.019 repair). MP3 = 25 audio tok/s,
+YouTube = 91 tok/s (3.6x dearer/min → prefer RSS MP3 over YouTube). **Quality failure:**
+gemini-3.5-flash-lite LOOPED after [12:41] on a 43-min file (329 lines, 120 unique) with
+confident fabricated timestamps — would pass an eyeball check; `gemini-3.5-transcribe` re-ran
+faithfully for LESS ($0.019) but returns parts[0].audioTranscription.text with NO timestamps →
+production = transcribe model primary + flash-lite for timestamp alignment/quotes + verify every
+quote against the faithful ASR. Retrieval demo: 29 chunks, $0.0028, correct person picked
+(Nick [00:00-01:26], 0.701). Raw-audio embedding would be 167x the text embeddings.
+**Fruitful top-5:** Vari's 6sense/Demandbase certs (AI Ark 0.5cr); the SDR stack quote
+"Salesforce, LinkedIn Sales Navigator, ZoomInfo & Outreach" (FREE Ashby req — deep call said NOT
+FOUND); ABM req 77 days open reporting to Head of Growth Mktg (free); 4/4 emails VALID/SMTP
+firstname@zafran.io (4cr); named CISO customers on homepage (Kraft Heinz, Chipotle, Netskope).
+outreach_safe:false on the refuted Cisco rumour, the third-party ARR/burn claim, an exec's exit.
+**Surprise (again):** the free ATS API out-researched the paid deep call at its own job (27 live
+reqs w/ full descriptions; BDRs sit in Marketing). Free sources first, always.

@@ -1,0 +1,42 @@
+PERSONAL DOSSIER — Vineet Edupuganti
+Research date: September 2, 2026. Target lock: the sources below identify the subject as Vineet Edupuganti, Co-Founder & CEO of Cogent Security, with the stated LinkedIn location San Francisco, California. 1. Identity and current role
+- Current role: “Co-Founder and CEO - Cogent Security (Current).” URL: https://www.linkedin.com/in/vineetedupuganti
+- SANS independently describes him as “CEO at Cogent” and “the Co-Founder and CEO of Cogent Security.” URL: https://www.sans.org/profiles/vineet-edupuganti
+- Stanford Applied Cyber identifies him as “currently the Co-Founder/CEO of Cogent Security.” URL: https://applied-cyber.stanford.edu/events/25aut/
+- LinkedIn stated location: “San Francisco, California, United States.” URL: https://www.linkedin.com/in/vineetedupuganti 2. Cogent Security
+- Company launch: “Cogent exits stealth with $11M in funding and a thesis: the hardest part of vulnerability management is everything after the scan.” URL: https://www.cogent.com/blog/introducing-cogent-security
+- The launch announcement states: “Today, we’re thrilled to launch out of stealth with $11 million in funding.” URL: https://www.cogent.com/blog/introducing-cogent-security
+- Series A: “Today, I'm excited to share that we've raised $42 million in Series A funding led by Bain Capital Ventures, with continued support from Greylock Partners and Definition.” URL: https://www.cogent.com/blog/cogent-security-raises-42m-series-a
+- Total funding stated by Cogent: “This brings our total funding to $53 million.” URL: https://www.cogent.com/blog/cogent-security-raises-42m-series-a
+- Cogent’s product thesis: “This lived experience is why we built Cogent’s AI Taskforce, the first-ever fleet of AI agents purpose-built for end-to-end vulnerability remediation.” URL: https://www.cogent.com/blog/introducing-cogent-security
+- Cogent describes the agents as follows: “They investigate findings in the context of your actual environment, determine who owns what, assess real-world risk, generate remediation steps, and track fixes through to verified completion.” URL: https://www.cogent.com/blog/cogent-security-raises-42m-series-a
+- Publicly announced AVR: “Today we're announcing Autonomous Vulnerability Response (AVR), the first end-to-end autonomous AI vulnerability response capability proven in production.” URL: https://www.linkedin.com/posts/vineetedupuganti_today-were-announcing-autonomous-vulnerability-activity-7483203736241217536-RKTO 3. Prior professional experience
+- LinkedIn search result records: “Head of Multi Product Platform Division - Abnormal AI” and “Jan 2023 - Jan 2024 (1 year).” URL: https://www.linkedin.com/in/vineetedupuganti
+- SANS states he was “pivotal in scaling Abnormal AI from its earliest days to a market-leading security company, progressing from machine learning engineer to product leader, and later served as Head of the Multi-Product Platform Division.” URL: https://www.sans.org/profiles/vineet-edupuganti
+- In a podcast transcript, he says: “And then in my final stretch there, I was one of the general managers at the company responsible for engineering, product and design across several of the R&D divisions.” URL: https://podscan.fm/podcasts/venture-with-grace/episodes/vineet-edupuganti-cogent-security-ceo-on-ai-vulnerability-management (timestamp shown by source: 00:01:49)
+- Lockstep describes his background as “Former: Abnormal AI (Head of Product), Meta, New Relic, Stanford, Menlo Ventures (ML Engineering / Research).” URL: https://www.lockstep.vc/portfolio/cogent
+- Lockstep says: “Prior to founding Cogent, Vineet was a GM at Abnormal Security, where he joined as an early employee and helped build it into a category-leading company.” URL: https://www.lockstep.vc/portfolio/cogent 4. Education and early technical achievement
+- LinkedIn lists “Bachelor of Science - BS, Electrical Engineering” at Stanford University. URL: https://www.linkedin.com/in/vineetedupuganti
+- LinkedIn lists “Master of Science - MS, Computer Science” at Stanford University. URL: https://www.linkedin.com/in/vineetedupuganti
+- SANS confirms: “He holds both a bachelor's and master's degree from Stanford University.” URL: https://www.sans.org/profiles/vineet-edupuganti
+- Siemens Foundation identifies him as “2016 Siemens Competition Individual Grand Prize Winner.” URL: https://www.youtube.com/watch?v=8x_RZ4yIRbw
+- The same Siemens source identifies “HIGH SCHOOL: Oregon Episcopal School, Portland, OR” and “PROJECT: ‘Development of a High-Performance Biodegradable Battery for Transient Electronics’.” URL: https://www.youtube.com/watch?v=8x_RZ4yIRbw 5. Publicly expressed professional viewpoints and potential outreach hooks
+- On AI systems in high-stakes settings, he said: “building systems that have the right verification, transparency, uh demonstrate the reasoning chain and provide confidence to the end user, that becomes really critical.” URL: https://www.youtube.com/watch?v=_OHZyK0nugs
+- Explaining his focus on cybersecurity, he said: “every company past a certain point of maturity to where you actually have digital assets to go and defend, they have to worry about cybersecurity.” URL: https://www.youtube.com/watch?v=_OHZyK0nugs
+- He described the mission as: “very hard to you know, get up and go to work and make progress on the things that we're doing and not feel like you're moving the world in the direction that it needs to go.” URL: https://www.youtube.com/watch?v=_OHZyK0nugs
+- Stanford Applied Cyber frames Cogent’s focus as “the first ‘AI Taskforce’ for Vulnerability Management that autonomously remediates critical exposures before attackers can get to them.” URL: https://applied-cyber.stanford.edu/events/25aut/
+- A podcast description says the discussion covered “fighting AI-powered hackers with defensive AI agents, what Abnormal got right, and how to win over CISOs in one of the toughest markets in tech.” URL: https://podcasts.apple.com/us/podcast/building-ai-agents-to-fight-cybercrime-vineet-edupuganti/id1504732284?i=1000748867878 6. Public appearances and community activity
+- He appeared on “The Rise of the Autonomous Blue Team with Vineet Edupuganti,” described as discussing “how AI agents are rewriting the rules of cybersecurity.” URL: https://hackervalleystudio.podbean.com/e/the-rise-of-the-autonomous-blue-team-with-vineet-edupuganti/
+- CyberBytes describes an episode recorded “live at Black Hat 2025 in Las Vegas” and says he discussed “the founding story of Cogent, the shortcomings of legacy tools, how AI is shifting the balance between attackers and defenders, and what it takes to assemble world-class talent.” URL: https://podcasts.apple.com/gb/podcast/rethinking-security-at-scale-cogents-mission-to-outpace/id1763243770?i=1000723724823
+- SANS labels him a “Speaker / Contributor” and clarifies: “They are not a SANS employee, instructor, or affiliate.” URL: https://www.sans.org/profiles/vineet-edupuganti
+- Stanford Applied Cyber describes him as “a Stanford alum.” URL: https://applied-cyber.stanford.edu/events/25aut/ 7. Explicit NOT FOUND
+- Personal email: NOT FOUND
+- Personal phone number: NOT FOUND
+- Exact street address: NOT FOUND
+- Personal website or newsletter: NOT FOUND
+- Verified personal hobbies or non-professional interests: NOT FOUND
+- Self-announced family milestones: NOT FOUND
+- Personal political, religious, health, sexuality, family, legal, or other sensitive information: NOT FOUND
+- Confirmed dates for every role before Abnormal AI: NOT FOUND
+- Verbatim transcript timestamps for the YouTube appearance beyond the timestamp explicitly shown by the podcast transcript source: NOT FOUND 8. Same-name/disambiguation note
+- The reviewed sources consistently connect the target name to Cogent Security, Abnormal AI, Stanford, SANS, and the supplied LinkedIn profile. No same-name person was used in the dossier.

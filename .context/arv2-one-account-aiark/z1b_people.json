@@ -1,0 +1,807 @@
+{
+  "domain_search": {
+    "totalElements": 163,
+    "returned": 12,
+    "credits": 6.0,
+    "rows": [
+      {
+        "full_name": "Brian Sams",
+        "title": "RSM SLED",
+        "headline": "RSM SLED at Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/brian-sams",
+        "location": {
+          "default": "Seattle, Washington, United States, North America",
+          "short": "Seattle, Washington",
+          "country": "United States",
+          "state": "Washington",
+          "city": "Seattle",
+          "position": null
+        },
+        "current_company": "Zafran Security",
+        "current_company_domain": null,
+        "date": {
+          "start": "2026-08-01",
+          "end": null
+        },
+        "ark_id": "0010b9d7-d3ce-64d1-02c6-c6d170a8762f",
+        "department": {
+          "departments": [
+            "sales"
+          ],
+          "sub_departments": [
+            "account_executive_and_new_business_sales"
+          ],
+          "functions": [
+            "sales"
+          ],
+          "seniority": "mid_level"
+        },
+        "top_keys": [
+          "company",
+          "department",
+          "educations",
+          "id",
+          "identifier",
+          "industry",
+          "languages",
+          "last_updated",
+          "link",
+          "location",
+          "member_badges",
+          "position_groups",
+          "profile",
+          "skills",
+          "statistics"
+        ]
+      },
+      {
+        "full_name": "Tom Anthony",
+        "title": "SVP, Global Sales",
+        "headline": "SVP, Global Sales",
+        "linkedin": "https://www.linkedin.com/in/tomanthonyjr",
+        "location": {
+          "default": "San Francisco, California, United States, North America",
+          "short": "San Francisco, California",
+          "country": "United States",
+          "state": "California",
+          "city": "San Francisco",
+          "position": null
+        },
+        "current_company": "Zafran Security",
+        "current_company_domain": null,
+        "date": {
+          "start": "2024-11-01",
+          "end": null
+        },
+        "ark_id": "00b61224-c103-3644-2f12-0ffda514ead9",
+        "department": {
+          "departments": [
+            "sales"
+          ],
+          "sub_departments": [
+            "enterprise_sales"
+          ],
+          "functions": [
+            "sales"
+          ],
+          "seniority": "vp"
+        },
+        "top_keys": [
+          "company",
+          "department",
+          "educations",
+          "id",
+          "identifier",
+          "industry",
+          "languages",
+          "last_updated",
+          "link",
+          "location",
+          "member_badges",
+          "position_groups",
+          "profile",
+          "skills",
+          "statistics"
+        ]
+      },
+      {
+        "full_name": "Corey Wahler",
+        "title": "Technical Account Manager",
+        "headline": "Senior Technical Account Manager | Enterprise Cybersecurity | SaaS Security \u00b7 Cloud Security \u00b7 Vulnerability Management",
+        "linkedin": "https://www.linkedin.com/in/coreywahler",
+        "location": {
+          "default": "Greater Seattle Area, United States, North America",
+          "short": "Greater Seattle Area",
+          "country": "United States",
+          "state": null,
+          "city": "Greater Seattle Area",
+          "position": null
+        },
+        "current_company": "Zafran Security",
+        "current_company_domain": null,
+        "date": {
+          "start": "2025-12-01",
+          "end": null
+        },
+        "ark_id": "191ffd16-4d8a-c2a9-da09-c398bbfbeaf1",
+        "department": {
+          "departments": [
+            "customer_success_and_support"
+          ],
+          "sub_departments": [
+            "customer_success"
+          ],
+          "functions": [
+            "customer_success_and_support"
+          ],
+          "seniority": "senior"
+        },
+        "top_keys": [
+          "certifications",
+          "company",
+          "courses",
+          "department",
+          "educations",
+          "id",
+          "identifier",
+          "industry",
+          "languages",
+          "last_updated",
+          "link",
+          "location",
+          "member_badges",
+          "position_groups",
+          "profile",
+          "skills",
+          "statistics"
+        ]
+      },
+      {
+        "full_name": "Jordan Beam",
+        "title": "Major Account Manager",
+        "headline": "Zafran Security | Major Accounts | Agentic Exposure Management",
+        "linkedin": "https://www.linkedin.com/in/jordanbeam",
+        "location": {
+          "default": "Austin, Texas, United States, North America",
+          "short": "Austin, Texas",
+          "country": "United States",
+          "state": "Texas",
+          "city": "Austin",
+          "position": null
+        },
+        "current_company": "Zafran Security",
+        "current_company_domain": null,
+        "date": {
+          "start": "2025-11-01",
+          "end": null
+        },
+        "ark_id": "20bbaed5-a8f6-6568-592d-bb555d0c0123",
+        "department": {
+          "departments": [
+            "sales"
+          ],
+          "sub_departments": [
+            "strategic_and_key_accounts"
+          ],
+          "functions": [
+            "sales"
+          ],
+          "seniority": "mid_level"
+        },
+        "top_keys": [
+          "certifications",
+          "company",
+          "department",
+          "educations",
+          "id",
+          "identifier",
+          "industry",
+          "languages",
+          "last_updated",
+          "link",
+          "location",
+          "member_badges",
+          "position_groups",
+          "profile",
+          "skills",
+          "statistics"
+        ]
+      },
+      {
+        "full_name": "Travis J. Bennett",
+        "title": "Regional Sales Manager - Majors",
+        "headline": "Continuous Threat Exposure Management (CTEM) @ Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/travis-j-bennett-113a1414",
+        "location": {
+          "default": "San Diego, California, United States, North America",
+          "short": "San Diego, California",
+          "country": "United States",
+          "state": "California",
+          "city": "San Diego",
+          "position": null
+        },
+        "current_company": "Zafran Security",
+        "current_company_domain": null,
+        "date": {
+          "start": "2026-02-01",
+          "end": null
+        },
+        "ark_id": "22c9e6c2-fd63-2152-d6be-5fcaafeb52d4",
+        "department": {
+          "departments": [
+            "sales"
+          ],
+          "sub_departments": [
+            "field_outside_sales"
+          ],
+          "functions": [
+            "sales"
+          ],
+          "seniority": "manager"
+        },
+        "top_keys": [
+          "company",
+          "department",
+          "educations",
+          "id",
+          "identifier",
+          "industry",
+          "languages",
+          "last_updated",
+          "link",
+          "location",
+          "member_badges",
+          "position_groups",
+          "profile",
+          "skills",
+          "statistics"
+        ]
+      },
+      {
+        "full_name": "Sanaz Yashar",
+        "title": "Co-Founder & CEO",
+        "headline": "Co-Founder & CEO @ Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/sanaz-yashar",
+        "location": {
+          "default": "Israel, Asia",
+          "short": null,
+          "country": "Israel",
+          "state": null,
+          "city": null,
+          "position": null
+        },
+        "current_company": "Zafran Security",
+        "current_company_domain": null,
+        "date": {
+          "start": "2022-11-01",
+          "end": null
+        },
+        "ark_id": "2f6b7fba-b747-ed8b-2724-26bfdbbf354a",
+        "department": {
+          "departments": [
+            "information_technology"
+          ],
+          "sub_departments": [
+            "cybersecurity"
+          ],
+          "functions": [
+            "information_technology"
+          ],
+          "seniority": "founder"
+        },
+        "top_keys": [
+          "company",
+          "department",
+          "educations",
+          "id",
+          "identifier",
+          "industry",
+          "languages",
+          "last_updated",
+          "link",
+          "location",
+          "member_badges",
+          "position_groups",
+          "profile",
+          "skills",
+          "statistics",
+          "volunteer_experiences"
+        ]
+      },
+      {
+        "full_name": "Brett Robinson",
+        "title": "Regional Sales Manager - Majors",
+        "headline": "Continuous Threat Exposure Management",
+        "linkedin": "https://www.linkedin.com/in/bwrobinson1",
+        "location": {
+          "default": "Franklin, Tennessee, United States, North America",
+          "short": "Franklin, Tennessee",
+          "country": "United States",
+          "state": "Tennessee",
+          "city": "Franklin",
+          "position": null
+        },
+        "current_company": "Zafran Security",
+        "current_company_domain": null,
+        "date": {
+          "start": "2025-02-01",
+          "end": null
+        },
+        "ark_id": "335216a0-9701-913a-6619-846616b07c27",
+        "department": {
+          "departments": [
+            "sales"
+          ],
+          "sub_departments": [
+            "field_outside_sales"
+          ],
+          "functions": [
+            "sales"
+          ],
+          "seniority": "manager"
+        },
+        "top_keys": [
+          "company",
+          "department",
+          "educations",
+          "id",
+          "identifier",
+          "industry",
+          "languages",
+          "last_updated",
+          "link",
+          "location",
+          "member_badges",
+          "organizations",
+          "position_groups",
+          "profile",
+          "skills",
+          "statistics"
+        ]
+      },
+      {
+        "full_name": "Aidan Maloney",
+        "title": "Business Development",
+        "headline": "Continuous Threat Exposure Management (CTEM) at Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/aidan-maloney-614856181",
+        "location": {
+          "default": "New York, New York, United States, North America",
+          "short": "New York, New York",
+          "country": "United States",
+          "state": "New York",
+          "city": "New York",
+          "position": null
+        },
+        "current_company": "Zafran Security",
+        "current_company_domain": null,
+        "date": {
+          "start": "2025-12-01",
+          "end": null
+        },
+        "ark_id": "387b8ed4-d28c-3451-fb80-36f4f7b47df4",
+        "department": {
+          "departments": [
+            "business_development"
+          ],
+          "sub_departments": [
+            "strategic_business_development"
+          ],
+          "functions": [
+            "business_development"
+          ],
+          "seniority": "mid_level"
+        },
+        "top_keys": [
+          "company",
+          "department",
+          "educations",
+          "id",
+          "identifier",
+          "industry",
+          "languages",
+          "last_updated",
+          "link",
+          "location",
+          "member_badges",
+          "position_groups",
+          "profile",
+          "skills",
+          "statistics"
+        ]
+      },
+      {
+        "full_name": "Rotem Peled-Dvir",
+        "title": "SVP, Finance",
+        "headline": "Strategic Finance Leader | Building Scalable, Tech-Forward Teams",
+        "linkedin": "https://www.linkedin.com/in/rotem-peled-dvir",
+        "location": {
+          "default": "New York, New York, United States, North America",
+          "short": "New York, New York",
+          "country": "United States",
+          "state": "New York",
+          "city": "New York",
+          "position": null
+        },
+        "current_company": "Zafran Security",
+        "current_company_domain": null,
+        "date": {
+          "start": "2025-01-01",
+          "end": null
+        },
+        "ark_id": "3a589e34-77e9-199d-7bc8-6a356c676c73",
+        "department": {
+          "departments": [
+            "finance"
+          ],
+          "sub_departments": [
+            "corporate_finance"
+          ],
+          "functions": [
+            "finance"
+          ],
+          "seniority": "vp"
+        },
+        "top_keys": [
+          "company",
+          "department",
+          "educations",
+          "id",
+          "identifier",
+          "industry",
+          "languages",
+          "last_updated",
+          "link",
+          "location",
+          "member_badges",
+          "position_groups",
+          "profile",
+          "skills",
+          "statistics"
+        ]
+      },
+      {
+        "full_name": "Andrew Marasa",
+        "title": "Regional Sales Manager",
+        "headline": "Regional Sales Manager @ Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/andrewmarasa",
+        "location": {
+          "default": "Boston, Massachusetts, United States, North America",
+          "short": "Boston, Massachusetts",
+          "country": "United States",
+          "state": "Massachusetts",
+          "city": "Boston",
+          "position": null
+        },
+        "current_company": "Zafran Security",
+        "current_company_domain": null,
+        "date": {
+          "start": "2025-11-01",
+          "end": null
+        },
+        "ark_id": "3a5c39b4-9c4a-d808-187b-425dc2d60120",
+        "department": {
+          "departments": [
+            "sales"
+          ],
+          "sub_departments": [
+            "territory_sales"
+          ],
+          "functions": [
+            "sales"
+          ],
+          "seniority": "manager"
+        },
+        "top_keys": [
+          "certifications",
+          "company",
+          "department",
+          "educations",
+          "id",
+          "identifier",
+          "industry",
+          "languages",
+          "last_updated",
+          "link",
+          "location",
+          "member_badges",
+          "position_groups",
+          "profile",
+          "skills",
+          "statistics"
+        ]
+      },
+      {
+        "full_name": "Kris Nordberg",
+        "title": "Regional Sales Manager",
+        "headline": "RSM | Zafran Security | MO, IA, NE, KS",
+        "linkedin": "https://www.linkedin.com/in/kris-nordberg-bb465090",
+        "location": {
+          "default": "St Louis, Missouri, United States, North America",
+          "short": "St Louis, Missouri",
+          "country": "United States",
+          "state": "Missouri",
+          "city": "St Louis",
+          "position": null
+        },
+        "current_company": "Zafran Security",
+        "current_company_domain": null,
+        "date": {
+          "start": "2025-10-01",
+          "end": null
+        },
+        "ark_id": "3b97b409-f565-b0f6-fe74-e1e647a0849e",
+        "department": {
+          "departments": [
+            "sales"
+          ],
+          "sub_departments": [
+            "field_outside_sales"
+          ],
+          "functions": [
+            "sales"
+          ],
+          "seniority": "manager"
+        },
+        "top_keys": [
+          "awards",
+          "company",
+          "department",
+          "educations",
+          "id",
+          "identifier",
+          "industry",
+          "languages",
+          "last_updated",
+          "link",
+          "location",
+          "member_badges",
+          "position_groups",
+          "profile",
+          "skills",
+          "statistics"
+        ]
+      },
+      {
+        "full_name": "Quentin O'Dell",
+        "title": "Director, Technical Account Manager",
+        "headline": "Director, Technical Account Management",
+        "linkedin": "https://www.linkedin.com/in/quentin-odell",
+        "location": {
+          "default": "Dallas-fort Worth Metroplex, United States, North America",
+          "short": "Dallas-fort Worth Metroplex",
+          "country": "United States",
+          "state": null,
+          "city": "Dallas-fort Worth Metroplex",
+          "position": null
+        },
+        "current_company": "Zafran Security",
+        "current_company_domain": null,
+        "date": {
+          "start": "2026-06-01",
+          "end": null
+        },
+        "ark_id": "490f7f6c-23d4-3633-b7d0-512e6870fcde",
+        "department": {
+          "departments": [
+            "sales"
+          ],
+          "sub_departments": [
+            "account_management"
+          ],
+          "functions": [
+            "sales"
+          ],
+          "seniority": "director"
+        },
+        "top_keys": [
+          "company",
+          "department",
+          "educations",
+          "id",
+          "identifier",
+          "industry",
+          "languages",
+          "last_updated",
+          "link",
+          "location",
+          "member_badges",
+          "position_groups",
+          "profile",
+          "skills",
+          "statistics"
+        ]
+      }
+    ]
+  },
+  "name_scoped": {
+    "Vari Kaur": {
+      "variants": [
+        "Vari Kaur",
+        "Varinder Kaur"
+      ],
+      "http": 200,
+      "totalElements": 1,
+      "returned": 1,
+      "credits": 0.5,
+      "rows": [
+        {
+          "full_name": "Vari Kaur",
+          "title": "Head of Growth Marketing",
+          "headline": "Demand Generation & ABM Expert | B2B SaaS Marketing Leader | GTM Strategist | Pipeline Acceleration, and Revenue Growth",
+          "linkedin": "https://www.linkedin.com/in/varinderkaur",
+          "location": {
+            "default": "Easton, Pennsylvania, United States, North America",
+            "short": "Easton, Pennsylvania",
+            "country": "United States",
+            "state": "Pennsylvania",
+            "city": "Easton",
+            "position": null
+          },
+          "current_company": "Zafran Security",
+          "current_company_domain": null,
+          "date": {
+            "start": "2025-05-01",
+            "end": null
+          },
+          "ark_id": "02321ba9-8571-0924-a589-abef8647c8fa",
+          "department": {
+            "departments": [
+              "marketing"
+            ],
+            "sub_departments": [
+              "growth_marketing"
+            ],
+            "functions": [
+              "marketing"
+            ],
+            "seniority": "head"
+          },
+          "top_keys": [
+            "awards",
+            "certifications",
+            "company",
+            "department",
+            "educations",
+            "id",
+            "identifier",
+            "industry",
+            "languages",
+            "last_updated",
+            "link",
+            "location",
+            "member_badges",
+            "position_groups",
+            "profile",
+            "skills",
+            "statistics"
+          ]
+        }
+      ]
+    },
+    "Nick Fisher": {
+      "variants": [
+        "Nick Fisher",
+        "Nicholas Fisher"
+      ],
+      "http": 200,
+      "totalElements": 1,
+      "returned": 1,
+      "credits": 0.5,
+      "rows": [
+        {
+          "full_name": "Nick Fisher",
+          "title": "VP of Marketing",
+          "headline": "VP Marketing at Zafran Security",
+          "linkedin": "https://www.linkedin.com/in/nicholastfisher",
+          "location": {
+            "default": "New York, New York, United States, North America",
+            "short": "New York, New York",
+            "country": "United States",
+            "state": "New York",
+            "city": "New York",
+            "position": null
+          },
+          "current_company": "Zafran Security",
+          "current_company_domain": null,
+          "date": {
+            "start": "2024-04-01",
+            "end": null
+          },
+          "ark_id": "5669ed27-2388-effa-30a8-53bf21dee7d3",
+          "department": {
+            "departments": [
+              "marketing"
+            ],
+            "sub_departments": [
+              "product_marketing"
+            ],
+            "functions": [
+              "marketing"
+            ],
+            "seniority": "vp"
+          },
+          "top_keys": [
+            "awards",
+            "certifications",
+            "company",
+            "department",
+            "educations",
+            "id",
+            "identifier",
+            "industry",
+            "languages",
+            "last_updated",
+            "link",
+            "location",
+            "member_badges",
+            "position_groups",
+            "profile",
+            "projects",
+            "publications",
+            "skills",
+            "statistics"
+          ]
+        }
+      ]
+    },
+    "Ben Seri": {
+      "variants": [
+        "Ben Seri"
+      ],
+      "http": 200,
+      "totalElements": 1,
+      "returned": 1,
+      "credits": 0.5,
+      "rows": [
+        {
+          "full_name": "Ben Seri",
+          "title": "Co-Founder & CTO",
+          "headline": "Co-Founder & CTO @ Zafran Security",
+          "linkedin": "https://www.linkedin.com/in/ben-seri",
+          "location": {
+            "default": "Tel Aviv District, Israel, Asia",
+            "short": "Tel Aviv District",
+            "country": "Israel",
+            "state": null,
+            "city": "Tel Aviv District",
+            "position": null
+          },
+          "current_company": "Zafran Security",
+          "current_company_domain": null,
+          "date": {
+            "start": "2022-11-01",
+            "end": null
+          },
+          "ark_id": "88f5f40a-c65c-1141-6186-c54a81b95d51",
+          "department": {
+            "departments": [
+              "information_technology"
+            ],
+            "sub_departments": [
+              "cybersecurity_operations"
+            ],
+            "functions": [
+              "entrepreneurship"
+            ],
+            "seniority": "founder"
+          },
+          "top_keys": [
+            "company",
+            "department",
+            "id",
+            "identifier",
+            "industry",
+            "languages",
+            "last_updated",
+            "link",
+            "location",
+            "member_badges",
+            "position_groups",
+            "profile",
+            "statistics"
+          ]
+        }
+      ]
+    }
+  }
+}

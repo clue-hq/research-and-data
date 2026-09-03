@@ -1,0 +1,244 @@
+{
+  "requestId": "cdb3105782a8a6152a3856ca9cd3a268",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/g0pf8scr0c2",
+      "title": "Tyler Chonoles",
+      "url": "https://www.linkedin.com/in/tyler-chonoles-106405a0",
+      "publishedDate": "2026-07-18T06:48:09.000Z",
+      "text": "# Tyler Chonoles\n\nSecuring AI | Growth Marketing @ Harmonic Security\n\nNew York City Metropolitan Area (US)\n\n500 connections \u2022 795 followers\n\n## About\n\nSecuring AI | Growth Marketing @ Harmonic Security\n\nTotal Experience: 7 years and 1 month\n\n## Experience\n\n### Growth and Demand Gen Marketing Manager - [Harmonic Security](https://www.linkedin.com/company/harmonic-security) (Current)\n\nMay 2026 - Present (2 months) in New York, New York, United States\n\nDepartment: Marketing \u2022 Level: Manager\n\nHarmonic Security is a Technology, Information and Internet company. Harmonic Security has 50-60 employees and has annual revenue in the $1M-$10M range, founded in 2023. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and United Kingdom. Has $24.5M in total funding, with 2 prior funding rounds.\n\n### Programmatic Trading Specialist - [The Trade Desk](https://www.linkedin.com/company/the-trade-desk)\n\nApr 2024 - May 2026 (2 years and 1 month) in New York, New York, United States\n\nDepartment: Marketing \u2022 Level: Specialist\n\nThe Trade Desk (TTD) is a Technology, Information and Internet company. The Trade Desk has 3,000-4,000 employees (+10% YoY) and has annual revenue in the $2B-$3B range, founded in 2009. Headquartered in Ventura, California, United States, operates in 14 countries (including France, Australia, Taiwan, South Korea, and China). Its workforce is distributed across 31 countries (including United States, United Kingdom, Au",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/g0pf8scr0c2",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Tyler Chonoles",
+            "firstName": "Tyler",
+            "lastName": "Chonoles",
+            "location": "New York City Metropolitan Area",
+            "workHistory": [
+              {
+                "title": "Growth and Demand Gen Marketing Manager",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2026-05-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9j6bkrfw0m4",
+                  "name": "Harmonic Security"
+                }
+              },
+              {
+                "title": "Programmatic Trading Specialist",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2024-04-01",
+                  "to": "2026-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/p13qv8t5zm0",
+                  "name": "The Trade Desk"
+                }
+              },
+              {
+                "title": "Business Intelligence Architect",
+                "location": null,
+                "dates": {
+                  "from": "2021-11-01",
+                  "to": "2024-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/24jfc7c8hns",
+                  "name": "GRAIN Group"
+                }
+              },
+              {
+                "title": "Senior Analyst, Data Analytics",
+                "location": null,
+                "dates": {
+                  "from": "2021-09-01",
+                  "to": "2021-11-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/v4gsgfpl3dg",
+                  "name": "Horizon Media"
+                }
+              },
+              {
+                "title": "Analyst, Data Analytics",
+                "location": null,
+                "dates": {
+                  "from": "2021-05-01",
+                  "to": "2021-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/v4gsgfpl3dg",
+                  "name": "Horizon Media"
+                }
+              },
+              {
+                "title": "Employee",
+                "location": "Salt Lake City, Utah, United States",
+                "dates": {
+                  "from": "2020-12-01",
+                  "to": "2021-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/jsdb1vdlwk7",
+                  "name": "Snowbird"
+                }
+              },
+              {
+                "title": "Analyst",
+                "location": "New York, New York",
+                "dates": {
+                  "from": "2019-07-01",
+                  "to": "2020-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/j149ftgqby7",
+                  "name": "Mizuho"
+                }
+              },
+              {
+                "title": "Summer Analyst",
+                "location": "New York, New York",
+                "dates": {
+                  "from": "2018-05-01",
+                  "to": "2018-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/j149ftgqby7",
+                  "name": "Mizuho"
+                }
+              },
+              {
+                "title": "Intern",
+                "location": null,
+                "dates": {
+                  "from": "2017-06-01",
+                  "to": "2017-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/vdr3dggyy0g",
+                  "name": "HGK Asset Management, Inc."
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "High School",
+                "dates": {
+                  "from": "2011",
+                  "to": "2015"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Friends Seminary"
+                }
+              },
+              {
+                "degree": "Mathematics, Physics",
+                "dates": {
+                  "from": "2015",
+                  "to": "2019"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/y6tsrmkqws1",
+                  "name": "Bowdoin College"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://brand-innovators.com/brand-innovators-40-under-40-2023-awards/",
+      "title": "Brand Innovators\u2019 40 Under 40 2023 Awards",
+      "url": "https://brand-innovators.com/brand-innovators-40-under-40-2023-awards/",
+      "publishedDate": "2023-12-08T18:37:00.000Z",
+      "author": "Ben Wasilewski",
+      "text": "Brand Innovators\u2019 40 Under 40 2023 Awards\n\nBrand Innovators is pleased to announce our 2023 honorees of our 40 Under 40 awards.\n\nSince 2018, we\u2019ve aimed to recognize and honor the regional leaders powering their brands forward. These individuals inspire and innovate and before you know it they\u2019ll be running your marketing departments \u2013 if they\u2019re not already.\n\nWe\u2019ve already highlighted our Midwest 2023 Class and will be promoting our Northeast, Southeast, and West Coast honorees over the next few weeks. Congratulations to the 2023 40 Under 40 recipients. We are so thrilled to recognize your talent and look forward to your industry accomplishments in the year ahead.\n\n### Brand Innovators \u201940 Under 40\u2032 Midwest Class of 2023\n\n- Adam Tollefson, Marketing Director, BelGioioso\n- Tony Fung, Director of Shopper Marketing and E-commerce, Bob Evans Farms Inc.\n- Kayleen Alexson, Sr. Director, ESG & Enterprise Brand Strategy, Caribou Coffee\n- Rose Russo, Director of Media & Digital Marketing, Constellation Brands\n- Brittany Flory, Director of International Marketing, Domino\u2019s\n- Megan Suttile, AVP Media Portfolio Partnerships, Eli Lilly and Company\n- Michelle Henning, Marketing Manager, Empire Today\n- Kelsea Cozad, Manager, Social Media, Express\n- Brittni Ainsworth-Hukee, Digital Experience Manager, Ferrara\n- Brian Camen, Sr. Director, Content & PR, Ferrara Candy Company\n- Fernando Bernardo, Director of Marketing, Ferrero\n- Robert Pickart, Brand Marketing Director, Ferrero\n- Camille Vicin",
+      "image": "https://brand-innovators.com/wp-content/uploads/2023/12/6573621f09261458ba8a7da0_unnamed.png"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/tyler-chonoles-106405a0_excited-to-share-that-ive-officially-joined-activity-7465103151470292992--FHB",
+      "title": "Excited to share that I\u2019ve officially joined Harmonic Security as their new Growth and Demand Gen Marketing Manager! | Tyler Chonoles",
+      "url": "https://www.linkedin.com/posts/tyler-chonoles-106405a0_excited-to-share-that-ive-officially-joined-activity-7465103151470292992--FHB",
+      "publishedDate": "2026-05-26T18:14:46.000Z",
+      "author": "Tyler Chonoles",
+      "text": "Excited to share that I\u2019ve officially joined Harmonic Security as their new Growth and Demand Gen Marketing Manager! The problem Harmonic is solving is one I genuinely believe matters: enabling the\u2026 | Tyler Chonoles | 25 comments\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\n# Tyler Chonoles\u2019 Post\n\nSecuring AI | Growth Marketing @ Harmonic Security\n\n2mo\n\nEdited\n\nExcited to share that I\u2019ve officially joined Harmonic Security as their new Growth and Demand Gen Marketing Manager! The problem Harmonic is solving is one I genuinely believe matters: enabling the safe use of AI. As AI becomes embedded in how every team works, organizations are facing a real question: how do you let your people benefit from these tools without putting sensitive data at risk? Harmonic\u2019s answer is elegant. Rather than simply blocking AI tools, Harmonic gives security teams full visibility into how AI is being used across their organization, detects sensitive data in real time using their own small language models, and coaches employees toward secure behavior at the exact moment it matters. I couldn\u2019t be more proud to join this team. Getting to know Ana Corio and Michael Marriott throughout the process, and being able to work alongside my good friend Jackson Harrower, made this decision incredibly easy. The depth of thinking and the genuine excitement about what they\u2019re building stood out from the very first c",
+      "image": "https://static.licdn.com/aero-v1/sc/h/c45fy346jw096z9pbphyyhdz7",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://view.ceros.com/crain/lw2022-hub-3-2-1",
+      "title": "40U40 2023 - Honorees",
+      "url": "https://view.ceros.com/crain/lw2022-hub-3-2-1",
+      "text": "40U40 2023 - Honorees\n\n#### Yong Zhang\n\nDirector of data science, Kroger Precision Marketing\n\n#### Lauren Wetzel\n\nChief operating officer, InfoSum\n\n#### Jared Vestal\n\nVP of growth and journey marketing, Geico\n\n#### Crystal Vinisse Thomas\n\nVP and global brand leader of lifestyle and luxury brands, Hyatt\n\n#### Everette Taylor\n\nCEO, Kickstarter\n\n#### Erin Styles\n\nHead of advertising/ B2B communications and PR, Spotify\n\n#### Storm Smith\n\nStorytelling director, Gallaudet University\n\n#### Jess Shuraleff\n\nHead of US&C delivery ads, Uber\n\n#### Simona Shakin\n\nVP of product and retention marketing, Etsy\n\n#### Rinee Shah\n\nCreative director, Oatly\n\n#### Rob Sender\n\nDirector of brand and marketing, Dallas Cowboys\n\n#### Travis Scoles\n\nSenior VP of advanced advertising, Paramount\n\n#### Matt Schaffer\n\nCreative director, Frito-Lay North America\n\n#### Noura Sakkijha\n\nCEO and co-founder, Mejuri\n\n#### Gautam Reghunath\n\nCo-founder and CEO, Talented.Agency\n\n#### Lindsay Radkoski\n\nU.S. chief marketing officer, The Wendy's Company\n\n#### Sean Pitts\n\nAssociate strategy director, Walton Isaacson\n\n#### Brian Park\n\nSenior manager of product management, ads and data platforms, The Walt Disney Company\n\n#### Amie Owen\n\nU.S. head of commerce, UM\n\n#### Jaime Nash\n\nDirector of product marketing, The Trade Desk\n\n#### Charlotte Mostaed\n\nChief marketing officer, Health-Ade\n\n#### Daniel Maynez\n\nManager of multicultural marketing, Hyundai Motor America\n\n#### Rogelio Magana\n\nSenior director of brand strategy and cam",
+      "image": "https://media-s3-us-east-1.ceros.com/crain/page-thumbnails/2023/09/18/573f810efdf0c109942bde4dec1e6029/page-thumbnail.jpg?imageOpt=1&crop=870,489,x0,y0"
+    },
+    {
+      "id": "https://brand-innovators.com/awards/2021-under-40-northeast/",
+      "title": "2021 Under 40 Northeast - Brand Innovators",
+      "url": "https://brand-innovators.com/awards/2021-under-40-northeast/",
+      "publishedDate": "2024-01-09T20:16:32.000Z",
+      "text": "2021 Under 40 Northeast - Brand Innovators\n\nAbout Honorees\n\n### Brand Innovators Announces Ninth Annual List Of \u201940 Under 40\u2032 Brand Marketers in The Northeast U.S.\n\nHonorees were nominated by the Brand Innovators community which includes more than 25,000 brand side marketers across the US, Canada and UK. Winners were then selected by the Brand Innovators editorial team based on their professional accomplishments, expertise in leveraging digital media and emerging advertising technology platforms and a drive to continually keep their respective brands on the cutting edge of innovation.\n\n\u200d\n\nFollowing is the Brand Innovators \u201940 Under 40\u2032 Northeast Class of 2021:\n\n- Sara Resnick, Vice President, Enterprise SEO & Partnerships, 1-800-FLOWERS.COM, Inc.\n- Robert Hagemann, Chief Marketing Officer, Aether Diamonds\n- Ashley Schapiro, VP MARKETING, MEDIA, PERFORMANCE & ENGAGEMENT, American Eagle\n- Arielle Isackson, Director, Digital Marketing, Augustinus Bader\n- Adrian Molina, Senior Brand Marketing Manager, Aviation Gin\n- Stephanie Linker, Head of Retirement Marketing, BlackRock\n- Chris Marino, Global Head of Performance Marketing & Media, Bloomberg Media\n- Anne Marie Gianutsos, Chief Marketing Officer, Drone Racing League\n- Tiara Puglisi, Director, Brand Marketing, Sims & Skate, EA\n- Deepa Sen, Head of Strategy, Marcom, EA Games, EA\n- Miguel Zorrilla, Brand Director \u2013 Butterfinger, Ferrero\n- Sandra Pope, VP of Marketing, fresh&co\n- Rachel Mansfield, VP of Marketing, Getaway\n- Obehi Re",
+      "image": "https://brand-innovators.com/wp-content/themes/brand-innovators/assets/logo-facebook-bk.svg",
+      "favicon": "https://brand-innovators.com/wp-content/uploads/2024/01/BrandInnovators_Logo_Favicon.png"
+    },
+    {
+      "id": "https://brand-innovators.com/awards/2021-under-40-west-coast/",
+      "title": "2021 Under 40 West Coast - Brand Innovators",
+      "url": "https://brand-innovators.com/awards/2021-under-40-west-coast/",
+      "publishedDate": "2024-01-09T20:15:29.000Z",
+      "text": "2021 Under 40 West Coast - Brand Innovators\n\nAbout Honorees\n\n### Brand Innovators Announces Ninth Annual List Of \u201940 Under 40\u2032 Brand Marketers in The West Coast U.S.\n\nHonorees were nominated by the Brand Innovators community which includes more than 25,000 brand side marketers across the US, Canada and UK. Winners were then selected by the Brand Innovators editorial team based on their professional accomplishments, expertise in leveraging digital media and emerging advertising technology platforms and a drive to continually keep their respective brands on the cutting edge of innovation.\n\n\u200d\n\nFollowing is the Brand Innovators \u201940 Under 40\u2032 West Coast Class of 2021:\n\n- Kennedy Reynolds, Vice President, Brand and Content, Acorns\n- Angelic Vendette, VP Marketing, Alo Yoga\n- Kayla Nocket, Media Execution Lead, Apple\n- Dani Ingram, Director, Applebee\u2019s Brand Marketing, Applebee\u2019s\n- Alissa Norby, VP, Digital Content and Strategy, BRON Studios\n- Kim Caldbeck, Chief Marketing Officer, Coursera\n- Emily Sly, VP, Global Marketing, Crocs, Inc.\n- Ashley Cartwright, Vice President, Media Planning & Strategy, Disney\n- Gayitri Budhraja, VP of Brand, e.l.f. Beauty, e.l.f. Beauty\n- Laurel Stark, Creative Director, The Sims, EA\n- Elle McCarthy, VP, EA Brand, EA\n- Patrick Benson, Senior Manager Social, El Pollo Loco\n- Diana Wolff, Global Head of Social Marketing, Facebook for Business, Facebook\n- Austin Ratner, Senior Partnerships Marketing Manager, Freshly\n- Bailey Mobley, Social Media Manager, G",
+      "image": "https://brand-innovators.com/wp-content/themes/brand-innovators/assets/logo-facebook-bk.svg",
+      "favicon": "https://brand-innovators.com/wp-content/uploads/2024/01/BrandInnovators_Logo_Favicon.png"
+    },
+    {
+      "id": "https://brand-innovators.com/awards/2021-under-40-south/",
+      "title": "2021 Under 40 South - Brand Innovators",
+      "url": "https://brand-innovators.com/awards/2021-under-40-south/",
+      "publishedDate": "2024-01-09T20:16:00.000Z",
+      "text": "2021 Under 40 South - Brand Innovators\n\nAbout Honorees\n\n### Brand Innovators Announces Ninth Annual List Of \u201940 Under 40\u2032 Brand Marketers in The South U.S.\n\nHonorees were nominated by the Brand Innovators community which includes more than 25,000 brand side marketers across the US, Canada and UK. Winners were then selected by the Brand Innovators editorial team based on their professional accomplishments, expertise in leveraging digital media and emerging advertising technology platforms and a drive to continually keep their respective brands on the cutting edge of innovation.\n\n\u200d\n\nFollowing is the Brand Innovators \u201940 Under 40\u2032 South Class of 2021:\n\n- Amy Craven, Director, Brand & Advertising, American Airlines\n- Ryan Luckey, AVP, Corporate Brand Marketing, AT&T\n- Jorge Almeida, Senior Digital Marketing Manager, Avocados from Mexico\n- Gabriela McCoy, Director of Grey Goose, Patron & Agave Portfolio, Bacardi\n- Dave Levin, VP of Marketing, CareerBuilder\n- Jordan Lalor, Manger Creative Strategy & Content, Coca-Cola\n- Michael Pittman, Global Director, Next Generation Social Media Capabilities, Coca-Cola\n- Jeff Haynes, Brand Manager of Innovation, Cox Communications\n- Shannon Womack, General Manager, Brand Communications, Delta Airlines\n- Luis Martinez, Director, Marketing Intelligence and CRM, Denny\u2019s\n- Sarah Groves, Senior Director, Global Integrated Communications, ExxonMobil\n- Emily Allen, Omnichannel Marketing Grocery Lead, Georgia-Pacific\n- Teresa Bossong, Senior Director, C",
+      "image": "https://brand-innovators.com/wp-content/themes/brand-innovators/assets/logo-facebook-bk.svg",
+      "favicon": "https://brand-innovators.com/wp-content/uploads/2024/01/BrandInnovators_Logo_Favicon.png"
+    },
+    {
+      "id": "https://www.prweb.com/releases/dmn-announces-2018-40under40-winners-842937205.html",
+      "title": "DMN Announces 2018 40Under40 Winners",
+      "url": "https://www.prweb.com/releases/dmn-announces-2018-40under40-winners-842937205.html",
+      "publishedDate": "2018-10-10T16:00:00.000Z",
+      "author": "DMN",
+      "text": "DMN Announces 2018 40Under40 Winners Accessibility Statement Skip Navigation\n\nNEW YORK, Oct. 10, 2018 /PRNewswire-PRWeb/ -- DMN, a leading provider of digital and data-driven marketing news, is excited to celebrate 40 of the best, most accomplished, high-level superheroes in the business of marketing today \u2013 all under the age of 40.\n\nDMN's 40Under40 recognizes these extraordinary young marketers from across brands, agencies, and vendors, who are not only succeeding, but excelling in their careers. Their outstanding achievements through creativity, innovation, support, leadership, and company advancement in marketing, is what makes DMN proud to honor them.\n\nOn November 6, 2018 marketing heroes will unite at Dream Downtown in NYC, for a night of libations, great food, even better conversations, and a festive awards ceremony.\n\nAnd finally, the 2018 DMN 40Under40 honorees are: Tasso Argyros (Founder and CEO, ActionIQ), Mike Batiste (President, Five Eighty (formerly known as Life In Mobile)), Brandon Beatty (Co-Founder, KleerMail), Jason Beckerman (CEO, Unified), Eric Berry (Co-Founder and CEO, TripleLift), Jessica Best (Director of Data-Driven Marketing, Barkley), Joe Coleman (Co-founder and CEO, Contently), Matt Conlin (Co-founder and President, Fluent, Inc.), Susan Diana (Director, Product Management, Marriott International), David Fossas (Sr. Director, Brand, WP Engine), Lauren Gentile (VP, Executive Creative Director, Epsilon), Ellen Gurevich (VP, Integrated Marketing, Instit",
+      "image": "https://www.prweb.com/content/dam/prweb/home/Logo%20%20118x45.png",
+      "favicon": "https://www.prweb.com/content/dam/cision/icons/favicon.png"
+    }
+  ],
+  "searchTime": 1403.2,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.51,
+  "_request": {
+    "query": "\"Tyler Chonoles\" award winner \"40 under 40\" top marketers recognition list",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

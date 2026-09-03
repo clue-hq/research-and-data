@@ -1,0 +1,57 @@
+{
+  "id": "gen-1788329881-shBw7l1WzMeYW7WORoed",
+  "object": "chat.completion",
+  "created": 1788329881,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"claims\": [\n    {\n      \"field_key\": \"contact.facet.career_history\",\n      \"value\": [\n        \"Growth and Demand Gen Marketing Manager - Harmonic Security (May 2026 - Present)\",\n        \"Programmatic Trading Specialist - The Trade Desk (Apr 2024 - May 2026)\",\n        \"Business Intelligence Architect - GRAIN Group (Nov 2021 - Mar 2024)\",\n        \"Senior Analyst, Data Analytics - Horizon Media (Sep 2021 - Nov 2021)\",\n        \"Analyst, Data Analytics - Horizon Media (May 2021 - Sep 2021)\",\n        \"Employee - Snowbird (Dec 2020 - May 2021)\",\n        \"Analyst - Mizuho (Jul 2019 - Sep 2020)\",\n        \"Summer Analyst - Mizuho (May 2018 - Aug 2018)\",\n        \"Intern - HGK Asset Management, Inc. (Jun 2017 - Jul 2017)\"\n      ],\n      \"evidence_quote\": \"Growth and Demand Gen Marketing Manager - [Harmonic Security] (Current)\\n\\nMay 2026 - Present (2 months) in New York, New York, United States\",\n      \"source_url\": \"https://www.linkedin.com/in/tyler-chonoles-106405a0\",\n      \"source_timestamp\": null,\n      \"source_type\": \"linkedin_profile\",\n      \"charter_category\": \"professional_identity\",\n      \"priority\": \"P1\",\n      \"use_class\": \"professional-public\",\n      \"identity_binding\": \"STRONG\",\n      \"outreach_safe\": true,\n      \"note\": \"\"\n    },\n    {\n      \"field_key\": \"contact.facet.alma_mater\",\n      \"value\": \"Mathematics, Physics at Bowdoin College (2015 - 2019)\",\n      \"evidence_quote\": \"Mathematics, Physics at [Bowdoin College]\\n\\n2015 - 2019 (4 years) in Brunswick, Maine, United States\",\n      \"source_url\": \"https://www.linkedin.com/in/tyler-chonoles-106405a0\",\n      \"source_timestamp\": null,\n      \"source_type\": \"linkedin_profile\",\n      \"charter_category\": \"background\",\n      \"priority\": \"P1\",\n      \"use_class\": \"professional-public\",\n      \"identity_binding\": \"STRONG\",\n      \"outreach_safe\": true,\n      \"note\": \"\"\n    },\n    {\n      \"field_key\": \"contact.facet.hobby\",\n      \"value\": [\n        \"playing guitar\",\n        \"skiing\",\n        \"played basketball in school\",\n        \"golf\"\n      ],\n      \"evidence_quote\": \"Off the course, Tyler enjoys playing guitar and skiing\",\n      \"source_url\": \"https://athletics.bowdoin.edu/sports/mens-golf/roster/tyler-chonoles/1896\",\n      \"source_timestamp\": null,\n      \"source_type\": \"company_site\",\n      \"charter_category\": \"life_outside_work\",\n      \"priority\": \"P2\",\n      \"use_class\": \"personal-public-non-sensitive\",\n      \"identity_binding\": \"STRONG\",\n      \"outreach_safe\": true,\n      \"note\": \"Golf and basketball references from Bowdoin athletics pages; single-page quote used for guitar and skiing.\"\n    },\n    {\n      \"field_key\": \"contact.facet.recent_post\",\n      \"value\": \"Excited to share that I\u2019ve officially joined Harmonic Security as their new Growth and Demand Gen Marketing Manager!\",\n      \"evidence_quote\": \"Excited to share that I\u2019ve officially joined Harmonic Security as their new Growth and Demand Gen Marketing Manager!\",\n      \"source_url\": \"https://www.linkedin.com/posts/tyler-chonoles-106405a0_excited-to-share-that-ive-officially-joined-activity-7465103151470292992--FHB\",\n      \"source_timestamp\": null,\n      \"source_type\": \"linkedin_post\",\n      \"charter_category\": \"professional_identity\",\n      \"priority\": \"P1\",\n      \"use_class\": \"professional-public\",\n      \"identity_binding\": \"STRONG\",\n      \"outreach_safe\": true,\n      \"note\": \"\"\n    },\n    {\n      \"field_key\": \"contact.facet.publications\",\n      \"value\": \"Curator of The Frequency, Harmonic\u2019s AI security and governance newsletter\",\n      \"evidence_quote\": \"Written by practitioners, curated by Tyler Chonoles at Harmonic\",\n      \"source_url\": \"https://www.harmonic.security/frequency\",\n      \"source_timestamp\": null,\n      \"source_type\": \"company_site\",\n      \"charter_category\": \"professional_identity\",\n      \"priority\": \"P1\",\n      \"use_class\": \"professional-public\",\n      \"identity_binding\": \"STRONG\",\n      \"outreach_safe\": true,\n      \"note\": \"\"\n    },\n    {\n      \"field_key\": \"contact.facet.publications\",\n      \"value\": \"Most AI security content out there is vendor noise dressed up as thought leadership. We\u2019re trying to do something different\",\n      \"evidence_quote\": \"Most AI security content out there is vendor noise dressed up as thought leadership. We\u2019re trying to do something different\",\n      \"source_url\": \"https://www.linkedin.com/posts/tyler-chonoles-106405a0_been-heads-down-building-something-im-really-activity-7480653138769661953-LZ8j\",\n      \"source_timestamp\": null,\n      \"source_type\": \"linkedin_post\",\n      \"charter_category\": \"voice\",\n      \"priority\": \"P1\",\n      \"use_class\": \"professional-public\",\n      \"identity_binding\": \"STRONG\",\n      \"outreach_safe\": true,\n      \"note\": \"Published as LinkedIn post about the newsletter.\"\n    },\n    {\n      \"field_key\": \"contact.facet.communication_style\",\n      \"value\": \"The problem Harmonic is solving is one I genuinely believe matters: enabling the safe use of AI.\",\n      \"evidence_quote\": \"The problem Harmonic is solving is one I genuinely believe matters: enabling the safe use of AI.\",\n      \"source_url\": \"https://www.linkedin.com/posts/tyler-chonoles-106405a0_excited-to-share-that-ive-officially-joined-activity-7465103151470292992--FHB\",\n      \"source_timestamp\": null,\n      \"source_type\": \"linkedin_post\",\n      \"charter_category\": \"voice\",\n      \"priority\": \"P1\",\n      \"use_class\": \"professional-public\",\n      \"identity_binding\": \"STRONG\",\n      \"outreach_safe\": true,\n      \"note\": \"Represents self-stated motivation/reason for joining Harmonic.\"\n    },\n    {\n      \"field_key\": \"contact.facet.conference_talk\",\n      \"value\": \"NOT FOUND\",\n      \"evidence_quote\": \"\",\n      \"source_url\": \"\",\n      \"source_timestamp\": null,\n      \"source_type\": \"other\",\n      \"charter_category\": \"voice\",\n      \"priority\": \"P3\",\n      \"use_class\": \"professional-public\",\n      \"identity_binding\": \"STRONG\",\n      \"outreach_safe\": true,\n      \"note\": \"No long-form talks or transcripts located.\"\n    },\n    {\n      \"field_key\": \"contact.facet.openers\",\n      \"value\": [\n        \"Congrats on joining Harmonic Security \u2014 excited to see how you shape The Frequency.\",\n        \"Loved your line: \\\"Most organizations can tell you which AI tools their teams are using. Very few can tell you what work is actually getting done inside them.\\\"\"\n      ],\n      \"evidence_quote\": \"Most organizations can tell you which AI tools their teams are using. Very few can tell you what work is actually getting done inside them.\",\n      \"source_url\": \"https://www.linkedin.com/posts/tyler-chonoles-106405a0_most-organizations-can-tell-you-which-ai-activity-7465428804988121088-w05G\",\n      \"source_timestamp\": null,\n      \"source_type\": \"linkedin_post\",\n      \"charter_category\": \"opener\",\n      \"priority\": \"P1\",\n      \"use_class\": \"professional-public\",\n      \"identity_binding\": \"STRONG\",\n      \"outreach_safe\": true,\n      \"note\": \"First opener built from joining/newsletter context; second opener uses verbatim quote as evidence_quote per rules.\"\n    }\n  ],\n  \"unique_insight\": {\n    \"text\": \"NOT FOUND \u2014 thin public footprint\",\n    \"evidence_quote\": \"\",\n    \"source_url\": \"\"\n  },\n  \"not_found\": [\n    \"background.hometown\",\n    \"background.degree_granularity\",\n    \"background.languages (explicit beyond LinkedIn languages)\",\n    \"voice.long_form_quotes\",\n    \"life_outside_work.pets\",\n    \"life_outside_work.causes\",\n    \"life_outside_work.side_projects beyond The Frequency\",\n    \"professional_identity.complete_scope_of_responsibility\",\n    \"professional_identity.management_philosophy\"\n  ],\n  \"same_name_contamination\": []\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABql7-aEAbUJacN-iiZX-Vklu8YSJbdxaMDcj_DfrmRa73O2zKk-S8E7734YDccXsYRK7Pf88kYGxJyIxlr5z7mcw5ZuFZS10xOXJ5szBZiqHWplPDouBb02HUEzKDQVZoyt24o8wAtjRqS4e3Q4uzaeF89IAKmJ61fXBbbIeWDwbCyKUnaf927ycazV_aNazwIMyyDOuzBMijLf-3tsKGpPv-N8IbC7g0EMJyXk0XxayoZrlPhTgCrjzVWg4R4Yii47kNY2vikihQurgOPaEKGtm9CAmYCSUjsPOsc6fWeedQXry-BgCrp8GVPDAwLtdjt4hdWwzmPAiE08ybz0kNji4fREOELB6scrfLSRM0gArhvqbyhHZuU5FN2xm5PrkXZ9AuzGWjF1uPMEh6Xv-BF_li7PWy8qxj_N2KWqwJFtt5q1CFfy4MbkVMMflkcqdKeEE13r7coKpbilyQMrXKaXcumC9fzKrbl2gqWfEdRj3InFn9Q8r1mJ6--Yk1_hfFY5X3YjkcZCOfn3M676kiCZkz3UfJAOvqI-mZMgKakcmUVd8pES2fhakPqQ2GOdPF9fYC8gXbp0s5FxT4bk674aZYZrEetIwuVOgWfB2fSrtm04qtSNN-qjDHXl8Jv1Dnx_SGnp8Aqv0vJ4OKPS3BSoAJX6F9RDJGdg7v5LPJaROmtc5RMEc08Dt-USHtu94ZzjHCrkG6liRYM_VWOyrQqe59wPPC7l_5sFUGslVkf5aJ8e5Zzsf5lXOYt_wF9P_QJR07CM_iASS6zFfkRX81jx_K-hVBDvXoXN_4vH-JhPzBmyWgnI0Ex6ysAHHVkcxqaQHAmulv7eVPhjllNPdm_ZXylt9F0AtDXsnkB4NckVRj_JZpMIAOErNjXMkbjxjzcwQ7cRt0-y3cj2PC3rOljENvI2G6IoexHJHG6O7YGOSZPbUKSWxCmgPrs1OrG3dFqDodMjn0fzdmHNW7_yRRDWJ_IdTVLlWYoAZCT1MIUFD5M1hGWnLkvLbSVa5usqBOImtpgAayGFDonrDjZCmgU06biim3rwrFY-h4SSS_FtTMR8nOfievRomySebtDgWqDjx6ejTkR08mXthXdSPoEkpiB-s0UefBz7uJInQD1_tYA6W6M8R9jg2HH3Jr7BCrnLTBgFZ0vdOGh7X9i8x9JTrHJc-iMJ0TF-EMj1PHtZcSkhcwHa7XBk4ghXLc-Hu-pcadZJ9hI-oJYqjG1Ub3eod834Igf9-gpVPtahCU-J8BfUVQ7UjlM8QUDUh0S-9kmaTi9P6oLlDeLk-f7tiC1PrgT4wsJ16hRvUsaDDI14gpwBlc5rLk29hd4uCn8dk5yFsUcU3m9k6IQoVXvZuWJP7GcQKTWz0rAfbXbDxZN0guDDbkvK8Cz430MLwtIhyEHgB9k.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_0bc5e709a05f4154016a97bf9ac88887d09e7ffbe4f6127135",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 5917,
+    "completion_tokens": 1921,
+    "total_tokens": 7838,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00532125,
+      "upstream_inference_prompt_cost": 0.00147925,
+      "upstream_inference_completions_cost": 0.003842
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 17.9
+}

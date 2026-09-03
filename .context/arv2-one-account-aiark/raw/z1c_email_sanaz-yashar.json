@@ -1,0 +1,517 @@
+{
+  "_http_status": 200,
+  "_elapsed_s": 2.76,
+  "_request_body": {
+    "url": "https://www.linkedin.com/in/sanaz-yashar"
+  },
+  "_body": {
+    "id": "2f6b7fba-b747-ed8b-2724-26bfdbbf354a",
+    "identifier": "sanaz-yashar",
+    "profile": {
+      "first_name": "Sanaz",
+      "middle_name": null,
+      "last_name": "Yashar",
+      "full_name": "Sanaz Yashar",
+      "headline": "Co-Founder & CEO @ Zafran Security",
+      "title": "Co-Founder & CEO",
+      "picture": {
+        "source": "https://images.ai-ark.com/gY9SEfwS81AJ6JZHMM0ofeWiAPwZJhTH_8eKEVuB2jo/exp:1790899199/rs:fill:80:80/plain/s3://ark-person/images/2f6b7fba-b747-ed8b-2724-26bfdbbf354a.jpg"
+      },
+      "background": {
+        "source": "https://media.licdn.com/dms/image/v2/D4D16AQGA9MwFgGb3bA/profile-displaybackgroundimage-shrink_350_1400/profile-displaybackgroundimage-shrink_350_1400/0/1711614252974?e=1786579200&v=beta&t=VacjH1Beg4dTqUl0MqHNgipKYAyZasArtHeyjezbXY0"
+      },
+      "summary": null
+    },
+    "link": {
+      "linkedin": "https://www.linkedin.com/in/sanaz-yashar",
+      "twitter": null,
+      "github": null,
+      "facebook": null
+    },
+    "location": {
+      "default": "Israel, Asia",
+      "short": null,
+      "country": "Israel",
+      "state": null,
+      "city": null,
+      "position": null
+    },
+    "languages": {
+      "primary_locale": {
+        "country": "US",
+        "language": "en"
+      },
+      "supported_locales": [
+        {
+          "country": "US",
+          "language": "en"
+        }
+      ],
+      "profile_languages": null
+    },
+    "industry": "Computer & Network Security",
+    "educations": [
+      {
+        "school": {
+          "id": "e05e3336-da9d-5ac5-bc4a-68abaaa28941",
+          "name": "Tel Aviv University",
+          "logo": "https://images.ai-ark.com/auUGrF98akHXdlkZqGtub9QVBV1OHIGtsvKa9ZQRtRc/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/e05e3336-da9d-5ac5-bc4a-68abaaa28941.jpg",
+          "url": "https://www.linkedin.com/school/tel-aviv-university"
+        },
+        "degree_name": "Bachelor\u2019s of science",
+        "field_of_study": "Biochemistry and Molecular Biology",
+        "grade": null,
+        "date": {
+          "start": "1999-01-01",
+          "end": "2002-12-31"
+        }
+      },
+      {
+        "school": {
+          "id": "b9a8ef16-2e53-efd9-815a-dca83487d603",
+          "name": "Ben-Gurion University of the Negev",
+          "logo": "https://images.ai-ark.com/4PajQqYCxl-bIuylLrfly1-vROqx7pWP9Os9ycIyp3E/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/b9a8ef16-2e53-efd9-815a-dca83487d603.jpg",
+          "url": "https://www.linkedin.com/school/ben-gurion-university"
+        },
+        "degree_name": "Master of Business Administration (M.B.A.)",
+        "field_of_study": null,
+        "grade": null,
+        "date": {
+          "start": "2008-01-01",
+          "end": "2010-12-31"
+        }
+      }
+    ],
+    "position_groups": [
+      {
+        "company": {
+          "id": "4d204374-9b1e-69fe-6840-539eacb7a436",
+          "name": "Zafran Security",
+          "logo": "https://images.ai-ark.com/RpiIBozJWCMNQANKs8JmoEPrgxmC-k6InHogkK2sszk/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/4d204374-9b1e-69fe-6840-539eacb7a436.jpg",
+          "url": "https://www.linkedin.com/company/zafran-security",
+          "employees": {
+            "start": 51,
+            "end": 200
+          }
+        },
+        "date": {
+          "start": "2022-11-01",
+          "end": null
+        },
+        "profile_positions": [
+          {
+            "company": "Zafran Security",
+            "description": "Zafran's Threat Exposure Management Platform integrates with your security tools to reveal, remediate, and mitigate risk",
+            "title": "Co-Founder & CEO",
+            "employment_type": "Full-time",
+            "location": "Tel Aviv, Israel",
+            "date": {
+              "start": "2022-11-01",
+              "end": null
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": "c871864b-515d-420d-4341-9b2d071834d9",
+          "name": "Mandiant (part of Google Cloud)",
+          "logo": "https://images.ai-ark.com/u1gysF-S4mLjnUV3V6QLUxVym9zJMP2-WNgE8QO1naM/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/c871864b-515d-420d-4341-9b2d071834d9.jpg",
+          "url": "https://www.linkedin.com/company/mandiant",
+          "employees": {
+            "start": 10001,
+            "end": null
+          }
+        },
+        "date": {
+          "start": "2021-11-01",
+          "end": "2022-11-30"
+        },
+        "profile_positions": [
+          {
+            "company": "Mandiant",
+            "description": null,
+            "title": "Senior Manager",
+            "employment_type": "Full-time",
+            "location": null,
+            "date": {
+              "start": "2021-11-01",
+              "end": "2022-11-30"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": "7578f843-7275-2245-465b-5028d2e2cf3e",
+          "name": "FireEye, Inc.",
+          "logo": "https://images.ai-ark.com/kUOpXOLBrIYM0x5Pg_n-kHVYk_7ozfOou0tWibY5TPk/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/7578f843-7275-2245-465b-5028d2e2cf3e.jpg",
+          "url": "https://www.linkedin.com/company/fireeye",
+          "employees": {
+            "start": 1001,
+            "end": 5000
+          }
+        },
+        "date": {
+          "start": "2017-10-01",
+          "end": "2022-03-31"
+        },
+        "profile_positions": [
+          {
+            "company": "FireEye, Inc.",
+            "description": null,
+            "title": "Manager",
+            "employment_type": "Full-time",
+            "location": null,
+            "date": {
+              "start": "2017-10-01",
+              "end": "2022-03-31"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": "36af8a6e-3e5f-9e7c-fd90-73dca5913312",
+          "name": "Cybereason, A LevelBlue Company",
+          "logo": "https://images.ai-ark.com/ejTKCcj77x_9jwGpgcGXMK_FoHSsHLv9WU5F156KRe8/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/36af8a6e-3e5f-9e7c-fd90-73dca5913312.jpg",
+          "url": "https://www.linkedin.com/company/cybereason",
+          "employees": {
+            "start": 1001,
+            "end": 5000
+          }
+        },
+        "date": {
+          "start": "2016-09-01",
+          "end": "2017-10-31"
+        },
+        "profile_positions": [
+          {
+            "company": "Cybereason",
+            "description": null,
+            "title": "Director of Intelligence",
+            "employment_type": null,
+            "location": null,
+            "date": {
+              "start": "2016-09-01",
+              "end": "2017-10-31"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": "15f4bc33-bc86-45e9-ee5f-1056543707a1",
+          "name": "Israeli Military Intelligence",
+          "logo": "https://images.ai-ark.com/rm4alCfFWcmMfXqIc45bN0Ax8myfnIYycBj20ImYjhg/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/15f4bc33-bc86-45e9-ee5f-1056543707a1.jpg",
+          "url": "https://www.linkedin.com/company/israelimilitaryintelligence",
+          "employees": {
+            "start": 5001,
+            "end": 10000
+          }
+        },
+        "date": {
+          "start": "2001-10-01",
+          "end": "2016-09-30"
+        },
+        "profile_positions": [
+          {
+            "company": "Israeli Military Intelligence",
+            "description": null,
+            "title": "Head of Department",
+            "employment_type": null,
+            "location": null,
+            "date": {
+              "start": "2001-10-01",
+              "end": "2016-09-30"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": "e05e3336-da9d-5ac5-bc4a-68abaaa28941",
+          "name": "Tel Aviv University",
+          "logo": "https://images.ai-ark.com/auUGrF98akHXdlkZqGtub9QVBV1OHIGtsvKa9ZQRtRc/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/e05e3336-da9d-5ac5-bc4a-68abaaa28941.jpg",
+          "url": "https://www.linkedin.com/school/tel-aviv-university",
+          "employees": {
+            "start": 5001,
+            "end": 10000
+          }
+        },
+        "date": {
+          "start": "1999-01-01",
+          "end": "2001-12-31"
+        },
+        "profile_positions": [
+          {
+            "company": "Tel Aviv University",
+            "description": null,
+            "title": "Research Assistant",
+            "employment_type": null,
+            "location": null,
+            "date": {
+              "start": "1999-01-01",
+              "end": "2001-12-31"
+            }
+          }
+        ]
+      }
+    ],
+    "volunteer_experiences": [
+      {
+        "role": "Mentor",
+        "company": {
+          "id": "7bf332b8-a565-c745-2488-44479a732cc7",
+          "name": "Woman2Woman - 8200 Alumni Association",
+          "logo": "https://images.ai-ark.com/R_NIriLp9XML0FwfLlRncCkhl37JbdGFM8DZTxI7k0Q/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/7bf332b8-a565-c745-2488-44479a732cc7.jpg",
+          "url": "https://www.linkedin.com/company/woman2woman-8200-alumni-association"
+        },
+        "cause": null,
+        "description": null,
+        "date": null
+      }
+    ],
+    "skills": [
+      "Management",
+      "Microsoft Office",
+      "Research",
+      "Microsoft Excel",
+      "Microsoft Word",
+      "Product Management",
+      "Software Development",
+      "Cyber",
+      "Analytical Skills",
+      "Project Management",
+      "Team Leadership",
+      "Python",
+      "Linux",
+      "Software Design",
+      "C",
+      "Object Oriented Design",
+      "Leadership"
+    ],
+    "member_badges": {
+      "premium": true,
+      "creator": true,
+      "open_to_work": false,
+      "hiring": false,
+      "verified": false,
+      "influencer": false
+    },
+    "statistics": {
+      "network": {
+        "influencer": false,
+        "followable": null,
+        "followers_count": 3655,
+        "connections_count": 5888
+      },
+      "experience": {
+        "prev_job_titles": null,
+        "tenure": {
+          "company": "2022-11-01",
+          "start": "1999-01-01",
+          "title": "2022-11-01"
+        }
+      }
+    },
+    "company": {
+      "id": "4d204374-9b1e-69fe-6840-539eacb7a436",
+      "summary": {
+        "name": "Zafran Security",
+        "legal_name": "Zafran Security Ltd.",
+        "description": "Zafran is an AI-native exposure management platform that eliminates the manual toil of vulnerability management by cutting through noise, revealing what is truly exploitable, and automating mitigation and remediation using the security controls teams already have.\n\nWe are a team of practitioners and builders shaped by high-stakes security moments, where clarity and speed mattered, and manual processes came at a real cost.\n\nWe\u2019re on a mission to proactively stop the exploitation of vulnerabilities, everywhere.",
+        "overview": "Zafran Security is a cybersecurity startup specializing in vulnerability prioritization and threat exposure management, aiming to identify, remediate, and mitigate risks within organizations. The AI-native exposure management platform developed by the company aims to proactively avert the exploitation of vulnerabilities by incorporating autonomous agents throughout all stages of the vulnerability management lifecycle. With threat actors rapidly exploiting newly revealed security vulnerabilities through AI automation, Zafran's platform enables organizations to take action before these vulnerabilities result in incidents. The company\u2019s solutions work alongside current security tools, utilizing AI agents to pinpoint weaknesses, provide contextual information, and address these issues by linking them to controls and evaluating the potential for exploitation.",
+        "founded_year": 2022,
+        "type": "PRIVATELY_HELD",
+        "industry": "computer and network security",
+        "staff": {
+          "total": 167,
+          "range": {
+            "start": 51,
+            "end": 200
+          }
+        },
+        "logo": {
+          "source": "https://images.ai-ark.com/RpiIBozJWCMNQANKs8JmoEPrgxmC-k6InHogkK2sszk/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/4d204374-9b1e-69fe-6840-539eacb7a436.jpg"
+        }
+      },
+      "link": {
+        "website": "https://www.zafran.io",
+        "domain": "zafran.io",
+        "domain_ltd": "zafran.io",
+        "linkedin": "https://www.linkedin.com/company/zafran-security",
+        "twitter": "https://x.com/Zafran_io",
+        "crunchbase": "https://www.crunchbase.com/organization/zafran"
+      },
+      "financial": {
+        "revenue": {
+          "annual": {
+            "start": 10000000,
+            "end": 25000000,
+            "amount": "10000000-25000000"
+          }
+        },
+        "funding": {
+          "type": "SERIES_C",
+          "total_amount": 130500000,
+          "last_amount": 60000000,
+          "num_investor": 9,
+          "num_funding_rounds": 4,
+          "rounds": [
+            {
+              "announced_at": "2025-12-02",
+              "raised_amount": 60000000,
+              "type": "SERIES_C",
+              "investors": [
+                "Vintage Investment Partners",
+                "Cyberstarts",
+                "Amex Ventures",
+                "PSP Growth",
+                "Knollwood Investment Advisory",
+                "Sequoia Capital",
+                "Menlo Ventures"
+              ]
+            },
+            {
+              "announced_at": "2024-09-08",
+              "raised_amount": 40000000,
+              "type": "SERIES_B",
+              "investors": [
+                "Penny Jar Capital",
+                "Cerca Partners",
+                "Cyberstarts"
+              ]
+            },
+            {
+              "announced_at": "2024-03-28",
+              "raised_amount": 25000000,
+              "type": "VENTURE_ROUND"
+            },
+            {
+              "announced_at": "2024-03-28",
+              "raised_amount": 5500000,
+              "type": "SEED_ROUND"
+            }
+          ],
+          "date": "2025-12-02"
+        },
+        "aberdeen": {
+          "it_spend": 7626866
+        }
+      },
+      "location": {
+        "headquarter": {
+          "continent": "North America",
+          "country": "United States",
+          "city": "New York, New York",
+          "raw_address": "New York, New York, United States, North America",
+          "position": {
+            "lng": -73.98556,
+            "lat": 40.748295
+          }
+        },
+        "locations": [
+          {
+            "continent": "North America",
+            "country": "United States",
+            "city": "New York, New York",
+            "raw_address": "New York, New York, United States, North America",
+            "position": {
+              "lng": -73.98556,
+              "lat": 40.748295
+            }
+          }
+        ]
+      },
+      "technologies": [
+        {
+          "name": "dnssec",
+          "category": "ns"
+        },
+        {
+          "name": "google cloud",
+          "category": "hosting"
+        },
+        {
+          "name": "amazon s3",
+          "category": "cdn"
+        },
+        {
+          "name": "envoy",
+          "category": "server"
+        },
+        {
+          "name": "floc opt-out",
+          "category": "ads"
+        },
+        {
+          "name": "cloudflare automatic challenge",
+          "category": "cdn"
+        },
+        {
+          "name": "cloudflare challenge",
+          "category": "cdn"
+        },
+        {
+          "name": "hubspot hosted",
+          "category": "hosting"
+        },
+        {
+          "name": "amazon oregon region",
+          "category": "hosting"
+        },
+        {
+          "name": "zendesk mail",
+          "category": "mx"
+        }
+      ],
+      "industries": [
+        "risk management",
+        "cyber security",
+        "information technology",
+        "network security",
+        "software",
+        "computer and network security"
+      ],
+      "languages": [
+        "english"
+      ],
+      "last_updated": "2026-08-22"
+    },
+    "department": {
+      "departments": [
+        "information_technology"
+      ],
+      "sub_departments": [
+        "cybersecurity"
+      ],
+      "functions": [
+        "information_technology"
+      ],
+      "seniority": "founder"
+    },
+    "email": {
+      "state": "DONE",
+      "output": [
+        {
+          "address": "sanaz@zafran.io",
+          "mx": {
+            "record": "aspmx.l.google.com",
+            "google": false,
+            "found": true,
+            "provider": "g-suite"
+          },
+          "domainType": "SMTP",
+          "status": "VALID",
+          "subStatus": "EMPTY",
+          "date": "2026-09-02T07:18:08.000422",
+          "free": false,
+          "generic": false,
+          "found": true
+        }
+      ]
+    },
+    "last_updated": "2026-08-22"
+  }
+}

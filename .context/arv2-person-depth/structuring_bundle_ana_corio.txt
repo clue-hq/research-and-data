@@ -1,0 +1,187 @@
+SUBJECT (identity already locked, do not re-derive):
+  name: Ana Corio (aka Anastasia Corio)
+  title: Director of Demand Generation
+  company: Harmonic Security (harmonic.security)
+  linkedin: https://www.linkedin.com/in/anastasiacorio
+
+CLOSED FIELD-KEY LIST — use ONLY these:
+  contact.facet.career_history
+  contact.facet.alma_mater
+  contact.facet.stated_interests
+  contact.facet.communication_style
+  contact.facet.public_appearances
+  contact.facet.publications
+  contact.facet.recent_post
+  contact.facet.nickname
+  contact.facet.hobby
+  contact.facet.recent_award
+  contact.facet.conference_talk
+  contact.facet.causes
+  contact.facet.hooks   [PROPOSED — new field]
+  contact.facet.openers   [PROPOSED — new field]
+  contact.facet.voice_quote   [PROPOSED — new field]
+
+CHARTER CATEGORIES for `charter_category`: background, life_outside_work, voice, professional_identity, unique_insight, opener
+
+Return STRICT JSON, no prose, shaped exactly:
+{
+  "claims": [
+    {"field_key": "<one of the closed list>",
+      "value": <string, or array of strings, or object — whatever suits the field>,
+      "evidence_quote": "<VERBATIM, copied exactly from the material below>",
+      "source_url": "<a URL that appears in the material>",
+      "source_timestamp": "<MM:SS or null>",
+      "source_type": "<linkedin_profile|linkedin_post|youtube_transcript|podcast_transcript|podcast_shownotes|press|company_site|university|blog|directory|other>",
+      "charter_category": "<one of the charter categories>",
+      "priority": "P1|P2|P3",
+      "use_class": "professional-public|personal-public-non-sensitive",
+      "identity_binding": "STRONG",
+      "outreach_safe": true,
+      "note": "<optional short caveat, or empty>"}
+  ],
+  "unique_insight": {"text": "<one paragraph, or 'NOT FOUND — thin public footprint'>",
+                      "evidence_quote": "<verbatim or empty>", "source_url": "<or empty>"},
+  "not_found": ["<charter category or sub-item that came back empty>", "..."],
+  "same_name_contamination": ["<url — why it was ruled out>", "..."]
+}
+
+=== MATERIAL 1: DEEP-RESEARCH DOSSIER (Exa deep-reasoning, personal charter) ===
+Target lock and scope: The supplied LinkedIn URL is indexed as “Ana Corio,” and the indexed profile describes her as “Growth and demand gen marketing nerd in the B2B cybersecurity space, based in SF.” URL: https://www.linkedin.com/in/anastasiacorio . The search record also indexes the same profile under the work history “Director of Demand Generation” at “Harmonic Security” and “Director of Demand Generation” at “Material Security.” URL: https://www.linkedin.com/in/anastasiacorio . The supplied charter ends after “3”; sections 3 and later are therefore NOT FOUND / not provided in the request. I did not merge the separate Allentown “Ana Corio” profile or any other same-name result. 1. BACKGROUND Hometown / where they grew up: NOT FOUND. No reviewed target-authored source explicitly states a hometown or where Ana/Anastasia grew up. Location: The indexed target profile states “Based in San Francisco, California, United States [US].” URL: https://www.linkedin.com/in/anastasiacorio . This is a stated/current profile location, not evidence of hometown. Alma mater(s), degree, subject, years: The indexed target profile lists “Bachelor’s, Marketing” at “Santa Clara University - Leavey School of Business,” with dates “2010” to “2014.” URL: https://www.linkedin.com/in/anastasiacorio . It also lists “Reforge Growth Series” in “2019,” “International Institute, Madrid, Spain” in “2012,” and “Palos Verdes High School” from “2006” to “2010,” but the indexed record does not provide a degree or subject for those entries. URL: https://www.linkedin.com/in/anastasiacorio . The specific degree wording, completed/attendance status, and subject for the non-university entries are NOT FOUND. Student activities, societies, sports teams, awards while at Santa Clara: The indexed profile shows “Promo Team Member” for “Santa Clara University Activities Programming Board,” dated “2010” to “2011.” URL: https://www.linkedin.com/in/anastasiacorio . Other student activities, societies, sports teams, and awards are NOT FOUND. Early career / first jobs: The indexed profile lists “Special Events Coordinator” at “Palos Verdes High School Associated Student Body” from “2009” to “2010”; “Promo Team Member” at “Santa Clara University Activities Programming Board” from “2010” to “2011”; “Event Planning Intern” at “Choura Events” and “First Allied Securities” in “2011”; and “Marketing Intern” at “Malwarebytes” from “2012” to “2013.” URL: https://www.linkedin.com/in/anastasiacorio . The earliest indexed employment entry is “Special Events Coordinator” at “Palos Verdes High School Associated Student Body,” with dates “2009” to “2010.” URL: https://www.linkedin.com/in/anastasiacorio . Her own explanation of how she entered marketing or cybersecurity, and a verbatim account of her first job, are NOT FOUND. Career chronology: The indexed profile lists “Marketing Intern” at Malwarebytes, “Security Marketing Project Specialist and Social Media Channel Manager” at Cisco from “2013” to “2015,” “Senior Content Marketing & Digital Strategy Manager” at Digital Shadows from “2015” to “2020,” “Growth Marketing Strategist” at CrowdStrike from “2020” to “2021,” “Director of Demand Generation” at Material Security from “2021” to “2024,” and “Director of Demand Generation” at Harmonic Security from “2024” onward. URL: https://www.linkedin.com/in/anastasiacorio . The profile’s Material Security description says: “First marketing hire focused on demand generation and growth. Built out intent and signal-based demand generation motions to drive top of funnel for the sales team.” URL: https://www.linkedin.com/in/anastasiacorio . How she describes her professional field: Her indexed profile headline/about text says “Growth and demand gen marketing nerd in the B2B cybersecurity space.” URL: https://www.linkedin.com/in/anastasiacorio . In a 2020 self-authored post she wrote: “What does a #marketingnerd do for 1.5 weeks between jobs?” and then listed “Binge marketing content in specific areas of interest. (For me - #growthmarketing #contentmarketing #digitalmarketing).” URL: https://www.linkedin.com/posts/anastasiacorio_marketingnerd-growthmarketing-contentmarketing-activity-6686617378190618624--lBV . Military, competitive sport, music/arts, or other non-corporate background: NOT FOUND. No reviewed target-authored source establishes military service, competitive sport, music/arts training, or another non-corporate background. Languages spoken: NOT FOUND. 2. LIFE OUTSIDE WORK — ONLY AS THEY THEMSELVES STATE IT Hobbies and sports: In her self-authored 2020 post, she wrote: “1. Hit the beach for a mind break. 🏖” and “3. Binge marketing content in specific areas of interest. (For me - #growthmarketing #contentmarketing #digitalmarketing).” URL: https://www.linkedin.com/posts/anastasiacorio_marketingnerd-growthmarketing-contentmarketing-activity-6686617378190618624--lBV . No other hobby or sport is established in the reviewed target-authored sources. Running, climbing, cooking, gaming, and other hobbies/sports: NOT FOUND. Pets: NOT FOUND. No reviewed target-authored source states that she has or keeps a pet. Self-announced milestones: New job: in a self-authored October 2, 2024 post she wrote, “First launch 👀........ Series A is LIVE!!!!!!!! 🚀” and “I'm super excited to start this next chapter with you all and am grateful to be a part of what we're building next.” URL: https://www.linkedin.com/posts/anastasiacorio_first-launch-series-a-is-live-activity-7247229259990106112-n8-y . The post identifies the event as Harmonic Security’s Series A launch, but it does not explicitly state her start date. URL: https://www.linkedin.com/posts/anastasiacorio_first-launch-series-a-is-live-activity-7247229259990106112-n8-y . Wedding, relocation, or work-anniversary announcements: NOT FOUND in the reviewed target-authored sources. Causes, volunteering, boards, mentoring, pledges, alumni service: NOT FOUND. No reviewed target-authored source establishes any such activity. Side projects, newsletters, communities she runs or built: She authored a July 8, 2026 post saying: “So... we built ‘The Frequency’. Monthly (to start), 5 min read, zero fluff” and describing sections including “What’s Trending – a practical, actionable guide on AI governance,” “Industry Map,” “On the Record,” and “The B-Side.” URL: https://www.linkedin.com/posts/anastasiacorio_one-of-my-favorite-parts-of-this-job-is-watching-activity-7480647440614936576-Y6BK . The same post says: “Huge shoutout to Tyler Chonoles for spearheading this” and “First issue drops end of July.” URL: https://www.linkedin.com/posts/anastasiacorio_one-of-my-favorite-parts-of-this-job-is-watching-activity-7480647440614936576-Y6BK . The evidence supports that she publicly described the Harmonic team’s newsletter/content project as “we built,” but does not establish that she personally founded or solely runs it. Books, podcasts, tools, or people publicly recommended: Her 2020 post says she planned to “clean-up marketing newsletter & podcast subscription list,” but it does not name subscriptions. URL: https://www.linkedin.com/posts/anastasiacorio_marketingnerd-growthmarketing-contentmarketing-activity-6686617378190618624--lBV . In a self-authored hiring post she named tools “Clay, Common Room, PhantomBuster, etc” in the context of a modern outbound/GTM stack. URL: https://www.linkedin.com/posts/anastasiacorio_calling-all-gtm-growth-geeks-i-activity-7292187587660693507-E9A3 . Her indexed Material Security profile description also names “6sense, Clearbit, Warmly, and Clay.” URL: https://www.linkedin.com/in/anastasiacorio . These are tools she publicly referenced in professional work; they are not necessarily personal recommendations. Specific books, podcasts, or non-work recommendations: NOT FOUND. Company/colleague posts: A colleague’s post says “Shout out to ... Anastasia Corio (Alessandra)” in a Material Security remote-work post. URL: https://www.linkedin.com/posts/mishakestler_remotework-activity-7162857085272092673-5TO5 . This is colleague-authored and is not used as evidence for Ana’s personal life or self-statements. Known long-form media exclusion: The supplied YouTube video https://www.youtube.com/watch?v=DBRuxk0YrQk is explicitly designated by the requester as not featuring Ana Corio; it is excluded and provides no dossier evidence.
+
+=== MATERIAL 2: LINKEDIN PROFILE (indexed copy) ===
+# Ana Corio
+
+Br0k3n_1337
+
+San Francisco, California, United States (US)
+
+500 connections • 2,444 followers
+
+## About
+
+Growth and demand gen marketing nerd in the B2B cybersecurity space, based in SF…
+
+Total Experience: 15 years and 8 months
+
+## Experience
+
+### Director of Demand Generation - [Harmonic Security](https://www.linkedin.com/company/harmonic-security) (Current)
+
+Sep 2024 - Present (1 year and 11 months)
+
+Kicking off demand generation and growth marketing at Harmonic: the easy button for enabling AI safely.
+
+Department: Marketing • Level: Director
+
+Harmonic Security is a Technology, Information and Internet company. Harmonic Security has 50-60 employees and has annual revenue in the $1M-$10M range, founded in 2023. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and United Kingdom. Has $24.5M in total funding, with 2 prior funding rounds.
+
+### Director of Demand Generation - [Material Security](https://www.linkedin.com/company/materialsecurity)
+
+Jul 2021 - Sep 2024 (3 years and 2 months) in San Francisco Bay Area
+
+First marketing hire focused on demand generation and growth. Built out intent and signal-based demand generation motions to drive top of funnel for the sales team.
+- Built out all early stage functions including content strategy & an inbound motion, paid advertising, analyst relations, search, events, gifting, review sites, and more.
+- Inbound: Ran a variety of security community sponsorships (podcasts, newsletters, interviews) and paid social activities (LinkedIn, Reddit, Twitter) to drive site traffic and sales pipeline.
+- Outbound: Worked closely with SDR team to understand their motion and enable them with intent data and warm leads. Also built out an automated outbound program that included building account and contact lists, strategizing personalization approaches, working with MarketingOps on workflows and automation, writing outreach messaging, and launching campaigns. Utilized tools such as 6sense, Clearbit, Warmly, and Clay. Show less
+
+Department: Marketing • Level: Director
+
+Material Security is a Computer and Network Security company. Material Security provides phishing protection, account takeover prevention, and email DLP for Google Workspace and Microsoft 365. Material Security has 60-70 employees (8-9% YoY decline) and has annual revenue in the $1M-$10M range, founded in 2017. Headquartered in San Francisco, California, United States, with an office in Redwood City. Has $162M in total funding, with 3 prior funding rounds.
+
+### Growth Marketing Strategist - [CrowdStrike](https://www.linkedin.com/company/crowdstrike)
+
+Jul 2020 - Jul 2021 (1 year)
+
+- Helped build eCommerce for CrowdStrike
+- Ran content strategy for eCommerce group
+- Launched in-app messaging platform for improving UX and Trial Conversions
+- Led strategy & execution for third party review sites to help voice of customer initiative & lead generation (G2, TrustRadius, Capterra, IT Central Station)
+- Managed other new growth channels (i.e. sponsored newsletter program with Hustle and Morning Brew)
+- Ran optimization testing around Free Trial program's landing page Show less
+
+Department: Marketing • Level: Specialist
+
+CrowdStrike (CRWD) is a Computer and Network Security company. CrowdStrike is a global cybersecurity leader with an advanced cloud-native platform for protecting endpoints, cloud workloads, identities and data. CrowdStrike has 8,000-9,000 employees (+10% YoY) and has annual revenue in the $4B-$5B range, founded in 2011. Headquartered in Other, with offices in Sunnyvale and Austin. Its workforce is distributed across 54 countries (including United States, India, United Kingdom, Australia, and Israel). Has a market cap in the $70B-$80B range. IPO 2019.
+
+### Senior Content Marketing & Digital Strategy Manager - Digital Shadows (Acquired by Reliaquest)
+
+Dec 2015 - Jun 2020 (4 years and 6 months) in San Francisco
+
+- Manage all digital marketing and content strategy efforts including website optimization and maintenance, content scheduling and production, organic and paid social, paid search, SEO, online advertising, Drift chatbot, and more
+- Focus on website strategy: Increase website traffic (+780% in monthly visitors) + Engage and Convert users (+790% in monthly web form fills) + Practice Product-Led Growth Tactics
+- Run Content Strategy and Team to drive site traffic, generate demand, and build brand awareness
+- Project manager for website launches, research report and other content launches, and other product announcements
+- Tools: Drift, Salesforce, Marketo, Uberflip, Wordpress, Google Ads, Google Analytics, Google Search Console, Rollworks ABM Platform, Twitter, Facebook, LinkedIn, Instagram, Youtube Other Projects include: Project Manager for all Design/Branding projects, Managed Black Hat 2017 show in its entirety Show less
+
+### Security Marketing Project Specialist and Social Media Channel Manager - [Cisco](https://www.linkedin.com/company/cisco)
+
+Jun 2013 - Dec 2015 (2 years and 6 months) in San Jose, CA
+
+- Manage the Cisco security social channels including Twitter (307k followers), Facebook (275k fans), LinkedIn (20k followers), YouTube, Blog, and SlideShare
+- Create social media plans for product and solution launches and industry events to drive web and booth traffic, promote a variety of content, and track success
+- Analyze social media efforts using Sprinklr, Radian6, Tableau, SiteCatalyst & SimplyMeasured
+- Strategize paid social and demand generation efforts
+- Participate in social listening to discover opportunities for social media engagement with current and potential customers and influencers – increased engagement by 500%+
+- Increased security's social media presence (reach +3100%, clicks +1450%, eng/post +107%)
+- Manage the Security Awards Program and Security Speaking Program Show less
+
+Department: Marketing • Level: Specialist
+
+Cisco (CSCO) is a Software Development company. Cisco is a worldwide technology leader powering an inclusive future for all. Cisco has 70,000-80,000 employees (+1-2% YoY) and has annual revenue in the $50B-$60B range, founded in 1984. Headquartered in San Jose, California, United States, operates in 14 countries (including United Kingdom, Brazil, France, Poland, and Norway). Its workforce is distributed across 159 countries (including United States, India, United Kingdom, China, and Mexico). IPO 1990.
+
+### Marketing Intern - [Malwarebytes](https://www.linkedin.com/company/malwarebytes)
+
+Jun 2012 - Jun 2013 (1 year) in San Jose, CA
+
+- Designed web pages, executed A/B and multivariate testing, and analyzed the market using Google Analytics
+- Promoted the company via social media, Search Engine Optimization (SEO), and inbound marketing tactics
+- Collaborated with Marketing Department to make critical decisions upon current and future products
+- Completed Customer Relationship Management (CRM) system and E-commerce tasks
+
+Department: Marketing • Level: Intern
+
+Malwarebytes is a Computer and Network Security company. Malwarebytes offers advanced antivirus, anti-malware, privacy and scam protection for all your devices. Protect your digital life today. Malwarebytes has 400-500 employees (-10% YoY) and has annual revenue in the $200M-$300M range, founded in 2008. Headquartered in Santa Clara, California, United States, with presence in Ireland and Estonia. Its workforce is distributed across 28 countries (including United States, Estonia, Ireland, Italy, and Spain). Has $180M in total funding, with 2 prior funding rounds.
+
+### Event Planning Intern - First Allied Securities
+
+Aug 2011 - Aug 2011 in San Diego
+
+- Participated in meetings with Hotel/Conference Center team, assisted with registration and concierge services to attendees, organized and worked at exhibits and breakout sessions, and prepared the final celebration event
+- Collaborated with corporate event planning leadership at National Sales Conference and other First Allied corporate employees
+
+Department: Marketing • Level: Intern
+
+### Event Planning Intern - [Choura Events](https://www.linkedin.com/company/choura)
+
+Jul 2011 - Jul 2011 in Redondo Beach, CA
+
+- Managed over 20 restaurants in the fundraising event for Walk With Sally, a non-profit organization
+- Designed event layout/exhibitor placement and solved arising issues with restaurant vendors
+
+Department: Marketing • Level: Intern
+
+Choura is a Events Services company. Choura Events is a company that specializes in building large, temporary outdoor environments primarily in the western United States. They offer services in tents, structures, flooring, event rentals, creative services, and production. Choura has 30-40 employees (+8-9% YoY) and has annual revenue in the $10M-$20M range, founded in 2007. Headquartered in Torrance, California, United States, with an office in Las Vegas.
+
+### Promo Team Member - Santa Clara University Activities Programming Board
+
+Sep 2010 - Jun 2011 (9 months) in Santa Clara
+
+-
+
+=== MATERIAL 3: LONG-FORM MEDIA TRANSCRIPTS (where this person verifiably speaks) ===
+NONE — no long-form media in which this person verifiably speaks was located.
+
+=== MATERIAL 4: CONFIRMED SOURCE URLS FROM THE SWEEP ===
+- https://www.linkedin.com/in/anastasiacorio (Ana Corio)
+- https://www.linkedin.com/posts/anastasiacorio_hiring-post-im-hiring-an-abm-account-activity-7490847280472879104-iDH9 (Hiring post! 📣 I'm hiring an ABM (account based marketing) manager for our most )
+- https://www.linkedin.com/posts/michael-marriott-harmonic_massive-opportunity-to-work-for-the-very-activity-7427017874596126720-pZ-y (Massive opportunity to work for the very awesome Ana Corio as a SEO+GEO-focused )
+- https://www.linkedin.com/posts/anastasiacorio_linkedin-do-your-thing-im-hiring-activity-7427403844734799873-R1Ie (LinkedIn, do your thing. 🔎 | Ana Corio)
+- https://www.linkedin.com/posts/anastasiacorio_growing-the-marketing-team-over-here-at-material-activity-6955599827338502144-8EfW (Growing the marketing team over here at Material Security 🚀 | Ana Corio)
+- https://theorg.com/org/harmonic-security/offices/hq (Harmonic Security - HQ | The Org)
+- https://www.linkedin.com/posts/anastasiacorio_one-of-my-favorite-parts-of-this-job-is-watching-activity-7480647440614936576-Y6BK (One of my favorite parts of this job is watching someone on the team turn "we sh)
+- https://www.linkedin.com/posts/anastasiacorio_calling-all-gtm-growth-geeks-i-activity-7292187587660693507-E9A3 (📣 Calling all GTM growth geeks 🤓 – I’m hiring! | Ana Corio)
+- https://www.linkedin.com/posts/anastasiacorio_one-of-my-favorite-parts-of-this-role-is-activity-7465427324197572608-VrVm (One of my favorite parts of this role is exactly this. | Ana Corio)
+- https://www.linkedin.com/posts/angelbeat_angelbeat-activity-7452023334831136788-KOUF (Financial Services companies learned valuable insights on AI Data Guardrails at )
+- https://www.linkedin.com/posts/anastasiacorio_marketingnerd-growthmarketing-contentmarketing-activity-6686617378190618624--lBV (What does a do for 1.5 weeks between jobs? 🤔 | Ana Corio)
+- https://www.linkedin.com/posts/anastasiacorio_first-launch-series-a-is-live-activity-7247229259990106112-n8-y (First launch 👀........ Series A is LIVE!!!!!!!! 🚀 | Ana Corio)
+- https://www.linkedin.com/posts/anastasiacorio_grateful-to-be-back-in-office-in-sf-with-activity-7407563195416190976-Q4Tt (Grateful to be back in office in SF with this fun, festive, slightly-too-excited)

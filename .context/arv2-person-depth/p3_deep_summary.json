@@ -1,0 +1,74 @@
+[
+  {
+    "key": "alastair_paterson",
+    "chars": 9296,
+    "not_found": 11,
+    "elapsed_s": 27.8,
+    "http": 200,
+    "cost_usd": 0.023
+  },
+  {
+    "key": "alexander_semien",
+    "chars": 11005,
+    "not_found": 23,
+    "elapsed_s": 33.2,
+    "http": 200,
+    "cost_usd": 0.025
+  },
+  {
+    "key": "ana_corio",
+    "chars": 8346,
+    "not_found": 12,
+    "elapsed_s": 27.5,
+    "http": 200,
+    "cost_usd": 0.025
+  },
+  {
+    "key": "cameron_coles",
+    "chars": 3290,
+    "not_found": 8,
+    "elapsed_s": 13.3,
+    "http": 200,
+    "cost_usd": 0.015
+  },
+  {
+    "key": "mandar_marathe",
+    "chars": 9035,
+    "not_found": 12,
+    "elapsed_s": 25.5,
+    "http": 200,
+    "cost_usd": 0.015
+  },
+  {
+    "key": "nick_fisher",
+    "chars": 4795,
+    "not_found": 9,
+    "elapsed_s": 17.9,
+    "http": 200,
+    "cost_usd": 0.02
+  },
+  {
+    "key": "sanaz_yashar",
+    "chars": 9176,
+    "not_found": 9,
+    "elapsed_s": 29.7,
+    "http": 200,
+    "cost_usd": 0.025
+  },
+  {
+    "key": "tyler_chonoles",
+    "chars": 8173,
+    "not_found": 16,
+    "elapsed_s": 25.6,
+    "http": 200,
+    "cost_usd": 0.025
+  },
+  {
+    "key": "vineet_edupuganti",
+    "chars": 7877,
+    "not_found": 10,
+    "elapsed_s": 24.0,
+    "http": 200,
+    "cost_usd": 0.024
+  }
+]

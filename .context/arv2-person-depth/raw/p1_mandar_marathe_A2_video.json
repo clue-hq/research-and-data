@@ -1,0 +1,97 @@
+{
+  "requestId": "ec5c4b30ade13d02cd59631957e5306e",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://www.youtube.com/watch?v=lKLvH-ui8vY",
+      "title": "",
+      "url": "https://www.youtube.com/watch?v=lKLvH-ui8vY",
+      "publishedDate": "2025-03-04T00:00:00.000Z",
+      "author": "Uptiq",
+      "text": "[Music] welcome to the uptick AI workbench tool that developers use to rapidly develop AI agents for the financial services industry let's dive in and show you how our agents are created I'm going to start by selecting our agents I'm going to go ahead and choose our commercial loan agent as an examp example to get started in creating one of these agents first you need to understand how to set the scope of the agent Define that scope then ultimately develop your sub agents and pick the intents and then string together these workflows so our basic configuration starts by describing the agent what is this agent going to do and then select your model what models are we going to use to ultimately execute on the agent the AI workbenches llm agnostic you have a choice of over 16 plus llms as well as some fine tune models and rag infrastructure that might be used throughout your AI agent once you've created the description of the agent you will create the sub agents sub agents are are specific tasks that the agent itself do to complete the action that it's been prompted to uh complete so here's example of two of the sub agents within our commercial loan agent so I'm going to look at our credit memo agent here so again you're going to define the scope of these sub agents this is very specific what exactly is a sub agent going to do if you need help defining that scope you can go to our prompt reviewer type it in and ask it to improve the prompt it will the llm will review and give you",
+      "image": "https://i.ytimg.com/vi/lKLvH-ui8vY/sddefault.jpg?sqp=-oaymwEmCIAFEOAD8quKqQMa8AEB-AH-CYAC0AWKAgwIABABGBQgcigqMA8=&rs=AOn4CLDBc2NbiFwQoW6vN79lq-f36695hw"
+    },
+    {
+      "id": "https://www.youtube.com/watch?v=8qu5sSLmCIs",
+      "title": "AI in Action: Transforming Equipment Finance Operations with AI Agents",
+      "url": "https://www.youtube.com/watch?v=8qu5sSLmCIs",
+      "author": "Uptiq",
+      "text": "All right, I appreciate everyone who is joining with us live today and thank you to all of you who are watching this recording after the fact. We look forward to connecting with everyone afterwards, hopefully on some individual calls, but this should be a good starting point. So, do a couple quick intros on the Uptick side before we jump in. I'm My name's Corey Ashline. I've been with Uptick for only about a month now, still pretty new with the company, but excited to be here. Be your main point of contact for any inquiries you have about Uptick. And then I will loop in others such as James who you meet here in just a minute for for some of the demos and technical presentations, but that's all you need to know about me. James, do you want to give a quick intro? Yeah, thank you, Corey. Hi, everyone. I'm James Hallasey. I lead our solutions engineering group here at Uptick. Been at Uptick for around 3 years and come with an extensive background in non-banking and fintech lending space. Thank you, Corey. Excellent. Yeah, excellent. Thanks, James. Jay or Gagan, do any of you guys want to do a quick intro of yourselves? Gagan, feel free if you want real quick. Thank you so much, Corey. This is Gagandeep Grover. Been with Uptick close to a year now. I handle parts of client implementations and client relationships and expansion within Uptick. And I've had about two decades of equipment finance and leasing experience across various companies in multiple geographies. Glad to be here.",
+      "image": "https://i.ytimg.com/vi/8qu5sSLmCIs/sddefault.jpg"
+    },
+    {
+      "id": "https://www.youtube.com/shorts/czOEvgEUREE",
+      "title": "Understanding the nuances of D2C vs B2C marketing feat. Mandar Marathe - YouTube",
+      "url": "https://www.youtube.com/shorts/czOEvgEUREE",
+      "publishedDate": "2025-02-01T14:17:50.000Z",
+      "text": "Understanding the nuances of D2C vs B2C marketing feat. Mandar Marathe - YouTube\n\nUnderstanding the nuances of D2C vs B2C marketing feat. Mandar Marathe - YouTube\n[](https://www.youtube.com/)[](https://www.youtube.com/)\n[About](https://www.youtube.com/about/)[Press](https://www.youtube.com/about/press/)[Copyright](https://www.youtube.com/about/copyright/)[Contact us](https://www.youtube.com/t/contact_us/)[Creators](https://www.youtube.com/creators/)[Advertise](https://www.youtube.com/ads/)[Developers](https://developers.google.com/youtube)[Terms](https://www.youtube.com/t/terms)[Privacy](https://www.youtube.com/t/privacy)[Policy & Safety](https://www.youtube.com/about/policies/)[How YouTube works](https://www.youtube.com/howyoutubeworks?utm_campaign=ytgen&utm_source=ythp&utm_medium=LeftNav&utm_content=txt&u=https://www.youtube.com/howyoutubeworks?utm_source=ythp&utm_medium=LeftNav&utm_campaign=ytgen)[Test new features](https://www.youtube.com/new)\n&copy; 2026 Google LLC",
+      "image": "https://i.ytimg.com/vi/czOEvgEUREE/oar2.jpg?sqp=-oaymwEkCJUDENAFSFqQAgHyq4qpAxMIARUAAAAAJQAAyEI9AICiQ3gB&rs=AOn4CLAm9nxBa93gKKJeblQwwKs3zcqcIw&usqp=CCk"
+    },
+    {
+      "id": "https://www.youtube.com/watch?v=GS8qgXDfpHM",
+      "title": "See Uptiq for Equipment Finance in Action - YouTube",
+      "url": "https://www.youtube.com/watch?v=GS8qgXDfpHM",
+      "publishedDate": "2025-06-24T17:10:38.000Z",
+      "text": "See Uptiq for Equipment Finance in Action - YouTube\n\nSee Uptiq for Equipment Finance in Action - YouTube\n[](https://www.youtube.com/)[](https://www.youtube.com/)\n[About](https://www.youtube.com/about/)[Press](https://www.youtube.com/about/press/)[Copyright](https://www.youtube.com/about/copyright/)[Contact us](https://www.youtube.com/t/contact_us/)[Creators](https://www.youtube.com/creators/)[Advertise](https://www.youtube.com/ads/)[Developers](https://developers.google.com/youtube)[Terms](https://www.youtube.com/t/terms)[Privacy](https://www.youtube.com/t/privacy)[Policy & Safety](https://www.youtube.com/about/policies/)[How YouTube works](https://www.youtube.com/howyoutubeworks?utm_campaign=ytgen&utm_source=ythp&utm_medium=LeftNav&utm_content=txt&u=https://www.youtube.com/howyoutubeworks?utm_source=ythp&utm_medium=LeftNav&utm_campaign=ytgen)[Test new features](https://www.youtube.com/new)\n&copy; 2026 Google LLC",
+      "image": "https://i.ytimg.com/vi/GS8qgXDfpHM/maxresdefault.jpg?sqp=-oaymwEmCIAKENAF8quKqQMa8AEB-AH-CYAC0AWKAgwIABABGFIgQihlMA8=&rs=AOn4CLDO2H5pkbbNjc9hs8T_KQIPZetxKQ"
+    },
+    {
+      "id": "https://www.youtube.com/watch?v=HCE084lbsLg",
+      "title": "The Three IQs: Ground Your Agents in Knowledge, Data, and Work | LIVE171 - YouTube",
+      "url": "https://www.youtube.com/watch?v=HCE084lbsLg",
+      "publishedDate": "2026-06-05T14:49:07.000Z",
+      "text": "The Three IQs: Ground Your Agents in Knowledge, Data, and Work | LIVE171 - YouTube\n\nThe Three IQs: Ground Your Agents in Knowledge, Data, and Work | LIVE171 - YouTube\n[](https://www.youtube.com/)[](https://www.youtube.com/)\n[About](https://www.youtube.com/about/)[Press](https://www.youtube.com/about/press/)[Copyright](https://www.youtube.com/about/copyright/)[Contact us](https://www.youtube.com/t/contact_us/)[Creators](https://www.youtube.com/creators/)[Advertise](https://www.youtube.com/ads/)[Developers](https://developers.google.com/youtube)[Terms](https://www.youtube.com/t/terms)[Privacy](https://www.youtube.com/t/privacy)[Policy & Safety](https://www.youtube.com/about/policies/)[How YouTube works](https://www.youtube.com/howyoutubeworks?utm_campaign=ytgen&utm_source=ythp&utm_medium=LeftNav&utm_content=txt&u=https://www.youtube.com/howyoutubeworks?utm_source=ythp&utm_medium=LeftNav&utm_campaign=ytgen)[Test new features](https://www.youtube.com/new)[NFL Sunday Ticket](https://tv.youtube.com/learn/nflsundayticket)\n&copy; 2026 Google LLC",
+      "image": "https://i.ytimg.com/vi/HCE084lbsLg/maxresdefault.jpg",
+      "favicon": "https://www.youtube.com/s/desktop/cf14c559/img/favicon_32x32.png"
+    },
+    {
+      "id": "https://www.youtube.com/watch?v=ciBMxLn1_-I",
+      "title": "The Indian Top-Notch Talents | Keynote Talk | Zinnov Japan Roundtable (English) - YouTube",
+      "url": "https://www.youtube.com/watch?v=ciBMxLn1_-I",
+      "publishedDate": "2021-07-27T07:30:56.000Z",
+      "text": "The Indian Top-Notch Talents | Keynote Talk | Zinnov Japan Roundtable (English) - YouTube\n\nThe Indian Top-Notch Talents | Keynote Talk | Zinnov Japan Roundtable (English) - YouTube\n[](https://www.youtube.com/)[](https://www.youtube.com/)\n[About](https://www.youtube.com/about/)[Press](https://www.youtube.com/about/press/)[Copyright](https://www.youtube.com/about/copyright/)[Contact us](https://www.youtube.com/t/contact_us/)[Creators](https://www.youtube.com/creators/)[Advertise](https://www.youtube.com/ads/)[Developers](https://developers.google.com/youtube)[Terms](https://www.youtube.com/t/terms)[Privacy](https://www.youtube.com/t/privacy)[Policy & Safety](https://www.youtube.com/about/policies/)[How YouTube works](https://www.youtube.com/howyoutubeworks?utm_campaign=ytgen&utm_source=ythp&utm_medium=LeftNav&utm_content=txt&u=https://www.youtube.com/howyoutubeworks?utm_source=ythp&utm_medium=LeftNav&utm_campaign=ytgen)[Test new features](https://www.youtube.com/new)[NFL Sunday Ticket](https://tv.youtube.com/learn/nflsundayticket)\n&copy; 2026 Google LLC",
+      "image": "https://i.ytimg.com/vi/ciBMxLn1_-I/maxresdefault.jpg"
+    },
+    {
+      "id": "https://www.youtube.com/watch?v=2TPP6cqlGqc",
+      "title": "The Man Behind UPI Reveals the Secret to Success ft. Mandar Agashe",
+      "url": "https://www.youtube.com/watch?v=2TPP6cqlGqc",
+      "author": "Sampada Vaze",
+      "text": "You know you mentioned something in one of your earlier interviews which you had given to um I think your engineering institute >> you said that keep close with your with your classmates because moving forward they might potentially form your working team. So do you believe that you can actually work better if you have friend if you're friends with those people or you shouldn't be mixing work and >> so it depends uh uh you know some it's not always that you know friends can become good colleagues and so on but uh when you work in groups in college they need not be your best friends they could be just friends but you know their wavelength what I meant is that look for people with wavelength that you want to be with then eventually they'll become your friends or they won't become your friend depends on life right but at least you should know if the wavelength matches or that's what I said if friends or your colleagues drag you down then better to stay away from them >> yeah that's true that's true >> because the faster and they discourage you or something best is to just quickly uh you know but that doesn't mean you u always want yesmen around you correct finally friends are who will tell you if you're going wrong and they help you tell it in such a way that you course correct and yet achieve your dream. Those who tell you to give up your dream are not necessarily the ones you're looking for. >> No, that's that's really I think something deep that you said because I think a sta",
+      "image": "https://i.ytimg.com/vi/2TPP6cqlGqc/sddefault.jpg"
+    },
+    {
+      "id": "https://www.youtube.com/shorts/FvdEDfjzP_Y",
+      "title": "Why Successful Entrepreneurs Never Run Out of Energy | Dr. Ajit Marathe | Badeaam Podcast - YouTube",
+      "url": "https://www.youtube.com/shorts/FvdEDfjzP_Y",
+      "publishedDate": "2026-05-02T13:31:08.000Z",
+      "author": "Badeaam Podcast",
+      "text": "# Why Successful Entrepreneurs Never Run Out of Energy | Dr. Ajit Marathe | Badeaam Podcast\n\n- Channel: Badeaam Podcast\n- Length: 00:56\n- Views: 1.1K\n- Likes: 64\n- Published: 2026-05-02T06:31:08-07:00\n- Category: People & Blogs\n- Keywords: bade aam podcast, sandeep kulkarni, sandeep kulkarni podcast, Bade Aam, Sandeep Kulkarni, Badeaam Podcast, Badeaam, Dr Ajit Marathe, Ajit Marathe, Sandeep Kulkarni Podcast, Badeaam Sandeep Kulkarni, Marathi Podcast, Marathi Business, Marathi Businesmen\n- Language: mr\n\n## Description\n\nIn business, you can't control the traffic jams, the market fluctuations, or the unexpected hurdles. What you can control is your energy.\n\nRunning a business is a constant marathon. Employees leave, deals fall through, and problems arise every single day. Because of this, staying driven can feel like a heavy task if you are doing it all alone.\n\nIn this segment of the Badeaam Podcast, Dr. Ajit Marathe explains that to overcome the daily grind, you don't need just a strategy; you need an energy recharge. This is why having a support network like the Saturday Club is so vital. When you plug into a room filled with like-minded, positive entrepreneurs every 15 days, it charges your batteries for the road ahead.\n\nWatch the full masterclass on our YouTube channel: Badeaam Podcast. Link in bio.\n\nConnect with Saturday Club Global Trust:\n- Website: https://scgt.org.in/\n- Phone: +91-22-2568 8838\n \n#Marathibusinessman #MarathiCommunity #Maharashtra #Leadership #Maharashtra",
+      "image": "https://i.ytimg.com/vi/FvdEDfjzP_Y/sddefault.jpg?sqp=-oaymwEoCIAFEOAD8quKqQMcGADwAQH4AbYIgAKAD4oCDAgAEAEYRCBUKGUwDw==&rs=AOn4CLCANFyHFIk1PtX-qOZnVIMuvON9yw"
+    }
+  ],
+  "searchTime": 1770.6,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.88,
+  "_request": {
+    "query": "\"Mandar Marathe\" UPTIQ, Inc. talk webinar video keynote",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    },
+    "includeDomains": [
+      "youtube.com",
+      "youtu.be",
+      "vimeo.com"
+    ]
+  }
+}

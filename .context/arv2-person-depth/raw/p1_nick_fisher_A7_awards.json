@@ -1,0 +1,661 @@
+{
+  "requestId": "7a3a6f9cf6f94e6d7a7505edff3a9ce7",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/7gskzqy6zfs",
+      "title": "Nick Fisher",
+      "url": "https://www.linkedin.com/in/nick-fisher-67937466",
+      "publishedDate": "2026-08-10T15:27:16.000Z",
+      "text": "# Nick Fisher\n\nEquipment Sales Fleet Manager at Hyster\n\nWestlake, Ohio, United States (US)\n\n500 connections \u2022 1,027 followers\n\n## About\n\nEquipment Sales Fleet Manager at Hyster\n\nTotal Experience: 13 years and 10 months\n\n## Experience\n\n### Equipment Sales Fleet Manager - Burns Industrial Equipment- Hyster (Current)\n\nOct 2012 - Present (13 years and 10 months)\n\nDepartment: Sales \u2022 Level: Manager\n\n## Education\n\n### Bachelor's degree, Business/Corporate Communications at [Duquesne University](https://www.linkedin.com/school/duquesne-university)\n\n2003 - 2008 (5 years) in Pittsburgh, Pennsylvania, United States\n\nDuquesne University is a higher education institution. Duquesne University is a Catholic university that offers academic programs, community service, and equity and opportunity in the Pittsburgh region. It was founded in 1878 and has a campus of nearly 8,000 graduate and undergraduate students. Duquesne University has 2,000-3,000 employees (+4-5% YoY) and has annual revenue in the $300M-$400M range, founded in 1878. Headquartered in Pittsburgh, Pennsylvania, United States. Its workforce is distributed across 19 countries (including United States, Italy, United Kingdom, United Arab Emirates, and Australia). Has $10.5M in total funding, with 3 prior funding rounds. Research output of 10,000-20,000 works, primarily in Medicine, Social Sciences, and Psychology. Funds research behind 10-20 works.\n\n## Skills\n\nequipment management \u2022 equipment sales \u2022 fleet management \u2022 fleet manag",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/7gskzqy6zfs",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Nick Fisher",
+            "firstName": "Nick",
+            "lastName": "Fisher",
+            "location": "Westlake, Ohio, United States",
+            "workHistory": [
+              {
+                "title": "Equipment Sales Fleet Manager",
+                "location": null,
+                "dates": {
+                  "from": "2012-10-01",
+                  "to": null
+                },
+                "company": {
+                  "id": null,
+                  "name": "Burns Industrial Equipment- Hyster"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor's degree, Business/Corporate Communications",
+                "dates": {
+                  "from": "2003",
+                  "to": "2008"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/9r2tx0tvk1r",
+                  "name": "Duquesne University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/02wf95ngvn6",
+      "title": "Nick Fisher",
+      "url": "https://www.linkedin.com/in/nickfisher-lw",
+      "publishedDate": "2026-08-19T21:32:46.000Z",
+      "text": "# Nick Fisher\n\nCorporate Associate (Private Equity) at Latham & Watkins\n\nLondon, England, United Kingdom (GB)\n\n500 connections \u2022 1,010 followers\n\n## About\n\nI am an associate in the London office of Latham & Watkins and a member of the firm\u2019s Corporate Department. I advise clients on mergers and acquisitions, private equity, capital markets, and general corporate matters. I trained in Latham & Watkins' London and Singapore offices, gaining experience in corporate, capital markets, and acquisition and leveraged finance transactions and have also spent time on secondments to Thomas Cook Group plc and Bain Capital Private Equity.\n\nTotal Experience: 10 years\n\n## Experience\n\n### [Latham & Watkins](https://www.linkedin.com/company/latham-%26-watkins)\n\n#### Corporate Associate (Current)\n\nAug 2019 - Present (7 years) in London, United Kingdom\n\nDepartment: Other\n\n#### Trainee Solicitor\n\nAug 2017 - Aug 2019 (2 years) in London, United Kingdom\n\nEquity Capital Markets Banking Corporate secondment to Thomas Cook Group plc Corporate/Capital Markets secondment to Latham & Watkins Singapore\n\nDepartment: Legal \u2022 Level: Intern\n\nLatham & Watkins is a Law Practice company. Latham & Watkins is a global law firm that advises businesses and institutions that power the global economy. They leverage their vast global resources to work relentlessly and efficiently to accomplish client goals. Latham & Watkins has 6,000-7,000 employees (+8-9% YoY) and has annual revenue in the $5B-$6B range, founded in 1",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/02wf95ngvn6",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Nick Fisher",
+            "firstName": "Nick",
+            "lastName": "Fisher",
+            "location": "London, England, United Kingdom",
+            "workHistory": [
+              {
+                "title": "Corporate Associate",
+                "location": "London, United Kingdom",
+                "dates": {
+                  "from": "2019-08-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/2hc3csprq4d",
+                  "name": "Latham & Watkins"
+                }
+              },
+              {
+                "title": "Trainee Solicitor",
+                "location": "London, United Kingdom",
+                "dates": {
+                  "from": "2017-08-01",
+                  "to": "2019-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/2hc3csprq4d",
+                  "name": "Latham & Watkins"
+                }
+              },
+              {
+                "title": "Legal Counsel",
+                "location": "London, United Kingdom",
+                "dates": {
+                  "from": "2020-02-01",
+                  "to": "2020-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fsbdc72n2k4",
+                  "name": "Bain Capital"
+                }
+              },
+              {
+                "title": "Group Trainee Legal Counsel",
+                "location": "London, United Kingdom",
+                "dates": {
+                  "from": "2018-08-01",
+                  "to": "2019-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/xpn2p9797b9",
+                  "name": "Thomas Cook"
+                }
+              },
+              {
+                "title": "Vacation Scheme",
+                "location": "London, United Kingdom",
+                "dates": {
+                  "from": "2015-04-01",
+                  "to": "2015-04-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "JONES DAY\u00ae"
+                }
+              },
+              {
+                "title": "Business Development",
+                "location": "Paris Area, France",
+                "dates": {
+                  "from": "2014-06-01",
+                  "to": "2014-09-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Maupard Fiduciaire"
+                }
+              },
+              {
+                "title": "English Language and Literature Teacher",
+                "location": "Trapani Area, Italy",
+                "dates": {
+                  "from": "2013-10-01",
+                  "to": "2014-06-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Liceo Classico L. Ximenes and Liceo Artistico M. Buonarroti"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "GDL, Distinction",
+                "dates": {
+                  "from": "2015",
+                  "to": "2016"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/qc71mzm9dgb",
+                  "name": "BPP University"
+                }
+              },
+              {
+                "degree": "University College, Bachelor of Arts - BA, French and Italian (Literature), 2:1",
+                "dates": {
+                  "from": "2011",
+                  "to": "2015"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/q2wb8xn7zr4",
+                  "name": "Durham University"
+                }
+              },
+              {
+                "degree": null,
+                "dates": {
+                  "from": "2004",
+                  "to": "2011"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Woodbridge School"
+                }
+              },
+              {
+                "degree": "LPC, Distinction",
+                "dates": {
+                  "from": "2016",
+                  "to": "2017"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/63h7lwmsps8",
+                  "name": "BPP Law School"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.inkwellmanagement.com/client/susan-fowler",
+      "title": "Susan Fowler | InkWell Management Literary Agency",
+      "url": "https://www.inkwellmanagement.com/client/susan-fowler",
+      "author": "InkWell Management Literary Agency",
+      "text": "Susan Fowler | InkWell Management Literary Agency\n\n# Clients\n\nWe are privileged to work with some of the most exciting authors, chefs, illustrators and personalities in the world. Below you will find a sample of our clients which can be searched by first name, last name or title. For our full client list select, \u201cFind by Name.\u201d\n\nFind by Name Hide Names Images\n\nclick on a letter to filter by last name\n\nJessica Pan & Rachel Kapelke-Dale\n\nHeidi Baker & Eden Jarrin\n\nRobert and Melinda Blanchard\n\nShelly Branch & Sue Callaway\n\nDrew Callander and Alana Harrison\n\nKatie da Cunha Lewin\n\nNunzio DeFilippis and Christina Weir\n\nDrew Callander and Alana Harrison\n\nMichael and Diane Medved\n\nLiz and Jimmy Reed\n\nLisa and Laura Roecker\n\nMartin E. P. Seligman\n\nThe International Culinary Center\n\nHans van de Ven\n\nAngela von der Lippe\n\nKris Webb and Kathy Wilson\n\n## Susan Fowler\n\nSusan Fowler is a writer, engineer, and startup advisor based in the San Francisco Bay Area. She currently works at Stripe as the editor-in-chief of Increment(which Kara Swisher has dubbed \u201cThe New Yorker of Silicon Valley\u201d).\n\nAs one of the \u201cSilence Breakers\u201d, Susan was TIME\u2019s Person of the Year in 2017. She\u2019s been profiled by Maureen Dowd in the New York Times, and has appeared on the cover of Politico magazine, the cover of TIME magazine, as well as on lots of lists, including: The Recode 100, Vanity Fair\u2019s New Establishment List, The Politico 50, Fortune\u2019s 40 Under 40, Marie Claire\u2019s New Guard List, the Upstart Top 50, a",
+      "image": "https://www.inkwellmanagement.com/images/authors/susan_fowler_credit_shalon_van_tine.jpg",
+      "favicon": "https://www.inkwellmanagement.com/favicon.ico"
+    },
+    {
+      "id": "https://exa.ai/library/person/h2gw0ssnm5x",
+      "title": "Wendy Davies",
+      "url": "https://www.linkedin.com/in/weyoung",
+      "publishedDate": "2026-08-10T11:33:15.000Z",
+      "text": "# Wendy Davies\n\nExecutive Director at SONOMA MENDOCINO LAKE MEDICAL ASSOCIATIONS\n\nSan Francisco Bay Area (US)\n\n500 connections \u2022 1,211 followers\n\n## About\n\nResourceful and dedicated Executive Director with extensive experience in the coordination, planning, and implementation of daily operations of a professional organization. \uf076 Demonstrated leadership of a professional membership organization including strategic planning, membership development, financial operations, budget, by-laws and resolutions, professional education programs, special events planning, member value and benefits, website creation and maintenance, social media, newsletters, board of director building and support, creating and monitoring member committees, scholarships program, etc.; \uf076 Proven track record of accurate information management, marketing plans and materials, and business development efforts within budget constraints. \uf076 Highly focused and results-oriented in creation of and support of complex, deadline-driven operations and events; \uf076 Developed public relations materials, sponsorship programs, advertising opportunities, fostered media relations and website templates for multiple components of the National AIA; \uf076 The voice of the local component representing my organization both locally and nationally at events across the nation in a professional leadership role.\n\nTotal Experience: 39 years and 7 months\n\n## Experience\n\n### Executive Director - Sonoma County Medical Association (Current)\n\nFeb 2017 ",
+      "image": "https://media.licdn.com/dms/image/v2/D5603AQF5P5JA3V2Tng/profile-displayphoto-scale_200_200/B56ZoxlQe9JYAY-/0/1761768442998?e=2147483647&v=beta&t=DNc3NZUZpYEFhlJYHIeurvEKqYxBUAAET1cxJ1Zlgpk",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/h2gw0ssnm5x",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Wendy Davies",
+            "firstName": "Wendy",
+            "lastName": "Davies",
+            "location": "San Francisco Bay Area",
+            "workHistory": [
+              {
+                "title": "Executive Director",
+                "location": "2312 Bethards Drive, Suite #6, Santa Rosa, CA",
+                "dates": {
+                  "from": "2017-02-01",
+                  "to": null
+                },
+                "company": {
+                  "id": null,
+                  "name": "Sonoma County Medical Association"
+                }
+              },
+              {
+                "title": "Executive Director",
+                "location": "Northern California",
+                "dates": {
+                  "from": "2019-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/7w4sw94g303",
+                  "name": "MENDOCINO LAKE COUNTY MEDICIAL SOCIETY"
+                }
+              },
+              {
+                "title": "Executive Director",
+                "location": "Sonoma County, California, United States",
+                "dates": {
+                  "from": "2017-02-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/ssyll1vys4d",
+                  "name": "Sonoma-Mendocino-Lake Medical Association"
+                }
+              },
+              {
+                "title": "Executive Director",
+                "location": "Sonoma County, California",
+                "dates": {
+                  "from": "2006-08-01",
+                  "to": "2017-02-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "AIA Redwood Empire"
+                }
+              },
+              {
+                "title": "Business Office Manager",
+                "location": "Windsor, California",
+                "dates": {
+                  "from": "2005-01-01",
+                  "to": "2007-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/80xj9ps5gtf",
+                  "name": "Carlson Laboratories, Inc"
+                }
+              },
+              {
+                "title": "Development of Events Volunteer Mangement",
+                "location": "Santa Rosa, CA",
+                "dates": {
+                  "from": "2000-01-01",
+                  "to": "2006-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/nwcnrm0lq8c",
+                  "name": "American Red Cross"
+                }
+              },
+              {
+                "title": "Litigation Paralegal",
+                "location": "Santa Rosa, California",
+                "dates": {
+                  "from": "1998-01-01",
+                  "to": "2000-01-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Law Offices of Richard R. Rudnansky"
+                }
+              },
+              {
+                "title": "Executive Assistant to VP of Operations",
+                "location": "Healdsburg, CA",
+                "dates": {
+                  "from": "1995-01-01",
+                  "to": "1998-01-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Simi Winery"
+                }
+              },
+              {
+                "title": "Litigation Assistant",
+                "location": "Santa Rosa, CA",
+                "dates": {
+                  "from": "1989-01-01",
+                  "to": "1995-01-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Shapiro, Galvin & Shapiro"
+                }
+              },
+              {
+                "title": "Legal Assistant",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "1987-01-01",
+                  "to": "1989-01-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Thelen, Marrin, Johnson & Bridges"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": null,
+                "dates": {
+                  "from": "1980",
+                  "to": "1985"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Encinal High, Alameda"
+                }
+              },
+              {
+                "degree": "Law",
+                "dates": {
+                  "from": "2006",
+                  "to": "2009"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/0j9cpxlwdxh",
+                  "name": "School of Business and Economics at Sonoma State University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.ohiogamma.org/storage/media/2015_OSUSPE_NL_Print.pdf",
+      "title": "The Ohio Gamma",
+      "url": "https://www.ohiogamma.org/storage/media/2015_OSUSPE_NL_Print.pdf",
+      "text": "Red Door HONOR THE PAST ~ CELEBRATE THE PRESENT ~ CREATE THE FUTURE\n\nA key element of our alumni function is event planning. Our alumni events lead to more involved alumni. Involved alumni lead to a better relationship with our undergrads and a continually outstanding undergrad chapter. We have had an active 2015 calendar of Alumni Events - some old and some new. In mid-June we had another 1960\u2019s Sig Ep Reunion (our third). This event featured a Friday night reception at the Embassy Suites, golf at New Albany Golf Links, an Ohio Union and Campus walking tour and a spirited dinner at the 94th Aero Squadron restaurant. This event demonstrates how our Sig Ep friendships have stood the test of time for well over 50 years. Of special significance, we honored Lin Boling (wife of Brian Boling) and presented her with the first Lifetime Sig Ep Sweetheart award for her outstanding contribution as our Reunion coordinator for the past 50 years. Jim Doyle created a DVD of a composite of 8mm films that were taken in the 60\u2019s and you can view that video at https://vimeo. com/135719549. If your group has not had a reunion, you should plan to do so. More on this later. In August we had our annual Golf Outing at Glenross Golf Course. The weather was fantastic, the scores were \u201d interesting\u201d and many purchased $10 mulligan\u2019s to improve their chances of winning. Everyone donated their winnings, and along with the Phillips-Barnett side bet, we were able to donate over $800 to the Chapter Scholars"
+    },
+    {
+      "id": "https://exa.ai/library/person/vjx9yjtkjss",
+      "title": "Fraser Lundie, CFA",
+      "url": "https://www.linkedin.com/in/fraserlundie",
+      "publishedDate": "2026-07-29T06:56:56.000Z",
+      "text": "# Fraser Lundie, CFA\n\nGlobal Head of Fixed Income at Aviva Investors | Board member at University of Aberdeen Trust\n\nLondon, England, United Kingdom (GB)\n\n500 connections \u2022 5,384 followers\n\n## About\n\nAs Global Head of Fixed Income at Aviva Investors, I lead a diverse platform spanning\u2026\n\nTotal Experience: 22 years and 7 months\n\n## Experience\n\n### Global Head of Fixed Income - [Aviva Investors](https://www.linkedin.com/company/aviva-investors) (Current)\n\nNov 2024 - Present (1 year and 9 months)\n\nAs the Global Head of Fixed Income at Aviva Investors, I lead our Global Rates, Investment Grade, High Yield, Emerging Market Debt, and Global Liquidity groups as well as the Solutions area, including bespoke Buy & Maintain and LDI strategies. With extensive experience in asset management, I am dedicated to delivering strong performance and innovative investment solutions for our clients.\n\nDepartment: Finance & Accounting \u2022 Level: Head\n\nAviva Investors is a Financial Services company. aviva investors is a global asset manager with investment expertise across all major asset classes. They are committed to helping people defy uncertainty and invest with confidence. Their investment intelligence spans major markets, giving them the size and scale to successfully seek out opportunities that will deliver specific investor outcomes. Aviva Investors has 900-1,000 employees (+1-2% YoY) and has annual revenue in the $300M-$400M range, founded in 2008. Headquartered in London, England, United Kin",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQGwjnnKfUAG8A/profile-displayphoto-shrink_200_200/B4EZPzd6ijHsAY-/0/1734956526398?e=2147483647&v=beta&t=BnaVVQ-lv-W4y2w1OoJt1Ol1n_Sy08hW1DJsiel2C9Q",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/vjx9yjtkjss",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Fraser Lundie, CFA",
+            "firstName": "Fraser",
+            "lastName": "Lundie",
+            "location": "London, England, United Kingdom",
+            "workHistory": [
+              {
+                "title": "Global Head of Fixed Income",
+                "location": null,
+                "dates": {
+                  "from": "2024-11-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/nq3v2984966",
+                  "name": "Aviva Investors"
+                }
+              },
+              {
+                "title": "Markets Participant Group member",
+                "location": "London Area, United Kingdom",
+                "dates": {
+                  "from": "2025-08-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/18dsr2jkcm4",
+                  "name": "Bank of England"
+                }
+              },
+              {
+                "title": "Member Board of Trustees",
+                "location": "Aberdeen, Scotland, United Kingdom",
+                "dates": {
+                  "from": "2023-02-01",
+                  "to": null
+                },
+                "company": {
+                  "id": null,
+                  "name": "University of Aberdeen"
+                }
+              },
+              {
+                "title": "Head of Fixed Income - Public Markets",
+                "location": "London, England, United Kingdom",
+                "dates": {
+                  "from": "2022-01-01",
+                  "to": "2024-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fbnkhx84wn4",
+                  "name": "Federated Hermes Limited"
+                }
+              },
+              {
+                "title": "Head of Credit",
+                "location": "London, United Kingdom",
+                "dates": {
+                  "from": "2012-02-01",
+                  "to": "2022-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fbnkhx84wn4",
+                  "name": "Federated Hermes Limited"
+                }
+              },
+              {
+                "title": "Senior Credit Portfolio Manager",
+                "location": null,
+                "dates": {
+                  "from": "2010-02-01",
+                  "to": "2012-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fbnkhx84wn4",
+                  "name": "Federated Hermes Limited"
+                }
+              },
+              {
+                "title": "CFA UK Board Member",
+                "location": "London, United Kingdom",
+                "dates": {
+                  "from": "2017-11-01",
+                  "to": "2023-11-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fjh3ksl7mpf",
+                  "name": "CFA UK"
+                }
+              },
+              {
+                "title": "Head of Euro High Yield, Lead Euro High Yield Portfolio Manager, Global Credit and Hybrids",
+                "location": null,
+                "dates": {
+                  "from": "2008-10-01",
+                  "to": "2010-02-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Fortis Investments"
+                }
+              },
+              {
+                "title": "High Yield Portfolio Manager, Global Fixed Income and Currencies",
+                "location": null,
+                "dates": {
+                  "from": "2006-01-01",
+                  "to": "2008-10-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Fortis Investments"
+                }
+              },
+              {
+                "title": "Investment Associate",
+                "location": "Paris Area, France",
+                "dates": {
+                  "from": "2004-01-01",
+                  "to": "2006-01-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Fortis Investments"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": null,
+                "dates": {
+                  "from": "1985",
+                  "to": "1998"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "The Glasgow Academy"
+                }
+              },
+              {
+                "degree": "Masters (MSc) Investment Analysis",
+                "dates": {
+                  "from": "2003",
+                  "to": "2004"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "University of Stirling"
+                }
+              },
+              {
+                "degree": "European Advocacy Professionalism",
+                "dates": {
+                  "from": "2017",
+                  "to": "2017"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "CFA Institute"
+                }
+              },
+              {
+                "degree": "Chartered Financial Analyst (CFA) designation awarded",
+                "dates": {
+                  "from": null,
+                  "to": "2009"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "CFA Institute"
+                }
+              },
+              {
+                "degree": "Certificate in Investment Management (IMC)",
+                "dates": {
+                  "from": null,
+                  "to": "2005"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "CFA Institute"
+                }
+              },
+              {
+                "degree": "MA (Hons) Economics",
+                "dates": {
+                  "from": "1998",
+                  "to": "2002"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "University of Aberdeen"
+                }
+              },
+              {
+                "degree": "Sustainable Finance Finance",
+                "dates": {
+                  "from": "2021",
+                  "to": "2021"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "University of Cambridge"
+                }
+              },
+              {
+                "degree": "Role of the Director and the Board Governance",
+                "dates": {
+                  "from": "2018",
+                  "to": "2018"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Institute of Directors (IoD)"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.bcgsc.ca/sites/default/files/CVs/Jones_Steven%20Master%20CV-Mar%2027%202025.pdf",
+      "title": "1 CANADA\u2019S MICHAEL SMITH GENOME SCIENCES CENTRE ............................................................... 2 CURRICULUM VITAE ......................................................................................................................................... 2 Steven J.M. Jones.................................................................................................................................................... 2 Areas of Expertise:.................................................................................................................................................. 2 EDUCATION: ........................................................................................................................................................ 2 ACADEMIC EMPLOYMENT HISTORY: ........................................................................................................... 2 HONOURS and AWARDS: ................................................................................................................................... 3 TEACHING EXPERIENCE:.................................................................................................................................. 4 SOCIETY MEMBERSHIPS:.................................................................................................................................. 6 COMMITTEE and OTHER INVOLVEMENT:..................................................................................................... 7 EDITORIAL RESPONSIBILITIES: .................................................................................................................... 11 PUBLIC OUTREACH/SERVICE:....................................................................................................................... 11 Contributions to the Training of Highly Qualified Personnel:.............................................................................. 12 STUDENT ADVISORY COMMITTEE INVOLVEMENT: ............................................................................... 21 Examiner for PHD/MSC theses: ........................................................................................................................... 23 TRAINEE AWARDS, SCHOLARSHIPS & FELLOWSHIPS:........................................................................... 25 Contributions to the Training of Highly Qualified Personnel (HQP): .................................................................. 32 Activities and Contributions: ................................................................................................................................ 32 Most Significant Contributions:............................................................................................................................ 33 Grants and Awards APPLIED FOR:..................................................................................................................... 33 GRANTS HELD:.................................................................................................................................................. 35 Past Grants: ........................................................................................................................................................... 38 Patents:.................................................................................................................................................................. 52 Book Chapters and Review Articles: .................................................................................................................... 55 PEER REVIEWED PUBLICATIONS: ................................................................................................................ 56 NON-PEER REVIEWED PUBLICATIONS: .................................................................................................... 110 Invited Presentations:.......................................................................................................................................... 111 Abstracts and Posters: ......................................................................................................................................... 121",
+      "url": "https://www.bcgsc.ca/sites/default/files/CVs/Jones_Steven%20Master%20CV-Mar%2027%202025.pdf",
+      "author": "Lesa Fehr",
+      "text": "1 \nCANADA\u2019S MICHAEL SMITH GENOME SCIENCES CENTRE ... 2 \nCURRICULUM VITAE ... 2 \nSteven J.M. Jones ... 2 \nAreas of Expertise: ... 2 \nEDUCATION: ... 2 \nACADEMIC EMPLOYMENT HISTORY: ... 2 \nHONOURS and AWARDS: ... 3 \nTEACHING EXPERIENCE: ... 4 \nSOCIETY MEMBERSHIPS: ... 6 \nCOMMITTEE and OTHER INVOLVEMENT: ... 7 \nEDITORIAL RESPONSIBILITIES: ... 11 \nPUBLIC OUTREACH/SERVICE: ... 11 \nContributions to the Training of Highly Qualified Personnel: ... 12 \nSTUDENT ADVISORY COMMITTEE INVOLVEMENT: ... 21 \nExaminer for PHD/MSC theses: ... 23 \nTRAINEE AWARDS, SCHOLARSHIPS & FELLOWSHIPS: ... 25 \nContributions to the Training of Highly Qualified Personnel (HQP): ... 32 \nActivities and Contributions: ... 32 \nMost Significant Contributions: ... 33 \nGrants and Awards APPLIED FOR: ... 33 \nGRANTS HELD: ... 35 \nPast Grants: ... 38 \nPatents: ... 52 \nBook Chapters and Review Articles: ... 55 \nPEER REVIEWED PUBLICATIONS: ... 56 \nNON-PEER REVIEWED PUBLICATIONS: ... 110 \nInvited Presentations: ... 111 \nAbstracts and Posters: ... 121 \n\nCANADA\u2019S MICHAEL SMITH GENOME SCIENCES CENTRE\n\nCURRICULUM VITAE\n\nSTEVEN J.M. JONES \nCanada\u2019s Michael Smith Genome Sciences \nCentre at BC Cancer \n570 West 7 th Avenue \nVancouver, British Columbia \nV5Z 4S6 Canada \n\nPhone: (604) 877 6083 Office Phone: (604) 707 5800 Main Office Fax: (604) 876 3561 e-mail: sjones@bcgsc.ca\n\nAREAS OF EXPERTISE: \nbioinformatics, genomics, cancer genomics, comparative genomics, computational drug design, epigenomics, \ngene prediction, DNA sequencing,"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/thehondo_the-official-full-lineup-for-the-hondo-rodeo-activity-7189688913509208064-gQgK",
+      "title": "The Hondo Rodeo Fest\u2019s Post",
+      "url": "https://www.linkedin.com/posts/thehondo_the-official-full-lineup-for-the-hondo-rodeo-activity-7189688913509208064-gQgK",
+      "publishedDate": "2024-04-26T18:16:54.000Z",
+      "text": "The official full lineup for The Hondo Rodeo and Music Fest! November\u2026 | The Hondo Rodeo Fest\nLinkedIn and 3rd parties use essential and non-essential cookies to provide, secure, analyze and improve our Services, and to show you relevant ads (including**professional and job ads**) on and off LinkedIn. Learn more in our[Cookie Policy](https://www.linkedin.com/legal/cookie-policy).\nSelect Accept to consent or Reject to decline non-essential cookies for this use. You can update your choices at any time in your[settings](https://www.linkedin.com/mypreferences/g/guest-cookies).\nAcceptReject\nAgree & Join LinkedIn\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s[User Agreement](https://www.linkedin.com/legal/user-agreement?trk=linkedin-tc_auth-button_user-agreement),[Privacy Policy](https://www.linkedin.com/legal/privacy-policy?trk=linkedin-tc_auth-button_privacy-policy), and[Cookie Policy](https://www.linkedin.com/legal/cookie-policy?trk=linkedin-tc_auth-button_cookie-policy).\n````````````[Skip to main content](#main-content)\n# The Hondo Rodeo Fest\u2019s Post\n[![View organization page for The Hondo Rodeo Fest]()](https://www.linkedin.com/company/thehondo?trk=public_post_feed-actor-image)\n[The Hondo Rodeo Fest](https://www.linkedin.com/company/thehondo?trk=public_post_feed-actor-name)\n243 followers\n1y\n* [Report this post](https://www.linkedin.com/uas/login?session_redirect=https://www.linkedin.com/posts/thehondo_the-official-full-lineup-for-the-hondo-rodeo-activity-71896",
+      "image": "https://media.licdn.com/dms/image/v2/D5622AQGnKd3lZiNCAA/feedshare-shrink_2048_1536/feedshare-shrink_2048_1536/0/1714155414023?e=2147483647&v=beta&t=Qay0IgKq593CD7Czdq181J36_qZJzISz7SLdyMZEefc",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    }
+  ],
+  "searchTime": 1032.2,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.21,
+  "_request": {
+    "query": "\"Nick Fisher\" award winner \"40 under 40\" top marketers recognition list",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

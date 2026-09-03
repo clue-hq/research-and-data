@@ -1,0 +1,42 @@
+{
+  "requestId": "fc875c542d3e2f1bd65be80f5b704d40",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://podcasts.apple.com/us/podcast/ai-summit-sanaz-yashar-co-founder-and-ceo-at-zafran-security/id1749699539?i=1000721382470&l=zh-Hant-TW",
+      "title": "Apple Podcast\uff1a\u300aBoardroom Club\u300b\u3008AI Summit: Sanaz Yashar, Co-Fo\u22ef\u3009",
+      "url": "https://podcasts.apple.com/us/podcast/ai-summit-sanaz-yashar-co-founder-and-ceo-at-zafran-security/id1749699539?i=1000721382470&l=zh-Hant-TW",
+      "publishedDate": "2025-08-10T14:05:09.000Z",
+      "text": "Apple Podcast\uff1a\u300aBoardroom Club\u300b\u3008AI Summit: Sanaz Yashar, Co-Fo\u22ef\u3009\n\n- 2025\u5e748\u670810\u65e5\n- 43 \u5206\u9418\n\n# AI Summit: Sanaz Yashar, Co-Founder and CEO at Zafran Security\n\n\u64ad\u653e\n\nWatch our exclusive interview with Sanaz Yashar, Co-Founder and CEO at Zafran Security.\n\nBorn in Iran, moved to Israel, studied #Biology and ended up in Cyber. There\u2019s never a dull moment with Sanaz!\n\nJoin us as Sanaz walks us through her incredible journey, building Zafran Security . It all started with a #cyber incident at a hospital \u2014an event that pushed them to think differently and develop a way to quickly identify and reduce real threats without relying solely on #patching.\n\nSounds simple? Well, not when you\u2019re dealing with 30 million #vulnerabilities. It\u2019s all about the order\u2014just like making #PersianRice. As Sanaz says: you only add the Zafran at the end. That\u2019s why we even got a live #demo! (of their cyber product)\n\nWe also discussed Zafran Security\u2019s #GTM approach, how they initially engage with #clients, and explored real-world cases where they\u2019ve made a major #impact.\n\nSo how are Biology, Cyber, Persian rice, and #StephCurry all connected? \ud83e\uddec\ud83d\udcbb\ud83c\udf5a\ud83c\udfc0\n\nCheck our new website:\n\nhttps://www.boardroomclub.net\n\nCheck out our new YouTube Channel:\n\nhttps://www.youtube.com/@BoardroomClub\n\nInterviewers: \u2060Yossi Garmazi\u2060 & \u2060\u00c1lvaro Jim\u00e9nez Cabello de los Cobos\u2060.\n\n#tech #innovation #ai #cyber #biology\n\nChapters:\n\n00:00 Intro\n\n00:43 Born in Iran, moved to Israel\n\n02:06 Lessons from Biology to Cyber\n\n06:03 Zafran beginning: Cyb",
+      "image": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/84/cc/e0/84cce0ca-aed9-fc6c-e348-c86ac4bc05e4/mza_15894546398081643721.jpg/1200x1200ECA.PESS01-60.jpg?imgShow=Podcasts211/v4/d4/97/ca/d497ca2d-bc43-c185-1d27-2812f2bda4ae/mza_1332494387896370315.jpg"
+    }
+  ],
+  "searchTime": 951.6,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.03,
+  "_request": {
+    "query": "\"Sanaz Yashar\" Zafran Security",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    },
+    "includeDomains": [
+      "podcasts.apple.com",
+      "open.spotify.com",
+      "podchaser.com",
+      "listennotes.com",
+      "player.fm",
+      "podbean.com",
+      "buzzsprout.com"
+    ]
+  }
+}

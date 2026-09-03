@@ -1,0 +1,712 @@
+{
+  "requestId": "c045c4b7d4390f57fa9381dd670ed293",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/dgk0txtrb6b",
+      "title": "Lexy Marchbank",
+      "url": "https://www.linkedin.com/in/lexymarchbank",
+      "publishedDate": "2026-08-22T05:51:12.000Z",
+      "text": "# Lexy Marchbank\n\nFounder of FieldSavvy | Event & Field Marketing for Startups\n\nChicago, Illinois, United States (US)\n\n500 connections \u2022 1,400 followers\n\n## About\n\nI help fast moving startups turn events into actual results - not just branded\u2026\n\nTotal Experience: 13 years and 5 months\n\n## Experience\n\n### Director of Events - [Harmonic Security](https://www.linkedin.com/company/harmonic-security) (Current)\n\nJul 2026 - Present (1 month)\n\nDepartment: Marketing \u2022 Level: Director\n\nHarmonic Security is a Technology, Information and Internet company. Harmonic Security has 50-60 employees and has annual revenue in the $1M-$10M range, founded in 2023. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and United Kingdom. Has $24.5M in total funding, with 2 prior funding rounds.\n\n### Founder - [Field Savvy](https://www.linkedin.com/company/field-savvy) (Current)\n\nJun 2024 - Present (2 years and 2 months)\n\nAs founder, I lead strategy, client partnerships, and team development. I work closely with high-growth B2B startups, particularly in cybersecurity and tech, to create field marketing programs that drive real results. That includes everything from pre-event planning and staffing to onsite execution and post-event follow-up.\n\nDepartment: General Management \u2022 Level: Founder\n\nField Savvy is a Marketing Services company. FieldSavvy is a company that offers summer slowdown packages and provides consulting services for quick meetings ",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/dgk0txtrb6b",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Lexy Marchbank",
+            "firstName": "Lexy",
+            "lastName": "Marchbank",
+            "location": "Chicago, Illinois, United States",
+            "workHistory": [
+              {
+                "title": "Director of Events",
+                "location": null,
+                "dates": {
+                  "from": "2026-07-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9j6bkrfw0m4",
+                  "name": "Harmonic Security"
+                }
+              },
+              {
+                "title": "Founder",
+                "location": null,
+                "dates": {
+                  "from": "2024-06-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/561yzwtyr7v",
+                  "name": "Field Savvy"
+                }
+              },
+              {
+                "title": "Director Of Field Marketing",
+                "location": null,
+                "dates": {
+                  "from": "2022-05-01",
+                  "to": "2024-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9qjtt6h5xy3",
+                  "name": "Material Security"
+                }
+              },
+              {
+                "title": "Global Events & Field Marketing Manager - Google Cloud Security",
+                "location": null,
+                "dates": {
+                  "from": "2019-09-01",
+                  "to": "2022-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/k7t465sztky",
+                  "name": "Google"
+                }
+              },
+              {
+                "title": "Field Marketing Manager - Chronicle",
+                "location": null,
+                "dates": {
+                  "from": "2019-04-01",
+                  "to": "2019-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/k7t465sztky",
+                  "name": "Google"
+                }
+              },
+              {
+                "title": "Manager, Marketing Events",
+                "location": null,
+                "dates": {
+                  "from": "2018-01-01",
+                  "to": "2019-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/10pnymgmrgk",
+                  "name": "Exabeam"
+                }
+              },
+              {
+                "title": "Global and Field Event Manager Marketing Demand Generation Manager",
+                "location": null,
+                "dates": {
+                  "from": "2015-10-01",
+                  "to": "2017-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/10pnymgmrgk",
+                  "name": "Exabeam"
+                }
+              },
+              {
+                "title": "Branding and Marcom Specialist",
+                "location": "Menlo Park, CA",
+                "dates": {
+                  "from": "2015-09-01",
+                  "to": "2015-10-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Delphix"
+                }
+              },
+              {
+                "title": "Marketing Coordinator",
+                "location": "Menlo Park, CA",
+                "dates": {
+                  "from": "2014-06-01",
+                  "to": "2015-08-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Delphix"
+                }
+              },
+              {
+                "title": "Consultant",
+                "location": "Los Gatos",
+                "dates": {
+                  "from": "2013-11-01",
+                  "to": "2015-01-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Haute Bride"
+                }
+              },
+              {
+                "title": "Marketing Coordinator",
+                "location": null,
+                "dates": {
+                  "from": "2012-02-01",
+                  "to": "2012-09-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "BeWhys Marketing"
+                }
+              },
+              {
+                "title": "Public Relations Intern",
+                "location": "West Hollywood, CA",
+                "dates": {
+                  "from": "2012-01-01",
+                  "to": "2012-05-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "The Shop Public Relations"
+                }
+              },
+              {
+                "title": "Public Relations Intern",
+                "location": "Newport Beach, CA",
+                "dates": {
+                  "from": "2011-09-01",
+                  "to": "2011-12-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Brower, Miller and Cole"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": null,
+                "dates": {
+                  "from": "2013",
+                  "to": "2013"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Victoria University of Wellington"
+                }
+              },
+              {
+                "degree": "Bachelor's degree Public Relations and Advertising",
+                "dates": {
+                  "from": "2010",
+                  "to": "2013"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Chapman University"
+                }
+              },
+              {
+                "degree": "Master's degree Management",
+                "dates": {
+                  "from": "2021",
+                  "to": "2024"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Harvard Extension School"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/p0yf6c03bqs",
+      "title": "Daniel Lee",
+      "url": "https://www.linkedin.com/in/ygdaniellee",
+      "publishedDate": "2026-08-22T06:32:14.000Z",
+      "text": "# Daniel Lee\n\nAssociate at Cooley LLP\n\nSan Francisco Bay Area (US)\n\n500 connections \u2022 774 followers\n\n## About\n\nAssociate at Cooley LLP\n\nTotal Experience: 11 years and 6 months\n\n## Experience\n\n### Associate - [Cooley LLP](https://www.linkedin.com/company/cooleyllp) (Current)\n\nMar 2019 - Present (7 years and 5 months) in Palo Alto, California\n\nDepartment: Other\n\nCooley LLP is a Law Practice company. Cooley is a global law firm that provides a wide range of services and insights to its clients. They focus on powering innovation and defending success. They offer services in areas such as racial and social justice, securities class action, public company innovation, and global business hub. They also provide online payments portals for clients to pay invoices online. Cooley is a B2B company. Cooley LLP has 2,000-3,000 employees (+4-5% YoY) and has annual revenue in the $900M-$1B range, founded in 1920. Headquartered in Palo Alto, California, United States. Its workforce is distributed across 11 countries (including United States, United Kingdom, China, Hong Kong, and Singapore).\n\n### Associate - [Proskauer Rose LLP](https://www.linkedin.com/company/proskauer)\n\nJan 2018 - Jan 2019 (1 year) in Los Angeles, California\n\nDepartment: Other\n\nProskauer Rose LLP is a Law Practice company. Proskauer Rose LLP is a company that provides legal services in various industries. Proskauer Rose LLP has 1,000-2,000 employees and has annual revenue in the $1B-$2B range, founded in 1875. Headquartered",
+      "image": "https://media.licdn.com/dms/image/v2/C5603AQFcM3253Q1ZuQ/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1607038651673?e=2147483647&v=beta&t=LeLl3QPwh3xcj7ffAjn2vXpDwfD4KzoI3vrP2wVefuI",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/p0yf6c03bqs",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Daniel Lee",
+            "firstName": "Daniel",
+            "lastName": "Lee",
+            "location": "San Francisco Bay Area",
+            "workHistory": [
+              {
+                "title": "Associate",
+                "location": "Palo Alto, California",
+                "dates": {
+                  "from": "2019-03-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/5vsh3f2x9t9",
+                  "name": "Cooley LLP"
+                }
+              },
+              {
+                "title": "Associate",
+                "location": "Los Angeles, California",
+                "dates": {
+                  "from": "2018-01-01",
+                  "to": "2019-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/tt89nh9d0nd",
+                  "name": "Proskauer Rose LLP"
+                }
+              },
+              {
+                "title": "Associate",
+                "location": "Los Angeles",
+                "dates": {
+                  "from": "2015-01-01",
+                  "to": "2018-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/82ggcsbxyyp",
+                  "name": "Blank Rome LLP"
+                }
+              },
+              {
+                "title": "Summer Associate (Law Clerk)",
+                "location": "Seoul, Korea",
+                "dates": {
+                  "from": "2014-01-01",
+                  "to": "2014-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0z9pvwcs63t",
+                  "name": "Kim & Chang"
+                }
+              },
+              {
+                "title": "Summer Associate",
+                "location": null,
+                "dates": {
+                  "from": "2013-01-01",
+                  "to": "2013-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/5rj2hwp9wgy",
+                  "name": "Squire Sanders"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "J.D.",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/sklcr5gg6pc",
+                  "name": "University of California, Los Angeles - School of Law"
+                }
+              },
+              {
+                "degree": "B.A., Economics, International Studies (Political Economy Specialization)",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/hjbz3rr4xnv",
+                  "name": "University of Washington"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/g54cdb8l2yz",
+      "title": "Harry Stein",
+      "url": "https://www.linkedin.com/in/harry-stein-1300522a",
+      "publishedDate": "2026-08-06T19:47:43.000Z",
+      "text": "# Harry Stein\n\nInvestment Management Distribution | UK & European Wholesale | Emerging Markets | Capital Raising | UCITS\n\nLondon Area, United Kingdom (GB)\n\n500 connections \u2022 1,307 followers\n\n## About\n\nSenior business development and capital raising professional with 15+ years' experience\u2026\n\nTotal Experience: 16 years and 11 months\n\n## Experience\n\n### Institutional Sales Director - [GIB Asset Management](https://www.linkedin.com/company/gib-asset-management) (Current)\n\nJul 2022 - Present (4 years and 1 month) in London, England Metropolitan Area\n\nDepartment: Sales\n\nGIB Asset Management is a Investment Management company. GIB Asset Management combines high-conviction investing with disciplined active strategies across equities and fixed income. By focusing on markets where active insight delivers the greatest value, our objective is to generate long-term outperformance for our clients. GIB Asset Management has 50-60 employees (-20% YoY) and has annual revenue in the $5B-$6B range. Headquartered in London, United Kingdom, with presence in United States. Its workforce is distributed across 6 countries (including United Kingdom, Bahrain, United States, Australia, and United Arab Emirates).\n\n### Head Of Investor Relations - [Ascender Capital](https://www.linkedin.com/company/ascendercapital)\n\nNov 2020 - Jul 2022 (1 year and 8 months) in London, England, United Kingdom\n\nHead of Investor Relations at Ascender Capital\n\nDepartment: General Management \u2022 Level: Head\n\nAscender Capital is a",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQHF9Ns8P4Xtlg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1708464586205?e=2147483647&v=beta&t=yZzKNjPrWvyr_DzltfcRW8583dNuDnsTNh8LyN6OnlA",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/g54cdb8l2yz",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Harry Stein",
+            "firstName": "Harry",
+            "lastName": "Stein",
+            "location": "London Area, United Kingdom",
+            "workHistory": [
+              {
+                "title": "Institutional Sales Director",
+                "location": "London, England Metropolitan Area",
+                "dates": {
+                  "from": "2022-07-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/40g97y3vmw9",
+                  "name": "GIB Asset Management"
+                }
+              },
+              {
+                "title": "Head Of Investor Relations",
+                "location": "London, England, United Kingdom",
+                "dates": {
+                  "from": "2020-11-01",
+                  "to": "2022-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/mn0h35vrxtx",
+                  "name": "Ascender Capital"
+                }
+              },
+              {
+                "title": "Head of Sales and Marketing",
+                "location": null,
+                "dates": {
+                  "from": "2019-12-01",
+                  "to": "2020-11-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Mobius Capital Partners"
+                }
+              },
+              {
+                "title": "Sales & Marketing Manager",
+                "location": null,
+                "dates": {
+                  "from": "2018-05-01",
+                  "to": "2019-12-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Mobius Capital Partners"
+                }
+              },
+              {
+                "title": "Associate, Institutional Investors Buy-side",
+                "location": "London, United Kingdom",
+                "dates": {
+                  "from": "2016-04-01",
+                  "to": "2018-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/5z7ysrkcgnn",
+                  "name": "London Stock Exchange Group"
+                }
+              },
+              {
+                "title": "Press Officer",
+                "location": null,
+                "dates": {
+                  "from": "2013-10-01",
+                  "to": "2016-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/5z7ysrkcgnn",
+                  "name": "London Stock Exchange Group"
+                }
+              },
+              {
+                "title": "Senior Consultant",
+                "location": null,
+                "dates": {
+                  "from": "2009-09-01",
+                  "to": "2013-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/klzj768rgxj",
+                  "name": "FTI Consulting"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor of Arts (B.A.) History and Politics",
+                "dates": {
+                  "from": "2006",
+                  "to": "2009"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Newcastle University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/h7nx6xd8llm",
+      "title": "Michael Needel",
+      "url": "https://www.linkedin.com/in/michaelneedel",
+      "publishedDate": "2026-08-26T20:10:22.000Z",
+      "text": "# Michael Needel\n\nChief Financial Officer at RegScale\n\nGreater Boston (US)\n\n500 connections \u2022 2,139 followers\n\n## About\n\nChief Financial Officer at RegScale\n\nTotal Experience: 16 years and 5 months\n\n## Experience\n\n### Chief Financial Officer - [RegScale](https://www.linkedin.com/company/regscale) (Current)\n\nApr 2023 - Present (3 years and 4 months)\n\nDepartment: Finance & Accounting \u2022 Level: C-Level\n\nRegScale is a Computer and Network Security company. RegScale is an automated governance, risk, and compliance software that helps streamline cyber GRC and streamline governance, risk, and compliance programs. RegScale has 80-90 employees and has annual revenue in the $1M-$10M range, founded in 2021. Headquartered in Tysons, Virginia, United States, with offices in Knoxville and Mclean. Has $52.2M in total funding, with 4 prior funding rounds.\n\n### Chief Financial Officer - SecZetta Inc.\n\nJul 2022 - Jan 2023 (6 months)\n\nCFO through SecZetta's successful acquisition by SailPoint\n\nDepartment: Finance & Accounting \u2022 Level: C-Level\n\n### Senior Vice President Finance - SecZetta Inc.\n\nApr 2021 - Jul 2022 (1 year and 3 months)\n\nDepartment: Finance & Accounting \u2022 Level: President/Vice President\n\n### Board Observer - SecZetta Inc.\n\nAug 2019 - Apr 2021 (1 year and 8 months)\n\nDepartment: Other\n\n### Board Observer - [Okera](https://www.linkedin.com/company/okerainc)\n\nMar 2020 - Apr 2021 (1 year and 1 month)\n\nDepartment: Other\n\nOkera (Acquired by Databricks) is a Software Development company. ",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/h7nx6xd8llm",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Michael Needel",
+            "firstName": "Michael",
+            "lastName": "Needel",
+            "location": "Greater Boston",
+            "workHistory": [
+              {
+                "title": "Chief Financial Officer",
+                "location": null,
+                "dates": {
+                  "from": "2023-04-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/79qk2fqrs4b",
+                  "name": "RegScale"
+                }
+              },
+              {
+                "title": "Chief Financial Officer",
+                "location": null,
+                "dates": {
+                  "from": "2022-07-01",
+                  "to": "2023-01-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "SecZetta Inc."
+                }
+              },
+              {
+                "title": "Senior Vice President Finance",
+                "location": null,
+                "dates": {
+                  "from": "2021-04-01",
+                  "to": "2022-07-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "SecZetta Inc."
+                }
+              },
+              {
+                "title": "Board Observer",
+                "location": null,
+                "dates": {
+                  "from": "2019-08-01",
+                  "to": "2021-04-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "SecZetta Inc."
+                }
+              },
+              {
+                "title": "Board Observer",
+                "location": null,
+                "dates": {
+                  "from": "2020-03-01",
+                  "to": "2021-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/dcm9n0qmhgs",
+                  "name": "Okera"
+                }
+              },
+              {
+                "title": "Board Observer",
+                "location": null,
+                "dates": {
+                  "from": "2020-02-01",
+                  "to": "2021-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/2g8qx6g8t43",
+                  "name": "Accurics"
+                }
+              },
+              {
+                "title": "Board Observer",
+                "location": null,
+                "dates": {
+                  "from": "2019-10-01",
+                  "to": "2021-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/vbk9kzpznqq",
+                  "name": "Altamira Technologies Corporation"
+                }
+              },
+              {
+                "title": "Board Observer",
+                "location": null,
+                "dates": {
+                  "from": "2018-11-01",
+                  "to": "2021-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/czqqms5b7s7",
+                  "name": "ZeroNorth"
+                }
+              },
+              {
+                "title": "Vice President",
+                "location": null,
+                "dates": {
+                  "from": "2018-07-01",
+                  "to": "2021-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hktzx6sq0pm",
+                  "name": "ClearSky"
+                }
+              },
+              {
+                "title": "Corporate Development Senior Manager",
+                "location": "Redmond, Washington",
+                "dates": {
+                  "from": "2017-09-01",
+                  "to": "2018-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/gxl16rnpqtq",
+                  "name": "Microsoft"
+                }
+              },
+              {
+                "title": "Corporate Development Manager",
+                "location": "Redmond, WA",
+                "dates": {
+                  "from": "2015-08-01",
+                  "to": "2017-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/gxl16rnpqtq",
+                  "name": "Microsoft"
+                }
+              },
+              {
+                "title": "MBA Student",
+                "location": "Hanover, New Hampshire",
+                "dates": {
+                  "from": "2013-08-01",
+                  "to": "2015-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/4bjj9sqwm8c",
+                  "name": "Tuck School of Business at Dartmouth College"
+                }
+              },
+              {
+                "title": "Summer Associate",
+                "location": "Denver, Colorado",
+                "dates": {
+                  "from": "2014-06-01",
+                  "to": "2014-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/5cz7b8n4j10",
+                  "name": "Meritage Funds"
+                }
+              },
+              {
+                "title": "Associate",
+                "location": "Alexandria, Virginia",
+                "dates": {
+                  "from": "2011-08-01",
+                  "to": "2013-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/2gsgz5pvh3l",
+                  "name": "Columbia Capital"
+                }
+              },
+              {
+                "title": "Analyst, Communications and Media Group",
+                "location": "New York, New York",
+                "dates": {
+                  "from": "2009-07-01",
+                  "to": "2011-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9tmcjxf7tth",
+                  "name": "Barclays Capital"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Master of Business Administration (M.B.A.)",
+                "dates": {
+                  "from": "2013",
+                  "to": "2015"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "The Tuck School of Business at Dartmouth"
+                }
+              },
+              {
+                "degree": "High School Diploma",
+                "dates": {
+                  "from": "2001",
+                  "to": "2005"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Northgate High School"
+                }
+              },
+              {
+                "degree": "BA Mathematical Economics",
+                "dates": {
+                  "from": "2005",
+                  "to": "2009"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Colgate University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.securityweek.com/meet-the-team/",
+      "title": "Meet The Team - SecurityWeek",
+      "url": "https://www.securityweek.com/meet-the-team/",
+      "publishedDate": "2017-07-16T16:27:21.000Z",
+      "author": "(Danelle Au)",
+      "text": "Meet The Team - SecurityWeek\n\n### SECURITYWEEK NETWORK:\n\n### ICS:\n\nConnect with us\n\nHi, what are you looking for?\n\nEduard Kovacs (@EduardKovacs) is senior managing editor at SecurityWeek. He worked as a high school IT teacher before starting a career in journalism in 2011. Eduard holds a bachelor\u2019s degree in industrial informatics and a master\u2019s degree in computer techniques applied in electrical engineering.\n\n## Hasbro Data Breach Exposed Employee Personal Information\n\nIonut Arghire is an international correspondent for SecurityWeek.\n\n## Critical Isolated-vm Vulnerability Leads to RCE on Host\n\nAFP 2023\n\n## Hackers Stole \u2018Sensitive\u2019 Data From Taiwan Telecom Giant: Ministry\n\n## In Other News: Log4j RCE Scare, Minimus Shutdown, Iranian Hacker Sanctions\n\nFor more than 15 years, Mike Lennon has been closely monitoring the threat landscape and analyzing trends in the National Security and enterprise cybersecurity space. In his role at SecurityWeek, he oversees the editorial direction of the publication and is founder and director of several leading cybersecurity industry conferences around the world.\n\n## Hands-On Cyber-Physical Systems Training Returns to ICS Cybersecurity Conference\n\nKevin Townsend is a Senior Contributor at SecurityWeek. He has been writing about high tech issues since before the birth of Microsoft. For the last 15 years he has specialized in information security; and has had many thousands of articles published in dozens of different magazines \u2013 from The Times ",
+      "image": "https://www.securityweek.com/wp-content/uploads/2023/01/Cybersecurity_News-SecurityWeek.jpg",
+      "favicon": "https://www.securityweek.com/wp-content/uploads/2023/01/cropped-SecurityWeek-Icon-32x32.jpeg"
+    }
+  ],
+  "searchTime": 1384.4,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.47,
+  "_request": {
+    "query": "\"Alastair Paterson\" award winner \"40 under 40\" top marketers recognition list",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}
