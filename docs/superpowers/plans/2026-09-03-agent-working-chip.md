@@ -44,7 +44,7 @@
   - `shouldShowAgentWorkingChip({ editDisabled, hasScene }: { editDisabled: boolean | undefined; hasScene: boolean }): boolean` — true only when the lock is engaged AND a scene is actually on the stage (the chip never floats over the empty-state card).
   - `AgentWorkingChip({ label }: { label: string }): JSX.Element`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `apps/frontend/src/features/chat-shell/components/agent-working-chip.test.tsx`:
 
@@ -77,12 +77,12 @@ it("renders a polite status with a nine-dot grid and the label", () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run from `apps/frontend`: `npx tsx --test src/features/chat-shell/components/agent-working-chip.test.tsx`
 Expected: failure to resolve `./agent-working-chip` / `./agent-working-chip.logic`.
 
-- [ ] **Step 3: Write the logic module**
+- [x] **Step 3: Write the logic module**
 
 Create `apps/frontend/src/features/chat-shell/components/agent-working-chip.logic.ts`:
 
@@ -113,7 +113,7 @@ export function shouldShowAgentWorkingChip({
 }
 ```
 
-- [ ] **Step 4: Write the component**
+- [x] **Step 4: Write the component**
 
 Create `apps/frontend/src/features/chat-shell/components/agent-working-chip.tsx`:
 
@@ -143,7 +143,7 @@ export function AgentWorkingChip({ label }: { label: string }) {
 }
 ```
 
-- [ ] **Step 5: Add the styles**
+- [x] **Step 5: Add the styles**
 
 In `chat-shell.module.css`, change `.sceneStage` so the chip can pin to it:
 
@@ -242,7 +242,7 @@ Then append, beside the existing keyframes (after `toolbar-menu-enter` is fine),
 }
 ```
 
-- [ ] **Step 6: Wire it into the stage**
+- [x] **Step 6: Wire it into the stage**
 
 In `artifact-stage.tsx`, import both:
 
@@ -261,7 +261,7 @@ and inside the `<div aria-label="Ad output canvas" className={styles.sceneStage}
 
 (`hasScene: true` is correct at that site: the `.sceneStage` branch only renders when a scene is on the stage; the empty-state card is the other branch. If the branch condition is a named variable in scope, pass that variable instead of `true` and say so in the report.)
 
-- [ ] **Step 7: Run the tests and the gate**
+- [x] **Step 7: Run the tests and the gate**
 
 From `apps/frontend`:
 
@@ -272,7 +272,7 @@ npm run design-system:build && npm run lint && npm run build
 
 Expected: 3 tests pass; lint reports the two pre-existing `canvasOperations.ts` warnings only; build compiles. Then run the chat-shell suite: `find src/features/chat-shell -name "*.test.ts*" -print0 | xargs -0 npx tsx --test` — all pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```
 git add apps/frontend/src/features/chat-shell/components/agent-working-chip.tsx apps/frontend/src/features/chat-shell/components/agent-working-chip.logic.ts apps/frontend/src/features/chat-shell/components/agent-working-chip.test.tsx apps/frontend/src/features/chat-shell/components/chat-shell.module.css apps/frontend/src/features/chat-shell/components/artifact-stage.tsx
