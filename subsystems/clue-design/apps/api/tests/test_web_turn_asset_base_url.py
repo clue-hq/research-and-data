@@ -36,7 +36,16 @@ def _captured_turn(monkeypatch: pytest.MonkeyPatch) -> dict:
     import lumen_agent.harness_web as harness_web
     import lumen_agent.llm as agent_llm
 
-    def _fake_turn(*, prompt, config, initial_web_doc, event_sink, checkpointer, thread_id):
+    def _fake_turn(
+        *,
+        prompt,
+        config,
+        initial_web_doc,
+        event_sink,
+        checkpointer,
+        thread_id,
+        cancel_requested=None,
+    ):
         captured["config"] = config
         return {
             "status": "applied",
