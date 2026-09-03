@@ -39,21 +39,40 @@ Three decisions, each load-bearing:
   by default: print media would lay the site out under rules it was never
   designed or previewed in, and would let any ``@media print`` block rewrite the
   design at the last moment.
-* **A small injected print sheet** (``break-inside: avoid`` on the page's bands
-  and images) so Chromium's pagination cuts BETWEEN bands rather than through a
-  hero or a headline. The selectors are the tags the delivery renderer actually
-  emits: top-level bands are ``section``/``header``/``footer`` (the engine's
-  ``SectionTag``) and images are bare ``img``.
+* **A small injected print sheet** that keeps the ATOMS whole and lets the BANDS
+  split. A band is routinely taller than whatever is left of the current sheet,
+  so pinning ``section``/``header``/``footer`` with ``break-inside: avoid`` made
+  the whole band jump to the next sheet and left the rest of this one as a void
+  — half a page of bare background. Bands may therefore break across sheets now;
+  only the small things Chromium would otherwise cut THROUGH (a heading, a
+  paragraph, a list item, an image, a figure, a quote) are unbreakable, and a
+  heading is additionally kept with the text under it (``break-after: avoid``).
+
+Delivery HTML names its bytes ROOT-RELATIVELY — ``/asset-store/<digest>`` in
+``src``, in ``srcset``, in inline ``style`` ``url()``, in the fragment CSS in the
+head, and inside the compiled site stylesheet — and ``page.set_content`` gives
+the document no origin, so every one of those references resolved against
+nothing: the header logo printed as a broken-image icon and a photo band printed
+its alt text. :func:`inline_asset_store_refs` therefore rewrites each reference
+into a ``data:`` URI read straight from the blob store BEFORE the html reaches
+Chromium. A digest with no blob is left exactly as it was and reported, never
+raised: a missing picture is a poorer PDF, a failed export is no PDF at all.
 
 ``main.py`` imports this module; this module never imports ``main.py``.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+import base64
+import logging
+import re
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import web_export
+from .database import NotFoundError
 from .document_thumbnails import _CAPTURE_SLOTS, inline_tailwind
+
+logger = logging.getLogger("lumen_api.web_pdf")
 
 JsonObject = Dict[str, Any]
 
@@ -71,13 +90,16 @@ _VIEWPORT = {"width": 768, "height": 1024}
 #: Injected AFTER load, so it wins the cascade over the page's own sheet. Two jobs:
 #: zero the body margin so the bands fill the whole 794px sheet (a pinned 768px
 #: width left a bare 26px strip of page background down every page's right edge,
-#: and 794 is still above `md:` so nothing reflows), and make Chromium's page
-#: breaks fall BETWEEN the page's bands instead of through them. The selectors
-#: are the delivery renderer's real vocabulary — a top-level band is a
-#: `section`/`header`/`footer` and an image is a bare `img`; there is no `figure`,
-#: and `data-node-id` is emitted in EDITOR mode only, so neither is asked for here.
+#: and 794 is still above `md:` so nothing reflows), and decide WHAT Chromium is
+#: allowed to cut. The rule is: a band may split, a small thing may not. Pinning
+#: the bands themselves (`section`/`header`/`footer`) was the earlier attempt and
+#: it produced half-page voids — a band taller than the sheet's remainder moved
+#: whole to the next sheet and left the background behind. So only the atoms are
+#: unbreakable here, and a heading additionally stays with the text it
+#: introduces.
 _PRINT_SHEET = (
-    "section, header, footer, img { break-inside: avoid; }\n"
+    "h1, h2, h3, h4, p, li, img, figure, blockquote { break-inside: avoid; }\n"
+    "h1, h2, h3, h4 { break-after: avoid; }\n"
     "html, body { margin: 0; }"
 )
 
@@ -88,12 +110,68 @@ _PRINT_SHEET = (
 _PDF_MARGIN = {"top": "0", "right": "0", "bottom": "0", "left": "0"}
 
 
+#: Every way the delivery bytes name a stored asset is this one absolute path with
+#: a sha256 after it — `src="/asset-store/<d>"`, a `srcset` candidate, a CSS
+#: `url(/asset-store/<d>)` in an inline `style`, in the fragment CSS, or in the
+#: compiled site stylesheet. One pattern therefore covers markup and CSS alike,
+#: which is exactly how `web_export` repoints the same references into a zip.
+_ASSET_STORE_REF = re.compile(r"/asset-store/([0-9a-fA-F]{64})")
+
+
 class WebPdfUnavailable(Exception):
     """No honest PDF could be produced. Carries a stable ``code`` for the route."""
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+def inline_asset_store_refs(
+    html: str,
+    read_blob: Callable[[str], Tuple[str, bytes]],
+    *,
+    cache: Optional[Dict[str, Optional[str]]] = None,
+) -> Tuple[str, List[str]]:
+    """Replace every ``/asset-store/<digest>`` with a ``data:`` URI of its bytes.
+
+    Pure: it reads blobs through the ``read_blob`` it is handed (the blob store's
+    ``read_blob``, i.e. ``digest -> (media_type, bytes)``) and touches nothing
+    else. It exists because ``page.set_content`` gives the document NO origin, so
+    a root-relative asset path resolves against nothing and prints as a broken
+    image; a ``data:`` URI carries its own bytes and needs no origin at all.
+
+    Returns ``(html, missing)``. A digest the store does not have is LEFT IN THE
+    HTML untouched and named in ``missing`` — an export that loses one picture is
+    still an honest export, while raising here would turn a dangling asset row
+    into a 502 for the whole site.
+
+    ``cache`` maps digest -> data URI (or ``None`` for a known-missing digest) and
+    may be shared across the pages of ONE export, because a site's header logo is
+    on every page and its bytes should be read once. Passing nothing gives each
+    call its own cache, which still de-duplicates within a single page.
+    """
+
+    resolved: Dict[str, Optional[str]] = {} if cache is None else cache
+    missing: List[str] = []
+
+    def data_uri(digest: str) -> Optional[str]:
+        if digest not in resolved:
+            try:
+                media_type, data = read_blob(digest)
+            except NotFoundError:
+                resolved[digest] = None
+                missing.append(digest)
+            else:
+                encoded = base64.b64encode(data).decode("ascii")
+                resolved[digest] = f"data:{media_type};base64,{encoded}"
+        return resolved[digest]
+
+    def replace(match: "re.Match[str]") -> str:
+        # A function replacement, not a template: base64 is `+/=`-safe but a
+        # template would still make `\` in a media type a backreference.
+        return data_uri(match.group(1)) or match.group(0)
+
+    return _ASSET_STORE_REF.sub(replace, html), missing
 
 
 def build_web_pdf(
@@ -141,7 +219,27 @@ def build_web_pdf(
             html_digest=package.html_digest,
         )
     ]
-    return render_pages_pdf([page.html for page in pages], runtime=runtime)
+    # The bytes each page names have to travel WITH it: `set_content` gives the
+    # document no origin, so `/asset-store/<digest>` resolves nowhere. One cache
+    # for the whole export — the same logo appears on every page of a site.
+    asset_cache: Dict[str, Optional[str]] = {}
+    htmls: List[str] = []
+    missing: List[str] = []
+    for page in pages:
+        inlined, page_missing = inline_asset_store_refs(
+            page.html, blobs.read_blob, cache=asset_cache
+        )
+        htmls.append(inlined)
+        missing.extend(page_missing)
+    if missing:
+        # Reported, not raised: those references stay in the html and print as
+        # whatever a missing image prints as, which is a truer answer than a 502.
+        logger.warning(
+            "web_pdf_assets_missing document_id=%s digests=%s",
+            document.get("id"),
+            ",".join(digest[:12] for digest in missing),
+        )
+    return render_pages_pdf(htmls, runtime=runtime)
 
 
 def render_pages_pdf(htmls: List[str], *, runtime: Optional[bytes] = None) -> bytes:
@@ -149,8 +247,12 @@ def render_pages_pdf(htmls: List[str], *, runtime: Optional[bytes] = None) -> by
 
     Every html is laid out at :data:`_VIEWPORT` — 768px, Tailwind's ``md:`` — under
     SCREEN media, and printed onto A4 sheets with no margins, so the sheets hold
-    exactly the tablet layout the agent's ``preview_768.png`` shows, cut between
-    bands rather than reflowed.
+    exactly the tablet layout the agent's ``preview_768.png`` shows, cut through
+    the bands where a sheet ends (never through a heading or an image) rather
+    than reflowed.
+
+    It prints whatever html it is handed: asset inlining belongs to
+    :func:`build_web_pdf`, which has the blob store this function does not.
     """
 
     if not htmls:

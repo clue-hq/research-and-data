@@ -10,15 +10,20 @@ rather than in a collection-time `skipif`.
 
 from __future__ import annotations
 
+import base64
 import functools
+import io
 
 import pymupdf
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from conftest import make_client
 
+from lumen_api.database import NotFoundError
 from lumen_api.main import create_app
+from lumen_api.web_pdf import inline_asset_store_refs
 
 # `test_web_export` is this file's nearest peer (it owns the ZIP export these pages
 # also feed), and it already carries the F5 helpers — so the site fixture is built
@@ -27,6 +32,8 @@ from test_web_export import (
     _empty_page,
     create_scene_document,
     create_web_document,
+    find_node,
+    ingest_content,
     seed_content,
 )
 
@@ -185,3 +192,91 @@ def test_web_pdf_export_persists_nothing(client: TestClient) -> None:
     state = client.get(f"/documents/{document['id']}/web/publish")
     assert state.status_code == 200, state.text
     assert not state.json().get("published")
+
+
+# --- asset inlining ---------------------------------------------------------
+
+# Three digest-shaped strings: the pattern is `/asset-store/<64 hex>`, and these
+# are the shortest things that satisfy it without pretending to be real content.
+#: The seeded picture's pixel dimensions, and the assertion the printed sheet is
+#: checked against — deliberately nothing like Chromium's broken-image icon.
+IMAGE_SIZE = (160, 120)
+
+_D1 = "a" * 64
+_D2 = "b" * 64
+_D3 = "c" * 64
+
+
+def test_inline_asset_store_refs_inlines_bytes_and_leaves_a_missing_digest() -> None:
+    """Pure: markup and CSS references both become data URIs, one read per digest."""
+    reads: list[str] = []
+
+    def read_blob(digest: str) -> tuple[str, bytes]:
+        reads.append(digest)
+        if digest == _D3:
+            raise NotFoundError("design_blob", digest)
+        return "image/png", b"\x89PNG-not-really"
+
+    html = (
+        f'<img src="/asset-store/{_D1}">'
+        f'<div style="background-image:url(/asset-store/{_D2})"></div>'
+        f'<img src="/asset-store/{_D1}">'
+        f'<img src="/asset-store/{_D3}">'
+    )
+    out, missing = inline_asset_store_refs(html, read_blob)
+
+    encoded = base64.b64encode(b"\x89PNG-not-really").decode("ascii")
+    assert f'src="data:image/png;base64,{encoded}"' in out
+    assert f"url(data:image/png;base64,{encoded})" in out
+    # ...and nothing of the two resolvable references is left pointing at an
+    # origin this document does not have.
+    assert f"/asset-store/{_D1}" not in out
+    assert f"/asset-store/{_D2}" not in out
+
+    # The unknown digest is reported, and its reference is left EXACTLY as it was:
+    # a lost picture is an honest export, a raised error is no export at all.
+    assert f'src="/asset-store/{_D3}"' in out
+    assert missing == [_D3]
+
+    # The logo case: the same digest twice costs one read.
+    assert reads == [_D1, _D2, _D3]
+
+
+def test_web_pdf_export_prints_the_page_images(client: TestClient) -> None:
+    """The header logo used to print as a broken-image icon: no origin, no bytes."""
+    if not _chromium_available():
+        pytest.skip("playwright chromium not installed")
+
+    buffer = io.BytesIO()
+    Image.new("RGB", IMAGE_SIZE, (120, 80, 200)).save(buffer, "PNG")
+    upload = client.post(
+        "/assets", files={"file": ("hero.png", buffer.getvalue(), "image/png")}
+    )
+    assert upload.status_code == 200, upload.text
+    record = upload.json()["asset"]
+
+    document = create_web_document(client)
+    web_doc = ingest_content(client, document["id"])
+    container = find_node(web_doc, "container")
+    web_doc["pages"][0]["nodes"]["pdf_img"] = {
+        "id": "pdf_img",
+        "kind": "image",
+        "asset_id": record["id"],
+        "alt": "PDF hero",
+        "classes": "",
+    }
+    web_doc["pages"][0]["nodes"][container].setdefault("children", []).append("pdf_img")
+    web_doc.setdefault("assets", {})[record["id"]] = record
+    seed_content(client, document["id"], web_doc)
+
+    response = client.get(f"/documents/{document['id']}/web/export.pdf")
+    assert response.status_code == 200, response.text
+
+    with pymupdf.open(stream=response.content, filetype="pdf") as pdf:
+        # `(xref, smask, width, height, ...)` — the SIZE is what is asserted, not the
+        # count: an unresolved `/asset-store/<digest>` still embeds one image, namely
+        # Chromium's 14x16 broken-image ICON, so "at least one image" is green on
+        # exactly the bug this test exists for. The seeded asset's own dimensions are
+        # the only answer the icon cannot fake.
+        sizes = [(image[2], image[3]) for image in pdf[0].get_images()]
+    assert IMAGE_SIZE in sizes, sizes
