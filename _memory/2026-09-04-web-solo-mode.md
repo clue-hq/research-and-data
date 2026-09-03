@@ -84,3 +84,45 @@ is the pre-existing F841 `workspace_str` (present at HEAD; left alone).
 - Realistic landing zone on grok-4.6 (~41 tok/s): 12–15 min. If still above target after
   the rerun, next levers are output-token discipline in the mega planning calls and the
   per-model latency itself (env-first model config makes swaps one-line now).
+
+## Benchmark run #1 (Ramp × CFO, 2026-09-04) — 16.6 min build, LOST to a latent commit-gate bug, now fixed
+
+Solo verified live (single orchestrator role, zero `task` calls). Model span 19:14:54→19:31:31
+= **16.6 min**, 39 calls (vs trio 56.8 min / 135 calls), 3.7M prompt tokens (88% cached).
+Read-once law held (skills+recipes+survey in 3 batched calls); vendor-first logo pulled Ramp's
+real family off the Brandfetch CDN first try (vs 5×403 on the OpenAI run); native compaction
+fired once (~71s "SESSION INTENT" summary) and the agent resumed from plan.md cleanly; the
+micro-loop caught and repaired two real defects (hero swirl height at 768/375, phone-header CTA
+clipping). Agent's finalize described the on-brief page (nine bands, Stripe×Ramp co-brand with
+the real lockup, one CTA → the Issuing/Treasury/Capital form, "Prepared for Ramp" only).
+
+**But the run row says `failed`: `web_turn.operations_incomplete`** — the API's replay-equality
+commit gate. Root cause (proven offline by replaying the ledger against the pre-turn doc):
+the accepted full-page ingest came back WITHOUT `asset_ing_01fbbe4c…` (the Stripe network-motif
+raster — registered mid-turn, viewed, deliberately not placed), while the append-only ledger
+kept its `upsert_asset`; replay carried the asset, the final doc did not, docs differed by
+exactly that one entry, commit refused, 16.6 minutes discarded.
+`_page_replacement_operations`' docstring states the invariant; it expresses only children +
+custom CSS, so a core-side asset drop is unexpressible in ops. The trio never tripped it
+because its authors placed every asset they registered; solo's `fetch_logo` registers the
+whole family (place one cell of eight) → near-certain trigger.
+
+**Fix (committed with this note):** the `_submit_page` accept path carries `before`'s asset
+map forward into the ingested doc (`setdefault` per asset — a registered asset is turn library
+state, not garbage), covering author AND patch origins (all three live `author_web_page`
+submissions were REJECTED; the page actually landed via `patch_web_page`'s accept — same
+`_submit_page` seam). Offline proof: replay == final after carry-forward, byte-equal.
+Red-proofed test `test_unplaced_registered_asset_survives_full_page_author_and_replay`
+simulates the drop at the ingest seam (the live-only trigger condition involves brand-kit
+state my hermetic probes did not reproduce; the seam simulation pins the invariant against
+ANY core drop condition).
+
+Also observed, minor: a stale plan.md from a previous brief on the same document was correctly
+detected and amended ("The existing plan is a billing campaign, not this Ramp ABM brief") —
+consider stamping the brief hash into plan.md so a mismatched plan archives instead of
+continuing; and three small sequential read_file calls (~1 min) where the read-once law wants
+batching.
+
+**Next: restart the fleet worker (it runs pre-fix code) and rerun the same Ramp brief.**
+Projection: the page that took 16.6 min now COMMITS; timing should repeat or improve
+(no stale plan detour on a fresh doc).

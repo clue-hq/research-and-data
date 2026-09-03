@@ -1842,6 +1842,22 @@ class LumenWebTools:
             return self._rejected(diagnostics)
 
         self.web_doc = response["web_doc"]
+        # Registered assets survive a full-page ingest (found live 2026-09-04, the Ramp solo
+        # run): ``web_ingest_html`` rebuilds the document and can DROP an asset that was
+        # registered mid-turn but not referenced by the new markup, while the append-only
+        # operations ledger keeps its ``upsert_asset`` — so the API's replay-equality commit
+        # gate refused the whole turn (``web_turn.operations_incomplete``: replay carried the
+        # asset, the final doc did not). The page-replacement ops below deliberately express
+        # only children + custom CSS; the asset map must therefore be carried forward here so
+        # doc and replay agree. An unplaced registered asset is turn library state, not
+        # garbage — the trio lane never tripped this only because its authors placed every
+        # asset they registered; fetch_logo's family registration (place one cell of eight)
+        # makes the drop near-certain.
+        carried_assets = before.get("assets")
+        if isinstance(carried_assets, dict):
+            new_assets = self.web_doc.setdefault("assets", {})
+            for asset_id, asset_record in carried_assets.items():
+                new_assets.setdefault(asset_id, asset_record)
         self._record_operations(
             self._page_replacement_operations(before, self.web_doc)
         )

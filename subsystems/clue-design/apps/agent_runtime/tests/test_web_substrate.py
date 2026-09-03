@@ -2334,3 +2334,101 @@ def test_an_unbriefed_rejection_carries_no_geometry_advice(tmp_path: Path):
     assert all(d.get("severity") != "advice" for d in result["diagnostics"])
     # The patch flow repairs from exactly what the agent was handed.
     assert result["diagnostics"] == tools._last_rejected_authoring["diagnostics"]
+
+
+# --- registered-but-unplaced assets survive a full-page ingest (solo run, 2026-09-04) -----
+
+
+def test_unplaced_registered_asset_survives_full_page_author_and_replay(
+    tmp_path: Path, monkeypatch
+):
+    """The commit gate's own invariant, red before the carry-forward fix.
+
+    On the live Ramp ABM solo run (2026-09-04), the accepted full-page ingest came back
+    WITHOUT an asset that was registered mid-turn but not referenced by the final markup,
+    while the append-only operations ledger kept its ``upsert_asset`` — so the API's
+    replay-equality gate refused the whole turn (``web_turn.operations_incomplete``) and a
+    finished 16-minute page was discarded. The exact core-side drop condition depends on
+    live-only state (brand kit present), so this test simulates the drop AT THE SEAM: the
+    ingest response is stripped of unreferenced assets, and the accept path must still
+    guarantee that (a) a registered asset survives and (b) replaying the ledger reproduces
+    the working doc byte for byte — which is what the API commits on.
+    """
+    tools = _tools(tmp_path)
+    real_ingest = tools.core.web_ingest_html
+
+    def pruning_ingest(*args, **kwargs):
+        response = real_ingest(*args, **kwargs)
+        web_doc = response.get("web_doc")
+        if isinstance(web_doc, dict) and isinstance(web_doc.get("assets"), dict):
+            referenced = json.dumps(web_doc.get("pages"))
+            web_doc["assets"] = {
+                asset_id: record
+                for asset_id, record in web_doc["assets"].items()
+                if asset_id in referenced
+            }
+        return response
+
+    monkeypatch.setattr(tools.core, "web_ingest_html", pruning_ingest)
+    record = {
+        "id": "asset_ing_0123456789abcdef",
+        "kind": "raster_image",
+        "status": "ready",
+        "tags": ["test"],
+        "label": "registered-but-never-placed.png",
+        "media": {
+            "digest": {
+                "value": "01fbbe4cbdccae8288fe7592a1dad5ae5159aae70915dbed012b72a864eb09b8",
+                "algorithm": "sha256",
+            },
+            "filename": "registered-but-never-placed.png",
+            "location": {
+                "url": None,
+                "provider": "clue-storage",
+                "opaque_ref": "test/registered-but-never-placed",
+            },
+            "mime_type": "image/png",
+            "thumbnail": None,
+            "byte_length": 1024,
+        },
+        "raster": {
+            "dpi_x": None,
+            "dpi_y": None,
+            "has_alpha": True,
+            "pixel_width": 64,
+            "aspect_ratio": 1.0,
+            "pixel_height": 64,
+            "color_profile": None,
+        },
+        "source": {"kind": "uploaded", "source_asset_id": None, "label": "test upload"},
+        "provenance": {
+            "notes": [],
+            "confidence": 1.0,
+            "created_at": "2026-09-04T00:00:00+00:00",
+            "created_by": "test",
+            "source_label": "test",
+        },
+        "font": None,
+        "logo": None,
+        "vector": None,
+        "license": None,
+    }
+    before_registration = json.loads(json.dumps(tools.web_doc))
+    registered = tools._register_asset_record(
+        record, origin="test", label=record["label"], alt=None, extra={}
+    )
+    assert registered, "registration itself must succeed for this test to mean anything"
+    assert "asset_ing_0123456789abcdef" in (tools.web_doc.get("assets") or {})
+
+    # The full-page author does NOT reference the registered asset.
+    result = json.loads(tools.author_web_page(SAMPLE_HTML))
+    assert result["status"] == "ok", result
+
+    # The registered asset survived the ingest...
+    assert "asset_ing_0123456789abcdef" in (tools.web_doc.get("assets") or {}), (
+        "a registered asset must survive a full-page ingest — dropping it while the "
+        "ledger keeps its upsert is exactly the replay divergence that failed the turn"
+    )
+    # ...and the ledger reproduces the working doc, which is what the API commits on.
+    replay = tools.core.web_apply_ops(before_registration, tools.operations_ledger)
+    assert replay["web_doc"] == tools.web_doc
