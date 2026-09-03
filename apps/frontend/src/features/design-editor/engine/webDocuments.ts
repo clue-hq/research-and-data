@@ -1675,6 +1675,14 @@ export interface WebOperationDiagnostic {
 export class WebOperationsError extends Error {
   readonly status: number;
   readonly code: string | null;
+  /** F5 task 19: the ENGINE's own refusal code (`op.route_exists`,
+   * `op.route_invalid`, `op.page_exists`, …), which the design API sends beside
+   * the flattened envelope `code` on a 422. `code` stays the one code every
+   * existing client branches on; this is how a caller tells WHICH refusal this
+   * was without parsing prose — the inspector's route field uses it to say
+   * "already used by another page" in its own words. Null when the server sent
+   * none (a 409, or any older server). */
+  readonly engineCode: string | null;
   readonly kind: "base_version" | "invalid" | "other";
   readonly diagnostics: WebOperationDiagnostic[];
 
@@ -1682,6 +1690,7 @@ export class WebOperationsError extends Error {
     message: string;
     status: number;
     code: string | null;
+    engineCode?: string | null;
     kind: "base_version" | "invalid" | "other";
     diagnostics?: WebOperationDiagnostic[];
   }) {
@@ -1689,6 +1698,7 @@ export class WebOperationsError extends Error {
     this.name = "WebOperationsError";
     this.status = params.status;
     this.code = params.code;
+    this.engineCode = params.engineCode ?? null;
     this.kind = params.kind;
     this.diagnostics = params.diagnostics ?? [];
   }
@@ -1705,6 +1715,7 @@ export interface AppliedWebOperations {
  * both the 409 and 422 rejections use), tolerating a string detail. */
 function readErrorDetail(body: unknown): {
   code: string | null;
+  engineCode: string | null;
   diagnostics: WebOperationDiagnostic[];
   message: string | null;
 } {
@@ -1713,6 +1724,9 @@ function readErrorDetail(body: unknown): {
     const record = detail as Record<string, unknown>;
     return {
       code: typeof record.code === "string" ? record.code : null,
+      // F5 task 19: the engine's own refusal code, sent beside the flattened
+      // envelope code on a 422 (design API `main.py`, web/operations).
+      engineCode: typeof record.engine_code === "string" ? record.engine_code : null,
       diagnostics: Array.isArray(record.diagnostics)
         ? (record.diagnostics as WebOperationDiagnostic[])
         : [],
@@ -1721,6 +1735,7 @@ function readErrorDetail(body: unknown): {
   }
   return {
     code: null,
+    engineCode: null,
     diagnostics: [],
     message: typeof detail === "string" ? detail : null
   };
@@ -1765,6 +1780,7 @@ export async function applyWebOperations(
         message: detail.message ?? "This website was changed elsewhere.",
         status: 409,
         code: detail.code,
+        engineCode: detail.engineCode,
         kind: "base_version"
       });
     }
@@ -1775,6 +1791,7 @@ export async function applyWebOperations(
           first?.message ?? detail.message ?? "This edit could not be applied.",
         status: 422,
         code: detail.code,
+        engineCode: detail.engineCode,
         kind: "invalid",
         diagnostics: detail.diagnostics
       });
@@ -1784,6 +1801,7 @@ export async function applyWebOperations(
         detail.message ?? `Edit failed (HTTP ${response.status}).`,
       status: response.status,
       code: detail.code,
+      engineCode: detail.engineCode,
       kind: "other"
     });
   }
@@ -1837,6 +1855,7 @@ async function postWebHistory(
       message: detail.message ?? `${path} failed (HTTP ${response.status}).`,
       status: response.status,
       code: detail.code,
+      engineCode: detail.engineCode,
       kind: response.status === 409 ? "base_version" : "other"
     });
   }

@@ -249,8 +249,12 @@ export function ArtifactHeader({
         {/* FLAGGED F5 T18: no designed slot in the dummy frontend for a page
          * switcher — minimal neutral control pending founder/design ruling.
          * Styled as the device/zoom menus already are, so it reads as one of
-         * them rather than as invented chrome. */}
-        {kind === "web" && pages && pages.length >= 1 ? (
+         * them rather than as invented chrome.
+         *
+         * F5 T19 (founder ruling after T18): TWO pages, not one. A single-page
+         * site has nothing to switch to, so its header stays exactly as it
+         * shipped — the switcher appears the moment a site becomes plural. */}
+        {kind === "web" && pages && pages.length >= 2 ? (
           <div className={styles.toolbarMenuAnchor} ref={pageMenuRef}>
             <button
               aria-expanded={pageMenuOpen}

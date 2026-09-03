@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   inspectorChangeToOperation,
   nextVisibilityMemory,
   type VisibilityMemory,
 } from "../adapter/apply";
-import type { LoadedWebDocument } from "../engine/webDocuments";
+import {
+  addPageOp,
+  removePageOp,
+  setPageMetaOp,
+  type LoadedWebDocument,
+} from "../engine/webDocuments";
 import type { WebArtifactSelection } from "./use-web-artifact-selection";
 import {
   useWebManualEdits,
@@ -25,6 +30,24 @@ import {
  * or `documentVersion`, or addressed to a node other than the current
  * selection, is IGNORED — dummy-state interactions can never become writes.
  */
+/**
+ * F5 task 19: the manual-edits controller plus the three PAGE writes the web
+ * inspector's Page section fires. They sit here, beside the node-write listener,
+ * because they are the same write path — one op, through `applyOps`, carrying
+ * `base_version`, reloading on success and reporting a refusal in the one inline
+ * slot. The only thing that differs is that a page write is addressed by page
+ * id, so it comes in as a call rather than through the node-addressed
+ * `clue:inspector-property-change` seam.
+ */
+export interface InspectorWrites extends WebManualEdits {
+  /** Rename a page and/or repoint its route (`set_page_meta`). */
+  setPageMeta: (pageId: string, meta: { name?: string; route?: string }) => void;
+  /** Add an empty page (`add_page`). The caller makes it active afterwards. */
+  addPage: (page: { id: string; name: string; route: string }) => void;
+  /** Remove a page (`remove_page`). The engine refuses a document's last one. */
+  removePage: (pageId: string) => void;
+}
+
 export function useInspectorWrites({
   document,
   documentId,
@@ -35,7 +58,7 @@ export function useInspectorWrites({
   documentId: string | null;
   onReload: () => void;
   selection: WebArtifactSelection | null;
-}): WebManualEdits {
+}): InspectorWrites {
   const edits = useWebManualEdits({
     baseVersion: document?.currentVersion ?? null,
     documentId: documentId ?? "",
@@ -165,5 +188,25 @@ export function useInspectorWrites({
     };
   }, [documentId]);
 
-  return edits;
+  // F5 task 19: the three page writes. Each is exactly one operation through
+  // the SAME `applyOps` every other inspector edit uses — no second write path,
+  // no batching, and the intent string names what the user did so the run
+  // history reads honestly ("rename_route" only when a route actually moved).
+  const setPageMeta = useCallback(
+    (pageId: string, meta: { name?: string; route?: string }) => {
+      applyOpsRef.current(
+        [setPageMetaOp(pageId, meta)],
+        meta.route !== undefined ? "rename_route" : "rename_page",
+      );
+    },
+    [],
+  );
+  const addPage = useCallback((page: { id: string; name: string; route: string }) => {
+    applyOpsRef.current([addPageOp(page)], "add_page");
+  }, []);
+  const removePage = useCallback((pageId: string) => {
+    applyOpsRef.current([removePageOp(pageId)], "remove_page");
+  }, []);
+
+  return { ...edits, addPage, removePage, setPageMeta };
 }

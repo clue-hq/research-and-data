@@ -166,6 +166,9 @@ export function EditorSurface({
               onReplaceImage={session.onReplaceImage}
               onSelectLayer={session.onSelectLayer}
               onSelectionChange={controller.selectInspectorElement}
+              // F5 task 19 (FLAGGED): the page/route controls, present only while
+              // no node is selected (the session decides).
+              pageSection={session.pageSection}
               richTextRange={session.richTextRange}
               selection={inspectorSelection}
               themeColors={session.themeColors}
