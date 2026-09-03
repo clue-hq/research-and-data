@@ -33,6 +33,8 @@ from typing import Any, Dict, List, Optional
 
 from PIL import Image
 
+from lumen_api.qa_render_ua import qa_render_context_kwargs
+
 JsonObject = Dict[str, Any]
 
 #: The monorepo root — `subsystems/clue-design/apps/api/lumen_api/<this file>`.
@@ -180,6 +182,8 @@ def web_thumbnail_png(
                 context = browser.new_context(
                     viewport={"width": width, "height": height},
                     device_scale_factor=scale,
+                    # A normal Chrome UA when the flag is on — see `qa_render_ua.py`.
+                    **qa_render_context_kwargs(),
                 )
                 page = context.new_page()
                 page.set_content(inline_tailwind(html, runtime), wait_until="load")

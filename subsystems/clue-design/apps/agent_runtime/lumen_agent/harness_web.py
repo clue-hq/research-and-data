@@ -283,6 +283,7 @@ def create_web_deepagent(
                 brand_card=tools.brand_card_text,
                 theme_token_names=theme_token_names,
                 account_card=tools.account_card_text,
+                brandfetch_client_id=runtime_config.brandfetch_client_id,
             ),
             "model": author_model,
             "tools": [

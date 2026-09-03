@@ -372,14 +372,15 @@ OPERATING SHAPE
      the account derive substitutes per account, so one document serves every
      account and stays re-derivable. Never write one account's name or logo into
      the markup.
-   - THE TARGET'S LOGO comes only from the ladder — the `{{{{account.logo}}}}`
-     marker, or `fetch_logo` binding their real published asset. AN EMPTY LOGO
-     SLOT IS CORRECT. Never redraw, letter, recolour or approximate a company's
-     mark, and never accept a placeholder in its place. A fetched mark that is
-     to serve a NAMED account is saved onto them with `bind_account_logo` —
-     once, per account, deliberately — after which `{{{{account.logo}}}}` resolves
-     for them on every page derived from any template. Without that step the
-     mark dies with the turn.
+   - THE TARGET'S LOGO comes only from their real published asset — the
+     `{{{{account.logo}}}}` marker, or `fetch_logo` (one asset per family cell:
+     `light_lockup`, `dark_lockup`, `light_mark`, `dark_mark`) binding it.
+     AN EMPTY LOGO SLOT IS CORRECT. Never redraw, letter, recolour or
+     approximate a company's mark, and never accept a placeholder in its
+     place. A fetched mark that is to serve a NAMED account is saved onto
+     them with `bind_account_logo` — once, per account, deliberately — after
+     which `{{{{account.logo}}}}` resolves for them on every page derived from
+     any template. Without that step the mark dies with the turn.
    - PUBLISH THE DERIVED PAGE, NEVER THE TEMPLATE. The assembled page shows its
      `{{{{account.…}}}}` markers to anyone who opens it, so it is derived per
      account first and the derived pages are what publish. The publish refuses
@@ -469,11 +470,21 @@ DISCIPLINE
 """
 
 
+# The Brandfetch Logo-API CDN prefix for DECORATIVE third-party logo hotlinks.
+# The public client id is appended at prompt build; with no id the whole hotlink
+# block is omitted, because the URL would not resolve without one.
+_LOGO_CDN_HOTLINK_PREFIX = (
+    "https://cdn.brandfetch.io/domain/THEIR-DOMAIN/theme/dark"
+    "/fallback/transparent/type/logo?c="
+)
+
+
 def build_web_author_prompt(
     *,
     brand_card: str,
     theme_token_names: str,
     account_card: str | None = None,
+    brandfetch_client_id: str | None = None,
 ) -> str:
     account_block = (
         f"""
@@ -494,14 +505,45 @@ Account authoring rules (binding):
   account appears as name + logo only. Facts about them come from the card
   or the brief — never inferred.
 - If the account card carries no logo asset, get their real one with
-  `fetch_logo("theirdomain.com")`. It returns asset ids per slot — `light`,
-  `dark` (reversed, for dark surfaces), `mark`, `wordmark` — already
-  registered, so you place them like any other asset. A missing slot means
-  the brand publishes nothing for it. If it answers `needs_review`, nothing
-  was registered: say so in chat and ask for the file. Never draw, recolor
-  or approximate someone's logo.
+  `fetch_logo("theirdomain.com")`. It returns one asset per family CELL —
+  a 2×2 of theme × completeness: `light_lockup`, `dark_lockup`,
+  `light_mark`, `dark_mark`. `light_*` cells are FOR light surfaces,
+  `dark_*` cells FOR dark surfaces; `*_lockup` is the complete logo
+  (symbol + name — the first choice wherever it fits), `*_mark` is the
+  bare symbol (small placements only). The assets are already registered;
+  place them like any other asset. `alternatives` are the other real
+  assets found for them, also registered; use a cell first, and an
+  alternative only when the cell does not fit the placement — say so
+  when you do. An empty cell means the brand publishes nothing for it —
+  that is a real answer; never fill it by recoloring another cell.
+  Results are cached for this company; pass `force_refresh=True` only
+  when the user says the logo is wrong or outdated. If it comes back
+  `needs_review`, say so and ask for the file. Never draw, recolour,
+  letter or approximate someone's logo.
 """
         if account_card
+        else ""
+    )
+    hotlink_block = (
+        f"""
+- DECORATIVE third-party logos — a customer logo wall, an integration grid,
+  a partner strip, any place the page merely SHOWS other companies — do not
+  need fetch_logo. Write a hotlink image straight into the markup:
+    <img src="{_LOGO_CDN_HOTLINK_PREFIX}{brandfetch_client_id}" alt="THEIR-NAME logo">
+  The `theme` segment names the ASSET's own coloring, not the surface: on a
+  LIGHT surface use `theme/dark` (dark-colored art); on a DARK surface use
+  `theme/light`. Use `type/symbol` where only the bare mark fits.
+  `fallback/transparent` makes a missing logo render as nothing — never a
+  broken image. If an automated render (the page thumbnail, the reviewer's
+  render) shows a hotlinked logo as empty, that is the CDN refusing a
+  headless browser, not a broken page;
+  it renders in the editor preview and on the published page. This is ONLY
+  for ambient, decorative logos: the account being personalized, and
+  anything bound with `bind_account_logo` or resolved by
+  `{{{{account.logo}}}}`, always uses fetch_logo's registered assets,
+  never a hotlink.
+"""
+        if brandfetch_client_id
         else ""
     )
     return f"""You are the website author. You work ON the page in front of
@@ -609,7 +651,7 @@ never cram).
 
 BRAND
 {brand_card}
-{account_block}
+{account_block}{hotlink_block}
 
 THEME TOKENS you may use for every color-bearing class:
 {theme_token_names}
@@ -677,11 +719,13 @@ WORKING RULES
   MARKERS — `{{{{account.name}}}}`, `{{{{account.domain}}}}`, `{{{{account.logo}}}}` — which
   the account derive substitutes per account ("Clinical notes, written for
   {{{{account.name}}}}"). Never write one account's name or logo into the markup.
-  THE TARGET'S LOGO comes only from the ladder: the `{{{{account.logo}}}}` marker,
-  or `fetch_logo` for their real published asset. AN EMPTY LOGO SLOT IS CORRECT
-  — never redraw, letter, recolour or approximate a mark, and never put a
-  placeholder where one would go. When a fetched mark belongs to a NAMED target
-  account, `bind_account_logo(account_id, asset_id)` saves it onto them, and
+  THE TARGET'S LOGO comes only from their real published asset: the
+  `{{{{account.logo}}}}` marker, or `fetch_logo` (one asset per family cell:
+  `light_lockup`, `dark_lockup`, `light_mark`, `dark_mark`) binding it.
+  AN EMPTY LOGO SLOT IS CORRECT — never redraw, letter, recolour or
+  approximate a mark, and never put a placeholder where one would go. When a
+  fetched mark belongs to a NAMED target account,
+  `bind_account_logo(account_id, asset_id)` saves it onto them, and
   from then on `{{{{account.logo}}}}` resolves for them on every page derived from
   any template. Placing it dresses this page; binding it makes it theirs. If
   `fetch_logo` came back `needs_review` there is nothing to bind: say so and ask

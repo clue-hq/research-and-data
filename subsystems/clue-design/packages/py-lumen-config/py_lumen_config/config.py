@@ -117,6 +117,24 @@ class Settings(BaseSettings):
     # A typo must fail at startup rather than silently seat the other page, so it is
     # enum-validated below.
     lumen_degraded_repair_selection: str = "keep_flagged"
+    # Whether the two automated QA renderers — the page thumbnail and the clone-review walk —
+    # present a normal Chrome User-Agent instead of the headless one. Brandfetch's logo CDN
+    # refuses any User-Agent containing `HeadlessChrome`, so a hotlinked decorative logo renders
+    # EMPTY there and the review cannot judge the page as a visitor sees it. FOUNDER DECISION
+    # (2026-09-02, plan D11): default ON; `0` restores the headless User-Agent, which is the
+    # switch to reach for if the vendor objects. It reaches those two renderers only — never the
+    # editor, never publish, never fragment isolation. See `lumen_api/qa_render_ua.py`.
+    lumen_qa_render_ua_override: bool = True
+
+    # Whether the in-house logo ladder (the target-logo scrape that runs as the second rung
+    # behind Brandfetch) fetches with a real Chrome TLS/HTTP fingerprint — curl_cffi
+    # `impersonate="chrome"`, the engine under scrapling's Fetcher. Cloudflare-walled sites
+    # score the TLS/HTTP2 handshake, not the User-Agent string, so plain httpx gets a 403
+    # challenge page (openai.com) and the rung reports "blocked" no matter what UA we send.
+    # FOUNDER DECISION (2026-09-02): default ON; `0` restores the plain httpx transport.
+    # It reaches the LADDER's own client only — the brand-kit ingestion capture keeps httpx.
+    # See `lumen_ingestion/capture/impersonate.py`.
+    lumen_ladder_impersonate_chrome: bool = True
 
     # --- Image generation (image_provider) ---
     # Blank base_url/api_key → /assets/generate returns a clean 503.
@@ -235,6 +253,17 @@ class Settings(BaseSettings):
     pdl_api_key: str = ""
     pdl_base_url: str = "https://api.peopledatalabs.com"
     pdl_timeout_s: float = 30.0
+
+    # -- Brandfetch (target-account logo vendor; vendor-first logo family, 2026-09-02) ----
+    # Brand API key (Bearer). Blank = vendor rung disabled: `fetch_logo` degrades honestly
+    # to the in-house ladder, exactly like a blank PDL_API_KEY degrades ad identity.
+    brandfetch_api_key: str = ""
+    # Logo API *client id* (PUBLIC — appears in published-page <img> URLs). Powers the
+    # hotlink lane only; blank = the hotlink prompt guidance is omitted.
+    brandfetch_client_id: str = ""
+    brandfetch_api_base_url: str = "https://api.brandfetch.io"
+    brandfetch_timeout_s: float = 20.0
+
     # The vision model that distils harvested creatives into the ad-DNA card. Same shape and
     # same gateway as the asset describer above (OpenRouter chat-completions, multimodal).
     lumen_ad_dna_model: str = "x-ai/grok-4.5"

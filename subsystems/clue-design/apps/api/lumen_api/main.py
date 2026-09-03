@@ -67,6 +67,7 @@ from .export_policy import (
     partition_export_diagnostics,
 )
 from .agent_account_logos import DurableAgentAccountLogoBinder
+from .agent_logo_family_cache import DurableLogoFamilyCache
 from .agent_cloned_sections import DurableAgentClonedSectionRegistry
 from .agent_custom_components import DurableAgentCustomComponentRegistry
 from .custom_component_runtime import (
@@ -8555,6 +8556,9 @@ def run_agent_turn_preview(
             # the accept seam (the scene-persist backstop). Pointing the runtime anywhere else
             # fails seeded imagery with LUME0210. LUMEN_AGENT_ASSET_STORE still overrides.
             config = replace(config, asset_store_root=turn_cache_root)
+        # Vendor-first logo family cache (decision #4): per workspace, keyed by registrable
+        # domain; the tool degrades to uncached fetching when this is None.
+        config = replace(config, logo_family_cache=DurableLogoFamilyCache(blobs=turn_blobs))
         if resolved_brand_kit is _BRAND_KIT_UNRESOLVED:
             brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = (
                 resolve_agent_turn_brand_kit(payload, turn_blobs)
@@ -8852,6 +8856,9 @@ def run_web_agent_turn(
             # D4: generated imagery must land in (and export from) the request workspace's
             # engine cache, exactly as the scene path pins it.
             config = replace(config, asset_store_root=turn_cache_root)
+        # Vendor-first logo family cache (decision #4): per workspace, keyed by registrable
+        # domain; the tool degrades to uncached fetching when this is None.
+        config = replace(config, logo_family_cache=DurableLogoFamilyCache(blobs=turn_blobs))
         # The agent's in-loop preview resolves every `<img data-asset=…>` against
         # `config.asset_base_url`. Unlike the HTTP render route above (which derives it from
         # `request.base_url`), this path has NO request: a web turn is leased fleet work and

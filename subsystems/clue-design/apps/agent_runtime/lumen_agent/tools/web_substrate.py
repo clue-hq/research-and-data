@@ -36,7 +36,7 @@ from selectolax.parser import HTMLParser
 
 from py_lumen_obs import bind_run_id, get_logger
 
-from lumen_api.agent_account_logos import AccountLogoRefused, is_ladder_fetched
+from lumen_api.agent_account_logos import AccountLogoRefused, is_fetched_logo
 from lumen_api.core import CoreClient, CoreError
 from lumen_api.database import FragmentReferenceError
 from lumen_api.clone_review import (
@@ -3306,27 +3306,46 @@ class LumenWebTools:
         )
         return json.dumps({"status": "ok", **page}, indent=2)
 
-    def fetch_logo(self, domain: str, company_name: Optional[str] = None) -> str:
-        """Fetch a company's REAL logo from its website and register it here.
+    def fetch_logo(
+        self,
+        domain: str,
+        company_name: Optional[str] = None,
+        force_refresh: bool = False,
+    ) -> str:
+        """Fetch a company's REAL logo family and register it here.
 
         Use this whenever the page shows a company that is not us — the target
         account on an ABM page, a named customer, a partner. Pass their domain
         (`goodmancampbell.com`) or any URL on their site; pass `company_name`
         too when you know it, because it sharpens the identity check.
 
-        Returns the asset ids it registered, one per slot it could fill:
-        `light` (for light backgrounds), `dark` (a reversed/white asset for dark
-        backgrounds), `mark` (the symbol alone) and `wordmark`. Place them like
-        any other asset. A slot is missing when the brand publishes nothing for
-        it — that is a real answer, not a failure, and it is never filled by
-        recoloring another slot.
+        Returns the asset ids it registered, one per FAMILY CELL of a 2x2:
+        theme (`light_*` = for light backgrounds, `dark_*` = for dark) x
+        completeness (`*_lockup` = the full logo, `*_mark` = the bare symbol).
+        The four cells are `light_lockup`, `dark_lockup`, `light_mark` and
+        `dark_mark`. Place them like any other asset. A cell is missing when the
+        brand publishes nothing for it — that is a real answer, not a failure,
+        and it is never filled by recoloring another cell.
+
+        Each cell is the best PROVEN asset from two sources — Brandfetch and a
+        scrape of the company's own site — judged by measured ink colour for the
+        surface, completeness, format and size. Every asset says which source
+        served it. `alternatives` lists every other real asset found for the
+        company (a vendor icon, a short form, a losing candidate), each
+        registered too and each saying why it is not in a cell. Use a cell
+        first; reach for an alternative only when the cell does not fit the
+        placement — for example when the dark lockup turns out to be only a
+        symbol — and say so. Results
+        are cached per workspace+company, so asking twice in a project costs
+        one fetch — pass `force_refresh=True` only when the user says the logo
+        is wrong or outdated, which refetches and replaces the cached family.
 
         If it comes back `needs_review`, nothing was registered because no asset
         could be attributed to that company with confidence. Say so and ask for
         the file. Never draw, recolor or approximate a logo.
 
-        Static fetch only: a site that builds its header in JavaScript has no
-        logo to read here, and reports that plainly.
+        Static fetch only on the ladder fallback: a site that builds its header
+        in JavaScript has no logo to read there, and reports that plainly.
         """
         requested = (domain or "").strip()
         if not requested:
@@ -3338,7 +3357,10 @@ class LumenWebTools:
             return budget_error
         try:
             outcome = logo_fetch.fetch_logo_family(
-                requested, company_name=(company_name or "").strip() or None
+                requested,
+                company_name=(company_name or "").strip() or None,
+                force_refresh=force_refresh,
+                cache=getattr(self.config, "logo_family_cache", None),
             )
         except ValueError as error:
             return self._tool_error("logo_fetch.bad_request", str(error))
@@ -3371,7 +3393,7 @@ class LumenWebTools:
                 "agent",
                 "web_logo_fetch_needs_review",
                 input_summary=requested[:500],
-                output_summary=(outcome.notes[0] if outcome.notes else "no slot filled")[:500],
+                output_summary=(outcome.notes[0] if outcome.notes else "no cell filled")[:500],
             )
             return json.dumps(logo_fetch.review_payload(outcome), indent=2)
 
@@ -3382,7 +3404,7 @@ class LumenWebTools:
             ingest = self.core.ingest_asset(**prepared.ingest_kwargs(store_root))
             if not ingest.get("ok"):
                 detail = (ingest.get("error") or {}).get("message", "unknown error")
-                failures.append({"slot": prepared.slot, "error": detail})
+                failures.append({"cell": prepared.cell, "error": detail})
                 continue
             record = (ingest.get("asset") or {}).get("record") or {}
             registered = self._register_asset_record(
@@ -3390,14 +3412,15 @@ class LumenWebTools:
                 origin="logo_ladder",
                 label=prepared.label,
                 alt=f"{outcome.company or prepared.label} logo",
-                extra={"slot": prepared.slot},
+                extra={"cell": prepared.cell},
             )
             # `_register_asset_record` returns a tool-error envelope when the
             # checked op path rejects the batch; surface it verbatim.
             if '"status": "ok"' not in registered:
                 return registered
             placed.append({
-                "slot": prepared.slot,
+                "cell": prepared.cell,
+                "source": prepared.source,
                 "asset_id": prepared.asset_id,
                 **prepared.evidence,
             })
@@ -3409,25 +3432,60 @@ class LumenWebTools:
                 failures=failures,
             )
 
+        # The other real assets found for this company, registered the same way.
+        # A failed alternative is dropped and named; only `placed` decides success.
+        alternatives: List[JsonObject] = []
+        failed_alternatives: List[JsonObject] = []
+        for prepared in outcome.alternatives:
+            ingest = self.core.ingest_asset(**prepared.ingest_kwargs(store_root))
+            if not ingest.get("ok"):
+                detail = (ingest.get("error") or {}).get("message", "unknown error")
+                failed_alternatives.append({"cell": prepared.cell, "error": detail})
+                continue
+            record = (ingest.get("asset") or {}).get("record") or {}
+            registered = self._register_asset_record(
+                record,
+                origin="logo_ladder",
+                label=prepared.label,
+                alt=f"{outcome.company or prepared.label} logo",
+                extra={"cell": prepared.cell, "alternative": True},
+            )
+            if '"status": "ok"' not in registered:
+                failed_alternatives.append(
+                    {"cell": prepared.cell, "error": "registration refused"}
+                )
+                continue
+            alternatives.append({
+                "asset_id": prepared.asset_id,
+                "source": prepared.source,
+                "competed_for": prepared.evidence.get("competed_for"),
+                "reason": prepared.evidence.get("reason"),
+                **prepared.evidence,
+            })
+
         self._register_fetched_logo_custody(outcome)
         payload: JsonObject = {
             "status": outcome.status,
             "site": outcome.site,
             "identity": outcome.identity,
             "lockup_completeness": outcome.lockup_completeness,
+            "cache_hit": outcome.cache_hit,
             "logos": placed,
+            "alternatives": alternatives,
             "notes": outcome.notes[:4],
         }
         if failures:
-            payload["failed_slots"] = failures
+            payload["failed_cells"] = failures
+        if failed_alternatives:
+            payload["failed_alternatives"] = failed_alternatives
         self.record(
             "agent",
             "web_logo_fetched",
             input_summary=requested[:500],
             output_summary=(
-                f"{outcome.site}: " + ", ".join(p["slot"] for p in placed)
+                f"{outcome.site}: " + ", ".join(p["cell"] for p in placed)
             )[:500],
-            payload={"site": outcome.site, "slots": [p["slot"] for p in placed]},
+            payload={"site": outcome.site, "cells": [p["cell"] for p in placed]},
         )
         return json.dumps(payload, indent=2)
 
@@ -3482,11 +3540,12 @@ class LumenWebTools:
                 "ask for the file. An empty account logo is CORRECT; never draw, recolour or "
                 "approximate one.",
             )
-        if not is_ladder_fetched(record):
+        if not is_fetched_logo(record):
             return self._tool_error(
                 "account_logo.not_a_fetched_logo",
-                f"'{asset}' was not fetched from that company's own website, so it cannot "
-                "become their logo. Only a mark the logo ladder retrieved and attributed binds "
+                f"'{asset}' was not fetched from that company's own website or logo vendor, "
+                "so it cannot become their logo. "
+                "Only a mark the logo ladder retrieved and attributed binds "
                 "here — a generated image, a placeholder or a section's own artwork is not a "
                 "company's logo. Call fetch_logo with their domain; if it finds nothing, an "
                 "empty account logo is CORRECT.",

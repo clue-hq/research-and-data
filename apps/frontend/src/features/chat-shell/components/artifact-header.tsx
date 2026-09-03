@@ -21,7 +21,10 @@ import type {
 import { useArtifactActionMenuController } from "../hooks/use-artifact-action-menu-controller";
 import { useArtifactSharingController } from "../hooks/use-artifact-sharing-controller";
 import { useArtifactTabController } from "../hooks/use-artifact-tab-controller";
-import { useArtifactToolbarController } from "../hooks/use-artifact-toolbar-controller";
+import {
+  useArtifactToolbarController,
+  type ArtifactPreviewDevice,
+} from "../hooks/use-artifact-toolbar-controller";
 import { useImageExportController } from "../hooks/use-image-export-controller";
 import { ArtifactActionMenu } from "./artifact-action-menu";
 import { ArtifactShareMenu } from "./artifact-share-menu";
@@ -45,10 +48,12 @@ const ZOOM_LEVELS = Array.from({ length: 29 }, (_, index) => `${10 + index * 5}%
 export function ArtifactHeader({
   editDisabled = false,
   editDisabledReason = null,
+  device,
   editing,
   exportPreview,
   exportStatus,
   kind,
+  onDeviceChange,
   onEdit,
   onRename,
   onRequestExportPreview,
@@ -72,6 +77,10 @@ export function ArtifactHeader({
    * chrome is invented for it — the button already has a hover/AT surface, and
    * the same sentence is in the inspector's note line beside it. */
   editDisabledReason?: string | null;
+  /** The preview device to display. Present → the artifact stage owns the
+   * value (it also drives the web canvas viewport width); absent leaves the
+   * toolbar controller's own local value. */
+  device?: ArtifactPreviewDevice | null;
   editing: boolean;
   /** AD4.D step 3: the ad session's render for the export menu's designed
    * preview region, with the element that hosts it. Absent on every other
@@ -81,6 +90,10 @@ export function ArtifactHeader({
    * status line. Absent on every other path. */
   exportStatus?: SceneExportStatus | null;
   kind: ChatShellArtifactKind;
+  /** A device the user picked from the menu, reported to the artifact stage —
+   * which owns the value and hands it back through `device`. The AD branch
+   * renders the zoom menu instead and never touches either. */
+  onDeviceChange?: (device: ArtifactPreviewDevice) => void;
   onEdit: () => void;
   onRename: (title: string) => void;
   /** AD4.D step 3: the export menu's request for a preview at the settings it
@@ -135,7 +148,7 @@ export function ArtifactHeader({
     chooseDevice,
     chooseZoom,
     closeMenus: closeToolbarMenus,
-    device,
+    device: activeDevice,
     deviceMenuOpen,
     deviceMenuRef,
     toggleDeviceMenu,
@@ -143,10 +156,11 @@ export function ArtifactHeader({
     zoom: activeZoom,
     zoomMenuOpen,
     zoomMenuRef,
-    // AD2.8: zoom is now LIFTED — the session owns it, because the same value
-    // has to drive the canvas viewport. The device menu (the web branch) is
-    // untouched and still lives entirely inside this controller.
-  } = useArtifactToolbarController({ onZoomChange, zoom });
+    // AD2.8: zoom is LIFTED — the ad session owns it, because the same value
+    // has to drive the canvas viewport. The device choice is lifted the same
+    // way: the artifact stage owns it, because it also sets the web canvas's
+    // viewport width.
+  } = useArtifactToolbarController({ device, onDeviceChange, onZoomChange, zoom });
   const handleRenameKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") commitRename();
     if (event.key === "Escape") cancelRename();
@@ -163,7 +177,7 @@ export function ArtifactHeader({
     imageExportController.closeMenu();
     toggleArtifactActionMenu();
   };
-  const PreviewDeviceIcon = PREVIEW_DEVICE_ICONS[device];
+  const PreviewDeviceIcon = PREVIEW_DEVICE_ICONS[activeDevice];
 
   return (
     <header className={styles.artifactHeader}>
@@ -258,7 +272,7 @@ export function ArtifactHeader({
             <button
               aria-expanded={deviceMenuOpen}
               aria-haspopup="menu"
-              aria-label={`Preview device: ${device}`}
+              aria-label={`Preview device: ${activeDevice}`}
               className={styles.deviceButton}
               onClick={() => {
                 closeArtifactActionMenu();
@@ -279,15 +293,15 @@ export function ArtifactHeader({
               <div aria-label="Preview device" className={styles.toolbarMenu} role="menu">
                 {PREVIEW_DEVICES.map((option) => (
                   <button
-                    aria-checked={device === option}
-                    className={`${styles.toolbarMenuItem} ${device === option ? styles.toolbarMenuItemActive : ""}`}
+                    aria-checked={activeDevice === option}
+                    className={`${styles.toolbarMenuItem} ${activeDevice === option ? styles.toolbarMenuItemActive : ""}`}
                     key={option}
                     onClick={() => chooseDevice(option)}
                     role="menuitemradio"
                     type="button"
                   >
                     <span>{option}</span>
-                    {device === option ? <CheckIcon aria-hidden="true" size={12} strokeWidth={1.5} /> : null}
+                    {activeDevice === option ? <CheckIcon aria-hidden="true" size={12} strokeWidth={1.5} /> : null}
                   </button>
                 ))}
               </div>
