@@ -18,9 +18,16 @@ client's cloned nav or cloned site footer, and it refuses rather than falling
 back to one — every nav link is a way off the one page written for this
 account.
 
-Order of operations: author the page's own sections with `author_web_page`
-FIRST, then `assemble_abm_page`. A whole-page rewrite drops every pinned clone,
-so chrome pinned before it is chrome you lose.
+Order of operations: build the page's own sections FIRST — pinned clones with
+marker-bearing slot values, derived variants, and raw compositions
+(`assemble_cloned_sections` / `insert_cloned_section` / `repair_cloned_section`
+/ `compose_web_section`), with `author_web_page` reserved for the few bands
+that must carry `data-var`/`data-slot` attributes a slot value cannot express —
+then `assemble_abm_page`. (This line once said "author_web_page FIRST"; that
+wording predates the raw lane and taught a full-vocabulary page — the
+2026-09-04 Ramp run's generic-template regression. A whole-page rewrite drops
+every pinned clone, so chrome pinned before it is chrome you lose — another
+reason the largest verb comes last, if at all.)
 
 **The page is a TEMPLATE, not one account's page.** Slots hold the account
 markers — `{{account.name}}`, `{{account.domain}}`, `{{account.logo}}` — which

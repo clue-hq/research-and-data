@@ -994,6 +994,7 @@ def build_web_solo_prompt(
     account_card: str | None = None,
     brandfetch_client_id: str | None = None,
     page_routes: list[str] | None = None,
+    workspace_dir: str = "workspace",
 ) -> str:
     """The SOLO prompt (founder ruling 2026-09-04): one agent, three pairs of eyes.
 
@@ -1078,6 +1079,20 @@ Account rules (binding — the abm-page recipe governs; read it in step 1):
 - Every section you compose for this page carries a section id beginning
   `abm_` (`<section id="abm_peer_proof">`), so a reviewer can tell a new band
   from cloned chrome.
+- PINNING IS STILL THE TOP RUNG FOR THIS PAGE'S NON-CHROME BANDS. A cloned
+  band's SLOT VALUES carry the `{{{{account.*}}}}` markers, so pinning never
+  sacrifices personalization — "it needs markers" is NOT a reason to compose.
+  An off-argument slot value is a REBIND; a shape that cannot carry the
+  campaign is a DERIVE-VARIANT; a defective capture is a REPAIR (or a pin of
+  its released repair) — none of these is a reason to abandon the client's
+  real band and imitate it. COMPOSE-VOCAB is reserved for bands that must
+  carry `data-var`/`data-slot`/`data-slot-when` ATTRIBUTES slot values cannot
+  express (typically the campaign header's co-brand slot), and each such
+  choice is JUSTIFIED in the plan by naming why PIN, REBIND, DERIVE-VARIANT,
+  REPAIR, and COMPOSE-RAW all cannot serve. A page of `abm_` vocabulary bands
+  in a workspace whose library holds the seller's real heroes, proof strips,
+  and stat bands will read as a generic template in the seller's colors — the
+  judge must fail it on the logo-off test.
 """
         if account_card
         else ""
@@ -1151,12 +1166,18 @@ THE SHAPE OF THE TURN
    What you need downstream goes into the plan, now. Re-reading a skill
    mid-build is a defect of process, not diligence.
 
-2. WRITE THE PLAN — your first write is `workspace/plan.md`, per the
+2. WRITE THE PLAN — your first write is `{workspace_dir}/plan.md` (THIS RUN'S
+   OWN workspace folder — the one holding your brief.md; NEVER a bare
+   top-level `workspace/`, which is shared across runs and is how a previous
+   brief's plan leaks into yours), per the
    plan-design skill, BEFORE any document mutation: the brief's words VERBATIM
    as anchors; the brand grammar audit extracted from the real bands you
    viewed; one spec per section with a NAMED source (PIN frag_… · REBIND
    frag_… · DERIVE-VARIANT of frag_… · REPAIR frag_… · COMPOSE-RAW remixing
-   frag_… · COMPOSE-VOCAB and why); the imagery decision per band (place a
+   frag_… · COMPOSE-VOCAB and why — and the "why" must name what PIN, REBIND,
+   DERIVE-VARIANT, REPAIR, and COMPOSE-RAW each cannot do for this band;
+   "it needs personalization markers" is never a valid why, because a clone's
+   slot values carry the markers); the imagery decision per band (place a
    real asset by id / generate, naming subject and role / deliberately none,
    with the reason); the BRAND ANCHOR (2–3 creative-director words every
    decision must express); and the Review & Finish tasks, written before
@@ -1256,15 +1277,20 @@ THE AUTHORING CONTRACT (you are the designer — these are your hands)
   Library truly lacks the band → COMPOSE, in the right lane.
 - NEVER casually rewrite a working cloned section, and never retype one into
   your own markup — slots first, variant second, repair for defects.
-- TWO COMPOSING LANES: `compose_web_section` (raw HTML + raw CSS — the
-  DEFAULT on a clone-bearing page; remix a named ancestor clone's real class
+- TWO COMPOSING LANES: `compose_web_section` (raw HTML + raw CSS — THE
+  DEFAULT IN ANY WORKSPACE WITH RELEASED CLONES; a create turn's page starts
+  empty by definition, so "the page carries no clones yet" is never a reason
+  to choose the other lane. Remix a named ancestor clone's real class
   names, spacing constants, and type scale — new content, the site's real
   visual sentence structure; scripts stripped; images only as
   `/asset-store/<digest>` from `search_assets`) versus
-  `author_web_page`/`author_web_subtree` (the constrained vocabulary — when
-  content must stay deeply human-editable or carry `data-var`/`data-slot`
-  markers). A vocabulary band between two real cloned bands is where
-  "generic with the brand's colors" sneaks in.
+  `author_web_page`/`author_web_subtree` (the constrained vocabulary — ONLY
+  when content must stay deeply human-editable in the inspector, or carry
+  `data-var`/`data-slot` ATTRIBUTES that a clone's slot values cannot
+  express). A vocabulary band beside real cloned or raw-composed bands is
+  where "generic with the brand's colors" sneaks in — and a WHOLE PAGE of
+  vocabulary bands in a clone-rich workspace is the quality failure this
+  platform exists to prevent.
 - `author_web_page` is the LARGEST verb, not the habit: it replaces the whole
   page and DROPS every pinned cloned section (the result names them under
   `dropped_cloned_sections` — that list is re-pin work). Reach for it only

@@ -99,8 +99,15 @@ def test_solo_prompt_is_the_merged_persona_with_the_shared_rubric(
     # No delegation is promised that the runtime would reject.
     assert AUTHOR not in prompt
     assert REVIEWER not in prompt
-    # The working memory law and the micro-loop are stated.
-    assert "workspace/plan.md" in prompt
+    # The working memory law and the micro-loop are stated — and the plan path is
+    # RUN-SCOPED (founder correction 2026-09-04: a bare relative `workspace/` resolved
+    # to the shared backend root and leaked one brief's plan into the next run).
+    assert "/workspace/plan.md" in prompt
+    assert "first write is `workspace/plan.md`" not in prompt
+    # The raw lane is the workspace-level default (the Ramp regression's fix): the
+    # chicken-and-egg "page has no clones yet" reading is closed in the always-present
+    # lanes block.
+    assert "DEFAULT IN ANY WORKSPACE WITH RELEASED CLONES" in prompt
     assert "render_web_preview" in prompt
 
 
@@ -126,6 +133,11 @@ def test_solo_account_blocks_render_only_with_an_account() -> None:
     assert "this is a 1:1 page for one company" in with_account
     assert "bind_account_logo" in with_account
     assert "cdn.brandfetch.io" in with_account
+    # The clone-first law survives the ABM marker pressure (the Ramp regression):
+    # markers ride slot values, so pinning stays the top rung on account pages, and
+    # COMPOSE-VOCAB must justify itself against every other source.
+    assert "PINNING IS STILL THE TOP RUNG" in with_account
+    assert '"it needs markers" is NOT a reason to compose' in with_account
     without = build_web_solo_prompt(**base)
     assert "this is a 1:1 page for one company" not in without
     assert "cdn.brandfetch.io" not in without

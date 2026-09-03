@@ -126,3 +126,41 @@ batching.
 **Next: restart the fleet worker (it runs pre-fix code) and rerun the same Ramp brief.**
 Projection: the page that took 16.6 min now COMMITS; timing should repeat or improve
 (no stale plan detour on a fresh doc).
+
+## Quality regression diagnosis (Ramp run) — why ZERO clones were used, and the fixes
+
+Founder's observation confirmed by the plan the agent wrote: **all nine bands COMPOSE-VOCAB**,
+zero pins, zero `compose_web_section` calls — while the survey had found a RICH library
+(14 Stripe sections, 7 heroes, 8 proof bands, nav, footer, all released). The trio's OpenAI
+run composed its gap-bands in the RAW lane (real remixed CSS) and pinned real clones; solo's
+page was pure vocabulary → generic template in Stripe colors. Not drift — three specific,
+quotable defects, each visible in the agent's own plan:
+
+1. **The ABM marker law forced the vocabulary lane.** Plan: "Use `data-var=account.name`…
+   COMPOSE-VOCAB (`abm_hero`) remixing ancestor frag_591d…; do not pin." The agent reasoned
+   markers ⇒ vocabulary, not knowing/not believing that a CLONE'S SLOT VALUES carry
+   `{{account.*}}` markers. FIX: new ABM block law — "PINNING IS STILL THE TOP RUNG …
+   'it needs markers' is NOT a reason to compose"; COMPOSE-VOCAB now requires a plan
+   justification naming why all five other sources cannot serve.
+2. **The abm-page recipe literally said `author_web_page` FIRST.** The "Order of operations"
+   line predates the raw lane and taught the full-vocabulary page. FIX: recipe rewritten —
+   pins/variants/raw compositions first, author_web_page reserved for attribute-bearing
+   bands, largest verb last if at all (supersession note in the recipe).
+3. **Chicken-and-egg lane conditional.** "RAW is the default on a clone-bearing page" — a
+   create turn's page starts empty, so the condition never fired and vocabulary became the
+   default. FIX: "RAW is THE DEFAULT IN ANY WORKSPACE WITH RELEASED CLONES — 'the page has
+   no clones yet' is never the reason."
+   Secondary casualty now noted: with zero clones on the page, `review_cloned_page`
+   self-disabled ("not applicable"), so the mechanical fidelity gate never ran either.
+
+**plan.md cross-run leak (founder correction #1) fixed:** the plan lived at the SHARED
+`.deepagent-workspace/workspace/plan.md` (bare relative path against the backend root) —
+which is exactly how the Ramp run inherited the billing campaign's 380-line plan. The solo
+prompt now interpolates the RUN-SCOPED path (`/{run_id}/workspace/plan.md`, passed from the
+harness's scaffold) and names the leak. NOTE: the trio prompts still say bare
+`workspace/plan.md` — same latent leak there; left untouched this pass (trio is dormant
+behind the flag), recorded here so it isn't rediscovered.
+
+Next: rerun the Ramp brief on the fixed prompt + the asset-carry-forward commit-gate fix.
+Watch for: pins + raw compositions in the tool trace, `review_cloned_page` actually running,
+plan.md landing in the run dir, and the commit succeeding.

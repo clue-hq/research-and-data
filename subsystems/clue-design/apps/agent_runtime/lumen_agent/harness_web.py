@@ -486,6 +486,11 @@ def create_web_deepagent(
             account_card=tools.account_card_text,
             brandfetch_client_id=runtime_config.brandfetch_client_id,
             page_routes=page_routes,
+            # The RUN-SCOPED workspace (founder correction 2026-09-04): plan.md lives
+            # beside this run's brief.md, never at the shared backend root — a bare
+            # relative "workspace/" resolved there and leaked one brief's plan into the
+            # next run (the Ramp run inherited the billing campaign's 380-line plan).
+            workspace_dir=workspace_str,
         )
     else:
         system_prompt = build_web_orchestrator_prompt(
