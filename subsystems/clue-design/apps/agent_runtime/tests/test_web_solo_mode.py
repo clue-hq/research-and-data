@@ -151,3 +151,48 @@ def test_solo_account_blocks_render_only_with_an_account() -> None:
 
 def test_the_mutation_budget_is_the_backstop_the_ruling_named() -> None:
     assert web_substrate._ROUND_MUTATION_BUDGET == 75
+
+
+def test_tool_calls_are_serialized_and_tools_keep_their_schema(tmp_path, monkeypatch) -> None:
+    """The lost-update race (third solo Ramp run, 2026-09-04): batched writes ran in parallel
+    and two `asset` registrations erased an `assemble_cloned_sections` result. Every tool
+    handed to the agent now holds the substrate's re-entrant lock while it runs, and the
+    wrapping is invisible to the tool-schema conversion."""
+    import threading
+    import time
+
+    from langchain_core.tools import StructuredTool
+
+    captured = _create_web_agent(tmp_path, monkeypatch, _solo_config(tmp_path))
+    tools = captured["tools"]
+    by_name = {getattr(t, "name", getattr(t, "__name__", "")): t for t in tools}
+    assemble = by_name["assemble_cloned_sections"]
+    # Schema survives the wrapper: name, docstring, and the real argument list.
+    converted = StructuredTool.from_function(assemble)
+    assert converted.name == "assemble_cloned_sections"
+    assert "fragment_ids_json" in converted.args
+    assert assemble.__doc__ and "Pin a CHOSEN, ORDERED set" in assemble.__doc__
+    # And the wrapper holds ONE lock shared by every wrapped tool: while one call runs, a
+    # sibling cannot start.
+    lock = assemble.__wrapped__.__self__.tool_lock
+    entered = threading.Event()
+    release = threading.Event()
+
+    def slow(*_a, **_k):
+        entered.set()
+        release.wait(5)
+        return "{}"
+
+    monkeypatch.setattr(assemble.__wrapped__.__self__, "assemble_cloned_sections", slow)
+    from lumen_agent.harness_web import serialize_tool_calls
+
+    wrapped_slow = serialize_tool_calls([slow], lock)[0]
+    worker = threading.Thread(target=wrapped_slow, args=("[]",))
+    worker.start()
+    assert entered.wait(5)
+    time.sleep(0.05)
+    assert lock.acquire(blocking=False) is False, "a second tool call must block while one runs"
+    release.set()
+    worker.join(5)
+    assert lock.acquire(blocking=False) is True
+    lock.release()

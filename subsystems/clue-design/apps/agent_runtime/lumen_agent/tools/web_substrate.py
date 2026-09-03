@@ -938,6 +938,16 @@ class LumenWebTools:
         )
         self.event_sink = event_sink
         self._record_lock = threading.Lock()
+        # Serializes every TOOL CALL against this substrate (found live 2026-09-04, the third
+        # solo Ramp run): the agent batched `assemble_cloned_sections` with two `asset`
+        # registrations in ONE response, langgraph ran them in parallel threads, and the asset
+        # tools — which had read `self.web_doc` BEFORE the assembly landed — committed their
+        # pre-assembly snapshot 27ms after it, erasing four pinned bands (a lost update; the
+        # agent then saw an empty page and spent minutes re-pinning). Every tool the harness
+        # hands the model is wrapped to hold this lock (`harness_web.serialize_tool_calls`), so
+        # a batched response executes its calls one at a time in order. Re-entrant, because
+        # tools call sibling methods internally.
+        self.tool_lock = threading.RLock()
         self.prompt = prompt
         self.run_id = new_run_id()
         self.page_id = HOME_PAGE_ID

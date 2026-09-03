@@ -14,7 +14,9 @@ Public API:
 
 from __future__ import annotations
 
+import functools
 import json
+import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
@@ -172,6 +174,33 @@ class WebDelegationCap(AgentMiddleware):
             )
         self.delegations[budget.subagent] += 1
         return handler(request)
+
+
+def serialize_tool_calls(tool_list: list, lock: "threading.RLock") -> list:
+    """Wrap every plain-callable tool so its execution holds ``lock``.
+
+    langgraph executes one response's tool calls in parallel threads; the substrate's
+    document is a read-modify-write shared state, so two batched writers race (live
+    2026-09-04: two `asset` registrations erased an `assemble_cloned_sections` result
+    that landed 27ms earlier). Holding one re-entrant lock per call turns a batched
+    response into an in-order sequence. `functools.wraps` keeps the name, docstring,
+    annotations and `__wrapped__`, which is what the tool-schema conversion reads, so the
+    model sees byte-identical tools. Ready-made ``BaseTool`` objects (the `view` tool) are
+    passed through untouched — they are reads of an atomically-assigned dict.
+    """
+
+    def wrap(tool):
+        if not callable(tool) or hasattr(tool, "invoke"):
+            return tool
+
+        @functools.wraps(tool)
+        def serialized(*args, **kwargs):
+            with lock:
+                return tool(*args, **kwargs)
+
+        return serialized
+
+    return [wrap(tool) for tool in tool_list]
 
 
 def _scaffold_web_workspace(tools: LumenWebTools, prompt: str) -> str:
@@ -511,7 +540,10 @@ def create_web_deepagent(
         model=orchestrator_model,
         backend=backend,
         permissions=_filesystem_permissions(),
-        tools=orchestrator_tools,
+        # One response's tool calls run in parallel threads by default; the substrate's
+        # document is shared read-modify-write state, so they are serialized (see
+        # `serialize_tool_calls`).
+        tools=serialize_tool_calls(orchestrator_tools, tools.tool_lock),
         system_prompt=system_prompt,
         # SOLO carries the skills tree itself (it is the reader now); the trio path keeps
         # skills on the subagents exactly as before (None = the library default).
