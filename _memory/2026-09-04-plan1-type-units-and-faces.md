@@ -46,7 +46,10 @@ after pulling: the Python side changed (parser, normalizer, evidence builder).
   old content); one `update_node` op (lh 1.0, ls -0.01; doc v205) cleared it. The SVG embeds
   seasonMix 400 AND 700 as TTF; headline `<tspan font-weight="700">`. Evidence in `/tmp/plan1-evidence-keep/`.
 - Backfill dry-run on colombo hit a job row whose `evidence_json` is a stub `{"schema_version":1}`
-  → Task 5 fix round 1 (skip such kits loudly, keep the sweep going).
+  → Task 5 fix round 1 landed (`43495e521`: `UnusableEvidence` → SKIP per kit, read-phase failures
+  roll back the aborted transaction). Colombo dry-run after the fix: 51 examined, 12 needing change
+  (all in pilot/logosweep workspaces; the Apollo kit v4 is already element-relative), 29 without
+  evidence, 0 failed. Nothing applied — owner action per environment.
 
 ## Open for the founder
 - Approve kit v4 (or v3) and decide whether v2's approved status should carry.
