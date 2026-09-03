@@ -1795,6 +1795,7 @@
  * is the canvas's, painted by the engine — see `scene-artifact-canvas.module
  * .css`). */
 .sceneStage {
+  position: relative; /* the agent-working chip pins to this edge */
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
@@ -3276,3 +3277,133 @@
 .assetLibraryRetry { border: 0.5px solid var(--chat-shell-border); border-radius: 6px; background: var(--chat-shell-neutral); font: inherit; font-size: 12px; padding: 2px 8px; cursor: pointer; }
 .assetLibraryFooter { display: flex; padding: 10px 14px; border-top: 0.5px solid var(--chat-shell-subtle-border); }
 .assetLibraryUpload { height: 32px; padding: 0 12px; border: 0.5px solid var(--chat-shell-border); border-radius: 8px; background: var(--chat-shell-neutral); font: inherit; cursor: pointer; }
+
+/*
+ * Agent-working chip (founder request 2026-09-03): the visible form of the scene
+ * editor's agent-run lock. Pinned top-left of `.sceneStage`, never intercepts the
+ * pointer, animates a 3×3 dot pulse and a text shimmer; static under reduced motion.
+ * Surface/border/shadow/text tokens are the ones the file's own pill-shaped chip and
+ * badge rules use (`.editTargetChip`, `.assetLibraryBadge`).
+ */
+.agentWorkingChip {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 10px;
+  border-radius: 999px;
+  background: var(--chat-shell-neutral);
+  border: 0.5px solid var(--chat-shell-border);
+  box-shadow: var(--clue-ds-shadow-card-subtle);
+  pointer-events: none;
+  user-select: none;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.agentWorkingGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 3px);
+  grid-auto-rows: 3px;
+  gap: 2px;
+}
+
+.agentWorkingDot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--chat-shell-content);
+  opacity: 0.25;
+  animation: agent-working-dot 1.2s ease-in-out infinite;
+}
+
+.agentWorkingDot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.agentWorkingDot:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.agentWorkingDot:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.agentWorkingDot:nth-child(4) {
+  animation-delay: 0.1s;
+}
+
+.agentWorkingDot:nth-child(5) {
+  animation-delay: 0.2s;
+}
+
+.agentWorkingDot:nth-child(6) {
+  animation-delay: 0.3s;
+}
+
+.agentWorkingDot:nth-child(7) {
+  animation-delay: 0.2s;
+}
+
+.agentWorkingDot:nth-child(8) {
+  animation-delay: 0.3s;
+}
+
+.agentWorkingDot:nth-child(9) {
+  animation-delay: 0.4s;
+}
+
+.agentWorkingLabel {
+  color: transparent;
+  background-image: linear-gradient(
+    90deg,
+    var(--chat-shell-content) 0%,
+    var(--chat-shell-content) 35%,
+    var(--chat-shell-subtle) 50%,
+    var(--chat-shell-content) 65%,
+    var(--chat-shell-content) 100%
+  );
+  background-size: 250% 100%;
+  background-position: 100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: agent-working-shimmer 2.2s linear infinite;
+}
+
+@keyframes agent-working-dot {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes agent-working-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: 0% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agentWorkingDot {
+    animation: none;
+    opacity: 0.7;
+  }
+
+  .agentWorkingLabel {
+    animation: none;
+    background: none;
+    color: var(--chat-shell-content);
+  }
+}

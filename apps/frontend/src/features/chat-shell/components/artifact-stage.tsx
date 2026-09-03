@@ -40,6 +40,11 @@ import type { GalleryArtifact } from "@/features/gallery/model/project-gallery";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import type { EditorShellSurface } from "../hooks/use-editor-shell-controller";
 import type { ArtifactPreviewDevice } from "../hooks/use-artifact-toolbar-controller";
+import { AgentWorkingChip } from "./agent-working-chip";
+import {
+  AGENT_WORKING_CHIP_LABEL,
+  shouldShowAgentWorkingChip,
+} from "./agent-working-chip.logic";
 import { ArtifactHeader } from "./artifact-header";
 import { ArtifactTabs } from "./artifact-tabs";
 import styles from "./chat-shell.module.css";
@@ -345,6 +350,12 @@ export function ArtifactStage({
                * `.imageCanvas` card, which could only ever show a 640px square
                * of it. The card keeps the empty state below, unchanged. */
               <div aria-label="Ad output canvas" className={styles.sceneStage}>
+                {shouldShowAgentWorkingChip({
+                  editDisabled,
+                  hasScene: Boolean(activeDocumentId),
+                }) ? (
+                  <AgentWorkingChip label={AGENT_WORKING_CHIP_LABEL} />
+                ) : null}
                 <SceneArtifactCanvas
                   controlsRef={sceneCanvasControlsRef}
                   displayScene={sceneDisplayScene}
