@@ -463,7 +463,16 @@ def test_the_web_turn_hands_the_agent_runtime_the_resolved_package(
     artifact = _mint(workspace_id, design_storage)
     captured: dict[str, Any] = {}
 
-    def _fake_turn(*, prompt, config, initial_web_doc, event_sink, checkpointer, thread_id):
+    def _fake_turn(
+        *,
+        prompt,
+        config,
+        initial_web_doc,
+        event_sink,
+        checkpointer,
+        thread_id,
+        cancel_requested=None,
+    ):
         captured["config"] = config
         return {
             "status": "applied",
@@ -512,7 +521,16 @@ def test_a_web_turn_on_a_fragmentless_document_carries_no_package(
 
     captured: dict[str, Any] = {}
 
-    def _fake_turn(*, prompt, config, initial_web_doc, event_sink, checkpointer, thread_id):
+    def _fake_turn(
+        *,
+        prompt,
+        config,
+        initial_web_doc,
+        event_sink,
+        checkpointer,
+        thread_id,
+        cancel_requested=None,
+    ):
         captured["config"] = config
         return {
             "status": "applied",

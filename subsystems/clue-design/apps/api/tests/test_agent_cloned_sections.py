@@ -896,7 +896,16 @@ def test_a_web_turn_is_handed_the_workspaces_cloned_section_capability(
 
     captured: dict = {}
 
-    def _fake_turn(*, prompt, config, initial_web_doc, event_sink, checkpointer, thread_id):
+    def _fake_turn(
+        *,
+        prompt,
+        config,
+        initial_web_doc,
+        event_sink,
+        checkpointer,
+        thread_id,
+        cancel_requested=None,
+    ):
         captured["config"] = config
         return {
             "status": "applied",
