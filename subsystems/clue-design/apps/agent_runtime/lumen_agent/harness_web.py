@@ -35,6 +35,7 @@ from .prompts_web import (
     build_web_author_prompt,
     build_web_orchestrator_prompt,
     build_web_reviewer_prompt,
+    build_web_solo_prompt,
 )
 from .tools.web_substrate import (
     LumenWebTools,
@@ -248,12 +249,16 @@ def create_web_deepagent(
     orchestrator_model = _instrument(
         runtime_config, tools, runtime_config.orchestrator_model, "orchestrator", **cancel_kwargs
     )
-    author_model = _instrument(
-        runtime_config, tools, runtime_config.author_model, "author", **cancel_kwargs
-    )
-    reviewer_model = _instrument(
-        runtime_config, tools, runtime_config.reviewer_model, "reviewer", **cancel_kwargs
-    )
+    # SOLO MODE (founder ruling 2026-09-04) builds neither subagent model: there is nobody
+    # to hand them to, and an instrumented model that can never be called is a lie in the
+    # attribution stream.
+    if not runtime_config.web_solo:
+        author_model = _instrument(
+            runtime_config, tools, runtime_config.author_model, "author", **cancel_kwargs
+        )
+        reviewer_model = _instrument(
+            runtime_config, tools, runtime_config.reviewer_model, "reviewer", **cancel_kwargs
+        )
 
     # Two view variants over the same substrate state: identical except the
     # stale/no-preview refusal text. The subagent variant never instructs a
@@ -270,7 +275,13 @@ def create_web_deepagent(
 
     theme_token_names = web_theme_token_names(runtime_config.brand_kit)
 
-    subagents = [
+    # SOLO MODE: the ternary short-circuits, so neither subagent dict (nor the models they
+    # would close over) is ever constructed — the same tool-absence enforcement as D-F7,
+    # widened to both roles. The trio path below is byte-identical to before the ruling.
+    subagents = (
+        []
+        if runtime_config.web_solo
+        else [
         {
             "name": "lumen-web-author",
             "description": (
@@ -373,7 +384,8 @@ def create_web_deepagent(
             # validation failure instead of killing the run.
             "response_format": ToolStrategy(VisualCritique),
         },
-    ]
+        ]
+    )
 
     # --- the web lane's fast loop / ruling D-F7: reviewer QUARANTINED, not deleted -------------
     # The scene lane's R3 quarantine, mirrored for web turns (F3.3). Under the web fast loop the
@@ -384,7 +396,7 @@ def create_web_deepagent(
     # Everything about the reviewer stays BUILT above: its prompt (rubric included), its own
     # model instance, its ToolStrategy(VisualCritique), its whole dict. It is one config flag
     # from being live again, and `LUMEN_AGENT_WEB_REVIEWER=1` is that flag.
-    if not runtime_config.web_reviewer_enabled:
+    if not runtime_config.web_solo and not runtime_config.web_reviewer_enabled:
         subagents = [sa for sa in subagents if sa["name"] != _REVIEWER_SUBAGENT]
         logger.info(
             "web_reviewer_quarantined",
@@ -428,13 +440,55 @@ def create_web_deepagent(
         tools.finalize_web_run,
     ]
 
+    if runtime_config.web_solo:
+        # SOLO MODE (founder ruling 2026-09-04): the one agent is director, designer, and
+        # judge, so it carries the author's whole write surface on top of the director's
+        # read/render/judge surface above. The author-owns-the-document law is not
+        # weakened — there is exactly one document-writing role either way; it simply has
+        # the director's eyes now.
+        orchestrator_tools += [
+            tools.web_ops,
+            tools.author_web_page,
+            tools.author_web_subtree,
+            tools.patch_web_page,
+            tools.insert_cloned_section,
+            tools.recreate_cloned_page,
+            tools.assemble_cloned_sections,
+            tools.repair_cloned_section,
+            tools.compose_web_section,
+            tools.release_repair,
+            tools.mint_campaign_shells,
+            tools.assemble_abm_page,
+            tools.asset,
+            tools.write_custom_component_source,
+            tools.compile_custom_component,
+            tools.place_custom_component,
+        ]
+        logger.info(
+            "web_subagents_quarantined",
+            run_id=tools.run_id,
+            quarantined=[_AUTHOR_SUBAGENT, _REVIEWER_SUBAGENT],
+            reason="web_solo_2026_09_04",
+        )
+
     doc_title = initial_web_doc.get("title") or "Untitled site"
-    agent = create_deep_agent(
-        model=orchestrator_model,
-        backend=backend,
-        permissions=_filesystem_permissions(),
-        tools=orchestrator_tools,
-        system_prompt=build_web_orchestrator_prompt(
+    page_routes = [
+        page["route"]
+        for page in initial_web_doc.get("pages") or []
+        if isinstance(page, dict) and page.get("route")
+    ]
+    if runtime_config.web_solo:
+        system_prompt = build_web_solo_prompt(
+            doc_title=doc_title,
+            has_existing_content=has_existing_content(initial_web_doc),
+            brand_card=tools.brand_card_text,
+            theme_token_names=theme_token_names,
+            account_card=tools.account_card_text,
+            brandfetch_client_id=runtime_config.brandfetch_client_id,
+            page_routes=page_routes,
+        )
+    else:
+        system_prompt = build_web_orchestrator_prompt(
             doc_title=doc_title,
             # F5 task 8: ANY page having content makes this a continuation, not a fresh
             # site — a second page authored last turn is standing work the director must
@@ -446,12 +500,17 @@ def create_web_deepagent(
             account_card=tools.account_card_text,
             # D-F7: the same rubric either way; only who applies it moves.
             web_reviewer=runtime_config.web_reviewer_enabled,
-            page_routes=[
-                page["route"]
-                for page in initial_web_doc.get("pages") or []
-                if isinstance(page, dict) and page.get("route")
-            ],
-        ),
+            page_routes=page_routes,
+        )
+    agent = create_deep_agent(
+        model=orchestrator_model,
+        backend=backend,
+        permissions=_filesystem_permissions(),
+        tools=orchestrator_tools,
+        system_prompt=system_prompt,
+        # SOLO carries the skills tree itself (it is the reader now); the trio path keeps
+        # skills on the subagents exactly as before (None = the library default).
+        skills=(workspace_skills if runtime_config.web_solo else None),
         subagents=subagents,
         # G4/G6: the delegation budgets ride as ordinary tool-call middleware on the
         # ORCHESTRATOR, which is where `task` executes. Fresh per turn, so the counters

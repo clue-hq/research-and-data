@@ -380,6 +380,16 @@ class Settings(BaseSettings):
     # web fast loop. Meaningless (and ignored) when that flag is off — the reviewer is always
     # dispatched there.
     lumen_agent_web_reviewer: bool = False
+    # SOLO MODE (founder ruling 2026-09-04): ONE web deepagent — director, designer and
+    # reviewer in a single model loop. Both subagents (`lumen-web-author`,
+    # `lumen-web-reviewer`) are QUARANTINED (not registered; tool-absence enforcement, the
+    # D-F7 pattern), the orchestrator carries the full authoring toolset, and the merged
+    # solo prompt replaces direction-by-delegation with plan -> build -> render -> self-review.
+    # Motive: the 2026-09-01 OpenAI-CFO diagnostic run measured ~20+ minutes of pure trio
+    # coordination overhead (per-delegation skill re-reads, brief writing, discovery loss)
+    # in a 57-minute page build. Overrides the two web flags above when on: there are no
+    # subagents to quarantine selectively.
+    lumen_agent_web_solo: bool = False
     # §5.6 budgets. RULING D1 (founder, 2026-08-26) SPLIT THESE IN TWO: budgets
     # are GUIDANCE, not gates.
     #

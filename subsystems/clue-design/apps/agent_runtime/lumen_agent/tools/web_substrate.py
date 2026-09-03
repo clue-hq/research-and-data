@@ -342,7 +342,12 @@ _GEOMETRY_UNSET = object()
 # tells the author to end its round. Sized against real healthy rounds (a full
 # page install + several patch repairs + a few surgical ops ≈ 11); the
 # pathological round this guards against burned 20+ (2026-07-29 blind churn).
-_ROUND_MUTATION_BUDGET = 14
+# 14 -> 75 (founder ruling 2026-09-04, the solo-mode wave): the original value forced a
+# from-empty ABM build (shells + ~7 bands x compose+insert + assets > 14 mutations) to
+# yield mid-build by construction, and each forced yield cost minutes of re-discovery in
+# the next pass. 75 keeps the guard's real job — a runaway that edits blind forever still
+# dies — while never interrupting an honest build; the render reset below is unchanged.
+_ROUND_MUTATION_BUDGET = 75
 
 # Consecutive failed capture passes before render_web_preview stops
 # re-attempting and instructs the orchestrator to finalize honestly. The

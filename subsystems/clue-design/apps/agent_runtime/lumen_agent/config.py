@@ -217,6 +217,10 @@ class AgentRuntimeConfig:
     # scenes. Default OFF, and the default is a decision (see py_lumen_config for why).
     web_fast_loop: bool = False
     web_reviewer: bool = False
+    # SOLO MODE (founder ruling 2026-09-04): one web deepagent — director, designer, and
+    # reviewer in a single loop. Quarantines BOTH web subagents (the D-F7 pattern, widened)
+    # and swaps in the merged solo prompt; the two flags above are moot while this is on.
+    web_solo: bool = False
     # R4 budgets, re-shaped by ruling D1 (2026-08-26). Only consulted under
     # `fast_loop`. Two pairs, two jobs:
     #   * `fast_loop_target_*` — GUIDANCE. Communicated to the orchestrator in
@@ -280,6 +284,7 @@ class AgentRuntimeConfig:
             scene_reviewer=settings.lumen_agent_scene_reviewer,
             web_fast_loop=settings.lumen_agent_web_fast_loop,
             web_reviewer=settings.lumen_agent_web_reviewer,
+            web_solo=settings.lumen_agent_web_solo,
             fast_loop_target_llm_calls=settings.lumen_agent_fast_loop_target_llm_calls,
             fast_loop_target_wall_clock_s=settings.lumen_agent_fast_loop_target_wall_clock_s,
             fast_loop_max_llm_calls=settings.lumen_agent_fast_loop_max_llm_calls,
