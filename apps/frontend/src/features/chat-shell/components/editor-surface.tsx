@@ -4,6 +4,8 @@ import {
   useEditorShellController,
   type EditorShellInitialState,
 } from "../hooks/use-editor-shell-controller";
+import { AGENT_RUN_LOCK_NOTE } from "@/features/chat-shell/model/agent-run-lock";
+import { useDocumentAgentRun } from "@/features/design-editor/hooks/use-document-agent-run";
 import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene-editing-session";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
@@ -80,16 +82,25 @@ export function EditorSurface({
     documentIds,
     enabled: controller.artifactKind === "web",
   });
+  // The recorded follow-up, now built (2026-09-03): the lock on this route comes
+  // from the DOCUMENT-scoped agent-busy read (`useDocumentAgentRun` polling
+  // `GET /documents/{id}/agent-run`), which answers from the same predicate the
+  // manual-write routes' 409 uses — ruling R1 of the standalone-artifact-lock
+  // plan, so no thread-shaped source is invented for a route with no turn stream.
+  const sceneDocumentId =
+    controller.artifactKind === "ad" && controller.activeArtifactId
+      ? (documentIds?.[controller.activeArtifactId] ?? null)
+      : null;
+  const agentRun = useDocumentAgentRun({
+    documentId: sceneDocumentId,
+    enabled: controller.artifactKind === "ad",
+  });
+  const sceneLocked = agentRun.active;
   const sceneSession = useSceneEditingSession({
     activeArtifactId: controller.activeArtifactId,
-    // Task 4 (scene live-streaming rung A): `agentRunLocked` is deliberately
-    // NOT passed, for the same reason `inspectorDisabled` and
-    // `sceneGestureDisabled` are not below — the lock is derived from a live
-    // turn stream, and this route has none. The default (false) keeps this
-    // route behaving exactly as it does today; its net stays the D10 CAS
-    // reconciliation plus task 1's server-side 409, and the recorded follow-up
-    // (a DOCUMENT-scoped agent-busy signal off the run_event SSE, which this
-    // route already has a reason to watch) is what would close the gap.
+    // Task 4 (scene live-streaming rung A), closed here: the lock is the
+    // document-scoped agent-busy read above, not a turn stream this route lacks.
+    agentRunLocked: sceneLocked,
     documentIds,
     enabled: controller.artifactKind === "ad",
   });
@@ -187,18 +198,10 @@ export function EditorSurface({
           {/* AD2.7 (F2): the SAME dock the web branch above uses — same
               wrapper, same class, same grid column. Only the panel differs. */}
           <div className={styles.inspectorDock}>
-            {/* AD4.R-10 / GATE G-H: `inspectorDisabled` is deliberately NOT
-                passed here, so this route behaves exactly as it did. The ruled
-                in-flight gate reads the chat controller's `threadBusy`, and the
-                artifact route has no live turn stream to read — it is the
-                document open on its own, with no thread beside it. Its net
-                against an agent write landing under the user's hands stays the
-                D10 CAS reconciliation (the document version moves, the write is
-                refused, the panel reloads and says so — proven at T8). RECORDED
-                FOLLOW-UP: a DOCUMENT-scoped agent-busy signal (plausibly off the
-                run_event SSE, which this route already has a reason to watch)
-                would close the gap; inventing a second, thread-shaped source
-                here would not. */}
+            {/* AD4.R-10 / GATE G-H: the in-flight gate now holds on this route
+                too. Its source is the document-scoped agent-busy read polled
+                above (`useDocumentAgentRun`), not the chat controller's
+                `threadBusy` — ruling R1 of the standalone-artifact-lock plan. */}
             <ImageInspector
               // Keyed on the SELECTED NODE only, exactly as the web branch is.
               // Values need no remount to resynchronize — every bound field
@@ -213,6 +216,7 @@ export function EditorSurface({
               fontOptions={sceneSession.fontOptions}
               hydrated={sceneSession.hydrated}
               imageAi={sceneSession.imageAi}
+              inspectorDisabled={sceneLocked}
               layers={sceneSession.layerRows}
               note={sceneSession.note}
               onReplaceImage={sceneSession.onReplaceImage}
@@ -235,7 +239,9 @@ export function EditorSurface({
         activeDocumentId={activeDocumentId}
         artifacts={artifacts ?? []}
         canvasControlsRef={session.canvasControls}
-        canvasReloadToken={session.reloadNonce + sceneSession.reloadNonce}
+        canvasReloadToken={
+          session.reloadNonce + sceneSession.reloadNonce + agentRun.reloadNonce
+        }
         exportPreview={sceneSession.exportPreview}
         exportStatus={sceneSession.exportStatus}
         onRequestExportPreview={sceneSession.requestExportPreview}
@@ -254,13 +260,11 @@ export function EditorSurface({
         onSceneSelect={sceneSession.onSelectCanvas}
         onSceneZoomChange={sceneSession.onZoomChange}
         sceneCanvasControlsRef={sceneSession.canvasControls}
-        // AD4.C / GATE G-H: `sceneGestureDisabled` is deliberately NOT passed
-        // here, for exactly the reason `inspectorDisabled` is not (above) — the
-        // ruled in-flight gate reads the chat controller's `threadBusy`, and
-        // this route has no live turn stream to read. Its net stays the D10 CAS
-        // reconciliation, and the recorded follow-up (a document-scoped
-        // agent-busy signal off the run_event SSE) would close this gap and
-        // that one together.
+        // AD4.C / GATE G-H: the canvas half of the same lock `inspectorDisabled`
+        // implements above, off the same fact — the document-scoped agent-busy
+        // read polled at the top of this component (ruling R1), not a turn
+        // stream this route does not have.
+        sceneGestureDisabled={sceneLocked}
         // Rung C / §1.6: one document, one brand palette — the caret
         // session's colour control offers exactly what the inspector's do.
         scenePalette={sceneSession.palette}
@@ -300,6 +304,12 @@ export function EditorSurface({
         onToggleMaximized={controller.toggleArtifactMaximized}
         onTogglePanel={() => undefined}
         onToggleEditing={() => controller.setEditing(!controller.editing)}
+        // Task 4: the Edit affordance itself. Entering edit mode is refused
+        // while the lock holds — an editor whose every control is inert is not
+        // an editor — but LEAVING it never is, or a lock engaging mid-edit would
+        // trap the user in a dock they cannot close.
+        editDisabled={sceneLocked && !controller.editing}
+        editDisabledReason={AGENT_RUN_LOCK_NOTE}
         openArtifacts={controller.openArtifacts}
         // Replace-image Task 6: the asset-library picker floats over the stage,
         // rendered by the surface (the stage is pass-through chrome). The Task-4
