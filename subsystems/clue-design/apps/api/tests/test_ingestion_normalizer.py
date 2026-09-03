@@ -469,3 +469,59 @@ def test_normalizer_bakes_x_height_adjusted_ramp_and_metrics() -> None:
     assert "x-height-normalized" in kit["tokens"]["numbers"]["type.size.md"]["provenance"]["source"]
     fonts = kit["assets"]["fonts"]
     assert any(f.get("metrics", {}).get("x_height_ratio") == 0.44 for f in fonts.values())
+
+
+def test_a_misparsed_line_height_is_dropped_with_a_diagnostic_naming_the_role() -> None:
+    from lumen_ingestion.evidence import BrandEvidence, EvidencePointer, TypeSample
+    from lumen_ingestion.normalizer.typography import build_type_styles, resolve_anchors
+
+    evidence = BrandEvidence.model_validate(
+        {
+            "schema_version": 1,
+            "source": {"kind": "website", "url": "https://apollo.example"},
+            "type_samples": [
+                {
+                    "label": "h1", "family": "seasonMix", "weight": 550, "size_px": 72.0,
+                    "line_height": 4.5, "letter_spacing": -0.045,
+                    "pointer": {"source": "website", "locator": "rendered :: h1"},
+                },
+                {
+                    "label": "body", "family": "soehne", "weight": 400, "size_px": 18.0,
+                    "line_height": 1.6875, "letter_spacing": 0.0106,
+                    "pointer": {"source": "website", "locator": "rendered :: body"},
+                },
+            ],
+        }
+    )
+    styles, diagnostics = build_type_styles(resolve_anchors(evidence))
+    headline = styles["type.headline"]
+    assert headline["line_height"] == 1.1  # the derived default, not 4.5
+    assert headline["letter_spacing"] == -0.045  # within the em limit → kept
+    assert styles["type.body"]["line_height"] == 1.6875  # a sane anchor is left alone
+    codes = [d for d in diagnostics if d["code"] == "LUMI0233"]
+    assert len(codes) == 1
+    assert "type.headline" in codes[0]["message"] and "4.5" in codes[0]["message"]
+    assert "rendered :: h1" in codes[0]["message"]
+
+
+def test_an_absurd_letter_spacing_is_dropped_the_same_way() -> None:
+    from lumen_ingestion.evidence import BrandEvidence
+    from lumen_ingestion.normalizer.typography import build_type_styles, resolve_anchors
+
+    evidence = BrandEvidence.model_validate(
+        {
+            "schema_version": 1,
+            "source": {"kind": "website", "url": "https://apollo.example"},
+            "type_samples": [
+                {
+                    "label": "h1", "family": "seasonMix", "weight": 700, "size_px": 72.0,
+                    "line_height": 1.0, "letter_spacing": 2.0,
+                    "pointer": {"source": "website", "locator": "rendered :: h1"},
+                }
+            ],
+        }
+    )
+    styles, diagnostics = build_type_styles(resolve_anchors(evidence))
+    assert styles["type.headline"]["line_height"] == 1.0
+    assert styles["type.headline"]["letter_spacing"] == -0.01  # spec default for headline
+    assert [d["code"] for d in diagnostics] == ["LUMI0233"]
