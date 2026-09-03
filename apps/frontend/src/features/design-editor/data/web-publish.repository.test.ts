@@ -231,6 +231,59 @@ test("a refused export throws rather than downloading an error page", async () =
   await assert.rejects(repository.exportZip("doc_1"), /HTTP 502/);
 });
 
+test("the http repository downloads the site pdf under the server's filename", async () => {
+  const calls: string[] = [];
+  const body = new TextEncoder().encode("%PDF-1.4\n%%EOF\n");
+  const fetchImpl: typeof fetch = async (input) => {
+    calls.push(String(input));
+    return new Response(body, {
+      headers: {
+        "content-disposition": 'attachment; filename="acme-launch-1a2b3c4d.pdf"',
+        "content-type": "application/pdf",
+      },
+      status: 200,
+    });
+  };
+  const repository = createHttpWebPublishRepository({
+    apiBaseUrl: "http://localhost:8002",
+    fetchImpl,
+  });
+
+  const result = await repository.exportPdf("doc_1");
+
+  // `.pdf` is its own route, not a query on the zip one — a request that lost
+  // the suffix would come back as a zip the browser would save as a pdf.
+  assert.equal(
+    calls[0],
+    "http://localhost:8002/documents/doc_1/web/export.pdf",
+  );
+  assert.equal(result.filename, "acme-launch-1a2b3c4d.pdf");
+  assert.equal(result.blob.size, body.byteLength);
+});
+
+test("the http repository falls back to site.pdf when the server names nothing", async () => {
+  const fetchImpl: typeof fetch = async () =>
+    new Response(new TextEncoder().encode("%PDF-1.4\n"), {
+      headers: { "content-type": "application/pdf" },
+      status: 200,
+    });
+  const repository = createHttpWebPublishRepository({
+    apiBaseUrl: "http://localhost:8002",
+    fetchImpl,
+  });
+  assert.equal((await repository.exportPdf("doc_1")).filename, "site.pdf");
+});
+
+test("a refused pdf export throws rather than downloading an error page", async () => {
+  const fetchImpl: typeof fetch = async () =>
+    jsonResponse(502, { detail: { code: "web_pdf.render_failed" } });
+  const repository = createHttpWebPublishRepository({
+    apiBaseUrl: "http://localhost:8002",
+    fetchImpl,
+  });
+  await assert.rejects(repository.exportPdf("doc_1"), /HTTP 502/);
+});
+
 test("the fixture repository exports a zip-typed blob named for the site", async () => {
   const repository = createFixtureWebPublishRepository();
   const unpublished = await repository.exportZip("doc_1");
@@ -240,4 +293,15 @@ test("the fixture repository exports a zip-typed blob named for the site", async
 
   await repository.publish("doc_1", { slug: "acme", noindex: false });
   assert.equal((await repository.exportZip("doc_1")).filename, "acme.zip");
+});
+
+test("the fixture repository exports a pdf-typed blob named for the site", async () => {
+  const repository = createFixtureWebPublishRepository();
+  const unpublished = await repository.exportPdf("doc_1");
+  assert.equal(unpublished.blob.type, "application/pdf");
+  assert.ok(unpublished.blob.size > 0);
+  assert.equal(unpublished.filename, "site.pdf");
+
+  await repository.publish("doc_1", { slug: "acme", noindex: false });
+  assert.equal((await repository.exportPdf("doc_1")).filename, "acme.pdf");
 });

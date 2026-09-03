@@ -45,6 +45,12 @@ export interface WebPublishRepository {
    * consumer of that route names it.
    */
   exportZip(documentId: string): Promise<{ blob: Blob; filename: string }>;
+  /**
+   * The whole site as one PDF (`GET /documents/{id}/web/export.pdf`) — every
+   * page of the site printed by the server's own browser, in document order.
+   * The `filename` is the server's `Content-Disposition` name, as for the ZIP.
+   */
+  exportPdf(documentId: string): Promise<{ blob: Blob; filename: string }>;
 }
 
 /** The empty-ZIP end-of-central-directory record: a 22-byte archive that is a
@@ -53,6 +59,17 @@ export interface WebPublishRepository {
 const EMPTY_ZIP_BYTES = new Uint8Array([
   0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ]);
+
+/** A minimal one-page PDF, for the same reason the empty zip above exists: a
+ * fixture-mode download must produce a genuine `.pdf`, not a text file wearing
+ * the suffix. */
+const TINY_PDF = `%PDF-1.4
+1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
+3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>endobj
+trailer<</Root 1 0 R>>
+%%EOF
+`;
 
 /**
  * The download name to use, read off a `Content-Disposition` header.
@@ -100,6 +117,13 @@ const FIXTURE_ORIGIN = "https://fixture.pages.test";
 export function createFixtureWebPublishRepository(): WebPublishRepository {
   const published = new Map<string, WebPublishState>();
   return {
+    async exportPdf(documentId) {
+      const slug = published.get(documentId)?.slug ?? "site";
+      return {
+        blob: new Blob([TINY_PDF], { type: "application/pdf" }),
+        filename: `${slug}.pdf`,
+      };
+    },
     async exportZip(documentId) {
       const slug = published.get(documentId)?.slug ?? "site";
       return {
@@ -143,25 +167,36 @@ export function createFixtureWebPublishRepository(): WebPublishRepository {
 export function createHttpWebPublishRepository(
   config: DesignEditorConfig,
 ): WebPublishRepository {
+  async function download(
+    documentId: string,
+    path: string,
+    fallbackFilename: string,
+  ): Promise<{ blob: Blob; filename: string }> {
+    const { apiBaseUrl, fetchImpl = defaultDesignFetch } = config;
+    const response = await fetchImpl(
+      new URL(
+        `/documents/${encodeURIComponent(documentId)}/${path}`,
+        apiBaseUrl,
+      ),
+    );
+    if (!response.ok) {
+      throw new Error(`Site export failed (HTTP ${response.status}).`);
+    }
+    return {
+      blob: await response.blob(),
+      filename: downloadFilenameFrom(
+        response.headers.get("content-disposition"),
+        fallbackFilename,
+      ),
+    };
+  }
+
   return {
+    async exportPdf(documentId) {
+      return download(documentId, "web/export.pdf", "site.pdf");
+    },
     async exportZip(documentId) {
-      const { apiBaseUrl, fetchImpl = defaultDesignFetch } = config;
-      const response = await fetchImpl(
-        new URL(
-          `/documents/${encodeURIComponent(documentId)}/web/export`,
-          apiBaseUrl,
-        ),
-      );
-      if (!response.ok) {
-        throw new Error(`Site export failed (HTTP ${response.status}).`);
-      }
-      return {
-        blob: await response.blob(),
-        filename: downloadFilenameFrom(
-          response.headers.get("content-disposition"),
-          "site.zip",
-        ),
-      };
+      return download(documentId, "web/export", "site.zip");
     },
     async publish(documentId, { noindex, slug }) {
       const result = await publishWebDocument(config, documentId, slug, {

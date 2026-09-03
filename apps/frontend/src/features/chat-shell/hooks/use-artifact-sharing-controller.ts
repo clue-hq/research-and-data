@@ -379,22 +379,35 @@ export function useArtifactSharingController({
   const requestExport = useCallback(
     (format: ArtifactShareExportFormat) => {
       setLastExportFormat(format);
-      if (kind === "web" && format === "PDF") {
-        // FLAGGED F5: no web PDF export backend yet (scene export is PDF-capable; web is not)
-        setStatusMessage("PDF export isn't available for websites yet");
-        return;
-      }
-      if (kind === "web" && format === "ZIP" && documentId) {
-        setStatusMessage("Preparing ZIP export");
+      if (kind === "web" && documentId) {
+        // Both website formats are the same download against the same seam —
+        // the server renders the bytes and names the file — so they differ only
+        // in which repository call fetches them. The map is total over the
+        // format union, so a third format cannot silently fall through to the
+        // "requested" no-op below without the compiler saying so.
+        const webExport: Record<
+          ArtifactShareExportFormat,
+          (repository: WebPublishRepository) => Promise<{
+            blob: Blob;
+            filename: string;
+          }>
+        > = {
+          PDF: (repository) => repository.exportPdf(documentId),
+          ZIP: (repository) => repository.exportZip(documentId),
+        };
+        setStatusMessage(`Preparing ${format} export`);
         void (async () => {
           try {
-            const { blob, filename } =
-              await resolveRepository().exportZip(documentId);
+            const { blob, filename } = await webExport[format](
+              resolveRepository(),
+            );
             downloadBlob(blob, filename);
-            setStatusMessage("ZIP downloaded");
+            setStatusMessage(`${format} downloaded`);
           } catch (error) {
             setStatusMessage(
-              error instanceof Error ? error.message : "ZIP export failed",
+              error instanceof Error
+                ? error.message
+                : `${format} export failed`,
             );
           }
         })();
