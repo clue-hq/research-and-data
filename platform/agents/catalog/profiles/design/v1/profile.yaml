@@ -123,8 +123,10 @@ tools:
     output_schema_sha256: 1c04f0f1726deb37d4d80670ff7d93d84a27eddd1f2e5b048ad4e7d9b71e61ce
   - name: design_publish_web
     version: "1"
+    # output digest re-pinned 2026-09-03 (F5 multi-page publish): WebPublishRef gained
+    # page_count + routes; input schema unchanged.
     input_schema_sha256: 26449497cc96f0168aeed9aaf54b8eaa0847a407466110ca28e03f97fce7ac35
-    output_schema_sha256: e47bff5ae86fcf0b78eb5734f46aff83507029e3859a1fed13a3fa5d92cc7fc9
+    output_schema_sha256: 22ffc62459078972870b20971c1cbbd799e77aff80ad749686159b678e50c9bb
   - name: design_record_diagnostics
     version: "1"
     input_schema_sha256: 6d369c4f5940e7bf2b15ce3c756ecfc7aaff3665e35c3b986428ea93ca641069
