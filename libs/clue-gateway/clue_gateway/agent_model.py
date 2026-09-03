@@ -74,6 +74,31 @@ def _without_unsupported_patterns(node: Any) -> Any:
     return node
 
 
+# Transient provider failures worth retrying on the SAME model before falling back or
+# raising. Found live twice on 2026-09-04 (design solo runs 2 and 3): OpenRouter returned
+# ``Auth context expired`` (code 502) on a 136s and then a 236s grok-4.6 generation — once
+# on /responses, once on chat-completions, so it is the long-generation window, not the
+# endpoint — and each time the single failed call discarded a 6- and a 35-minute web turn,
+# because a web turn persists once at the end and had no retry at the model call.
+# The ChatOpenAI-level ``max_retries`` never sees these: they arrive as error payloads in
+# an otherwise successful HTTP exchange. A retried generation simply starts over.
+_TRANSIENT_RETRIES = 2
+_TRANSIENT_MARKERS = ("auth context expired", "overloaded", "timed out", "timeout")
+_TRANSIENT_STATUS = {408, 425, 429, 500, 502, 503, 504, 529}
+
+
+def _is_transient_provider_error(exc: BaseException) -> bool:
+    """Is this the kind of upstream failure a same-model retry can reasonably recover from?"""
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int) and status in _TRANSIENT_STATUS:
+        return True
+    text = str(exc).lower()
+    if any(marker in text for marker in _TRANSIENT_MARKERS):
+        return True
+    # The error-payload-in-a-200 shape: ValueError("{'message': ..., 'code': 502}").
+    return any(f"'code': {code}" in text or f'"code": {code}' in text for code in _TRANSIENT_STATUS)
+
+
 _REQUESTED_MODEL_KEY = "clue_requested_model"
 _ANSWERING_MODEL_KEY = "clue_answering_model"
 _COST_CENTS_KEY = "clue_cost_cents"
@@ -301,20 +326,32 @@ class GovernedAgentChatModel(BaseChatModel):
     ) -> tuple[ChatResult, str]:
         first_error: Exception | None = None
         for index, (model, model_id) in enumerate(zip(self.models, self.model_ids, strict=True)):
-            try:
-                result = model._generate(
-                    messages,
-                    stop=stop,
-                    run_manager=run_manager,
-                    **kwargs,
-                )
-                return result, _served_model_from_result(result, fallback=model_id)
-            except Exception as exc:
-                first_error = first_error or exc
-                if index == len(self.models) - 1:
-                    if first_error is not exc:
-                        raise exc from first_error
-                    raise
+            for attempt in range(_TRANSIENT_RETRIES + 1):
+                try:
+                    result = model._generate(
+                        messages,
+                        stop=stop,
+                        run_manager=run_manager,
+                        **kwargs,
+                    )
+                    return result, _served_model_from_result(result, fallback=model_id)
+                except Exception as exc:
+                    # Retry the SAME model only when there is no further candidate to fall
+                    # back to: a configured fallback stays the cheaper, faster answer to a
+                    # transient primary failure, exactly as before.
+                    last_candidate = index == len(self.models) - 1
+                    if (
+                        last_candidate
+                        and attempt < _TRANSIENT_RETRIES
+                        and _is_transient_provider_error(exc)
+                    ):
+                        continue
+                    first_error = first_error or exc
+                    if index == len(self.models) - 1:
+                        if first_error is not exc:
+                            raise exc from first_error
+                        raise
+                    break
         raise AssertionError("governed agent model requires at least one provider model")
 
     async def _agenerate_with_fallback(
@@ -327,20 +364,32 @@ class GovernedAgentChatModel(BaseChatModel):
     ) -> tuple[ChatResult, str]:
         first_error: Exception | None = None
         for index, (model, model_id) in enumerate(zip(self.models, self.model_ids, strict=True)):
-            try:
-                result = await model._agenerate(
-                    messages,
-                    stop=stop,
-                    run_manager=run_manager,
-                    **kwargs,
-                )
-                return result, _served_model_from_result(result, fallback=model_id)
-            except Exception as exc:
-                first_error = first_error or exc
-                if index == len(self.models) - 1:
-                    if first_error is not exc:
-                        raise exc from first_error
-                    raise
+            for attempt in range(_TRANSIENT_RETRIES + 1):
+                try:
+                    result = await model._agenerate(
+                        messages,
+                        stop=stop,
+                        run_manager=run_manager,
+                        **kwargs,
+                    )
+                    return result, _served_model_from_result(result, fallback=model_id)
+                except Exception as exc:
+                    # Retry the SAME model only when there is no further candidate to fall
+                    # back to: a configured fallback stays the cheaper, faster answer to a
+                    # transient primary failure, exactly as before.
+                    last_candidate = index == len(self.models) - 1
+                    if (
+                        last_candidate
+                        and attempt < _TRANSIENT_RETRIES
+                        and _is_transient_provider_error(exc)
+                    ):
+                        continue
+                    first_error = first_error or exc
+                    if index == len(self.models) - 1:
+                        if first_error is not exc:
+                            raise exc from first_error
+                        raise
+                    break
         raise AssertionError("governed agent model requires at least one provider model")
 
     def _stream_with_fallback(

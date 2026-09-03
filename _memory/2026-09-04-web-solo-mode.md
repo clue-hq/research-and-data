@@ -202,3 +202,47 @@ last-resort wording. Suites green: solo, substrate, abm_assembly, review_gate,
 design_guidance_wiring, cloned_sections.
 Next: rerun Ramp; the verdict is the tool trace (insert/assemble/repair/compose calls, not
 author_web_page) and whether `review_cloned_page` runs.
+
+## Benchmark runs #2 and #3 (Ramp, 2026-09-04) — both killed by OpenRouter mid-generation; four fixes shipped
+
+**Run 2** (fresh doc, pre-clone-first-fix prompt): died at 6 min — a 136s grok generation on
+/responses returned `Auth context expired` (server_error item). Fix: design runtime now routes
+non-OpenAI ids over chat-completions (`LUMEN_AGENT_OPENROUTER_CHAT_COMPLETIONS=1`).
+**Run 3** (clone-first prompt, chat-completions): the quality thesis PROVED — plan.md in the run
+dir, every section source a real clone (PIN hero frag_591d…, PIN released navy repair, PIN+variant
+grid/close, shells), `assemble_cloned_sections` → 4 pinned, then the campaign bands built in the
+RAW lane (`compose_web_section` ×5, released + pinned; not one vocabulary band), the mechanical
+`review_cloned_page` walk actually ran (6/6 observations), the judge caught three real blockers
+(duplicate close, missing footer, unresolved `{{account.name}}` — correct: no account card) and
+repaired header/hero/why in the raw lane. Then died at 34.7 min: a 236s generation (close-band
+rewrite) returned `{'message': 'Auth context expired.', 'code': 502}` — ON CHAT-COMPLETIONS.
+So it is the long-generation window (~2–4 min), not the endpoint. Nothing committed (web turns
+persist once at the end).
+
+Fixes shipped from run 3's trace (all committed):
+1. **Tool-call serialization** (`37f1bba7b`): batched `assemble` + 2× `asset` ran in parallel
+   threads; the asset tools committed a pre-assembly doc snapshot 27ms after the assembly landed
+   and erased four pinned bands (lost update). Every tool handed to the agent now holds one
+   re-entrant lock (`serialize_tool_calls`); schema preserved via functools.wraps.
+2. **`inspect_cloned_section`** (`7056d600c`): no tool had ever exposed a clone's HTML/CSS —
+   search lists slots + preview handle, view shows a picture — so "remix the original's actual
+   CSS" was un-followable; the agent grepped the filesystem (other runs' dirs included) and the
+   trio's old "raw" compositions were from memory too. New read tool returns html+css+slots via
+   `registry.read_source`; rungs 3–4 of the ladder point at it.
+3. **Campaign variants are lineage roots** (same commit): `_resolve_lineages` took the newest
+   healthy descendant regardless of why it was derived, so a released one-CTA variant of Stripe's
+   canonical hero would have hijacked every future pin. The agent refused DERIVE-VARIANT for that
+   (true) reason. Variants (note prefix "campaign variant", embedded in derived_reason) no longer
+   supersede; skill + solo prompt say so.
+4. **Same-model transient retry in the governed gateway** (this commit): `Auth context expired`
+   / 5xx / overloaded on the LAST candidate retries twice on the same model (a configured fallback
+   still wins first, as before); ChatOpenAI's own max_retries never sees error payloads delivered
+   inside a 200. Tests: retried-then-recovered, exhausted-still-raises, non-transient-not-retried.
+
+Still open, in order of expected impact on the next run: a re-survey of the library mid-repair
+(~2 min; the read-once law slipping under repair pressure — prompt line for the repair step);
+insert-index confusion when pinning the footer "last" (it overwrote the close; the agent
+recovered but spent a loop); plan writes of 8–9k tokens are the run's longest single calls and
+sit in the kill window even on chat-completions — consider asking for a shorter plan or
+splitting it. Web-turn progressive persistence (scene mode has it) is the structural answer to
+"one killed call discards the run"; recorded, not started.

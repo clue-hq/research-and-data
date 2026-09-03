@@ -694,3 +694,60 @@ def test_supports_image_input_reads_the_models_catalog() -> None:
         return httpx.Response(500, json={"error": "down"}, request=request)
 
     assert _p32_provider(GatewayConfig(), unreachable).supports_image_input("vision/model") is None
+
+
+# --- transient provider errors are retried on the same model (design solo runs 2+3, 2026-09-04)
+
+
+class _FlakyChatModel(BaseChatModel):
+    """Fails ``failures`` times with a provider-shaped error, then answers."""
+
+    failures: int = 1
+    error_text: str = "{'message': 'Auth context expired.', 'code': 502}"
+    calls: int = 0
+
+    @property
+    def _llm_type(self) -> str:
+        return "flaky"
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise ValueError(self.error_text)
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content="recovered"))])
+
+
+def _governed(flaky: _FlakyChatModel) -> GovernedAgentChatModel:
+    return GovernedAgentChatModel(
+        models=(flaky,),
+        model_ids=("served/model",),
+        requested_model="served/model",
+        gateway_config=GatewayConfig(),
+    )
+
+
+def test_a_transient_provider_error_is_retried_on_the_same_model() -> None:
+    """OpenRouter's 'Auth context expired' (502) killed a 136s and a 236s generation — one on
+    /responses, one on chat-completions — and each discarded a whole web turn because the
+    single failed call had no retry. ChatOpenAI's own max_retries never sees an error payload
+    delivered inside a 200; the governed wrapper now retries the same model twice."""
+    flaky = _FlakyChatModel(failures=2)
+    response = _governed(flaky).invoke("build the close band")
+    assert response.text == "recovered"
+    assert flaky.calls == 3
+
+
+def test_a_transient_error_that_never_clears_still_raises_honestly() -> None:
+    flaky = _FlakyChatModel(failures=99)
+    with pytest.raises(ValueError, match="Auth context expired"):
+        _governed(flaky).invoke("x")
+    assert flaky.calls == 3  # the original attempt plus exactly two retries
+
+
+def test_a_non_transient_error_is_not_retried() -> None:
+    flaky = _FlakyChatModel(
+        failures=99, error_text="invalid_union: expected string, received array"
+    )
+    with pytest.raises(ValueError, match="invalid_union"):
+        _governed(flaky).invoke("x")
+    assert flaky.calls == 1
