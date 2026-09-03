@@ -7253,13 +7253,13 @@ class LumenWebTools:
         them) as the first and last sections of the page, and — when you name one — a released
         cloned HERO between them. Everything else on the page stays where it is.
 
-        IT DOES NOT REACH FOR THE CLIENT'S NAV OR SITE FOOTER, AND SAYS SO IF YOU DO. Every link
-        in a nav is a way off the one page written for this account, so the shells are this
-        page's chrome — a workspace with no released shells is REFUSED (`abm.no_campaign_shells`)
-        and told to mint them, because that is a missing input rather than a matter of taste. But
-        naming a `nav`- or `footer`-role clone as the hero PINS it and hands you a note in
-        `advice`, and a page that already carries one is assembled around and noted the same way
-        (founder ruling R-F5-8: allowed, not recommended). The judgement is yours.
+        THE SHELLS ARE WHAT IT REACHES FOR. They are this page's chrome, so a workspace with no
+        released shells is REFUSED (`abm.no_campaign_shells`) and told to mint them — a missing
+        input, not a matter of taste; the walk does not quietly wear the client's cloned
+        navigation in their place. You can still pin a cloned `nav` or `footer` yourself: name
+        one as the hero and it goes on with a note in `advice`, and a page that already carries
+        one is assembled around and noted the same way (founder ruling R-F5-8: allowed, not
+        recommended). The judgement is yours.
 
         THE PAGE IS A TEMPLATE, NOT ONE ACCOUNT'S PAGE. The header's `prepared_for` and
         `target_logo` are bound to `{{account.name}}` and `{{account.logo}}`, which the account
@@ -7353,10 +7353,11 @@ class LumenWebTools:
                 + " or ".join(missing)
                 + " shell"
                 + (f" for brand kit {kit_id}" if kit_id else "")
-                + ", and an ABM page wears its own chrome — never the client's cloned "
-                "navigation, because every link in a nav is a way off the one page written for "
-                "this account. Call mint_campaign_shells to compose them from the brand kit, "
-                "then a human releases them by re-approving the brand kit. Nothing was pinned.",
+                + ", and the shells are the chrome this walk reaches for — it will not put the "
+                "client's cloned navigation there instead of them. Call mint_campaign_shells to "
+                "compose them from the brand kit, then a human releases them by re-approving the "
+                "brand kit. (You can still pin a cloned nav or footer yourself by name; it comes "
+                "with advice — R-F5-8: allowed, not recommended.) Nothing was pinned.",
                 missing_shell_roles=missing,
                 brand_kit=kit_id,
             )
