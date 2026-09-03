@@ -582,7 +582,9 @@ def test_publish_serve_republish_rollback(client: TestClient, workspace_id: str)
     assert published.status_code == 200, published.text
     body = published.json()
     slug = body["slug"]
-    assert body["url"] == f"/w/{workspace_id}/p/{slug}"
+    # F5/R-F5-1: the reported URL is ABSOLUTE and config-sourced. With no host suffix set
+    # (the default, and what the test env has) it is the interim path on the request origin.
+    assert body["url"] == f"http://testserver/w/{workspace_id}/p/{slug}"
     assert body["doc_version"] == 1
     assert body["previous_available"] is False
 
@@ -634,6 +636,26 @@ def test_publish_serve_republish_rollback(client: TestClient, workspace_id: str)
     assert unpub.status_code == 200, unpub.text
     assert unpub.json()["status"] == "unpublished"
     assert client.get(f"/w/{workspace_id}/p/{slug}").status_code == 404
+
+
+def test_publish_noindex_option_reaches_the_served_page(
+    client: TestClient, workspace_id: str
+) -> None:
+    """F5 task 13: the share menu's indexing toggle is a real publish option.
+
+    `noindex` defaults off (the neighbouring publish tests pin that an ordinary publish carries
+    no robots meta), and asking for it puts the meta on the page the visitor is served.
+    """
+
+    document = seed_document(client)
+    published = client.post(
+        f"/documents/{document['id']}/web/publish",
+        json={"slug": "hidden-page", "noindex": True},
+    )
+    assert published.status_code == 200, published.text
+    served = client.get(f"/w/{workspace_id}/p/hidden-page")
+    assert served.status_code == 200, served.text
+    assert '<meta name="robots" content="noindex">' in served.text
 
 
 def test_publish_slug_validation(client: TestClient) -> None:
@@ -700,3 +722,305 @@ def test_web_export_endpoints_reject_scene_documents(
     )
     assert response.status_code == 409, response.text
     assert response.json()["detail"]["code"] == "document.kind_unsupported"
+
+
+# --------------------------------------------------------------------------- #
+# F5 — multi-page publishing, per-route serving, one export folder per page    #
+# --------------------------------------------------------------------------- #
+
+
+def _empty_page(page_id: str, route: str, name: str = "Pricing") -> dict:
+    """The smallest legal WebPage: its root Container alone, no children.
+
+    Copied from ``test_web_documents.py`` rather than imported: these modules are peers, and a
+    test helper shared across them by import makes one file's refactor break the other's.
+    """
+    root = f"root_{page_id}"
+    return {
+        "id": page_id,
+        "name": name,
+        "route": route,
+        "root": root,
+        "nodes": {root: {"id": root, "kind": "container", "classes": "", "children": []}},
+    }
+
+
+def test_rewrite_site_links_touches_only_document_routes() -> None:
+    from lumen_api.web_export import rewrite_site_links
+
+    html = (
+        '<a href="/pricing">a</a><a href="/careers">b</a>'
+        '<img src="/asset-store/abc"><a href="/">home</a>'
+    )
+    out = rewrite_site_links(html, ["/", "/pricing"], "/w/ws1/p/site")
+    assert 'href="/w/ws1/p/site/pricing"' in out
+    assert 'href="/w/ws1/p/site"' in out
+    # A path that merely LOOKS like a route, and a non-href attribute, are untouched.
+    assert 'href="/careers"' in out
+    assert 'src="/asset-store/abc"' in out
+
+
+def test_publish_serves_every_page_at_its_route(
+    client: TestClient, workspace_id: str
+) -> None:
+    document = create_web_document(client)
+    added = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={"operations": [{"kind": "add_page", "page": _empty_page("pricing", "/pricing")}]},
+    )
+    assert added.status_code == 200, added.text
+
+    web_doc = client.get(f"/documents/{document['id']}").json()["scene"]
+    home_html = (
+        '<section id="hero"><h1>Home</h1>'
+        '<p><a href="/pricing">See pricing</a></p></section>'
+    )
+    seeded = client.app.state.core.web_ingest_html(web_doc, "home", home_html, None, None)[
+        "web_doc"
+    ]
+    seeded = client.app.state.core.web_ingest_html(
+        seeded, "pricing", '<section id="plans"><h1>Plans</h1></section>', None, None
+    )["web_doc"]
+    seed_content(client, document["id"], seeded)
+
+    published = client.post(
+        f"/documents/{document['id']}/web/publish", json={"slug": "multi"}
+    )
+    assert published.status_code == 200, published.text
+    assert published.json()["routes"] == ["/", "/pricing"]
+
+    home = client.get(f"/w/{workspace_id}/p/multi")
+    pricing = client.get(f"/w/{workspace_id}/p/multi/pricing")
+    assert home.status_code == 200, home.text
+    assert "Home" in home.text
+    assert pricing.status_code == 200, pricing.text
+    assert "Plans" in pricing.text
+    # The site link is rewritten to the served address of the pricing page.
+    assert f'href="/w/{workspace_id}/p/multi/pricing"' in home.text
+    # ...and each page carries its OWN canonical.
+    assert '<link rel="canonical" href="' in pricing.text
+    assert f"/w/{workspace_id}/p/multi/pricing" in pricing.text
+    assert client.get(f"/w/{workspace_id}/p/multi/nope").status_code == 404
+
+    state = client.get(f"/documents/{document['id']}/web/publish").json()
+    assert [page["route"] for page in state["pages"]] == ["/", "/pricing"]
+
+
+def test_export_zip_writes_one_folder_per_page(client: TestClient) -> None:
+    document = create_web_document(client)
+    added = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={"operations": [{"kind": "add_page", "page": _empty_page("pricing", "/pricing")}]},
+    )
+    assert added.status_code == 200, added.text
+    web_doc = client.get(f"/documents/{document['id']}").json()["scene"]
+    seeded = client.app.state.core.web_ingest_html(
+        web_doc,
+        "home",
+        '<section id="hero"><h1>Home</h1><p><a href="/pricing">Pricing</a></p></section>',
+        None,
+        None,
+    )["web_doc"]
+    seeded = client.app.state.core.web_ingest_html(
+        seeded, "pricing", '<section id="plans"><h1>Plans</h1></section>', None, None
+    )["web_doc"]
+    seed_content(client, document["id"], seeded)
+
+    files, _html, manifest = export_zip(client, document["id"])
+    assert "index.html" in files
+    assert "pricing/index.html" in files
+    assert "pricing/index.html" in manifest["files"]
+    assert [page["route"] for page in manifest["pages"]] == ["/", "/pricing"]
+    assert b"Plans" in files["pricing/index.html"]
+    # A static host serves a folder page from its directory index.
+    assert 'href="/pricing/"' in files["index.html"].decode("utf-8")
+
+
+# --------------------------------------------------------------------------- #
+# The export bundle's own CSP — the zip must not block the zip's own files     #
+# --------------------------------------------------------------------------- #
+
+
+def test_the_static_bundle_csp_allows_the_bundles_own_files() -> None:
+    """The zip's `index.html` refused to load the zip's own bytes.
+
+    `build_export_bundle` injected the PUBLISH policy with no `public_base` — so under
+    `default-src 'none'` the page allowed no origin at all, and its own `site.css`,
+    `assets/<digest>.<ext>` and `fonts/<digest>.woff2` were blocked BY THE PAGE ITSELF, on
+    disk and on any static host. `'self'` covers the static-host case; `file:` is required on
+    top of it because a document opened from disk has an opaque origin in Chromium, which
+    `'self'` does not match.
+    """
+    from lumen_api.web_export import _delivery_csp
+
+    policy = _delivery_csp(meta=True, static_bundle=True)
+    directives = dict(
+        part.split(" ", 1) for part in (p.strip() for p in policy.split(";")) if part
+    )
+
+    assert directives["script-src"] == "'self' 'unsafe-inline' data: file:"
+    assert directives["style-src"] == "'self' 'unsafe-inline' file:"
+    assert directives["img-src"] == "'self' data: blob: file:"
+    assert directives["font-src"] == "'self' data: file:"
+    # Everything genuinely remote is still refused: the bundle reaches its own disk, no further.
+    assert directives["default-src"] == "'none'"
+    assert directives["connect-src"] == "'none'"
+    assert directives["object-src"] == "'none'"
+    assert directives["worker-src"] == "'none'"
+    assert directives["base-uri"] == "'none'"
+    assert directives["form-action"] == "'none'"
+    # meta shape: `frame-ancestors` is ignored in a meta CSP and is not claimed.
+    assert "frame-ancestors" not in policy
+
+
+def test_the_served_policy_is_byte_identical_without_the_static_bundle_flag() -> None:
+    """The publish/serving path is NOT touched by the export fix. This pins the exact string
+    `_delivery_csp` produced before `static_bundle` existed, captured from the pre-change code."""
+    from lumen_api.web_export import _delivery_csp
+
+    assert _delivery_csp("http://127.0.0.1:8016", meta=True) == (
+        "default-src 'none'; "
+        "script-src 'unsafe-inline' data: http://127.0.0.1:8016; "
+        "style-src 'unsafe-inline' http://127.0.0.1:8016; "
+        "img-src data: blob: http://127.0.0.1:8016; "
+        "font-src data: http://127.0.0.1:8016; "
+        "connect-src 'none'; object-src 'none'; worker-src 'none'; "
+        "frame-src 'self' data: blob:; base-uri 'none'; form-action 'none'"
+    )
+
+
+def test_export_pages_carry_the_static_bundle_csp(client: TestClient) -> None:
+    """Every exported page — not just `index.html` — carries the bundle policy."""
+    from lumen_api.web_export import _delivery_csp, _escape_attr
+
+    document = create_web_document(client)
+    added = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={
+            "operations": [
+                {"kind": "add_page", "page": _empty_page("pricing", "/pricing")}
+            ]
+        },
+    )
+    assert added.status_code == 200, added.text
+    web_doc = client.get(f"/documents/{document['id']}").json()["scene"]
+    seeded = client.app.state.core.web_ingest_html(
+        web_doc, "home", '<section id="hero"><h1>Home</h1></section>', None, None
+    )["web_doc"]
+    seeded = client.app.state.core.web_ingest_html(
+        seeded, "pricing", '<section id="plans"><h1>Plans</h1></section>', None, None
+    )["web_doc"]
+    seed_content(client, document["id"], seeded)
+
+    files, html, _manifest = export_zip(client, document["id"])
+    tag = (
+        '<meta http-equiv="Content-Security-Policy" content="'
+        f'{_escape_attr(_delivery_csp(meta=True, static_bundle=True))}">'
+    )
+    assert tag in html
+    assert tag in files["pricing/index.html"].decode("utf-8")
+    # The old (originless publish) policy is gone from the bundle.
+    assert "img-src data: blob:;" not in html
+
+
+def test_an_exported_zip_loads_its_own_css_and_images_from_disk(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """The browser proof: unzip the export, open `index.html` over `file://`, and check that
+    the page actually got its stylesheet and its image — with no CSP violation on the console.
+
+    Skipped honestly (never failed) when no Chromium is installed, the way the thumbnail and
+    PDF suites skip: the probe LAUNCHES a browser, so it lives in the test body.
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as pw:
+            pw.chromium.launch(headless=True).close()
+    except Exception:
+        pytest.skip("playwright chromium not installed")
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (24, 16), (120, 80, 200)).save(buffer, "PNG")
+    upload = client.post(
+        "/assets", files={"file": ("hero.png", buffer.getvalue(), "image/png")}
+    )
+    assert upload.status_code == 200, upload.text
+    record = upload.json()["asset"]
+
+    document = create_web_document(client)
+    added = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={
+            "operations": [
+                {"kind": "add_page", "page": _empty_page("pricing", "/pricing")}
+            ]
+        },
+    )
+    assert added.status_code == 200, added.text
+    web_doc = client.get(f"/documents/{document['id']}").json()["scene"]
+    web_doc = client.app.state.core.web_ingest_html(
+        web_doc, "home", SAMPLE_HTML, None, None
+    )["web_doc"]
+    web_doc = client.app.state.core.web_ingest_html(
+        web_doc, "pricing", '<section id="plans"><h1>Plans</h1></section>', None, None
+    )["web_doc"]
+    container = find_node(web_doc, "container")
+    web_doc["pages"][0]["nodes"]["export_img"] = {
+        "id": "export_img",
+        "kind": "image",
+        "asset_id": record["id"],
+        "alt": "Export hero",
+        "classes": "",
+    }
+    web_doc["pages"][0]["nodes"][container].setdefault("children", []).append(
+        "export_img"
+    )
+    web_doc.setdefault("assets", {})[record["id"]] = record
+    seed_content(client, document["id"], web_doc)
+
+    files, html, _manifest = export_zip(client, document["id"])
+    assert "site.css" in files and any(n.startswith("assets/") for n in files)
+    bundle = tmp_path / "bundle"
+    for name, data in files.items():
+        target = bundle / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+
+    violations: list[str] = []
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.on(
+            "console",
+            lambda message: violations.append(message.text)
+            if "Content Security Policy" in message.text
+            or "Refused to" in message.text
+            else None,
+        )
+        page.goto((bundle / "index.html").as_uri())
+        page.wait_for_load_state("networkidle")
+        result = page.evaluate(
+            """() => ({
+                images: Array.from(document.images).map((img) => ({
+                    src: img.getAttribute('src'),
+                    naturalWidth: img.naturalWidth,
+                })),
+                sheets: Array.from(document.styleSheets).map((s) => s.href || 'inline'),
+                heroBackground: getComputedStyle(
+                    document.getElementById('hero')
+                ).backgroundColor,
+            })"""
+        )
+        browser.close()
+
+    assert result["images"], "the exported page has an <img> to load"
+    for image in result["images"]:
+        assert image["naturalWidth"] > 0, f"{image['src']} was blocked or missing"
+    # A CSP-blocked `<link>` never becomes a stylesheet, so its presence IS the proof it loaded.
+    assert any(href.endswith("/site.css") for href in result["sheets"]), result["sheets"]
+    # ...and it APPLIED: `bg-light` is a compiled `site.css` rule, nothing inline provides it.
+    assert result["heroBackground"] not in ("", "rgba(0, 0, 0, 0)"), result[
+        "heroBackground"
+    ]
+    assert violations == [], violations

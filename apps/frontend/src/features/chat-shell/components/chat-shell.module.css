@@ -1400,6 +1400,13 @@
   background: var(--clue-ds-color-bg-neutral-hover);
 }
 
+/* FLAGGED F5 T18: the page switcher's muted route suffix, on the same
+ * `.toolbarMenuItem` row as its page name. */
+.toolbarMenuItemHint {
+  margin-left: 6px;
+  color: var(--chat-shell-subtle);
+}
+
 .artifactHeading,
 .artifactHeaderActions,
 .deviceButton,
@@ -3168,6 +3175,55 @@
 
 .inspectorStatusError {
   color: var(--clue-ds-color-primitives-critical-700);
+}
+
+/* FLAGGED F5 T19: no designed slot in the dummy frontend for the page/route
+ * section. Minimal neutral treatment only, borrowed from this surface's own
+ * idioms — the message line is `.inspectorStatusError`'s exact treatment
+ * (12/16 in critical-700, no box, no icon), and the two buttons are the
+ * inspector's existing menu-item shape. Do not grow this into designed chrome
+ * without a founder/design ruling. */
+.inspectorPageMessage {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--clue-ds-color-primitives-critical-700);
+}
+
+.inspectorPageActions {
+  display: flex;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.inspectorPageButton {
+  flex: 1;
+  min-height: 30px;
+  padding: 6px 8px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--chat-shell-subtle);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.inspectorPageButton:hover:not(:disabled),
+.inspectorPageButton:focus-visible {
+  background: var(--clue-ds-color-bg-neutral-hover);
+  color: var(--chat-shell-content);
+}
+
+.inspectorPageButton:focus-visible {
+  outline: 2px solid rgb(27 102 255 / 45%);
+  outline-offset: -2px;
+}
+
+.inspectorPageButton:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* W3.4: the action menu's Undo/Redo disable at empty engine stacks (native

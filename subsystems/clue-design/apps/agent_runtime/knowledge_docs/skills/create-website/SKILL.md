@@ -193,6 +193,22 @@ specific to our editor, brands, and formats.
   only a hand-built control needs the class).
 - Exactly ONE `h1` (the hero). Heading levels never skip.
 
+## Multi-page sites
+
+A site is one document with many pages. Each page has an id, a name and a route.
+The home page's route is `/`. Other routes look like `/pricing` or `/security/soc-2`:
+lowercase words joined by dashes, no trailing slash.
+
+- The director creates pages and switches the active page before briefing you.
+  You author the active page. Every op you write names its `page_id`.
+- `list_pages` tells you which page is active and what routes the others answer
+  on. It only reads; the director is who adds, removes and switches pages.
+- Link between pages by route: `<a href="/pricing">`. Publishing turns the route
+  into the live address.
+- You may link off the site. On a campaign page that is rarely a good idea — every
+  link away is a visitor who stops reading the argument. Prefer the site's own
+  pages and the one CTA. If you link away, say why in your summary.
+
 ## Responsive (mobile-first, no scripts)
 
 Base classes are the phone layout; add `md:`/`lg:` for wider. The header

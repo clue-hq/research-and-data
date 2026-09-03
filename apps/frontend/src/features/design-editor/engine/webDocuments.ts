@@ -499,16 +499,25 @@ export interface WebRenderResult {
  * authored formatting). The first task-6 cut omitted it from the view fetch
  * and rich-text highlights/link CSS visibly broke — browser-caught. `mode`
  * stays `editor`, which is the endpoint's own default and is NOT what injects
- * the bridge — the opt-in `bridge=1&nonce=…` pair is. */
+ * the bridge — the opt-in `bridge=1&nonce=…` pair is.
+ *
+ * F5 addendum (2026-09-02): the endpoint is page-aware. `pageId` names which
+ * page of a multi-page site to render; OMITTING it is the endpoint's own
+ * first-page default, so an absent/empty id sends no `page_id` param at all
+ * rather than an empty one (an unknown id is a typed 404 server-side). */
 export async function fetchWebRenderHtml(
   { apiBaseUrl, fetchImpl = defaultDesignFetch }: WebDocumentOptions,
   documentId: string,
   runtimeSrc: string,
-  bridge?: { nonce?: string }
+  bridge?: { nonce?: string },
+  pageId?: string
 ): Promise<WebRenderResult> {
   const url = new URL(`/documents/${encodeURIComponent(documentId)}/web/render`, apiBaseUrl);
   url.searchParams.set("mode", "editor");
   url.searchParams.set("runtime_src", runtimeSrc);
+  if (pageId) {
+    url.searchParams.set("page_id", pageId);
+  }
   if (bridge?.nonce) {
     url.searchParams.set("bridge", "1");
     url.searchParams.set("nonce", bridge.nonce);
@@ -718,7 +727,14 @@ export type WebOperation =
   | { kind: "remove_node"; page_id: string; id: string }
   | { kind: "replace_asset"; page_id: string; id: string; asset_id: string }
   | { kind: "upsert_asset"; record: AssetRecord }
-  | { kind: "set_slot_key"; page_id: string; id: string; slot_key: string | null };
+  | { kind: "set_slot_key"; page_id: string; id: string; slot_key: string | null }
+  | { kind: "set_page_meta"; page_id: string; name?: string; route?: string }
+  | {
+      kind: "add_page";
+      page: WebPageSummary & { root: string; nodes: Record<string, WebNode> };
+      index?: number;
+    }
+  | { kind: "remove_page"; page_id: string };
 
 /** Op builders — the one place a manual-edit payload is shaped, so panels bind
  * fields and call these rather than spelling out op objects inline. */
@@ -778,6 +794,91 @@ export function upsertAssetOp(record: AssetRecord): WebOperation {
  * Section/Container on binding presence (see {@link slotKeyParts}). */
 export function setSlotKeyOp(pageId: string, id: string, slotKey: string | null): WebOperation {
   return { kind: "set_slot_key", page_id: pageId, id, slot_key: slotKey };
+}
+
+/** Rename a page and/or repoint its route. Only the keys actually supplied are
+ * emitted — the engine's `Option<String>` fields are
+ * `skip_serializing_if = "Option::is_none"`, and a `name: undefined` property
+ * would still serialize as a present `"name": null`-shaped absence in some
+ * encoders, so the object is built conditionally. */
+export function setPageMetaOp(
+  pageId: string,
+  meta: { name?: string; route?: string }
+): WebOperation {
+  const op: { kind: "set_page_meta"; page_id: string; name?: string; route?: string } = {
+    kind: "set_page_meta",
+    page_id: pageId
+  };
+  if (meta.name !== undefined) {
+    op.name = meta.name;
+  }
+  if (meta.route !== undefined) {
+    op.route = meta.route;
+  }
+  return op;
+}
+
+/** Add a new, empty page: its root is a single `root_<id>` Container holding no
+ * children (every other node kind is inserted later by insert_node). `index`
+ * is omitted when absent, which the engine reads as "append". */
+export function addPageOp(
+  page: { id: string; name: string; route: string },
+  index?: number
+): WebOperation {
+  const root = `root_${page.id}`;
+  const op: {
+    kind: "add_page";
+    page: WebPageSummary & { root: string; nodes: Record<string, WebNode> };
+    index?: number;
+  } = {
+    kind: "add_page",
+    page: {
+      id: page.id,
+      name: page.name,
+      route: page.route,
+      root,
+      nodes: { [root]: { id: root, kind: "container", classes: "", children: [] } }
+    }
+  };
+  if (index !== undefined) {
+    op.index = index;
+  }
+  return op;
+}
+
+/** Remove a page. The engine refuses this for a document's last page. */
+export function removePageOp(pageId: string): WebOperation {
+  return { kind: "remove_page", page_id: pageId };
+}
+
+/** Exact mirror of the engine's `route_is_valid` (lumen-web `validate.rs`):
+ * `/` or `/seg(/seg)*` where a segment is `[a-z0-9]+(-[a-z0-9]+)*`; no trailing
+ * slash; total length <= 128; `manifest.json` is never a segment, and
+ * `p-assets` / `asset-store` are never the FIRST one (both are served beside a
+ * published site and would shadow it). Kept in lockstep with the Rust so the
+ * editor refuses a route before the round trip does. */
+export function routeIsValid(route: string): boolean {
+  if (route === "/") {
+    return true;
+  }
+  if (route.length > 128 || !route.startsWith("/") || route.endsWith("/")) {
+    return false;
+  }
+  const segments = route.slice(1).split("/");
+  const first = segments[0];
+  if (first === "p-assets" || first === "asset-store") {
+    return false;
+  }
+  return segments.every(routeSegmentIsValid);
+}
+
+function routeSegmentIsValid(segment: string): boolean {
+  if (segment.length === 0 || segment === "manifest.json") {
+    return false;
+  }
+  return segment
+    .split("-")
+    .every((run) => run.length > 0 && /^[a-z0-9]+$/.test(run));
 }
 
 /** The slot-key charset the engine enforces (`SlotKey` rules, D2): lowercase
@@ -1574,6 +1675,14 @@ export interface WebOperationDiagnostic {
 export class WebOperationsError extends Error {
   readonly status: number;
   readonly code: string | null;
+  /** F5 task 19: the ENGINE's own refusal code (`op.route_exists`,
+   * `op.route_invalid`, `op.page_exists`, …), which the design API sends beside
+   * the flattened envelope `code` on a 422. `code` stays the one code every
+   * existing client branches on; this is how a caller tells WHICH refusal this
+   * was without parsing prose — the inspector's route field uses it to say
+   * "already used by another page" in its own words. Null when the server sent
+   * none (a 409, or any older server). */
+  readonly engineCode: string | null;
   readonly kind: "base_version" | "invalid" | "other";
   readonly diagnostics: WebOperationDiagnostic[];
 
@@ -1581,6 +1690,7 @@ export class WebOperationsError extends Error {
     message: string;
     status: number;
     code: string | null;
+    engineCode?: string | null;
     kind: "base_version" | "invalid" | "other";
     diagnostics?: WebOperationDiagnostic[];
   }) {
@@ -1588,6 +1698,7 @@ export class WebOperationsError extends Error {
     this.name = "WebOperationsError";
     this.status = params.status;
     this.code = params.code;
+    this.engineCode = params.engineCode ?? null;
     this.kind = params.kind;
     this.diagnostics = params.diagnostics ?? [];
   }
@@ -1604,6 +1715,7 @@ export interface AppliedWebOperations {
  * both the 409 and 422 rejections use), tolerating a string detail. */
 function readErrorDetail(body: unknown): {
   code: string | null;
+  engineCode: string | null;
   diagnostics: WebOperationDiagnostic[];
   message: string | null;
 } {
@@ -1612,6 +1724,9 @@ function readErrorDetail(body: unknown): {
     const record = detail as Record<string, unknown>;
     return {
       code: typeof record.code === "string" ? record.code : null,
+      // F5 task 19: the engine's own refusal code, sent beside the flattened
+      // envelope code on a 422 (design API `main.py`, web/operations).
+      engineCode: typeof record.engine_code === "string" ? record.engine_code : null,
       diagnostics: Array.isArray(record.diagnostics)
         ? (record.diagnostics as WebOperationDiagnostic[])
         : [],
@@ -1620,6 +1735,7 @@ function readErrorDetail(body: unknown): {
   }
   return {
     code: null,
+    engineCode: null,
     diagnostics: [],
     message: typeof detail === "string" ? detail : null
   };
@@ -1664,6 +1780,7 @@ export async function applyWebOperations(
         message: detail.message ?? "This website was changed elsewhere.",
         status: 409,
         code: detail.code,
+        engineCode: detail.engineCode,
         kind: "base_version"
       });
     }
@@ -1674,6 +1791,7 @@ export async function applyWebOperations(
           first?.message ?? detail.message ?? "This edit could not be applied.",
         status: 422,
         code: detail.code,
+        engineCode: detail.engineCode,
         kind: "invalid",
         diagnostics: detail.diagnostics
       });
@@ -1683,6 +1801,7 @@ export async function applyWebOperations(
         detail.message ?? `Edit failed (HTTP ${response.status}).`,
       status: response.status,
       code: detail.code,
+      engineCode: detail.engineCode,
       kind: "other"
     });
   }
@@ -1736,6 +1855,7 @@ async function postWebHistory(
       message: detail.message ?? `${path} failed (HTTP ${response.status}).`,
       status: response.status,
       code: detail.code,
+      engineCode: detail.engineCode,
       kind: response.status === 409 ? "base_version" : "other"
     });
   }
@@ -1839,6 +1959,14 @@ export function suggestPublishSlug(title: string, documentId: string): string {
   return slug;
 }
 
+/** One route the published site currently serves (F5). No markup — the route,
+ * the page it came from, and that page's html digest. */
+export interface WebPublishPage {
+  route: string;
+  pageId: string | null;
+  htmlDigest: string | null;
+}
+
 /** The document's current publish state (`GET /documents/{id}/web/publish`).
  * `published: false` is the unpublished case; the slug/url/version fields carry
  * values only when `published` is true. */
@@ -1854,6 +1982,12 @@ export interface WebPublishState {
   manifestDigest: string | null;
   packageDigest: string | null;
   htmlDigest: string | null;
+  /** F5: the routes the site serves, in document order. Empty on a pre-F5
+   * publish, which still serves its single page at `/`. */
+  pages: WebPublishPage[];
+  /** F5: the ABSOLUTE address of every route, computed by the server (R-F5-1).
+   * The client never builds a public URL from a host constant of its own. */
+  pageUrls: Record<string, string>;
 }
 
 /** Read the document's publish state. Throws (with the server message) on any
@@ -1882,6 +2016,8 @@ export async function fetchWebPublishInfo(
     manifest_digest?: unknown;
     package_digest?: unknown;
     html_digest?: unknown;
+    pages?: unknown;
+    page_urls?: unknown;
   };
   return {
     published: payload.published === true,
@@ -1894,8 +2030,38 @@ export async function fetchWebPublishInfo(
     publishId: typeof payload.publish_id === "string" ? payload.publish_id : null,
     manifestDigest: typeof payload.manifest_digest === "string" ? payload.manifest_digest : null,
     packageDigest: typeof payload.package_digest === "string" ? payload.package_digest : null,
-    htmlDigest: typeof payload.html_digest === "string" ? payload.html_digest : null
+    htmlDigest: typeof payload.html_digest === "string" ? payload.html_digest : null,
+    pages: parseWebPublishPages(payload.pages),
+    pageUrls: parseStringMap(payload.page_urls)
   };
+}
+
+/** The `pages` array of a publish state — anything that is not a route-bearing
+ * object is dropped rather than guessed at. */
+function parseWebPublishPages(raw: unknown): WebPublishPage[] {
+  if (!Array.isArray(raw)) return [];
+  const pages: WebPublishPage[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const page = entry as { route?: unknown; page_id?: unknown; html_digest?: unknown };
+    if (typeof page.route !== "string") continue;
+    pages.push({
+      route: page.route,
+      pageId: typeof page.page_id === "string" ? page.page_id : null,
+      htmlDigest: typeof page.html_digest === "string" ? page.html_digest : null
+    });
+  }
+  return pages;
+}
+
+/** A `{ route: url }` wire map, keeping only the string-to-string entries. */
+function parseStringMap(raw: unknown): Record<string, string> {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
+  const map: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === "string") map[key] = value;
+  }
+  return map;
 }
 
 /** The result of a `POST /documents/{id}/web/publish`. */
@@ -1910,20 +2076,37 @@ export interface WebPublishResult {
   manifestDigest: string | null;
   packageDigest: string | null;
   htmlDigest: string | null;
+  /** F5: every route this publish put on the air, in document order. A server
+   * that predates the field answers with an empty list. */
+  routes: string[];
+  /** F5/R-F5-1: the ABSOLUTE address of every one of those routes, built by the
+   * server. Empty from a server that predates the field, and only then does the
+   * caller fall back to joining `url` to `routes` itself — the addresses are the
+   * server's to compute, because only it knows whether this workspace's sites
+   * live on their own host or on the interim tenant path. */
+  pageUrls: Record<string, string>;
 }
 
 /** Publish (or republish) a website (`POST /documents/{id}/web/publish`). Pass
  * the desired slug; omit it to let the server keep the current one. A 422 (bad
  * slug) or 409 (slug taken by another document) throws with the server's
- * message so the dialog can surface it inline. */
+ * message so the dialog can surface it inline.
+ *
+ * `noindex` (R-F1) asks the server to serve the pages with a robots `noindex`
+ * meta. Omitted, the server keeps its own default — and it ORs the document's
+ * durable ABM `noindex`, so passing `false` can never un-noindex an ABM page. */
 export async function publishWebDocument(
   { apiBaseUrl, fetchImpl = defaultDesignFetch }: WebDocumentOptions,
   documentId: string,
-  slug?: string
+  slug?: string,
+  options: { noindex?: boolean } = {}
 ): Promise<WebPublishResult> {
   const body: Record<string, unknown> = {};
   if (slug != null && slug.length > 0) {
     body.slug = slug;
+  }
+  if (typeof options.noindex === "boolean") {
+    body.noindex = options.noindex;
   }
   const response = await fetchImpl(
     new URL(`/documents/${encodeURIComponent(documentId)}/web/publish`, apiBaseUrl),
@@ -1947,6 +2130,8 @@ export async function publishWebDocument(
     manifest_digest?: unknown;
     package_digest?: unknown;
     html_digest?: unknown;
+    routes?: unknown;
+    page_urls?: unknown;
   };
   return {
     schemaVersion: typeof payload.schema_version === "number" ? payload.schema_version : null,
@@ -1963,7 +2148,11 @@ export async function publishWebDocument(
     publishId: typeof payload.publish_id === "string" ? payload.publish_id : null,
     manifestDigest: typeof payload.manifest_digest === "string" ? payload.manifest_digest : null,
     packageDigest: typeof payload.package_digest === "string" ? payload.package_digest : null,
-    htmlDigest: typeof payload.html_digest === "string" ? payload.html_digest : null
+    htmlDigest: typeof payload.html_digest === "string" ? payload.html_digest : null,
+    routes: Array.isArray(payload.routes)
+      ? payload.routes.filter((route): route is string => typeof route === "string")
+      : [],
+    pageUrls: parseStringMap(payload.page_urls)
   };
 }
 

@@ -30,6 +30,38 @@ Then open **http://localhost:3020** and sign in:
 | 8030 | platform API (second instance, same app) | Historical twin; some flows were exercised against it. Cheap to run, keep it. |
 | — | fleet worker (`clue_api.fleet_main`) | Drives design runs. **No worker = messages accepted but nothing ever generates.** |
 
+### Running a second stack from another worktree
+
+The port map above is the **default**, not a constant. Six keys move a whole stack, and each
+worktree sets its own in **its own `.env`** (they are also in `.env.example`, at these defaults):
+
+| Key | Default | What it moves |
+|---|---|---|
+| `CLUE_DEV_DB_URL` | `postgresql+psycopg://aryankeshri@localhost/clue_istanbul_dev` | The dev database every process talks to. |
+| `CLUE_DEV_FRONTEND_PORT` | `3020` | Next.js — and the CORS list the design API is started with. |
+| `CLUE_DEV_DESIGN_PORT` | `8010` | Design API — and `CLUE_DESIGN_API_BASE_URL` / `LUMEN_API_ORIGIN`. |
+| `CLUE_DEV_PLATFORM_PORT` | `8020` | Platform API. |
+| `CLUE_DEV_PLATFORM_PORT_2` | `8030` | Platform API, second instance. |
+| `CLUE_DEV_LOG_SUFFIX` | *(empty)* | `/tmp/browser_<name><suffix>.log` and `/tmp/clue_dev_stack<suffix>.pids`. |
+
+Precedence: a value exported in your shell beats the key in `.env`, which beats the default.
+Setting none of them reproduces the original stack byte for byte.
+
+**The rule for a second worktree: its `.env` must set its own database, its own four ports, its
+own absolute `CLUE_STORAGE_FS_ROOT`, and its own log suffix.** Sharing any one of them is a
+silent cross-stack bug — a shared DB gives two stacks the same rows with different code, a
+shared storage root splits blob custody exactly as an unset root does, and a shared log suffix
+means two processes interleave into one file (and, worse, share one pidfile).
+Also update that worktree's `apps/frontend/.env.local` (`CLUE_APP_ORIGIN`, `CLUE_API_BASE_URL`,
+`LUMEN_API_BASE_URL`) and add its frontend port to `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES`.
+
+`up` records the five PIDs it started in `/tmp/clue_dev_stack<suffix>.pids`, and **`down` kills
+exactly those PIDs and their children** — it never `pkill`s by process name, so it cannot take
+down the other worktree's stack. `status` probes this worktree's resolved ports and checks the
+fleet worker through the same pidfile (a name-based `pgrep` matches every worktree's worker and
+would report your stack UP because someone else's is). Consequence: a stack started by the
+pre-2026-09-03 script has no pidfile, so it reports `fleet-worker: DOWN` until it is restarted.
+
 ## `.env` keys that break everything when missing (all already set — do not remove)
 
 | Key | Why |
@@ -40,6 +72,35 @@ Then open **http://localhost:3020** and sign in:
 | `CLUE_SCRAPE_BACKEND=scrapling` + `CLUE_STAGE0_PAGE_FETCHER=scrapling` | Standing rule; Firecrawl showing in logs means the env is wrong. |
 | `LUMEN_API_BASE_URL=http://127.0.0.1:8010` — in **`apps/frontend/.env.local`**, not `.env` | The frontend's design proxy (`/api/clue/design/*`) needs it. Missing → every design render 500s: **grey gallery thumbnails, editor canvas never renders** — while chat and generation work fine, which makes it look like the design finished "invisibly". Found live 2026-08-29 (was an ad-hoc shell export that evaporated at a stack rebuild). |
 | Model pins: grok-4.6 everywhere | Env alone is NOT enough — catalog profile (head-of-abm v40), registry promotion, composer pins, and the gateway chat-completions flag all matter. GPT-5.6-terra in the picker → `missing_finalize` step failures. |
+
+## Public pages host (published sites on their own hostname) — OFF by default
+
+A published site is normally served from the design API's own origin at the interim path
+`http://127.0.0.1:8010/w/{workspace}/p/{slug}`. Set **`LUMEN_PUBLIC_PAGES_HOST_SUFFIX`** (and
+optionally `LUMEN_PUBLIC_PAGES_SCHEME`, default `https`) and the same site is addressed AND
+served at `{handle}.<suffix>/{slug}{route}`, where `{handle}` is the workspace handle
+(`GET /workspace/handle`, frozen at first publish).
+
+| Key | Value | Notes |
+|---|---|---|
+| `LUMEN_PUBLIC_PAGES_HOST_SUFFIX` | blank (default) | Interim path serving; no host route is mounted at all. |
+| | `pages.cluehq.ai` | Host mode: publish URLs, canonical/og:url and the serving routes all move to the wildcard host. |
+| `LUMEN_PUBLIC_PAGES_SCHEME` | `https` (default) / `http` | Only lower it for a local wildcard host with no certificate. |
+
+**Changing the suffix needs an API restart.** The `Host` route is compiled into the route table
+when the app is built, so a running process keeps whatever suffix it started with.
+
+Operator prerequisites before turning it on anywhere real — the founder owns all three:
+
+- **A public ingress for the design API.** It is reached through a tunnel on 8060 today
+  (`_memory/2026-08-27-railway-frontend-deployment.md`); a published site's visitors must reach
+  the API directly.
+- **Wildcard DNS** `*.pages.cluehq.ai` → that ingress.
+- **Wildcard TLS** for the same name (Cloudflare proxy, or the ingress's ACME wildcard).
+
+Locally you can exercise it without DNS: point a hostname at 127.0.0.1 in `/etc/hosts`
+(`127.0.0.1 acme.pages.local`), start the API with `LUMEN_PUBLIC_PAGES_HOST_SUFFIX=pages.local`
+and `LUMEN_PUBLIC_PAGES_SCHEME=http`, set that workspace's handle to `acme`, and publish.
 
 ## One-time machine prerequisites
 
@@ -107,6 +168,9 @@ the message must get a response. If all four work, the stack is genuinely up.
 
 ```bash
 pkill -f clue_api.fleet_main                       # kills the turn transactionally — nothing half-saved
+                                                   # NB: with two worktrees up this kills BOTH workers.
+                                                   # Kill just yours: kill $(awk '$1=="fleet-worker"{print $2}' \
+                                                   #   /tmp/clue_dev_stack"$CLUE_DEV_LOG_SUFFIX".pids)
 psql -d clue_istanbul_dev -c "UPDATE design_agent_run SET status='failed' WHERE status='running'"
 ./scripts/dev_stack.sh up                          # worker comes back idle (script is idempotent-ish; or relaunch just the worker)
 ```

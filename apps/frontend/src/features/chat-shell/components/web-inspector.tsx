@@ -20,11 +20,21 @@ import {
   richTextLinkPrefill,
   type RichTextLinkBinding,
 } from "@/features/design-editor/adapter/rich-text-link-section";
+import type { WebPageSectionBinding } from "@/features/design-editor/hooks/use-web-editing-session";
 import {
   themeColorForToken,
   type ThemeColorOption,
 } from "@/features/design-editor/adapter/theme-options";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
+/* F5 task 19: the Page section's pure decisions (route grammar, the slug a new
+   page's name mints, the two structural Remove refusals, the server-refusal
+   wording). */
+import {
+  addPageDecision,
+  pageIsRemovable,
+  pageWriteMessage,
+  routeFieldDecision,
+} from "./inspector-page-field";
 import {
   useInspectorController,
   useInspectorLayerTree,
@@ -1320,6 +1330,179 @@ const WEB_BUTTON_DUMMY_TOKENS: Partial<InspectorPresentationState> = {
   tokenTextColor: "White",
 };
 
+// FLAGGED F5 T19: no designed slot in the dummy frontend for a page/route
+// section — minimal neutral controls pending founder/design ruling.
+//
+// It renders ONLY when no node is selected (the binding is null otherwise —
+// `use-web-editing-session`), because a selected node means this panel is
+// describing that node, and the page is not part of it. Every control here goes
+// through the same one-op write path the rest of the inspector uses, and no
+// write can fire on a draft the pure decisions refuse.
+function PageSection({ binding }: { binding: WebPageSectionBinding }) {
+  const {
+    activePage,
+    busy,
+    errorEngineCode,
+    onAddPage,
+    onRemovePage,
+    onSetPageMeta,
+    pages,
+  } = binding;
+  const [open, setOpen] = useState(true);
+  const [nameDraft, setNameDraft] = useState(activePage.name);
+  const [routeDraft, setRouteDraft] = useState(activePage.route);
+  const [routeMessage, setRouteMessage] = useState<string | null>(null);
+  const [newPageName, setNewPageName] = useState("");
+  const [addMessage, setAddMessage] = useState<string | null>(null);
+
+  // The DOCUMENT's own page meta outranks whatever is in these boxes: a
+  // committed write, an undo, or a page switch all mean the page on screen now
+  // says something different, and a draft of the previous value would be this
+  // panel lying about the document. React's adjust-state-on-prop-change (a
+  // render-time comparison — the pattern `InspectorImageUpload` already uses),
+  // never an effect. A REFUSED write reloads nothing, so the typed text
+  // survives its own refusal, which is the point.
+  const [seed, setSeed] = useState({
+    id: activePage.id,
+    name: activePage.name,
+    route: activePage.route,
+  });
+  if (
+    seed.id !== activePage.id ||
+    seed.name !== activePage.name ||
+    seed.route !== activePage.route
+  ) {
+    setSeed({ id: activePage.id, name: activePage.name, route: activePage.route });
+    setNameDraft(activePage.name);
+    setRouteDraft(activePage.route);
+    setRouteMessage(null);
+  }
+
+  const siblingRoutes = pages
+    .filter((candidate) => candidate.id !== activePage.id)
+    .map((candidate) => candidate.route);
+  // A refusal the field caught itself outranks the last server refusal — it is
+  // what the user just did. The server's refusal reaches this field ONLY when
+  // its engine code is one of the two route refusals, said in this section's own
+  // words (engine prose — "route `/x` is already taken" — never reaches a
+  // marketer). Anything else the write path failed on is not this section's to
+  // narrate and stays in the inspector's one existing error line.
+  const routeError = routeMessage ?? pageWriteMessage(errorEngineCode, null);
+  const removable = pageIsRemovable(activePage, pages.length);
+
+  const commitRoute = () => {
+    if (busy) return;
+    const decision = routeFieldDecision(routeDraft, activePage.route, siblingRoutes);
+    if (decision.kind === "noop") {
+      setRouteMessage(null);
+      return;
+    }
+    if (decision.kind === "refuse") {
+      setRouteMessage(decision.message);
+      return;
+    }
+    setRouteMessage(null);
+    onSetPageMeta(activePage.id, { route: decision.route });
+  };
+
+  const commitName = () => {
+    if (busy) return;
+    const name = nameDraft.trim();
+    // An unnamed page is not an edit — nothing to write, and the box re-seeds
+    // from the document on the next change either way.
+    if (name === "" || name === activePage.name) return;
+    onSetPageMeta(activePage.id, { name });
+  };
+
+  const commitAddPage = () => {
+    if (busy) return;
+    const decision = addPageDecision(
+      newPageName,
+      pages.map((candidate) => candidate.route),
+    );
+    if (decision.kind === "refuse") {
+      setAddMessage(decision.message);
+      return;
+    }
+    setAddMessage(null);
+    setNewPageName("");
+    onAddPage(decision.page);
+  };
+
+  return (
+    <InspectorSection label="Page" onOpenChange={setOpen} open={open}>
+      <InspectorField label="Name">
+        <InspectorInput
+          ariaLabel="Page name"
+          disabled={busy}
+          onChange={setNameDraft}
+          onCommit={commitName}
+          value={nameDraft}
+        />
+      </InspectorField>
+      <InspectorField label="Route">
+        <InspectorInput
+          ariaLabel="Page route"
+          disabled={busy}
+          onChange={(value) => {
+            setRouteDraft(value);
+            setRouteMessage(null);
+          }}
+          onCommit={commitRoute}
+          value={routeDraft}
+        />
+      </InspectorField>
+      {routeError ? (
+        <p className={styles.inspectorPageMessage} role="alert">
+          {routeError}
+        </p>
+      ) : null}
+      <InspectorField label="Add a page">
+        <InspectorInput
+          ariaLabel="New page name"
+          disabled={busy}
+          onChange={(value) => {
+            setNewPageName(value);
+            setAddMessage(null);
+          }}
+          onCommit={commitAddPage}
+          placeholder="Pricing"
+          value={newPageName}
+        />
+      </InspectorField>
+      {addMessage ? (
+        <p className={styles.inspectorPageMessage} role="alert">
+          {addMessage}
+        </p>
+      ) : null}
+      <div className={styles.inspectorPageActions}>
+        <button
+          className={styles.inspectorPageButton}
+          disabled={busy}
+          onClick={commitAddPage}
+          type="button"
+        >
+          Add page
+        </button>
+        <button
+          className={styles.inspectorPageButton}
+          // The engine refuses removing a document's last page, and a site
+          // without "/" serves nothing at its own root — so the button simply
+          // cannot offer an action that could not succeed.
+          disabled={busy || !removable}
+          onClick={() => {
+            if (busy || !removable) return;
+            onRemovePage(activePage.id);
+          }}
+          type="button"
+        >
+          Remove page
+        </button>
+      </div>
+    </InspectorSection>
+  );
+}
+
 export function WebInspector({
   addressing,
   customComponentForm = null,
@@ -1331,6 +1514,7 @@ export function WebInspector({
   onReplaceImage,
   onSelectionChange,
   onSelectLayer,
+  pageSection = null,
   reviewMenuEnabled = false,
   richTextRange = null,
   selection,
@@ -1379,6 +1563,11 @@ export function WebInspector({
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
   /** W2.3: a layer-row click — callers send bridge `selectNode`. */
   onSelectLayer?: (nodeId: string) => void;
+  /** F5 task 19 (FLAGGED — no designed slot): the page/route controls. The
+   * session hands this over only while NO node is selected, so the section can
+   * never render beside a node's own controls; absent/null → no Page section at
+   * all, which is every dummy-state mount. */
+  pageSection?: WebPageSectionBinding | null;
   reviewMenuEnabled?: boolean;
   /** W4.8b (contract item 3): the live rich-text range whose link the TEXT
    * schema's "Link to" section edits — supplied by the owner only while a
@@ -1452,6 +1641,11 @@ export function WebInspector({
     };
   }, [reviewMenuOpen]);
 
+  // F5 task 19: does the Page section speak for the current write error? Only
+  // the two route refusals it can provoke and word itself.
+  const pageSectionOwnsError =
+    pageSection !== null && pageWriteMessage(pageSection.errorEngineCode, null) !== null;
+
   const reviewMenu = reviewMenuEnabled && reviewMenuOpen ? (
     <div aria-label="Preview inspector element types" className={styles.inspectorVariantMenu} role="menu">
       <span className={styles.inspectorVariantMenuLabel}>Element controls</span>
@@ -1499,11 +1693,16 @@ export function WebInspector({
             {note}
           </p>
         ) : null}
-        {error ? (
+        {/* F5 task 19: a ROUTE refusal is said beside the route field that
+            caused it, in the section's own words — so this line stands down for
+            exactly those two codes rather than repeating the same failure
+            twice. Every other failure still lands here, unchanged. */}
+        {error && !pageSectionOwnsError ? (
           <p className={styles.inspectorStatusError} role="alert">
             {error}
           </p>
         ) : null}
+        {pageSection ? <PageSection binding={pageSection} /> : null}
         <ThemeColorsContext.Provider value={themeColors}>
           <DocumentLayersContext.Provider value={documentLayers}>
             {webSelection === "canvas" ? <CanvasControls controller={canvasController} layerTree={canvasLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}

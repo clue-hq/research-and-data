@@ -172,24 +172,57 @@ _ASSET_REFERENCE_RE = re.compile(r"""[^"'()\s]*asset-store/[0-9a-f]{64}""")
 # dead origin is a connection refusal (instant) and a live one is a loopback GET.
 _ASSET_PREFLIGHT_TIMEOUT_S = 5.0
 
-# The page every P0 WebDoc carries (a single "home" page at route "/"). Website
-# mode is single-page for now; the id is fixed so the tools never guess.
+# The page every WebDoc is born with (a "home" page at route "/"). A document
+# may now carry more (F5 Task 6, `add_page`), but this one is always there and
+# its id is fixed, so the tools never guess at the starting page.
 HOME_PAGE_ID = "home"
 
+#: The publish-surface route grammar, a Python mirror of the engine's
+#: `lumen_web::validate::route_is_valid` (F5, Task 1). It lives here so a bad
+#: route comes back to the model as a plain sentence rather than an engine code.
+#: `/` or `/seg(/seg)*`, a segment being `[a-z0-9]+(-[a-z0-9]+)*`.
+_ROUTE_RE = re.compile(r"^/$|^(/[a-z0-9]+(?:-[a-z0-9]+)*)+$")
 
-def has_existing_content(web_doc: JsonObject, page_id: str = HOME_PAGE_ID) -> bool:
+#: Never the FIRST segment of a route: both are served beside a published site
+#: and a page there would shadow them (same rule, same reason, as the engine).
+_RESERVED_FIRST_SEGMENTS = frozenset({"p-assets", "asset-store"})
+
+
+def _route_is_valid(route: Any) -> bool:
+    """Mirror of the engine's route grammar — see `_ROUTE_RE`.
+
+    `manifest.json` needs no clause of its own: a dot is not in the segment
+    alphabet, so the regex already refuses it (as the engine's does)."""
+    if not isinstance(route, str) or len(route) > 128:
+        return False
+    if _ROUTE_RE.match(route) is None:
+        return False
+    if route == "/":
+        return True
+    return route[1:].split("/")[0] not in _RESERVED_FIRST_SEGMENTS
+
+
+def has_existing_content(
+    web_doc: JsonObject, page_id: Optional[str] = None
+) -> bool:
     """True when the page already carries authored content (any node beyond the
-    empty root).
+    empty root). `page_id=None` asks about ANY page in the document.
 
     ONE predicate, two consumers, and they must never disagree: `harness_web`
-    tells the orchestrator whether it is continuing someone's page, and
+    tells the orchestrator whether it is continuing someone's site, and
     `LumenWebTools` uses the same answer to decide whether the geometry
     retokenizer may touch these classes at all (resolution-once — an existing
     page's classes are a human's or an earlier turn's decision).
     """
     for page in web_doc.get("pages") or []:
-        if isinstance(page, dict) and page.get("id") == page_id:
-            return len(page.get("nodes") or {}) > 1
+        if not isinstance(page, dict):
+            continue
+        if page_id is not None and page.get("id") != page_id:
+            continue
+        if len(page.get("nodes") or {}) > 1:
+            return True
+        if page_id is not None:
+            return False
     return False
 
 # The fixed semantic web token names the theme compiler always emits, in
@@ -745,6 +778,21 @@ def _split_non_error_diagnostics(
         if isinstance(diagnostic, dict) and diagnostic.get("severity") != "error"
     ]
     return warnings, advice
+
+
+def _escape_route_advice(fragment_id: str, section_role: Any) -> str:
+    """What the walk thinks of a cloned nav or site footer on a campaign page — as a SENTENCE.
+
+    FOUNDER RULING R-F5-8 (2026-09-02): links are structurally free, so this is the whole of the
+    consequence. It names the fragment, says what it is, says what it does to a campaign page,
+    and says that the call is the author's. The words matter: "usually poor practice", never
+    "forbidden" — the walk pinned the thing it is describing.
+    """
+    role = str(section_role or "").strip().lower() or "section"
+    return (
+        f"{fragment_id} is a cloned {role} — its links leave this page; on a campaign page "
+        "that is usually poor practice (R-F5-8: allowed, not recommended)"
+    )
 
 
 def _extract_grounded_page(
@@ -2275,6 +2323,270 @@ class LumenWebTools:
             n for n in frag_nodes if isinstance(n, dict) and n.get("id") in ids
         ]
 
+    # --- pages (F5) ---------------------------------------------------------
+
+    def _page_listing(self) -> List[JsonObject]:
+        """Every page of this document, in document order, as the model reads it."""
+        listing: List[JsonObject] = []
+        for page in self.web_doc.get("pages") or []:
+            if not isinstance(page, dict):
+                continue
+            page_id = page.get("id")
+            listing.append(
+                {
+                    "id": page_id,
+                    "name": page.get("name") or page_id,
+                    "route": page.get("route"),
+                    "sections": web_doc_page_section_count(self.web_doc, page_id),
+                }
+            )
+        return listing
+
+    def _page_ids(self) -> List[str]:
+        return [
+            page["id"]
+            for page in (self.web_doc.get("pages") or [])
+            if isinstance(page, dict) and isinstance(page.get("id"), str)
+        ]
+
+    def _apply_page_operations(
+        self, operations: List[JsonObject], tool_name: str, input_summary: str
+    ) -> Optional[str]:
+        """Apply page-level operations through the engine.
+
+        Returns a refusal envelope, or None once the working document has been
+        replaced by the accepted one. The CoreError split is `web_ops`': a
+        `helper.*` code is a plumbing fault (helper_error), anything else is the
+        checked apply refusing the caller's ops, which is a `rejected`.
+        """
+        try:
+            response = self.core.web_apply_ops(self.web_doc, operations)
+        except CoreError as error:
+            diagnostics = list(error.diagnostics or [])
+            code = getattr(error, "code", "") or ""
+            if code.startswith("helper."):
+                self.record(
+                    "author",
+                    f"web_{tool_name}_rejected",
+                    input_summary=input_summary,
+                    output_summary=f"helper error: {error.message}",
+                    diagnostics=diagnostics,
+                )
+                return self._tool_error(
+                    f"{tool_name}.helper_error", error.message, diagnostics=diagnostics
+                )
+            if not diagnostics:
+                diagnostics = [
+                    {
+                        "code": code or "op.rejected",
+                        "message": error.message,
+                        "severity": "error",
+                    }
+                ]
+            self.record(
+                "author",
+                f"web_{tool_name}_rejected",
+                input_summary=input_summary,
+                output_summary=f"batch rejected: {error.message}",
+                diagnostics=diagnostics,
+            )
+            return self._rejected(diagnostics)
+
+        # Defensive: a non-raising ok:false path (raise_on_error is on today, so
+        # this mirrors web_ops' belt-and-braces reject guard).
+        if not response.get("ok"):
+            return self._rejected(response.get("diagnostics"))
+
+        self.web_doc = response["web_doc"]
+        self._record_operations(operations)
+        self._doc_version += 1
+        return None
+
+    def list_pages(self) -> str:
+        """List the pages of this site and say which one you are editing.
+
+        Returns {"active_page": id, "pages": [{id, name, route, sections}]}.
+        Every authoring, view and render tool works on the ACTIVE page — use
+        switch_page to move to another one. This tool only reads: it changes
+        nothing and costs no edit budget."""
+        return json.dumps(
+            {"active_page": self.page_id, "pages": self._page_listing()}, indent=2
+        )
+
+    def add_page(self, page_id: str, name: str, route: str) -> str:
+        """Add a new empty page to the site and start editing it.
+
+        `page_id` is a short handle you will use in later ops (lowercase
+        letters, digits, '-' or '_', starting with a letter — e.g. "pricing").
+        `name` is what a person calls it ("Pricing"). `route` is the path it
+        will be published at: "/" or lowercase segments like "/pricing" or
+        "/about/team" — no capitals, no spaces, no trailing slash.
+
+        The page arrives EMPTY (a bare root); author it exactly as you author
+        the home page. The active page becomes this new page, so the very next
+        author_web_page writes into it — call list_pages if you lose track, and
+        switch_page to go back.
+
+        Returns {"status":"ok","active_page":id,"pages":[...]}. A page id or
+        route that is already taken, or a route that is not a valid site path,
+        is refused and nothing is added."""
+        refusal = self._consume_round_budget("add_page")
+        if refusal is not None:
+            return refusal
+        clean_id = (page_id or "").strip()
+        if not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", clean_id):
+            return self._tool_error(
+                "add_page.bad_id",
+                "page_id must be lowercase letters, digits, '-' or '_' "
+                "(start with a letter).",
+            )
+        clean_route = route.strip() if isinstance(route, str) else route
+        if not _route_is_valid(clean_route):
+            return self._tool_error(
+                "add_page.bad_route",
+                f"route {route!r} is not a valid site route: use '/' or "
+                "'/lowercase-segments/like-this' (no trailing slash, no "
+                "'manifest.json', not starting with 'p-assets' or "
+                "'asset-store').",
+            )
+        root_id = f"root_{clean_id}"
+        page: JsonObject = {
+            "id": clean_id,
+            "name": (name or clean_id).strip(),
+            "route": clean_route,
+            "root": root_id,
+            "nodes": {
+                root_id: {
+                    "id": root_id,
+                    "kind": "container",
+                    "classes": "",
+                    "children": [],
+                }
+            },
+        }
+        operations: List[JsonObject] = [{"kind": "add_page", "page": page}]
+        refusal = self._apply_page_operations(
+            operations, "add_page", f"{clean_id} {clean_route}"
+        )
+        if refusal is not None:
+            return refusal
+        # Only now that the engine has taken it: the new page is where the
+        # author works next, and the standing previews are of the old one.
+        self.page_id = clean_id
+        self._preview_by_width = {}
+        self._state_captures = []
+        self.record(
+            "author",
+            "web_page_added",
+            input_summary=f"{clean_id} {clean_route}",
+            output_summary=f"page `{clean_id}` added at {clean_route}",
+            payload={"page_id": clean_id, "route": clean_route},
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                "active_page": clean_id,
+                "pages": self._page_listing(),
+            },
+            indent=2,
+        )
+
+    def remove_page(self, page_id: str) -> str:
+        """Delete a page and everything on it.
+
+        `page_id` is the page's handle (see list_pages). A site keeps at least
+        one page, so removing the last one is refused. If you delete the page
+        you were editing, the first remaining page becomes the active one —
+        the reply tells you which.
+
+        Returns {"status":"ok","active_page":id,"pages":[...]}. This cannot be
+        undone from here, so read list_pages first if you are unsure."""
+        refusal = self._consume_round_budget("remove_page")
+        if refusal is not None:
+            return refusal
+        clean_id = (page_id or "").strip()
+        known = self._page_ids()
+        if clean_id not in known:
+            return self._tool_error(
+                "remove_page.unknown_page",
+                f"there is no page {clean_id!r}. This site has: "
+                f"{', '.join(known)}.",
+                pages=self._page_listing(),
+            )
+        operations: List[JsonObject] = [
+            {"kind": "remove_page", "page_id": clean_id}
+        ]
+        refusal = self._apply_page_operations(operations, "remove_page", clean_id)
+        if refusal is not None:
+            return refusal
+        if self.page_id == clean_id:
+            remaining = self._page_ids()
+            self.page_id = remaining[0] if remaining else HOME_PAGE_ID
+            # The standing previews are pixels of a page that no longer exists.
+            self._preview_by_width = {}
+            self._state_captures = []
+        self.record(
+            "author",
+            "web_page_removed",
+            input_summary=clean_id,
+            output_summary=f"page `{clean_id}` removed; active page {self.page_id}",
+            payload={"page_id": clean_id, "active_page": self.page_id},
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                "active_page": self.page_id,
+                "pages": self._page_listing(),
+            },
+            indent=2,
+        )
+
+    def switch_page(self, page_id: str) -> str:
+        """Move to another page of the site — every following tool call works
+        on it.
+
+        `page_id` is the page's handle (see list_pages). Switching changes
+        nothing in the document; it only changes which page you are editing.
+        The standing previews are dropped, because a screenshot belongs to the
+        page it was taken of: render_web_preview again to see this one. Your
+        edit budget starts fresh, so a switch begins a clean round on the new
+        page.
+
+        Returns {"status":"ok","active_page":id,"pages":[...]}. An unknown page
+        is refused, with the list of the pages that do exist."""
+        clean_id = (page_id or "").strip()
+        known = self._page_ids()
+        if clean_id not in known:
+            return self._tool_error(
+                "switch_page.unknown_page",
+                f"there is no page {clean_id!r}. This site has: "
+                f"{', '.join(known)}.",
+                pages=self._page_listing(),
+            )
+        self.page_id = clean_id
+        # Previews (and the interactive state captures taken with them) belong
+        # to a page; and a switch is the start of a fresh page round, so the
+        # between-renders edit budget opens again.
+        self._preview_by_width = {}
+        self._state_captures = []
+        self._mutations_since_render = 0
+        self._round_budget_event_recorded = False
+        self.record(
+            "author",
+            "web_page_switched",
+            input_summary=clean_id,
+            output_summary=f"active page is now `{clean_id}`",
+            payload={"page_id": clean_id},
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                "active_page": clean_id,
+                "pages": self._page_listing(),
+            },
+            indent=2,
+        )
+
     def web_ops(self, operations_json: str) -> str:
         """Apply a small batch of surgical operations to the page — the repair
         ladder's bottom rung, for one-or-a-few-line fixes.
@@ -2284,7 +2596,9 @@ class LumenWebTools:
         `[{"kind":"remove_node","page_id":"home","id":"sec_news"}]`.
         Writing the op name under any other field (`op`, `type`, `action`)
         rejects the whole batch with `missing field 'kind'`. The op grammar
-        (page_id is ALWAYS "home" in v0):
+        (page_id names the page the op applies to — see list_pages; the
+        active page is the one you were briefed on, and every example
+        below writes it out as "home"):
           - set_node_classes {page_id:"home", id, classes} — replace a node's
             class string wholesale (it is NOT merged with the old one).
           - set_text {page_id:"home", id, content} — replace a text node's
@@ -6998,11 +7312,13 @@ class LumenWebTools:
         them) as the first and last sections of the page, and — when you name one — a released
         cloned HERO between them. Everything else on the page stays where it is.
 
-        IT NEVER PINS THE CLIENT'S NAV OR SITE FOOTER. Every link in a nav is a way off the one
-        page written for this account. A workspace with no released shells is REFUSED
-        (`abm.no_campaign_shells`) and told to mint them; naming a `nav`- or `footer`-role clone
-        as the hero is REFUSED (`abm.escape_route_chrome`); and a page that already carries one
-        stops the assembly before anything lands. There is no fallback to the cloned nav.
+        THE SHELLS ARE WHAT IT REACHES FOR. They are this page's chrome, so a workspace with no
+        released shells is REFUSED (`abm.no_campaign_shells`) and told to mint them — a missing
+        input, not a matter of taste; the walk does not quietly wear the client's cloned
+        navigation in their place. You can still pin a cloned `nav` or `footer` yourself: name
+        one as the hero and it goes on with a note in `advice`, and a page that already carries
+        one is assembled around and noted the same way (founder ruling R-F5-8: allowed, not
+        recommended). The judgement is yours.
 
         THE PAGE IS A TEMPLATE, NOT ONE ACCOUNT'S PAGE. The header's `prepared_for` and
         `target_logo` are bound to `{{account.name}}` and `{{account.logo}}`, which the account
@@ -7096,15 +7412,24 @@ class LumenWebTools:
                 + " or ".join(missing)
                 + " shell"
                 + (f" for brand kit {kit_id}" if kit_id else "")
-                + ", and an ABM page wears its own chrome — never the client's cloned "
-                "navigation, because every link in a nav is a way off the one page written for "
-                "this account. Call mint_campaign_shells to compose them from the brand kit, "
-                "then a human releases them by re-approving the brand kit. Nothing was pinned.",
+                + ", and the shells are the chrome this walk reaches for — it will not put the "
+                "client's cloned navigation there instead of them. Call mint_campaign_shells to "
+                "compose them from the brand kit, then a human releases them by re-approving the "
+                "brand kit. (You can still pin a cloned nav or footer yourself by name; it comes "
+                "with advice — R-F5-8: allowed, not recommended.) Nothing was pinned.",
                 missing_shell_roles=missing,
                 brand_kit=kit_id,
             )
 
-        # --- the escape-route rule, over the PAGE and over this call's arguments ---------------
+        # --- the escape-route ADVICE, over the PAGE and over this call's arguments --------------
+        #
+        # FOUNDER RULING R-F5-8 (2026-09-02): links are structurally free. The DETECTION below is
+        # exactly the one R24-1 shipped — `is_escape_route_role` is unchanged, and it still spots
+        # the client's own nav and site footer wherever they arrive from — but a cloned nav is now
+        # PINNED when it is asked for, and what the walk thinks of it rides back in `advice`. The
+        # sentences say "usually poor practice", because that is what it is: this page belongs to
+        # the human running the campaign, not to this tool.
+        escape_route_advice: List[str] = []
         page = self._home_page()
         nodes = page.get("nodes") or {}
         root_id = page.get("root")
@@ -7114,31 +7439,23 @@ class LumenWebTools:
         for fragment_id in sorted(pinned_now):
             row = by_id.get(fragment_id)
             if row is None:
-                # Fail CLOSED (fix-round M1): a pinned fragment absent from the bounded,
-                # approved-only listing — retired since it was pinned, or beyond the listing
-                # cap — is one this walk cannot classify, and "I don't know what this is" must
-                # never read as "it's fine": the review pinned a nav, dropped its row, and the
-                # walk assembled campaign chrome around it.
-                return self._tool_error(
-                    "abm.unresolved_pinned_fragment",
-                    f"this page pins {fragment_id}, which is not in the released cloned-"
-                    "section listing this walk reads (it may have been retired since it was "
-                    "pinned, or the workspace's listing is larger than the walk's bound) — so "
-                    "the walk cannot tell whether it is an escape route. Remove it from the "
-                    "page, or release it so it lists, then run this again. Nothing was pinned.",
-                    fragment_id=fragment_id,
-                    section_node_ids=list(pinned_now[fragment_id]),
+                # ADVISE, don't refuse (founder ruling R-F5-8, 2026-09-02). The DETECTION is the
+                # one fix-round M1 shipped — a pinned fragment absent from the bounded,
+                # approved-only listing is one this walk cannot classify — but "I cannot tell
+                # what this links to" is no longer a reason to stop the assembly: links are
+                # structurally free, so the walk says what it does not know and carries on.
+                escape_route_advice.append(
+                    f"{fragment_id} is pinned on this page but is not in the released cloned-"
+                    "section listing this walk reads (retired since it was pinned, or beyond "
+                    "the listing's bound) — the walk could not check what it links to; judge "
+                    "it yourself (R-F5-8: allowed, not recommended)"
                 )
+                continue
             if is_escape_route_role(row.get("section_role")):
-                return self._tool_error(
-                    "abm.escape_route_chrome",
-                    f"this page already carries {fragment_id} — the client's own "
-                    f"{row.get('section_role')} — and every link in it is a way off the one page "
-                    "written for this account. Remove it before assembling the ABM chrome; the "
-                    "campaign shells replace it. Nothing was pinned.",
-                    fragment_id=fragment_id,
-                    section_role=row.get("section_role"),
-                    section_node_ids=list(pinned_now[fragment_id]),
+                # Already on the page, put there by an earlier call: the walk builds its chrome
+                # around it and says what it thinks, rather than refusing to assemble at all.
+                escape_route_advice.append(
+                    _escape_route_advice(fragment_id, row.get("section_role"))
                 )
 
         hero: Optional[JsonObject] = None
@@ -7174,14 +7491,10 @@ class LumenWebTools:
                     section_role=hero.get("section_role"),
                 )
             if is_escape_route_role(hero.get("section_role")):
-                return self._tool_error(
-                    "abm.escape_route_chrome",
-                    f"{clean_hero} is the client's own {hero.get('section_role')}, and an ABM "
-                    "page never wears one: every link in it is a way off the one page written "
-                    "for this account. The campaign shells are this page's chrome. Nothing was "
-                    "pinned.",
-                    fragment_id=clean_hero,
-                    section_role=hero.get("section_role"),
+                # Asked for by name as the hero. It is pinned — the caller may have a reason the
+                # walk cannot see — and the note goes with it.
+                escape_route_advice.append(
+                    _escape_route_advice(clean_hero, hero.get("section_role"))
                 )
             if raw_hero_slots:
                 # The AUTHORITATIVE kinds, out of the artifact. Fail LOUD rather than soft here,
@@ -7372,6 +7685,13 @@ class LumenWebTools:
             warnings=warnings,
             advice=advice,
         )
+        if escape_route_advice:
+            # FIRST in the bucket: it is the thing about this page an author is least likely to
+            # have thought about, and it is about the page rather than about one operation. The
+            # engine's own advice entries are dicts; these are sentences, which is what a ruling
+            # about practice has to say — there is no code for "your client's nav is on your
+            # campaign page and that is your call".
+            result["advice"] = escape_route_advice + list(result["advice"])
         self._note_degraded_pins(result, degraded_pins)
         self.record(
             "author",
@@ -8807,6 +9127,10 @@ class LumenWebTools:
         self.iteration += 1
         iter_dir = self.trace_dir / f"iter_{self.iteration}"
         iter_dir.mkdir(parents=True, exist_ok=True)
+        # Which page these screenshots are OF. A multi-page run captures the same
+        # widths under several pages, and an iteration directory that does not say
+        # which one it holds is a trace nobody can read back.
+        (iter_dir / "page.txt").write_text(self.page_id + "\n", encoding="utf-8")
 
         try:
             html, diagnostics, tailwind_missing = self._render_page_html()
@@ -8883,10 +9207,12 @@ class LumenWebTools:
             "orchestrator",
             "web_preview_rendered",
             output_summary=(
-                f"iteration {self.iteration}: {len(paths)} screenshot(s), "
+                f"iteration {self.iteration}: page `{self.page_id}`, "
+                f"{len(paths)} screenshot(s), "
                 f"{len(self._state_captures)} state capture(s)"
             ),
             diagnostics=diagnostics,
+            payload={"page_id": self.page_id},
         )
         return json.dumps(result, indent=2)
 
@@ -9486,6 +9812,12 @@ class LumenWebTools:
             "summary": summary,
             "grounding_source_count": len(grounding["sources"]),
             "provenance_citation_count": len(grounding["citations"]),
+            # Informational only — what this site ended up being. NO gate reads
+            # it: a one-page site is as finishable as a ten-page one.
+            "pages": [
+                {"id": page["id"], "route": page["route"], "sections": page["sections"]}
+                for page in self._page_listing()
+            ],
         }
         if gap:
             payload["ladder_gap"] = gap

@@ -102,6 +102,11 @@ export function useWebBridgeSelection(params: {
    * keeps the inspector on the same stable node id). Kept in a ref so a
    * changing callback never re-arms the listener. */
   onSelect?: (selection: WebSelection | null) => void;
+  /** F5 task 20: invoked when the user clicks a site-internal link in the
+   * canvas — the bridge prevented the iframe navigation and reported the page
+   * that link points at, so the SHELL performs the switch. Kept in a ref so a
+   * changing callback never re-arms the listener. */
+  onNavigate?: (pageId: string) => void;
   /** Invoked when the bridge posts a generic `move-node` intent. `index` is
    * measured against the destination parent's children after source removal,
    * so the same callback covers reorder and reparent. */
@@ -119,6 +124,7 @@ export function useWebBridgeSelection(params: {
     nonceRef,
     onRichTextCommit,
     onSelect,
+    onNavigate,
     onMoveNode,
     onResizeNode
   } = params;
@@ -139,11 +145,13 @@ export function useWebBridgeSelection(params: {
   const editingRef = useRef(false);
   const onRichTextCommitRef = useRef(onRichTextCommit);
   const onSelectRef = useRef(onSelect);
+  const onNavigateRef = useRef(onNavigate);
   const onMoveNodeRef = useRef(onMoveNode);
   const onResizeNodeRef = useRef(onResizeNode);
   useEffect(() => {
     onRichTextCommitRef.current = onRichTextCommit;
     onSelectRef.current = onSelect;
+    onNavigateRef.current = onNavigate;
     onMoveNodeRef.current = onMoveNode;
     onResizeNodeRef.current = onResizeNode;
   });
@@ -202,6 +210,10 @@ export function useWebBridgeSelection(params: {
       }
       if (message.type === "rich-text-commit") {
         onRichTextCommitRef.current?.(message.nodeId, message.content);
+        return;
+      }
+      if (message.type === "navigate") {
+        onNavigateRef.current?.(message.pageId);
         return;
       }
       if (message.type === "move-node") {

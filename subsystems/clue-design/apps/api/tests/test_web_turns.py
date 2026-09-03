@@ -218,6 +218,54 @@ def test_web_render_bridge_includes_generic_node_metrics_protocol(
     assert "new ResizeObserver" in html
 
 
+def test_web_render_bridge_carries_the_documents_route_map(
+    client: TestClient,
+) -> None:
+    """F5 task 20: in-editor navigation. The bridge already swallows every
+    anchor click; to turn a SITE-INTERNAL one into a page switch it needs to
+    know which hrefs are routes of THIS document, so the script carries the
+    whole document's `{route: page_id}` map — every page, not just the rendered
+    one (the point is to leave the rendered page)."""
+    document = create_web_document(client)
+    client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={
+            "operations": [
+                {
+                    "kind": "add_page",
+                    "page": {
+                        "id": "pricing",
+                        "name": "Pricing",
+                        "route": "/pricing",
+                        "root": "root_pricing",
+                        "nodes": {
+                            "root_pricing": {
+                                "id": "root_pricing",
+                                "kind": "container",
+                                "classes": "",
+                                "children": [],
+                            }
+                        },
+                    },
+                }
+            ]
+        },
+    ).raise_for_status()
+    response = client.get(
+        f"/documents/{document['id']}/web/render"
+        "?bridge=1&nonce=bridge-routes-123&page_id=home"
+    )
+    assert response.status_code == 200, response.text
+    html = response.json()["html"]
+    # The map is interpolated as compact JSON, the same escaped way every other
+    # capability list is, so a route can never break out of the script string.
+    assert "var PAGE_ROUTES = " in html
+    assert '"/":"home"' in html
+    assert '"/pricing":"pricing"' in html
+    # ...and the click handler consults it before posting a navigation intent.
+    assert 'post("lumen:navigate"' in html
+
+
 def test_web_render_bridge_exposes_generic_reorder_and_reparent_capabilities(
     client: TestClient,
 ) -> None:

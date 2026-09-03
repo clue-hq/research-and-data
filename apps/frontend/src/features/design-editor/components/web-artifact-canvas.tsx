@@ -86,9 +86,11 @@ export function WebArtifactCanvas({
   controlsRef,
   documentId,
   editing = false,
+  onNavigate,
   onRichTextCommit,
   onRichTextSessionChange,
   onSelect,
+  pageId,
   reloadToken = 0,
   richTextBusy = false,
   richTextEnabled = false,
@@ -101,6 +103,11 @@ export function WebArtifactCanvas({
   /** W4 addendum: the mode switch. False (the default) mounts the bridge-free
    * view render — an actual website, links opening in new tabs. */
   editing?: boolean;
+  /** F5 task 20: the user clicked a site-internal link in the canvas. The
+   * injected bridge always prevents the iframe navigation; when the link's raw
+   * href is one of the document's routes it reports the page it points at, and
+   * the owner switches the active page (which also clears the selection). */
+  onNavigate?: (pageId: string) => void;
   /** W4.8a: a text node's in-iframe session committed — the owner persists ONE
    * `set_rich_text` op through the manual-edits controller. */
   onRichTextCommit?: (nodeId: string, content: RichTextDocument) => void;
@@ -109,6 +116,11 @@ export function WebArtifactCanvas({
   /** W2.2: canvas selection events from the injected bridge, nonce-validated
    * by the ported listener. */
   onSelect?: (selection: WebSelection | null) => void;
+  /** F5: which page of a multi-page site to render. Undefined (the default)
+   * renders the document's first page — the endpoint's own default. A change
+   * refetches into the SAME iframe under the reloadToken quiet-swap
+   * discipline; only the DOCUMENT keys the remount, never the page. */
+  pageId?: string;
   /** W3.2: bump to quietly refetch the render after a committed write. The
    * new HTML swaps into the SAME mounted iframe (no keyed remount, no
    * loading flash) — the source shell's post-edit behavior. */
@@ -137,9 +149,11 @@ export function WebArtifactCanvas({
       controlsRef={controlsRef}
       documentId={documentId}
       editing={editing}
+      onNavigate={onNavigate}
       onRichTextCommit={onRichTextCommit}
       onRichTextSessionChange={onRichTextSessionChange}
       onSelect={onSelect}
+      pageId={pageId}
       reloadToken={reloadToken}
       richTextBusy={richTextBusy}
       richTextEnabled={richTextEnabled}
@@ -153,9 +167,11 @@ function DocumentRender({
   controlsRef,
   documentId,
   editing,
+  onNavigate,
   onRichTextCommit,
   onRichTextSessionChange,
   onSelect,
+  pageId,
   reloadToken,
   richTextBusy,
   richTextEnabled,
@@ -165,9 +181,11 @@ function DocumentRender({
   controlsRef?: RefObject<WebArtifactCanvasControls | null>;
   documentId: string;
   editing: boolean;
+  onNavigate?: (pageId: string) => void;
   onRichTextCommit?: (nodeId: string, content: RichTextDocument) => void;
   onRichTextSessionChange?: (state: WebRichTextSessionState) => void;
   onSelect?: (selection: WebSelection | null) => void;
+  pageId?: string;
   reloadToken: number;
   richTextBusy: boolean;
   richTextEnabled: boolean;
@@ -175,13 +193,14 @@ function DocumentRender({
   selectedNodeId: string | null;
 }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const { nonceRef, state } = useWebRender(documentId, reloadToken, editing);
+  const { nonceRef, state } = useWebRender(documentId, reloadToken, editing, pageId);
   // The ported bridge listener (source-window + nonce validation). Selection
   // state itself lives with the join owner (useWebArtifactSelection); this
   // canvas only forwards validated events upward.
   const bridge = useWebBridgeSelection({
     iframeRef,
     nonceRef,
+    onNavigate,
     onRichTextCommit,
     onSelect,
   });

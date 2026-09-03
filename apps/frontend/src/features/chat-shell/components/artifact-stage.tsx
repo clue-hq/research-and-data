@@ -38,7 +38,10 @@ import { ProjectGallery } from "@/features/gallery/components/project-gallery";
 import type { GalleryArtifact } from "@/features/gallery/model/project-gallery";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import type { EditorShellSurface } from "../hooks/use-editor-shell-controller";
-import type { ArtifactPreviewDevice } from "../hooks/use-artifact-toolbar-controller";
+import type {
+  ArtifactPageOption,
+  ArtifactPreviewDevice,
+} from "../hooks/use-artifact-toolbar-controller";
 import { ArtifactHeader } from "./artifact-header";
 import { ArtifactTabs } from "./artifact-tabs";
 import styles from "./chat-shell.module.css";
@@ -52,6 +55,7 @@ import styles from "./chat-shell.module.css";
 export function ArtifactStage({
   activeArtifactId,
   activeDocumentId,
+  activePageId,
   artifacts,
   artifactKind,
   canvasControlsRef,
@@ -72,6 +76,8 @@ export function ArtifactStage({
   onCloseArtifact,
   onOpenGallery,
   onOpenGalleryArtifact,
+  onPageChange,
+  pages,
   onRenameArtifact,
   onRenameArtifactFor,
   onSceneChange,
@@ -103,6 +109,11 @@ export function ArtifactStage({
    * Present → the web canvas mounts the real sandboxed render; absent → the
    * dummy's empty canvas (geometry stable). */
   activeDocumentId?: string | null;
+  /** F5 task 18: which page of a multi-page web document the canvas renders —
+   * owned by the web editing session (it also owns the document and the
+   * selection). Absent → the render seam picks the document's own first page,
+   * exactly as it did before the switcher existed. */
+  activePageId?: string | null;
   artifacts: ProjectArtifact[];
   /** W2.3: receives the mounted web canvas's imperative controls
    * (`selectNode` for layer-row clicks). */
@@ -146,6 +157,11 @@ export function ArtifactStage({
   onCloseArtifact: (artifactId: string) => void;
   onOpenGallery: () => void;
   onOpenGalleryArtifact: (artifact: GalleryArtifact) => void;
+  /** F5 task 18: the header's switcher reporting the page the user picked,
+   * back to the web editing session that owns it. */
+  onPageChange?: (pageId: string) => void;
+  /** F5 task 18: the active web document's pages, for that switcher. */
+  pages?: readonly ArtifactPageOption[];
   onRenameArtifact: (title: string) => void;
   onRenameArtifactFor: (artifactId: string, title: string) => void;
   /** AD2.7: the rendered ad scene, mirrored up for the shared editing
@@ -261,14 +277,18 @@ export function ArtifactStage({
       {showingArtifact ? (
         <>
           <ArtifactHeader
+            activePageId={activePageId}
             device={previewDevice}
+            documentId={activeDocumentId}
             editing={editing}
             exportPreview={exportPreview}
             exportStatus={exportStatus}
             kind={artifactKind}
             onDeviceChange={setPreviewDevice}
             onEdit={onToggleEditing}
+            onPageChange={onPageChange}
             onRename={onRenameArtifact}
+            pages={pages}
             onRequestExportPreview={onRequestExportPreview}
             onZoomChange={onSceneZoomChange}
             redoDisabled={redoDisabled}
@@ -289,9 +309,15 @@ export function ArtifactStage({
                     controlsRef={canvasControlsRef}
                     documentId={activeDocumentId}
                     editing={editing}
+                    /* F5 task 20: a site-internal link clicked inside the
+                     * canvas switches the page through the very same session
+                     * setter the header's switcher uses — one active page, one
+                     * writer, so the two surfaces can never disagree. */
+                    onNavigate={onPageChange}
                     onRichTextCommit={onRichTextCommit}
                     onRichTextSessionChange={onRichTextSessionChange}
                     onSelect={onCanvasSelect}
+                    pageId={activePageId ?? undefined}
                     reloadToken={canvasReloadToken}
                     richTextBusy={richTextBusy}
                     richTextEnabled={richTextEnabled}

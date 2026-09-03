@@ -166,6 +166,9 @@ export function EditorSurface({
               onReplaceImage={session.onReplaceImage}
               onSelectLayer={session.onSelectLayer}
               onSelectionChange={controller.selectInspectorElement}
+              // F5 task 19 (FLAGGED): the page/route controls, present only while
+              // no node is selected (the session decides).
+              pageSection={session.pageSection}
               richTextRange={session.richTextRange}
               selection={inspectorSelection}
               themeColors={session.themeColors}
@@ -223,6 +226,11 @@ export function EditorSurface({
       <ArtifactStage
         activeArtifactId={controller.activeArtifactId}
         activeDocumentId={activeDocumentId}
+        // F5 task 18: the header's page switcher and the canvas read ONE
+        // value — the web editing session's active page.
+        activePageId={session.activePageId}
+        onPageChange={session.setActivePageId}
+        pages={session.pages}
         artifacts={artifacts ?? []}
         canvasControlsRef={session.canvasControls}
         canvasReloadToken={session.reloadNonce + sceneSession.reloadNonce}

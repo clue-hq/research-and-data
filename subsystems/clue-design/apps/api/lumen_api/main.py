@@ -8,6 +8,7 @@ import inspect
 import io
 import json
 import logging
+import os
 import re
 
 # D2.5B: SQLite is DELETED from this API. `sqlite3` survives here only as the API's
@@ -43,8 +44,16 @@ from fastapi.responses import (
     Response,
     StreamingResponse,
 )
+from starlette.routing import Host
 
-from . import ad_runtime, document_thumbnails, image_cache, image_provider, web_export
+from . import (
+    ad_runtime,
+    document_thumbnails,
+    image_cache,
+    image_provider,
+    web_export,
+    web_pdf,
+)
 from .asset_custody import (
     ensure_materialized,
     materialize_scene_assets,
@@ -77,10 +86,12 @@ from .custom_component_runtime import (
 )
 from .fragments.render import (
     build_fragment_render_package,
+    build_fragment_render_package_for_document,
     empty_fragment_render_package,
     fragment_collision_diagnostics,
     fragment_css_sheet,
     fragment_render_map,
+    web_doc_all_fragment_ids,
     web_doc_fragment_ids,
 )
 from .fragments import (
@@ -144,12 +155,15 @@ from .dto import (
     scene_replaced_dto,
     snapshot_summary,
 )
+from .public_address import HOST_SUFFIX_ENV, PublicSiteAddress, public_site_address
+from .public_pages import PUBLISH_NOT_FOUND_HTML, build_public_pages_app
 from .web_bridge import render_bridge_script
 from .models import (
     AgentTurnPreviewRequest,
     WebTurnRequest,
     WebOperationsRequest,
     WebPublishRequest,
+    SetWorkspaceHandleRequest,
     SetAgentInstructionsRequest,
     SetLayoutManagedEditingRequest,
     SetWebNoindexRequest,
@@ -634,6 +648,30 @@ def _ingestion_offer_payload(
         "request": request,
         "envelope": envelope,
     }
+
+
+def resolve_web_page_id(web_doc: JsonObject, requested: Optional[str]) -> str:
+    """The page a web read targets: the caller's page when it exists, else the first page.
+
+    Multi-page (F5) retires the assumption that a WebDoc's page is called ``home``: a
+    document's pages are an ORDERED list, so "no page named" means the first one, not a
+    literal id that a real multi-page site may not even contain. A caller that DID name a
+    page and got it wrong is told so — a silent fallback to page one would render the
+    wrong page under the right URL.
+    """
+    pages = [p for p in (web_doc.get("pages") or []) if isinstance(p, dict)]
+    if requested:
+        if any(p.get("id") == requested for p in pages):
+            return requested
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "web_render.page_missing",
+                "message": f"page {requested!r} is not in this document",
+            },
+        )
+    first = pages[0].get("id") if pages else None
+    return first if isinstance(first, str) and first else "home"
 
 
 def create_app(
@@ -3570,6 +3608,7 @@ def create_app(
         runtime_src: Optional[str] = None,
         bridge: int = 0,
         nonce: Optional[str] = None,
+        page_id: Optional[str] = None,
         repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         # Render the stored WebDoc to HTML for the editor iframe (editor mode,
@@ -3582,6 +3621,9 @@ def create_app(
         document = require_document(repo, document_id)
         require_web_document(document)
         web_doc = document["scene"]
+        # F5: every page-shaped read below targets THIS page — `?page_id=` when the
+        # caller named one, else the document's first page. Unknown page => typed 404.
+        page = resolve_web_page_id(web_doc, page_id)
         brand_kit, _source, _assets, brand_fonts = resolve_web_turn_brand_kit(
             web_doc, blob_store(repo)
         )
@@ -3592,7 +3634,7 @@ def create_app(
             brand_fonts, str(request.base_url).rstrip("/")
         )
         runtime_frames: Dict[str, JsonObject] = {}
-        if web_doc_uses_custom_components(web_doc, "home"):
+        if web_doc_uses_custom_components(web_doc, page):
             try:
                 theme_response = app.state.core.web_validate(web_doc, brand_kit)
             except CoreError as error:
@@ -3617,7 +3659,7 @@ def create_app(
                 blob_store(repo),
                 account_id=account_id if isinstance(account_id, str) else None,
                 web_doc=web_doc,
-                page_id="home",
+                page_id=page,
                 theme=theme_response.get("web_theme"),
                 override_variables=override_variables,
                 runtime_host_path=Path(app.state.custom_component_runtime_host),
@@ -3633,7 +3675,7 @@ def create_app(
                     },
                 )
             try:
-                bridge_script = render_bridge_script(nonce or "", web_doc, "home")
+                bridge_script = render_bridge_script(nonce or "", web_doc, page)
             except ValueError as error:
                 raise HTTPException(
                     status_code=422,
@@ -3644,13 +3686,13 @@ def create_app(
         # engine the markup map + the concatenated scoped CSS. An id that will not resolve is
         # left OUT of the map on purpose — the engine renders its placeholder and says so
         # (LUMW0412), which is what keeps a document with a dead pin editable.
-        fragment_ids = web_doc_fragment_ids(web_doc, "home")
+        fragment_ids = web_doc_fragment_ids(web_doc, page)
         fragment_package = (
             build_fragment_render_package(
                 app.state.storage,
                 workspace_id=store_workspace_id(repo),
                 web_doc=web_doc,
-                page_id="home",
+                page_id=page,
             )
             if fragment_ids
             else empty_fragment_render_package()
@@ -3658,7 +3700,7 @@ def create_app(
         try:
             response = app.state.core.web_render(
                 web_doc,
-                "home",
+                page,
                 mode=mode,
                 asset_base_url=asset_base_url,
                 tailwind_runtime_src=runtime_src,
@@ -3684,7 +3726,7 @@ def create_app(
         # The ledgered cascade risk, reported not refused: compiled utilities land after fragment
         # CSS, so a cloned class the document also authors is overruled.
         diagnostics.extend(
-            fragment_collision_diagnostics(fragment_package, web_doc, "home")
+            fragment_collision_diagnostics(fragment_package, web_doc, page)
         )
         return {
             "schema_version": 1,
@@ -3870,6 +3912,11 @@ def create_app(
                 status_code=422,
                 detail={
                     "code": "web_operations.invalid",
+                    # The envelope code stays the one flattened code every existing
+                    # client branches on; the engine's OWN refusal code (e.g.
+                    # `op.route_invalid`, `op.route_exists`) rides alongside it so a
+                    # caller can tell WHICH refusal this was without parsing prose.
+                    "engine_code": error.get("code"),
                     "message": error.get("message")
                     or "the operation batch would leave the document invalid",
                     "diagnostics": diagnostics,
@@ -4233,6 +4280,63 @@ def create_app(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
+    @app.get("/documents/{document_id}/web/export.pdf")
+    def export_web_document_pdf(
+        document_id: str,
+        request: Request,
+        repo: HybridRepository = Depends(repository),
+    ) -> Response:
+        # The whole SITE as one PDF: every page rendered by Chromium from the same
+        # delivery bytes a publish would serve, concatenated in document order.
+        # Nothing is persisted — no revision, no pointer — so exporting a PDF never
+        # puts a site on the air. A render or compile failure fails the request
+        # honestly (502) rather than shipping a blank or unstyled document.
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        try:
+            content = web_pdf.build_web_pdf(
+                app.state.core,
+                repo,
+                document,
+                blobs=blob_store(repo),
+                public_base=str(request.base_url).rstrip("/"),
+                workspace_id=store_workspace_id(repo),
+                node_bin=app.state.web_export_node_bin,
+                runtime=document_thumbnails.resolve_tailwind_runtime(),
+            )
+        except web_pdf.WebPdfUnavailable as error:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": error.code, "message": str(error)},
+            ) from error
+        except web_export.WebExportCompileError as error:
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "code": "web_export.compile_failed",
+                    "message": error.stderr or "static css compile failed",
+                },
+            ) from error
+        except web_export.WebExportError as error:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": "web_export.failed", "message": str(error)},
+            ) from error
+
+        filename = f"{web_slugify(document['title'])}-{document_id[:8]}.pdf"
+        log_event(
+            api_logger,
+            logging.INFO,
+            "web_pdf_export_completed",
+            document_id=document_id,
+            byte_count=len(content),
+        )
+        return Response(
+            content=content,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
     def _publish_refusals(slug: str, document_id: str) -> Dict[str, Any]:
         """The exact wire contract the editor has always seen for a refused publish.
 
@@ -4277,7 +4381,7 @@ def create_app(
         publish is byte-identical to what it produced before this task.
         """
         try:
-            return run_design_tool(
+            published = run_design_tool(
                 "design_publish_web",
                 {
                     "document_id": document["id"],
@@ -4289,6 +4393,13 @@ def create_app(
                 idempotency_key=idempotency_key,
                 refusals=_publish_refusals(slug, document["id"]),
             )
+            # T14 / R-F5-5: something is now on the air at this workspace's handle, so the
+            # handle stops being editable. AFTER the publish and only on success — a refused
+            # publish must leave the marketer free to keep choosing. Idempotent, so the
+            # hundredth republish (and every account page of a batch) is a no-op that cannot
+            # move `locked_at` off the moment the address actually became public.
+            repo.lock_workspace_handle()
+            return published
         except web_export.WebExportUnresolvedMarkers as error:
             # R25-7: the un-derived TEMPLATE renders its `{{account.…}}` markers to a visitor.
             # A 422, not a 502: nothing broke — the wrong document was handed to publish, and the
@@ -4328,12 +4439,14 @@ def create_app(
         slug = (payload.slug or "").strip() or web_default_slug(
             document["title"], document_id
         )
+        public_base = str(request.base_url).rstrip("/")
         publish = _publish_web(
             repo,
             document,
             slug=slug,
-            public_base=str(request.base_url).rstrip("/"),
+            public_base=public_base,
             idempotency_key=idempotency_key,
+            noindex=payload.noindex,
         )
         log_event(
             api_logger,
@@ -4343,10 +4456,12 @@ def create_app(
             slug=slug,
             doc_version=publish["doc_version"],
         )
+        address = publish_site_address(repo, slug, request_base_url=public_base)
+        routes = list(publish.get("routes") or []) or ["/"]
         return {
             "schema_version": 1,
             "slug": slug,
-            "url": public_publish_path(repo, slug),
+            "url": address.page_url("/"),
             "doc_version": publish["doc_version"],
             "runtime_version": publish["runtime_version"],
             "publish_id": publish["publish_id"],
@@ -4354,22 +4469,40 @@ def create_app(
             "package_digest": publish.get("package_digest"),
             "html_digest": publish.get("html_digest"),
             "previous_available": publish["previous_available"],
+            # F5: every route this publish just put on the air, in document order.
+            "routes": list(publish.get("routes") or []),
+            # F5/R-F5-1: and their ABSOLUTE addresses, built by the ONE builder that knows where
+            # sites live. The share menu shows exactly these — joining a site root to a route is
+            # the server's job, so a deployment that moves the public origin (or a workspace
+            # that has just earned its own host) moves the links the marketer copies with it.
+            "page_urls": {route: address.page_url(route) for route in routes},
         }
 
     @app.get("/documents/{document_id}/web/publish")
     def get_web_publish_state(
-        document_id: str, repo: HybridRepository = Depends(repository)
+        document_id: str,
+        request: Request,
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_web_document(document)
         publish = repo.get_web_publish_for_document(document_id)
         if publish is None:
             return {"schema_version": 1, "published": False}
+        # F5/R-F5-1: the site's public address, config-sourced. `request` supplies only the
+        # interim fallback origin — the workspace still comes from the store, and a configured
+        # host suffix ignores the request entirely.
+        address = publish_site_address(
+            repo, publish["slug"], request_base_url=str(request.base_url).rstrip("/")
+        )
+        pages = repo.list_web_publish_pages(publish["slug"])
+        # A pre-F5 publish has no page rows and still serves its one page at `/`.
+        routes = [page["route"] for page in pages] or ["/"]
         return {
             "schema_version": 1,
             "published": True,
             "slug": publish["slug"],
-            "url": public_publish_path(repo, publish["slug"]),
+            "url": address.page_url("/"),
             "doc_version": publish["doc_version"],
             "status": publish["status"],
             "publish_id": publish.get("publish_id"),
@@ -4378,7 +4511,88 @@ def create_app(
             "html_digest": publish.get("html_digest"),
             "previous_available": publish["previous_html"] is not None,
             "updated_at": publish["updated_at"],
+            # F5: the routes the SITE currently serves — route/page_id/html_digest, no markup.
+            # A pre-F5 publish has no page rows and answers with an empty list; it still serves
+            # its single page at `/` from the publish row's own html.
+            "pages": pages,
+            # F5: the absolute address of EVERY route this site serves. The editor shows exactly
+            # these — there is no host constant on the client, so a deployment that moves the
+            # public origin moves the links the marketer copies with it.
+            "page_urls": {route: address.page_url(route) for route in routes},
         }
+
+    def workspace_handle_dto(handle: JsonObject) -> JsonObject:
+        """The wire shape of a workspace handle: the label, whether it is frozen, and — only if
+        this deployment actually has a wildcard host — the host it resolves to.
+
+        ``public_host`` is ``null`` whenever ``LUMEN_PUBLIC_PAGES_HOST_SUFFIX`` is unset, which
+        is the dev default. Reporting ``acme.pages.cluehq.ai`` for a deployment with no such DNS
+        would be a URL nobody can open, and the client owns no host constant of its own to catch
+        it with (R-F5-1) — so the honest answer is "there is no public host yet".
+        """
+        suffix = (os.environ.get(HOST_SUFFIX_ENV) or "").strip().strip("/")
+        return {
+            "schema_version": 1,
+            "handle": handle["handle"],
+            "locked": handle["locked"],
+            "locked_at": handle["locked_at"],
+            "public_host": f"{handle['handle']}.{suffix}" if suffix else None,
+        }
+
+    @app.get("/workspace/handle")
+    def get_workspace_handle(repo: HybridRepository = Depends(repository)) -> JsonObject:
+        """This workspace's publishing handle (F5 T14, ruling R-F5-5).
+
+        A GET that MINTS the default rather than answering "none yet": every workspace has an
+        address from the moment it exists, so the share surface has something to show — and a
+        publish would have derived exactly the same label a moment later anyway.
+        """
+        return workspace_handle_dto(repo.ensure_workspace_handle())
+
+    @app.put("/workspace/handle")
+    def put_workspace_handle(
+        payload: SetWorkspaceHandleRequest,
+        repo: HybridRepository = Depends(repository),
+    ) -> JsonObject:
+        """Choose the handle — until the first publish freezes it.
+
+        The three refusals are the DAL's, mapped one-for-one: 409 ``locked`` (something is
+        already on the air at this address, and a live URL's host does not move), 422 ``invalid``
+        (not a DNS label, or a name the hosting domain reserves for itself) and 409 ``taken``.
+        """
+        try:
+            return workspace_handle_dto(repo.set_workspace_handle(payload.handle))
+        except ValueError as error:
+            reason = str(error)
+            if reason == "handle_locked":
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "workspace_handle.locked",
+                        "message": (
+                            "this workspace has already published a site, so its handle is "
+                            "fixed — changing it would break every URL already shared"
+                        ),
+                    },
+                ) from error
+            if reason == "handle_taken":
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "workspace_handle.taken",
+                        "message": f"the handle {payload.handle!r} is already in use",
+                    },
+                ) from error
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "workspace_handle.invalid",
+                    "message": (
+                        f"{payload.handle!r} is not a usable handle: 3-63 lowercase letters, "
+                        "digits and inner dashes, and not a reserved name"
+                    ),
+                },
+            ) from error
 
     def _publish_not_found(slug: str) -> HTTPException:
         return HTTPException(
@@ -5242,7 +5456,9 @@ def create_app(
                     repo, derived, slug=slug, public_base=public_base, noindex=abm
                 )
                 row["slug"] = slug
-                row["url"] = public_publish_path(repo, slug)
+                row["url"] = publish_site_address(
+                    repo, slug, request_base_url=public_base
+                ).page_url("/")
                 row["noindex"] = abm
                 row["status"] = "published"
             return row
@@ -5490,6 +5706,47 @@ def create_app(
             },
         )
 
+    def _serve_site_page(
+        repo: HybridRepository, slug: str, route: str, csp_origin: str
+    ) -> HTMLResponse:
+        """One published site page, by route (F5). The ONE serving body every route shares.
+
+        The publish row is the site: it must exist and be ``active``, whichever page is asked
+        for. The page itself comes from the per-route pages the last publish materialized.
+
+        A publish made before F5 has NO page rows at all, so `/` falls back to the publish row's
+        own denormalized html — that is what keeps an already-live page live across the deploy
+        that adds this. Every other route on such a publish is genuinely absent, and gets the
+        same 404 an unknown route gets.
+
+        ``csp_origin`` is the origin the page is actually being served from, and is the one
+        thing the two ADDRESSES disagree on (T15): the interim routes pass the request's own
+        base url, the public host app passes the site's ``PublicSiteAddress.origin``. Passed in
+        rather than re-derived from the request, so the delivery CSP names the origin the site's
+        own stylesheet and fonts are loaded from in either mode.
+        """
+        publish = repo.get_web_publish(slug)
+        if publish is None or publish["status"] != "active":
+            return HTMLResponse(content=PUBLISH_NOT_FOUND_HTML, status_code=404)
+        page = repo.get_web_publish_page(slug, route)
+        if page is not None:
+            html, html_digest = page["html"], page["html_digest"]
+        elif route == "/":
+            html, html_digest = publish["html"], publish.get("html_digest")
+        else:
+            return HTMLResponse(content=PUBLISH_NOT_FOUND_HTML, status_code=404)
+        return HTMLResponse(
+            content=html,
+            status_code=200,
+            headers={
+                "Cache-Control": "public, max-age=60, must-revalidate",
+                "ETag": f'"sha256-{html_digest}"',
+                "Content-Security-Policy": web_export._delivery_csp(csp_origin),
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
+            },
+        )
+
     @app.get("/w/{workspace_id}/p/{slug}")
     def serve_published_page(
         workspace_id: str,
@@ -5497,28 +5754,85 @@ def create_app(
         request: Request,
         repo: HybridRepository = Depends(public_repository),
     ) -> HTMLResponse:
-        publish = repo.get_web_publish(slug)
-        if publish is None or publish["status"] != "active":
-            return HTMLResponse(
-                content=(
-                    "<!doctype html><html><head><meta charset=\"utf-8\">"
-                    "<title>Not found</title></head><body><h1>404</h1>"
-                    "<p>No published page at this address.</p></body></html>"
+        return _serve_site_page(repo, slug, "/", str(request.base_url).rstrip("/"))
+
+    # DECLARED AFTER `serve_publish_manifest` ON PURPOSE: this pattern also matches
+    # `/w/{ws}/p/{slug}/manifest.json`, and FastAPI matches in declaration order, so the
+    # manifest route must come first or a site could never serve its own manifest again.
+    @app.get("/w/{workspace_id}/p/{slug}/{route:path}")
+    def serve_published_site_page(
+        workspace_id: str,
+        slug: str,
+        route: str,
+        request: Request,
+        repo: HybridRepository = Depends(public_repository),
+    ) -> HTMLResponse:
+        # A trailing slash is the same page (a static host would serve the folder index), and
+        # an empty path is the site root.
+        normalized = "/" + route.strip("/")
+        return _serve_site_page(
+            repo, slug, normalized, str(request.base_url).rstrip("/")
+        )
+
+    # --- T15: the PUBLIC ORIGIN — `{handle}.<suffix>/{slug}{route}` -------------------------- #
+    # The routes above are the interim, tenant-in-the-path scheme. This is the real address a
+    # published site is shared at, and it reuses the four bodies above verbatim — one publish
+    # read, one 404 page, one CSP. See `public_pages.py` for the custom-domain seam.
+
+    def resolve_workspace_for_handle(handle: str) -> Optional[str]:
+        """``handle -> workspace_id``. Cross-workspace by nature: it answers *which* tenant a
+        hostname belongs to. ``ensure_workspace=False`` (and a router-only placeholder tenant)
+        so a stranger's hostname reads nothing and mints nothing."""
+        return HybridRepository(
+            workspace_id="ws_public_host_router", ensure_workspace=False
+        ).get_workspace_by_handle(handle)
+
+    def host_serve_site_page(
+        *,
+        workspace_id: str,
+        handle: str,
+        slug: str,
+        route: str,
+        request_base_url: str,
+    ) -> HTMLResponse:
+        address = public_site_address(
+            request_base_url=request_base_url,
+            workspace_id=workspace_id,
+            slug=slug,
+            handle=handle,
+        )
+        return _serve_site_page(
+            public_repository(workspace_id), slug, route, address.origin
+        )
+
+    suffix = (os.environ.get(HOST_SUFFIX_ENV) or "").strip().strip("/")
+    if suffix:
+        # Read ONCE, here: a `Host` pattern is compiled into the route table, so changing the
+        # suffix needs a restart (documented in DEV_STACK.md). Blank mounts nothing and every
+        # route above behaves exactly as it did before this existed.
+        #
+        # INSERTED FIRST so a request whose Host header matches the wildcard is served as a
+        # published site before any path route can claim it; every other host falls through the
+        # host route (Match.NONE) into the API's own routes, unchanged.
+        app.router.routes.insert(
+            0,
+            Host(
+                f"{{handle}}.{suffix}",
+                app=build_public_pages_app(
+                    resolve_workspace_for_handle=resolve_workspace_for_handle,
+                    serve_site_page=host_serve_site_page,
+                    serve_publish_manifest=lambda workspace_id, slug: (
+                        serve_publish_manifest(
+                            workspace_id, slug, public_repository(workspace_id)
+                        )
+                    ),
+                    serve_publish_asset=serve_publish_asset,
+                    # A thunk, not the function object: `get_asset_store_bytes` is defined
+                    # further down this factory, so binding it eagerly here is a NameError. The
+                    # closure cell is filled long before any request arrives.
+                    serve_asset_store=lambda digest: get_asset_store_bytes(digest),
                 ),
-                status_code=404,
-            )
-        return HTMLResponse(
-            content=publish["html"],
-            status_code=200,
-            headers={
-                "Cache-Control": "public, max-age=60, must-revalidate",
-                "ETag": f'"sha256-{publish.get("html_digest")}"',
-                "Content-Security-Policy": web_export._delivery_csp(
-                    str(request.base_url).rstrip("/")
-                ),
-                "X-Content-Type-Options": "nosniff",
-                "Referrer-Policy": "no-referrer",
-            },
+            ),
         )
 
     @app.post("/documents/{document_id}/export")
@@ -7343,14 +7657,29 @@ def store_workspace_id(repo: HybridRepository) -> str:
     return repo.workspace_id
 
 
-def public_publish_path(repo: HybridRepository, slug: str) -> str:
-    """The ONE builder for a publish's public path — O6b interim scheme.
+def publish_site_address(
+    repo: HybridRepository, slug: str, *, request_base_url: str
+) -> PublicSiteAddress:
+    """The ONE builder for a publish's public address (founder ruling R-F5-1).
 
-    Publish slugs are workspace-local (O6), so every minted link carries the tenant in the
-    path. The workspace comes from the STORE the publish row lives in, never from the request
-    URL. Part-IV item 5 (design-integration-master-plan.md) replaces this scheme wholesale.
+    Replaces the old ``public_publish_path``, which could only ever answer with the interim
+    ``/w/{workspace}/p/{slug}`` path and answered it RELATIVELY — a URL nobody outside this API
+    could use, and a shape that cannot survive a site moving onto its own host. The workspace
+    still comes from the STORE the publish row lives in, never from the request URL; the
+    request only supplies the fallback origin, and only while no host suffix is configured.
+
+    The handle (T14, ruling R-F5-5) is ENSURED rather than read: a workspace's first publish must
+    not have to answer "where is this site?" with the interim path merely because nobody had
+    minted its label yet. ``ensure`` never overwrites, so calling it on every address build is
+    free of consequence — and with no host suffix configured the handle changes nothing about
+    the answer anyway.
     """
-    return f"/w/{store_workspace_id(repo)}/p/{slug}"
+    return public_site_address(
+        request_base_url=request_base_url,
+        workspace_id=store_workspace_id(repo),
+        slug=slug,
+        handle=repo.ensure_workspace_handle()["handle"],
+    )
 
 
 def require_document(repo: HybridRepository, document_id: str) -> JsonObject:
@@ -8668,33 +8997,50 @@ def _describe_web_turn_targets(
     web_doc: JsonObject, target_node_ids: List[str]
 ) -> str:
     """Build the TURN TARGET brief addendum for a scoped edit turn: one line
-    per selected node, naming the node, its kind, and the enclosing section the
-    turn should be scoped to. A selection that no longer exists in the page
-    yields a line telling the agent to fall back to its own judgment."""
-    page = None
+    per selected node, naming the node, its kind, the PAGE it sits on, and the
+    enclosing section the turn should be scoped to. A selection that no longer
+    exists in the document yields a line telling the agent to fall back to its
+    own judgment.
+
+    F5: every page is searched, not the one spelled `home`. A selection made on
+    a second page used to resolve against the home page's node map and come
+    back as "that element no longer exists" — the agent then rebuilt on its own
+    judgment instead of editing what the user had actually clicked."""
+    # (page id, nodes, that page's top-level band ids, child -> parent) per page,
+    # in document order. Built once; a target is then looked up across all of them.
+    pages: List[Tuple[str, Dict[str, Any], set, Dict[str, str]]] = []
     for candidate in web_doc.get("pages") or []:
-        if isinstance(candidate, dict) and candidate.get("id") == "home":
-            page = candidate
-            break
-    nodes = (page or {}).get("nodes") or {}
-    root_id = (page or {}).get("root")
-    root = nodes.get(root_id) or {}
-    root_child_set = set(root.get("children") or [])
-    parent_of: Dict[str, str] = {}
-    for nid, node in nodes.items():
-        if isinstance(node, dict):
-            for child in node.get("children") or []:
-                parent_of[child] = nid
+        if not isinstance(candidate, dict):
+            continue
+        nodes = candidate.get("nodes")
+        if not isinstance(nodes, dict):
+            continue
+        page_id = candidate.get("id") if isinstance(candidate.get("id"), str) else ""
+        root = nodes.get(candidate.get("root")) or {}
+        root_child_set = set(root.get("children") or []) if isinstance(root, dict) else set()
+        parent_of: Dict[str, str] = {}
+        for nid, node in nodes.items():
+            if isinstance(node, dict):
+                for child in node.get("children") or []:
+                    parent_of[child] = nid
+        pages.append((page_id, nodes, root_child_set, parent_of))
 
     lines: List[str] = []
     for target in target_node_ids:
-        node = nodes.get(target)
-        if not isinstance(node, dict):
+        # First page carrying the id wins. Node ids are document-unique, so this is a
+        # lookup rather than a choice; ordering it makes the tie deterministic anyway.
+        found = next(
+            (entry for entry in pages if isinstance(entry[1].get(target), dict)),
+            None,
+        )
+        if found is None:
             lines.append(
                 f"\n\nTURN TARGET: the user selected `{target}`, but that element no "
                 "longer exists in the page — use your own judgment about what to edit."
             )
             continue
+        page_id, nodes, root_child_set, parent_of = found
+        node = nodes[target]
         section: Optional[str] = None
         if target in root_child_set:
             section = target
@@ -8711,9 +9057,12 @@ def _describe_web_turn_targets(
         label = _web_node_label(node)
         descriptor = f'{kind} "{label}"' if label else str(kind)
         section_str = f"`{section}`" if section else "the page"
+        # A page with no id is not addressable, so it is named by saying nothing rather
+        # than by an invented index — the line then reads exactly as it did pre-F5.
+        page_clause = f" on page `{page_id}`" if page_id else ""
         lines.append(
-            f"\n\nTURN TARGET: the user selected `{target}` ({descriptor}) inside "
-            f"section {section_str}. Scope this turn to that section unless the "
+            f"\n\nTURN TARGET: the user selected `{target}` ({descriptor}){page_clause} "
+            f"inside section {section_str}. Scope this turn to that section unless the "
             "brief clearly requires more."
         )
     return "".join(lines)
@@ -8844,14 +9193,18 @@ def run_web_agent_turn(
         # placeholder for the visual reviewer to judge. A pin that reaches the document by any
         # OTHER route mid-turn — hand-built ops naming an id nothing resolved — still renders the
         # placeholder, which is the honest answer rather than an improvised one.
-        if web_doc_fragment_ids(web_doc, "home"):
+        #
+        # F5: EVERY page's pins, not the home page's. A turn is of a DOCUMENT — the agent can
+        # author on any page during it — so a package scoped to one page would render a band
+        # pinned on `/pricing` as the engine's placeholder in the agent's own screenshots, and
+        # the visual reviewer would judge the hole.
+        if web_doc_all_fragment_ids(web_doc):
             config = replace(
                 config,
-                fragment_render_package=build_fragment_render_package(
+                fragment_render_package=build_fragment_render_package_for_document(
                     turn_blobs.storage,
                     workspace_id=turn_workspace_id,
                     web_doc=web_doc,
-                    page_id="home",
                 ),
             )
         # F2.3: the WORKSPACE's released cloned sections, as a capability rather than a value —

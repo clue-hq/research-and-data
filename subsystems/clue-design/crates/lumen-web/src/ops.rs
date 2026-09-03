@@ -15,7 +15,7 @@ use crate::doc::{
 use crate::inline::sanitize_inline;
 use crate::rich_text::RichTextDocument;
 use crate::util::href_is_allowed;
-use crate::validate::validate_web_doc;
+use crate::validate::{route_is_valid, validate_web_doc};
 use lumen_core::{AssetId, AssetRecord, Diagnostic, DiagnosticSeverity, NodeId, PageId, SlotKey};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -126,6 +126,18 @@ pub enum WebOperation {
     },
     SetCustomCss {
         css: String,
+    },
+    /// Insert a whole page (F5). An empty page is its root Container alone. Refused when the
+    /// id or route already exists, the route fails the grammar, or `root` is not in `nodes`.
+    AddPage {
+        page: crate::doc::WebPage,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<usize>,
+    },
+    /// Remove a page; the inverse re-inserts it verbatim at its former index. The last page
+    /// is refused by name (validation would refuse it too, as LUMW0002).
+    RemovePage {
+        page_id: PageId,
     },
 }
 
@@ -763,6 +775,24 @@ fn apply_operation_in_place(
             name,
             route,
         } => {
+            if let Some(candidate) = route {
+                if !route_is_valid(candidate) {
+                    return Err(WebOpError::new(
+                        "op.route_invalid",
+                        format!("route `{candidate}` is not a valid site route"),
+                    ));
+                }
+                if doc
+                    .pages
+                    .iter()
+                    .any(|other| &other.id != page_id && &other.route == candidate)
+                {
+                    return Err(WebOpError::new(
+                        "op.route_exists",
+                        format!("route `{candidate}` is already taken"),
+                    ));
+                }
+            }
             let page = require_page_mut(doc, page_id)?;
             let mut previous_name = None;
             let mut previous_route = None;
@@ -781,6 +811,62 @@ fn apply_operation_in_place(
         WebOperation::SetCustomCss { css } => {
             let previous = std::mem::replace(&mut doc.custom_css, css.clone());
             Ok(WebOperation::SetCustomCss { css: previous })
+        }
+        WebOperation::AddPage { page, index } => {
+            if doc.page(&page.id).is_some() {
+                return Err(WebOpError::new(
+                    "op.page_exists",
+                    format!("page `{}` already exists", page.id),
+                ));
+            }
+            if doc.pages.iter().any(|existing| existing.route == page.route) {
+                return Err(WebOpError::new(
+                    "op.route_exists",
+                    format!("route `{}` is already taken", page.route),
+                ));
+            }
+            if !route_is_valid(&page.route) {
+                return Err(WebOpError::new(
+                    "op.route_invalid",
+                    format!("route `{}` is not a valid site route", page.route),
+                ));
+            }
+            if !page.nodes.contains_key(&page.root) {
+                return Err(WebOpError::new(
+                    "op.page_root_missing",
+                    format!("page `{}` root `{}` is not in its nodes", page.id, page.root),
+                ));
+            }
+            let at = index.unwrap_or(doc.pages.len());
+            if at > doc.pages.len() {
+                return Err(WebOpError::new(
+                    "op.index_out_of_range",
+                    format!("page index {at} is past the end ({})", doc.pages.len()),
+                ));
+            }
+            doc.pages.insert(at, page.clone());
+            Ok(WebOperation::RemovePage {
+                page_id: page.id.clone(),
+            })
+        }
+        WebOperation::RemovePage { page_id } => {
+            if doc.pages.len() <= 1 {
+                return Err(WebOpError::new(
+                    "op.cannot_remove_last_page",
+                    "a document keeps at least one page",
+                ));
+            }
+            let Some(at) = doc.pages.iter().position(|page| &page.id == page_id) else {
+                return Err(WebOpError::new(
+                    "op.page_missing",
+                    format!("page `{page_id}` not found"),
+                ));
+            };
+            let page = doc.pages.remove(at);
+            Ok(WebOperation::AddPage {
+                page,
+                index: Some(at),
+            })
         }
     }
 }
@@ -2141,5 +2227,134 @@ mod tests {
         assert_eq!(json["kind"], "move_node");
         let back: WebOperation = serde_json::from_value(json).expect("deserialize");
         assert_eq!(back, operation);
+    }
+
+    fn empty_page(id: &str, route: &str) -> crate::doc::WebPage {
+        let root_id = NodeId::from(format!("root_{id}"));
+        let root = WebNode::branch(
+            root_id.clone(),
+            WebNodeKind::Container {
+                href: None,
+                new_tab: false,
+                background: None,
+            },
+            "",
+        );
+        let mut nodes = BTreeMap::new();
+        nodes.insert(root_id.clone(), root);
+        crate::doc::WebPage {
+            id: PageId::from(id),
+            name: id.to_owned(),
+            route: route.to_owned(),
+            root: root_id,
+            nodes,
+        }
+    }
+
+    #[test]
+    fn add_page_then_inverse_restores_the_document() {
+        let mut doc = fixture();
+        let before = doc.clone();
+        let inverses = apply_operations_checked(
+            &mut doc,
+            &[WebOperation::AddPage {
+                page: empty_page("pricing", "/pricing"),
+                index: None,
+            }],
+        )
+        .expect("add page")
+        .0;
+        assert_eq!(doc.pages.len(), 2);
+        assert_eq!(doc.pages[1].route, "/pricing");
+        assert!(matches!(inverses[0], WebOperation::RemovePage { .. }));
+        apply_operations(&mut doc, &inverses).expect("inverse applies");
+        assert_eq!(doc, before);
+    }
+
+    #[test]
+    fn remove_page_inverse_reinserts_at_the_same_index() {
+        let mut doc = fixture();
+        apply_operations(
+            &mut doc,
+            &[WebOperation::AddPage {
+                page: empty_page("a", "/a"),
+                index: Some(0),
+            }],
+        )
+        .unwrap();
+        let before = doc.clone();
+        let inverses = apply_operations(
+            &mut doc,
+            &[WebOperation::RemovePage {
+                page_id: PageId::from("a"),
+            }],
+        )
+        .unwrap();
+        assert_eq!(doc.pages.len(), 1);
+        apply_operations(&mut doc, &inverses).unwrap();
+        assert_eq!(doc, before);
+        assert_eq!(doc.pages[0].id, PageId::from("a"));
+    }
+
+    #[test]
+    fn add_page_refuses_duplicates_and_bad_routes() {
+        let mut doc = fixture();
+        let dup_id = apply_operations(
+            &mut doc,
+            &[WebOperation::AddPage {
+                page: empty_page("home", "/x"),
+                index: None,
+            }],
+        );
+        assert_eq!(dup_id.unwrap_err().code, "op.page_exists");
+        let dup_route = apply_operations(
+            &mut doc,
+            &[WebOperation::AddPage {
+                page: empty_page("x", "/"),
+                index: None,
+            }],
+        );
+        assert_eq!(dup_route.unwrap_err().code, "op.route_exists");
+        let bad_route = apply_operations(
+            &mut doc,
+            &[WebOperation::AddPage {
+                page: empty_page("x", "/Bad"),
+                index: None,
+            }],
+        );
+        assert_eq!(bad_route.unwrap_err().code, "op.route_invalid");
+        assert_eq!(
+            doc.pages.len(),
+            1,
+            "a refused batch leaves the document untouched"
+        );
+    }
+
+    #[test]
+    fn the_last_page_cannot_be_removed() {
+        let mut doc = fixture();
+        let err = apply_operations(
+            &mut doc,
+            &[WebOperation::RemovePage {
+                page_id: page_id(),
+            }],
+        )
+        .unwrap_err();
+        assert_eq!(err.code, "op.cannot_remove_last_page");
+    }
+
+    #[test]
+    fn set_page_meta_refuses_an_invalid_route() {
+        let mut doc = fixture();
+        let err = apply_operations(
+            &mut doc,
+            &[WebOperation::SetPageMeta {
+                page_id: page_id(),
+                name: None,
+                route: Some("/Bad Route".into()),
+            }],
+        )
+        .unwrap_err();
+        assert_eq!(err.code, "op.route_invalid");
     }
 }

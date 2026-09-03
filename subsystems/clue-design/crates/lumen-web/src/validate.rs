@@ -16,6 +16,39 @@ use crate::util::{href_is_allowed, quoted_id};
 use lumen_core::{AssetId, Diagnostic, DiagnosticSubject, NodeId, Phase};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// The publish-surface route grammar (F5, Task 1). `/` or `/seg(/seg)*` where a segment is
+/// `[a-z0-9]+(-[a-z0-9]+)*`; no trailing slash; ≤128 chars; `manifest.json` is never a
+/// segment and `p-assets` / `asset-store` are never the first one (both are served beside
+/// a published site and would shadow it).
+pub fn route_is_valid(route: &str) -> bool {
+    if route == "/" {
+        return true;
+    }
+    if route.len() > 128 || !route.starts_with('/') || route.ends_with('/') {
+        return false;
+    }
+    let mut segments = route[1..].split('/');
+    let Some(first) = segments.next() else {
+        return false;
+    };
+    if first == "p-assets" || first == "asset-store" {
+        return false;
+    }
+    std::iter::once(first).chain(segments).all(segment_is_valid)
+}
+
+fn segment_is_valid(segment: &str) -> bool {
+    if segment.is_empty() || segment == "manifest.json" {
+        return false;
+    }
+    segment.split('-').all(|run| {
+        !run.is_empty()
+            && run
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+    })
+}
+
 pub fn validate_web_doc(doc: &WebDoc) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -56,6 +89,22 @@ pub fn validate_web_doc(doc: &WebDoc) -> Vec<Diagnostic> {
                 format!("duplicate route `{}`", page.route),
                 Some(DiagnosticSubject::Page(page.id.clone())),
             ));
+        }
+        if !route_is_valid(&page.route) {
+            diagnostics.push(
+                Diagnostic::error(
+                    Phase::Web,
+                    "LUMW0036",
+                    format!(
+                        "page `{}` route `{}` is not a valid site route",
+                        page.id, page.route
+                    ),
+                    Some(DiagnosticSubject::Page(page.id.clone())),
+                )
+                .with_hint(
+                    "Routes are `/` or `/lowercase-segments/like-this`; no trailing slash, ≤128 chars.",
+                ),
+            );
         }
         validate_page(doc, page, &mut diagnostics);
     }
@@ -1169,5 +1218,43 @@ mod tests {
             .map(|diagnostic| diagnostic.code.clone())
             .collect();
         assert!(codes.contains(&"LUMW0016".to_owned()), "{codes:?}");
+    }
+
+    #[test]
+    fn route_grammar_accepts_root_and_kebab_paths() {
+        assert!(route_is_valid("/"));
+        assert!(route_is_valid("/pricing"));
+        assert!(route_is_valid("/pricing/enterprise-2026"));
+    }
+
+    #[test]
+    fn route_grammar_refuses_bad_shapes() {
+        for bad in [
+            "",
+            "pricing",
+            "/Pricing",
+            "/pricing/",
+            "//a",
+            "/a b",
+            "/a_b",
+            "/manifest.json",
+            "/p-assets/x",
+            "/asset-store/x",
+            "/x/manifest.json",
+        ] {
+            assert!(!route_is_valid(bad), "{bad:?} should be refused");
+        }
+        assert!(!route_is_valid(&format!("/{}", "a".repeat(128))));
+    }
+
+    #[test]
+    fn a_page_with_an_invalid_route_is_an_error_diagnostic() {
+        let mut doc = WebDoc::new("d", "Site", None);
+        doc.pages[0].route = "/Bad Route".to_owned();
+        let diagnostics = validate_web_doc(&doc);
+        assert!(
+            diagnostics.iter().any(|d| d.code == "LUMW0036"),
+            "{diagnostics:#?}"
+        );
     }
 }

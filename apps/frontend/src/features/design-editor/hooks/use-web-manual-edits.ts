@@ -52,6 +52,13 @@ export interface WebManualEdits {
   /** An inline error (422 diagnostic or transport failure); cleared on the next
    * send or via {@link WebManualEdits.clearMessages}. */
   error: string | null;
+  /** F5 task 19: the ENGINE's own refusal code behind the current `error`
+   * (`op.route_exists`, `op.route_invalid`, …), when the server sent one. The
+   * controller stays prose-agnostic — it surfaces the code and lets the panel
+   * that provoked the write say the refusal in ITS own words (the inspector's
+   * route field does exactly this). Null for a transport failure, a locally
+   * reported error, or any refusal the server sent no code for. */
+  errorEngineCode: string | null;
   clearMessages: () => void;
   /** W4.2 (§1 row 12): set the same inline error line from an adjacent write
    * path that fails BEFORE any operation exists — today the Replace-image
@@ -87,6 +94,9 @@ export function useWebManualEdits(options: UseWebManualEditsOptions): WebManualE
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // F5 task 19: moves in lockstep with `error` — always set/cleared in the same
+  // place, so the pair can never describe two different failures.
+  const [errorEngineCode, setErrorEngineCode] = useState<string | null>(null);
 
   const busyRef = useRef(false);
   const mountedRef = useRef(true);
@@ -117,6 +127,7 @@ export function useWebManualEdits(options: UseWebManualEditsOptions): WebManualE
   const clearMessages = useCallback(() => {
     setNote(null);
     setError(null);
+    setErrorEngineCode(null);
   }, []);
 
   // W4.2 (§1 row 12): the Replace-image upload fails before there is any batch
@@ -128,6 +139,8 @@ export function useWebManualEdits(options: UseWebManualEditsOptions): WebManualE
     }
     setNote(null);
     setError(message);
+    // A locally reported failure has no server refusal behind it.
+    setErrorEngineCode(null);
   }, []);
 
   const base = useCallback(() => config ?? designBffConfig(), [config]);
@@ -141,6 +154,7 @@ export function useWebManualEdits(options: UseWebManualEditsOptions): WebManualE
       setBusy(true);
       setNote(null);
       setError(null);
+      setErrorEngineCode(null);
       void applyImpl(base(), documentId, operations, {
         baseVersion: baseVersionRef.current,
         intent
@@ -162,6 +176,9 @@ export function useWebManualEdits(options: UseWebManualEditsOptions): WebManualE
           setError(
             cause instanceof Error ? cause.message : "This edit could not be applied."
           );
+          setErrorEngineCode(
+            cause instanceof WebOperationsError ? cause.engineCode : null
+          );
         });
     },
     [applyImpl, base, documentId, settle]
@@ -176,6 +193,7 @@ export function useWebManualEdits(options: UseWebManualEditsOptions): WebManualE
       setBusy(true);
       setNote(null);
       setError(null);
+      setErrorEngineCode(null);
       void impl(base(), documentId)
         .then(() => {
           settle();
@@ -201,5 +219,15 @@ export function useWebManualEdits(options: UseWebManualEditsOptions): WebManualE
   const undo = useCallback(() => runHistory(undoImpl), [runHistory, undoImpl]);
   const redo = useCallback(() => runHistory(redoImpl), [runHistory, redoImpl]);
 
-  return { applyOps, undo, redo, busy, note, error, clearMessages, reportError };
+  return {
+    applyOps,
+    undo,
+    redo,
+    busy,
+    note,
+    error,
+    errorEngineCode,
+    clearMessages,
+    reportError
+  };
 }
