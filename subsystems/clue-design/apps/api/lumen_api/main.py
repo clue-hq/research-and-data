@@ -46,7 +46,14 @@ from fastapi.responses import (
 )
 from starlette.routing import Host
 
-from . import ad_runtime, document_thumbnails, image_cache, image_provider, web_export
+from . import (
+    ad_runtime,
+    document_thumbnails,
+    image_cache,
+    image_provider,
+    web_export,
+    web_pdf,
+)
 from .asset_custody import (
     ensure_materialized,
     materialize_scene_assets,
@@ -4269,6 +4276,63 @@ def create_app(
         return Response(
             content=buffer.getvalue(),
             media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @app.get("/documents/{document_id}/web/export.pdf")
+    def export_web_document_pdf(
+        document_id: str,
+        request: Request,
+        repo: HybridRepository = Depends(repository),
+    ) -> Response:
+        # The whole SITE as one PDF: every page rendered by Chromium from the same
+        # delivery bytes a publish would serve, concatenated in document order.
+        # Nothing is persisted — no revision, no pointer — so exporting a PDF never
+        # puts a site on the air. A render or compile failure fails the request
+        # honestly (502) rather than shipping a blank or unstyled document.
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        try:
+            content = web_pdf.build_web_pdf(
+                app.state.core,
+                repo,
+                document,
+                blobs=blob_store(repo),
+                public_base=str(request.base_url).rstrip("/"),
+                workspace_id=store_workspace_id(repo),
+                node_bin=app.state.web_export_node_bin,
+                runtime=document_thumbnails.resolve_tailwind_runtime(),
+            )
+        except web_pdf.WebPdfUnavailable as error:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": error.code, "message": str(error)},
+            ) from error
+        except web_export.WebExportCompileError as error:
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "code": "web_export.compile_failed",
+                    "message": error.stderr or "static css compile failed",
+                },
+            ) from error
+        except web_export.WebExportError as error:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": "web_export.failed", "message": str(error)},
+            ) from error
+
+        filename = f"{web_slugify(document['title'])}-{document_id[:8]}.pdf"
+        log_event(
+            api_logger,
+            logging.INFO,
+            "web_pdf_export_completed",
+            document_id=document_id,
+            byte_count=len(content),
+        )
+        return Response(
+            content=content,
+            media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
