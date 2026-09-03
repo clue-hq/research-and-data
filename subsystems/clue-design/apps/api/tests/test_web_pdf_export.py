@@ -30,11 +30,29 @@ from test_web_export import (
     seed_content,
 )
 
+# Every sheet is A4 — 210mm expressed in PDF points. The layout inside it is the
+# 768px `md:` tablet layout, which fits A4's 794px unscaled; the sheet SIZE is the
+# thing asserted here, and the layout is asserted by the grid test below.
+PAGE_WIDTH_PT = 210 / 25.4 * 72
+
 PAGE_HTML = """
 <section id="hero" class="bg-light">
   <div class="mx-auto max-w-[1200px] px-6 py-24 flex flex-col items-center gap-6">
     <h1 data-variant="display">{heading}</h1>
     <p class="text-muted">A page of the site the PDF has to contain.</p>
+  </div>
+</section>
+"""
+
+# Three columns from `md:` up, stacked below it. At the 768px viewport this export
+# prints at, the three headings sit side by side on ONE row; in the mobile layout a
+# margin-shrunk (<768px) box would fall back to, they stack down the page.
+GRID_HTML = """
+<section id="cards" class="bg-light">
+  <div class="mx-auto max-w-[1200px] px-6 py-24 grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="p-6"><h3>Alpha</h3></div>
+    <div class="p-6"><h3>Bravo</h3></div>
+    <div class="p-6"><h3>Charlie</h3></div>
   </div>
 </section>
 """
@@ -106,10 +124,44 @@ def test_web_pdf_export_returns_every_page_of_the_site(client: TestClient) -> No
     # bug this asserts against, so the floor is the page COUNT, not "a valid PDF".
     with pymupdf.open(stream=response.content, filetype="pdf") as pdf:
         assert pdf.page_count >= 2
+        widths = [page.rect.width for page in pdf]
         text = "\n".join(page.get_text() for page in pdf)
+    # ...and every sheet is A4, the paper this export paginates onto.
+    assert all(abs(width - PAGE_WIDTH_PT) <= 1 for width in widths), widths
     # ...and it is THIS site: both headings are in the printed text, so a PDF of two
     # copies of the homepage would fail here even though its page count passed.
     assert "Home" in text and "Pricing" in text
+
+
+def test_web_pdf_export_prints_the_tablet_layout_not_the_mobile_one(
+    client: TestClient,
+) -> None:
+    if not _chromium_available():
+        pytest.skip("playwright chromium not installed")
+
+    document = create_web_document(client)
+    core = client.app.state.core
+    web_doc = client.get(f"/documents/{document['id']}").json()["scene"]
+    ingested = core.web_ingest_html(web_doc, "home", GRID_HTML, None, None)
+    errors = [
+        d for d in ingested.get("diagnostics", []) if d.get("severity") == "error"
+    ]
+    assert not errors, ingested.get("diagnostics")
+    seed_content(client, document["id"], ingested["web_doc"])
+
+    response = client.get(f"/documents/{document['id']}/web/export.pdf")
+    assert response.status_code == 200, response.text
+
+    with pymupdf.open(stream=response.content, filetype="pdf") as pdf:
+        words = pdf[0].get_text("words")
+    # (x0, y0, x1, y1, word, ...) — the top of each heading's box is what matters.
+    tops = {
+        word[4]: word[1] for word in words if word[4] in {"Alpha", "Bravo", "Charlie"}
+    }
+    assert set(tops) == {"Alpha", "Bravo", "Charlie"}, tops
+    # One row: the `md:` three-column grid applied. Stacked mobile columns would sit
+    # a whole card apart vertically, which is orders of magnitude past this slack.
+    assert max(tops.values()) - min(tops.values()) <= 2, tops
 
 
 def test_web_pdf_export_refuses_a_scene_document(client: TestClient) -> None:

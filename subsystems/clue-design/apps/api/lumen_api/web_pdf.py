@@ -21,6 +21,29 @@ held for the whole browser-owning span, and the helpers (`_CAPTURE_SLOTS`,
 ``inline_tailwind``) are imported from there rather than copied. One browser
 launch serves the whole document; each site page gets its own ``page``.
 
+Each site page prints AT THE TABLET LAYOUT — a 768px-wide viewport under
+``emulate_media(media="screen")``, paginated onto A4 sheets with NO margins.
+Three decisions, each load-bearing:
+
+* **768px**, because that is exactly Tailwind's ``md:`` breakpoint and the width
+  the agent's own ``preview_768.png`` is captured at — the render a human
+  approved. An A4 sheet is 794px wide, so a 768px layout drops onto it whole
+  (13px of slack each side) with NO scaling; the layout box is pinned to that
+  width by an injected ``html, body { width: 768px }`` so it cannot drift with
+  the sheet. The old export laid out at 1440px on one enormous sheet; the older
+  one printed A4 *with* 10mm margins, which left a ~718px content box — BELOW
+  ``md:`` — so every page came back in the squeezed mobile layout. Margins are
+  therefore zero here on purpose: a margin shrinks the box and reflows the site.
+* **Screen media**, set BEFORE the content, because ``page.pdf`` emulates print
+  by default: print media would lay the site out under rules it was never
+  designed or previewed in, and would let any ``@media print`` block rewrite the
+  design at the last moment.
+* **A small injected print sheet** (``break-inside: avoid`` on the page's bands
+  and images) so Chromium's pagination cuts BETWEEN bands rather than through a
+  hero or a headline. The selectors are the tags the delivery renderer actually
+  emits: top-level bands are ``section``/``header``/``footer`` (the engine's
+  ``SectionTag``) and images are bare ``img``.
+
 ``main.py`` imports this module; this module never imports ``main.py``.
 """
 
@@ -38,10 +61,28 @@ JsonObject = Dict[str, Any]
 #: block need a beat before the paint is worth photographing.
 _SETTLE_MS = 400
 
-#: Print geometry. A4 with print backgrounds on, because a landing page whose hero
-#: is a background wash is a blank sheet without them.
-_PDF_FORMAT = "A4"
-_PDF_MARGIN = {"top": "12mm", "bottom": "12mm", "left": "10mm", "right": "10mm"}
+#: The viewport every site page is laid out at: Tailwind's `md:` breakpoint, which
+#: is the width the agent's own `preview_768.png` is captured at and the layout a
+#: human signed off on. The height is only the initial viewport — Chromium
+#: paginates the full document onto A4 sheets below.
+_VIEWPORT = {"width": 768, "height": 1024}
+
+#: Injected AFTER load, so it wins the cascade over the page's own sheet. Two jobs:
+#: keep the layout box exactly 768px whatever the sheet is, and make Chromium's
+#: page breaks fall BETWEEN the page's bands instead of through them. The selectors
+#: are the delivery renderer's real vocabulary — a top-level band is a
+#: `section`/`header`/`footer` and an image is a bare `img`; there is no `figure`,
+#: and `data-node-id` is emitted in EDITOR mode only, so neither is asked for here.
+_PRINT_SHEET = (
+    "section, header, footer, img { break-inside: avoid; }\n"
+    "html, body { width: 768px; margin: 0; }"
+)
+
+#: Print backgrounds on, because a landing page whose hero is a background wash is
+#: a blank sheet without them. No margins: A4 is 794px, so a zero-margin sheet
+#: holds the 768px layout unscaled, while ANY margin shrinks the box under the
+#: `md:` breakpoint and reflows the whole site into its mobile layout.
+_PDF_MARGIN = {"top": "0", "right": "0", "bottom": "0", "left": "0"}
 
 
 class WebPdfUnavailable(Exception):
@@ -101,7 +142,13 @@ def build_web_pdf(
 
 
 def render_pages_pdf(htmls: List[str], *, runtime: Optional[bytes] = None) -> bytes:
-    """Print each html to PDF in one browser, then merge the runs in order."""
+    """Print each html to PDF in one browser, then merge the runs in order.
+
+    Every html is laid out at :data:`_VIEWPORT` — 768px, Tailwind's ``md:`` — under
+    SCREEN media, and printed onto A4 sheets with no margins, so the sheets hold
+    exactly the tablet layout the agent's ``preview_768.png`` shows, cut between
+    bands rather than reflowed.
+    """
 
     if not htmls:
         raise WebPdfUnavailable("web_pdf.render_failed", "the site has no pages")
@@ -123,21 +170,34 @@ def render_pages_pdf(htmls: List[str], *, runtime: Optional[bytes] = None) -> by
         with _CAPTURE_SLOTS, sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             try:
-                context = browser.new_context()
+                context = browser.new_context(viewport=dict(_VIEWPORT))
                 for html in htmls:
                     page = context.new_page()
                     try:
+                        # `BrowserContext.new_page()` takes no per-page options, so
+                        # the viewport is set on the page itself. It is already the
+                        # context's, and it is re-stated here because THIS is the
+                        # number the layout depends on: 768 is the `md:` breakpoint.
+                        page.set_viewport_size(dict(_VIEWPORT))
                         content = (
                             inline_tailwind(html, runtime)
                             if runtime is not None
                             else html
                         )
+                        # BEFORE the content, so nothing ever lays out under print
+                        # media: `page.pdf` emulates print by default, and that is
+                        # exactly the reflow this export exists to stop.
+                        page.emulate_media(media="screen")
                         page.set_content(content, wait_until="load")
                         page.wait_for_timeout(_SETTLE_MS)
+                        # AFTER load, so it lands last in the cascade and pins the
+                        # layout box + the break behaviour over the page's own sheet.
+                        page.add_style_tag(content=_PRINT_SHEET)
                         parts.append(
                             page.pdf(
-                                format=_PDF_FORMAT,
+                                format="A4",
                                 print_background=True,
+                                prefer_css_page_size=False,
                                 margin=dict(_PDF_MARGIN),
                             )
                         )
