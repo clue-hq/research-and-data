@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import psycopg
+from pydantic import ValidationError
 
 from lumen_api.design_store import HybridRepository
 from lumen_ingestion.evidence import BrandEvidence
@@ -36,6 +37,16 @@ from lumen_ingestion.normalizer.typography import (
 )
 
 ROOT_PX = 16.0
+
+
+class UnusableEvidence(Exception):
+    """A job row's stored ``evidence_json`` is not a usable ``BrandEvidence`` document.
+
+    Seen in the wild on the colombo database: a job that never got past its stub carries
+    ``{"schema_version": 1}``. That is not a re-derivation FAILURE for the kit — there is simply
+    nothing to re-derive from — so it is skipped like a missing evidence row, and it must never
+    abort the sweep for the kits that come after it.
+    """
 
 
 @dataclass
@@ -125,12 +136,26 @@ def _latest_evidence(conn, workspace_id: str, brand_kit_id: str) -> Optional[Bra
         return None
     raw = row[0]
     payload = json.loads(raw) if isinstance(raw, str) else raw
+    if not isinstance(payload, dict):
+        raise UnusableEvidence(f"evidence_json is a {type(payload).__name__}, not an object")
     # The JOB's evidence document is the BrandEvidence dump PLUS the website lane's ride-along
     # refs (`site_snapshots`, `web_fragments` — see `pipeline._evidence_dump`), and
     # `BrandEvidence` forbids extras. Keep only the evidence's own fields.
-    return BrandEvidence.model_validate(
-        {key: value for key, value in payload.items() if key in BrandEvidence.model_fields}
-    )
+    try:
+        return BrandEvidence.model_validate(
+            {key: value for key, value in payload.items() if key in BrandEvidence.model_fields}
+        )
+    except ValidationError as error:
+        raise UnusableEvidence(_one_line(error)) from error
+
+
+def _one_line(error: ValidationError) -> str:
+    """A pydantic ValidationError as ONE line, so a SKIP stays one grep-able row."""
+    parts = [
+        f"{'.'.join(str(part) for part in item['loc']) or '<root>'}: {item['msg']}"
+        for item in error.errors()
+    ]
+    return "; ".join(parts[:3]) + (f"; (+{len(parts) - 3} more)" if len(parts) > 3 else "")
 
 
 def _repin(conn, workspace_id: str, brand_kit_id: str, old: int, new: int) -> int:
@@ -144,6 +169,14 @@ def _repin(conn, workspace_id: str, brand_kit_id: str, old: int, new: int) -> in
     return cursor.rowcount
 
 
+def _rollback(conn) -> None:
+    """Best-effort: clear an aborted transaction so the next kit's SELECT can still run."""
+    try:
+        conn.rollback()
+    except Exception:  # noqa: BLE001 — the sweep continues even if the connection is gone
+        pass
+
+
 def rederive_kit_type_units(
     conn,
     *,
@@ -155,15 +188,35 @@ def rederive_kit_type_units(
     summary = Summary()
     for ws, kit_id, version in _latest_kits(conn, workspace_id, brand_kit_id):
         summary.examined += 1
-        evidence = _latest_evidence(conn, ws, kit_id)
-        if evidence is None:
-            print(f"SKIP {ws}/{kit_id} v{version}: no stored evidence to re-derive from")
+        # The READ phase is per-kit guarded too: one unreadable row must not cost every kit
+        # after it in the sweep (a stub `evidence_json` used to abort the whole run).
+        try:
+            evidence = _latest_evidence(conn, ws, kit_id)
+            if evidence is None:
+                print(f"SKIP {ws}/{kit_id} v{version}: no stored evidence to re-derive from")
+                summary.skipped_no_evidence += 1
+                continue
+            repo = HybridRepository(workspace_id=ws)
+            row = repo.require_brand_kit(kit_id, version)
+            kit = row["brand_kit"]
+            changes = recomputed_units(kit, correct_type_units(evidence))
+        except UnusableEvidence as error:
+            print(
+                f"SKIP {ws}/{kit_id} v{version}: stored evidence is not a usable BrandEvidence"
+                f" ({error})"
+            )
             summary.skipped_no_evidence += 1
             continue
-        repo = HybridRepository(workspace_id=ws)
-        row = repo.require_brand_kit(kit_id, version)
-        kit = row["brand_kit"]
-        changes = recomputed_units(kit, correct_type_units(evidence))
+        except Exception as error:  # noqa: BLE001 — one kit must not stop the sweep
+            summary.failed += 1
+            print(
+                f"FAIL {ws}/{kit_id} v{version}: {type(error).__name__}: {error}",
+                file=sys.stderr,
+            )
+            # A failed SELECT leaves psycopg's transaction aborted; without this every later
+            # read would fail too, which is the abort this guard exists to prevent.
+            _rollback(conn)
+            continue
         if not changes:
             print(f"OK   {ws}/{kit_id} v{version}: type units already element-relative")
             continue
@@ -205,6 +258,7 @@ def rederive_kit_type_units(
                 f"FAIL {ws}/{kit_id} v{version}: {type(error).__name__}: {error}",
                 file=sys.stderr,
             )
+            _rollback(conn)
     return summary
 
 

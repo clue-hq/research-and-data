@@ -246,3 +246,81 @@ def test_a_kit_with_no_stored_evidence_is_skipped_loudly(
     )
     assert summary.skipped_no_evidence == 1 and summary.published == 0
     assert "no stored evidence" in capsys.readouterr().out
+
+
+#: A kit id that sorts FIRST inside the workspace (`_latest_kits` orders by brand_kit_id), so the
+#: stub row is swept BEFORE the healthy kit and a regression to the old abort-the-run behaviour
+#: costs the healthy kit its publish.
+STUB_KIT_ID = "brand_kit_ing_" + "0" * 32
+
+
+def _clone_kit_with_stub_evidence(
+    conn, workspace_id: str, source_kit_id: str, source_version: int, new_kit_id: str
+) -> None:
+    """A second kit whose ingestion job never got past its stub `{"schema_version": 1}`.
+
+    Cloned in SQL rather than driven through the pipeline a second time: the kit row is a REAL
+    kit row (byte-copied from the healthy one) and the job row is the exact shape the colombo
+    database carries, without a second ~40s ingestion-brief model call.
+    """
+    conn.execute(
+        "INSERT INTO design_brand_kit (brand_kit_id, version, workspace_id, brand_id, name,"
+        " approval_status, product_ready, source, brand_kit_json, brand_summary_json,"
+        " diagnostics_json)"
+        " SELECT %s, version, workspace_id, brand_id, name, approval_status, product_ready,"
+        " source, brand_kit_json, brand_summary_json, diagnostics_json FROM design_brand_kit"
+        " WHERE brand_kit_id=%s AND version=%s AND workspace_id=%s",
+        (new_kit_id, source_kit_id, source_version, workspace_id),
+    )
+    conn.execute(
+        "INSERT INTO design_ingestion_job (job_id, workspace_id, kind, status, request_json,"
+        " evidence_json, brand_kit_id, brand_kit_version)"
+        " VALUES (%s, %s, 'website', 'succeeded', %s::jsonb, %s::jsonb, %s, %s)",
+        (
+            f"job_stub_{uuid4().hex[:12]}",
+            workspace_id,
+            json.dumps({"url": "https://stub.example"}),
+            json.dumps({"schema_version": 1}),
+            new_kit_id,
+            source_version,
+        ),
+    )
+    conn.commit()
+
+
+def test_a_kit_whose_stored_evidence_is_a_stub_is_skipped_and_the_sweep_continues(
+    client: TestClient, conn, capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The colombo abort: `{"schema_version": 1}` fails `BrandEvidence` validation, and before
+    the fix that ValidationError escaped the per-kit guard and killed the run for every kit
+    after it. The stub kit sorts first here, so a regression costs the healthy kit its publish.
+    """
+    workspace_id = HybridRepository().workspace_id
+    healthy_kit_id, version = _publish_kit_from_evidence(
+        client, monkeypatch, _evidence_with_px16_headline()
+    )
+    _clone_kit_with_stub_evidence(conn, workspace_id, healthy_kit_id, version, STUB_KIT_ID)
+    assert STUB_KIT_ID < healthy_kit_id, "the stub kit must be swept first"
+
+    summary = load_script().rederive_kit_type_units(
+        conn,
+        workspace_id=workspace_id,
+        brand_kit_id=None,
+        apply=True,
+        repin_documents=False,
+    )
+
+    assert summary.examined == 2
+    assert summary.skipped_no_evidence == 1
+    assert summary.failed == 0
+    # The sweep did NOT stop: the healthy kit behind the stub was still re-derived and published.
+    assert summary.changed == 1 and summary.published == 1
+
+    out = capsys.readouterr().out
+    assert f"SKIP {workspace_id}/{STUB_KIT_ID} v{version}" in out
+    assert "stored evidence is not a usable BrandEvidence" in out
+    assert "source: Field required" in out
+
+    # Nothing was published for the stub kit; the healthy kit moved on by one.
+    assert HybridRepository().require_brand_kit(STUB_KIT_ID)["version"] == version
+    assert HybridRepository().require_brand_kit(healthy_kit_id)["version"] == version + 1
