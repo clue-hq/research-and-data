@@ -309,6 +309,11 @@ export function ArtifactStage({
                     controlsRef={canvasControlsRef}
                     documentId={activeDocumentId}
                     editing={editing}
+                    /* F5 task 20: a site-internal link clicked inside the
+                     * canvas switches the page through the very same session
+                     * setter the header's switcher uses — one active page, one
+                     * writer, so the two surfaces can never disagree. */
+                    onNavigate={onPageChange}
                     onRichTextCommit={onRichTextCommit}
                     onRichTextSessionChange={onRichTextSessionChange}
                     onSelect={onCanvasSelect}

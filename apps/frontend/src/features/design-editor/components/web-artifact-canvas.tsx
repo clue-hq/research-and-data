@@ -86,6 +86,7 @@ export function WebArtifactCanvas({
   controlsRef,
   documentId,
   editing = false,
+  onNavigate,
   onRichTextCommit,
   onRichTextSessionChange,
   onSelect,
@@ -102,6 +103,11 @@ export function WebArtifactCanvas({
   /** W4 addendum: the mode switch. False (the default) mounts the bridge-free
    * view render — an actual website, links opening in new tabs. */
   editing?: boolean;
+  /** F5 task 20: the user clicked a site-internal link in the canvas. The
+   * injected bridge always prevents the iframe navigation; when the link's raw
+   * href is one of the document's routes it reports the page it points at, and
+   * the owner switches the active page (which also clears the selection). */
+  onNavigate?: (pageId: string) => void;
   /** W4.8a: a text node's in-iframe session committed — the owner persists ONE
    * `set_rich_text` op through the manual-edits controller. */
   onRichTextCommit?: (nodeId: string, content: RichTextDocument) => void;
@@ -143,6 +149,7 @@ export function WebArtifactCanvas({
       controlsRef={controlsRef}
       documentId={documentId}
       editing={editing}
+      onNavigate={onNavigate}
       onRichTextCommit={onRichTextCommit}
       onRichTextSessionChange={onRichTextSessionChange}
       onSelect={onSelect}
@@ -160,6 +167,7 @@ function DocumentRender({
   controlsRef,
   documentId,
   editing,
+  onNavigate,
   onRichTextCommit,
   onRichTextSessionChange,
   onSelect,
@@ -173,6 +181,7 @@ function DocumentRender({
   controlsRef?: RefObject<WebArtifactCanvasControls | null>;
   documentId: string;
   editing: boolean;
+  onNavigate?: (pageId: string) => void;
   onRichTextCommit?: (nodeId: string, content: RichTextDocument) => void;
   onRichTextSessionChange?: (state: WebRichTextSessionState) => void;
   onSelect?: (selection: WebSelection | null) => void;
@@ -191,6 +200,7 @@ function DocumentRender({
   const bridge = useWebBridgeSelection({
     iframeRef,
     nonceRef,
+    onNavigate,
     onRichTextCommit,
     onSelect,
   });

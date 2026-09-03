@@ -198,7 +198,12 @@ export type WebBridgeInbound =
   | {
       type: "custom-component-runtime";
       runtime: WebCustomComponentRuntimeState;
-    };
+    }
+  /** F5 task 20: a click on a site-internal link. The bridge swallows every
+   * anchor click (the canvas must never navigate the iframe); when the raw
+   * href matches one of the document's routes it re-posts the click as this
+   * intent, and the shell switches the active page. */
+  | { type: "navigate"; pageId: string };
 
 /** Coerce the bridge's `node` payload into a {@link WebSelection}, tolerating a
  * missing/partial shape. Returns `null` for an absent node (a cleared
@@ -544,6 +549,14 @@ export function validateBridgeMessage(
       return null;
     }
     return { type: "resize-node", nodeId, widthPx, heightPx };
+  }
+  // F5 task 20: the bridge's `lumen:navigate` — a site-internal link click it
+  // already prevented, translated to the page it points at. Admitted under the
+  // very same source/origin/channel/nonce checks as every selection message
+  // above, so a message from a torn-down render can never move the page.
+  if (data.type === "lumen:navigate") {
+    const pageId = typeof data.pageId === "string" ? data.pageId : "";
+    return pageId ? { type: "navigate", pageId } : null;
   }
   if (data.type === "custom-component-runtime") {
     const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";

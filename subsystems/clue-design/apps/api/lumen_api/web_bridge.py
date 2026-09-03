@@ -86,6 +86,10 @@ _BRIDGE_V0_TEMPLATE = """
   var DROP_PARENT_NODE_IDS = new Set(__LUMEN_DROP_PARENT_NODE_IDS__);
   var RESIZABLE_NODE_IDS = new Set(__LUMEN_RESIZABLE_NODE_IDS__);
   var ROOT_NODE_ID = __LUMEN_ROOT_NODE_ID__;
+  // F5: the WHOLE document's `{route: page_id}` map — every page, not just the
+  // rendered one, because the point of a site-internal link is to leave this
+  // page. Consulted only to translate an already-prevented anchor click.
+  var PAGE_ROUTES = __LUMEN_PAGE_ROUTES__;
   var selected = null;
   var hoverEl = null;
 
@@ -379,7 +383,22 @@ _BRIDGE_V0_TEMPLATE = """
     function (event) {
       var anchor =
         event.target && event.target.closest ? event.target.closest("a") : null;
-      if (anchor) event.preventDefault();
+      if (anchor) {
+        event.preventDefault();
+        // F5: a link whose RAW href is one of this document's routes is a page
+        // switch, reported to the shell (which owns the active page). The raw
+        // attribute, never `.href` — the browser resolves that against the
+        // srcdoc's null origin, so "/pricing" would arrive as an absolute URL.
+        // `hasOwnProperty` so an href like "constructor" cannot name a
+        // prototype member. Any other link stays merely prevented, as before.
+        var href = anchor.getAttribute("href");
+        if (
+          typeof href === "string" &&
+          Object.prototype.hasOwnProperty.call(PAGE_ROUTES, href)
+        ) {
+          post("lumen:navigate", { pageId: PAGE_ROUTES[href] });
+        }
+      }
       var cmdBtn =
         event.target && event.target.closest
           ? event.target.closest("button[commandfor]")
@@ -1177,6 +1196,23 @@ def _script_json(value: Any) -> str:
     )
 
 
+def _bridge_page_routes(web_doc: dict[str, Any] | None) -> dict[str, str]:
+    """This document's `{route: page_id}` map — the whole site, not one page.
+
+    Deliberately NOT part of `_bridge_page_capabilities` (which is page-scoped
+    and short-circuits when the rendered page is missing): a route map that
+    omitted the pages you can navigate TO would be useless.
+    """
+    pages = web_doc.get("pages") if isinstance(web_doc, dict) else None
+    return {
+        page["route"]: page["id"]
+        for page in (pages or [])
+        if isinstance(page, dict)
+        and isinstance(page.get("id"), str)
+        and isinstance(page.get("route"), str)
+    }
+
+
 def _bridge_page_capabilities(
     web_doc: dict[str, Any] | None, page_id: str
 ) -> tuple[list[str], list[str], list[str], str]:
@@ -1262,4 +1298,5 @@ def render_bridge_script(
         .replace("__LUMEN_DROP_PARENT_NODE_IDS__", _script_json(drop_parents))
         .replace("__LUMEN_RESIZABLE_NODE_IDS__", _script_json(resizable))
         .replace("__LUMEN_ROOT_NODE_ID__", _script_json(root_id))
+        .replace("__LUMEN_PAGE_ROUTES__", _script_json(_bridge_page_routes(web_doc)))
     )
