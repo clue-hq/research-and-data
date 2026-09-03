@@ -27,10 +27,11 @@ Three decisions, each load-bearing:
 
 * **768px**, because that is exactly Tailwind's ``md:`` breakpoint and the width
   the agent's own ``preview_768.png`` is captured at — the render a human
-  approved. An A4 sheet is 794px wide, so a 768px layout drops onto it whole
-  (13px of slack each side) with NO scaling; the layout box is pinned to that
-  width by an injected ``html, body { width: 768px }`` so it cannot drift with
-  the sheet. The old export laid out at 1440px on one enormous sheet; the older
+  approved. That viewport governs the INITIAL layout and any width-sensitive JS
+  only: the print layout box IS the sheet, so the bands fill the full 794px of
+  A4 (no bare strip down the right edge), and 794 is still above the ``md:``
+  breakpoint, so the same tablet layout applies. The old export laid out at
+  1440px on one enormous sheet; the older
   one printed A4 *with* 10mm margins, which left a ~718px content box — BELOW
   ``md:`` — so every page came back in the squeezed mobile layout. Margins are
   therefore zero here on purpose: a margin shrinks the box and reflows the site.
@@ -68,14 +69,16 @@ _SETTLE_MS = 400
 _VIEWPORT = {"width": 768, "height": 1024}
 
 #: Injected AFTER load, so it wins the cascade over the page's own sheet. Two jobs:
-#: keep the layout box exactly 768px whatever the sheet is, and make Chromium's
-#: page breaks fall BETWEEN the page's bands instead of through them. The selectors
+#: zero the body margin so the bands fill the whole 794px sheet (a pinned 768px
+#: width left a bare 26px strip of page background down every page's right edge,
+#: and 794 is still above `md:` so nothing reflows), and make Chromium's page
+#: breaks fall BETWEEN the page's bands instead of through them. The selectors
 #: are the delivery renderer's real vocabulary — a top-level band is a
 #: `section`/`header`/`footer` and an image is a bare `img`; there is no `figure`,
 #: and `data-node-id` is emitted in EDITOR mode only, so neither is asked for here.
 _PRINT_SHEET = (
     "section, header, footer, img { break-inside: avoid; }\n"
-    "html, body { width: 768px; margin: 0; }"
+    "html, body { margin: 0; }"
 )
 
 #: Print backgrounds on, because a landing page whose hero is a background wash is
