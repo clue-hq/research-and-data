@@ -1,5 +1,21 @@
 # Clone-Fidelity Master Plan — verbatim fragments, Ploy-grade output (Phases F0–F5)
 
+> **STATUS 2026-09-03 — PHASE F5 BUILT (engineering); CP3 live walk + founder review OPEN.**
+> Executed via SDD on `design/website-multi-page` (22-task execution plan
+> `docs/superpowers/plans/2026-09-02-f5-multipage-sites-and-publishing.md`; Opus implementers,
+> every diff reviewed and every task re-verified first-hand by the orchestrating session, no
+> reviewer subagents per founder rule). Tasks 1–21 + one fix wave landed, local only. Engine:
+> route grammar LUMW0036 + AddPage/RemovePage. API: page-aware render, N-page publish served by
+> route (`design_web_publish_revision_page` + materialized `design_web_publish_page`,
+> migration `6893f29b6973`), PublicSiteAddress from env, workspace handle (`5456c0770de8`),
+> Host-matched public pages app. Agent: active page + page tools, one-brief-per-page law,
+> R-F5-8 advisory demotions. Shell: real Publish (repository seam), page switcher, page/route
+> section, in-editor navigation; dev-shell parity. OPEN: the CP3 acceptance walk (needs a
+> live stack + a migrated dev DB: heads must be `5456c0770de8`), the founder review items in
+> the ledger (prompt/skill wording; two FLAGGED UI slots; per-page links placement; unpublish
+> control; handle default R-F5-5; bare-host root), and the deployment/domain work ruled out of
+> scope for now. Ledger: `.superpowers/sdd/2026-09-02-f5-multipage-sites-and-publishing/progress.md`.
+>
 > **STATUS 2026-09-02 — PHASE F5 SCOPE RE-RATIFIED on `design/website-multi-page`.** Fresh
 > scout of the post-F4 tree + founder rulings R-F5-1..5 (URL shape, publish unit, slug/route,
 > indexing, workspace handle default). F5 now owns the default-domain serving (Part-IV item 5
