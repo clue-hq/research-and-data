@@ -139,5 +139,8 @@ def test_the_export_paths_still_use_their_own_relative_and_same_origin_bases():
     from lumen_api import web_export
 
     source = Path(web_export.__file__).read_text()
-    assert 'asset_base_url="assets"' in source
+    # F5 multi-page export (Task 11): the ZIP base gained the per-page relative
+    # hop `prefix` ("" for the root `index.html`, "../" for a `<route>/index.html`
+    # subpage), so each page still resolves its own sibling `assets/` folder.
+    assert 'asset_base_url=f"{prefix}assets"' in source
     assert 'asset_base_url="/asset-store"' in source
