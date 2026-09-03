@@ -265,6 +265,7 @@ export function EditorSurface({
         // read polled at the top of this component (ruling R1), not a turn
         // stream this route does not have.
         sceneGestureDisabled={sceneLocked}
+        onSceneLockedEdit={sceneSession.onLockedEdit}
         // Rung C / §1.6: one document, one brand palette — the caret
         // session's colour control offers exactly what the inspector's do.
         scenePalette={sceneSession.palette}
