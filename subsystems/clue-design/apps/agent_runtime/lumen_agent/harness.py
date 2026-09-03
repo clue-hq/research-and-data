@@ -153,6 +153,7 @@ def _fresh_model(runtime_config: AgentRuntimeConfig, model_id: str, role: str | 
         timeout_s=runtime_config.agent_llm_timeout_s,
         role=role,
         fallback_model=runtime_config.agent_fallback_model,
+        chat_completions=runtime_config.agent_chat_completions,
     )
 
 

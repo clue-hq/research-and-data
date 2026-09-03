@@ -109,6 +109,8 @@ class AgentRuntimeConfig:
     # (disables load-balancing) so the append-only ReAct prefix stays cache-warm.
     # None → no `provider` field on the request (byte-identical to pre-L1).
     agent_provider_sort: str | None = "latency"
+    # Non-OpenAI agent models over chat-completions (see py_lumen_config for the ruling).
+    agent_chat_completions: bool = True
     # P3.2: fallback model id for the governed gateway (None → no fallback).
     agent_fallback_model: str | None = None
     # L3 (straggler watchdog): per-request timeout in SECONDS threaded into
@@ -273,6 +275,7 @@ class AgentRuntimeConfig:
             agent_reasoning=settings.lumen_agent_reasoning,
             agent_max_tokens=settings.lumen_agent_max_tokens,
             agent_provider_sort=settings.lumen_agent_provider_sort,
+            agent_chat_completions=settings.lumen_agent_openrouter_chat_completions,
             agent_fallback_model=settings.lumen_agent_fallback_model,
             agent_llm_timeout_s=settings.lumen_agent_llm_timeout_s,
             agent_model_orchestrator=settings.lumen_agent_model_orchestrator,
