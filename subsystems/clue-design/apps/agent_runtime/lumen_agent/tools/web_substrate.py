@@ -1696,19 +1696,10 @@ class LumenWebTools:
     # --- tools --------------------------------------------------------------
 
     def author_web_page(self, html: str, custom_css: str = "") -> str:
-        """THE LAST-RESORT LANE. Install a COMPLETE page from constrained HTML —
-        the platform's restricted vocabulary, styled from generic utility classes,
-        carrying none of the client's real CSS. In a workspace with released
-        cloned sections the page is built from THEM first: `assemble_cloned_sections`
-        / `insert_cloned_section` (pin, slot values carrying `{{account.*}}` markers),
-        `repair_cloned_section(..., css=…)` (derive a variant of a real band),
-        `compose_web_section` (raw HTML+CSS remixing a real ancestor). Reach for this
-        tool only for a band that must carry `data-var`/`data-slot-when` attributes or
-        stay inspector-editable, and never for a whole page that clones could serve —
-        it replaces the whole page and DROPS every pinned cloned section.
-
-        `html` is the full section markup (header/section/footer top-level elements);
-        `custom_css` is optional page-scoped CSS. The whole page is replaced.
+        """Install a COMPLETE page from constrained HTML. `html` is the full
+        section markup (header/section/footer top-level elements); `custom_css`
+        is optional page-scoped CSS. The whole page is replaced, which drops
+        every pinned cloned section.
 
         On any error-severity diagnostic NOTHING is stored — fix every
         diagnostic (each carries a code, node id, and hint) and resend the
@@ -1900,10 +1891,9 @@ class LumenWebTools:
         return json.dumps(result, indent=2)
 
     def author_web_subtree(self, node_id: str, html: str) -> str:
-        """Scoped edit: replace ONE top-level section with new VOCABULARY markup — the
-        last-resort lane for a composed band. A CLONED section is never edited with this:
-        rebind its slots, derive a variant with `repair_cloned_section(..., css=…)`, or
-        repair it; a raw-composed band is re-composed with `compose_web_section`.
+        """Scoped edit: replace ONE top-level composed section with new markup.
+        (A cloned section is edited through its slots or `repair_cloned_section`,
+        not with this.)
 
         v0 scoped edits operate at SECTION granularity — a section is a direct
         child of the page root ("root"). `node_id` is resolved to its enclosing
