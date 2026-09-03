@@ -30,6 +30,38 @@ Then open **http://localhost:3020** and sign in:
 | 8030 | platform API (second instance, same app) | Historical twin; some flows were exercised against it. Cheap to run, keep it. |
 | — | fleet worker (`clue_api.fleet_main`) | Drives design runs. **No worker = messages accepted but nothing ever generates.** |
 
+### Running a second stack from another worktree
+
+The port map above is the **default**, not a constant. Six keys move a whole stack, and each
+worktree sets its own in **its own `.env`** (they are also in `.env.example`, at these defaults):
+
+| Key | Default | What it moves |
+|---|---|---|
+| `CLUE_DEV_DB_URL` | `postgresql+psycopg://aryankeshri@localhost/clue_istanbul_dev` | The dev database every process talks to. |
+| `CLUE_DEV_FRONTEND_PORT` | `3020` | Next.js — and the CORS list the design API is started with. |
+| `CLUE_DEV_DESIGN_PORT` | `8010` | Design API — and `CLUE_DESIGN_API_BASE_URL` / `LUMEN_API_ORIGIN`. |
+| `CLUE_DEV_PLATFORM_PORT` | `8020` | Platform API. |
+| `CLUE_DEV_PLATFORM_PORT_2` | `8030` | Platform API, second instance. |
+| `CLUE_DEV_LOG_SUFFIX` | *(empty)* | `/tmp/browser_<name><suffix>.log` and `/tmp/clue_dev_stack<suffix>.pids`. |
+
+Precedence: a value exported in your shell beats the key in `.env`, which beats the default.
+Setting none of them reproduces the original stack byte for byte.
+
+**The rule for a second worktree: its `.env` must set its own database, its own four ports, its
+own absolute `CLUE_STORAGE_FS_ROOT`, and its own log suffix.** Sharing any one of them is a
+silent cross-stack bug — a shared DB gives two stacks the same rows with different code, a
+shared storage root splits blob custody exactly as an unset root does, and a shared log suffix
+means two processes interleave into one file (and, worse, share one pidfile).
+Also update that worktree's `apps/frontend/.env.local` (`CLUE_APP_ORIGIN`, `CLUE_API_BASE_URL`,
+`LUMEN_API_BASE_URL`) and add its frontend port to `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES`.
+
+`up` records the five PIDs it started in `/tmp/clue_dev_stack<suffix>.pids`, and **`down` kills
+exactly those PIDs and their children** — it never `pkill`s by process name, so it cannot take
+down the other worktree's stack. `status` probes this worktree's resolved ports and checks the
+fleet worker through the same pidfile (a name-based `pgrep` matches every worktree's worker and
+would report your stack UP because someone else's is). Consequence: a stack started by the
+pre-2026-09-03 script has no pidfile, so it reports `fleet-worker: DOWN` until it is restarted.
+
 ## `.env` keys that break everything when missing (all already set — do not remove)
 
 | Key | Why |
@@ -136,6 +168,9 @@ the message must get a response. If all four work, the stack is genuinely up.
 
 ```bash
 pkill -f clue_api.fleet_main                       # kills the turn transactionally — nothing half-saved
+                                                   # NB: with two worktrees up this kills BOTH workers.
+                                                   # Kill just yours: kill $(awk '$1=="fleet-worker"{print $2}' \
+                                                   #   /tmp/clue_dev_stack"$CLUE_DEV_LOG_SUFFIX".pids)
 psql -d clue_istanbul_dev -c "UPDATE design_agent_run SET status='failed' WHERE status='running'"
 ./scripts/dev_stack.sh up                          # worker comes back idle (script is idempotent-ish; or relaunch just the worker)
 ```

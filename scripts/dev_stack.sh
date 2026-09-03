@@ -7,7 +7,8 @@
 # truth for how the five processes run — if a port or flag changes, change it
 # HERE, never only in a shell command.
 #
-# THE PORT MAP (do not improvise):
+# THE PORT MAP (do not improvise) — these are the DEFAULTS; a second worktree
+# overrides them through the CLUE_DEV_* keys below:
 #   3020  frontend (Next.js)     — THE app port. CLUE_APP_ORIGIN in
 #                                  apps/frontend/.env.local names it, the BFF
 #                                  403s writes from any other origin, and
@@ -22,6 +23,22 @@
 #                                  session flows were exercised against it.
 #   ----  fleet worker           — drives design runs; no port.
 #
+# RUNNING TWO WORKTREES AT ONCE (added 2026-09-03):
+#   Every port, the database URL and the log-file names come from env keys with
+#   defaults equal to the map above, so an unset environment behaves exactly as
+#   this script always did:
+#     CLUE_DEV_DB_URL           default postgresql+psycopg://aryankeshri@localhost/clue_istanbul_dev
+#     CLUE_DEV_FRONTEND_PORT    default 3020
+#     CLUE_DEV_DESIGN_PORT      default 8010
+#     CLUE_DEV_PLATFORM_PORT    default 8020
+#     CLUE_DEV_PLATFORM_PORT_2  default 8030
+#     CLUE_DEV_LOG_SUFFIX       default empty  → /tmp/browser_<name><suffix>.log
+#   Precedence: a value exported in your shell wins over the same key in
+#   $ROOT/.env, which wins over the default. Each worktree normally sets its own
+#   values in its own .env (also its own CLUE_STORAGE_FS_ROOT).
+#   `down` only kills the PIDs this worktree's `up` recorded in
+#   /tmp/clue_dev_stack<suffix>.pids — it can never take down the other stack.
+#
 # DEV LOGIN (Clerk dev instance, test mode):
 #   email     aryan+clerk_test_design@example.com
 #   password  ClueDev2026!stripe        (reset via Clerk API 2026-08-29)
@@ -34,65 +51,138 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DB_URL="postgresql+psycopg://aryankeshri@localhost/clue_istanbul_dev"
-PLATFORM_ENV=(
-  CLUE_DATABASE_URL="$DB_URL"
-  CLUE_DESIGN_RUNTIME_ENABLED=1
-  CLUE_DESIGN_API_BASE_URL=http://127.0.0.1:8010
-  CLUE_AGENT_WORKSPACE_ROOT=/private/tmp/clue-agent-workspaces
-)
+
+# Captured BEFORE .env is sourced, so an explicit shell export beats the file.
+CLI_DB_URL="${CLUE_DEV_DB_URL:-}"
+CLI_FRONTEND_PORT="${CLUE_DEV_FRONTEND_PORT:-}"
+CLI_DESIGN_PORT="${CLUE_DEV_DESIGN_PORT:-}"
+CLI_PLATFORM_PORT="${CLUE_DEV_PLATFORM_PORT:-}"
+CLI_PLATFORM_PORT_2="${CLUE_DEV_PLATFORM_PORT_2:-}"
+CLI_LOG_SUFFIX="${CLUE_DEV_LOG_SUFFIX:-}"
 
 load_env() { set -a; source "$ROOT/.env"; set +a; }
 
+# Must run AFTER load_env — the knobs normally live in this worktree's .env.
+resolve_config() {
+  DB_URL="${CLI_DB_URL:-${CLUE_DEV_DB_URL:-postgresql+psycopg://aryankeshri@localhost/clue_istanbul_dev}}"
+  FRONTEND_PORT="${CLI_FRONTEND_PORT:-${CLUE_DEV_FRONTEND_PORT:-3020}}"
+  DESIGN_PORT="${CLI_DESIGN_PORT:-${CLUE_DEV_DESIGN_PORT:-8010}}"
+  PLATFORM_PORT="${CLI_PLATFORM_PORT:-${CLUE_DEV_PLATFORM_PORT:-8020}}"
+  PLATFORM_PORT_2="${CLI_PLATFORM_PORT_2:-${CLUE_DEV_PLATFORM_PORT_2:-8030}}"
+  LOG_SUFFIX="${CLI_LOG_SUFFIX:-${CLUE_DEV_LOG_SUFFIX:-}}"
+
+  PIDFILE="/tmp/clue_dev_stack${LOG_SUFFIX}.pids"
+  DESIGN_ORIGIN="http://127.0.0.1:${DESIGN_PORT}"
+
+  PLATFORM_ENV=(
+    CLUE_DATABASE_URL="$DB_URL"
+    CLUE_DESIGN_RUNTIME_ENABLED=1
+    CLUE_DESIGN_API_BASE_URL="$DESIGN_ORIGIN"
+    CLUE_AGENT_WORKSPACE_ROOT=/private/tmp/clue-agent-workspaces
+  )
+}
+
+log_path() { echo "/tmp/browser_${1}${LOG_SUFFIX}.log"; }
+
+# One "<name> <pid>" line per process, written by up, consumed by down/status.
+record_pid() { echo "$1 $2" >> "$PIDFILE"; }
+pid_of() { [ -f "$PIDFILE" ] && awk -v n="$1" '$1==n {print $2}' "$PIDFILE" || true; }
+
+# Kill a recorded pid and everything it spawned (npm run dev → sh → next), and
+# nothing else: we only ever walk down from PIDs this worktree started.
+kill_tree() {
+  local pid="$1" child
+  for child in $(pgrep -P "$pid" 2>/dev/null || true); do kill_tree "$child"; done
+  kill "$pid" 2>/dev/null || true
+}
+
 up() {
   load_env
+  resolve_config
   mkdir -p /private/tmp/clue-agent-workspaces && chmod 700 /private/tmp/clue-agent-workspaces
+  : > "$PIDFILE"
 
-  ( cd "$ROOT/subsystems/clue-design" && \
+  (
+    cd "$ROOT/subsystems/clue-design"
     env "${PLATFORM_ENV[@]}" \
         LUMEN_EMBEDDED_FLEET_WORKER=1 \
         LUMEN_CORE_HELPER="$ROOT/subsystems/clue-design/target/release/lumen-api-helper" \
-        LUMEN_API_CORS_ORIGINS="http://localhost:3020,http://127.0.0.1:3020,http://localhost:3000" \
+        LUMEN_API_ORIGIN="$DESIGN_ORIGIN" \
+        LUMEN_API_CORS_ORIGINS="http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3000" \
         PYTHONPATH=.:apps/api:apps/agent_runtime \
-        "$ROOT/.venv/bin/python" -m uvicorn lumen_api.main:app --port 8010 \
-        > /tmp/browser_design_api.log 2>&1 & )
+        "$ROOT/.venv/bin/python" -m uvicorn lumen_api.main:app --port "$DESIGN_PORT" \
+        > "$(log_path design_api)" 2>&1 &
+    record_pid design-api "$!"
+  )
 
-  ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
-      "$ROOT/.venv/bin/python" -m uvicorn clue_api.projections_main:app --port 8020 \
-      > /tmp/browser_platform_api_8020.log 2>&1 & )
+  (
+    cd "$ROOT"
+    env "${PLATFORM_ENV[@]}" \
+      "$ROOT/.venv/bin/python" -m uvicorn clue_api.projections_main:app --port "$PLATFORM_PORT" \
+      > "$(log_path platform_api_8020)" 2>&1 &
+    record_pid platform-api "$!"
+  )
 
-  ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
-      "$ROOT/.venv/bin/python" -m uvicorn clue_api.projections_main:app --port 8030 \
-      > /tmp/browser_platform_api.log 2>&1 & )
+  (
+    cd "$ROOT"
+    env "${PLATFORM_ENV[@]}" \
+      "$ROOT/.venv/bin/python" -m uvicorn clue_api.projections_main:app --port "$PLATFORM_PORT_2" \
+      > "$(log_path platform_api)" 2>&1 &
+    record_pid platform-api-2 "$!"
+  )
 
-  ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
+  (
+    cd "$ROOT"
+    env "${PLATFORM_ENV[@]}" \
+      LUMEN_API_ORIGIN="$DESIGN_ORIGIN" \
       "$ROOT/.venv/bin/python" -m clue_api.fleet_main \
-      > /tmp/browser_fleet_worker.log 2>&1 & )
+      > "$(log_path fleet_worker)" 2>&1 &
+    record_pid fleet-worker "$!"
+  )
 
   # Class fix 2026-08-31: hard-killed/overlapping dev-server starts corrupt the
   # .next route graph (single routes 404 while siblings work — twice live on
   # 2026-08-30/31). A cold route compile costs seconds; a corrupted cache costs
   # a debugging session. Always start the frontend from a clean cache.
   rm -rf "$ROOT/apps/frontend/.next"
-  ( cd "$ROOT/apps/frontend" && npm run dev -- --port 3020 \
-      > /tmp/browser_frontend.log 2>&1 & )
+  (
+    cd "$ROOT/apps/frontend"
+    npm run dev -- --port "$FRONTEND_PORT" \
+      > "$(log_path frontend)" 2>&1 &
+    record_pid frontend "$!"
+  )
 
-  echo "starting…"; sleep 8; status
+  echo "starting…"; sleep 8; status_resolved
   echo
-  echo "app:   http://localhost:3020"
+  echo "app:   http://localhost:${FRONTEND_PORT}"
   echo "login: aryan+clerk_test_design@example.com / ClueDev2026!stripe / code 424242"
+  echo
+  echo "logs:"
+  for name in frontend design_api platform_api_8020 platform_api fleet_worker; do
+    echo "  $(log_path "$name")"
+  done
+  echo "  pids: $PIDFILE"
 }
 
 down() {
-  pkill -f "uvicorn lumen_api.main:app" 2>/dev/null || true
-  pkill -f "uvicorn clue_api.projections_main:app" 2>/dev/null || true
-  pkill -f "clue_api.fleet_main" 2>/dev/null || true
-  pkill -f "next dev.*3020" 2>/dev/null || true
+  load_env
+  resolve_config
+  if [ ! -f "$PIDFILE" ]; then
+    echo "no pidfile at $PIDFILE — nothing this worktree started is recorded."
+    echo "(refusing to pkill by name: that would kill another worktree's stack)"
+    return 0
+  fi
+  while read -r name pid; do
+    [ -n "${pid:-}" ] || continue
+    kill_tree "$pid"
+    echo "  stopped $name ($pid)"
+  done < "$PIDFILE"
+  rm -f "$PIDFILE"
   echo "stack stopped"
 }
 
-status() {
-  for spec in "3020 frontend" "8010 design-api" "8020 platform-api" "8030 platform-api-2"; do
+status_resolved() {
+  for spec in "$FRONTEND_PORT frontend" "$DESIGN_PORT design-api" "$PLATFORM_PORT platform-api" "$PLATFORM_PORT_2 platform-api-2"; do
     port="${spec%% *}"; name="${spec#* }"
     if lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
       echo "  $name ($port): UP"
@@ -100,12 +190,18 @@ status() {
       echo "  $name ($port): DOWN"
     fi
   done
-  if pgrep -f "clue_api.fleet_main" >/dev/null 2>&1; then
+  # Pidfile-scoped, not `pgrep -f clue_api.fleet_main`: that matches every
+  # worktree's worker and would report this stack UP because another one is.
+  fleet_pid="$(pid_of fleet-worker)"
+  if [ -n "$fleet_pid" ] && kill -0 "$fleet_pid" 2>/dev/null \
+     && ps -p "$fleet_pid" -o command= 2>/dev/null | grep -q "clue_api.fleet_main"; then
     echo "  fleet-worker: UP"
   else
     echo "  fleet-worker: DOWN"
   fi
 }
+
+status() { load_env; resolve_config; status_resolved; }
 
 case "${1:-status}" in
   up) up ;;
