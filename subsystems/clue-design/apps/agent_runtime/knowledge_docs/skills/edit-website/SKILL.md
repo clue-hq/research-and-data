@@ -225,8 +225,10 @@ colors. Follow this sequence:
    sanitize-once door every captured byte passes — and your ancestor from
    step 2 is not just inspiration, it is *source material*: view it and
    reuse its real CSS constants verbatim where they fit. Platform-native
-   (deep editability, derivation markers): the constrained vocabulary, where
-   theme tokens and geometry utilities carry the brand's measurements. In
+   (deep inspector editability, attribute-level derivation markers): the
+   constrained vocabulary, where theme tokens and geometry utilities carry
+   the brand's measurements — the LAST RESORT, chosen only when the raw lane
+   and a derived variant genuinely cannot serve, and said so in the plan. In
    both lanes, steps 1–4 (grammar, ancestor, surfaces, density) carry the
    judgment no mechanism can.
 6. **Apply the logo-off test at review.** Look at the rendered section

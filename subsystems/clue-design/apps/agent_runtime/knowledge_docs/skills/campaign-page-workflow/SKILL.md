@@ -140,9 +140,9 @@ Only the bands the library genuinely lacks. The sequence is
 edit-website's: extract the page's design grammar (already written in
 your plan's audit — re-read it) → name ONE structural ancestor → make
 the surface-hierarchy judgment → match the content density → build in
-the right lane (raw is the default on a clone-bearing page; remix the
-ancestor's real CSS, never imagine) → pin into the gap between real
-bands. Every composed band is checked against the plan's grammar audit
+the right lane (in a workspace with released clones, raw is the default
+and the vocabulary lane is the last resort; remix the ancestor's real CSS,
+never imagine) → pin into the gap between real bands. Every composed band is checked against the plan's grammar audit
 before it counts as built.
 
 ## Step 8 — The copy pass

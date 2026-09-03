@@ -5,6 +5,17 @@ description: Author a complete branded website page in the constrained-HTML wire
 
 # Create a Website Page
 
+**This skill is the VOCABULARY lane's contract — and in a workspace with released
+cloned sections, the vocabulary lane is the LAST RESORT, never the first idea.** The
+client's real bands come first: pin them (`assemble_cloned_sections` /
+`insert_cloned_section`), personalize through slot values (the `{{account.*}}` markers
+ride there), derive a variant when the shape must change
+(`repair_cloned_section(..., css=…)` edits the original's real HTML and CSS), and
+compose a missing band in the raw lane (`compose_web_section`, remixing a real
+ancestor's CSS). Reach for what follows only for a band that must carry
+`data-var`/`data-slot-when` attributes or stay deeply inspector-editable — and know
+it completely, because when you do need it, it must be done right.
+
 You author **one complete page per call** to `author_web_page(html, custom_css?)`.
 The markup is parsed into a typed tree; **any error rejects the whole batch and
 nothing is stored** — you then repair with `patch_web_page` (see Repairing

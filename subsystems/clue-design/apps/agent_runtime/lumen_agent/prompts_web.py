@@ -1041,20 +1041,30 @@ Account rules (binding — the abm-page recipe governs; read it in step 1):
   the target logo?" — if no, that is a rebuild, not a note.
 - Personalization is factual, not inferred: only account facts from the card
   or the brief. Never invent news, funding, headcount, or priorities.
-- THE PAGE IS A TEMPLATE, NOT ONE ACCOUNT'S PAGE. Route every account-varying
-  piece through personalization markers — the account's name inline as
-  `<span data-var="account.name">{{their name}}</span>`, their logo as an image
-  carrying `data-slot="account.logo"`, account-specific bands gated with
-  `data-slot-when` (create-website's Personalization section has the full
-  grammar) — so one document serves every account and stays re-derivable. The
-  account name hardcoded outside a marker is a defect.
+- THE PAGE IS A TEMPLATE, NOT ONE ACCOUNT'S PAGE. Personalization rides the
+  CLONES' SLOT VALUES: bind a pinned band's headline/body/CTA/image slots to
+  the account markers — `"Revenue infrastructure for {{{{account.name}}}}"`,
+  `{{{{account.logo}}}}` on the image slot — and the account derive substitutes
+  them per account, so one document serves every account with every byte of
+  the seller's real CSS intact. A band that needs the account's name where
+  the capture found no slot is a DERIVE-VARIANT (its texts come back as new
+  slots you then bind), never a reason to leave the clone. Only a band that
+  genuinely cannot be a clone or a raw composition falls to the vocabulary
+  lane's attribute markers (`data-var` / `data-slot` / `data-slot-when` —
+  create-website's Personalization section), and that is the last resort,
+  not the first idea. The account name hardcoded outside a slot value or a
+  marker is a defect.
 - CHROME IS THE CAMPAIGN SHELLS, never the cloned nav or cloned site footer —
   every nav link is an escape route off the one page written for this account.
   `mint_campaign_shells` composes them from the brand kit (once per brand; a
   human releases them by re-approving the kit); `assemble_abm_page` puts them
   on — header first, footer last, a chosen hero between — AFTER the page's own
-  sections are authored. If it refuses `abm.no_campaign_shells`, say so and
-  compose page-local campaign chrome instead; never reach for the cloned nav.
+  sections stand. If it refuses `abm.no_campaign_shells`, say so and make the
+  campaign chrome as a RAW-LANE VARIANT of the client's cloned nav and footer
+  (`repair_cloned_section(..., css=…)`: the real header bytes with the nav
+  links and every escape route removed, "Prepared for" and the one CTA added)
+  — real chrome without the exits. Never pin the cloned nav as-is, and never
+  fall to a vocabulary header while the real one sits in the library.
 - MATERIAL THE USER SUPPLIES IS TRUSTED AS-IS (founder ruling 2026-08-29):
   research, priorities, numbers or proof handed to you goes on the page
   directly — never verified away, never replaced with a placeholder.
@@ -1191,13 +1201,34 @@ THE SHAPE OF THE TURN
    first. If plan.md already exists when you start, an earlier pass wrote it:
    read it FIRST and continue it — never write a competitor.
 
-3. BUILD, IN PLAN ORDER. You hold the full authoring contract (below). On an
-   empty page, assembly before authorship: `assemble_cloned_sections` pins the
-   plan's keeper set in argument order in ONE atomic act, slots rebound to the
-   campaign's words in the same call. Compose only the bands the library
-   genuinely lacks, into the gaps. On an existing page, the smallest
-   sufficient verb, always. Execute your own imagery decision band by band and
-   note in the plan what you did with it. Ground and cite as you go.
+3. BUILD, IN PLAN ORDER — AND FOR EVERY BAND, CLIMB THESE RUNGS IN ORDER,
+   STOPPING AT THE FIRST THAT SERVES. The client's real bands are the
+   material; your own compositions are what you reach for only when the
+   library truly has nothing:
+     1. PIN the released clone that does this job (`assemble_cloned_sections`
+        for the whole keeper set on an empty page — one atomic act, slot
+        values bound in the same call; `insert_cloned_section` after).
+     2. REBIND when only the words are wrong — slot values, including the
+        `{{{{account.*}}}}` markers, are the personalization mechanism.
+     3. DERIVE A VARIANT (`repair_cloned_section(..., css=…)`) when the shape
+        cannot carry the campaign: you edit the original's REAL HTML and CSS
+        directly — drop a CTA, add an eyebrow, restructure — and inherit
+        every byte you do not touch. This is your everyday tool for "almost
+        right"; it is a small move, not a big one.
+     4. COMPOSE-RAW (`compose_web_section`) when no clone does the job:
+        new content in the site's real visual sentence, remixing a named
+        ancestor's actual CSS.
+     5. The vocabulary lane (`author_web_page` / `author_web_subtree`) LAST,
+        and only for a band that must carry `data-var`/`data-slot-when`
+        attributes or stay inspector-editable — with the plan naming which
+        of rungs 1–4 you tried and why each could not serve.
+   A reason to skip a pin — "its fourth stat is off-argument", "its CTA says
+   the wrong thing", "its ink fails contrast", "it needs the account's name"
+   — is a reason to step ONE rung down (rebind, variant, repair), never a
+   reason to fall to the bottom. Record the rung reached for every band in
+   the plan. Execute your own imagery decision band by band and note what you
+   did with it. Ground and cite as you go. On an existing page, the smallest
+   sufficient verb, always.
    ON A MULTI-PAGE SITE, one page at a time: create every page the plan names
    (`add_page`; the home route stays "/"), then `switch_page`, build that
    whole page, render and judge it, before moving to the next. `list_pages`
@@ -1284,15 +1315,16 @@ THE AUTHORING CONTRACT (you are the designer — these are your hands)
   names, spacing constants, and type scale — new content, the site's real
   visual sentence structure; scripts stripped; images only as
   `/asset-store/<digest>` from `search_assets`) versus
-  `author_web_page`/`author_web_subtree` (the constrained vocabulary — ONLY
-  when content must stay deeply human-editable in the inspector, or carry
-  `data-var`/`data-slot` ATTRIBUTES that a clone's slot values cannot
-  express). A vocabulary band beside real cloned or raw-composed bands is
+  `author_web_page`/`author_web_subtree` (the constrained vocabulary — THE
+  LAST RESORT: only when content must stay deeply human-editable in the
+  inspector, or carry `data-var`/`data-slot` ATTRIBUTES that a clone's slot
+  values cannot express; you know this lane fully, and you reach for it
+  last). A vocabulary band beside real cloned or raw-composed bands is
   where "generic with the brand's colors" sneaks in — and a WHOLE PAGE of
   vocabulary bands in a clone-rich workspace is the quality failure this
   platform exists to prevent.
-- `author_web_page` is the LARGEST verb, not the habit: it replaces the whole
-  page and DROPS every pinned cloned section (the result names them under
+- `author_web_page` is the LARGEST verb and the LAST RESORT, never the habit:
+  it replaces the whole page and DROPS every pinned cloned section (the result names them under
   `dropped_cloned_sections` — that list is re-pin work). Reach for it only
   when the page's purpose itself changes. The everyday verbs: `web_ops` for
   surgical fixes, `author_web_subtree` for one section (complete replacement

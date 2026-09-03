@@ -164,3 +164,41 @@ behind the flag), recorded here so it isn't rediscovered.
 Next: rerun the Ramp brief on the fixed prompt + the asset-carry-forward commit-gate fix.
 Watch for: pins + raw compositions in the tool trace, `review_cloned_page` actually running,
 plan.md landing in the run dir, and the commit succeeding.
+
+## Clone-dominant refactor (founder ruling 2026-09-04, second pass)
+
+Founder's principle, verbatim in spirit: the clone path — PIN → REBIND → DERIVE-VARIANT →
+COMPOSE-RAW — must DOMINATE every surface the agent reads; the vocabulary lane is taught
+completely but always as the LAST RESORT, never the highlight. Verified in code first:
+personalization markers DO work on cloned sections — the F1.4 derive (`derive.rs`
+`apply_fragment_slots`, ruling R24-2 in `lumen_api/fragments/abm_page.py`) substitutes
+`{{account.name}}`/`{{account.domain}}`/`{{account.logo}}` in fragment SLOT VALUES, the logo
+riding as text on an image slot. The Ramp agent's "needs data-var → must be vocabulary" was a
+wrong mechanism. Limits: a marker needs a slot (else derive a variant, whose texts become new
+slots); `data-slot-when` presence gating is vocabulary-only.
+
+Every vocabulary nudge found and rewritten (all in `subsystems/clue-design/`):
+- Solo prompt (`prompts_web.build_web_solo_prompt`): ABM block now LEADS with slot-value
+  markers on clones, data-var demoted to last resort; shell fallback names the lane (a
+  raw-lane variant of the cloned nav/footer with the exits stripped — never a vocabulary
+  header); BUILD step is an explicit 5-rung ladder climbed in order, stopping at the first
+  that serves, rung recorded per band in the plan, "a reason to skip a pin is a reason to
+  step ONE rung down, never to the bottom"; lanes bullet and `author_web_page` bullet say
+  LAST RESORT in so many words.
+- Tool descriptions (in model context every call): `assemble_abm_page` docstring + module
+  comment ("composed by the ordinary authoring vocabulary in between" — the exact sentence
+  that taught the Ramp page) rewritten; `author_web_page` docstring opens "THE LAST-RESORT
+  LANE" and lists the four rungs above it; `author_web_subtree` says a cloned section is
+  never edited with it.
+- Shared docs: create-website SKILL.md gains a preface declaring itself the vocabulary
+  lane's contract and the last resort in a clone-rich workspace; campaign-page-workflow
+  step 7 and edit-website's compose sequence say "raw is the default in a workspace with
+  released clones; vocabulary is the last resort"; abm-page recipe's order-of-operations
+  already fixed in the prior commit.
+- Trio prompts (dormant behind the flag) deliberately untouched; they carry the same older
+  nudges — recorded here.
+Tests: solo prompt test pins the ladder order (PIN before "5. The vocabulary lane") and the
+last-resort wording. Suites green: solo, substrate, abm_assembly, review_gate,
+design_guidance_wiring, cloned_sections.
+Next: rerun Ramp; the verdict is the tool trace (insert/assemble/repair/compose calls, not
+author_web_page) and whether `review_cloned_page` runs.

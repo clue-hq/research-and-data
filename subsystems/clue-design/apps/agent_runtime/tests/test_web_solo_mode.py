@@ -108,6 +108,12 @@ def test_solo_prompt_is_the_merged_persona_with_the_shared_rubric(
     # chicken-and-egg "page has no clones yet" reading is closed in the always-present
     # lanes block.
     assert "DEFAULT IN ANY WORKSPACE WITH RELEASED CLONES" in prompt
+    # The build step is a rung ladder the agent climbs in order, vocabulary LAST
+    # (founder ruling 2026-09-04: the clone path dominates; vocabulary is taught
+    # fully but always as the last resort).
+    assert "CLIMB THESE RUNGS IN ORDER" in prompt
+    assert prompt.index("1. PIN the released clone") < prompt.index("5. The vocabulary lane")
+    assert "LARGEST verb and the LAST RESORT" in prompt
     assert "render_web_preview" in prompt
 
 

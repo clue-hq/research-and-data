@@ -1696,9 +1696,19 @@ class LumenWebTools:
     # --- tools --------------------------------------------------------------
 
     def author_web_page(self, html: str, custom_css: str = "") -> str:
-        """Install a COMPLETE page from constrained HTML. `html` is the full
-        section markup (header/section/footer top-level elements); `custom_css`
-        is optional page-scoped CSS. The whole page is replaced.
+        """THE LAST-RESORT LANE. Install a COMPLETE page from constrained HTML —
+        the platform's restricted vocabulary, styled from generic utility classes,
+        carrying none of the client's real CSS. In a workspace with released
+        cloned sections the page is built from THEM first: `assemble_cloned_sections`
+        / `insert_cloned_section` (pin, slot values carrying `{{account.*}}` markers),
+        `repair_cloned_section(..., css=…)` (derive a variant of a real band),
+        `compose_web_section` (raw HTML+CSS remixing a real ancestor). Reach for this
+        tool only for a band that must carry `data-var`/`data-slot-when` attributes or
+        stay inspector-editable, and never for a whole page that clones could serve —
+        it replaces the whole page and DROPS every pinned cloned section.
+
+        `html` is the full section markup (header/section/footer top-level elements);
+        `custom_css` is optional page-scoped CSS. The whole page is replaced.
 
         On any error-severity diagnostic NOTHING is stored — fix every
         diagnostic (each carries a code, node id, and hint) and resend the
@@ -1890,7 +1900,10 @@ class LumenWebTools:
         return json.dumps(result, indent=2)
 
     def author_web_subtree(self, node_id: str, html: str) -> str:
-        """Scoped edit: replace ONE top-level section with new markup.
+        """Scoped edit: replace ONE top-level section with new VOCABULARY markup — the
+        last-resort lane for a composed band. A CLONED section is never edited with this:
+        rebind its slots, derive a variant with `repair_cloned_section(..., css=…)`, or
+        repair it; a raw-composed band is re-composed with `compose_web_section`.
 
         v0 scoped edits operate at SECTION granularity — a section is a direct
         child of the page root ("root"). `node_id` is resolved to its enclosing
@@ -7303,8 +7316,11 @@ class LumenWebTools:
     # --- the ABM assembly walk (clone-fidelity F4.2) -------------------------------------------
     #
     # "Build the page for this account" is an ASSEMBLY with a shape, exactly as the recreate is:
-    # the seller's campaign chrome around a personalized hero, with the new sections composed by
-    # the ordinary authoring vocabulary in between. Two of that shape's properties are the whole
+    # the seller's campaign chrome around a personalized hero, with the page's other bands
+    # between them — pinned clones with marker-bound slots, derived variants, and raw
+    # compositions remixing real ancestors (the vocabulary lane last, for attribute-bearing
+    # bands only; the 2026-09-04 Ramp run read an older "ordinary authoring vocabulary" wording
+    # here as the expected lane and built a generic page). Two of that shape's properties are the whole
     # reason this is a tool rather than a paragraph of prompt:
     #
     #   * an ABM page NEVER wears the cloned nav, and a rule that lives only in a prompt is a
@@ -7325,9 +7341,10 @@ class LumenWebTools:
     ) -> str:
         """Put the ABM page's chrome on: campaign header FIRST, campaign footer LAST.
 
-        Call this on an account page AFTER `author_web_page` has composed the page's own
-        sections — a whole-page rewrite cannot carry a pinned cloned section, so chrome pinned
-        before it would simply be dropped.
+        Call this on an account page AFTER the page's own sections stand — pinned clones with
+        marker-bound slot values, derived variants, raw compositions; `author_web_page` only for
+        the rare attribute-bearing band, and never after this, because a whole-page rewrite
+        cannot carry a pinned cloned section and would drop the chrome this pins.
 
         WHAT IT PINS. The workspace's released CAMPAIGN SHELLS (`mint_campaign_shells` makes
         them) as the first and last sections of the page, and — when you name one — a released
