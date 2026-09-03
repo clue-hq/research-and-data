@@ -1540,25 +1540,46 @@ def _font_manifest_entries(gate: _FontGate) -> JsonObject:
     }
 
 
-def _delivery_csp(public_base: Optional[str] = None, *, meta: bool = False) -> str:
+def _delivery_csp(
+    public_base: Optional[str] = None,
+    *,
+    meta: bool = False,
+    static_bundle: bool = False,
+) -> str:
     """The published page's CSP. ``meta=True`` is the ``<meta http-equiv>`` shape.
 
     The one difference: ``frame-ancestors`` is ignored inside a meta CSP by spec, and the
     browser says so on the console — which was the published page's ONE console error at the
     CP1 walk, and it was ours (walk criterion 4, final-review X7). The serving header keeps the
     directive; the meta tag stops claiming it.
+
+    ``static_bundle=True`` is the EXPORT ZIP's shape, and it exists because the zip's own
+    ``index.html`` was blocking the zip's own files. The published page is served from a known
+    origin, so ``public_base`` names it; a zip has no origin at build time, so it was emitted
+    with neither an origin nor ``'self'`` — and ``default-src 'none'`` then refused
+    ``<link href="site.css">``, ``src="assets/<digest>.webp"`` and ``url("fonts/<digest>.woff2")``
+    alike, on disk AND on any static host. The bundle policy allows the bundle's own bytes and
+    nothing else: ``'self'`` covers the static-host case; the ``file:`` scheme source is
+    required on top of it because a document opened from disk has an OPAQUE origin in Chromium,
+    which ``'self'`` does not match — so ``'self'`` alone leaves a double-clicked
+    ``index.html`` exactly as broken as before. Everything genuinely remote stays refused:
+    ``default-src``/``connect-src``/``object-src``/``worker-src``/``base-uri``/``form-action``
+    are untouched, so the bundle can still reach nothing off its own disk.
     """
     origin = ""
     if public_base:
         parsed = urlsplit(public_base)
         if parsed.scheme in {"http", "https"} and parsed.netloc:
             origin = f" {parsed.scheme}://{parsed.netloc}"
+    # Empty unless this is the export zip — so the publish/serving policy stays byte-identical.
+    own = " 'self'" if static_bundle else ""
+    disk = " file:" if static_bundle else ""
     policy = (
         "default-src 'none'; "
-        f"script-src 'unsafe-inline' data:{origin}; "
-        f"style-src 'unsafe-inline'{origin}; "
-        f"img-src data: blob:{origin}; "
-        f"font-src data:{origin}; "
+        f"script-src{own} 'unsafe-inline' data:{origin}{disk}; "
+        f"style-src{own} 'unsafe-inline'{origin}{disk}; "
+        f"img-src{own} data: blob:{origin}{disk}; "
+        f"font-src{own} data:{origin}{disk}; "
         "connect-src 'none'; object-src 'none'; worker-src 'none'; "
         "frame-src 'self' data: blob:; base-uri 'none'; form-action 'none'"
     )
@@ -1761,7 +1782,7 @@ def build_export_bundle(
             head += ROBOTS_NOINDEX_META + "\n"
         head += (
             '<meta http-equiv="Content-Security-Policy" content="'
-            f'{_escape_attr(_delivery_csp(meta=True))}">\n'
+            f'{_escape_attr(_delivery_csp(meta=True, static_bundle=True))}">\n'
         )
         head += (
             '<link rel="lumen-component-manifest" href="'
