@@ -7379,21 +7379,18 @@ class LumenWebTools:
         for fragment_id in sorted(pinned_now):
             row = by_id.get(fragment_id)
             if row is None:
-                # Fail CLOSED (fix-round M1): a pinned fragment absent from the bounded,
-                # approved-only listing — retired since it was pinned, or beyond the listing
-                # cap — is one this walk cannot classify, and "I don't know what this is" must
-                # never read as "it's fine": the review pinned a nav, dropped its row, and the
-                # walk assembled campaign chrome around it.
-                return self._tool_error(
-                    "abm.unresolved_pinned_fragment",
-                    f"this page pins {fragment_id}, which is not in the released cloned-"
-                    "section listing this walk reads (it may have been retired since it was "
-                    "pinned, or the workspace's listing is larger than the walk's bound) — so "
-                    "the walk cannot tell whether it is an escape route. Remove it from the "
-                    "page, or release it so it lists, then run this again. Nothing was pinned.",
-                    fragment_id=fragment_id,
-                    section_node_ids=list(pinned_now[fragment_id]),
+                # ADVISE, don't refuse (founder ruling R-F5-8, 2026-09-02). The DETECTION is the
+                # one fix-round M1 shipped — a pinned fragment absent from the bounded,
+                # approved-only listing is one this walk cannot classify — but "I cannot tell
+                # what this links to" is no longer a reason to stop the assembly: links are
+                # structurally free, so the walk says what it does not know and carries on.
+                escape_route_advice.append(
+                    f"{fragment_id} is pinned on this page but is not in the released cloned-"
+                    "section listing this walk reads (retired since it was pinned, or beyond "
+                    "the listing's bound) — the walk could not check what it links to; judge "
+                    "it yourself (R-F5-8: allowed, not recommended)"
                 )
+                continue
             if is_escape_route_role(row.get("section_role")):
                 # Already on the page, put there by an earlier call: the walk builds its chrome
                 # around it and says what it thinks, rather than refusing to assemble at all.

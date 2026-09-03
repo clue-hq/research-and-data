@@ -1021,11 +1021,13 @@ def test_another_brands_shell_cannot_ride_in_as_the_hero(tmp_path: Path) -> None
     assert result["error_code"] == "abm.shell_is_chrome"
 
 
-def test_a_pinned_fragment_the_listing_cannot_resolve_fails_closed(tmp_path: Path) -> None:
-    """T24 review M1, live-reproduced there: a pinned nav whose row is absent from the bounded
+def test_a_pinned_fragment_the_listing_cannot_resolve_assembles_and_advises(
+    tmp_path: Path,
+) -> None:
+    """T24 review M1 found the detection: a pinned nav whose row is absent from the bounded
     approved listing (retired later, or beyond the listing cap) sailed past the escape-route
-    scan — the one fail-open in a fail-closed module. Now: the walk refuses typed, because
-    "I don't know what this is" is not "it's fine"."""
+    scan. Under R-F5-8 the CONSEQUENCE is advice, not a refusal — the walk assembles the page
+    and says plainly that it could not check what this fragment links to."""
     registry = _seeded(tmp_path)
     tools = _tools(tmp_path, registry)
     assert json.loads(tools.insert_cloned_section(NAV_ID))["status"] == "ok"
@@ -1034,9 +1036,13 @@ def test_a_pinned_fragment_the_listing_cannot_resolve_fails_closed(tmp_path: Pat
 
     result = json.loads(tools.assemble_abm_page(hero_fragment_id=HERO_ID))
 
-    assert result["error_code"] == "abm.unresolved_pinned_fragment"
-    assert NAV_ID in result["message"]
-    assert _children(tools) == before
+    assert result["status"] == "ok"
+    notes = [item for item in result["advice"] if isinstance(item, str) and NAV_ID in item]
+    assert notes, result["advice"]
+    assert "could not check what it links to" in notes[0]
+    assert "R-F5-8" in notes[0]
+    # The chrome still went on, and nothing the author had pinned was removed.
+    assert set(before).issubset(set(_children(tools)))
 
 
 def test_degraded_and_superseded_heroes_are_not_offered_silently(tmp_path: Path) -> None:
