@@ -764,29 +764,53 @@ def _fallback_stack(value: str) -> list[str]:
     return [part.strip().strip("'\"") for part in value.split(",") if part.strip()]
 
 
-def _line_height(value: str) -> float | None:
+_ROOT_FONT_SIZE_PX = 16.0
+
+
+def _line_height(value: str, font_size_px: float | None) -> float | None:
+    """CSS ``line-height`` as a ratio of the ELEMENT's font size.
+
+    unitless / ``em`` / ``%`` are ratios already; ``px`` divides by the element size; ``rem``
+    is root-relative (× 16) and then divides by the element size. A length with no element
+    size is unconvertible → ``None`` (an honest blank). It must never fall back to ``px / 16``:
+    that was the 2026-09-04 Apollo bug — a 72px headline leading stored as 4.5.
+    """
     value = value.strip().lower()
+    if not value or value in ("normal", "inherit", "initial", "unset"):
+        return None
     try:
         return float(value)
     except ValueError:
-        px = _px_from_length(value)
-        return px / 16.0 if px is not None else None
+        pass
+    m = re.match(r"^(-?[\d.]+)(px|rem|em|%)$", value)
+    if not m:
+        return None
+    number, unit = float(m.group(1)), m.group(2)
+    if unit == "em":
+        return number
+    if unit == "%":
+        return number / 100.0
+    px = number if unit == "px" else number * _ROOT_FONT_SIZE_PX
+    if not font_size_px or font_size_px <= 0:
+        return None
+    return px / font_size_px
 
 
-def _letter_spacing(value: str) -> float | None:
+def _letter_spacing(value: str, font_size_px: float | None) -> float | None:
+    """CSS ``letter-spacing`` in em of the ELEMENT's font size (same rules as ``_line_height``)."""
     value = value.strip().lower()
-    if value in ("normal", "inherit"):
+    if not value or value in ("normal", "inherit", "initial", "unset"):
         return None
     m = re.match(r"^(-?[\d.]+)(px|rem|em)$", value)
     if not m:
         return None
-    number = float(m.group(1))
-    unit = m.group(2)
+    number, unit = float(m.group(1)), m.group(2)
     if unit == "em":
         return number
-    if unit == "rem":
-        return number
-    return number / 16.0  # px → em approximation
+    px = number if unit == "px" else number * _ROOT_FONT_SIZE_PX
+    if not font_size_px or font_size_px <= 0:
+        return None
+    return px / font_size_px
 
 
 def _weight_int(value: str) -> int | None:
@@ -1104,8 +1128,8 @@ def _parse_rule(
         family = None
         size_px = None
         font_weight = None
-        line_height = None
-        letter_spacing = None
+        line_height_raw: str | None = None
+        letter_spacing_raw: str | None = None
         for decl in decls:
             if getattr(decl, "type", None) != "declaration":
                 continue
@@ -1127,9 +1151,16 @@ def _parse_rule(
             elif name == "font-weight":
                 font_weight = _weight_int(value)
             elif name == "line-height":
-                line_height = _line_height(value)
+                line_height_raw = value
             elif name == "letter-spacing":
-                letter_spacing = _letter_spacing(value)
+                letter_spacing_raw = value
+
+        # Resolved AFTER the loop: a rule may declare line-height before font-size, and both
+        # lengths are relative to this rule's own element size.
+        line_height = _line_height(line_height_raw, size_px) if line_height_raw is not None else None
+        letter_spacing = (
+            _letter_spacing(letter_spacing_raw, size_px) if letter_spacing_raw is not None else None
+        )
 
         label = _type_label([selector])
         if label and (family or size_px or font_weight):
@@ -1220,14 +1251,15 @@ def _parse_computed_samples(snapshot: SiteSnapshot, parsed: ParsedSite) -> None:
         label = tag if tag in ("h1", "h2", "h3", "h4", "h5", "h6", "body", "button", "nav") else None
         family = sample.get("fontFamily")
         if label and family:
+            size_px = _px_from_length(str(sample.get("fontSize") or ""))
             parsed.type_samples.append(
                 ParsedType(
                     label="body" if label == "html" else label,
                     family=_first_family(str(family)),
                     weight=_weight_int(str(sample.get("fontWeight") or "")),
-                    size_px=_px_from_length(str(sample.get("fontSize") or "")),
-                    line_height=_line_height(str(sample.get("lineHeight") or "")),
-                    letter_spacing=_letter_spacing(str(sample.get("letterSpacing") or "")),
+                    size_px=size_px,
+                    line_height=_line_height(str(sample.get("lineHeight") or ""), size_px),
+                    letter_spacing=_letter_spacing(str(sample.get("letterSpacing") or ""), size_px),
                     locator=locator,
                 )
             )
