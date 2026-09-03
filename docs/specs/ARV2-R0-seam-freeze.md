@@ -44,6 +44,10 @@ Rules:
 > **DECISION BOX 1a** — is `directive_text` free-form only, or does it carry a small structured
 > block (e.g. depth: full|reduced|cheap-pass, committee size cap)? Strawman: free-form only for
 > v1; depth knobs arrive with tiering.
+> **Amended recommendation (2026-09-03, `ARV2-plan-delta-2026-09-03.md` §4):** carry a small
+> structured block — `effort: full|reduced|cheap-pass` and `committee_cap: int` — beside the
+> free text. The runs priced the rungs ($0.155 / $0.086 / $0.015 per account) and an explicit
+> ladder lets the human choose spend without a mechanical gate.
 >
 > **DECISION BOX 1b** — does launch accept accounts *not yet* in the store (domains to create),
 > or must discovery/import have landed them as `account_entity` rows first? Strawman: entities
@@ -126,6 +130,13 @@ qualifier_fields:            # compiled into the field catalog (registered, desc
 
 <the full human-readable definition: who they are, why they buy, what signals matter,
  in priority order — the prose the research agent actually reads>
+
+## Sections the interview should fill (amended 2026-09-03)
+- TAM / list-math estimate and the widen | tier | shrink choice the client made
+- Disqualifiers and red flags (incl. "direct competitor" wording)
+- Closed-won / closed-lost patterns from the client's last deals, in their own words
+- The client's own phrasing of who they sell to (verbatim, quoted)
+- The qualification-floor verdict: is this motion ABM-shaped, and if not, what to do first
 ```
 
 Rules:
@@ -152,6 +163,10 @@ Rules:
 > **DECISION BOX 2c** — the `Persona` enum has four values today and the persona map above uses
 > five (adds `user`). Adding `USER` to the enum is a contract-delta on frozen core + a migration,
 > proposed twice by the PoC runs (v2 §7.4, v3 §7.4). Ratify now or map `user → champion` for v1?
+> **Amended recommendation (2026-09-03):** the ICP `persona_map` is THE single persona vocabulary
+> — the research lane's committee claims, the Head-of-ABM skills, and the frontend's free-text
+> persona chips (the new `chat-shell` fixtures carry ten ad-hoc values) all map onto it. Add
+> `user` to the enum now; the PoC runs hit its absence three times.
 
 ---
 

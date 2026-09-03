@@ -106,3 +106,11 @@ db-smoke green; frontend gate green (2060/2060).
 NOT YET: `make check` fully green (11 documented pre-existing reds — debt-payoff needs an owner
 ruling); seam docs signed (draft ready, joint session pending); step 7 frontend contract-gap
 ruling session; step 8 ARV2 skeleton (flag + empty driver + catalog folder + Secrets.ai_ark_api_key).
+
+## ADDENDUM 2026-09-03 — plan delta after the Person-Depth + One-Account runs
+Read first-hand: `.context/arv2-person-depth/`, `.context/arv2-one-account-aiark/` (chicago), the
+`head-of-abm-agent-refinements/` program, and the new frontend truth `clue-frontend/chat-shell`
+@ `b24f547`. Written up as **`docs/specs/ARV2-plan-delta-2026-09-03.md`** (amends R1–R5 content,
+not order) + three amendments applied to the seam-freeze DRAFT. Two coordination facts: chicago
+does NOT have the R0 commits (push/merge before R1); Aryan's memory note reports Apollo + AI Ark
+keys pasted in an untracked chat attachment — rotate both.
