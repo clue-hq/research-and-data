@@ -335,6 +335,10 @@ export interface SceneTextEditStyle {
 /** Everything the DOM edit surface is drawn from, in STAGE px. */
 export interface SceneTextEditModel {
   nodeId: NodeId;
+  /** The node's DECLARED family, un-quoted — what the font registry is asked
+   * about (`model.style.fontFamily` is the DOM stack, which it cannot answer
+   * for). Plan 1 item B: the toolbar names it in the no-face reason. */
+  family: string;
   /** The STORED content — `text_transform` applies to painted glyphs only, so
    * the caret edits the raw string (upstream parity). */
   content: string;
@@ -431,6 +435,7 @@ export function sceneTextEditModel({
     height: Math.max(MIN_TEXT_EDIT_SIZE_PX, outline.height),
     left: outline.x,
     rotation: outline.rotation,
+    family: text.fontFamily,
     style: {
       color: descriptor.fill,
       fontFamily: domFontFamilyStack(text.fontFamily),

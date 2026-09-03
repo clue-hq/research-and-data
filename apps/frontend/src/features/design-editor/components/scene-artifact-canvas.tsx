@@ -86,7 +86,9 @@ import { SceneTextToolbar } from "./scene-text-toolbar";
 import {
   sceneTextFillPatch,
   sceneTextMarkPatch,
+  sceneTextMarkUnavailableReason,
   sceneTextStyleChord,
+  type SceneTextFaceAvailability,
   type SceneTextFillChoice,
   type SceneTextMarkChannel,
 } from "./scene-text-toolbar.logic";
@@ -106,6 +108,8 @@ import { valignOffset } from "../engine/scene/renderAdapter";
 import { getNode } from "../engine/scene/sceneQueries";
 import { CanvasKitImageCache } from "../engine/scene/canvaskit/imageCache";
 import {
+  boldChangesFace,
+  hasItalicFace,
   loadCanvasKit,
   subscribeTextMeasurementStatus,
   textMeasurementStatusSnapshot,
@@ -2382,6 +2386,18 @@ function SceneTextEditOverlay({
       );
   }, [settle]);
 
+  /**
+   * Plan 1 item B: which face-dependent marks this node's family can actually
+   * paint, asked of the same registry the canvas shapes through. Neither
+   * renderer synthesises a weight or a slant, so a mark with no face is refused
+   * with a reason (the button's title, and the chord's silent no-op) instead of
+   * writing a style nothing can draw.
+   */
+  const faces: SceneTextFaceAvailability = {
+    bold: boldChangesFace(model.family),
+    italic: hasItalicFace(model.family),
+  };
+
   const trackSelection = (element: HTMLTextAreaElement) => {
     setSelection({
       start: element.selectionStart ?? 0,
@@ -2425,6 +2441,9 @@ function SceneTextEditOverlay({
   };
 
   const applyMark = (channel: SceneTextMarkChannel) => {
+    if (sceneTextMarkUnavailableReason(channel, model.family, faces) !== null) {
+      return; // ⌘B/⌘I on a family with no such face: the button is disabled and says why
+    }
     const format = textEditFormatState(
       model.text,
       sessionRef.current,
@@ -2551,6 +2570,8 @@ function SceneTextEditOverlay({
       <SceneTextToolbar
         box={toolbarBox}
         collapsed={collapsed}
+        faces={faces}
+        family={model.family}
         format={format}
         inert={false}
         nodeColor={model.style.color}

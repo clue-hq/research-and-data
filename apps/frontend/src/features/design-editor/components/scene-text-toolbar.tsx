@@ -10,6 +10,7 @@ import {
   sceneTextMarkState,
   sceneTextToolbarPosition,
   sceneTextToolbarSwatches,
+  type SceneTextFaceAvailability,
   type SceneTextFillChoice,
   type SceneTextMarkChannel,
   type SceneTextToolbarPosition,
@@ -62,6 +63,10 @@ export interface SceneTextToolbarProps {
   box: { left: number; top: number; width: number; height: number };
   /** No range selected — the span toggles have nothing to act on (item 4). */
   collapsed: boolean;
+  /** Which face-dependent marks that family can paint (Plan 1 item B). */
+  faces: SceneTextFaceAvailability;
+  /** The node's declared family, for the disabled-mark reason. */
+  family: string;
   format: RangeFormatState;
   /** The session's own gate: a locked node, or a refused write path. */
   inert: boolean;
@@ -89,6 +94,8 @@ function isTextField(target: EventTarget | null): boolean {
 export function SceneTextToolbar({
   box,
   collapsed,
+  faces,
+  family,
   format,
   inert,
   nodeColor,
@@ -191,6 +198,8 @@ export function SceneTextToolbar({
           const state = sceneTextMarkState(control.channel, format, {
             collapsed,
             inert,
+            family,
+            faces,
           });
           return (
             <button
@@ -202,9 +211,10 @@ export function SceneTextToolbar({
               aria-label={control.label}
               aria-pressed={richTextAriaPressed(state.pressed)}
               title={
-                control.shortcut
+                state.reason ??
+                (control.shortcut
                   ? `${control.label} (${control.shortcut})`
-                  : control.label
+                  : control.label)
               }
               disabled={state.disabled}
               onClick={() => {

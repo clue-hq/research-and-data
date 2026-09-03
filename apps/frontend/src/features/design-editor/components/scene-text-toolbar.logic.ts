@@ -92,20 +92,57 @@ export function sceneTextMarkPatch(
   }
 }
 
+/** Which face-dependent marks the selected node's family can actually paint. */
+export interface SceneTextFaceAvailability {
+  bold: boolean;
+  italic: boolean;
+}
+
+/**
+ * Why a mark cannot be applied, or null. Only bold and italic need a face; the
+ * copy is the founder-ratified sentence (Plan 1, 2026-09-04) and names the family
+ * so the user knows which font to add to the kit.
+ */
+export function sceneTextMarkUnavailableReason(
+  channel: SceneTextMarkChannel,
+  family: string,
+  faces: SceneTextFaceAvailability,
+): string | null {
+  if (channel === "bold" && !faces.bold) {
+    return `No bold face for “${family}” in the brand kit`;
+  }
+  if (channel === "italic" && !faces.italic) {
+    return `No italic face for “${family}” in the brand kit`;
+  }
+  return null;
+}
+
 /**
  * One mark button's rendered state.
  *
- * `collapsed` disables it — founder-visible item 4: with a caret and no range
- * there is nothing to style (`applyStyleToRange` no-ops on an empty range), and
- * whole-node styling already lives in the inspector. `inert` is the session's
- * own gate (a locked node, or Gate G-H's in-flight turn).
+ * Three gates, any of which disables the button:
+ *
+ *  • `collapsed` — founder-visible item 4: with a caret and no range there is
+ *    nothing to style (`applyStyleToRange` no-ops on an empty range), and
+ *    whole-node styling already lives in the inspector;
+ *  • `inert` — the session's own gate (a locked node, or Gate G-H's in-flight
+ *    turn);
+ *  • `faces` — the kit has no face for this mark; the button carries the reason
+ *    as its title, so a toggle that could only write an unpaintable weight says
+ *    so instead of silently doing nothing.
  */
 export function sceneTextMarkState(
   channel: SceneTextMarkChannel,
   format: RangeFormatState,
-  { collapsed, inert }: { collapsed: boolean; inert: boolean },
-): { pressed: TriState; disabled: boolean } {
-  return { pressed: format[channel], disabled: collapsed || inert };
+  {
+    collapsed,
+    inert,
+    family,
+    faces,
+  }: { collapsed: boolean; inert: boolean; family: string; faces: SceneTextFaceAvailability },
+): { pressed: TriState; disabled: boolean; reason: string | null } {
+  const reason = sceneTextMarkUnavailableReason(channel, family, faces);
+  return { pressed: format[channel], disabled: collapsed || inert || reason !== null, reason };
 }
 
 /**

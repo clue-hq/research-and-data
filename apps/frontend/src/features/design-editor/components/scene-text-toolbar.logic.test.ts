@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { adBrandKit } from "../adapter/__fixtures__/brand-kit-colors";
 import { buildScenePalette } from "../adapter/scene-palette";
+import type { RangeFormatState } from "../engine/scene/textSpans";
 import {
   SCENE_TEXT_MARK_CONTROLS,
   SCENE_TEXT_TOOLBAR_BOX_GAP,
@@ -11,6 +12,7 @@ import {
   sceneTextFillPatch,
   sceneTextMarkPatch,
   sceneTextMarkState,
+  sceneTextMarkUnavailableReason,
   sceneTextStyleChord,
   sceneTextToolbarPosition,
   sceneTextToolbarSwatches,
@@ -62,26 +64,112 @@ test("a control reads its own channel's tri-state, and is inert on a caret", () 
     strikethrough: "off",
     fill: { kind: "uniform", paint: null },
   } as const;
-  assert.deepEqual(sceneTextMarkState("bold", state, { collapsed: false, inert: false }), {
-    pressed: "on",
-    disabled: false,
-  });
-  assert.deepEqual(sceneTextMarkState("italic", state, { collapsed: false, inert: false }), {
-    pressed: "mixed",
-    disabled: false,
-  });
+  const kitHasBoth = { family: "Inter", faces: { bold: true, italic: true } };
+  assert.deepEqual(
+    sceneTextMarkState("bold", state, { collapsed: false, inert: false, ...kitHasBoth }),
+    {
+      pressed: "on",
+      disabled: false,
+      reason: null,
+    },
+  );
+  assert.deepEqual(
+    sceneTextMarkState("italic", state, { collapsed: false, inert: false, ...kitHasBoth }),
+    {
+      pressed: "mixed",
+      disabled: false,
+      reason: null,
+    },
+  );
   // Founder-visible item 4: a collapsed caret disables the span toggles —
   // whole-node styling lives in the inspector, and `applyStyleToRange` no-ops
   // on an empty range anyway.
-  assert.deepEqual(sceneTextMarkState("bold", state, { collapsed: true, inert: false }), {
-    pressed: "on",
-    disabled: true,
-  });
+  assert.deepEqual(
+    sceneTextMarkState("bold", state, { collapsed: true, inert: false, ...kitHasBoth }),
+    {
+      pressed: "on",
+      disabled: true,
+      reason: null,
+    },
+  );
   // G-H / the lock: the session's own inert flag disables everything.
-  assert.deepEqual(sceneTextMarkState("bold", state, { collapsed: false, inert: true }), {
-    pressed: "on",
-    disabled: true,
-  });
+  assert.deepEqual(
+    sceneTextMarkState("bold", state, { collapsed: false, inert: true, ...kitHasBoth }),
+    {
+      pressed: "on",
+      disabled: true,
+      reason: null,
+    },
+  );
+});
+
+test("a mark whose face the kit lacks is disabled and says why", () => {
+  const state: RangeFormatState = {
+    bold: "off",
+    italic: "off",
+    underline: "off",
+    strikethrough: "off",
+    fill: { kind: "uniform", paint: null },
+  };
+  const faces = { bold: false, italic: false };
+  assert.deepEqual(
+    sceneTextMarkState("bold", state, {
+      collapsed: false,
+      inert: false,
+      family: "seasonMix",
+      faces,
+    }),
+    { pressed: "off", disabled: true, reason: "No bold face for “seasonMix” in the brand kit" },
+  );
+  assert.deepEqual(
+    sceneTextMarkState("italic", state, {
+      collapsed: false,
+      inert: false,
+      family: "seasonMix",
+      faces,
+    }),
+    { pressed: "off", disabled: true, reason: "No italic face for “seasonMix” in the brand kit" },
+  );
+  // Underline/strikethrough never depend on a face.
+  assert.equal(
+    sceneTextMarkState("underline", state, {
+      collapsed: false,
+      inert: false,
+      family: "seasonMix",
+      faces,
+    }).disabled,
+    false,
+  );
+  // With the faces present, nothing changes from before.
+  const ok = { bold: true, italic: true };
+  assert.deepEqual(
+    sceneTextMarkState("bold", state, {
+      collapsed: false,
+      inert: false,
+      family: "seasonMix",
+      faces: ok,
+    }),
+    { pressed: "off", disabled: false, reason: null },
+  );
+});
+
+test("the face reason is exact copy, per channel and family", () => {
+  assert.equal(
+    sceneTextMarkUnavailableReason("bold", "Söhne", { bold: false, italic: true }),
+    "No bold face for “Söhne” in the brand kit",
+  );
+  assert.equal(
+    sceneTextMarkUnavailableReason("italic", "Söhne", { bold: true, italic: false }),
+    "No italic face for “Söhne” in the brand kit",
+  );
+  assert.equal(
+    sceneTextMarkUnavailableReason("bold", "Söhne", { bold: true, italic: false }),
+    null,
+  );
+  assert.equal(
+    sceneTextMarkUnavailableReason("strikethrough", "Söhne", { bold: false, italic: false }),
+    null,
+  );
 });
 
 /* -------------------------------------------------------------------------
