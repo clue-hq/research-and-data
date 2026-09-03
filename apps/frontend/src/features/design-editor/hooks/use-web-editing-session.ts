@@ -19,7 +19,7 @@ import type {
   WebArtifactCanvasControls,
   WebRichTextSessionState,
 } from "../components/web-artifact-canvas";
-import type { RichTextDocument } from "../engine/webDocuments";
+import type { RichTextDocument, WebPageSummary } from "../engine/webDocuments";
 import { useCustomComponentArtifact } from "./use-custom-component-artifact";
 import { useInspectorWrites } from "./use-inspector-writes";
 import { useReplaceImage } from "./use-replace-image";
@@ -34,6 +34,32 @@ import { useWebTheme } from "./use-web-theme";
 // own; this is only the document/selection/write/theme session behind them.
 
 export type WebEditingSession = ReturnType<typeof useWebEditingSession>;
+
+/** F5 task 18: one page of the loaded document, as the shell's page switcher
+ * needs it (the document's own node maps stay inside the session). */
+export interface WebSessionPage {
+  id: string;
+  name: string;
+  route: string;
+}
+
+/**
+ * F5 task 18: which page of a multi-page web document is active.
+ *
+ * Pure and DERIVED, never reset in an effect (the same discipline
+ * `useWebArtifactSelection` documents): the requested page when the currently
+ * loaded document still has it, the first page otherwise — so a reload that
+ * dropped the active page falls back instead of asking the render seam for a
+ * page that no longer exists — and null when the document has no pages at all.
+ */
+export function resolveActivePageId(
+  pages: readonly WebPageSummary[] | undefined,
+  requested: string | null,
+): string | null {
+  if (!pages || pages.length === 0) return null;
+  const requestedPage = pages.find((page) => page.id === requested);
+  return requestedPage?.id ?? pages[0].id;
+}
 
 export function useWebEditingSession({
   activeArtifactId,
@@ -230,7 +256,42 @@ export function useWebEditingSession({
     selection: webSelection.selection,
   });
 
-  const page = webSelection.document?.webDoc?.pages?.[0];
+  // F5 task 18: the ACTIVE page — the one the shell's switcher picked, the
+  // first page until it picks one, and the first page again whenever a reload
+  // drops the picked one. Everything page-scoped in this session reads it —
+  // the render the canvas fetches and the layer tree below, which before task
+  // 18 was pinned to `pages[0]` — so the switcher, the canvas and the
+  // inspector can never disagree about which page is on screen. (Writes need
+  // no change: an op takes its `page_id` from the node it targets, via
+  // `pageIdForNode`.)
+  const documentPages = webSelection.document?.webDoc?.pages;
+  const [requestedPageId, setRequestedPageId] = useState<string | null>(null);
+  const activePageId = resolveActivePageId(documentPages, requestedPageId);
+  const pages: WebSessionPage[] = useMemo(
+    () =>
+      (documentPages ?? []).map((summary) => ({
+        id: summary.id,
+        name: summary.name,
+        route: summary.route,
+      })),
+    [documentPages],
+  );
+  // A selected node belongs to the page it was selected on, so switching pages
+  // clears the selection through the ordinary "selection gone" path (the same
+  // `onSelect(null)` the canvas sends on a press over nothing) — the canvas's
+  // `selectedNodeId` and the inspector empty out together.
+  const clearSelection = webSelection.onSelect;
+  const setActivePageId = useCallback(
+    (pageId: string) => {
+      setRequestedPageId(pageId);
+      clearSelection(null);
+    },
+    [clearSelection],
+  );
+
+  const page =
+    documentPages?.find((summary) => summary.id === activePageId) ??
+    documentPages?.[0];
   const layerRows =
     page?.root && page.nodes
       ? buildWebLayerRows(
@@ -274,6 +335,7 @@ export function useWebEditingSession({
 
   return {
     activeDocumentId,
+    activePageId,
     addressing,
     canvasControls,
     customComponentForm,
@@ -284,10 +346,12 @@ export function useWebEditingSession({
     onRichTextSessionChange: setRichTextSession,
     onSelectLayer,
     onWriteReload,
+    pages,
     redoDisabled: (webSelection.document?.redoDepth ?? 0) === 0,
     reloadNonce,
     richTextRange,
     richTextSession,
+    setActivePageId,
     theme,
     themeColors,
     undoDisabled: (webSelection.document?.undoDepth ?? 0) === 0,

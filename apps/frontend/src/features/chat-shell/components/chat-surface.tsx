@@ -565,6 +565,11 @@ export function ChatSurface({
       <ArtifactStage
         activeArtifactId={shell.activeArtifactId}
         activeDocumentId={activeDocumentId}
+        // F5 task 18: the header's page switcher and the canvas read ONE
+        // value — the web editing session's active page.
+        activePageId={session.activePageId}
+        onPageChange={session.setActivePageId}
+        pages={session.pages}
         artifacts={feedArtifacts}
         artifactKind={shell.artifactKind}
         artifactMaximized={shell.artifactMaximized}

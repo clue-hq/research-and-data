@@ -1400,6 +1400,13 @@
   background: var(--clue-ds-color-bg-neutral-hover);
 }
 
+/* FLAGGED F5 T18: the page switcher's muted route suffix, on the same
+ * `.toolbarMenuItem` row as its page name. */
+.toolbarMenuItemHint {
+  margin-left: 6px;
+  color: var(--chat-shell-subtle);
+}
+
 .artifactHeading,
 .artifactHeaderActions,
 .deviceButton,
