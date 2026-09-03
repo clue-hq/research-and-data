@@ -2487,6 +2487,28 @@ def create_app(
     ) -> JsonObject:
         return public_document(require_document(repo, document_id))
 
+    @app.get("/documents/{document_id}/agent-run")
+    def get_document_agent_run(
+        document_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """The document-scoped agent-busy signal (scene live-streaming rung A follow-up).
+
+        The standalone artifact route has no turn stream to derive the editor lock from, so it
+        asks HERE — the same ``active_design_run_for_document`` predicate the manual-write routes'
+        409 reads, so the page's lock and the server's refusal cannot disagree. ``current_version``
+        rides along so a poller can reload the canvas when the run's commits move the document,
+        without a second request.
+        """
+        document = require_document(repo, document_id)
+        run_id = repo.active_design_run_for_document(document_id)
+        return {
+            "schema_version": 1,
+            "document_id": document_id,
+            "active": run_id is not None,
+            "run_id": run_id,
+            "current_version": document["current_version"],
+        }
+
     @app.put("/documents/{document_id}/agent-instructions")
     def set_agent_instructions(
         document_id: str,
