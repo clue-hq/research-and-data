@@ -156,6 +156,22 @@ class FakeRegistry:
             "derived_reason": f"repair rung {rung}: {note}",
         }
 
+    def read_source(self, fragment_id):
+        section = self.sections.get(fragment_id)
+        if section is None:
+            raise KeyError(f"fragment {fragment_id!r} was not found in this workspace")
+        return {
+            "fragment_id": fragment_id,
+            "section_role": section.get("section_role") or section.get("role"),
+            "label": section.get("label"),
+            "source_url": section.get("source_url"),
+            "status": section.get("status"),
+            "derived_from": section.get("derived_from"),
+            "slots": section.get("slots") or [],
+            "html": section.get("html") or "",
+            "css": section.get("css") or "",
+        }
+
     def resolve_insertable(self, fragment_id):
         section = self.sections.get(fragment_id)
         if section is None:
@@ -1207,3 +1223,32 @@ def test_a_raw_repair_swaps_the_pinned_band_in_place(
     ]
     assert new_fragment_id in pins
     assert HERO_ID not in pins
+
+
+# --- inspect_cloned_section: the raw lane's missing read (third solo Ramp run, 2026-09-04) ---
+
+
+def test_inspect_cloned_section_shows_the_real_html_and_css(tmp_path: Path) -> None:
+    """Every raw-lane instruction says "remix the original's actual CSS", and until this tool
+    existed nothing showed the agent those bytes — search lists slots, view shows a picture —
+    so the third solo run grepped the filesystem for clone markup and then composed from
+    memory. The read returns the captured html + scoped css + slots, truncating honestly."""
+    registry = FakeRegistry(tmp_path)
+    registry.add(
+        fragment_id="frag_inspect_me",
+        role="hero",
+        label="Homepage hero",
+        html='<section class="hp-hero"><h1 data-slot="headline">Real</h1></section>',
+        css=".hp-hero { padding: 96px 0; background: linear-gradient(#a960ee, #ffcb57); }",
+        slots=[{"key": "headline", "kind": "text"}],
+    )
+    tools = _tools(tmp_path, registry)
+    result = json.loads(tools.inspect_cloned_section("frag_inspect_me"))
+    assert result["status"] == "ok"
+    assert result["label"] == "Homepage hero"
+    assert 'class="hp-hero"' in result["html"]
+    assert "linear-gradient(#a960ee, #ffcb57)" in result["css"]
+    assert result["html_truncated"] is False and result["css_truncated"] is False
+    assert result["slots"] == [{"key": "headline", "kind": "text"}]
+    missing = json.loads(tools.inspect_cloned_section("frag_nope"))
+    assert missing["status"] == "error" and missing["error_code"] == "cloned_section.not_found"

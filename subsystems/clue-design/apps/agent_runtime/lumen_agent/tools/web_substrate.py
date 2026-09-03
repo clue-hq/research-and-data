@@ -5008,6 +5008,57 @@ class LumenWebTools:
             "Compose the section instead.",
         )
 
+    def inspect_cloned_section(self, fragment_id: str) -> str:
+        """Read a cloned section's REAL SOURCE: its captured HTML and its scoped CSS, plus
+        its slots. This is what a derived variant (`repair_cloned_section(..., css=…)`) and a
+        raw composition (`compose_web_section`) remix — the client's actual class names,
+        spacing constants, gradients and type scale. Call it on the band you are about to
+        adapt, or on the ancestor of a band you are about to compose, BEFORE writing any
+        markup; `view("cloned_section:<id>")` shows the picture, this shows the bytes.
+        The clone's source lives in the library, never in the workspace filesystem —
+        searching files for it finds nothing. Long sources are truncated; the response
+        says so and gives the full sizes."""
+        clean_id = (fragment_id or "").strip()
+        if not clean_id:
+            return self._tool_error(
+                "cloned_section.bad_request", "inspect_cloned_section requires a fragment id."
+            )
+        registry = self._cloned_section_registry()
+        try:
+            source = registry.read_source(clean_id)
+        except Exception as error:  # noqa: BLE001 - an honest not-found beats a dead turn
+            return self._tool_error(
+                "cloned_section.not_found",
+                f"cloned section {clean_id!r} could not be read: {error}",
+                fragment_id=clean_id,
+            )
+        cap = 12_000
+        html = source.get("html") or ""
+        css = source.get("css") or ""
+        payload: JsonObject = {
+            "status": "ok",
+            "fragment_id": clean_id,
+            "section_role": source.get("section_role"),
+            "label": source.get("label"),
+            "source_url": source.get("source_url"),
+            "fragment_status": source.get("status"),
+            "derived_from": source.get("derived_from"),
+            "slots": source.get("slots"),
+            "html_chars": len(html),
+            "html_truncated": len(html) > cap,
+            "html": html[:cap],
+            "css_chars": len(css),
+            "css_truncated": len(css) > cap,
+            "css": css[:cap],
+        }
+        self.record(
+            "author",
+            "cloned_section_inspected",
+            input_summary=clean_id,
+            output_summary=f"{len(html)} html chars, {len(css)} css chars",
+        )
+        return json.dumps(payload, indent=2)
+
     def search_cloned_sections(
         self, q: str = "", role: Optional[str] = None, limit: int = 8
     ) -> str:

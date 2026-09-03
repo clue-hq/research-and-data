@@ -276,14 +276,38 @@ def _resolve_lineages(
     def is_healthy(row: JsonObject) -> bool:
         return row.get("status") == "approved" and not row.get("degraded")
 
+    def is_campaign_variant(row: JsonObject) -> bool:
+        """A CAMPAIGN VARIANT is a sibling band, never a successor (founder ruling 2026-09-04).
+
+        A repair exists to REPLACE a broken original, so it rightly becomes what pins of the
+        original resolve to. A variant exists to serve one campaign — the homepage hero with
+        one CTA and an eyebrow — and must never hijack the canonical band: found live on the
+        third solo Ramp run, where the agent correctly refused to derive from Stripe's real
+        hero because "deriving from the homepage hero would replace Stripe's captured band for
+        every future pin", and lost the whole DERIVE-VARIANT rung to that (true) fear. The
+        marker is the note prefix the repair-cloned-sections skill mandates for variants
+        (`repair_reason` embeds the note in `derived_reason`); a variant keeps `derived_from`
+        as provenance but starts its own family, so pins of the original keep resolving to
+        the original (or its genuine repairs), and later pages pin the variant by its own id.
+        """
+        reason = row.get("derived_reason")
+        return isinstance(reason, str) and "campaign variant" in reason.lower()
+
+    def lineage_parent(row: JsonObject) -> str | None:
+        """The parent for RESOLUTION purposes: a variant's link is provenance only."""
+        if is_campaign_variant(row):
+            return None
+        parent = row.get("derived_from")
+        return parent if isinstance(parent, str) and parent in by_id else None
+
     def root_of(fragment_id: str) -> str:
         seen: set = set()
         current = fragment_id
         while current not in seen:
             seen.add(current)
             row = by_id.get(current)
-            parent = row.get("derived_from") if isinstance(row, dict) else None
-            if not isinstance(parent, str) or parent not in by_id:
+            parent = lineage_parent(row) if isinstance(row, dict) else None
+            if parent is None:
                 return current
             current = parent
         return current
@@ -292,8 +316,8 @@ def _resolve_lineages(
     children: Dict[str, List[str]] = {}
     for fragment_id, row in by_id.items():
         families.setdefault(root_of(fragment_id), []).append(row)
-        parent = row.get("derived_from")
-        if isinstance(parent, str) and parent in by_id:
+        parent = lineage_parent(row)
+        if parent is not None:
             children.setdefault(parent, []).append(fragment_id)
 
     healthy_below: Dict[str, bool] = {}
@@ -653,6 +677,36 @@ class DurableAgentClonedSectionRegistry:
         return str(path) if path.is_file() else None
 
     # --- the insert gate ---------------------------------------------------------------------
+
+    def read_source(self, fragment_id: str) -> JsonObject:
+        """A cloned section's REAL SOURCE — its captured HTML and scoped CSS — plus its slots.
+
+        The raw lane's whole premise is "remix the original's actual bytes", and until this
+        existed no tool showed the agent those bytes: `search_cloned_sections` lists slots and a
+        preview handle, `view` shows a picture. Found live 2026-09-04 (third solo Ramp run): the
+        agent spent eight calls grepping the workspace filesystem — other runs' directories
+        included — for clone markup that lives in blob storage, then composed from memory. This
+        is a read of any fragment the workspace holds (draft or released; inspecting is not
+        pinning, and the pin gate is unchanged), the same payload every pin resolves through.
+        """
+        loaded = read_web_fragment(
+            self.blobs.storage,
+            workspace_id=self.workspace_id,
+            fragment_id=fragment_id,
+        )
+        row = loaded.row
+        payload = loaded.payload
+        return {
+            "fragment_id": fragment_id,
+            "section_role": row.get("section_role"),
+            "label": row.get("label"),
+            "source_url": row.get("source_url"),
+            "status": row.get("status"),
+            "derived_from": row.get("derived_from"),
+            "slots": _slot_summary(loaded.slot_manifest),
+            "html": str(payload.get("html") or ""),
+            "css": str(payload.get("css") or ""),
+        }
 
     def resolve_insertable(self, fragment_id: str) -> JsonObject:
         """May this fragment be pinned, and what does it render as?

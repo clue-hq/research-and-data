@@ -344,6 +344,7 @@ def create_web_deepagent(
                 # proof bands are reused where a released clone serves the job, and composing one
                 # from scratch is what happens when none does.
                 tools.search_cloned_sections,
+                tools.inspect_cloned_section,
                 tools.insert_cloned_section,
                 # F3.1: the two halves of the recreate walk. `recreate_cloned_page` is the
                 # whole-page assembly (all of them, source order, nothing added);
@@ -481,6 +482,9 @@ def create_web_deepagent(
             tools.author_web_subtree,
             tools.patch_web_page,
             tools.insert_cloned_section,
+            # 2026-09-04: the raw lane's missing read — a clone's real HTML+CSS, so a variant
+            # or raw composition remixes bytes instead of imagining them.
+            tools.inspect_cloned_section,
             tools.recreate_cloned_page,
             tools.assemble_cloned_sections,
             tools.repair_cloned_section,
