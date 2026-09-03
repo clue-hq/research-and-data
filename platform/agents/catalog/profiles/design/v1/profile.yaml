@@ -161,8 +161,9 @@ tools:
     output_schema_sha256: 8e1028357e9beee248e132cb2998da92c1b14d592eed0f90c93ca9eb105c33ba
   - name: design_rollback_web_publish
     version: "1"
+    # re-pinned 2026-09-03 (F5 multi-page publish): output schema changed (WebPublishRef gained page_count + routes).
     input_schema_sha256: ca2058b937ee6a66e87fca0ccc5b2f84b0cc73a21fa9a7eb25d92f9a61ff14a0
-    output_schema_sha256: e47bff5ae86fcf0b78eb5734f46aff83507029e3859a1fed13a3fa5d92cc7fc9
+    output_schema_sha256: 22ffc62459078972870b20971c1cbbd799e77aff80ad749686159b678e50c9bb
   - name: design_set_agent_instructions
     version: "1"
     input_schema_sha256: f61e020a272d5d4329fc9a287a259d7280566a4584f819ac0847055fd25b8bf4
