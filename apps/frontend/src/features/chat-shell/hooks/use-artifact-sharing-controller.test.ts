@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createFixtureWebPublishRepository } from "../../design-editor/data/web-publish.repository";
+import {
+  createFixtureWebPublishRepository,
+  downloadFilenameFrom,
+} from "../../design-editor/data/web-publish.repository";
 import {
   pageLinkRows,
   publishWithRepository,
@@ -83,4 +86,34 @@ test("pageLinkRows yields the one row a single-page site has", () => {
   assert.deepEqual(rows, [
     { label: "Home", route: "/", url: "https://acme.clue.site/launch" },
   ]);
+});
+
+test("downloadFilenameFrom reads the quoted filename the server sent", () => {
+  assert.equal(
+    downloadFilenameFrom(
+      'attachment; filename="acme-launch-1a2b3c4d.zip"',
+      "site.zip",
+    ),
+    "acme-launch-1a2b3c4d.zip",
+  );
+});
+
+test("downloadFilenameFrom reads an unquoted filename too", () => {
+  assert.equal(
+    downloadFilenameFrom("attachment; filename=acme.zip", "site.zip"),
+    "acme.zip",
+  );
+});
+
+test("downloadFilenameFrom falls back when there is no usable name", () => {
+  assert.equal(downloadFilenameFrom(null, "site.zip"), "site.zip");
+  assert.equal(downloadFilenameFrom("attachment", "site.zip"), "site.zip");
+  assert.equal(downloadFilenameFrom('attachment; filename=""', "site.zip"), "site.zip");
+});
+
+test("downloadFilenameFrom keeps only the file's own name", () => {
+  assert.equal(
+    downloadFilenameFrom('attachment; filename="../../etc/acme.zip"', "site.zip"),
+    "acme.zip",
+  );
 });

@@ -182,3 +182,62 @@ test("the http repository deletes the slug on unpublish", async () => {
   assert.equal(calls[0].url, "http://localhost:8002/web/publishes/acme");
   assert.equal(calls[0].init?.method, "DELETE");
 });
+
+test("the http repository downloads the site zip under the server's filename", async () => {
+  const calls: string[] = [];
+  const body = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x01, 0x02, 0x03]);
+  const fetchImpl: typeof fetch = async (input) => {
+    calls.push(String(input));
+    return new Response(body, {
+      headers: {
+        "content-disposition": 'attachment; filename="acme-launch-1a2b3c4d.zip"',
+        "content-type": "application/zip",
+      },
+      status: 200,
+    });
+  };
+  const repository = createHttpWebPublishRepository({
+    apiBaseUrl: "http://localhost:8002",
+    fetchImpl,
+  });
+
+  const result = await repository.exportZip("doc_1");
+
+  assert.equal(calls[0], "http://localhost:8002/documents/doc_1/web/export");
+  assert.equal(result.filename, "acme-launch-1a2b3c4d.zip");
+  assert.equal(result.blob.size, body.byteLength);
+});
+
+test("the http repository falls back to site.zip when the server names nothing", async () => {
+  const fetchImpl: typeof fetch = async () =>
+    new Response(new Uint8Array([0x50, 0x4b]), {
+      headers: { "content-type": "application/zip" },
+      status: 200,
+    });
+  const repository = createHttpWebPublishRepository({
+    apiBaseUrl: "http://localhost:8002",
+    fetchImpl,
+  });
+  assert.equal((await repository.exportZip("doc_1")).filename, "site.zip");
+});
+
+test("a refused export throws rather than downloading an error page", async () => {
+  const fetchImpl: typeof fetch = async () =>
+    jsonResponse(502, { detail: { code: "web_export.compile_failed" } });
+  const repository = createHttpWebPublishRepository({
+    apiBaseUrl: "http://localhost:8002",
+    fetchImpl,
+  });
+  await assert.rejects(repository.exportZip("doc_1"), /HTTP 502/);
+});
+
+test("the fixture repository exports a zip-typed blob named for the site", async () => {
+  const repository = createFixtureWebPublishRepository();
+  const unpublished = await repository.exportZip("doc_1");
+  assert.equal(unpublished.blob.type, "application/zip");
+  assert.ok(unpublished.blob.size > 0);
+  assert.equal(unpublished.filename, "site.zip");
+
+  await repository.publish("doc_1", { slug: "acme", noindex: false });
+  assert.equal((await repository.exportZip("doc_1")).filename, "acme.zip");
+});
