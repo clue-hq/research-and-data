@@ -348,6 +348,10 @@ class LumenDesignTools:
         # every applied scene mutation — the proposal's op source of truth
         # (see _log_scene_operations).
         self.operations_ledger: list[JsonObject] = []
+        #: Plan 2 Task 5: how much of `operations_ledger` the stream has carried. The client's
+        #: cursor applies a frame only when it BEGINS where the cursor stands, so a frame must
+        #: carry every ledger entry since the last frame — see `_contiguous_sink_extra`.
+        self._streamed_ledger_len = 0
         self.effective_brand_context: Optional[JsonObject] = None
         # K1: compact brand context card, built once from the by-value kit in
         # config (None without a kit). Injected via load_knowledge and
@@ -4564,6 +4568,33 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    def _contiguous_sink_extra(self, sink_extra: JsonObject) -> JsonObject:
+        """Make an op-bearing sink push begin where the client's cursor stands.
+
+        `operations_ledger` grows at ~20 sites (asset registration, autofix, pruning, …) but only
+        the authoring mutations push a frame. The frontend cursor (`scene-stream-cursor.ts`,
+        rule 5) applies a frame only when `operations_total - len(operations)` equals the
+        position it has been shown up to; a gap makes it dirty and it drops every frame until
+        a checkpoint. Live-proven 2026-09-04: two auto-registered kit assets (ledger 1–2, no
+        frame) left the fresh Apollo/Ramp document's first batch beginning at 2, and the stage
+        showed nothing for nine minutes. So every frame prepends the ledger entries streamed
+        since the last frame, and a checkpoint (which re-seats the client) advances the marker.
+        """
+        operations = sink_extra.get("operations")
+        total = sink_extra.get("operations_total")
+        if not isinstance(operations, list) or not isinstance(total, int):
+            return sink_extra
+        begin = total - len(operations)
+        if begin > self._streamed_ledger_len:
+            missing = [
+                entry["operation"]
+                for entry in self.operations_ledger[self._streamed_ledger_len : begin]
+                if isinstance(entry, dict) and "operation" in entry
+            ]
+            operations = missing + list(operations)
+        self._streamed_ledger_len = max(self._streamed_ledger_len, total)
+        return {**sink_extra, "operations": operations}
+
     def record(
         self,
         actor: str,
@@ -4611,7 +4642,7 @@ class LumenDesignTools:
                         "diagnostic_count": len(diagnostics or []),
                     }
                     if sink_extra:
-                        push.update(sink_extra)
+                        push.update(self._contiguous_sink_extra(sink_extra))
                     self.event_sink(event, push)
                 except Exception:
                     pass
@@ -4765,6 +4796,9 @@ class LumenDesignTools:
             )
             return
         self._checkpointed_operations = len(operations)
+        # Plan 2 Task 5: the checkpoint re-seats the client at this position (rung A reloads
+        # the version it names), so nothing before it needs to ride a later frame.
+        self._streamed_ledger_len = max(self._streamed_ledger_len, len(operations))
         self.record(
             "coordinator",
             "scene_checkpointed",
