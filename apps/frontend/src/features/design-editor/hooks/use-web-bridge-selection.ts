@@ -90,7 +90,7 @@ export interface WebBridgeSelection {
   setRichTextToolbarActive: (nodeId: string, active: boolean) => void;
   /** Commit or cancel the active iframe-local session from parent focus. */
   settleRichText: (nodeId: string, action: "commit" | "cancel") => void;
-  /** Slice 3 (R-A1): draw the shell's numbered annotation badges in the frame.
+  /** Slice 2 (R-A1): draw the shell's numbered annotation badges in the frame.
    * An empty list IS the clear. No-op until the frame + nonce are live. */
   postAnnotations: (items: { address: WebElementAddress; n: number }[]) => void;
 }
@@ -113,7 +113,7 @@ export function useWebBridgeSelection(params: {
    * that link points at, so the SHELL performs the switch. Kept in a ref so a
    * changing callback never re-arms the listener. */
   onNavigate?: (pageId: string) => void;
-  /** Slice 3 (R-A1): invoked on the bridge's element-level click report — the
+  /** Slice 2 (R-A1): invoked on the bridge's element-level click report — the
    * shell opens its comment box on that element. Kept in a ref so a changing
    * callback never re-arms the listener. */
   onAnnotate?: (event: WebAnnotateEvent) => void;

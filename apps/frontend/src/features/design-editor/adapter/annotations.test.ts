@@ -15,6 +15,11 @@ const open = {
   geometry,
   pageId: "home",
 };
+const other = {
+  ...open,
+  address: { nodeId: "frg_b", path: ":nth-child(3)", tag: "p" },
+  name: "p · body",
+};
 
 test("open then add numbers the annotation and clears the pending box", () => {
   let s = annotationsReducer(EMPTY_ANNOTATIONS, open);
@@ -60,4 +65,57 @@ test("clear drops everything", () => {
     { type: "clear" },
   );
   assert.deepEqual(s, EMPTY_ANNOTATIONS);
+});
+
+// Spec §3.4 / fix round 1: clicking a DIFFERENT element is the same gesture as
+// clicking away — a non-blank draft is banked, never lost, and never carried
+// across into the new box.
+test("opening a different address banks a non-blank draft and starts the new box empty", () => {
+  let s = annotationsReducer(EMPTY_ANNOTATIONS, open);
+  s = annotationsReducer(s, { type: "edit", note: "Shorter" });
+  s = annotationsReducer(s, other);
+  assert.deepEqual(
+    s.items.map((i) => [i.n, i.note, i.address.nodeId]),
+    [[1, "Shorter", "frg_a"]],
+  );
+  assert.equal(s.pending?.address.nodeId, "frg_b");
+  assert.equal(s.pending?.note, "");
+  assert.equal(s.nextN, 2);
+});
+
+test("opening a different address with a blank draft adds nothing", () => {
+  let s = annotationsReducer(EMPTY_ANNOTATIONS, open);
+  s = annotationsReducer(s, { type: "edit", note: "  " });
+  s = annotationsReducer(s, other);
+  assert.equal(s.items.length, 0);
+  assert.equal(s.nextN, 1);
+  assert.equal(s.pending?.address.nodeId, "frg_b");
+});
+
+test("re-opening the SAME element keeps the half-typed draft", () => {
+  let s = annotationsReducer(EMPTY_ANNOTATIONS, open);
+  s = annotationsReducer(s, { type: "edit", note: "Shorter" });
+  s = annotationsReducer(s, open);
+  assert.equal(s.items.length, 0);
+  assert.equal(s.pending?.note, "Shorter");
+});
+
+test("add with no argument stores the pending draft (the click-away path)", () => {
+  let s = annotationsReducer(EMPTY_ANNOTATIONS, open);
+  s = annotationsReducer(s, { type: "edit", note: " Shorter " });
+  s = annotationsReducer(s, { type: "add" });
+  assert.equal(s.pending, null);
+  assert.deepEqual(
+    s.items.map((i) => i.note),
+    ["Shorter"],
+  );
+});
+
+test("dismiss is an explicit cancel — a non-blank draft is dropped, not banked", () => {
+  let s = annotationsReducer(EMPTY_ANNOTATIONS, open);
+  s = annotationsReducer(s, { type: "edit", note: "Shorter" });
+  s = annotationsReducer(s, { type: "dismiss" });
+  assert.equal(s.pending, null);
+  assert.equal(s.items.length, 0);
+  assert.equal(s.nextN, 1);
 });

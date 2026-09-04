@@ -318,7 +318,7 @@ export function useWebEditingSession({
     [clearSelection],
   );
 
-  // Slice 3 (R-A1..R-A3): the canvas's element annotations. Owned HERE because
+  // Slice 2 (R-A1..R-A3): the canvas's element annotations. Owned HERE because
   // two surfaces need the one list — the canvas (comment box + badges) and the
   // composer's chip bar (task 7) — and because R-A3's "a document switch drops
   // them" is exactly this hook's lifetime.
@@ -327,11 +327,13 @@ export function useWebEditingSession({
   const annotationsOpen = annotations.open;
   const annotationsDismiss = annotations.dismiss;
   const annotationsAdd = annotations.add;
+  const annotationsEditNote = annotations.editNote;
   const annotationsItemsForPage = annotations.itemsForPage;
   const canvasAnnotations: WebAnnotationsCanvasBinding = useMemo(
     () => ({
       add: annotationsAdd,
       dismiss: annotationsDismiss,
+      editNote: annotationsEditNote,
       itemsForPage: annotationsItemsForPage,
       open: annotationsOpen,
       pending: annotationsPending,
@@ -339,6 +341,7 @@ export function useWebEditingSession({
     [
       annotationsAdd,
       annotationsDismiss,
+      annotationsEditNote,
       annotationsItemsForPage,
       annotationsOpen,
       annotationsPending,

@@ -253,7 +253,7 @@ export type WebBridgeInbound =
    * href matches one of the document's routes it re-posts the click as this
    * intent, and the shell switches the active page. */
   | { type: "navigate"; pageId: string }
-  /** Slice 3 (R-A1): a single click in Edit mode, reported at ELEMENT
+  /** Slice 2 (R-A1): a single click in Edit mode, reported at ELEMENT
    * granularity so a headline inside a cloned band — which has no node id of
    * its own — can still be commented on. Arrives alongside the ordinary
    * `select` for the owning node. */
@@ -618,7 +618,7 @@ export function validateBridgeMessage(
     const pageId = typeof data.pageId === "string" ? data.pageId : "";
     return pageId ? { type: "navigate", pageId } : null;
   }
-  // Slice 3 (R-A1): the element-level click report. Admitted under the very
+  // Slice 2 (R-A1): the element-level click report. Admitted under the very
   // same source/origin/channel/nonce checks as every message above.
   if (data.type === "annotate") {
     const address = (data.address ?? null) as Partial<WebElementAddress> | null;
@@ -723,7 +723,7 @@ export function webBridgeClearMessage(nonce: string): {
   return { channel: WEB_BRIDGE_CHANNEL, nonce, type: "clear" };
 }
 
-/** Slice 3 (R-A1): the numbered annotation badges posted INTO the iframe. The
+/** Slice 2 (R-A1): the numbered annotation badges posted INTO the iframe. The
  * SHELL owns the numbering; the frame only draws it — and an empty `items` list
  * IS the clear, so a settled turn erases every badge through this one message.
  * Same nonce-tagging as {@link webBridgeClearMessage}. */

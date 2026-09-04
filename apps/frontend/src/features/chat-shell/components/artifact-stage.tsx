@@ -116,7 +116,7 @@ export function ArtifactStage({
    * selection). Absent → the render seam picks the document's own first page,
    * exactly as it did before the switcher existed. */
   activePageId?: string | null;
-  /** Slice 3 (R-A1): the web canvas's annotation session — the comment box a
+  /** Slice 2 (R-A1): the web canvas's annotation session — the comment box a
    * click opens and the numbered badges it draws back into the frame. */
   annotations?: WebAnnotationsCanvasBinding;
   artifacts: ProjectArtifact[];

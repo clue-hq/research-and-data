@@ -16,7 +16,7 @@ import { computePopoverPosition } from "./web-annotation-popover.logic";
 import styles from "./web-annotation-popover.module.css";
 
 /**
- * Slice 3 (rulings R-A1 / R-A2): the comment box a single click in Edit mode
+ * Slice 2 (rulings R-A1 / R-A2): the comment box a single click in Edit mode
  * opens on the element under the cursor.
  *
  * Canvas UI, like the rich-text toolbar beside it: `position: fixed`, anchored
@@ -31,11 +31,25 @@ import styles from "./web-annotation-popover.module.css";
  * provided — the composer chips (task 7) and the clone text editor (task 16)
  * own those halves, and a button that cannot do anything is worse than no
  * button.
+ *
+ * Spec §3.4 governs how the box CLOSES, and the two ways differ on purpose:
+ *
+ *  • **Click away** (outside the card and outside the canvas) is not a
+ *    rejection — a non-blank note is stored exactly as Add would store it, and
+ *    only an empty box is dropped. Typing a sentence and clicking the page must
+ *    never lose the sentence.
+ *  • **Escape** (and the × / trash buttons) is an explicit cancel, and discards
+ *    the draft whatever it says.
+ *
+ * The draft therefore lives in the reducer (`pending.note`), not here: clicking
+ * a DIFFERENT element replaces this box, and the reducer has to bank the draft
+ * on its own when it does. This component is fully controlled.
  */
 export function WebAnnotationPopover({
   iframeRef,
   onAdd,
   onDismiss,
+  onEditNote,
   onEditText,
   onSend,
   pending,
@@ -43,6 +57,8 @@ export function WebAnnotationPopover({
   iframeRef: RefObject<HTMLIFrameElement | null>;
   onAdd: (note: string) => void;
   onDismiss: () => void;
+  /** Every keystroke — the draft is reducer state (see the header). */
+  onEditNote: (note: string) => void;
   /** Task 16: open the constrained inline editor on this element. */
   onEditText?: (address: WebElementAddress) => void;
   /** Task 7: store the annotation and submit the turn in one action. */
@@ -50,7 +66,7 @@ export function WebAnnotationPopover({
   pending: PendingAnnotation;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
-  const [note, setNote] = useState("");
+  const note = pending.note;
   const [position, setPosition] = useState<{ left: number; top: number } | null>(
     null,
   );
@@ -108,23 +124,40 @@ export function WebAnnotationPopover({
     };
   }, [recompute]);
 
-  // Escape anywhere, and a press outside both the card and the canvas, close
-  // the box. A press INSIDE the canvas is left alone deliberately: the bridge
-  // answers it with a new `annotate`, which replaces this box with one on the
-  // element just clicked — closing here first would only make it flicker.
+  // The listeners below are armed ONCE and read the latest note/callbacks off a
+  // ref, so a keystroke does not tear down and re-add a capture-phase listener
+  // on the whole document. Same passive-effect discipline as the callback refs
+  // in `use-web-bridge-selection.ts`.
+  const latest = useRef({ note, onAdd, onDismiss });
+  useEffect(() => {
+    latest.current = { note, onAdd, onDismiss };
+  });
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        // An explicit cancel: the draft goes with it (spec §3.4).
         event.stopPropagation();
-        onDismiss();
+        latest.current.onDismiss();
       }
     };
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (!target) return;
       if (cardRef.current?.contains(target)) return;
+      // A press INSIDE the canvas is left alone deliberately: the bridge
+      // answers it with a new `annotate`, and the REDUCER banks this draft as
+      // it opens the next box (`open` → `commitPending`). Handling it here too
+      // would double-store it.
       if (iframeRef.current && iframeRef.current === target) return;
-      onDismiss();
+      // Click-away is not a rejection: a written note is stored, an empty box
+      // is dropped.
+      const draft = latest.current.note;
+      if (draft.trim().length > 0) {
+        latest.current.onAdd(draft);
+      } else {
+        latest.current.onDismiss();
+      }
     };
     window.addEventListener("keydown", onKeyDown, true);
     window.document.addEventListener("pointerdown", onPointerDown, true);
@@ -132,7 +165,7 @@ export function WebAnnotationPopover({
       window.removeEventListener("keydown", onKeyDown, true);
       window.document.removeEventListener("pointerdown", onPointerDown, true);
     };
-  }, [iframeRef, onDismiss]);
+  }, [iframeRef]);
 
   const blank = note.trim().length === 0;
 
@@ -169,7 +202,7 @@ export function WebAnnotationPopover({
         placeholder="Edit or ask a question"
         aria-label="Annotation"
         value={note}
-        onChange={(event) => setNote(event.target.value)}
+        onChange={(event) => onEditNote(event.target.value)}
       />
       <div className={styles.foot}>
         <button

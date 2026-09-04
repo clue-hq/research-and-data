@@ -68,7 +68,7 @@ test("a lumen:navigate message without a page id is dropped", () => {
   }
 });
 
-/** Slice 3 (R-A1): the bridge's element-level `annotate` report. The address
+/** Slice 2 (R-A1): the bridge's element-level `annotate` report. The address
  * grammar is shared with the turn's `design_node` object ids (spec §3.5), so
  * the two serialisers live beside the validator and are pinned with it. */
 test("an annotate message is validated into a typed event, and addresses key/serialise per spec §3.5", () => {

@@ -20,7 +20,7 @@ import styles from "./web-artifact-canvas.module.css";
 import { WebRichTextToolbar } from "./web-rich-text-toolbar";
 
 /**
- * Slice 3 (R-A1..R-A3): the annotation session, as the CANVAS needs it. The
+ * Slice 2 (R-A1..R-A3): the annotation session, as the CANVAS needs it. The
  * state itself is owned by `useWebAnnotations` up in the editing session (the
  * composer chips read the same list); the canvas only opens the box on a click,
  * renders it, and draws the badges the list implies.
@@ -32,9 +32,10 @@ import { WebRichTextToolbar } from "./web-rich-text-toolbar";
 export interface WebAnnotationsCanvasBinding {
   pending: PendingAnnotation | null;
   itemsForPage: (pageId: string) => { address: WebElementAddress; n: number }[];
-  open: (pending: Omit<PendingAnnotation, "pageId">) => void;
+  open: (pending: Omit<PendingAnnotation, "pageId" | "note">) => void;
+  editNote: (note: string) => void;
   dismiss: () => void;
-  add: (note: string) => void;
+  add: (note?: string) => void;
   onSend?: (note: string) => void;
   onEditText?: (address: WebElementAddress) => void;
 }
@@ -123,7 +124,7 @@ export function WebArtifactCanvas({
   richTextTheme = null,
   selectedNodeId = null,
 }: {
-  /** Slice 3 (R-A1): the annotation session. Absent → no comment box and no
+  /** Slice 2 (R-A1): the annotation session. Absent → no comment box and no
    * badges, exactly as before this slice. */
   annotations?: WebAnnotationsCanvasBinding;
   /** W2.3: receives the canvas's imperative controls while mounted. */
@@ -229,7 +230,7 @@ function DocumentRender({
   // The ported bridge listener (source-window + nonce validation). Selection
   // state itself lives with the join owner (useWebArtifactSelection); this
   // canvas only forwards validated events upward.
-  // Slice 3 (R-A1): the element-level click report opens the comment box. The
+  // Slice 2 (R-A1): the element-level click report opens the comment box. The
   // ordinary `select` for the OWNING node still fires beside it, so the
   // inspector and the layers panel are untouched by annotating.
   const openAnnotation = annotations?.open;
@@ -266,7 +267,7 @@ function DocumentRender({
     settleRichText,
   } = bridge;
 
-  // Slice 3: the badges. Posted on every change of the list AND on every
+  // Slice 2: the badges. Posted on every change of the list AND on every
   // `ready` — a post-write reload rebuilds the frame's DOM (and rotates the
   // nonce), so the badges have to be drawn again against the new render.
   // An empty list is the clear, so a removed annotation erases its badge
@@ -412,7 +413,7 @@ function DocumentRender({
               window.document.body,
             )
           : null}
-        {/* Slice 3 (R-A1/R-A2): the comment box. Portalled to <body> for the
+        {/* Slice 2 (R-A1/R-A2): the comment box. Portalled to <body> for the
          * very reason the toolbar above is — `.artifactWorkspace`'s transform
          * would otherwise become the containing block for its `position: fixed`
          * and clip it. Keyed on the element address, so clicking a second
@@ -425,6 +426,7 @@ function DocumentRender({
                 iframeRef={iframeRef}
                 onAdd={annotations.add}
                 onDismiss={annotations.dismiss}
+                onEditNote={annotations.editNote}
                 onEditText={annotations.onEditText}
                 onSend={annotations.onSend}
                 pending={annotations.pending}
