@@ -283,3 +283,22 @@ Findings for the founder (unfixed, need rulings):
   larger library.
 - Campaign shells still unreleased (need human kit re-approval) → hand-composed header/footer
   lineage persists.
+
+## Edit turn on run 4's page (2026-09-04 11:34 IST) — ACCEPTED in 5.9 min, DERIVE-VARIANT used correctly
+
+Run `run_3f4f7843eb6c4f9682d57520073c3a76`, user ask: "use the three product-UI images as the card
+backgrounds instead of strips under the text". 12 model calls, wall ~6 min (finalize 05:52, commit
+06:10:04Z succeeded). Shape of the turn was exactly the ladder: view doc → locate the pinned "why"
+band → `inspect_cloned_section` (2.5k html / 2.3k css) → baseline render → plan (5.8k tokens, 97s,
+the longest call) → ONE `repair_cloned_section` raw rung=2 on `frag_90b5f22c9065d904` →
+`frag_bddd989fe5497209` released+pinned in place → render → review walk clean → finalize. Its own
+note: "REBIND could not restack layout; PIN kept images below text" — the variant rung chosen for
+the right reason. Untouched sections stayed byte-identical. Visual verified at 1440: three cards
+with full-bleed image fills + white fade under the copy; readable. Advisory it flagged itself: on
+375 the Visa wordmark sits near the last body line.
+
+Two things to keep in view: the plan write is still the single longest generation on an edit
+turn (97s for a one-section change — a "small edit → short plan" rule would shave ~1 min); and
+this variant IS a lineage successor of `frag_90b5f22c…` (a run-3 raw composition, itself
+Ramp-specific), which is fine — but it means the library-pollution question above now has a
+3-deep Ramp lineage in it.
