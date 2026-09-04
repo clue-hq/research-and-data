@@ -38,6 +38,24 @@ function clone(scene: Scene): Scene {
   return JSON.parse(JSON.stringify(scene)) as Scene;
 }
 
+/**
+ * Plan 3 (item E): the one shape the harvest lacks — a BUTTON, an auto-layout
+ * whose only child is text — made by moving the real headline into the real
+ * copy row (AD2.4's one-field-edit technique), never by inventing a node.
+ * `auto_row_copy` becomes a button: its only child is `text_headline`.
+ */
+function sceneWithButton(): Scene {
+  const next = clone(HARVESTED_AD_PAGE);
+  for (const node of Object.values(next.nodes)) {
+    node.children = node.children.filter((id) => id !== "text_headline");
+  }
+  for (const page of Object.values(next.pages)) {
+    page.children = page.children.filter((id) => id !== "text_headline");
+  }
+  next.nodes.auto_row_copy.children = ["text_headline"];
+  return next;
+}
+
 /** `text_proof_stat`'s laid-out box: a plain (non-token) text node, so its
  * descriptor fill resolves with no brand kit loaded. */
 const STAT_BOX = { x: 780, y: 149, width: 256, height: 36 };
@@ -229,6 +247,36 @@ test("no scene — no session and no drill-out", () => {
       selectedNodeId: "text_headline",
     }),
     { kind: "none" },
+  );
+});
+
+test("Plan 3: a double-click on a button opens the caret on its LABEL", () => {
+  const scene = sceneWithButton();
+  assert.deepEqual(
+    sceneDoubleClickEffect({ gestureDisabled: false, nodeId: "auto_row_copy", scene, selectedNodeId: "auto_row_copy" }),
+    { kind: "edit", nodeId: "text_headline" },
+  );
+});
+
+test("Plan 3: a button whose label is locked decides nothing; a locked run says so", () => {
+  const scene = sceneWithButton();
+  scene.nodes.text_headline.locked = true;
+  assert.deepEqual(
+    sceneDoubleClickEffect({ gestureDisabled: false, nodeId: "auto_row_copy", scene, selectedNodeId: null }),
+    { kind: "none" },
+  );
+  const unlocked = sceneWithButton();
+  assert.deepEqual(
+    sceneDoubleClickEffect({ gestureDisabled: true, nodeId: "auto_row_copy", scene: unlocked, selectedNodeId: null }),
+    { kind: "locked" },
+  );
+});
+
+test("Plan 3: a double-click on a non-button container still drills out as before", () => {
+  // The harvest's row is not a button: the existing top-level drill-out holds.
+  assert.deepEqual(
+    sceneDoubleClickEffect({ gestureDisabled: false, nodeId: "group_proof", scene: HARVESTED_AD_PAGE, selectedNodeId: "group_proof" }),
+    { kind: "select", nodeId: "frame_ad_root" },
   );
 });
 

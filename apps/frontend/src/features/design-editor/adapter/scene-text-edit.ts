@@ -26,6 +26,7 @@ import {
   selectionOutlineForBox,
   type SceneArtboardModel,
 } from "./scene-canvas-view";
+import { buttonLabelId } from "./scene-selection-ladder";
 
 /**
  * Rung B of the rich-text ladder (`docs/superpowers/plans/2026-08-24-rich-text-editing.md`,
@@ -162,17 +163,22 @@ export function sceneDoubleClickEffect({
     return { kind: "none" };
   }
   const node = getNode(scene, nodeId);
-  if (node?.kind.kind === "text") {
+  // Plan 3 (item E): a button is selected as one unit, so the double-click
+  // that used to land on its label now lands on the button — resolve it to the
+  // label and let the text rule below decide (lock first, then the run gate).
+  const labelId = node ? buttonLabelId(scene, node.id) : null;
+  const target = labelId !== null ? getNode(scene, labelId) : node;
+  if (target?.kind.kind === "text") {
     // The NODE's own lock is asked first and answers `none`: it is a document
     // fact that outlives the run, so "editing unlocks when it finishes" would
     // be a promise this node is not going to keep.
-    if (node.locked) {
+    if (target.locked) {
       return { kind: "none" };
     }
     if (gestureDisabled) {
       return { kind: "locked" };
     }
-    return { kind: "edit", nodeId: node.id };
+    return { kind: "edit", nodeId: target.id };
   }
   const from = selectedNodeId ?? nodeId;
   const top = topLevelAncestorId(scene, from);
