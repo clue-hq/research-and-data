@@ -12,8 +12,9 @@ use lumen_core::validation::validate_scene;
 use lumen_core::{
     build_structured_edit_batch, compile_dsl_into_scene_with_session, hit_stack, layout_scene,
     measure_key, preflight_scene, DslCompileSessionSnapshot, LayoutOptions, Operation, PageId,
-    PreflightOptions, ProvidedTextMeasurer, Scene, SharedTextMeasurer, StructuredEditInstruction,
-    TextDirection, TextMeasureInput, TextTransform, TextWrap,
+    PreflightOptions, ProvidedLine, ProvidedMetrics, ProvidedTextMeasurer, Scene,
+    SharedTextMeasurer, StructuredEditInstruction, TextDirection, TextMeasureInput, TextTransform,
+    TextWrap,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -51,6 +52,16 @@ pub fn version_payload() -> Value {
         "engine_commit": env!("LUMEN_ENGINE_COMMIT"),
         "text_measurement": TEXT_MEASUREMENT,
     })
+}
+
+/// Plan 4 item F: one editor-measured line box (see `ProvidedLine`).
+#[derive(Deserialize)]
+struct ProvidedMeasurementLine {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    baseline: f64,
 }
 
 /// One editor-supplied text measurement (Wave 3 C4): the measurement input
@@ -91,6 +102,11 @@ struct ProvidedMeasurement {
     spans: Vec<lumen_core::TextSpan>,
     width: f64,
     height: f64,
+    /// Plan 4 item F: the painted line boxes measured at this record's
+    /// `max_width` (paragraph-relative, left-aligned). Optional so the
+    /// unconstrained records keep their shape.
+    #[serde(default)]
+    lines: Option<Vec<ProvidedMeasurementLine>>,
 }
 
 impl ProvidedMeasurement {
@@ -183,7 +199,10 @@ impl Engine {
     /// metrics and relayout, so text `computed` becomes Skia-faithful. The
     /// payload is `[{ content, font_family, font_size, font_weight,
     /// line_height, letter_spacing, wrap, max_lines, direction, max_width?,
-    /// max_height?, width, height }]`; the engine keys each by the same
+    /// max_height?, width, height, lines? }]` — `lines` (Plan 4 item F) being
+    /// the painted line boxes `[{ x, y, width, height, baseline }]` the editor
+    /// measured at this record's `max_width`, which replace the heuristic
+    /// per-line detail when present. The engine keys each entry by the same
     /// measurement input it lays out with. An empty payload clears the
     /// override (back to the heuristic).
     pub fn set_measurements(&mut self, measurements_json: &str) -> String {
@@ -199,7 +218,25 @@ impl Engine {
         };
         let mut overrides = HashMap::with_capacity(entries.len());
         for entry in &entries {
-            overrides.insert(measure_key(&entry.input()), (entry.width, entry.height));
+            overrides.insert(
+                measure_key(&entry.input()),
+                ProvidedMetrics {
+                    width: entry.width,
+                    height: entry.height,
+                    lines: entry.lines.as_ref().map(|lines| {
+                        lines
+                            .iter()
+                            .map(|line| ProvidedLine {
+                                x: line.x,
+                                y: line.y,
+                                width: line.width,
+                                height: line.height,
+                                baseline: line.baseline,
+                            })
+                            .collect()
+                    }),
+                },
+            );
         }
         self.measurer = if overrides.is_empty() {
             None

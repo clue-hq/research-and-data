@@ -319,6 +319,46 @@ fn set_measurements_makes_hug_text_geometry_skia_faithful() {
     assert_eq!(node_computed_width(&engine, "node_contact_name"), before);
 }
 
+#[test]
+fn provided_lines_place_text_lines_and_narrow_the_hit_target() {
+    // Plan 4 item F: `node_contact_name` is a fixed 160×28 box at (24,40) on
+    // the minimal scene. A record keyed on that box (the key
+    // `validate_text_nodes` measures with) carries ONE 60-wide line, so the
+    // box's empty right half no longer hits the text.
+    let mut engine = Engine::from_scene_json(MINIMAL_SCENE).expect("minimal scene loads");
+    let measurements = json!([{
+        "content": "Dr. Priya Sharma",
+        "font_family": "Inter",
+        "font_size": 18.0,
+        "font_weight": 600,
+        "line_height": 1.2,
+        "letter_spacing": 0.0,
+        "wrap": "wrap",
+        "max_lines": null,
+        "direction": "ltr",
+        "max_width": 160.0,
+        "max_height": 28.0,
+        "width": 60.0,
+        "height": 21.6,
+        "lines": [{ "x": 0.0, "y": 0.0, "width": 60.0, "height": 21.6, "baseline": 17.0 }]
+    }]);
+    let ack = parse(engine.set_measurements(&measurements.to_string()));
+    assert_eq!(ack["ok"], true, "{ack:#?}");
+
+    let scene: Value = serde_json::from_str(&engine.scene_json()).expect("scene");
+    assert_eq!(
+        scene["nodes"]["node_contact_name"]["computed"]["text_lines"],
+        json!([{ "x": 24.0, "y": 40.0, "width": 60.0, "height": 21.6 }])
+    );
+    // Inside the box, right of the painted line: nothing (the page has no
+    // other child).
+    let miss = parse(engine.hit_test("page_a4", 150.0, 50.0));
+    assert_eq!(miss["hit"], Value::Null, "{miss:#?}");
+    // On the glyphs.
+    let hit = parse(engine.hit_test("page_a4", 30.0, 50.0));
+    assert_eq!(hit["hit"], "node_contact_name");
+}
+
 fn node_computed_width(engine: &Engine, node_id: &str) -> f64 {
     let scene: Value = serde_json::from_str(&engine.scene_json()).expect("scene");
     scene["nodes"][node_id]["computed"]["layout_bounds"]["width"]

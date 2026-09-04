@@ -205,18 +205,42 @@ fn spans_digest(spans: &[TextSpan]) -> String {
         .join("\u{1e}")
 }
 
+/// One editor-measured (SkParagraph) line box, paragraph-relative and laid out
+/// LEFT-aligned — exactly what `SkiaTextMeasurer` reports (`TextLineBox`),
+/// so the layout engine places it by `align`/`valign` the same way.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProvidedLine {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub baseline: f64,
+}
+
+/// One editor-supplied measurement: the overall extent, and (Plan 4 item F)
+/// optionally the painted line boxes. `None` keeps the pre-Plan-4 behaviour —
+/// heuristic per-line detail under a Skia-faithful extent.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProvidedMetrics {
+    pub width: f64,
+    pub height: f64,
+    pub lines: Option<Vec<ProvidedLine>>,
+}
+
 /// A measurer that overrides width/height for known inputs with editor-supplied
 /// (SkParagraph) metrics, delegating everything else — including per-line boxes
-/// — to the heuristic. Send+Sync because it holds only data (a JS-callback
-/// measurer would be !Send), which is why measure-then-inject is the V0 path.
+/// — to the heuristic, unless the record carries lines (Plan 4 item F), in
+/// which case those replace the heuristic ones outright. Send+Sync because it
+/// holds only data (a JS-callback measurer would be !Send), which is why
+/// measure-then-inject is the V0 path.
 #[derive(Debug, Default)]
 pub struct ProvidedTextMeasurer {
-    overrides: std::collections::HashMap<String, (f64, f64)>,
+    overrides: std::collections::HashMap<String, ProvidedMetrics>,
     fallback: HeuristicTextMeasurer,
 }
 
 impl ProvidedTextMeasurer {
-    pub fn new(overrides: std::collections::HashMap<String, (f64, f64)>) -> Self {
+    pub fn new(overrides: std::collections::HashMap<String, ProvidedMetrics>) -> Self {
         Self {
             overrides,
             fallback: HeuristicTextMeasurer,
@@ -231,17 +255,38 @@ impl ProvidedTextMeasurer {
 impl TextMeasurer for ProvidedTextMeasurer {
     fn measure(&self, input: &TextMeasureInput) -> TextMeasureOutput {
         let mut output = self.fallback.measure(input);
-        if let Some(&(width, height)) = self.overrides.get(&measure_key(input)) {
-            output.width = width;
-            output.height = height;
+        if let Some(metrics) = self.overrides.get(&measure_key(input)) {
+            output.width = metrics.width;
+            output.height = metrics.height;
+            // Plan 4 item F: a record that carries the editor's line boxes
+            // replaces the heuristic lines outright — those are what the
+            // canvas paints, so they are what hit-testing and the selection
+            // outline must see. Runs stay empty (never serialized; only the
+            // exporters read them, and they run under the shaping measurer).
+            if let Some(lines) = &metrics.lines {
+                output.lines = lines
+                    .iter()
+                    .map(|line| TextLineBox {
+                        text: String::new(),
+                        x: line.x,
+                        y: line.y,
+                        width: line.width,
+                        height: line.height,
+                        baseline: line.baseline,
+                        runs: Vec::new(),
+                    })
+                    .collect();
+                output.line_count = output.lines.len() as u16;
+            }
         }
         output
     }
 
     /// Non-shaping. It patches the overall width/height of *known* inputs with
     /// editor-supplied CanvasKit metrics, but performs no shaping itself: per-
-    /// line boxes stay heuristic, and any input without a stored override is
-    /// pure heuristic. Reporting `true` would suppress the LUMS0102 warning
+    /// line boxes stay heuristic unless the record carries the editor's own,
+    /// and any input without a stored override is pure heuristic. Reporting
+    /// `true` would suppress the LUMS0102 warning
     /// while the geometry is still approximate, so it is honestly `false`.
     /// (Only used inside the wasm engine, where LUMS0102 is deduped against the
     /// editor's own client-side EDITOR_HEURISTIC_MEASUREMENT signal anyway.)
@@ -685,7 +730,14 @@ mod provided_measurer_tests {
     fn overrides_width_height_for_a_known_input_only() {
         let known = input("Hello");
         let mut overrides = std::collections::HashMap::new();
-        overrides.insert(measure_key(&known), (321.0, 47.0));
+        overrides.insert(
+            measure_key(&known),
+            ProvidedMetrics {
+                width: 321.0,
+                height: 47.0,
+                lines: None,
+            },
+        );
         let measurer = ProvidedTextMeasurer::new(overrides);
 
         // Known input → the editor's Skia-faithful override.
@@ -704,6 +756,43 @@ mod provided_measurer_tests {
         let provided = measurer.measure(&other);
         assert_eq!(provided.width, fallback.width);
         assert_eq!(provided.height, fallback.height);
+    }
+
+    #[test]
+    fn provided_lines_replace_the_heuristic_lines() {
+        let known = input("Hello there");
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert(
+            measure_key(&known),
+            ProvidedMetrics {
+                width: 120.0,
+                height: 43.2,
+                lines: Some(vec![
+                    ProvidedLine {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 120.0,
+                        height: 21.6,
+                        baseline: 17.0,
+                    },
+                    ProvidedLine {
+                        x: 0.0,
+                        y: 21.6,
+                        width: 60.0,
+                        height: 21.6,
+                        baseline: 38.6,
+                    },
+                ]),
+            },
+        );
+        let measurer = ProvidedTextMeasurer::new(overrides);
+        let out = measurer.measure(&known);
+        assert_eq!(out.line_count, 2);
+        assert_eq!(out.lines.len(), 2);
+        assert_eq!(out.lines[1].y, 21.6);
+        assert_eq!(out.lines[1].width, 60.0);
+        assert_eq!(out.lines[1].baseline, 38.6);
+        assert!(out.lines[1].runs.is_empty());
     }
 
     #[test]
