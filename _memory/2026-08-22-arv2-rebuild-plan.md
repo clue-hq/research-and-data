@@ -334,3 +334,33 @@ firstname@zafran.io (4cr); named CISO customers on homepage (Kraft Heinz, Chipot
 outreach_safe:false on the refuted Cisco rumour, the third-party ARR/burn claim, an exec's exit.
 **Surprise (again):** the free ATS API out-researched the paid deep call at its own job (27 live
 reqs w/ full descriptions; BDRs sit in Marketing). Free sources first, always.
+
+## Addendum 2026-09-03 — frontend page content (Insights / Overview / Contact) written from the Zafran claims
+
+Founder rejected the first page proposal (one-liners; a "Role in the deal" heading — Clue is not a
+CRM, there is no deal object) and asked for (a) an explanation of how DB rows become page copy via
+a separate display model, and (b) the actual pages as they will render, with headers and body text,
+to edit the frontend against now.
+
+Delivered in `.context/frontend-page-content/`:
+- `README.md` — the translation pipeline: claim rows → fixed H1 templates per page → per-section
+  recipes (field-key lists, registry-driven) → one `gpt-5.6-luna` call per section (the Probook
+  step12 prompt + three changes: per-section, `claimIds[]` on every sentence, "In your email / on
+  the landing page" use-lines) → stored as `display_block` rows regenerated when cited claims are
+  superseded → the one new frontend slot `DisplayBlock{sections[{h1,items[{h2,body[{text,claimIds}],
+  contactRefs,priority}]}]}` resolving `claimIds` against the existing `evidence[]`. Cost estimate
+  from the measured Probook call ($0.0095 whole-account): ~$0.02/account + ~$0.01/contact page.
+- `ZAFRAN-PAGES.md` — Insights (Account insights: Buying signals / Money & momentum / Tools they
+  already use / How they sell and who they win; Contact insights per committee member with chips;
+  Context only collapsed), Account Overview (What they do / Why they fit ✓✗ / Why now / Buying
+  committee / How to approach / Watch-outs / right rail Core-Custom-Contacts-Activity), and the
+  Nick Fisher contact page under the founder's H1s with "Role in the deal" replaced by "Why this
+  person" (Their problem right now / Reach / Openers / Angles / Do not mention). Link table maps
+  every chip to its real URL.
+- `VARI-KAUR-CONTACT-PAGE.md` — second contact page, same template.
+
+Rules carried into the copy: outreach_safe=false rows (Cisco rumour, CTech ARR/burn, CPO departure)
+appear only under Context only / Do not mention; the cocktail hook is used once, first line only;
+every sentence chips to a claim; empty section → "No {section} information found for {name}."
+v1 has no email send, so contact-page bodies are the copy the user pastes (Copy affordance); v2
+seeds the email draft from the same body.
