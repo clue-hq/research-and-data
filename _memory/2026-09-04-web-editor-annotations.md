@@ -195,3 +195,14 @@ clause in the same DOM reproduced `path ":nth-child(1)"` on the id-less `<p>`.
 ## Slice 2 — Task 11: the ANNOTATIONS block in the solo prompt — landed `8b1dbea0b`
 
 `build_web_solo_prompt(..., annotations=)` renders the "ANNOTATIONS ARE THE BRIEF" law right after `{account_block}` only when notes ride, and `harness_web.py`'s single solo call site passes `runtime_config.turn_target_notes`; pinned by `test_web_solo_mode.py` (6 passed, 1 pre-existing fail — `.env` sets `LUMEN_AGENT_WEB_SOLO=1`, so the flag-off trio test cannot pass on this box; whole file green with `LUMEN_AGENT_WEB_SOLO=0`).
+
+## Slice 2 — closed 2026-09-05 (controller review)
+Commits d28b94402/0dca9621f (T5 bridge) → 0de0705db/36e3bfd8f (T6 shell) → ec9d0c629 (T7 chips + wire) →
+b06e1e571 (T8 note column, migration 4cbfa56e52a8) → c209d9e94 (T9 web targets + the submit-time
+validator plan gap) → 246047ccd (T10 ANNOTATION lines, wrapper-relative paths) → 8b1dbea0b (T11 prompt
+block). Rulings that matter later: paths are WRAPPER-relative (first step = a top-level element of the
+stored artifact HTML; Tasks 12–15 must match); click-away with text ADDS; the comment box never leaves
+the iframe band; an annotated target replaces its TURN TARGET line. Live acceptance (three annotations →
+one real turn) is the founder's walk: in Edit mode click three elements (one inside a clone), Add each,
+press send with an empty composer; expect "See annotations." as the message, three noted refs, ANNOTATION
+1–3 lines in the worker's brief, and the finalize summary confirming each by number.
