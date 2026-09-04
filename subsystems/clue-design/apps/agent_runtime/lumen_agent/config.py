@@ -54,6 +54,14 @@ class AgentRuntimeConfig:
     # the reviewer's blocker on the requested target was "out of scope" by
     # construction. None/empty → no declared targets, behavior unchanged.
     turn_target_node_ids: list[str] | None = None
+    # R-A2: what the human WROTE about those targets, passed BY VALUE beside the ids
+    # (same rule again — the runtime never reads the API database). One mapping per
+    # submitted reference in submission order: {"target": node id, "path": the optional
+    # `:nth-child` chain naming an element inside a cloned band, "note": their words}.
+    # The order is part of the message — a marketer numbers their own annotations. The
+    # prompt block that renders these is the runtime's; the API renders the same facts
+    # into the brief's ANNOTATION lines. None/empty → a selection-only scoped turn.
+    turn_target_notes: list[dict] | None = None
     # RC (reference-conditioned design): the user-attached reference images for
     # THIS turn, resolved by the API from its asset library and passed BY VALUE
     # (same rule as brand_kit_assets: the runtime never reads the API database).

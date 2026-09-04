@@ -85,6 +85,7 @@ from .custom_component_runtime import (
     default_runtime_host_path,
     web_doc_uses_custom_components,
 )
+from .fragments.paths import resolve_structural_path
 from .fragments.render import (
     build_fragment_render_package,
     build_fragment_render_package_for_document,
@@ -9093,12 +9094,77 @@ def _web_node_label(
     return None
 
 
+#: A human numbers their own annotations ("1. …", "2. …") in the composer, and those numbers
+#: are what the badges in the iframe show them. When a note carries one, it wins over the
+#: submission order — the agent and the marketer must be able to say "annotation 2" and mean
+#: the same element.
+_ANNOTATION_NUMBER_RE = re.compile(r"^\s*(\d{1,3})\s*[.)]\s")
+
+#: How much of an annotated element's current copy to quote back. Enough to recognize the
+#: element by; not so much that a long paragraph crowds out the brief.
+_ANNOTATED_TEXT_CHARS = 160
+
+
+def _annotation_number(note: str, order: int) -> int:
+    """The number this annotation should be called by: the human's own leading `N.` when
+    they wrote one, else its 1-based position in the submission."""
+    match = _ANNOTATION_NUMBER_RE.match(note)
+    return int(match.group(1)) if match else order
+
+
+def _describe_annotated_element(
+    node: JsonObject,
+    path: str,
+    read_source: Optional[Any],
+    cache: Dict[str, Optional[JsonObject]],
+) -> str:
+    """The `, element …` clause of an ANNOTATION line: what the path lands on inside the
+    clone's REAL stored markup, or an honest statement that it lands on nothing.
+
+    The path is only meaningful inside a cloned band (the bridge emits one only under
+    `data-fragment-root`), so a path on any other node kind is treated as dead rather than
+    resolved against markup that does not exist."""
+    fragment_id = node.get("fragment_id")
+    resolved: Optional[JsonObject] = None
+    if node.get("kind") == "fragment" and isinstance(fragment_id, str) and fragment_id:
+        if fragment_id not in cache:
+            source: Optional[JsonObject] = None
+            if read_source is not None:
+                try:
+                    candidate = read_source(fragment_id)
+                    source = candidate if isinstance(candidate, dict) else None
+                except Exception:
+                    # A registry miss (unreleased pin, another workspace's artifact, storage
+                    # hiccup) must never take the prompt build down: the annotation degrades to
+                    # "the path no longer resolves", which is the same honest answer a genuinely
+                    # dead path gets.
+                    source = None
+            cache[fragment_id] = source
+        source = cache[fragment_id]
+        if source is not None:
+            resolved = resolve_structural_path(str(source.get("html") or ""), path)
+    if resolved is None:
+        return ""
+    name = (
+        f"{resolved['tag']} · {resolved['slot']}"
+        if resolved.get("slot")
+        else str(resolved["tag"])
+    )
+    text = str(resolved.get("text") or "")
+    if len(text) > _ANNOTATED_TEXT_CHARS:
+        text = text[:_ANNOTATED_TEXT_CHARS].rstrip() + "…"
+    reading = f' reading "{text}"' if text else ""
+    return f", element `{name}` at path `{path}`{reading}"
+
+
 def _describe_web_turn_targets(
     web_doc: JsonObject,
     target_node_ids: List[str],
     fragment_meta: Optional[JsonObject] = None,
+    target_notes: Optional[List[JsonObject]] = None,
+    read_source: Optional[Any] = None,
 ) -> str:
-    """Build the TURN TARGET brief addendum for a scoped edit turn: one line
+    """Build the TURN TARGET / ANNOTATION brief addendum for a scoped edit turn: one line
     per selected node, naming the node, its kind, the PAGE it sits on, and the
     enclosing section the turn should be scoped to. A selection that no longer
     exists in the document yields a line telling the agent to fall back to its
@@ -9112,7 +9178,22 @@ def _describe_web_turn_targets(
     R-A5: `fragment_meta` (this workspace's registry facts, keyed by fragment id)
     is what lets a selected clone be named the way the human's layers panel names
     it. Omitted, a clone still reads as `fragment "Cloned section"` — honest, just
-    less useful."""
+    less useful.
+
+    R-A2: `target_notes` is what the marketer actually WROTE — one entry per
+    annotation they made, in submission order, each naming the owning node, the
+    optional inner element (a `:nth-child` path, spec §3.1) and their words. A
+    target that carries a note gets a numbered ANNOTATION line INSTEAD of its
+    TURN TARGET line — the annotation already names the node, its page and its
+    section, and saying it twice would only invite the agent to treat one
+    selection as two. Targets with no note keep the TURN TARGET line they have
+    always had, byte for byte.
+
+    `read_source` is the registry seam (`DurableAgentClonedSectionRegistry.read_source`)
+    used to resolve an inner path against the clone's REAL stored HTML, so the line can
+    name the element and quote what it currently says. Without it — or when the path is
+    dead — the line says the path no longer resolves rather than describing markup nobody
+    checked."""
     # (page id, nodes, that page's top-level band ids, child -> parent) per page,
     # in document order. Built once; a target is then looked up across all of them.
     pages: List[Tuple[str, Dict[str, Any], set, Dict[str, str]]] = []
@@ -9132,8 +9213,9 @@ def _describe_web_turn_targets(
                     parent_of[child] = nid
         pages.append((page_id, nodes, root_child_set, parent_of))
 
-    lines: List[str] = []
-    for target in target_node_ids:
+    def locate(target: str):
+        """(page id, nodes, node, enclosing section id) for a target, or None when the
+        document no longer holds it."""
         # First page carrying the id wins. Node ids are document-unique, so this is a
         # lookup rather than a choice; ordering it makes the tie deterministic anyway.
         found = next(
@@ -9141,13 +9223,8 @@ def _describe_web_turn_targets(
             None,
         )
         if found is None:
-            lines.append(
-                f"\n\nTURN TARGET: the user selected `{target}`, but that element no "
-                "longer exists in the page — use your own judgment about what to edit."
-            )
-            continue
+            return None
         page_id, nodes, root_child_set, parent_of = found
-        node = nodes[target]
         section: Optional[str] = None
         if target in root_child_set:
             section = target
@@ -9160,6 +9237,40 @@ def _describe_web_turn_targets(
                 if current in root_child_set:
                     section = current
                     break
+        return page_id, nodes, nodes[target], section
+
+    # One entry per annotation the human actually wrote. An entry with no words is a
+    # selection, not an annotation — the platform sends one ref per selected node whether
+    # or not it carries a note — so it contributes nothing here and its target keeps its
+    # ordinary TURN TARGET line.
+    annotations: List[Tuple[str, Optional[str], str]] = []
+    for entry in target_notes or []:
+        if not isinstance(entry, dict):
+            continue
+        target = entry.get("target")
+        note = entry.get("note")
+        if not isinstance(target, str) or not target:
+            continue
+        if not isinstance(note, str) or not note.strip():
+            continue
+        path = entry.get("path")
+        annotations.append(
+            (target, path if isinstance(path, str) and path else None, note.strip())
+        )
+    annotated = {target for target, _path, _note in annotations}
+
+    lines: List[str] = []
+    for target in target_node_ids:
+        if target in annotated:
+            continue
+        found = locate(target)
+        if found is None:
+            lines.append(
+                f"\n\nTURN TARGET: the user selected `{target}`, but that element no "
+                "longer exists in the page — use your own judgment about what to edit."
+            )
+            continue
+        page_id, nodes, node, section = found
         kind = node.get("kind") or "node"
         label = _web_node_label(node, nodes, fragment_meta)
         descriptor = f'{kind} "{label}"' if label else str(kind)
@@ -9172,6 +9283,40 @@ def _describe_web_turn_targets(
             f"inside section {section_str}. Scope this turn to that section unless the "
             "brief clearly requires more."
         )
+
+    source_cache: Dict[str, Optional[JsonObject]] = {}
+    for order, (target, path, note) in enumerate(annotations, start=1):
+        number = _annotation_number(note, order)
+        found = locate(target)
+        if found is None:
+            lines.append(
+                f"\n\nANNOTATION {number}: the user annotated `{target}`, but that element "
+                f'no longer exists in the page — "{note}". Use your own judgment about '
+                "what to edit."
+            )
+            continue
+        page_id, nodes, node, section = found
+        kind = node.get("kind") or "node"
+        label = _web_node_label(node, nodes, fragment_meta)
+        descriptor = f'{kind} "{label}"' if label else str(kind)
+        where_parts: List[str] = []
+        if page_id:
+            where_parts.append(f"page `{page_id}`")
+        where_parts.append(f"section `{section}`" if section else "the page")
+        where = f" ({', '.join(where_parts)})"
+        inner = (
+            _describe_annotated_element(node, path, read_source, source_cache)
+            if path
+            else ""
+        )
+        if path and not inner:
+            lines.append(
+                f"\n\nANNOTATION {number}: on {descriptor}{where}, element at path "
+                f'`{path}` — "{note}". That path no longer resolves in this section, so '
+                "use your judgment about which element they meant."
+            )
+            continue
+        lines.append(f'\n\nANNOTATION {number}: on {descriptor}{where}{inner} — "{note}"')
     return "".join(lines)
 
 
@@ -9182,6 +9327,7 @@ def run_web_agent_turn(
     root: Path,
     event_sink=None,
     target_node_ids: Optional[List[str]] = None,
+    target_notes: Optional[List[JsonObject]] = None,
     account_card: Optional[JsonObject] = None,
     asset_library: Optional[JsonObject] = None,
     custom_component_registry: Any = None,
@@ -9205,6 +9351,14 @@ def run_web_agent_turn(
     line so the orchestrator scopes the turn to that section. R-A5: the line
     NAMES that node the way the human's layers panel names it, which for a
     cloned band means reading this workspace's fragment registry here.
+
+    `target_notes` (R-A2): what the human WROTE about those targets — one entry
+    per submitted reference, in submission order, each optionally naming an
+    element INSIDE a cloned band by structural path. Each note becomes a numbered
+    ANNOTATION line, and the path is resolved HERE against the artifact's real
+    stored HTML (the same registry read the agent's own inspect tool uses), so
+    the brief can name the element and quote the words it currently reads instead
+    of handing the agent a bare `:nth-child` chain to guess at.
 
     `account_card` (a 1:1 personalized turn, P5 D6): the target account card
     {name, domain, logo_asset_id, data, notes}, resolved to 404 before the run
@@ -9263,6 +9417,13 @@ def run_web_agent_turn(
     )
     web_doc = document["scene"]
     try:
+        # F2.3: the workspace's cloned-section registry. Built once, up here, because two
+        # things now need it: the brief's ANNOTATION lines resolve an annotated inner path
+        # against the artifact's stored HTML through `read_source`, and the runtime gets the
+        # whole registry as a capability further down (see the F2.3 note at its `replace`).
+        cloned_section_registry = DurableAgentClonedSectionRegistry(
+            blobs=turn_blobs, cache_dir=turn_cache_root
+        )
         if target_node_ids:
             # R-A5: the TURN TARGET lines name the selection the way the human's layers
             # panel does. A selected CLONE is named from the registry, so the rows are
@@ -9280,7 +9441,11 @@ def run_web_agent_turn(
                 else None
             )
             prompt = prompt + _describe_web_turn_targets(
-                web_doc, target_node_ids, fragment_meta=fragment_meta
+                web_doc,
+                target_node_ids,
+                fragment_meta=fragment_meta,
+                target_notes=list(target_notes) if target_notes else None,
+                read_source=cloned_section_registry.read_source,
             )
         config = AgentRuntimeConfig.from_env(root)
         if model:
@@ -9339,12 +9504,7 @@ def run_web_agent_turn(
         # and that second question is a PERMISSION question whose answer must come from the
         # document write's own gate at the moment it is asked, not from a snapshot of the
         # registry taken when the turn was composed.
-        config = replace(
-            config,
-            cloned_section_registry=DurableAgentClonedSectionRegistry(
-                blobs=turn_blobs, cache_dir=turn_cache_root
-            ),
-        )
+        config = replace(config, cloned_section_registry=cloned_section_registry)
         if account_logo_binder is not None:
             # F4.3 (ruling R25-1): the G1+G2 bridge. Passed IN rather than built here — unlike
             # the cloned-section registry it needs the governed tool invoker, which lives at the
@@ -9371,6 +9531,10 @@ def run_web_agent_turn(
             config = replace(
                 config, turn_target_node_ids=list(target_node_ids)
             )
+        if target_notes:
+            # The runtime's own prompt block reads these; the brief addendum above is the
+            # API's rendering of the same facts, so both sides see one submission order.
+            config = replace(config, turn_target_notes=list(target_notes))
         brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = (
             resolve_web_turn_brand_kit(web_doc, turn_blobs)
         )
@@ -10290,6 +10454,14 @@ def execute_web_turn_job(
 
     model = payload.model
     target_node_ids = payload.target_node_ids
+    # R-A2: back to plain dicts at this seam. The envelope is frozen JSON and
+    # `_describe_web_turn_targets` / the runtime config both take mappings, so the model is
+    # the validation gate on the way in and nothing downstream depends on the class.
+    target_notes = (
+        [note.model_dump(mode="json") for note in payload.target_notes]
+        if payload.target_notes
+        else None
+    )
     base_version = payload.base_version
     override = host.web_turn_runner
     root = repo_root()
@@ -10333,6 +10505,7 @@ def execute_web_turn_job(
                 root,
                 event_sink=event_sink,
                 target_node_ids=target_node_ids,
+                target_notes=target_notes,
                 account_card=account_card,
                 asset_library=asset_library,
                 custom_component_registry=custom_component_registry,

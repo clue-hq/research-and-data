@@ -134,3 +134,96 @@ def test_a_section_wrapping_one_clone_inherits_its_name_and_an_unknown_pin_is_ge
     text = _describe_web_turn_targets(doc, ["s", "s2"], fragment_meta=meta)
     assert 'section "Pricing table"' in text
     assert 'section "Cloned section"' in text
+
+
+def test_annotations_are_numbered_and_resolved_against_the_clone():
+    """R-A2: a marketer's note about one element inside a cloned band reaches the agent as a
+    numbered ANNOTATION line that NAMES that element — resolved against the clone's real
+    stored HTML, not guessed at from the path string.
+
+    The two notes here are the two outcomes: a path the artifact still has (named, with the
+    words it currently reads) and one it does not (said so, out loud, with the fallback the
+    rest of this brief uses). The numbers come from the human's own "1." / "2." prefixes.
+    """
+    from lumen_api.main import _describe_web_turn_targets
+
+    frag = "frag_" + "ab" * 8
+    doc = {
+        "pages": [
+            {
+                "id": "home",
+                "root": "r",
+                "nodes": {
+                    "r": {"id": "r", "kind": "container", "children": ["s"]},
+                    "s": {"id": "s", "kind": "section", "children": ["f"]},
+                    "f": {"id": "f", "kind": "fragment", "fragment_id": frag},
+                },
+            }
+        ]
+    }
+    html = '<section><h2 data-lumen-slot="headline">Card economics</h2></section>'
+    text = _describe_web_turn_targets(
+        doc,
+        ["f"],
+        fragment_meta={frag: {"label": "Stripe hero", "section_role": "hero"}},
+        target_notes=[
+            {
+                "target": "f",
+                "path": ":nth-child(1) > :nth-child(1)",
+                "note": "1. Make this shorter",
+            },
+            {"target": "f", "path": ":nth-child(7)", "note": "2. Bolder"},
+        ],
+        read_source=lambda fid: {"html": html},
+    )
+    assert 'ANNOTATION 1: on fragment "Hero — Stripe hero"' in text
+    assert (
+        "element `h2 · headline` at path `:nth-child(1) > :nth-child(1)` "
+        'reading "Card economics"'
+    ) in text
+    assert '"1. Make this shorter"' in text
+    assert "ANNOTATION 2" in text and "no longer resolves" in text
+    # An annotated target does NOT also get the un-annotated TURN TARGET line: the
+    # annotation already says which node, which page and which section.
+    assert "TURN TARGET" not in text
+
+
+def test_an_unannotated_target_keeps_its_turn_target_line_beside_the_annotations():
+    """Mixed selections stay honest: the node the human wrote about reads as an ANNOTATION,
+    the one they only selected keeps the line it has always had, byte for byte."""
+    from lumen_api.main import _describe_web_turn_targets
+
+    doc = {
+        "pages": [
+            {
+                "id": "home",
+                "root": "r",
+                "nodes": {
+                    "r": {"id": "r", "kind": "container", "children": ["s", "s2"]},
+                    "s": {"id": "s", "kind": "section", "children": []},
+                    "s2": {"id": "s2", "kind": "section", "children": []},
+                },
+            }
+        ]
+    }
+    text = _describe_web_turn_targets(
+        doc,
+        ["s", "s2"],
+        target_notes=[{"target": "s2", "path": None, "note": "Warmer, please"}],
+    )
+    assert "TURN TARGET: the user selected `s`" in text
+    assert "TURN TARGET: the user selected `s2`" not in text
+    # No leading "N." in the note → the 1-based submission order numbers it.
+    assert 'ANNOTATION 1: on section (page `home`, section `s2`) — "Warmer, please"' in text
+
+
+def test_a_note_on_a_vanished_node_says_so_instead_of_inventing_a_section():
+    from lumen_api.main import _describe_web_turn_targets
+
+    doc = {"pages": [{"id": "home", "root": "r", "nodes": {"r": {"id": "r", "kind": "container"}}}]}
+    text = _describe_web_turn_targets(
+        doc, ["gone"], target_notes=[{"target": "gone", "path": None, "note": "3. Drop it"}]
+    )
+    assert "ANNOTATION 3" in text
+    assert "no longer exists in the page" in text
+    assert '"3. Drop it"' in text

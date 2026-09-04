@@ -1111,3 +1111,88 @@ def test_a_leg_web_turns_commit_is_labelled_with_the_users_message(
     envelopes = store.list_envelopes(document["id"])
     assert len(envelopes) == 1
     assert envelopes[0]["intent"] == "Go ahead."
+
+
+# --- annotated targets (R-A2) -----------------------------------------------
+
+
+def test_web_turn_accepts_annotated_targets_and_keeps_them_dict_shaped(
+    client: TestClient,
+) -> None:
+    """R-A2: the request model is the validation gate, and what comes out the other side is
+    the plain mapping every consumer downstream takes.
+
+    `execute_web_turn_job` dumps the validated notes back to dicts before handing them to the
+    brief builder and the runtime config, so this pins both halves: the wire shape the platform
+    sends is accepted, and dumping it returns exactly that shape (a note's absent `path`/`note`
+    stay explicit `None`s rather than disappearing, because submission ORDER and arity are part
+    of what the human said)."""
+    from lumen_api.models import WebTurnRequest
+
+    wire = {
+        "prompt": "Tighten the hero",
+        "base_version": 1,
+        "target_node_ids": ["frg_a", "sec_b"],
+        "target_notes": [
+            {
+                "target": "frg_a",
+                "path": ":nth-child(1) > :nth-child(2)",
+                "note": "1. Make this shorter",
+            },
+            {"target": "sec_b", "path": None, "note": None},
+        ],
+    }
+    payload = WebTurnRequest.model_validate(wire)
+    assert [note.model_dump(mode="json") for note in payload.target_notes] == wire[
+        "target_notes"
+    ]
+
+    document = create_web_document(client)
+    content_doc = ingest_content(client, document["id"])
+    seed_web_doc(client, document["id"], content_doc)
+
+    received: dict = {}
+
+    def stub(doc, prompt, model, root, target_node_ids):
+        received["target_node_ids"] = target_node_ids
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "outcome": "accepted",
+            "summary": "Scoped the hero.",
+            "web_doc": doc["scene"],
+            "operations": [],
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    client.app.state.web_turn_runner = stub
+    response = client.post(
+        f"/documents/{document['id']}/web/turns",
+        json={**wire, "target_node_ids": ["hero"], "target_notes": [
+            {"target": "hero", "path": ":nth-child(1)", "note": "1. Shorter"}
+        ]},
+    )
+    assert response.status_code == 200, response.text
+    run = wait_for_run(client, response.json()["run_id"])
+    assert run["status"] == "succeeded", run
+    assert received["target_node_ids"] == ["hero"]
+
+
+def test_web_turn_refuses_an_annotation_path_outside_the_closed_grammar(
+    client: TestClient,
+) -> None:
+    """Spec §3.1's grammar is enforced at the HTTP boundary, not deep inside the prompt
+    build: a path is interpolated into the brief and later resolved against real markup, so
+    anything that is not a `:nth-child` chain is refused before a run row exists."""
+    document = create_web_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/web/turns",
+        json={
+            "prompt": "Tighten the hero",
+            "base_version": 1,
+            "target_node_ids": ["hero"],
+            "target_notes": [{"target": "hero", "path": "div > h2", "note": "1. Shorter"}],
+        },
+    )
+    assert response.status_code == 422, response.text
