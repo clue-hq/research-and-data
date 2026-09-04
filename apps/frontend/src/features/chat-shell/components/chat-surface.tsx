@@ -569,6 +569,7 @@ export function ChatSurface({
         </div>
       </section>
       <ArtifactStage
+        annotations={session.canvasAnnotations}
         activeArtifactId={shell.activeArtifactId}
         activeDocumentId={activeDocumentId}
         // F5 task 18: the header's page switcher and the canvas read ONE

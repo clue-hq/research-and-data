@@ -1,18 +1,43 @@
 "use client";
 
-import { useEffect, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import type { PendingAnnotation } from "../adapter/annotations";
 import { canvasSandbox } from "../adapter/view-mode-html";
-import type {
-  RichTextCommand,
-  RichTextSelectionState,
-  WebSelection,
+import {
+  addressKey,
+  type RichTextCommand,
+  type RichTextSelectionState,
+  type WebAnnotateEvent,
+  type WebElementAddress,
+  type WebSelection,
 } from "../engine/webBridge";
 import type { RichTextDocument, WebTheme } from "../engine/webDocuments";
 import { useWebBridgeSelection } from "../hooks/use-web-bridge-selection";
 import { useWebRender } from "../hooks/use-web-render";
+import { WebAnnotationPopover } from "./web-annotation-popover";
 import styles from "./web-artifact-canvas.module.css";
 import { WebRichTextToolbar } from "./web-rich-text-toolbar";
+
+/**
+ * Slice 3 (R-A1..R-A3): the annotation session, as the CANVAS needs it. The
+ * state itself is owned by `useWebAnnotations` up in the editing session (the
+ * composer chips read the same list); the canvas only opens the box on a click,
+ * renders it, and draws the badges the list implies.
+ *
+ * `onSend` and `onEditText` are optional and their controls are simply absent
+ * without them — "Send to chat" belongs to the composer (task 7) and "Edit
+ * text" to the constrained clone editor (task 16).
+ */
+export interface WebAnnotationsCanvasBinding {
+  pending: PendingAnnotation | null;
+  itemsForPage: (pageId: string) => { address: WebElementAddress; n: number }[];
+  open: (pending: Omit<PendingAnnotation, "pageId">) => void;
+  dismiss: () => void;
+  add: (note: string) => void;
+  onSend?: (note: string) => void;
+  onEditText?: (address: WebElementAddress) => void;
+}
 
 /** W2.3: imperative controls the canvas publishes for its owner — layer-row
  * clicks send `selectNode` INTO the iframe (the frame echoes the normal
@@ -83,6 +108,7 @@ export interface WebRichTextSessionState {
  * discipline): no keyed remount, no loading flash.
  */
 export function WebArtifactCanvas({
+  annotations,
   controlsRef,
   documentId,
   editing = false,
@@ -97,6 +123,9 @@ export function WebArtifactCanvas({
   richTextTheme = null,
   selectedNodeId = null,
 }: {
+  /** Slice 3 (R-A1): the annotation session. Absent → no comment box and no
+   * badges, exactly as before this slice. */
+  annotations?: WebAnnotationsCanvasBinding;
   /** W2.3: receives the canvas's imperative controls while mounted. */
   controlsRef?: RefObject<WebArtifactCanvasControls | null>;
   documentId: string;
@@ -146,6 +175,7 @@ export function WebArtifactCanvas({
   return (
     <DocumentRender
       key={documentId}
+      annotations={annotations}
       controlsRef={controlsRef}
       documentId={documentId}
       editing={editing}
@@ -164,6 +194,7 @@ export function WebArtifactCanvas({
 }
 
 function DocumentRender({
+  annotations,
   controlsRef,
   documentId,
   editing,
@@ -178,6 +209,7 @@ function DocumentRender({
   richTextTheme,
   selectedNodeId,
 }: {
+  annotations?: WebAnnotationsCanvasBinding;
   controlsRef?: RefObject<WebArtifactCanvasControls | null>;
   documentId: string;
   editing: boolean;
@@ -197,9 +229,25 @@ function DocumentRender({
   // The ported bridge listener (source-window + nonce validation). Selection
   // state itself lives with the join owner (useWebArtifactSelection); this
   // canvas only forwards validated events upward.
+  // Slice 3 (R-A1): the element-level click report opens the comment box. The
+  // ordinary `select` for the OWNING node still fires beside it, so the
+  // inspector and the layers panel are untouched by annotating.
+  const openAnnotation = annotations?.open;
+  const onAnnotate = useCallback(
+    (event: WebAnnotateEvent) => {
+      openAnnotation?.({
+        address: event.address,
+        name: event.name,
+        textLike: event.textLike,
+        geometry: event.geometry,
+      });
+    },
+    [openAnnotation],
+  );
   const bridge = useWebBridgeSelection({
     iframeRef,
     nonceRef,
+    onAnnotate,
     onNavigate,
     onRichTextCommit,
     onSelect,
@@ -208,6 +256,7 @@ function DocumentRender({
   const {
     commandRichText,
     editingNodeId,
+    postAnnotations,
     ready,
     resetSelection,
     richTextError,
@@ -216,6 +265,21 @@ function DocumentRender({
     setRichTextToolbarActive,
     settleRichText,
   } = bridge;
+
+  // Slice 3: the badges. Posted on every change of the list AND on every
+  // `ready` — a post-write reload rebuilds the frame's DOM (and rotates the
+  // nonce), so the badges have to be drawn again against the new render.
+  // An empty list is the clear, so a removed annotation erases its badge
+  // through the very same message.
+  const itemsForPage = annotations?.itemsForPage;
+  const annotationItems = useMemo(
+    () => (itemsForPage && pageId ? itemsForPage(pageId) : []),
+    [itemsForPage, pageId],
+  );
+  useEffect(() => {
+    if (!ready) return;
+    postAnnotations(annotationItems);
+  }, [annotationItems, postAnnotations, ready]);
   useEffect(() => {
     if (!controlsRef) return;
     controlsRef.current = {
@@ -344,6 +408,26 @@ function DocumentRender({
                 command={commandRichText}
                 setInteractionActive={setRichTextToolbarActive}
                 settle={settleRichText}
+              />,
+              window.document.body,
+            )
+          : null}
+        {/* Slice 3 (R-A1/R-A2): the comment box. Portalled to <body> for the
+         * very reason the toolbar above is — `.artifactWorkspace`'s transform
+         * would otherwise become the containing block for its `position: fixed`
+         * and clip it. Keyed on the element address, so clicking a second
+         * element starts a genuinely empty box rather than carrying the first
+         * one's half-typed note across. */}
+        {editing && annotations?.pending
+          ? createPortal(
+              <WebAnnotationPopover
+                key={addressKey(annotations.pending.address)}
+                iframeRef={iframeRef}
+                onAdd={annotations.add}
+                onDismiss={annotations.dismiss}
+                onEditText={annotations.onEditText}
+                onSend={annotations.onSend}
+                pending={annotations.pending}
               />,
               window.document.body,
             )

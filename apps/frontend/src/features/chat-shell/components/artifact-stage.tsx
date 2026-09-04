@@ -11,6 +11,7 @@ import type {
 } from "../model/image-export";
 import {
   WebArtifactCanvas,
+  type WebAnnotationsCanvasBinding,
   type WebArtifactCanvasControls,
   type WebRichTextSessionState,
 } from "@/features/design-editor/components/web-artifact-canvas";
@@ -87,6 +88,7 @@ export function ArtifactStage({
   onSceneGestureZoom,
   onSceneAppliedOperations,
   onSceneOperations,
+  annotations,
   onSceneSelect,
   onSceneZoomChange,
   sceneCanvasControlsRef,
@@ -114,6 +116,9 @@ export function ArtifactStage({
    * selection). Absent → the render seam picks the document's own first page,
    * exactly as it did before the switcher existed. */
   activePageId?: string | null;
+  /** Slice 3 (R-A1): the web canvas's annotation session — the comment box a
+   * click opens and the numbered badges it draws back into the frame. */
+  annotations?: WebAnnotationsCanvasBinding;
   artifacts: ProjectArtifact[];
   /** W2.3: receives the mounted web canvas's imperative controls
    * (`selectNode` for layer-row clicks). */
@@ -306,6 +311,7 @@ export function ArtifactStage({
               >
                 {activeDocumentId ? (
                   <WebArtifactCanvas
+                    annotations={annotations}
                     controlsRef={canvasControlsRef}
                     documentId={activeDocumentId}
                     editing={editing}

@@ -227,6 +227,7 @@ export function EditorSurface({
         </div>
       ) : null}
       <ArtifactStage
+        annotations={session.canvasAnnotations}
         activeArtifactId={controller.activeArtifactId}
         activeDocumentId={activeDocumentId}
         // F5 task 18: the header's page switcher and the canvas read ONE

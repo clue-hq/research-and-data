@@ -16,6 +16,7 @@ import {
 } from "../adapter/rich-text-link-section";
 import { buildThemeColorOptions, tokenLabel } from "../adapter/theme-options";
 import type {
+  WebAnnotationsCanvasBinding,
   WebArtifactCanvasControls,
   WebRichTextSessionState,
 } from "../components/web-artifact-canvas";
@@ -23,6 +24,7 @@ import type { RichTextDocument, WebPageSummary } from "../engine/webDocuments";
 import { useCustomComponentArtifact } from "./use-custom-component-artifact";
 import { useInspectorWrites } from "./use-inspector-writes";
 import { useReplaceImage } from "./use-replace-image";
+import { useWebAnnotations } from "./use-web-annotations";
 import { useWebArtifactSelection } from "./use-web-artifact-selection";
 import { useWebTheme } from "./use-web-theme";
 import type { InspectorPresentationState } from "@/features/chat-shell/hooks/use-inspector-controller";
@@ -316,6 +318,33 @@ export function useWebEditingSession({
     [clearSelection],
   );
 
+  // Slice 3 (R-A1..R-A3): the canvas's element annotations. Owned HERE because
+  // two surfaces need the one list — the canvas (comment box + badges) and the
+  // composer's chip bar (task 7) — and because R-A3's "a document switch drops
+  // them" is exactly this hook's lifetime.
+  const annotations = useWebAnnotations(activeDocumentId, activePageId);
+  const annotationsPending = annotations.state.pending;
+  const annotationsOpen = annotations.open;
+  const annotationsDismiss = annotations.dismiss;
+  const annotationsAdd = annotations.add;
+  const annotationsItemsForPage = annotations.itemsForPage;
+  const canvasAnnotations: WebAnnotationsCanvasBinding = useMemo(
+    () => ({
+      add: annotationsAdd,
+      dismiss: annotationsDismiss,
+      itemsForPage: annotationsItemsForPage,
+      open: annotationsOpen,
+      pending: annotationsPending,
+    }),
+    [
+      annotationsAdd,
+      annotationsDismiss,
+      annotationsItemsForPage,
+      annotationsOpen,
+      annotationsPending,
+    ],
+  );
+
   // F5 task 19: adding a page makes it the one you are editing. Fired
   // optimistically beside the write, which is safe by construction: if the add
   // is refused the document never gains that id, and `resolveActivePageId`'s
@@ -408,6 +437,8 @@ export function useWebEditingSession({
     activeDocumentId,
     activePageId,
     addressing,
+    annotations,
+    canvasAnnotations,
     canvasControls,
     canvasHydrated,
     customComponentForm,

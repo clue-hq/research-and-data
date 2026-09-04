@@ -155,6 +155,55 @@ export interface WebNodeInfo {
 
 export type WebSelection = WebNodeInfo;
 
+/**
+ * Spec §3.1 — the ONE element-address grammar every consumer shares.
+ *
+ * `nodeId` is the WebDoc node that owns the DOM subtree; `path` is a structural
+ * `:nth-child(…)` chain from that node's rendered root down to the exact
+ * element, and exists ONLY for an element inside a cloned band (a vocabulary
+ * node's descendants have no path — see the bridge's `addressOf`). `slot` is
+ * the element's `data-lumen-slot` key when it carries one, and `tag` is display
+ * only.
+ */
+export interface WebElementAddress {
+  nodeId: string;
+  path?: string;
+  slot?: string;
+  tag: string;
+}
+
+/** Ruling R-A1: one click in Edit mode reports the exact element under the
+ * cursor — a SECOND, finer report beside the ordinary `select` of the owning
+ * node. `textLike` says the element carries editable copy (the comment box's
+ * "Edit text" quick action); `geometry` anchors the box to the element. */
+export interface WebAnnotateEvent {
+  address: WebElementAddress;
+  name: string;
+  textLike: boolean;
+  geometry: WebNodeGeometry;
+}
+
+/** The bridge's own path grammar (`elementPath` in `web_bridge.py`). Anything
+ * else is not a path this shell can hand back for resolution, so it is dropped
+ * rather than carried — the address then addresses the owning node, which is
+ * always resolvable. */
+const ELEMENT_PATH_PATTERN = /^(:nth-child\(\d+\)( > )?)+$/;
+
+/** The address's stable identity within a render — `${nodeId}#${path ?? ""}`.
+ * Used to key annotations; the trailing `#` keeps a node-level address from
+ * ever colliding with an inner-element one. */
+export function addressKey(a: WebElementAddress): string {
+  return `${a.nodeId}#${a.path ?? ""}`;
+}
+
+/** Spec §3.5 — the `design_node` context-ref `object_id` an annotation submits:
+ * the bare node id, or `${nodeId}#${path}` for an element inside a clone. `#`
+ * is illegal in both a node id and the path grammar, so the split is
+ * unambiguous on the server. */
+export function addressObjectId(a: WebElementAddress): string {
+  return a.path ? `${a.nodeId}#${a.path}` : a.nodeId;
+}
+
 export interface WebCustomComponentRuntimeState {
   nodeId: string;
   artifactId: string;
@@ -203,7 +252,12 @@ export type WebBridgeInbound =
    * anchor click (the canvas must never navigate the iframe); when the raw
    * href matches one of the document's routes it re-posts the click as this
    * intent, and the shell switches the active page. */
-  | { type: "navigate"; pageId: string };
+  | { type: "navigate"; pageId: string }
+  /** Slice 3 (R-A1): a single click in Edit mode, reported at ELEMENT
+   * granularity so a headline inside a cloned band — which has no node id of
+   * its own — can still be commented on. Arrives alongside the ordinary
+   * `select` for the owning node. */
+  | { type: "annotate"; event: WebAnnotateEvent };
 
 /** Coerce the bridge's `node` payload into a {@link WebSelection}, tolerating a
  * missing/partial shape. Returns `null` for an absent node (a cleared
@@ -288,6 +342,19 @@ function coerceComputedStyle(value: unknown): WebNodeComputedStyle {
   ) as unknown as WebNodeComputedStyle;
 }
 
+/** The bridge's `{viewport, document}` rect pair, tolerant of a missing or
+ * partial shape (every absent number folds to 0, as `coerceRect` does). Shared
+ * by the node-info snapshot and the element-level `annotate` report, so the two
+ * can never disagree about what a geometry payload means. */
+function coerceGeometry(value: unknown): WebNodeGeometry {
+  const record =
+    value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    viewport: coerceRect(record.viewport),
+    document: coerceRect(record.document)
+  };
+}
+
 function coerceNodeInfo(node: unknown): WebNodeInfo | null {
   if (!node || typeof node !== "object") {
     return null;
@@ -297,10 +364,6 @@ function coerceNodeInfo(node: unknown): WebNodeInfo | null {
   if (!nodeId) {
     return null;
   }
-  const geometry =
-    record.geometry && typeof record.geometry === "object"
-      ? (record.geometry as Record<string, unknown>)
-      : {};
   return {
     nodeId,
     tag: typeof record.tag === "string" ? record.tag : "",
@@ -311,10 +374,7 @@ function coerceNodeInfo(node: unknown): WebNodeInfo | null {
     childNodeIds: Array.isArray(record.childNodeIds)
       ? record.childNodeIds.filter((value): value is string => typeof value === "string")
       : [],
-    geometry: {
-      viewport: coerceRect(geometry.viewport),
-      document: coerceRect(geometry.document)
-    },
+    geometry: coerceGeometry(record.geometry),
     computedStyle: coerceComputedStyle(record.computedStyle)
   };
 }
@@ -558,6 +618,43 @@ export function validateBridgeMessage(
     const pageId = typeof data.pageId === "string" ? data.pageId : "";
     return pageId ? { type: "navigate", pageId } : null;
   }
+  // Slice 3 (R-A1): the element-level click report. Admitted under the very
+  // same source/origin/channel/nonce checks as every message above.
+  if (data.type === "annotate") {
+    const address = (data.address ?? null) as Partial<WebElementAddress> | null;
+    if (
+      !address ||
+      typeof address !== "object" ||
+      typeof address.nodeId !== "string" ||
+      address.nodeId.length === 0 ||
+      typeof address.tag !== "string" ||
+      address.tag.length === 0
+    ) {
+      return null;
+    }
+    const path =
+      typeof address.path === "string" && ELEMENT_PATH_PATTERN.test(address.path)
+        ? address.path
+        : undefined;
+    const slot =
+      typeof address.slot === "string" && address.slot.length > 0
+        ? address.slot
+        : undefined;
+    return {
+      type: "annotate",
+      event: {
+        address: { nodeId: address.nodeId, path, slot, tag: address.tag },
+        // A nameless report falls back to the tag — the label is display copy,
+        // never an identity, so an absent one must not drop the annotation.
+        name:
+          typeof data.name === "string" && data.name.length > 0
+            ? data.name
+            : address.tag,
+        textLike: data.textLike === true,
+        geometry: coerceGeometry(data.geometry)
+      }
+    };
+  }
   if (data.type === "custom-component-runtime") {
     const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";
     const artifactId =
@@ -624,6 +721,22 @@ export function webBridgeClearMessage(nonce: string): {
   type: "clear";
 } {
   return { channel: WEB_BRIDGE_CHANNEL, nonce, type: "clear" };
+}
+
+/** Slice 3 (R-A1): the numbered annotation badges posted INTO the iframe. The
+ * SHELL owns the numbering; the frame only draws it — and an empty `items` list
+ * IS the clear, so a settled turn erases every badge through this one message.
+ * Same nonce-tagging as {@link webBridgeClearMessage}. */
+export function webBridgeAnnotationsMessage(
+  nonce: string,
+  items: { address: WebElementAddress; n: number }[]
+): {
+  channel: typeof WEB_BRIDGE_CHANNEL;
+  nonce: string;
+  type: "annotations";
+  items: { address: WebElementAddress; n: number }[];
+} {
+  return { channel: WEB_BRIDGE_CHANNEL, nonce, type: "annotations", items };
 }
 
 /** The `component-preview` message posted INTO the iframe to open/close a

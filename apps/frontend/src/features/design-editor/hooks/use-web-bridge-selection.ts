@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 
 import {
   validateBridgeMessage,
+  webBridgeAnnotationsMessage,
   webBridgeClearMessage,
   webBridgeComponentPreviewMessage,
   webBridgeInspectNodeMessage,
@@ -25,6 +26,8 @@ import {
   type RichTextFormat,
   type RichTextFormatState,
   type RichTextSelectionState,
+  type WebAnnotateEvent,
+  type WebElementAddress,
   type WebNodeInfo,
   type WebCustomComponentRuntimeState,
   type WebSelection
@@ -87,6 +90,9 @@ export interface WebBridgeSelection {
   setRichTextToolbarActive: (nodeId: string, active: boolean) => void;
   /** Commit or cancel the active iframe-local session from parent focus. */
   settleRichText: (nodeId: string, action: "commit" | "cancel") => void;
+  /** Slice 3 (R-A1): draw the shell's numbered annotation badges in the frame.
+   * An empty list IS the clear. No-op until the frame + nonce are live. */
+  postAnnotations: (items: { address: WebElementAddress; n: number }[]) => void;
 }
 
 export function useWebBridgeSelection(params: {
@@ -107,6 +113,10 @@ export function useWebBridgeSelection(params: {
    * that link points at, so the SHELL performs the switch. Kept in a ref so a
    * changing callback never re-arms the listener. */
   onNavigate?: (pageId: string) => void;
+  /** Slice 3 (R-A1): invoked on the bridge's element-level click report — the
+   * shell opens its comment box on that element. Kept in a ref so a changing
+   * callback never re-arms the listener. */
+  onAnnotate?: (event: WebAnnotateEvent) => void;
   /** Invoked when the bridge posts a generic `move-node` intent. `index` is
    * measured against the destination parent's children after source removal,
    * so the same callback covers reorder and reparent. */
@@ -125,6 +135,7 @@ export function useWebBridgeSelection(params: {
     onRichTextCommit,
     onSelect,
     onNavigate,
+    onAnnotate,
     onMoveNode,
     onResizeNode
   } = params;
@@ -146,12 +157,14 @@ export function useWebBridgeSelection(params: {
   const onRichTextCommitRef = useRef(onRichTextCommit);
   const onSelectRef = useRef(onSelect);
   const onNavigateRef = useRef(onNavigate);
+  const onAnnotateRef = useRef(onAnnotate);
   const onMoveNodeRef = useRef(onMoveNode);
   const onResizeNodeRef = useRef(onResizeNode);
   useEffect(() => {
     onRichTextCommitRef.current = onRichTextCommit;
     onSelectRef.current = onSelect;
     onNavigateRef.current = onNavigate;
+    onAnnotateRef.current = onAnnotate;
     onMoveNodeRef.current = onMoveNode;
     onResizeNodeRef.current = onResizeNode;
   });
@@ -214,6 +227,17 @@ export function useWebBridgeSelection(params: {
       }
       if (message.type === "navigate") {
         onNavigateRef.current?.(message.pageId);
+        return;
+      }
+      if (message.type === "annotate") {
+        // The frame posts `annotate` on the very click that settles an open
+        // rich-text session, so `editingRef` is already false by the time it
+        // arrives — the guard is for the caret-move case, where a click inside
+        // the node being edited must not pop a comment box over the caret.
+        if (editingRef.current) {
+          return;
+        }
+        onAnnotateRef.current?.(message.event);
         return;
       }
       if (message.type === "move-node") {
@@ -337,6 +361,17 @@ export function useWebBridgeSelection(params: {
     [iframeRef, nonceRef]
   );
 
+  const postAnnotations = useCallback(
+    (items: { address: WebElementAddress; n: number }[]) => {
+      const win = iframeRef.current?.contentWindow;
+      const nonce = nonceRef.current;
+      if (win && nonce) {
+        win.postMessage(webBridgeAnnotationsMessage(nonce, items), "*");
+      }
+    },
+    [iframeRef, nonceRef]
+  );
+
   const settleRichText = useCallback(
     (nodeId: string, action: "commit" | "cancel") => {
       const win = iframeRef.current?.contentWindow;
@@ -368,6 +403,7 @@ export function useWebBridgeSelection(params: {
     formatRichText,
     commandRichText,
     setRichTextToolbarActive,
-    settleRichText
+    settleRichText,
+    postAnnotations
   };
 }
