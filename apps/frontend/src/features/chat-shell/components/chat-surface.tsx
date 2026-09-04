@@ -828,6 +828,11 @@ export function ChatSurface({
         // an editor — but LEAVING it never is, or a lock engaging mid-edit would
         // trap the user in a dock they cannot close.
         editDisabled={sceneLocked && !shell.editing}
+        // 2026-09-04 port: the motion follows the CANVAS lock (`sceneLocked`),
+        // not the Edit pill's `editDisabled`, so it also runs when the lock
+        // engages mid-edit (leaving edit mode is never refused, so
+        // `editDisabled` is false there).
+        agentWorking={sceneLocked}
         editDisabledReason={agentRunLock.note}
         openArtifacts={shell.openArtifacts}
         // Replace-image Task 6: the asset-library picker floats over the stage,

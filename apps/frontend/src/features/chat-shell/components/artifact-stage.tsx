@@ -40,11 +40,12 @@ import type { GalleryArtifact } from "@/features/gallery/model/project-gallery";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import type { EditorShellSurface } from "../hooks/use-editor-shell-controller";
 import type { ArtifactPreviewDevice } from "../hooks/use-artifact-toolbar-controller";
-import { AgentWorkingChip } from "./agent-working-chip";
+import "@/features/design-editor/components/generating/generating.css";
 import {
-  AGENT_WORKING_CHIP_LABEL,
-  shouldShowAgentWorkingChip,
-} from "./agent-working-chip.logic";
+  AdDesigningLock,
+  GeneratingGlow,
+  sceneAgentMotionActive,
+} from "@/features/design-editor/components/generating";
 import { ArtifactHeader } from "./artifact-header";
 import { ArtifactTabs } from "./artifact-tabs";
 import styles from "./chat-shell.module.css";
@@ -62,6 +63,7 @@ export function ArtifactStage({
   artifactKind,
   canvasControlsRef,
   canvasReloadToken,
+  agentWorking = false,
   artifactMaximized,
   artifactTitle,
   editDisabled,
@@ -128,6 +130,10 @@ export function ArtifactStage({
   artifactKind: ChatShellArtifactKind | null;
   artifactMaximized: boolean;
   artifactTitle: string;
+  /** Scene-ad motion (2026-09-04 port): true while the agent-run lock holds
+   * over this ad — `chat-surface.tsx`'s `sceneLocked`. The standalone artifact
+   * route has no turn stream and leaves it unset. */
+  agentWorking?: boolean;
   /** Task 4: the agent-run lock refuses ENTRY into edit mode (never the exit).
    * Absent leaves the header's Edit button exactly as it is today. */
   editDisabled?: boolean;
@@ -283,6 +289,12 @@ export function ArtifactStage({
   const adStageClass = activeDocumentId
     ? styles.sceneOutputStage
     : styles.imageOutputStage;
+  // 2026-09-04 port: one boolean drives both halves of the co-founder's
+  // agent-working motion — the lock's chip and the edge glow.
+  const sceneMotion = sceneAgentMotionActive({
+    agentWorking,
+    hasScene: Boolean(activeDocumentId),
+  });
 
   return (
     <section aria-label="Artifact workspace" className={styles.artifactWorkspace}>
@@ -349,13 +361,10 @@ export function ArtifactStage({
                * on it — so it is no longer wrapped in the dummy's fixed
                * `.imageCanvas` card, which could only ever show a 640px square
                * of it. The card keeps the empty state below, unchanged. */
-              <div aria-label="Ad output canvas" className={styles.sceneStage}>
-                {shouldShowAgentWorkingChip({
-                  editDisabled,
-                  hasScene: Boolean(activeDocumentId),
-                }) ? (
-                  <AgentWorkingChip label={AGENT_WORKING_CHIP_LABEL} />
-                ) : null}
+              <div
+                aria-label="Ad output canvas"
+                className={`${styles.sceneStage} clue-gen-host`}
+              >
                 <SceneArtifactCanvas
                   controlsRef={sceneCanvasControlsRef}
                   displayScene={sceneDisplayScene}
@@ -376,6 +385,16 @@ export function ArtifactStage({
                   selectedNodeId={sceneSelectedNodeId}
                   zoom={sceneZoomOverride}
                 />
+                {/* The co-founder's agent-working motion (handoff 2026-09-04):
+                    the artwork stays visible and keeps updating live; a
+                    transparent shield swallows canvas input and a chip with the
+                    Clue-mark spinner says the agent is mid-edit; a thin light
+                    frame drifts round the stage's edges. Both fade on their own
+                    when `active` drops — they stay mounted so the exit
+                    transition can play. Stacking is theirs (42/43), above the
+                    canvas's banners and caret. */}
+                <AdDesigningLock active={sceneMotion} />
+                <GeneratingGlow active={sceneMotion} />
               </div>
             ) : (
               <div
