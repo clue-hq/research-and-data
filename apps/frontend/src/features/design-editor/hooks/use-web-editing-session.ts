@@ -94,6 +94,7 @@ export function useWebEditingSession({
   activeArtifactId,
   documentIds,
   enabled = true,
+  onSendAnnotation,
 }: {
   /** The caller's OWN shell controller's active artifact tab. */
   activeArtifactId: string | null;
@@ -114,6 +115,20 @@ export function useWebEditingSession({
    * existing test) behaves exactly as before.
    */
   enabled?: boolean;
+  /**
+   * Slice 2 (R-A2): the comment box's **Send to chat** — store the note and
+   * submit the turn in one gesture.
+   *
+   * A PARAMETER rather than something this hook can do on its own, because
+   * only a mount with a composer can submit a turn: the chats route passes it,
+   * the artifact route (which has no composer) passes nothing and the canvas
+   * then renders no Send button at all — the binding's own contract.
+   *
+   * Must be identity-stable; it goes straight into the one memoised canvas
+   * binding, and a fresh function per render would hand the iframe a new
+   * binding on every keystroke in the composer.
+   */
+  onSendAnnotation?: (note: string) => void;
 }) {
   const activeDocumentId =
     enabled && activeArtifactId
@@ -337,6 +352,7 @@ export function useWebEditingSession({
       itemsForPage: annotationsItemsForPage,
       open: annotationsOpen,
       pending: annotationsPending,
+      onSend: onSendAnnotation,
     }),
     [
       annotationsAdd,
@@ -345,6 +361,7 @@ export function useWebEditingSession({
       annotationsItemsForPage,
       annotationsOpen,
       annotationsPending,
+      onSendAnnotation,
     ],
   );
 

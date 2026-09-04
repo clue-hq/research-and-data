@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ConversationContent } from "@/features/projects/components/conversation-content";
 import { ProjectComposer } from "@/features/projects/components/project-composer";
@@ -15,6 +15,7 @@ import type {
   ProjectArtifact,
   ProjectWorkspace,
 } from "@/features/projects/model/project-workspace";
+import type { WebAnnotation } from "@/features/design-editor/adapter/annotations";
 import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene-editing-session";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import { useEditorShellController } from "../hooks/use-editor-shell-controller";
@@ -29,6 +30,9 @@ import {
   chatSurfaceUrlState,
 } from "../model/chat-surface-params";
 import {
+  ANNOTATIONS_ONLY_MESSAGE,
+  annotationChips,
+  annotationContextRefs,
   editTargetChips,
   editTargetContextRefs,
 } from "../model/edit-targets";
@@ -111,10 +115,30 @@ export function ChatSurface({
   // kind rides in as `enabled` — the disabled one touches no transport
   // (audit finding F3: an ad tab used to run the web theme/document fetches
   // and swallow their 409s).
+  //
+  // Slice 2 (R-A2): the comment box's "Send to chat" must go through the SAME
+  // submit path the composer's own send button does — but that closure is
+  // rebuilt on every render (it reads the live composer text, the live
+  // annotation list, the live canvas selection), while the canvas binding has
+  // to stay identity-stable or the iframe's effects would re-run on every
+  // keystroke. So the canvas gets this stable dispatcher and the latest
+  // closure lives in a ref, assigned in an effect below.
+  //
+  // The lane gate is the SAME one the chips use minus the document (which is
+  // not known until the session exists, and which the canvas implies anyway —
+  // there is no comment box without a rendered document): outside an open
+  // design leg a `design_node` ref means nothing, so rather than send a turn
+  // that silently drops its annotations, the button is simply absent.
+  const annotationLaneOpen = chat.designLegOpen && shell.artifactKind === "web";
+  const sendAnnotationRef = useRef<((note: string) => void) | null>(null);
+  const dispatchSendAnnotation = useCallback((note: string) => {
+    sendAnnotationRef.current?.(note);
+  }, []);
   const session = useWebEditingSession({
     activeArtifactId: shell.activeArtifactId,
     documentIds,
     enabled: shell.artifactKind === "web",
+    onSendAnnotation: annotationLaneOpen ? dispatchSendAnnotation : undefined,
   });
   const sceneSession = useSceneEditingSession({
     activeArtifactId: shell.activeArtifactId,
@@ -143,6 +167,14 @@ export function ChatSurface({
     sceneSession.activeDocumentId !== null;
   const targetChips = editTargetsEnabled
     ? editTargetChips(sceneSession.scene, sceneSession.selectedIds)
+    : [];
+  // Slice 2 (R-A2), the web half of the same rule: an annotation is a noted
+  // `design_node` ref, so it rides a turn only beside the open design leg's
+  // own document.
+  const webAnnotationsEnabled =
+    annotationLaneOpen && session.activeDocumentId !== null;
+  const annotationChipList = webAnnotationsEnabled
+    ? annotationChips(session.annotations.state.items)
     : [];
 
   const activeThread =
@@ -298,6 +330,122 @@ export function ChatSurface({
     router.replace(`${pathname}${next ? `?${next}` : ""}`, { scroll: false });
   }, [editParam, pathname, router, searchParams, selectionParam, surfaceParam]);
 
+  /**
+   * The composer's ONE submit path — the composer's own send button and the
+   * canvas comment box's "Send to chat" both land here, so a turn carries the
+   * same context refs whichever gesture sent it.
+   *
+   * `justAdded` is the annotation "Send to chat" stored a moment ago: its
+   * reducer dispatch has not rendered yet, so the annotation state visible in
+   * this closure cannot see it, and the note the user is looking at would
+   * otherwise miss the very turn it triggered.
+   */
+  const submitTurn = async (
+    prompt: string,
+    entityIds?: string[],
+    justAdded?: WebAnnotation,
+  ): Promise<boolean> => {
+    // Snapshot references synchronously before any await. A queued turn owns these
+    // exact asset ids even if uploads or selection change before the POST returns.
+    const referenceSnapshot = designReferencesEnabled
+      ? referenceAttachments.snapshotContextRefs()
+      : [];
+    if (
+      referenceAttachments.attachments.length > 0 &&
+      referenceSnapshot === null
+    ) {
+      return false;
+    }
+    // Snapshot ids before the first await inside the scene session.
+    // A queued turn keeps this set even if the user changes the
+    // canvas selection while optimistic writes finish or the POST runs.
+    const editTargetSnapshot = editTargetsEnabled
+      ? await sceneSession.snapshotEditTargets()
+      : null;
+    if (targetChips.length > 0 && editTargetSnapshot === null) {
+      return false;
+    }
+    // Slice 2 (R-A2): the annotations, snapshotted for the same reason — the
+    // turn owns the notes that were on screen when it was sent.
+    const annotationItems = webAnnotationsEnabled
+      ? [...session.annotations.state.items, ...(justAdded ? [justAdded] : [])]
+      : [];
+    const annotationSnapshot =
+      webAnnotationsEnabled && session.activeDocumentId && annotationItems.length
+        ? {
+            documentId: session.activeDocumentId,
+            documentVersion:
+              session.webSelection.document?.currentVersion ?? null,
+            items: annotationItems,
+          }
+        : null;
+    const entityContextRefs = (entityIds ?? controller.selectedEntityIds)
+      .map((id) =>
+        controller.composerEntities.find((entity) => entity.id === id),
+      )
+      .filter((entity) => entity !== undefined)
+      .map((entity) => ({
+        objectId: entity.id,
+        objectType: entity.type,
+        version: entity.version ?? null,
+      }));
+    const contextRefs = [
+      ...entityContextRefs,
+      ...editTargetContextRefs(editTargetSnapshot),
+      ...annotationContextRefs(annotationSnapshot),
+      ...(referenceSnapshot ?? []),
+    ];
+    // The annotations can BE the message: a marketer who wrote three notes and
+    // pressed send said everything in them, and the refs carry the words.
+    const message =
+      prompt.trim().length === 0 && annotationSnapshot !== null
+        ? ANNOTATIONS_ONLY_MESSAGE
+        : prompt;
+    const accepted = await chat.submitMessage(message, {
+      contextRefs,
+      agentProfileId: workspace.composerCapabilities.agentProfileSelection
+        ? (controller.selectedModel?.id ?? null)
+        : null,
+    });
+    // R6 dismiss-on-send: a message the agent ACCEPTED closes the
+    // editing dock and restores the conversation the user is now
+    // talking in. A refused (`failed`) or empty/threadless
+    // (`not_submitted`) submit leaves them mid-edit. The rule is
+    // evaluated over the whole status union — before the early
+    // return — so the pure decision in ../model/chat-dock is the
+    // one that actually runs.
+    if (chatDockDismissedBySubmission(accepted.status)) {
+      shell.setEditing(false);
+    }
+    if (accepted.status !== "accepted") return false;
+    referenceAttachments.clear();
+    // R-A3: the annotations are now the turn's, so the chips and the badges in
+    // the canvas go together. Only on an ACCEPTED submit — a refused one leaves
+    // the marketer their notes.
+    session.annotations.clear();
+    controller.completeSubmissionContext(
+      entityContextRefs.map((reference) => reference.objectId),
+    );
+    return true;
+  };
+
+  // The latest submit closure, for the stable dispatcher the canvas holds.
+  // `add` returns the stored record (null only for a blank note, which the
+  // popover's Send button already refuses), and the composer's own text rides
+  // along — "Send to chat" is a send, not a second, separate channel.
+  const sendAnnotation = (note: string) => {
+    const stored = session.annotations.add(note);
+    if (stored === null) return;
+    void submitTurn(controller.prompt, controller.selectedEntityIds, stored).then(
+      (accepted) => {
+        if (accepted) controller.setPrompt("");
+      },
+    );
+  };
+  useEffect(() => {
+    sendAnnotationRef.current = sendAnnotation;
+  });
+
   return (
     <main
       className={`${styles.shell} ${shell.panelOpen ? styles.shellPanelOpen : ""} ${shell.artifactMaximized ? styles.shellArtifactMaximized : ""}`}
@@ -432,10 +580,38 @@ export function ChatSurface({
         </div>
         <div
           className={`${styles.composerDock} ${
-            targetChips.length ? styles.composerDockWithTargets : ""
+            targetChips.length || annotationChipList.length
+              ? styles.composerDockWithTargets
+              : ""
           }`}
         >
           <div className={styles.composerFrame}>
+            {/* Slice 2 (R-A2): the annotations, in badge order, above the
+                composer — the same bar the ad lane's edit targets use, so a
+                chip means the same thing in both lanes: "this turn is about
+                these". Removing one drops the badge in the canvas with it. */}
+            {annotationChipList.length ? (
+              <div aria-label="Annotations" className={styles.editTargetBar}>
+                <span className={styles.editTargetLabel}>Annotations</span>
+                <div className={styles.editTargetList}>
+                  {annotationChipList.map((chip) => (
+                    <span className={styles.editTargetChip} key={chip.n}>
+                      <span className={styles.editTargetName}>
+                        {chip.n} {chip.label}
+                      </span>
+                      <button
+                        aria-label={`Remove annotation ${chip.n}`}
+                        className={styles.editTargetRemove}
+                        onClick={() => session.annotations.remove(chip.n)}
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {targetChips.length ? (
               <div aria-label="Edit targets" className={styles.editTargetBar}>
                 <span className={styles.editTargetLabel}>Editing</span>
@@ -497,70 +673,15 @@ export function ChatSurface({
               onModelPickerToggle={controller.toggleModelPicker}
               onModelSelect={controller.selectModel}
               onPromptChange={controller.setPrompt}
-              onSubmit={async (prompt, entityIds) => {
-                // Snapshot references synchronously before any await. A queued turn owns these
-                // exact asset ids even if uploads or selection change before the POST returns.
-                const referenceSnapshot = designReferencesEnabled
-                  ? referenceAttachments.snapshotContextRefs()
-                  : [];
-                if (
-                  referenceAttachments.attachments.length > 0 &&
-                  referenceSnapshot === null
-                ) {
-                  return false;
-                }
-                // Snapshot ids before the first await inside the scene session.
-                // A queued turn keeps this set even if the user changes the
-                // canvas selection while optimistic writes finish or the POST runs.
-                const editTargetSnapshot = editTargetsEnabled
-                  ? await sceneSession.snapshotEditTargets()
-                  : null;
-                if (targetChips.length > 0 && editTargetSnapshot === null) {
-                  return false;
-                }
-                const entityContextRefs = (entityIds ?? controller.selectedEntityIds)
-                  .map((id) =>
-                    controller.composerEntities.find((entity) => entity.id === id),
-                  )
-                  .filter((entity) => entity !== undefined)
-                  .map((entity) => ({
-                    objectId: entity.id,
-                    objectType: entity.type,
-                    version: entity.version ?? null,
-                  }));
-                const contextRefs = [
-                  ...entityContextRefs,
-                  ...editTargetContextRefs(editTargetSnapshot),
-                  ...(referenceSnapshot ?? []),
-                ];
-                const accepted = await chat.submitMessage(prompt, {
-                  contextRefs,
-                  agentProfileId:
-                    workspace.composerCapabilities.agentProfileSelection
-                      ? (controller.selectedModel?.id ?? null)
-                      : null,
-                });
-                // R6 dismiss-on-send: a message the agent ACCEPTED closes the
-                // editing dock and restores the conversation the user is now
-                // talking in. A refused (`failed`) or empty/threadless
-                // (`not_submitted`) submit leaves them mid-edit. The rule is
-                // evaluated over the whole status union — before the early
-                // return — so the pure decision in ../model/chat-dock is the
-                // one that actually runs.
-                if (chatDockDismissedBySubmission(accepted.status)) {
-                  shell.setEditing(false);
-                }
-                if (accepted.status !== "accepted") return false;
-                referenceAttachments.clear();
-                controller.completeSubmissionContext(
-                  entityContextRefs.map((reference) => reference.objectId),
-                );
-                return true;
-              }}
+              onSubmit={(prompt, entityIds) => submitTurn(prompt, entityIds)}
               prompt={controller.prompt}
               sendDisabled={
                 designReferencesEnabled && referenceAttachments.submissionBlocked
               }
+              // Slice 2 (R-A2): chips on the bar are already a message — the
+              // notes ride the refs — so Send works on an empty box and the
+              // turn reads "See annotations."
+              submittableWithoutPrompt={annotationChipList.length > 0}
               selectedEntities={controller.selectedEntities}
               selectedEntityIds={controller.selectedEntityIds}
               selectedModel={controller.selectedModel}

@@ -201,6 +201,11 @@ export interface TurnContextReference {
   objectId: string;
   objectType: TurnContextObjectType;
   version: number | null;
+  /** Slice 2 (R-A2): the marketer's own words about THIS object — the note a
+   * web annotation carries, numbered so the turn's prose ("annotation 2") and
+   * the badge in the canvas name the same element. Optional and omitted from
+   * the wire when absent, so every existing ref shape is byte-identical. */
+  note?: string;
 }
 
 /** Block only a duplicate of the exact message request currently in flight. */
@@ -312,6 +317,7 @@ export function turnRequestBody(submission: TurnSubmission): unknown {
         object_type: reference.objectType,
         object_id: reference.objectId,
         version: reference.version,
+        ...(reference.note !== undefined ? { note: reference.note } : {}),
       })),
       attachment_refs: [],
       agent_profile_id: submission.agentProfileId ?? null,
