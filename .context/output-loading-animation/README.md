@@ -1,5 +1,27 @@
 # Output-pane loading animation — exploration (2026-09-04)
 
+## v2 — what ships (founder review, later the same day)
+
+Founder kept Option 1's aesthetic and asked for two production animations that
+cover the **entire output pane**, in brand colours (not Comet's blue):
+
+- **Website**: the page cannot stream, so the pane stays blurred until it
+  exists. `v2/website.html`.
+- **Ad**: the artwork is visible and updates live, so never blur it; lock input
+  and show a Moda-style pill, "Currently designing. Please wait to edit."
+  `v2/ad.html`.
+- Both get a Comet-style perimeter glow (sage / cream / slate-teal, slow
+  rotation, breathe).
+
+The deliverable for Aryan is `handoff/`: one `generating.css` (the only source
+of the motion; the previews link the same file), four React components
+(`ClueMark`, `GeneratingGlow`, `WebsiteGeneratingVeil`, `AdDesigningLock`) in
+the frontend's house style, and `HANDOFF.md` with mount points, the busy
+signal, copy rules, and a done-when checklist. References: `reference/` now
+also holds frames from the Comet + Moda recordings.
+
+## v1 — the original four options
+
 Self-contained folder. Nothing here touches `apps/frontend/`; it is a set of
 browser-openable mockups for deciding what the right-hand output pane should do
 while the model is generating an artifact.

@@ -1,0 +1,41 @@
+/* Preview-only chrome: the output pane (tabs, toolbar, canvas) at full width.
+   Not part of the handoff — production already has this shell. */
+@font-face{font-family:"Satoshi";src:url("../fonts/satoshi-regular.woff2") format("woff2");font-weight:400}
+@font-face{font-family:"Satoshi";src:url("../fonts/satoshi-medium.woff2") format("woff2");font-weight:500}
+:root{--font-sans:"Satoshi",Arial,sans-serif;--line:#E6E8E6;--page:#F7F8F8;--text:#1F211D;--muted:#7A7F75;--olive:#44483F;--olive-950:#33372E;--cream:#F8F5DC;--sage:#BCC4B3;--brand-100:#EEF2E9;--teal:#5C7A82}
+*{box-sizing:border-box}html,body{margin:0;height:100%;font-family:var(--font-sans);color:var(--text);background:#fff;-webkit-font-smoothing:antialiased}
+.output{display:flex;flex-direction:column;height:100vh;min-height:600px;background:var(--page)}
+.tabs{height:54px;display:flex;align-items:center;gap:6px;padding:0 20px;background:#fff;border-bottom:1px solid var(--line);font-size:13.5px;color:#5D625A}
+.tabs span{padding:7px 12px;border-radius:8px}.tabs span.active{background:#fff;border:1px solid var(--line);color:var(--text);font-weight:500;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.toolbar{height:56px;display:flex;align-items:center;gap:12px;padding:0 20px;background:#fff;border-bottom:1px solid var(--line);font-size:13.5px;font-weight:500}
+.toolbar .dots{color:#9AA097;letter-spacing:1px}.toolbar .zoom{color:#5D625A;font-weight:400;margin-right:8px}.spacer{flex:1}
+.toolbar button{font:inherit;font-weight:500;border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 12px;color:var(--text)}
+.toolbar button.dark{background:var(--olive-950);color:#fff;border-color:var(--olive-950)}
+.toolbar button[disabled]{opacity:.45}
+.pane{flex:1;position:relative;isolation:isolate;overflow:hidden;display:grid;place-items:center;padding:40px}
+.controls{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:flex;gap:8px;background:#161814;padding:8px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.25);z-index:20}
+.controls button{font:inherit;font-size:13px;font-weight:500;color:var(--cream);background:transparent;border:1px solid rgba(248,245,220,.25);border-radius:8px;padding:8px 14px;cursor:pointer}
+.controls button:hover{background:rgba(248,245,220,.1)}.controls .label{color:#A6AD9D;font-size:12px;align-self:center;padding:0 8px 0 6px}
+/* --- website mock (a landing page at ~23% zoom) --- */
+.site{width:min(760px,88%);height:100%;background:#fff;border:1px solid var(--line);border-radius:2px;overflow:hidden;display:flex;flex-direction:column;transition:opacity .8s cubic-bezier(.2,.7,.2,1),transform .9s cubic-bezier(.2,.7,.2,1)}
+.site.hidden{opacity:0;transform:scale(.99)}
+.site nav{display:flex;align-items:center;gap:26px;padding:22px 40px;font-size:13px;color:#5D625A}.site nav b{color:var(--text);font-weight:500;margin-right:auto;display:flex;align-items:center;gap:8px}
+.site nav b svg{width:16px;color:var(--olive)}.site nav .cta{background:var(--olive-950);color:var(--cream);padding:8px 14px;border-radius:999px}
+.site .hero{padding:48px 40px 40px;display:grid;grid-template-columns:1.1fr 1fr;gap:32px;align-items:center}
+.site h1{font-size:40px;line-height:1.08;letter-spacing:-.02em;font-weight:500;margin:0 0 16px;color:var(--olive-950)}
+.site p{font-size:15px;line-height:1.55;color:#5D625A;margin:0 0 22px}
+.site .btns{display:flex;gap:10px}.site .btns span{padding:10px 16px;border-radius:999px;font-size:13px;font-weight:500}
+.site .btns .p{background:var(--olive-950);color:var(--cream)}.site .btns .s{border:1.5px solid var(--olive);color:var(--olive)}
+.site .art{aspect-ratio:4/3;border-radius:10px;background:linear-gradient(135deg,var(--olive-950),var(--olive) 60%,#646B5C);position:relative;overflow:hidden}
+.site .art::after{content:"";position:absolute;inset:auto -10% -30% auto;width:70%;aspect-ratio:1;border-radius:50%;background:radial-gradient(closest-side,rgba(248,245,220,.35),transparent)}
+.site .row{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;padding:0 40px 40px}
+.site .row div{border:1px solid var(--line);border-radius:10px;padding:18px;font-size:13px;line-height:1.5;color:#5D625A}.site .row div b{display:block;color:var(--text);font-weight:500;margin-bottom:6px}
+/* --- ad mock --- */
+.ad{width:min(560px,80vh);aspect-ratio:1;background:#fff;border:1px solid var(--line);border-radius:2px;padding:32px;display:flex;flex-direction:column;gap:16px}
+.ad .who{display:flex;align-items:center;gap:12px;font-size:14px}.ad .av{width:40px;height:40px;border-radius:50%;background:var(--olive-950);display:grid;place-items:center}.ad .av svg{width:20px;color:var(--cream)}.ad .who small{display:block;color:var(--muted);font-size:12px}
+.ad .copy{font-size:15px;line-height:1.5}
+.ad .hero{flex:1;border-radius:6px;background:linear-gradient(135deg,var(--olive-950),var(--olive) 60%,#646B5C);display:flex;align-items:flex-end;padding:26px;color:var(--cream);font-size:27px;line-height:1.15;font-weight:500;letter-spacing:-.01em;transition:background 1.2s}
+.ad .cta{display:flex;align-items:center;justify-content:space-between;border:1px solid var(--line);border-radius:6px;padding:12px 14px;font-size:14px}.ad .cta span{border:1.5px solid var(--olive);border-radius:999px;padding:6px 14px;color:var(--olive);font-weight:500}
+/* live-edit simulation on the ad: the agent swaps the headline while locked */
+.ad .hero em{font-style:normal;display:block;transition:opacity .35s}
+.ad .hero em.swap{opacity:0}

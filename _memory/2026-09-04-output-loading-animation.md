@@ -27,3 +27,28 @@ logo as standalone files, all in one separate folder.
   to the frontend (they are on the project run stream); option 1 for pure brand moment.
 
 **Open:** founder to pick a direction; nothing is wired into `apps/frontend/`.
+
+## Round 2 (same day) — founder review → production handoff
+
+Founder liked Option 1 (Assembly) and refined the brief: two animations covering
+the **whole output pane**, brand colours only. Website = blur until the page
+exists (can't stream). Ad = artwork visible + live, input locked, Moda-style pill
+"Currently designing. Please wait to edit." Both get a Comet-style perimeter glow.
+References were two recordings of Moda running inside the Comet browser (glow =
+soft haze hugging the pane edges; Moda pill = frosted, top-left, blue shimmer text).
+
+Delivered in `.context/output-loading-animation/`:
+- `handoff/generating.css` — the single motion source (class prefix `clue-gen-*`,
+  token vars with hex fallbacks, reduced-motion block; glow z-index 7 above veil/lock 6).
+- `handoff/{clue-mark,generating-glow,website-generating-veil,ad-designing-lock}.tsx` + `index.ts`
+  — house style (named exports, `cn` from `@/lib/utils`, `data-active`), no `motion` dep.
+- `handoff/HANDOFF.md` — mount points (`artifact-stage.tsx`, `web-artifact-canvas.tsx:~345`,
+  `scene-artifact-canvas.tsx`, `chat-surface.tsx:~565`), signal
+  (`chat.threadBusy && chat.designLegOpen`; hold website veil until `designRefresh.canvasRevision`),
+  copy rule from `design-leg.ts` (no ETA/percent), done-when list.
+- `v2/website.html`, `v2/ad.html` previews (output pane only, no dummy chat pane).
+Verified via gstack browse at 1400x900, no console errors. Frontend facts used:
+React 19.2 / Next 16.2 / Tailwind v4, `motion` present but unused here, no
+`bg-brand-*` utilities (brand colours are raw `var(--clue-ds-color-primitives-*)`),
+`accent-700 #5C7A82` is the only teal ramp (no `secondary`).
+Preview server: `python3 -m http.server 7000` from the folder (started this session).

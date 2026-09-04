@@ -12,8 +12,15 @@ p{color:#5D625A;font-size:14px;line-height:1.55;margin:0 0 10px}
 .ref{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.ref img{width:100%;border:1px solid #E6E8E6;border-radius:8px;background:#fff}
 a{color:#44483F}
 </style></head><body>
-<h1>Output-pane loading animation — options for Clue</h1>
+<h1>Output-pane loading animation — Clue</h1>
 <p>While the model generates an artifact (a LinkedIn ad, a landing page, an email), the right-hand output pane is blank. These four self-contained pages show what that pane could do instead. Each opens in a browser, loops until you press <b>Finish generation</b>, then plays the hand-off to the finished artifact. <b>Replay</b> restarts it.</p>
+<h2 style="margin-top:12px">v2 — the two production animations (2026-09-04, after founder review)</h2>
+<p>Option 1's aesthetic kept, applied to the <b>whole output pane</b>, brand colours only. Two behaviours: the website blurs until it exists; the ad stays live but locked. Both carry a Comet-style perimeter glow in sage / cream / slate-teal. The React components and the single CSS file behind these previews are in <a href="handoff/HANDOFF.md">handoff/</a>, ready for the production app.</p>
+<div class="list">
+ <div class="opt"><div><b>Website — blur until it exists</b><p>Backdrop blur over the pane, the Clue mark assembles and breathes, one line of copy, perimeter glow. Lifts on the canvas revision that carries the page.</p></div><a class="btn" href="v2/website.html">Open</a></div>
+ <div class="opt"><div><b>Ad — live canvas, input locked</b><p>Artwork visible and updating live. A frosted pill reads "Currently designing. Please wait to edit." with the mark as a spinner; a transparent shield swallows clicks; perimeter glow on the pane.</p></div><a class="btn" href="v2/ad.html">Open</a></div>
+</div>
+<h2>v1 — the four original explorations</h2>
 <div class="list">
  <div class="opt"><div><b>Option 1 — Assembly</b><p>The three pieces of the Clue mark drift in, lock together, breathe, ease apart, and re-assemble. Behind it a slow "light on paper" drift. Calm, brand-led, no fake progress.</p></div><a class="btn" href="animations/01-assembly.html">Open</a></div>
  <div class="opt"><div><b>Option 2 — Segments</b><p>Closest to the Play reference: a frosted ghost of the artifact behind, and four brand segments (the three mark pieces plus a slate-teal ring) that pop in one after another, then each idles with its own motion.</p></div><a class="btn" href="animations/02-segments.html">Open</a></div>
