@@ -1252,3 +1252,51 @@ def test_inspect_cloned_section_shows_the_real_html_and_css(tmp_path: Path) -> N
     assert result["slots"] == [{"key": "headline", "kind": "text"}]
     missing = json.loads(tools.inspect_cloned_section("frag_nope"))
     assert missing["status"] == "error" and missing["error_code"] == "cloned_section.not_found"
+
+
+# --------------------------------------------------------------------------- #
+# A pin is born with a human name (R-A5)
+# --------------------------------------------------------------------------- #
+
+
+def test_a_pin_stamps_a_human_name_on_both_nodes(tmp_path: Path) -> None:
+    """A page the agent pinned and the same page opened by a human must agree on what each
+    band is called. The editor derives `"{Role} — {label}"` for an unnamed clone; the pin
+    stamps exactly those words, so the layers panel reads the same either way — and the name
+    rides INSIDE the `insert_node` payload, so the commit gate's replay reproduces it."""
+    named_hero_id = "frag_00000000000000aa"
+    registry = FakeRegistry(tmp_path)
+    registry.add(
+        fragment_id=named_hero_id,
+        role="hero",
+        label="Stripe homepage hero",
+        html='<section class="sh-hero"><h1>Real</h1></section>',
+    )
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.insert_cloned_section(named_hero_id, slot_values_json="{}"))
+
+    assert result["status"] == "ok"
+    page = _page(tools)
+    section = page["nodes"][result["section_node_id"]]
+    fragment = page["nodes"][result["node_id"]]
+    assert section["kind"] == "section" and fragment["kind"] == "fragment"
+    assert section["name"] == "Hero — Stripe homepage hero"
+    assert fragment["name"] == "Hero — Stripe homepage hero"
+    # No second operation to keep in step: the name is part of the one insert that replays.
+    assert [op["kind"] for op in tools.operations_ledger] == ["insert_node"]
+    assert {node["name"] for node in tools.operations_ledger[0]["nodes"]} == {
+        "Hero — Stripe homepage hero"
+    }
+
+
+def test_pin_display_name_degrades_honestly() -> None:
+    from lumen_agent.tools.web_substrate import pin_display_name
+
+    assert (
+        pin_display_name({"section_role": "footer", "label": "Stripe footer"})
+        == "Footer — Stripe footer"
+    )
+    assert pin_display_name({"section_role": "cta", "label": ""}) == "Cta"
+    assert pin_display_name({"label": "Only a label"}) == "Only a label"
+    assert pin_display_name({}) == "Cloned section"

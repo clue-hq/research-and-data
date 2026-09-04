@@ -25,6 +25,7 @@ import os
 import re
 import shutil
 import threading
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -437,6 +438,25 @@ _REVIEW_SCHEMA_VERSION = 2
 #: brings its own padding, background and rhythm (that is what makes it a clone), so a wrapper
 #: that imposed the platform's section rhythm on top would double it.
 _CLONED_SECTION_WRAPPER_CLASSES = "w-full"
+
+
+def pin_display_name(resolved: Mapping[str, Any]) -> str:
+    """The name a pinned clone is born with — `"{Role} — {label}"` (ruling R-A5).
+
+    Exactly the words the editor derives for an UNNAMED clone from `fragment_meta`, so a page
+    the agent pinned and the same page read back by a human call every band the same thing.
+    Degrades to whichever half exists, and to a plain noun when the registry row carries
+    neither — an honest generic name beats a node id in a layers panel.
+    """
+    role = resolved.get("section_role")
+    label = resolved.get("label")
+    role_text = role.strip().capitalize() if isinstance(role, str) and role.strip() else None
+    label_text = label.strip() if isinstance(label, str) and label.strip() else None
+    if role_text and label_text:
+        return f"{role_text} — {label_text}"
+    return role_text or label_text or "Cloned section"
+
+
 _GROUNDED_SOURCE_MAX = 64
 _GROUNDED_PAGE_SOURCE_MAX = 8
 _GROUNDED_CITATION_MAX = 100
@@ -5450,7 +5470,7 @@ class LumenWebTools:
             position = min(index, len(siblings))
 
         section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
-            clean_id, slots, set(nodes)
+            clean_id, slots, set(nodes), name=pin_display_name(resolved)
         )
         operations = [
             {
@@ -5833,7 +5853,7 @@ class LumenWebTools:
             if slot_error is not None:
                 return slot_error
             section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
-                fragment_id, slots, taken
+                fragment_id, slots, taken, name=pin_display_name(resolved)
             )
             taken.update({section_id, node_id})
             operations.append(
@@ -6225,7 +6245,7 @@ class LumenWebTools:
             if slot_error is not None:
                 return slot_error
             section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
-                fragment_id, slots, taken
+                fragment_id, slots, taken, name=pin_display_name(resolved)
             )
             taken.update({section_id, node_id})
             operations.append(
@@ -6554,7 +6574,7 @@ class LumenWebTools:
             index = children.index(old_section) if old_section in children else len(children)
             slot_kinds = (resolved.get("render") or {}).get("slot_kinds") or {}
             section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
-                new_id, {}, set(nodes)
+                new_id, {}, set(nodes), name=pin_display_name(resolved)
             )
             operations: List[JsonObject] = [
                 {"kind": "remove_node", "page_id": self.page_id, "id": old_section},
@@ -7694,7 +7714,7 @@ class LumenWebTools:
                     fragment_id=fragment_id,
                 )
             section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
-                fragment_id, entry["slots"], taken
+                fragment_id, entry["slots"], taken, name=pin_display_name(resolved)
             )
             taken.update({section_id, node_id})
             index = {"first": 0, "after_header": 1}.get(entry["place"], length)
@@ -8044,7 +8064,7 @@ class LumenWebTools:
             return None
         index = children.index(section_node_id)
         wrapper_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
-            repair_id, {}, set(nodes)
+            repair_id, {}, set(nodes), name=pin_display_name(resolved)
         )
         batch = [
             {"kind": "remove_node", "page_id": self.page_id, "id": section_node_id},
@@ -8095,7 +8115,12 @@ class LumenWebTools:
         return None
 
     def _cloned_section_pin_nodes(
-        self, fragment_id: str, slots: JsonObject, taken: set
+        self,
+        fragment_id: str,
+        slots: JsonObject,
+        taken: set,
+        *,
+        name: Optional[str] = None,
     ) -> tuple[str, str, List[JsonObject]]:
         """The `(wrapper section, fragment leaf)` pair one pinned clone occupies on the page.
 
@@ -8105,6 +8130,9 @@ class LumenWebTools:
         Shared by the single pin and the whole-page recreate so the two cannot produce different
         shapes for the same act. ``taken`` is the caller's running set of ids, so a batch that
         pins ten sections at once still mints ten distinct pairs.
+
+        ``name`` is the human name both nodes are BORN with (R-A5) — pass
+        ``pin_display_name(resolved)`` from the registry entry this pin resolved through.
         """
         section_id, node_id = self._cloned_section_node_ids(taken)
         section_node: JsonObject = {
@@ -8121,6 +8149,11 @@ class LumenWebTools:
             "fragment_id": fragment_id,
             "slots": slots,
         }
+        if name:
+            # R-A5: born human-readable. The name rides INSIDE the `insert_node` payload, so
+            # the commit gate's replay reproduces it without a second operation to keep in step.
+            section_node["name"] = name
+            fragment_node["name"] = name
         return section_id, node_id, [section_node, fragment_node]
 
     def _cloned_section_node_ids(self, taken: set) -> tuple[str, str]:
