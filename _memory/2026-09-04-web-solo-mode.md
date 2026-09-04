@@ -246,3 +246,40 @@ recovered but spent a loop); plan writes of 8–9k tokens are the run's longest 
 sit in the kill window even on chat-completions — consider asking for a shorter plan or
 splitting it. Web-turn progressive persistence (scene mode has it) is the structural answer to
 "one killed call discards the run"; recorded, not started.
+
+## Benchmark run #4 (Ramp × CFO, 2026-09-04 11:02 IST) — ACCEPTED in 15.9 min, committed, 6 clones pinned
+
+Run `run_5989158a6730448bb69061496e15184e` (outer `run_26bdb352…`), same brief, fresh chat, solo +
+chat-completions, all four run-3 fixes live. Diagnostics: `.context/run-diagnostics/ramp-run4-*.log`.
+
+Numbers: wall 956s (15.9 min) vs 41.5 min (run 3, failed) vs ~57 min (trio). Model time 908s over
+28 calls (run 3: 61 calls); tools+overhead 48s. Six calls >60s, longest 133s (the 7.3k-token
+plan write). Zero transient errors, zero retries fired. Two compactions (66s + ~37s). Commit:
+`design_apply_web_operations_completed` → `design_job.finished succeeded` (ledger replay held:
+17 ops = 8 insert_node, 8 upsert_asset, 1 remove_node).
+
+Behaviour (all run-3 fixes verified in anger): batched assemble+asset registrations did not lose
+the assembly (lock); `inspect_cloned_section` used 8×, 12k cap held (117k-char homepage hero
+truncated); no wander into other runs' dirs; plan.md in the run dir (14k chars, one amendment,
+`edit_file` diffs not rewrites after the initial write); DERIVE-VARIANT used on the close band
+(`frag_2f42f278b795efef`, released, noted as lineage successor of the composed close, NOT of a
+Stripe original); one raw composition (how-we-work band); review walk clean; self-judge caught
+the close band's gray wings at 1440 and fixed it in one iteration. Page: 7 sections, 1440/768/375
+all sound; hero → "why" gap is generous (~400px) but not broken.
+
+Findings for the founder (unfixed, need rulings):
+- **Library pollution by released campaign bands.** The six pins were run 3's OWN raw-lane
+  outputs (`frag_8dd7a2df` header, `frag_f855f401` hero, `frag_90b5f22c` why, `frag_1bc1630e`
+  close) — Ramp-specific copy released into the workspace library, surveyed as ordinary Stripe
+  sections. Windfall for the same account; wrong for any other account. Ruling needed: scope
+  account-personalized releases to their campaign (hide from the generic survey) vs keep as
+  reusable per-account bands.
+- **No account card on the leg again** → `{{account.*}}` unusable, `bind_account_logo`
+  impossible, "Ramp" hard-coded. The leg is opened without an account; harness-side.
+- **Exit judge cannot build** (`agent model timeout must be positive and no greater than
+  gateway policy`: DESIGN profile timeout > gateway timeout) → fail-safe CONTINUE every turn.
+  Known "lock it in" blocker; not a regression.
+- Agent chose `limit: 8` on every library search (run 3 used 20/50) — may hide candidates in a
+  larger library.
+- Campaign shells still unreleased (need human kit re-approval) → hand-composed header/footer
+  lineage persists.
