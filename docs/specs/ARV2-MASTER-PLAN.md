@@ -318,7 +318,7 @@ boot-time audit refuses to start if an old tool is re-granted; the old tools are
 5. R1 charters written from §3 and §9. *(Shashank)*
 6. D2. *(agent; Aryan review; Shashank owns recipes/prompts)*
 7. D3. *(Aryan)*
-8. D4. *(Shashang + agent; Aryan merges)*
+8. D4. *(Shashank + agent; Aryan merges)*
 9. R1 build on the merged base, in parallel with D2–D4. *(agent; Aryan review)*
 10. D5 acceptance walk-through; R2 starts with the display layer already live. *(both)*
 
