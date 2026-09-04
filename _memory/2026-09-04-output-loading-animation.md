@@ -78,3 +78,18 @@ bloom reach 3.5% / blur 8px, rim = 1px hairline only (no inset shadow), line bas
 tint sage not olive; beam thinned proportionally (haze 12%, bloom 4%). Line width
 stays 2px (beam 2px). Same file, no component changes.
 Round 4b: founder wanted thinner still → haze reach 5.5% / blur 18px, bloom 2.2% / blur 6px; beam 7% / 2.6%.
+
+## Delivery (founder approved the thin aurora frame)
+
+Orphan branch `handoff/output-pane-generating-motion` on origin
+(clue-hq/research-and-data) carries ONLY the approved set: `components/`
+(generating.css + 4 tsx + index.ts, aurora-only, paper veil, frost chip, no
+variants), `preview/{website,ad}.html` + fonts, `HANDOVER.md` (copy-paste steps
+for Aryan), `README.md`. Rejected material (v1 options, v2 flat haze, beam
+variant, ink tone/chip, logos, reference frames) stays only in this branch's
+`.context/output-loading-animation/` history, not on the handoff branch.
+Gotcha fixed at delivery: a generic `.clue-gen-glow > i { background: conic }`
+rule outranks `.clue-gen-glow__rim { background: none }` (specificity 0,1,1 vs
+0,1,0) and the unmasked rim floods the pane; rim selector is now
+`.clue-gen-glow > .clue-gen-glow__rim`. Branch built in a temp worktree
+(/tmp/handoff-wt) so this worktree stayed on install-agent-browser-global.
