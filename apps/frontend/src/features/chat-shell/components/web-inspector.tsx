@@ -34,6 +34,7 @@ import {
   pageIsRemovable,
   pageWriteMessage,
   routeFieldDecision,
+  suggestedRouteForName,
 } from "./inspector-page-field";
 import {
   useInspectorController,
@@ -939,7 +940,7 @@ function ButtonControls({
           label="Background color"
           options={themeColors}
           property="backgroundColor"
-          swatch={themeColorForToken(themeColors, state.tokenBackgroundColor) ?? "#00F59B"}
+          swatch={themeColorForToken(themeColors, state.tokenBackgroundColor) ?? state.backgroundColor}
           tokenProperty="tokenBackgroundColor"
           value={state.tokenBackgroundColor}
         />
@@ -1314,7 +1315,7 @@ function SectionControls({
 }
 
 /** W4.3 (§1 row 17): the web dummy's BUTTON chips are designed "Primary"
- * (#00F59B) and "White" (#FFFFFF), but the controller's shared `DEFAULT_STATE`
+ * and "White", but the controller's shared `DEFAULT_STATE`
  * carries "White"/"Content" for these two fields — those are the AD-side
  * image-inspector's designed chip values, and it reads the SAME state fields,
  * so `DEFAULT_STATE` cannot move without breaking that dummy's visual parity
@@ -1352,7 +1353,14 @@ function PageSection({ binding }: { binding: WebPageSectionBinding }) {
   const [nameDraft, setNameDraft] = useState(activePage.name);
   const [routeDraft, setRouteDraft] = useState(activePage.route);
   const [routeMessage, setRouteMessage] = useState<string | null>(null);
+  // Founder correction 2026-09-04: the NEW page has its own name AND route
+  // boxes, in their own group — the route is suggested from the name while
+  // the marketer has not typed one, and is visible before Add. The first
+  // shape (one Name/Route pair over the live page, a bare "Add a page" box)
+  // had a marketer rename and re-route the home page while trying to add one.
   const [newPageName, setNewPageName] = useState("");
+  const [newPageRoute, setNewPageRoute] = useState("");
+  const [newPageRouteTouched, setNewPageRouteTouched] = useState(false);
   const [addMessage, setAddMessage] = useState<string | null>(null);
 
   // The DOCUMENT's own page meta outranks whatever is in these boxes: a
@@ -1378,9 +1386,7 @@ function PageSection({ binding }: { binding: WebPageSectionBinding }) {
     setRouteMessage(null);
   }
 
-  const siblingRoutes = pages
-    .filter((candidate) => candidate.id !== activePage.id)
-    .map((candidate) => candidate.route);
+  const siblings = pages.filter((candidate) => candidate.id !== activePage.id);
   // A refusal the field caught itself outranks the last server refusal — it is
   // what the user just did. The server's refusal reaches this field ONLY when
   // its engine code is one of the two route refusals, said in this section's own
@@ -1392,7 +1398,7 @@ function PageSection({ binding }: { binding: WebPageSectionBinding }) {
 
   const commitRoute = () => {
     if (busy) return;
-    const decision = routeFieldDecision(routeDraft, activePage.route, siblingRoutes);
+    const decision = routeFieldDecision(routeDraft, activePage.route, siblings);
     if (decision.kind === "noop") {
       setRouteMessage(null);
       return;
@@ -1416,21 +1422,21 @@ function PageSection({ binding }: { binding: WebPageSectionBinding }) {
 
   const commitAddPage = () => {
     if (busy) return;
-    const decision = addPageDecision(
-      newPageName,
-      pages.map((candidate) => candidate.route),
-    );
+    const decision = addPageDecision(newPageName, newPageRoute, pages);
     if (decision.kind === "refuse") {
       setAddMessage(decision.message);
       return;
     }
     setAddMessage(null);
     setNewPageName("");
+    setNewPageRoute("");
+    setNewPageRouteTouched(false);
     onAddPage(decision.page);
   };
 
   return (
     <InspectorSection label="Page" onOpenChange={setOpen} open={open}>
+      <p className={styles.inspectorPageGroup}>This page</p>
       <InspectorField label="Name">
         <InspectorInput
           ariaLabel="Page name"
@@ -1457,17 +1463,48 @@ function PageSection({ binding }: { binding: WebPageSectionBinding }) {
           {routeError}
         </p>
       ) : null}
-      <InspectorField label="Add a page">
+      <div className={styles.inspectorPageActions}>
+        <button
+          className={styles.inspectorPageButton}
+          // The engine refuses removing a document's last page, and a site
+          // without "/" serves nothing at its own root — so the button simply
+          // cannot offer an action that could not succeed.
+          disabled={busy || !removable}
+          onClick={() => {
+            if (busy || !removable) return;
+            onRemovePage(activePage.id);
+          }}
+          type="button"
+        >
+          Remove page
+        </button>
+      </div>
+      <p className={styles.inspectorPageGroup}>New page</p>
+      <InspectorField label="Name">
         <InspectorInput
           ariaLabel="New page name"
           disabled={busy}
           onChange={(value) => {
             setNewPageName(value);
             setAddMessage(null);
+            if (!newPageRouteTouched) setNewPageRoute(suggestedRouteForName(value));
           }}
           onCommit={commitAddPage}
-          placeholder="Pricing"
           value={newPageName}
+        />
+      </InspectorField>
+      <InspectorField label="Route">
+        <InspectorInput
+          ariaLabel="New page route"
+          disabled={busy}
+          onChange={(value) => {
+            setNewPageRoute(value);
+            // Clearing the box hands the route back to the name's suggestion.
+            setNewPageRouteTouched(value.trim() !== "");
+            setAddMessage(null);
+          }}
+          onCommit={commitAddPage}
+          value={newPageRoute}
         />
       </InspectorField>
       {addMessage ? (
@@ -1483,20 +1520,6 @@ function PageSection({ binding }: { binding: WebPageSectionBinding }) {
           type="button"
         >
           Add page
-        </button>
-        <button
-          className={styles.inspectorPageButton}
-          // The engine refuses removing a document's last page, and a site
-          // without "/" serves nothing at its own root — so the button simply
-          // cannot offer an action that could not succeed.
-          disabled={busy || !removable}
-          onClick={() => {
-            if (busy || !removable) return;
-            onRemovePage(activePage.id);
-          }}
-          type="button"
-        >
-          Remove page
         </button>
       </div>
     </InspectorSection>

@@ -394,8 +394,8 @@ it("§1.1/§1.6: a solid fill hydrates as its hex on the solid fill type", () =>
 
 it("A16/§1.6: a TOKEN-filled text states its token name in the swatch, never a fixture", () => {
   // The harvested headline's real fill is the `$text.inverse` brand token.
-  // Leaving `textColor` unstated left the shared `DEFAULT_STATE` seed
-  // `#00F59B` on screen — the swatch claiming the headline is mint green while
+  // Leaving `textColor` unstated left the shared `DEFAULT_STATE` seed on
+  // screen — the swatch claiming the headline is the seed colour while
   // it is brand-token coloured — and unlike the gradient case this control
   // ACCEPTS a write (§1.6's ratified detach), so the lie was live, not inert.
   const state = hydrateSceneInspectorState(adTokenText(), SCENE);
@@ -1082,7 +1082,7 @@ it("§1.1: a TOKEN-filled root frame hydrates its token name, and states it in t
   // The harvested `$text.inverse` token paint on the root frame. Ruling A15.1:
   // the swatch states the token NAME — the fact the document carries — exactly
   // as §1.2's stroke row already does for a token stroke. Leaving it unstated
-  // showed the shared `DEFAULT_STATE` seed `#00F59B`, a colour of the dummy's.
+  // showed the shared `DEFAULT_STATE` seed, a colour of the dummy's.
   const state = hydrateSceneCanvasState(
     withRootFills([...adTokenText().fills]),
     AD_PAGE_ID,

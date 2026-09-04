@@ -1659,8 +1659,8 @@ function backgroundPaint(raw: unknown): Paint | null {
       //      event fires from the fill-type SELECT, so the document's paint is
       //      not solid — and hydrate deliberately states no `backgroundColor`
       //      for a non-solid paint (only facts hydrate), leaving the shared
-      //      `DEFAULT_STATE` seed `#00F59B` on screen. Committing it would
-      //      write the dummy's green into a real ad: a fabrication, and worse
+      //      `DEFAULT_STATE` seed on screen. Committing it would
+      //      write the dummy's seed into a real ad: a fabrication, and worse
       //      than `stops[0]`, which is at least a colour the document has.
       //
       // `stops[0]` is not the answer either: the stops are inert while solid

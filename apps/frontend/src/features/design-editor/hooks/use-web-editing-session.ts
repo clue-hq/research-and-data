@@ -14,7 +14,7 @@ import {
   type RichTextLinkBinding,
   type RichTextLinkTrigger,
 } from "../adapter/rich-text-link-section";
-import { buildThemeColorOptions } from "../adapter/theme-options";
+import { buildThemeColorOptions, tokenLabel } from "../adapter/theme-options";
 import type {
   WebArtifactCanvasControls,
   WebRichTextSessionState,
@@ -25,6 +25,7 @@ import { useInspectorWrites } from "./use-inspector-writes";
 import { useReplaceImage } from "./use-replace-image";
 import { useWebArtifactSelection } from "./use-web-artifact-selection";
 import { useWebTheme } from "./use-web-theme";
+import type { InspectorPresentationState } from "@/features/chat-shell/hooks/use-inspector-controller";
 
 // Chat-flow slice 2: the web editing session, extracted VERBATIM from
 // EditorSurface's hooks region so a second mount (the chats route's artifact
@@ -345,6 +346,17 @@ export function useWebEditingSession({
   // picker keeps the dummy's fixture palette.
   const theme = useWebTheme(activeDocumentId);
   const themeColors = useMemo(() => buildThemeColorOptions(theme), [theme]);
+  // Founder correction 2026-09-04: with NO node selected the inspector shows
+  // the canvas schema, whose Background used to sit on the shared default
+  // seed (a sample site's mint) because nothing hydrated it. The page's real
+  // background is the theme's `surface-page` token, so that is what the
+  // swatch states; a document with no theme hydrates nothing and the neutral
+  // default (white — what a themeless page renders) stands.
+  const canvasHydrated = useMemo<Partial<InspectorPresentationState> | undefined>(() => {
+    const value = theme?.tokens?.["surface-page"];
+    if (typeof value !== "string" || value.length === 0) return undefined;
+    return { backgroundColor: value, tokenBackgroundColor: tokenLabel("surface-page") };
+  }, [theme]);
 
   // W2.3: layer-row click → postMessage into the iframe → frame echoes
   // `select` → ordinary selection path.
@@ -396,6 +408,7 @@ export function useWebEditingSession({
     activePageId,
     addressing,
     canvasControls,
+    canvasHydrated,
     customComponentForm,
     inspectorError,
     layerRows,

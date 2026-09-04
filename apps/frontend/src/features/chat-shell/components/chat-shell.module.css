@@ -2253,10 +2253,6 @@
   border-radius: 1px;
 }
 
-.inspectorInputControl input::selection {
-  background: rgb(0 245 155 / 24%);
-}
-
 .inspectorControl > span:not(.inspectorIcon),
 .colorValue > span:not(.colorSwatch) {
   overflow: hidden;
@@ -3188,6 +3184,19 @@
   font-size: 12px;
   line-height: 16px;
   color: var(--clue-ds-color-primitives-critical-700);
+}
+
+/* Founder correction 2026-09-04: the Page section's two groups — "This page"
+ * (writes to the live page) and "New page" (what Add creates) — each under a
+ * small caption, so the two Name/Route pairs cannot be mistaken for one. */
+.inspectorPageGroup {
+  margin: 0;
+  padding-top: 6px;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--chat-shell-subtle);
 }
 
 .inspectorPageActions {

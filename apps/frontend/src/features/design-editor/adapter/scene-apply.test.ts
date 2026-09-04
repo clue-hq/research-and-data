@@ -191,7 +191,7 @@ it("§1.2 Color: an 8-digit hex truncates to six digits (the ported normalizatio
 });
 
 it("§1.2 Color: anything that is not a hex is refused rather than guessed black", () => {
-  for (const value of ["", "  ", "#FFF", "rebeccapurple", "00F59B", COLOR_NONE]) {
+  for (const value of ["", "  ", "#FFF", "rebeccapurple", "123456", COLOR_NONE]) {
     assert.equal(apply(adPlainText(), "textColor", value), null, value);
   }
   assert.equal(apply(adPlainText(), "textColor", 16711680), null);
@@ -1151,7 +1151,7 @@ it("§1.4 Shape Fill: a TEXT node is refused — hydrate routes ITS fill to text
 });
 
 it("§1.4 Shape Fill: anything that is not a hex or the sentinel is refused, never guessed black", () => {
-  for (const value of ["", "  ", "#FFF", "rebeccapurple", "00F59B"]) {
+  for (const value of ["", "  ", "#FFF", "rebeccapurple", "123456"]) {
     assert.equal(apply(adEllipse(), "backgroundColor", value), null, value);
   }
   assert.equal(apply(adEllipse(), "backgroundColor", 16711680), null);
@@ -1894,7 +1894,7 @@ it("§4: a LOCKED root frame refuses both Background rows", () => {
 });
 
 it("§1.1 Background: anything that is not a hex is refused rather than guessed black", () => {
-  for (const value of ["", "  ", "#FFF", "rebeccapurple", "00F59B"]) {
+  for (const value of ["", "  ", "#FFF", "rebeccapurple", "123456"]) {
     assert.equal(applyCanvas("backgroundColor", value), null, value);
   }
   assert.equal(applyCanvas("backgroundColor", 16711680), null);
@@ -2009,7 +2009,7 @@ it('§1.1 Background: the fill object\'s "solid" type carries no colour, so it w
   // The ruling is "write the swatch's current colour"; the event does not
   // carry it (`onFillChange` is handed `{angle, stops, type}` and the swatch
   // colour is a separate prop), and in the only case that reaches here the
-  // control is showing the dummy's `#00F59B` seed rather than a document
+  // control is showing the dummy's seed rather than a document
   // colour. `stops[0]` is not it either — the stops are inert while solid.
   // Both refusals, and the founder-facing gap they leave, are argued in full
   // at `backgroundPaint`'s `solid` case.
@@ -2340,8 +2340,8 @@ it("§1.6 ROUND TRIP on real data: token → hex detaches, hex → token re-bind
 });
 
 it("§1.6 Color: a label this document's kit does not define is NOT a write", () => {
-  // The dummy's fixture palette (`INSPECTOR_THEME_COLORS`), which the control
-  // falls back to when no kit is attached. Writing `{kind:"token",
+  // Labels the retired fixture palette used to offer (no palette exists any
+  // more, but a stale label could still arrive). Writing `{kind:"token",
   // token:"Primary"}` would bind the ad to a token nothing can resolve.
   for (const label of ["Primary", "Dark", "Subtle"]) {
     assert.equal(

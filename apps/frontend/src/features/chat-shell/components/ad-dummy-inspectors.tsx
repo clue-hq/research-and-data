@@ -314,8 +314,8 @@ function AutoLayoutControls({
  * Background do: brand swatches are offered FIRST (they ARE the Theme tab,
  * which is the tab `ColorControl` opens on), a brand pick writes a TOKEN
  * (`tokenBackgroundColor`), and a custom hex writes a literal and detaches the
- * binding — §1.6's ratified, informed trade. `fixtureFallback={false}` (ruling
- * A23) keeps the dummy's six invented swatches off a live write path.
+ * binding — §1.6's ratified, informed trade. There is no fixture palette to
+ * keep off the write path any more (founder ruling 2026-09-04).
  *
  * A node whose fill is a GRADIENT displays the derivation hydrate already
  * makes for it (its first stop), and every commit against it is refused at the
@@ -352,7 +352,7 @@ function ShapeControls({
     <DummySection label="Shape" {...section}>
       <div className={styles.dummyInspectorStack}>
         <InspectorField label="Fill">
-          <ColorControl color={fillRow.color} disabled={inert} fixtureFallback={false} onColorChange={fillRow.onColorChange} onTokenChange={fillRow.onTokenChange} options={paletteOptions} showOpacity={false} />
+          <ColorControl color={fillRow.color} disabled={inert} onColorChange={fillRow.onColorChange} onTokenChange={fillRow.onTokenChange} options={paletteOptions} showOpacity={false} />
         </InspectorField>
         {radii ? (
           <>
@@ -428,7 +428,7 @@ function StrokeControls({
     <DummySection label="Stroke" {...section}>
       <div className={styles.dummyInspectorStack}>
         <InspectorField label="Color">
-          <ColorControl color={strokeRow.color} disabled={inert} fixtureFallback={false} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} showOpacity={false} />
+          <ColorControl color={strokeRow.color} disabled={inert} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} showOpacity={false} />
         </InspectorField>
         <InspectorField label="Width">
           <InspectorInput ariaLabel="Stroke width" disabled={inert} onCommitValue={(value) => setValue("strokeWidth", value)} prefix="W" value={state.strokeWidth} />

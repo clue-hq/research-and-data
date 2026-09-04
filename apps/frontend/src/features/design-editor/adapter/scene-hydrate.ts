@@ -587,7 +587,7 @@ interface PaintState {
    *
    * There used to be a `color` field stated only for a paint that IS a solid
    * hex, which left every swatch beside a gradient or a token showing the
-   * shared `DEFAULT_STATE` seed (`#00F59B`). Browser-proven: with a radial
+   * shared `DEFAULT_STATE` seed. Browser-proven: with a radial
    * gradient on the frame, picking "Solid" showed the select saying "Solid",
    * the swatch saying a colour from two edits earlier, and the artboard
    * rendering the gradient — three answers at once. A gradient's FIRST STOP is
@@ -809,7 +809,7 @@ export function hydrateSceneInspectorState(
   if (node.kind.kind === "text") {
     // Ruling A16: the text swatch states `swatch` too. A token-filled headline
     // (the harvest's own `$text.inverse`) used to show the shared
-    // `DEFAULT_STATE` seed `#00F59B` — telling the user the text is mint green
+    // `DEFAULT_STATE` seed — telling the user the text is the seed colour
     // while it is brand-token coloured, on a control that ACCEPTS a write
     // (§1.6's ratified detach), which is worse than the gradient case behind
     // §1.2's guard. Same fabrication as the Background swatch, two lines away.
@@ -1054,7 +1054,7 @@ export function hydrateSceneCanvasState(
   const root = frameId ? scene.nodes[frameId] : null;
   const fill = paintState(root?.fills[0]?.paint);
   // Ruling A15.1: `swatch`, not `color` — a gradient-filled frame must show the
-  // colour the document HAS (its first stop), not the dummy's `#00F59B` seed.
+  // colour the document HAS (its first stop), not the dummy's seed.
   state.backgroundColor = fill.swatch;
   if (fill.token !== undefined) state.tokenBackgroundColor = fill.token;
   state.backgroundFill = fill.fill;

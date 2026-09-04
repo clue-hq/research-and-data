@@ -152,12 +152,15 @@ export function EditorSurface({
               // belongs to selection changes alone. (Known, accepted drift:
               // an engine-snapped value — padding 7→6 — displays as typed
               // until the node is reselected.)
-              key={session.webSelection.selection?.node.id ?? "canvas"}
+              // The canvas key carries the theme's page surface, so the one time the
+                // theme lands after mount the canvas inspector re-seeds from it
+                // (the web lane hydrates at mount, not live).
+                key={session.webSelection.selection?.node.id ?? `canvas:${session.canvasHydrated?.backgroundColor ?? ""}`}
               customComponentForm={session.customComponentForm}
               error={session.inspectorError}
               note={session.writes.note}
               addressing={session.addressing}
-              hydrated={session.webSelection.selection?.hydrated}
+              hydrated={session.webSelection.selection?.hydrated ?? session.canvasHydrated}
               layers={session.layerRows}
               // W5.1 (§5): the mapper's fallback flag — embeds (item 32) and
               // the interactive components (item 33) land on the container

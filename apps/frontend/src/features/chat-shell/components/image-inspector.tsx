@@ -377,7 +377,7 @@ function AdTextInspector({
   return (
     <>
       <Section id="typography" label="Typography" open={state.openSections.typography} toggle={() => toggleSection("typography")}>
-        <InspectorField label="Color"><ColorControl color={colorRow.color} disabled={inert} fixtureFallback={false} onColorChange={colorRow.onColorChange} onTokenChange={colorRow.onTokenChange} options={paletteOptions} /></InspectorField>
+        <InspectorField label="Color"><ColorControl color={colorRow.color} disabled={inert} onColorChange={colorRow.onColorChange} onTokenChange={colorRow.onTokenChange} options={paletteOptions} /></InspectorField>
         <InspectorField label="Font"><InspectorSelect disabled={inert} label="Font family" onChange={(value) => setValue("fontFamily", value)} options={fontOptions} value={state.fontFamily} /></InspectorField>
         <div className={styles.fieldGrid}>
           {/* §2 delta (contract row 2): the size select becomes a free number. */}
@@ -387,7 +387,7 @@ function AdTextInspector({
         <InspectorField label="Alignment"><TextAlignment disabled={inert} horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} onVerticalChange={(value) => setValue("verticalAlignment", value)} vertical={state.verticalAlignment} /></InspectorField>
       </Section>
       <Section id="stroke" label="Stroke" open={state.openSections.stroke} toggle={() => toggleSection("stroke")}>
-        <InspectorField label="Color"><ColorControl color={strokeRow.color} disabled={inert} fixtureFallback={false} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} /></InspectorField>
+        <InspectorField label="Color"><ColorControl color={strokeRow.color} disabled={inert} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} /></InspectorField>
         <InspectorField label="Width"><InspectorInput ariaLabel="Stroke width" disabled={inert} onCommitValue={(value) => setValue("strokeWidth", value)} value={state.strokeWidth} /></InspectorField>
       </Section>
       <Section id="layout" label="Layout" open={state.openSections.layout} toggle={() => toggleSection("layout")}>
@@ -565,7 +565,7 @@ function AdCanvasInspector({
           <BackgroundFillControl
             disabled={inspectorDisabled}
             fill={state.backgroundFill}
-            fixtureFallback={false}
+           
             onFillChange={changeBackgroundFill}
             onSolidColorChange={backgroundRow.onColorChange}
             onTokenChange={backgroundRow.onTokenChange}
