@@ -3120,7 +3120,11 @@
 }
 
 .layerRowNested {
-  padding-left: 16px;
+  /* Layers tree (founder, 2026-09-04): indent by REAL depth. `InspectorLayerRow`
+     sets `--layer-depth` per row and `sceneLayerRows` walks any depth, but this
+     rule used to be a flat 16px, so depth 2+ rendered at the depth-1 indent and
+     the tree read as if it were capped at two levels. One step per level. */
+  padding-left: calc(var(--layer-depth) * 16px);
 }
 
 .layerRowNested .layerRowContent {

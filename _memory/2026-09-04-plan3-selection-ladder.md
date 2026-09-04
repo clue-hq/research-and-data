@@ -41,3 +41,12 @@ The founder looked at the preview and declined it ("I don't think we need it rea
 section already shows the ancestry and selects on click, and the ladder gestures walk up without
 UI. `selectionBreadcrumb` was removed with its test (no consumer); the roadmap's item E is
 amended. Rule of thumb confirmed: no second navigation surface for something Layers already does.
+
+## Founder request 2026-09-04: Layers tree "capped at depth 2" → indent by real depth
+Not a data cap: `sceneLayerRows` walks any depth and expansion is seeded root + selection
+ancestors (the rest is the user's toggles). The CSS `.layerRowNested` gave every nested row a flat
+`padding-left: 16px` and never read the `--layer-depth` variable `InspectorLayerRow` sets, so depth
+2+ rendered at the depth-1 indent and the tree looked two levels deep. Fix: `padding-left:
+calc(var(--layer-depth) * 16px)`. Live-verified on the Apollo ad: depths 1–5 now render at
+16/32/48/64/80 px (artboard › card › split › left_col › quote_row › ramp_logo). Labels still clip
+(row `overflow: hidden`, no ellipsis) — fine at the depths an ad reaches.
