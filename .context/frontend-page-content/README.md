@@ -33,14 +33,14 @@ product's vocabulary and they are the same on every account / contact:
 |---|---|
 | Insights | Account insights → {Buying signals · Money & momentum · Tools they already use · How they sell, and who they win} · Contact insights · Context only (collapsed) |
 | Account overview | What they do · Why they fit · Why now · Buying committee · How to approach · Watch-outs · (right rail: Core / Custom / Contacts / Activity) |
-| Contact | Why this person · Their problem right now · Reach · Openers · Angles · Do not mention |
+| Contact | Why this person · Their problem right now · Openers · Angles · Do not mention · (rail: email, LinkedIn, location, best channel, education) |
 
 Each section has a **recipe**: the list of field keys it is allowed to draw from. Example:
 
 | section | field keys that feed it |
 |---|---|
 | Contact → Their problem right now | `account.abm_program_maturity`, `account.hiring_velocity`, `account.open_requisitions`, `account.gtm_tooling_stack`, `account.operational_pain`, `contact.facet.recent_post`, `contact.facet.publications` |
-| Contact → Reach | `core.work_email`, `contact.current_location`, `contact.network_statistics`, `contact.member_badges`, `contact.facet.alma_mater`, `contact.facet.public_appearances` |
+| Contact → rail (no prose) | `core.work_email`, `contact.current_location`, `contact.network_statistics`, `contact.member_badges`, `contact.facet.alma_mater` — rendered as rows, never sent to Luna |
 | Contact → Openers | `contact.facet.hobby`, `contact.facet.voice_quote`, `contact.facet.recent_post`, `contact.facet.publications`, `contact.facet.career_history`, `account.abm_program_maturity` — **only rows with `outreach_safe: true`** |
 | Contact → Do not mention | every row with `outreach_safe: false` for this contact or its account |
 | Insights → Buying signals | `account.open_requisitions`, `account.hiring_velocity`, `account.abm_program_maturity`, `account.strategic_moves`, `account.operational_pain`, `account.resonance.buying_culture` |

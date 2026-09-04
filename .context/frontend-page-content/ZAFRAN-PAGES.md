@@ -216,7 +216,7 @@ Ashland as customers [zafran.io].
 ## How to approach
 
 **Lead with marketing, not sales.** Vari is the champion: she is hiring the seat, holds the
-certifications, and is four months into the role. Nick is the budget. Tom is consulted. Sanaz is
+certifications, and is 16 months into the role. Nick is the budget. Tom is consulted. Sanaz is
 the sponsor only if this becomes a company-level bet.
 
 **The message.** "The ABM program you have been hiring for since June, running on your top 50 CISO
@@ -244,7 +244,7 @@ GTM plan is being set this month.
 - Owner: —
 - Industry: Cybersecurity · Risk management · Network security
 - Headcount: 167 (51–200)
-- Revenue: $10–25M (AI Ark estimate)
+- Revenue: $10–25M
 - Founded: 2022
 - HQ: New York, NY
 - Funding: Series C · $130.5M total
@@ -272,8 +272,12 @@ GTM plan is being set this month.
 nick@zafran.io ✓ verified 31 Aug 2026 · LinkedIn (6,808 followers) · At Zafran since Apr 2024
 
 **Core rail:** Name · Account → Zafran Security · Title: VP of Marketing · Persona: Economic buyer ·
-Email: nick@zafran.io (verified) · LinkedIn · Location: New York, NY · Tenure: 17 months ·
-Reports: Vari Kaur (Head of Growth Marketing)
+Email: nick@zafran.io ✓ verified 31 Aug 2026 · LinkedIn (6,808 followers, creator) · Location:
+New York, NY (in the NYC office ~3 days a week) · Best first channel: LinkedIn, then email ·
+Education: Columbia MBA · Tenure: 2 years 5 months · Reports: Vari Kaur (Head of Growth Marketing)
+
+(The reach facts live in the rail, not in a section: the email, the LinkedIn handle, the city and
+the office pattern are lookups, not reading. The one piece of reach *advice* moved into Openers.)
 
 ## Why this person
 
@@ -288,6 +292,15 @@ Senior Director of Product Marketing at Okta (2018–2021), VP Product Marketing
 (2021–2024), Director of Enterprise Product Marketing at Lookout (2014–2018) [AI Ark]. In your
 email, do not explain ABM. He has run it at scale. Reference the difference between a program run
 by a three-person team and one run at Okta.
+
+**He does his own customer research, and it shows in the messaging. That is a strength, and it tells you how to sell to him.**
+He found Zafran's best proof point, "96% of vulnerabilities didn't require patching", by "combing
+through dozens of Gong calls with vuln management teams" himself [Nick's article]. Read this as a
+buyer who trusts evidence he has seen with his own eyes, not vendor claims. The limit is scale: he
+can do that for Zafran's message once, not for every target account. In your email: "You went
+through dozens of Gong calls to find the 96% line. That is what we do for each of your target
+accounts, with the source on every line." On the landing page, show one per-account insight with
+its citation visible, so he can check it the way he checks Gong.
 
 **He says what he wants in public: "3 basic criteria".**
 In "Why I joined Zafran Security" he wrote that his decision comes down to "Is this a market with a
@@ -309,34 +322,16 @@ lead insight for the 1:1 plan.
 [Ashby]. Zafran's CEO told the press "we need more people" [CTech]. In your email, lead with output,
 not features: what a three-person team ships in a week when account-grade research is done for them.
 
-**He builds messaging from Gong calls by hand.**
-"Combing through dozens of Gong calls with vuln management teams" is how he found the "96% of
-vulnerabilities didn't require patching" line [Nick's article]. In your email: "You mined Gong to
-find the 96% line. We do the same per target account, with the source attached." On the landing
-page, show one per-account insight with its citation visible.
-
 **Whatever he buys has to fit HubSpot, Salesforce and Outreach.**
 Marketing stack: HubSpot and Salesforce; SDR stack: Salesforce, Sales Navigator, ZoomInfo, Outreach;
 no ABM platform named [Ashby]. In your email, one sentence: "Runs inside HubSpot and Salesforce.
 Nothing to rip out."
 
-## Reach
-
-**nick@zafran.io — mailbox-verified on 31 Aug 2026.**
-SMTP valid, Google Workspace, not a catch-all, not a free or generic address [AI Ark]. Use it from
-your own email client. The pattern is firstname@zafran.io for the rest of the committee.
-
-**LinkedIn is his home channel: creator badge, 6,808 followers, long-form articles.**
-[AI Ark] [LinkedIn]. Comment on the "Why I joined" article or his book post before the cold email,
-so the email reads as a follow-up to a conversation he started.
-
-**He is in New York, and Zafran's office expects three days a week in NYC.**
-[AI Ark] [Ashby]. Direct mail to the NYC office reaches him. NYC events do too.
-
-**Columbia Business School MBA (2013), Berkeley Haas exchange, Vassar BA in Economics.**
-[AI Ark]. Use for an alumni introduction if you have one. Otherwise not an opener.
-
 ## Openers
+
+**Warm it on LinkedIn first. It is his home channel: creator badge, long-form articles.**
+[AI Ark] [LinkedIn]. Comment on the "Why I joined" article or his book post a few days before the
+email, so the email reads as a follow-up to a conversation he started, not a cold send.
 
 **The cocktail-chemistry opener. Strongest, and safe: he published it himself.**
 He created the Cocktail Chemistry YouTube channel in 2014 and wrote the book "Cocktail Chemistry:

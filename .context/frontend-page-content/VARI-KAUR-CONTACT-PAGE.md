@@ -8,7 +8,9 @@ vari@zafran.io ✓ verified 31 Aug 2026 · LinkedIn (2,478 followers) · At Zafr
 
 **Core rail:** Name: Vari Kaur (profile also reads "Varinder Kaur"; she signs "Vari") · Account →
 Zafran Security · Title: Head of Growth Marketing · Persona: Champion · Email: vari@zafran.io
-(verified) · LinkedIn · Location: Easton, Pennsylvania · Tenure: 4 months · Reports to: Nick Fisher
+✓ verified 31 Aug 2026 · LinkedIn (2,478 followers) · Location: Easton, Pennsylvania (remote from
+the NYC office) · Best first channel: email; comment on her hiring post first · Tenure: 16 months ·
+Reports to: Nick Fisher
 
 ## Why this person
 
@@ -25,11 +27,11 @@ Expert, Google Analytics IQ [AI Ark]. In your email, never explain ABM. Explain 
 Demandbase do not do: research each account and its committee to this depth, and generate the
 artifacts. She will compare, so make the comparison for her.
 
-**Four months in, from three years running demand gen at Secureworks.**
+**Sixteen months in, from three years running demand gen at Secureworks.**
 Director, Demand Generation & Technology at Secureworks (June 2022 to May 2025); before that
 Axiom, ReSource Pro, Tangoe and seven years at Ivanti [AI Ark] [LinkedIn]. In your email, treat her
-as someone who has run cybersecurity demand gen for a decade and needs a first-90-days win in the
-new seat.
+as someone who has run cybersecurity demand gen for a decade and is past the settling-in period: the program
+now has to show pipeline.
 
 ## Their problem right now
 
@@ -56,21 +58,6 @@ improve campaign ROI" [LinkedIn]. In your email, use her words: personalization 
 Google Ads, LinkedIn Campaign Manager" [LinkedIn]; Zafran's marketing stack is HubSpot and
 Salesforce [Ashby]. In your email, one sentence: "Lives inside HubSpot and Salesforce; no new
 system for your team to learn."
-
-## Reach
-
-**vari@zafran.io — mailbox-verified on 31 Aug 2026.**
-SMTP valid, Google Workspace, not a catch-all [AI Ark]. Use it from your own email client.
-
-**LinkedIn: she posts about hiring and company milestones; 2,478 followers, no creator badge.**
-[AI Ark] [Vari's post] [Vari's funding post]. Comment on the hiring post before the email. She does
-not publish long-form, so do not expect a reply thread there.
-
-**Easton, Pennsylvania: remote from the NYC office.**
-[AI Ark]. No direct-mail address is held; send to the NYC office or skip direct mail for her.
-
-**Awards: CMO Special Mention, Marketing Team Player.**
-[AI Ark]. Not an opener.
 
 ## Openers
 
