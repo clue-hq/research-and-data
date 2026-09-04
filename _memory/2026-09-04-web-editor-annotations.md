@@ -191,3 +191,7 @@ HTML in a local `sandbox="allow-scripts"` harness page whose parent listens for
 `annotate` (`/tmp/task5-harness.html`). Same trust shape as production, fully
 controllable, and a red-proof is one string replacement away — restoring the retired
 clause in the same DOM reproduced `path ":nth-child(1)"` on the id-less `<p>`.
+
+## Slice 2 — Task 11: the ANNOTATIONS block in the solo prompt — landed `8b1dbea0b`
+
+`build_web_solo_prompt(..., annotations=)` renders the "ANNOTATIONS ARE THE BRIEF" law right after `{account_block}` only when notes ride, and `harness_web.py`'s single solo call site passes `runtime_config.turn_target_notes`; pinned by `test_web_solo_mode.py` (6 passed, 1 pre-existing fail — `.env` sets `LUMEN_AGENT_WEB_SOLO=1`, so the flag-off trio test cannot pass on this box; whole file green with `LUMEN_AGENT_WEB_SOLO=0`).
