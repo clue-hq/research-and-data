@@ -71,8 +71,11 @@ wasm handshake matched). Rulings R1–R8 are in the plan header.
   tracked `apps/editor/public/wasm/lumen_wasm_bg.wasm` modified; commit it deliberately at the end.
 
 ## Open
-- **Item G** — founder ruling on the preview (rows, icons, lucide as the source for `rows-3` and
-  `wrap-text`; the 0.05 stepper is new chrome; whether Resize belongs beside Fit to text).
+- **Item G** — founder reviewed the preview 2026-09-04: the line-height and letter-spacing icons are
+  approved; the duplicate Vertical alignment row is DROPPED (it already ships); Line height and Letter
+  spacing sit two-up in one row like Max lines + Wrap (preview revised, `10-item-g-preview-v2.png`).
+  Still open before controls land: lucide as the source for `rows-3`/`wrap-text`, the 0.05 stepper as
+  new chrome, and whether Resize belongs beside Fit to text.
 - Documents authored before R8 keep their stored geometry until the next layout pass; the editor
   relays out on load, so they display correctly now — nothing to migrate.
 - The `x` node's box (11.8×37) is narrower than its painted glyph line (14×30): the dashed frame
