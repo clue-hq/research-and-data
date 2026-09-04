@@ -1,6 +1,6 @@
 # ARV2 roadmap — the index
 
-**The single authoritative plan is `ARV2-MASTER-PLAN.md`; the founder work split is `ARV2-WORK-SPLIT.md`. Read those first; the documents below are the audit trail.**
+**The single authoritative plan is `ARV2-MASTER-PLAN.md`; the founder work split is `ARV2-WORK-SPLIT.md`; Shashank's setup runbook is `ARV2-GETTING-STARTED-SHASHANK.md`. Read those first; the documents below are the audit trail.**
 
 **Updated 2026-09-04.** One page that says where every plan document lives, what each one decides,
 and where we are. Roles: **Aryan = tech founder** (platform deepagent, onboarding, brand context,
