@@ -1320,3 +1320,97 @@ fn text_lines_serialize_only_when_present_and_default_when_absent() {
     let json = serde_json::to_value(&placed).expect("serializes");
     assert_eq!(json["text_lines"][0]["width"], 3.0);
 }
+
+// ── Plan 4 ruling R8: hug height follows the wrap width ──────────────────────
+
+const R8_COPY: &str = "Pipeline that shows up on time for every rep on the team";
+
+fn r8_expected_height(text: &TextNode, width: f64) -> f64 {
+    let mut input = TextMeasureInput::from_text_node(text);
+    input.max_width = Some(width);
+    HeuristicTextMeasurer.measure(&input).height
+}
+
+#[test]
+fn fixed_width_text_under_a_page_hugs_its_wrapped_height() {
+    let mut scene = scene_with_page(600.0, 400.0);
+    let mut copy = text_node("copy", R8_COPY, 20.0, 20.0, 120.0, 0.0);
+    copy.size.height = Dimension::Hug;
+    let NodeKind::Text(text) = &mut copy.kind else {
+        unreachable!("text_node builds a text node");
+    };
+    text.wrap = lumen_core::TextWrap::Wrap;
+    let text = text.clone();
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), copy);
+
+    let result = layout_scene(&scene, lumen_core::LayoutOptions::default());
+    let bounds = &result.geometry[&NodeId::from("copy")].layout_bounds;
+    let expected = r8_expected_height(&text, 120.0);
+    let unbounded = HeuristicTextMeasurer
+        .measure(&TextMeasureInput::from_text_node(&text))
+        .height;
+    assert!(
+        expected > unbounded,
+        "the copy must wrap at 120 for this test to mean anything"
+    );
+    assert_eq!(bounds.width, 120.0);
+    assert_eq!(
+        bounds.height, expected,
+        "hug height is the WRAPPED height, not {unbounded}"
+    );
+}
+
+#[test]
+fn fixed_width_text_inside_a_stack_hugs_its_wrapped_height() {
+    // The taffy path: the leaf's own definite width is the wrap width, not the
+    // 600-wide column's available space.
+    let mut scene = scene_with_page(600.0, 400.0);
+    let column = auto_layout(
+        "column",
+        AutoLayoutDirection::Column,
+        Dimension::Fixed(600.0),
+        Dimension::Hug,
+        0.0,
+        [0.0; 4],
+        false,
+    );
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), column);
+    let mut copy = text_node("copy", R8_COPY, 0.0, 0.0, 120.0, 0.0);
+    copy.size.height = Dimension::Hug;
+    let NodeKind::Text(text) = &mut copy.kind else {
+        unreachable!("text_node builds a text node");
+    };
+    text.wrap = lumen_core::TextWrap::Wrap;
+    let text = text.clone();
+    insert(&mut scene, ParentRef::Node(NodeId::from("column")), copy);
+
+    let result = layout_scene(&scene, lumen_core::LayoutOptions::default());
+    let bounds = &result.geometry[&NodeId::from("copy")].layout_bounds;
+    // Taffy rounds to whole pixels; the plan's own ROUNDING_TOLERANCE.
+    assert!(
+        (bounds.height - r8_expected_height(&text, 120.0)).abs() <= 0.51,
+        "{bounds:?}"
+    );
+}
+
+#[test]
+fn hug_width_text_still_measures_unbounded() {
+    let mut scene = scene_with_page(600.0, 400.0);
+    let mut copy = text_node("copy", R8_COPY, 20.0, 20.0, 0.0, 0.0);
+    copy.size = SizeSpec {
+        width: Dimension::Hug,
+        height: Dimension::Hug,
+    };
+    let NodeKind::Text(text) = &mut copy.kind else {
+        unreachable!("text_node builds a text node");
+    };
+    text.wrap = lumen_core::TextWrap::Wrap;
+    let text = text.clone();
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), copy);
+
+    let result = layout_scene(&scene, lumen_core::LayoutOptions::default());
+    let bounds = &result.geometry[&NodeId::from("copy")].layout_bounds;
+    let unbounded = HeuristicTextMeasurer.measure(&TextMeasureInput::from_text_node(&text));
+    assert_eq!(bounds.width, unbounded.width);
+    assert_eq!(bounds.height, unbounded.height);
+}

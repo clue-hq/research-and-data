@@ -682,17 +682,36 @@ impl<'a> LayoutEngine<'a> {
     }
 
     fn resolve_manual_size(&self, node: &Node, parent_size: Size2) -> Size2 {
-        Size2 {
-            width: match &node.size.width {
-                Dimension::Fixed(value) => *value,
-                Dimension::Fill { .. } => parent_size.width,
-                Dimension::Hug | Dimension::Token { .. } => self.natural_size(node).width,
-            },
-            height: match &node.size.height {
-                Dimension::Fixed(value) => *value,
-                Dimension::Fill { .. } => parent_size.height,
-                Dimension::Hug | Dimension::Token { .. } => self.natural_size(node).height,
-            },
+        let width = match &node.size.width {
+            Dimension::Fixed(value) => *value,
+            Dimension::Fill { .. } => parent_size.width,
+            Dimension::Hug | Dimension::Token { .. } => self.natural_size(node).width,
+        };
+        let height = match &node.size.height {
+            Dimension::Fixed(value) => *value,
+            Dimension::Fill { .. } => parent_size.height,
+            Dimension::Hug | Dimension::Token { .. } => self.natural_height_at_width(node, width),
+        };
+        Size2 { width, height }
+    }
+
+    /// Editor Quality Plan 4 (ruling R8): a text node's hug height is measured
+    /// at the width it is PAINTED at. The painters lay wrapped text out at the
+    /// box width, so a fixed- or fill-width text node measured without a bound
+    /// hugged its unwrapped line count — a 503-wide headline that paints three
+    /// lines hugged two, and the box stopped following the copy. Only a text
+    /// node whose width itself hugs measures unbounded (that IS its width).
+    /// Every other kind keeps `natural_size`.
+    fn natural_height_at_width(&self, node: &Node, width: f64) -> f64 {
+        match &node.kind {
+            NodeKind::Text(text)
+                if !matches!(node.size.width, Dimension::Hug | Dimension::Token { .. }) =>
+            {
+                let mut input = TextMeasureInput::from_text_node(text);
+                input.max_width = Some(width.max(0.0));
+                self.measurer.measure(&input).height
+            }
+            _ => self.natural_size(node).height,
         }
     }
 
@@ -1750,7 +1769,13 @@ fn measure_taffy_node(
 
     let natural = match context {
         Some(MeasureContext::Text(input)) => {
-            input.max_width = available_width(available_space.width);
+            // Plan 4 (ruling R8): a leaf with a definite width wraps at THAT
+            // width — the painters lay out at the box, not at the container's
+            // available space. A width-less leaf keeps the available bound.
+            input.max_width = match known_dimensions.width {
+                Some(width) => Some(f64::from(width)),
+                None => available_width(available_space.width),
+            };
             let measured = measurer.measure(input);
             Size2 {
                 width: measured.width,

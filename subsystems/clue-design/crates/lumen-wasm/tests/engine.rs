@@ -535,3 +535,30 @@ fn refreshed_computed_never_enters_authored_operations() {
         );
     }
 }
+
+#[test]
+fn fixed_width_hug_text_takes_the_editor_height_measured_at_its_width() {
+    // Ruling R8: `node_contact_name` fixed 160 wide, hug height. The editor's
+    // line pass keys its record on `max_width = 160` with no height; that is
+    // now the key the manual path measures with, so the injected height lands.
+    let mut scene: Value = serde_json::from_str(MINIMAL_SCENE).expect("scene json");
+    scene["nodes"]["node_contact_name"]["size"] =
+        json!({ "width": { "kind": "fixed", "value": 160.0 }, "height": { "kind": "hug" } });
+    let mut engine = Engine::from_scene_json(&scene.to_string()).expect("scene loads");
+    let measurements = json!([{
+        "content": "Dr. Priya Sharma", "font_family": "Inter", "font_size": 18.0, "font_weight": 600,
+        "line_height": 1.2, "letter_spacing": 0.0, "wrap": "wrap", "max_lines": null, "direction": "ltr",
+        "max_width": 160.0, "width": 100.0, "height": 99.0
+    }]);
+    let ack = parse(engine.set_measurements(&measurements.to_string()));
+    assert_eq!(ack["ok"], true, "{ack:#?}");
+    let scene: Value = serde_json::from_str(&engine.scene_json()).expect("scene");
+    assert_eq!(
+        scene["nodes"]["node_contact_name"]["computed"]["layout_bounds"]["height"],
+        99.0
+    );
+    assert_eq!(
+        scene["nodes"]["node_contact_name"]["computed"]["layout_bounds"]["width"],
+        160.0
+    );
+}
