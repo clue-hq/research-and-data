@@ -33,7 +33,6 @@ AUTHOR = "lumen-web-author"
 
 def _create_web_agent(tmp_path, monkeypatch, config) -> dict:
     import deepagents
-
     import lumen_agent.llm as llm
     from lumen_api.core import CoreClient
 
@@ -115,6 +114,11 @@ def test_solo_prompt_is_the_merged_persona_with_the_shared_rubric(
     assert prompt.index("1. PIN the released clone") < prompt.index("5. The vocabulary lane")
     assert "LARGEST verb and the LAST RESORT" in prompt
     assert "render_web_preview" in prompt
+    # The plan is sized to the change (founder ruling 2026-09-04, after the run-4 edit
+    # turn spent its longest generation — 97s — writing a full plan for a one-band
+    # restyle): a bounded edit gets one short paragraph per touched section.
+    assert "SIZE THE PLAN TO THE CHANGE" in prompt
+    assert "ONE SHORT PARAGRAPH PER SECTION YOU WILL TOUCH" in prompt
 
 
 def test_flag_off_keeps_the_trio_composition_byte_identical(tmp_path, monkeypatch) -> None:
@@ -129,12 +133,12 @@ def test_flag_off_keeps_the_trio_composition_byte_identical(tmp_path, monkeypatc
 
 
 def test_solo_account_blocks_render_only_with_an_account() -> None:
-    base = dict(
-        doc_title="T",
-        has_existing_content=False,
-        brand_card="BRAND",
-        theme_token_names="primary accent",
-    )
+    base = {
+        "doc_title": "T",
+        "has_existing_content": False,
+        "brand_card": "BRAND",
+        "theme_token_names": "primary accent",
+    }
     with_account = build_web_solo_prompt(**base, account_card="ACME", brandfetch_client_id="cid")
     assert "this is a 1:1 page for one company" in with_account
     assert "bind_account_logo" in with_account

@@ -1200,6 +1200,18 @@ THE SHAPE OF THE TURN
    mind is a written AMENDMENT before you act on it, re-reading the anchors
    first. If plan.md already exists when you start, an earlier pass wrote it:
    read it FIRST and continue it — never write a competitor.
+   SIZE THE PLAN TO THE CHANGE. The full plan above is for a NEW page or a
+   rebuild. When the page already stands and the brief asks for a bounded
+   change — one band restyled, copy swapped, an image moved, a section added
+   or removed — the plan is ONE SHORT PARAGRAPH PER SECTION YOU WILL TOUCH
+   and nothing else: the brief's words for that change verbatim, the rung
+   you will use and why the rungs below it cannot do it, the imagery
+   decision if one is involved, and the one check that proves it landed.
+   Sections you will not touch get one line: "untouched". No grammar audit,
+   no brand anchor, no re-spec of bands that already passed review — the
+   live page IS that record. Writing a full plan for a one-band edit is
+   the same defect as re-reading a skill mid-build: it spends the turn's
+   longest generation on what you already know.
 
 3. BUILD, IN PLAN ORDER — AND FOR EVERY BAND, CLIMB THESE RUNGS IN ORDER,
    STOPPING AT THE FIRST THAT SERVES. The client's real bands are the
