@@ -629,6 +629,12 @@ export interface CornerRadii {
 export interface ComputedGeometry {
   layout_bounds: Rect;
   render_bounds: Rect;
+  /** Plan 4 item F: the PAINTED line boxes of a text node, page-space and
+   * unrotated (the frame `layout_bounds` is in), placed by the engine exactly
+   * as the painters place the glyphs. Absent on non-text nodes, on stored
+   * scenes, and on nodes the engine has not placed — never an empty array on
+   * the wire (`skip_serializing_if`). */
+  text_lines?: Rect[];
 }
 
 export interface Rect {

@@ -5,7 +5,11 @@ import { beforeAll, describe, expect, it } from "../../__tests__/vitest-shim";
 import type { CanvasKit, TypefaceFontProvider } from "canvaskit-wasm";
 import type { Node, Scene, TextSpan } from "../contracts";
 import { minimalScene } from "./__fixtures__/minimalScene";
-import { measureParagraph, skiaMeasurements } from "../canvaskit/skiaMeasurements";
+import {
+  measureParagraph,
+  skiaLineMeasurements,
+  skiaMeasurements
+} from "../canvaskit/skiaMeasurements";
 
 /**
  * Wave 3 C4: the SkParagraph measurement provider. Verified with a system
@@ -162,5 +166,81 @@ describe.skipIf(!present)("SkParagraph measurement provider (Wave 3 C4)", () => 
     const record = skiaMeasurements(ck, fontMgr, spanScene)[0];
     expect(record.italic).toBe(true);
     expect(record.spans).toEqual([deItalic]);
+  });
+
+  it("Plan 4: emits line boxes keyed on each laid-out text node's solved box, twice", () => {
+    const content = "Hello there, world again and again and again";
+    const scene = JSON.parse(JSON.stringify(minimalScene)) as Scene;
+    const node = scene.nodes.node_contact_name;
+    if (node.kind.kind !== "text") throw new Error("fixture");
+    node.kind.content = content;
+    node.kind.font_family = family;
+    node.kind.font_size = 20;
+    node.kind.wrap = "wrap";
+    node.computed = {
+      layout_bounds: { x: 10, y: 20, width: 120, height: 200 },
+      render_bounds: { x: 10, y: 20, width: 120, height: 200 }
+    };
+    // A second text node the engine has not laid out: nothing to key on.
+    scene.nodes.unlaid = { ...node, id: "unlaid", computed: null };
+
+    const records = skiaLineMeasurements(ck, fontMgr, scene);
+    expect(records.length).toBe(2);
+    const [validateKey, taffyKey] = records;
+    expect(validateKey.max_width).toBe(120);
+    expect(validateKey.max_height).toBe(200);
+    expect(taffyKey.max_width).toBe(120);
+    expect(taffyKey.max_height).toBeUndefined();
+    // Same key fields as the unconstrained record.
+    const unconstrained = skiaMeasurements(ck, fontMgr, scene).find(
+      (r) => r.content === content
+    )!;
+    for (const key of [
+      "content",
+      "font_family",
+      "font_size",
+      "font_weight",
+      "line_height",
+      "letter_spacing",
+      "wrap",
+      "max_lines",
+      "direction",
+      "text_transform",
+      "truncate",
+      "paragraph_spacing",
+      "italic"
+    ] as const) {
+      expect(validateKey[key]).toEqual(unconstrained[key]);
+    }
+    // Wrapped at 120: several lines, ascending, each inside the width.
+    const lines = validateKey.lines!;
+    expect(lines.length).toBeGreaterThan(1);
+    for (let i = 0; i < lines.length; i += 1) {
+      expect(lines[i].x).toBeGreaterThanOrEqual(0);
+      expect(lines[i].width).toBeLessThanOrEqual(121);
+      expect(lines[i].height).toBeGreaterThan(0);
+      if (i > 0) expect(lines[i].y).toBeGreaterThan(lines[i - 1].y);
+    }
+    expect(taffyKey.lines).toEqual(lines);
+    // Extent is the stacked lines, not the unconstrained single line.
+    expect(validateKey.height).toBeGreaterThan(unconstrained.height);
+    expect(validateKey.width).toBeLessThanOrEqual(121);
+  });
+
+  it("Plan 4: max_lines cuts the line boxes", () => {
+    const scene = JSON.parse(JSON.stringify(minimalScene)) as Scene;
+    const node = scene.nodes.node_contact_name;
+    if (node.kind.kind !== "text") throw new Error("fixture");
+    node.kind.content = "Hello there, world again and again and again";
+    node.kind.font_family = family;
+    node.kind.font_size = 20;
+    node.kind.wrap = "wrap";
+    node.kind.max_lines = 2;
+    node.computed = {
+      layout_bounds: { x: 0, y: 0, width: 120, height: 200 },
+      render_bounds: { x: 0, y: 0, width: 120, height: 200 }
+    };
+    const [record] = skiaLineMeasurements(ck, fontMgr, scene);
+    expect(record.lines!.length).toBe(2);
   });
 });

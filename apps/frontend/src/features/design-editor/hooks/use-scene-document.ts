@@ -4,7 +4,10 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { textMeasurementSignature } from "../adapter/scene-canvas-view";
 import { designBffConfig } from "../data/design-bff";
 import { loadCanvasKit } from "../engine/scene/canvaskit/loadCanvasKit";
-import { skiaMeasurements } from "../engine/scene/canvaskit/skiaMeasurements";
+import {
+  skiaLineMeasurements,
+  skiaMeasurements,
+} from "../engine/scene/canvaskit/skiaMeasurements";
 import type { Diagnostic, PageId, Scene } from "../engine/scene/contracts";
 import { fetchBrandKitDetail, fetchDocument } from "../engine/scene/documentStore";
 import { loadKitFontFaces } from "../engine/scene/kitFonts";
@@ -452,9 +455,23 @@ export function useSceneDocument(
       if (cancelled || !bundle?.fontProvider) {
         return;
       }
-      engine.setMeasurements(
-        skiaMeasurements(bundle.ck, bundle.fontProvider, engine.scene),
+      // Pass 1 (Wave 3 C4): unconstrained extents, so hug boxes take Skia's
+      // size. Pass 2 (Plan 4 item F): the line boxes, keyed on the boxes pass
+      // 1 solved. Both sets ride the second call — `setMeasurements`
+      // REPLACES the override set. The effect's signature includes each text
+      // node's solved size, so a box that changes here re-runs the effect;
+      // the injection is deterministic, so that stops at the first pass that
+      // changes nothing.
+      const unconstrained = skiaMeasurements(
+        bundle.ck,
+        bundle.fontProvider,
+        engine.scene,
       );
+      engine.setMeasurements(unconstrained);
+      engine.setMeasurements([
+        ...unconstrained,
+        ...skiaLineMeasurements(bundle.ck, bundle.fontProvider, engine.scene),
+      ]);
       if (!cancelled) {
         setLoad((current) =>
           current.kind === "ready" && current.engine === engine

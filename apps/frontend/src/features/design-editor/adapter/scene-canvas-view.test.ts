@@ -462,6 +462,26 @@ test("editing text content re-measures", () => {
   );
 });
 
+test("Plan 4: a text node's solved size is part of the measurement signature", () => {
+  // The line pass is keyed on the box the engine solved; a resized box must
+  // re-measure or its lines go stale (the key misses → heuristic lines).
+  const scene = clone(HARVESTED_AD_PAGE);
+  scene.nodes.text_proof_stat.computed = {
+    layout_bounds: { x: 0, y: 0, width: 300, height: 120 },
+    render_bounds: { x: 0, y: 0, width: 300, height: 120 },
+  };
+  const before = textMeasurementSignature(scene, 0);
+  scene.nodes.text_proof_stat.computed.layout_bounds.width = 280;
+  assert.notEqual(textMeasurementSignature(scene, 0), before);
+  // A non-text node's size never re-measures.
+  const rect = clone(HARVESTED_AD_PAGE);
+  rect.nodes.rect_accent_bar.computed = {
+    layout_bounds: { x: 0, y: 0, width: 9, height: 9 },
+    render_bounds: { x: 0, y: 0, width: 9, height: 9 },
+  };
+  assert.equal(textMeasurementSignature(rect, 0), textMeasurementSignature(HARVESTED_AD_PAGE, 0));
+});
+
 test("a new kit generation re-measures (kit type roles are measurement inputs)", () => {
   assert.notEqual(
     textMeasurementSignature(HARVESTED_AD_PAGE, 1),

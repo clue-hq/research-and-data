@@ -454,6 +454,15 @@ function digestPassthroughUrl(
  * refresh → measure an infinite loop. `generation` is the kit token maps'
  * generation (kit values land after the first paint and are measurement
  * inputs), so measurements re-run when the brand kit arrives.
+ *
+ * Plan 4 item F adds each text node's SOLVED size to its part: the line pass
+ * (`skiaLineMeasurements`) is keyed on the box the engine solved, so that box
+ * is a measurement input now — a resized box whose signature did not move
+ * would keep serving stale lines (the key misses → heuristic lines). This does
+ * NOT reopen the loop: the injection is deterministic, so once the boxes stop
+ * moving the signature stops moving and the effect reaches a fixed point.
+ * Fixed-point (`toFixed(3)`) formatting matches the measurements' own rounding,
+ * so float noise below a thousandth cannot keep the effect alive.
  */
 export function textMeasurementSignature(
   scene: Scene,
@@ -484,6 +493,9 @@ export function textMeasurementSignature(
         t.font_size_token ?? "_",
         t.line_height_token ?? "_",
         t.letter_spacing_token ?? "_",
+        node.computed
+          ? `${node.computed.layout_bounds.width.toFixed(3)}x${node.computed.layout_bounds.height.toFixed(3)}`
+          : "_",
       ].join("|"),
     );
   }

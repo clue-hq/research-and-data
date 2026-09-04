@@ -50,6 +50,17 @@ export interface WasmEngineInstance {
   free?(): void;
 }
 
+/** Plan 4 item F: one CanvasKit line box, paragraph-relative and measured
+ * LEFT-aligned — the shape `SkiaTextMeasurer` reports, so the engine places it
+ * by `align`/`valign` itself. */
+export interface TextMeasurementLine {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  baseline: number;
+}
+
 /** Wave 3 C4: one editor-measured (SkParagraph) text metric. The engine keys
  * each by the measurement input it lays out with, so providing these makes
  * text `computed` Skia-faithful (measure-then-inject). */
@@ -83,6 +94,11 @@ export interface TextMeasurement {
    * Omitted for spanless nodes (serde `#[serde(default)]` → empty), keeping
    * pre-A6b payloads byte-identical. */
   spans?: TextSpan[];
+  /** Plan 4 item F: the painted line boxes measured at this record's
+   * `max_width` (see `skiaLineMeasurements`). Optional so every pre-Plan-4
+   * record keeps its shape (the engine's `ProvidedMeasurement.lines` is
+   * `#[serde(default)]`). */
+  lines?: TextMeasurementLine[];
   width: number;
   height: number;
 }
