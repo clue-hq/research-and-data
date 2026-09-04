@@ -79,3 +79,58 @@ def test_turn_targets_are_found_on_any_page():
     }
     text = _describe_web_turn_targets(doc, ["t"])
     assert "pricing" in text and "t" in text
+
+
+def test_turn_target_names_a_clone_like_the_frontend_does():
+    """R-A5: the agent's TURN TARGET line names a node with the same order the shell's
+    layers panel uses (`displayNameForNode`), so a human and the agent say the same words
+    about the same band. The fragment's name is the registry's role + label."""
+    from lumen_api.main import _describe_web_turn_targets
+
+    frag = "frag_" + "ab" * 8
+    doc = {
+        "pages": [
+            {
+                "id": "home",
+                "root": "r",
+                "nodes": {
+                    "r": {"id": "r", "kind": "container", "children": ["s"]},
+                    "s": {"id": "s", "kind": "section", "children": ["f"]},
+                    "f": {"id": "f", "kind": "fragment", "fragment_id": frag},
+                },
+            }
+        ]
+    }
+    meta = {frag: {"label": "Stripe homepage hero", "section_role": "hero"}}
+    text = _describe_web_turn_targets(doc, ["f"], fragment_meta=meta)
+    assert 'fragment "Hero — Stripe homepage hero"' in text
+
+
+def test_a_section_wrapping_one_clone_inherits_its_name_and_an_unknown_pin_is_generic():
+    """The other two halves of the shared order: a section whose only child is a fragment
+    reads as that fragment, and a pin the registry does not hold (unreleased, or another
+    workspace's) is named honestly rather than guessed at."""
+    from lumen_api.main import _describe_web_turn_targets
+
+    doc = {
+        "pages": [
+            {
+                "id": "home",
+                "root": "r",
+                "nodes": {
+                    "r": {"id": "r", "kind": "container", "children": ["s", "s2"]},
+                    "s": {"id": "s", "kind": "section", "children": ["f"]},
+                    "f": {"id": "f", "kind": "fragment", "fragment_id": "frag_known"},
+                    "s2": {"id": "s2", "kind": "section", "children": ["f2"]},
+                    "f2": {"id": "f2", "kind": "fragment", "fragment_id": "frag_gone"},
+                },
+            }
+        ]
+    }
+    meta = {
+        "frag_known": {"label": "Pricing table", "section_role": None},
+        "frag_gone": {"label": None, "section_role": None},
+    }
+    text = _describe_web_turn_targets(doc, ["s", "s2"], fragment_meta=meta)
+    assert 'section "Pricing table"' in text
+    assert 'section "Cloned section"' in text

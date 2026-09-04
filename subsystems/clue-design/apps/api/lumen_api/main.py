@@ -9037,11 +9037,43 @@ def run_agent_turn_preview(
     return agent_response_from_trace(payload_result, tools.trace_dir, tools.scene)
 
 
-def _web_node_label(node: JsonObject) -> Optional[str]:
-    """A cheap human label for a WebDoc node: its data-name, else its text/
-    button copy (inline markup stripped), truncated. None when nothing cheap
-    is available."""
-    for key in ("name", "content", "label"):
+def _web_node_label(
+    node: JsonObject,
+    nodes: Optional[JsonObject] = None,
+    fragment_meta: Optional[JsonObject] = None,
+) -> Optional[str]:
+    """A cheap human label for a WebDoc node, in the SAME order of precedence the
+    shell shows a human (``displayNameForNode``, ruling R-A5): its own name, else a
+    clone's registry name, else a section's sole clone child's name, else its text/
+    button/alt copy (inline markup stripped), truncated. None when nothing cheap is
+    available — the caller then prints the bare kind, as it always has.
+
+    The two mirrors must stay in step: the user says "make the hero tighter" about a
+    band the layers panel calls "Hero — Stripe homepage hero", and the agent's TURN
+    TARGET line has to name that same band with those same words, or the two of them
+    are discussing different things. ``nodes`` (the page's node map) and
+    ``fragment_meta`` (the registry facts, :func:`fragment_meta_for_document`) are
+    optional so a caller with neither still gets the old text/name answer.
+    """
+    name = node.get("name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()[:40]
+    kind = node.get("kind")
+    if kind == "fragment":
+        meta = (fragment_meta or {}).get(node.get("fragment_id") or "") or {}
+        role = meta.get("section_role")
+        label = meta.get("label")
+        role = role.strip().capitalize() if isinstance(role, str) and role.strip() else None
+        label = label.strip() if isinstance(label, str) and label.strip() else None
+        # A pin the registry does not hold (unreleased, or another workspace's) is named
+        # honestly rather than guessed at — the frontend's fallback, word for word.
+        return (f"{role} — {label}" if role and label else role or label) or "Cloned section"
+    if kind == "section" and nodes is not None:
+        children = node.get("children") or []
+        only = nodes.get(children[0]) if len(children) == 1 else None
+        if isinstance(only, dict) and only.get("kind") == "fragment":
+            return _web_node_label(only, nodes, fragment_meta)
+    for key in ("content", "label", "alt"):
         value = node.get(key)
         if isinstance(value, str) and value.strip():
             text = re.sub(r"<[^>]+>", "", value).strip()
@@ -9051,7 +9083,9 @@ def _web_node_label(node: JsonObject) -> Optional[str]:
 
 
 def _describe_web_turn_targets(
-    web_doc: JsonObject, target_node_ids: List[str]
+    web_doc: JsonObject,
+    target_node_ids: List[str],
+    fragment_meta: Optional[JsonObject] = None,
 ) -> str:
     """Build the TURN TARGET brief addendum for a scoped edit turn: one line
     per selected node, naming the node, its kind, the PAGE it sits on, and the
@@ -9062,7 +9096,12 @@ def _describe_web_turn_targets(
     F5: every page is searched, not the one spelled `home`. A selection made on
     a second page used to resolve against the home page's node map and come
     back as "that element no longer exists" — the agent then rebuilt on its own
-    judgment instead of editing what the user had actually clicked."""
+    judgment instead of editing what the user had actually clicked.
+
+    R-A5: `fragment_meta` (this workspace's registry facts, keyed by fragment id)
+    is what lets a selected clone be named the way the human's layers panel names
+    it. Omitted, a clone still reads as `fragment "Cloned section"` — honest, just
+    less useful."""
     # (page id, nodes, that page's top-level band ids, child -> parent) per page,
     # in document order. Built once; a target is then looked up across all of them.
     pages: List[Tuple[str, Dict[str, Any], set, Dict[str, str]]] = []
@@ -9111,7 +9150,7 @@ def _describe_web_turn_targets(
                     section = current
                     break
         kind = node.get("kind") or "node"
-        label = _web_node_label(node)
+        label = _web_node_label(node, nodes, fragment_meta)
         descriptor = f'{kind} "{label}"' if label else str(kind)
         section_str = f"`{section}`" if section else "the page"
         # A page with no id is not addressable, so it is named by saying nothing rather
@@ -9152,7 +9191,9 @@ def run_web_agent_turn(
 
     `target_node_ids` (a scoped edit turn): each selected node is resolved to
     its enclosing section in Python and appended to the brief as a TURN TARGET
-    line so the orchestrator scopes the turn to that section.
+    line so the orchestrator scopes the turn to that section. R-A5: the line
+    NAMES that node the way the human's layers panel names it, which for a
+    cloned band means reading this workspace's fragment registry here.
 
     `account_card` (a 1:1 personalized turn, P5 D6): the target account card
     {name, domain, logo_asset_id, data, notes}, resolved to 404 before the run
@@ -9210,9 +9251,26 @@ def run_web_agent_turn(
         else api_engine_cache_root(turn_workspace_id)
     )
     web_doc = document["scene"]
-    if target_node_ids:
-        prompt = prompt + _describe_web_turn_targets(web_doc, target_node_ids)
     try:
+        if target_node_ids:
+            # R-A5: the TURN TARGET lines name the selection the way the human's layers
+            # panel does. A selected CLONE is named from the registry, so the rows are
+            # read here — where the database is — exactly as the read route reads them
+            # (`GET /documents/{id}`), and only when this document pins something, so a
+            # clone-free turn pays for no registry scan. The build happens inside this
+            # try for the same reason everything else does: a turn that cannot reach the
+            # registry must fold into a failed envelope, not raise out of this function.
+            fragment_meta = (
+                fragment_meta_for_document(
+                    {"doc_kind": "web", "scene": web_doc},
+                    HybridRepository(workspace_id=turn_workspace_id).list_web_fragments(),
+                )
+                if web_doc_all_fragment_ids(web_doc)
+                else None
+            )
+            prompt = prompt + _describe_web_turn_targets(
+                web_doc, target_node_ids, fragment_meta=fragment_meta
+            )
         config = AgentRuntimeConfig.from_env(root)
         if model:
             config = replace(config, model=model)

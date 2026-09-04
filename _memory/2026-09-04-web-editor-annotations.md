@@ -53,3 +53,37 @@ Plan: docs/superpowers/plans/2026-09-04-web-editor-annotations-and-clone-text-ed
     both look up the `lumen-web-author` subagent, which `harness_web.py` quarantines
     (`reason=web_solo_2026_09_04`, landed in 7056d600c). Each verified failing at
     HEAD 62a6e3b24 by stashing this task's two files and re-running.
+
+## Slice 1 done — Task 4: the agent reads the same names the human does
+- `_web_node_label(node, nodes=None, fragment_meta=None)` in
+  `subsystems/clue-design/apps/api/lumen_api/main.py` now mirrors the frontend's
+  `displayNameForNode` precedence: own `name` (capped 40) → fragment: the registry's
+  `"{Role} — {label}"` (role `.capitalize()`d, degrading to role / label /
+  `"Cloned section"`) → a section whose ONLY child is a fragment inherits that
+  fragment's name → text/label/alt copy with inline markup stripped → None, and the
+  caller then prints the bare kind exactly as before.
+- `_describe_web_turn_targets(web_doc, target_node_ids, fragment_meta=None)` threads
+  the page's node map and the meta into the label call. Called without `fragment_meta`
+  a clone still reads honestly (`fragment "Cloned section"`), so no caller breaks.
+- Wiring: `run_web_agent_turn` builds the meta itself with
+  `fragment_meta_for_document({"doc_kind": "web", "scene": web_doc},
+  HybridRepository(workspace_id=...).list_web_fragments())`. Deviations from the brief,
+  both deliberate: (a) the brief said "the route already has `repo` in scope" — it does
+  not; this is a module function called from `execute_web_turn_job`, so the workspace-
+  scoped repository is constructed here, the same way `DurableAgentClonedSectionRegistry
+  ._repository()` already does inside a turn; (b) the read is skipped entirely unless
+  `web_doc_all_fragment_ids(web_doc)` is non-empty, so a clone-free turn pays for no
+  registry scan (Task 2's route applies the same rule to a scene GET).
+- The `if target_node_ids:` prompt append MOVED inside the function's existing try. It
+  used to sit outside it, so anything it raised escaped a function whose contract is
+  "never raises: any failure folds into a failed envelope". Pure dict-walking rarely
+  raises; a registry read can, so the relocation is part of this change rather than
+  incidental tidying.
+- Gate: `apps/api/tests/{test_web_turn_pages,test_web_turns,test_public_document_fragment_meta}.py`
+  33 passed; `test_agent_cloned_sections.py` 70 passed; `test_web_turn_asset_base_url.py`
+  + `test_web_fragment_render.py` + fragment_meta 25 passed. Ruff on `main.py`: 395 → 398,
+  the delta being exactly three new `Optional[...]` annotations (UP045), which is the
+  file's own style.
+- Known cosmetic divergence: Python caps a node's own `name` at 40 chars (bounding the
+  prompt line); the frontend does not cap it. Only a >40-char stamped name diverges, and
+  the pin tools' generated names are far shorter.
