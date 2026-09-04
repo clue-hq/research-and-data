@@ -69,3 +69,11 @@ layer, not the parent, or the mask silently drops; (2) cream/white light on a
 near-white page is invisible — the olive recess + sage/teal body is what makes it
 read; (3) the shell cwd drifted into `apps/frontend/` mid-session and a mkdir
 landed there (removed); use absolute paths.
+
+## Round 4 (same day) — thinner frame
+
+Founder liked v3 but the aurora frame was too thick and the dark recess looked
+bad. Thinned to a Moda-style line: haze reach 9% / blur 26px / opacity .55,
+bloom reach 3.5% / blur 8px, rim = 1px hairline only (no inset shadow), line base
+tint sage not olive; beam thinned proportionally (haze 12%, bloom 4%). Line width
+stays 2px (beam 2px). Same file, no component changes.
