@@ -31,8 +31,8 @@ Three questions were asked:
   makes this possible); keep a stable prompt prefix so OpenAI's cache pays (measured: 76,634 of 76,649
   prefix tokens served from cache, $0.0251 → $0.0077); generate contact pages lazily on first open;
   use the `:batch` endpoints (50% off) for nightly refreshes. **Do not lower Luna's reasoning effort:**
-  at `effort: low` the contact page leaked unsafe claims into outreach sections in both runs (3 each,
-  against 0 in every default-effort run) and it was not cheaper ($0.0067 vs $0.0044–0.0052). The
+  at `effort: low` the contact page cited an unsafe claim inside Openers and Angles in both runs (3
+  citations each, against 0 in every default-effort run) and it was not cheaper ($0.0067 vs $0.0044–0.0052). The
   reasoning budget is what enforces the safety rule.
 - **Two defects belong upstream, not in the prompt:** (a) the same fact stored twice with different
   `outreach_safe` flags (the cocktail hobby: `zaf-110` safe, `zaf-160` unsafe because it adds a Patreon
@@ -223,8 +223,8 @@ cold-equivalent of ~$0.011. So the levers, in order of what they save:
    30–40% off cold input.
 6. **Reasoning effort — measured, and rejected.** At `reasoning: {effort: "low"}` Luna used ~110–170
    reasoning tokens instead of 415–5,237, was *not* cheaper on a cold call ($0.0067 vs $0.0044–0.0052),
-   and on the contact page cited unsafe claims (`zaf-160`, `zaf-135`, `zaf-139`) inside "Why this
-   person", "Their problem right now" and "Openers" in both runs. The judge still gave it 3/10 with
+   and on the contact page cited the unsafe hobby claim (`zaf-160`, the Patreon-monetisation version)
+   inside "Openers" and "Angles" in both runs, three citations per run. The judge still gave it 3/10 with
    faithfulness 4 — the leak is invisible to a reader, which is exactly why the mechanical check exists.
    Keep the default effort.
 
