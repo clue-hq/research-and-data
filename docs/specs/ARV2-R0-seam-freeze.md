@@ -2,9 +2,9 @@
 
 **Status: DRAFT for the joint founder session (R0 checklist step 6).** Parent plan:
 `docs/specs/ARV2-R0-foundations-plan.md` (ratified 2026-09-01). Purpose: freeze the two seams
-that let the two workstreams run fully parallel — Shashank on the platform deepagent /
-onboarding / ICP / project context, Aryan on the ARV2 research lane + accounts frontend
-integration. Once these two pages are signed, neither workstream needs to consult the other
+that let the two workstreams run fully parallel — Aryan (tech founder) on the platform
+deepagent / onboarding / ICP / project context, Shashank (co-founder) on the ARV2 research lane +
+accounts frontend integration. (Roles corrected 2026-09-04; earlier text had the names swapped.) Once these two pages are signed, neither workstream needs to consult the other
 until integration.
 
 Everything here is a *strawman with decision boxes* — the session's job is to initial or amend
@@ -56,7 +56,7 @@ Rules:
 
 ### 1.2 The reverse edge: what research exposes back
 
-The project-context compiler (Shashank's side) reads only these, all existing surfaces:
+The project-context compiler (Aryan's side) reads only these, all existing surfaces:
 
 | Read | Backing |
 |---|---|
