@@ -87,3 +87,18 @@ Plan: docs/superpowers/plans/2026-09-04-web-editor-annotations-and-clone-text-ed
 - Known cosmetic divergence: Python caps a node's own `name` at 40 chars (bounding the
   prompt line); the frontend does not cap it. Only a >40-char stamped name diverges, and
   the pin tools' generated names are far shorter.
+
+## Slice 1 — closed 2026-09-04 (controller review)
+Commits e444c6025 (T1) → 62a6e3b24 (T2) → 8951d213c (T3) → e337d1c9b (T4) → 92494fad4 (fix: layer
+label ellipsis). Live-verified in a headless browser on the Ramp doc in Edit mode: Layers rows read
+"Hero — Repaired ×3 — ABM hero — …", "Proof — …", "Cta — …"; the agent's TURN TARGET line names the
+same clone with the same words (checked against the real registry). Gates: frontend lint/2108 tests/
+build green; design api + agent_runtime suites (see ledger). Parked for the founder: registry labels
+for repairs carry provenance ("Repaired ×3 — ABM hero — …") so the role shows twice in a row name —
+strip the prefix in the naming function, or keep the registry's words. Process notes: design-API
+tests need `.env` sourced; never `git stash` (one implementer did, no damage).
+Gate residuals (all pre-existing, verified at the pre-slice commit): compiler tests needed `npm ci` in
+`apps/custom-component-compiler` (node_modules was empty → transient_error; done on this box);
+ingestion tests are not hermetic — a real OpenRouter key in `.env` activates the brand-brief agent
+and the live model call exceeds the 60s job timeout (pass with the key blanked); three trio tests
+fail only under LUMEN_AGENT_WEB_SOLO=1. See the SDD ledger for detail.
