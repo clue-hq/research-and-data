@@ -445,7 +445,7 @@ def test_e1_real_db_import_cost_materialization_and_zero_call_replay(tmp_path: P
                     entity_id=EntityId(ready.account_id),
                     field_key=TIER_FIELD,
                     value_json={
-                        "tier": "high",
+                        "tier": "tier4",
                         "decision_basis": "discovery_criteria",
                         "selection_policy_version": "discovery-selection-v1",
                         "decision_version": "e1-test-decision",
@@ -458,8 +458,10 @@ def test_e1_real_db_import_cost_materialization_and_zero_call_replay(tmp_path: P
                         "icp_key": "independent-specialty-practices",
                         "icp_version": 1,
                     },
-                    source_tier=1,
-                    extraction_method=ExtractionMethod.HUMAN,
+                    source_tier=4,
+                    extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+                    source_url="https://example.com/tier-decision",
+                    evidence_span="Tier-4 source supports this exact selected account tier.",
                     confidence=1,
                     run_id=RunId(started.project_run_id),
                     research_mode=ResearchMode.ACCOUNT_PROFILING,
@@ -1106,7 +1108,7 @@ def test_preflight_rejects_non_selected_account_before_provider_work(tmp_path: P
                         "discovery_batch_id": str(started.batch_id),
                         "discovery_seal_sha256": seal.seal_sha256,
                         "project_run_id": str(started.project_run_id),
-                        "disposition": "selected",
+                        "disposition": "held",
                         "evidence_claim_ids": [],
                         "icp_key": "independent-specialty-practices",
                         "icp_version": 1,
@@ -1117,7 +1119,7 @@ def test_preflight_rejects_non_selected_account_before_provider_work(tmp_path: P
                     run_id=RunId(started.project_run_id),
                     research_mode=ResearchMode.ACCOUNT_PROFILING,
                     source_url="https://insighthealth.ai/",
-                    evidence_span="Machine selection is not human checkpoint approval.",
+                    evidence_span="This account was held rather than selected.",
                 ),
                 workspace_id=workspace_id,
             )
@@ -1127,7 +1129,7 @@ def test_preflight_rejects_non_selected_account_before_provider_work(tmp_path: P
             async def same_connection() -> AsyncIterator[AsyncConnection]:
                 yield conn
 
-            with pytest.raises(ExaTargetedEligibilityError, match="human-selected"):
+            with pytest.raises(ExaTargetedEligibilityError, match="selected tier decision"):
                 await compile_exa_targeted_preflight(
                     workspace_id=workspace_id,
                     project_run_id=ProjectRunId(started.project_run_id),

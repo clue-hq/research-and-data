@@ -38,7 +38,6 @@ from clue_core import (
     DiscoveryEnrichmentFormat,
     EntityId,
     EntityType,
-    ExtractionMethod,
     ProjectPhase,
     ProjectRunId,
     ResearchMode,
@@ -91,7 +90,11 @@ from clue_research.claimstore import (
     record_run_lineage,
 )
 from clue_research.discovery_scoring.discovery import REVENUE_BAND_OPTIONS
-from clue_research.discovery_scoring.tiering import TIER_FIELD
+from clue_research.discovery_scoring.tiering import (
+    ACCOUNT_RESEARCH_ELIGIBLE_TIERS,
+    TIER_CLAIM_MAX_SOURCE_TIER,
+    TIER_FIELD,
+)
 from clue_research.durable import (
     BudgetEngine,
     DbBudgetStore,
@@ -190,7 +193,7 @@ class ExaTargetedEnrichmentPolicy(BaseModel):
     maximum_accounts: int = Field(default=10, ge=1, le=100)
     maximum_fields: int = Field(default=5, ge=1, le=10)
     maximum_provider_credits: int = Field(default=200, ge=1)
-    eligible_tiers: frozenset[str] = frozenset({"high"})
+    eligible_tiers: frozenset[str] = ACCOUNT_RESEARCH_ELIGIBLE_TIERS
 
 
 DEFAULT_EXA_TARGETED_ENRICHMENT_POLICY = ExaTargetedEnrichmentPolicy()
@@ -371,8 +374,7 @@ async def compile_exa_targeted_preflight(
                 if not isinstance(value, dict):
                     continue
                 if (
-                    claim.extraction_method is ExtractionMethod.HUMAN
-                    and claim.source_tier == 1
+                    claim.source_tier <= TIER_CLAIM_MAX_SOURCE_TIER
                     and value.get("decision_basis") == "discovery_criteria"
                     and value.get("project_run_id") == str(project_run_id)
                     and value.get("discovery_batch_id") == str(sealed.discovery_batch_id)
@@ -385,7 +387,7 @@ async def compile_exa_targeted_preflight(
                     matching.append(claim)
             if len(matching) != 1:
                 raise ExaTargetedEligibilityError(
-                    "target account lacks one exact live human-selected tier decision"
+                    "target account lacks one exact live selected tier decision"
                 )
             targets.append(
                 TargetedEnrichmentTarget(
@@ -1302,11 +1304,13 @@ class ExaTargetedEnrichmentCoordinator:
                         entity_id=target.account_id,
                         run_id=RunId(operation.request.project_run_id),
                         artifact_key=item_key,
+                        retained_item=item_bytes,
                         company=company,
                         member_ids=members,
                         field_key=field_key,
                         value=value,
                         provider_field=observation.field_key,
+                        enrichment_id=observation.enrichment_id,
                         references=observation.references,
                         reasoning=observation.reasoning,
                         research_mode=ResearchMode.ACCOUNT_PROFILING,

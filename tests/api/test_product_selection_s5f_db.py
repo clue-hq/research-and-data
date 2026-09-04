@@ -14,7 +14,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
 from clue_api.agent_gate import get_gate
-from clue_api.agent_turn_scope_pin import load_or_create_agent_turn_scope_pin
+from clue_api.agent_turn_scope_pin import (
+    COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V3,
+    load_or_create_agent_turn_scope_pin,
+)
 from clue_api.agent_turn_submission import get_submission
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
@@ -33,7 +36,11 @@ from clue_core import ExecutionId, new_operation_id, new_run_id
 from clue_db import db_lifespan
 from clue_execution import CompatibilityLoader
 from clue_research.claimstore import record_run_lineage
-from clue_research.stage0 import finalize_client_kb_version
+from clue_research.stage0 import (
+    PRODUCT_KNOWLEDGE_FIELDS,
+    current_kb_version,
+    finalize_client_kb_version,
+)
 from clue_spine import (
     confirm_project_product,
     create_brand,
@@ -230,6 +237,64 @@ def test_icp_synthesis_pins_company_kb_independently_from_selected_product_kb(
             )
             assert by_kind["product"].key == products[0].product_id
             assert "product_kb" not in by_kind
+
+    run_async(scenario())
+
+
+def test_new_turn_repairs_legacy_selected_product_without_kb(tmp_path: Path) -> None:
+    """A selected legacy project cannot produce another null Product-KB turn receipt."""
+
+    async def scenario() -> None:
+        async with db_lifespan():
+            scope, products, _product_version = await _seed_product_context(tmp_path)
+        async with rollback_conn() as conn:
+            legacy_product = products[1]
+            assert (
+                await current_kb_version(
+                    conn,
+                    scope.client_entity_id,
+                    workspace_id=scope.workspace_id,
+                    product_id=legacy_product.product_id,
+                )
+                is None
+            )
+            project = await create_project(
+                conn,
+                workspace_id=scope.workspace_id,
+                brand_id=scope.brand_id,
+                product_id=legacy_product.product_id,
+                name="Legacy selected-without-knowledge project",
+            )
+            storage = FsStorage(tmp_path / "selected-product-pin-repair")
+            artifacts = DurableAgentArtifactStore(
+                storage=storage,
+                conn_factory=conn_session_factory(conn),
+            )
+            _submission, pin = await _make_presenting_turn(
+                conn,
+                artifacts=artifacts,
+                scope=scope,
+                project_id=project.project_id,
+                label="selected-product-pin-repair",
+                expected_product_id=legacy_product.product_id,
+            )
+            assert pin.product_kb_version == 1
+            assert (
+                pin.knowledge_scope_policy_version == COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V3
+            )
+            card = await compile_product_knowledge_card(
+                workspace_id=scope.workspace_id,
+                client_entity_id=scope.client_entity_id,
+                product_id=legacy_product.product_id,
+                product_kb_version=pin.product_kb_version,
+                conn_factory=conn_session_factory(conn),
+            )
+            assert not card.known_fields
+            assert set(card.open_gaps) == set(PRODUCT_KNOWLEDGE_FIELDS)
+            assert (card.coverage.filled, card.coverage.required) == (
+                0,
+                len(PRODUCT_KNOWLEDGE_FIELDS),
+            )
 
     run_async(scenario())
 
@@ -575,9 +640,30 @@ def test_catalog_gate_human_selection_and_next_turn_product_pair_for_projects_a_
             assert selected_a is not None and selected_a.product_id == products[0].product_id
             assert selected_b is not None and selected_b.product_id == products[1].product_id
 
+            # Product selection atomically preserves A's existing knowledge and bootstraps an
+            # honest empty v1 for B before either next-turn pin gets a chance to self-repair it.
+            assert (
+                await current_kb_version(
+                    conn,
+                    scope.client_entity_id,
+                    workspace_id=scope.workspace_id,
+                    product_id=products[0].product_id,
+                )
+                == product_version
+            )
+            assert (
+                await current_kb_version(
+                    conn,
+                    scope.client_entity_id,
+                    workspace_id=scope.workspace_id,
+                    product_id=products[1].product_id,
+                )
+                == 1
+            )
+
             # The structured answers are the next queued production turns. Their scope is resolved
-            # only after the confirmation transaction, so A receives its exact Product-KB while B
-            # honestly receives profile-only context.
+            # only after the selection transaction, and every selected-product V3 turn receives
+            # exact Product-KB authority even when all registered knowledge remains an open gap.
             answer_a = await get_submission(
                 conn,
                 workspace_id=scope.workspace_id,
@@ -597,7 +683,12 @@ def test_catalog_gate_human_selection_and_next_turn_product_pair_for_projects_a_
             )
             assert (pin_b.product_id, pin_b.product_kb_version) == (
                 products[1].product_id,
-                None,
+                1,
+            )
+            assert (
+                pin_a.knowledge_scope_policy_version
+                == pin_b.knowledge_scope_policy_version
+                == COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V3
             )
             assert (
                 await compile_product_profile_card(
@@ -616,6 +707,20 @@ def test_catalog_gate_human_selection_and_next_turn_product_pair_for_projects_a_
                     conn_factory=cf,
                 )
             ).product_kb_version == product_version
+            empty_card = await compile_product_knowledge_card(
+                workspace_id=scope.workspace_id,
+                client_entity_id=scope.client_entity_id,
+                product_id=pin_b.product_id,
+                product_kb_version=pin_b.product_kb_version,
+                conn_factory=cf,
+            )
+            assert empty_card.product_kb_version == 1
+            assert not empty_card.known_fields
+            assert set(empty_card.open_gaps) == set(PRODUCT_KNOWLEDGE_FIELDS)
+            assert (empty_card.coverage.filled, empty_card.coverage.required) == (
+                0,
+                len(PRODUCT_KNOWLEDGE_FIELDS),
+            )
 
             # Selection cannot rewrite the already-running opening turn's scope.
             assert original_pin_a.product_id is None and original_pin_a.product_kb_version is None
@@ -647,6 +752,23 @@ def test_catalog_gate_human_selection_and_next_turn_product_pair_for_projects_a_
                 action_ref=derive_turn_action_ref(uuid4()),
                 conn_factory=cf,
                 operation_id=new_operation_id(),
+            )
+            replayed_selection = await invoke_tool(
+                registry,
+                "confirm_project_product",
+                {"project_id": project_b.project_id, "product_id": products[1].product_id},
+                human_context,
+                idempotency_ttl_s=60,
+            )
+            assert replayed_selection.references["product_id"] == products[1].product_id
+            assert (
+                await current_kb_version(
+                    conn,
+                    scope.client_entity_id,
+                    workspace_id=scope.workspace_id,
+                    product_id=products[1].product_id,
+                )
+                == 1
             )
             with pytest.raises(PreconditionFailed, match="project_product_conflict"):
                 await invoke_tool(

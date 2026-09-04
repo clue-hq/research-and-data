@@ -594,10 +594,10 @@ def test_a_plan_proposing_the_human_only_confirm_tool_is_refused(tmp_path: Path)
     run_async(scenario_body())
 
 
-def test_frozen_v2_remains_replayable_while_the_current_slot_uses_plan_safe_v3(
+def test_frozen_v2_remains_replayable_while_the_current_slot_uses_comprehensive_v4(
     tmp_path: Path,
 ) -> None:
-    """The historical schema is unchanged; only its immutable successor is newly promoted."""
+    """The historical schemas are unchanged; only their immutable successor is newly promoted."""
 
     async def scenario_body() -> None:
         async with rollback_conn() as conn:
@@ -613,7 +613,9 @@ def test_frozen_v2_remains_replayable_while_the_current_slot_uses_plan_safe_v3(
                 node for node in definition.graph.nodes if node.node_key == "stage0_interactions"
             )
             assert "draft_account_research_directive@2" not in slot.dynamic_tool_allowlist
-            assert "draft_account_research_directive@3" in slot.dynamic_tool_allowlist
+            assert "draft_account_research_directive@3" not in slot.dynamic_tool_allowlist
+            assert "draft_account_research_directive@4" not in slot.dynamic_tool_allowlist
+            assert "draft_account_research_directive@5" in slot.dynamic_tool_allowlist
             assert (
                 "body"
                 in plane.tools.descriptor(
@@ -626,12 +628,23 @@ def test_frozen_v2_remains_replayable_while_the_current_slot_uses_plan_safe_v3(
                     "draft_account_research_directive", "3"
                 ).input_model.model_fields
             )
+            # The promoted contract adds the breadth declaration §3.3 row 1 needs.
+            assert (
+                "profile"
+                in plane.tools.descriptor(
+                    "draft_account_research_directive", "5"
+                ).input_model.model_fields
+            )
 
     run_async(scenario_body())
 
 
-def test_plan_safe_directive_v3_can_ride_the_current_conversation_plan(tmp_path: Path) -> None:
-    """The immutable successor renames only the graph-hostile field; its plan now validates."""
+def test_comprehensive_directive_v5_can_ride_the_current_conversation_plan(tmp_path: Path) -> None:
+    """The promoted successor keeps v3's plan-safe shape and adds the breadth declaration.
+
+    The scripted plan states an explicit field list, so it must declare ``profile="custom"`` —
+    exactly the narrower request §3.3 row 1 reserves for an explicit human ask.
+    """
 
     async def scenario_body() -> None:
         async with rollback_conn() as conn:
@@ -645,12 +658,13 @@ def test_plan_safe_directive_v3_can_ride_the_current_conversation_plan(tmp_path:
                 plan=_plan(
                     adapter,
                     PlanToolStep(
-                        node_key="draft_direction_v3",
-                        tool=_pin(plane, "draft_account_research_directive", "3"),
+                        node_key="draft_direction_v4",
+                        tool=_pin(plane, "draft_account_research_directive", "5"),
                         arguments={
                             "product_id": scenario.product_id,
                             "icp_key": scenario.fixture.deep_icp_key,
                             "icp_version": scenario.fixture.deep_icp_version,
+                            "profile": "custom",
                             "directive": scenario.directive_body,
                         },
                         purpose="Draft the selected-account research direction.",
@@ -659,7 +673,7 @@ def test_plan_safe_directive_v3_can_ride_the_current_conversation_plan(tmp_path:
                 constitution=adapter._constitution,
             )
 
-            assert validated.operations[0].address == "draft_account_research_directive@3"
+            assert validated.operations[0].address == "draft_account_research_directive@5"
 
     run_async(scenario_body())
 

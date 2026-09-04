@@ -15,11 +15,14 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Any, Final
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
+from sqlalchemy import text
 
+from clue_api.comprehensive_research_contract import COMPREHENSIVE_ACCOUNT_FIELD_SOURCES
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.sumble_claim_materialization import (
     SumbleClaimMaterializer,
@@ -47,6 +50,7 @@ from clue_core import (
     ResearchScope,
     new_account_gap_operation_id,
 )
+from clue_core.entity_research import EntityResearchJobAuthorization
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import (
     FieldRegistryScope,
@@ -59,12 +63,18 @@ from clue_research.claimstore import (
     field_species,
     get_effective_field,
 )
-from clue_research.discovery_scoring.tiering import TIER_FIELD
+from clue_research.discovery_scoring.tiering import (
+    ACCOUNT_RESEARCH_ELIGIBLE_TIERS,
+    TIER_CLAIM_MAX_SOURCE_TIER,
+    TIER_FIELD,
+)
 from clue_research.durable import (
+    AccountGapFieldWindowConflict,
     AccountGapNotFound,
     AccountGapReplayConflict,
     DiscoverySealConflict,
     ProjectRunStatus,
+    account_gap_window_field_owners,
     bind_discovery_artifact_subject,
     capture_discovery_artifact,
     claim_account_gap_operation,
@@ -88,6 +98,7 @@ from clue_research.durable.provider_spend import (
     ProviderSpendGuardError,
     require_provider_spend_capacity,
 )
+from clue_research.durable.spend_posture import cap_refusal_is_enforced
 from clue_research.identity import get_account, surviving_id
 from clue_research.resolvers.http import ProviderResponseError
 from clue_research.resolvers.sumble import (
@@ -95,6 +106,7 @@ from clue_research.resolvers.sumble import (
     ORGANIZATIONS_SOURCE_KEY,
     SUMBLE_API_BASE,
     SUMBLE_API_VERSION,
+    SUMBLE_SOURCE_KEYS,
     TECH_STACK_SOURCE_KEY,
     SumbleClient,
     SumbleCreditBudget,
@@ -106,6 +118,7 @@ from clue_research.resolvers.sumble import (
     engineering_jobs_request,
     matched_organization_id,
     organization_request,
+    sumble_action_supports_field,
 )
 from clue_storage import StorageBackend, content_address
 
@@ -115,6 +128,12 @@ SUMBLE_V9_CONTRACT_VERSION: Final = (
 SUMBLE_ACCOUNT_GAP_FIELD_POLICY_VERSION: Final = "sumble-account-gaps-v1"
 SUMBLE_ACCOUNT_GAP_PRICING_VERSION: Final = "sumble-v9-credits-2026-08-03"
 
+#: Attribution for the record-only spend-cap posture (founder ruling 2026-08-20; see
+#: :mod:`clue_research.durable.spend_posture`). Two distinct sites because they fail at opposite
+#: ends of the money: the preflight one can still save a call, the dispatch one never can.
+_SITE_GAP_PREFLIGHT: Final = "sumble_account_gap_preflight"
+_SITE_GAP_DISPATCH: Final = "sumble_account_gap_dispatch"
+
 _EMPLOYEE = "core.employee_count"
 _DOMAIN = "core.primary_domain"
 _INDUSTRY = "core.industry"
@@ -122,15 +141,62 @@ _HQ = "core.hq_location"
 _HIRING = "account.hiring_velocity_eng"
 _TECH = "core.primary_tech_stack"
 
-_SOURCE_BY_FIELD: Final[dict[str, str]] = {
-    _EMPLOYEE: ORGANIZATIONS_SOURCE_KEY,
-    _DOMAIN: ORGANIZATIONS_SOURCE_KEY,
-    _INDUSTRY: ORGANIZATIONS_SOURCE_KEY,
-    _HQ: ORGANIZATIONS_SOURCE_KEY,
-    _HIRING: JOBS_SOURCE_KEY,
-    _TECH: TECH_STACK_SOURCE_KEY,
-}
-_ORG_FIELDS: Final[frozenset[str]] = frozenset({_EMPLOYEE, _DOMAIN, _INDUSTRY, _HQ})
+#: Which Sumble source owns which field — derived from the frozen §3.1 ownership table so this
+#: compiler and the contract can never disagree (Slice-A carry-forward). ``core.primary_domain``
+#: is the one deliberate addition: it is canonical identity truth outside the 21-field profile
+#: that the organization action has always answered.
+_SOURCE_BY_FIELD: Final[Mapping[str, str]] = MappingProxyType(
+    {
+        **{
+            field_key: next(source for source in sources if source in SUMBLE_SOURCE_KEYS)
+            for field_key, sources in COMPREHENSIVE_ACCOUNT_FIELD_SOURCES.items()
+            if any(source in SUMBLE_SOURCE_KEYS for source in sources)
+        },
+        _DOMAIN: ORGANIZATIONS_SOURCE_KEY,
+    }
+)
+
+
+def _requestable(field_key: str) -> bool:
+    """Whether the pinned v9 action that owns ``field_key`` can actually ask for it.
+
+    §3.1 grants ``sumble_organizations`` seven account rows; its pinned v9 organization action
+    supports three of them (plus ``core.primary_domain``). A row it owns but cannot request is
+    never faked and never crashes ``organization_request`` — it settles as an honest
+    ``confirmed_missing`` so the field's next authorized source, or an honest empty, takes over.
+    """
+
+    source_key = _SOURCE_BY_FIELD.get(field_key)
+    return source_key is not None and sumble_action_supports_field(field_key, source_key)
+
+
+def _organization_request_fields(field_keys: Sequence[str]) -> tuple[str, ...]:
+    """The subset of ``field_keys`` the v9 organization action may put on the wire."""
+
+    return tuple(
+        key
+        for key in field_keys
+        if _SOURCE_BY_FIELD.get(key) == ORGANIZATIONS_SOURCE_KEY and _requestable(key)
+    )
+
+
+def _authorized_provider_credit_cap(
+    provider_credit_cap: int, *, bounded: int, enforce_budget: bool
+) -> int:
+    """The credit cap this request is actually reserved against.
+
+    Enforcing posture: the caller's cap, unchanged (a cap below the bounded worst case is refused
+    before this is ever consulted). Record-only posture (the 2026-08-20 ruling): the refusal is
+    skipped, so the call *will* go out and may be charged the full bounded maximum — the
+    reservation is therefore raised to that maximum rather than weakening the ledger's
+    ``charged <= reserved`` invariant. Pure and deterministic, because
+    :class:`SumbleAccountGapStarter` must reach the same number when it checks a replay's stored
+    authorization against the arguments it was handed again.
+    """
+
+    if enforce_budget or provider_credit_cap >= bounded:
+        return provider_credit_cap
+    return bounded
 
 
 class SumbleAccountGapError(RuntimeError):
@@ -155,6 +221,64 @@ class SumbleAccountGapNotEligible(SumbleAccountGapEligibilityError):
     """
 
 
+class SumbleAccountGapFieldsUnrequestable(SumbleAccountGapNotEligible):
+    """No requested field can be put on any pinned v9 Sumble wire.
+
+    A statement about the *request*, so it is deliberately the model-repairable species: the agent
+    drops those fields, chooses another admitted source, or finalizes with an honest gap. Paying
+    an organization credit for a call whose whole field set the action cannot even ask about would
+    buy nothing. A request that mixes requestable and unrequestable fields is **not** refused: it
+    proceeds for what it can buy and settles the rest as ``confirmed_missing``.
+    """
+
+
+class SumbleAccountGapFieldAlreadyAcquired(SumbleAccountGapNotEligible):
+    """This window already bought these fields for this account, so there is nothing to re-buy.
+
+    The observation window is per *project run*, not per job — that is the anti-double-spend rule,
+    and cross-job reuse inside a run is the point of it. The durable
+    ``account_gap_field_no_overlap`` trigger enforces one purchase per
+    ``(workspace, account, field, window)``; ``find_account_gap_operation_for_fields`` only rejoins
+    an *exactly equal* field set, so a later job asking for a strict subset (or any overlapping
+    set) of an earlier job's fields used to walk past the rejoin and straight into that trigger.
+    Live on 2026-08-20, job ``3cc0a4f2`` asked for ``core.hq_location`` alone after job
+    ``eea48931`` had bought ``core.employee_count`` + ``core.hq_location`` together: the raw
+    ``DBAPIError`` escaped as ``execution_failed`` and paused the whole job.
+
+    It is a statement about the *request*, so it is the model-repairable species: the agent reads
+    the answer the owning operation already produced (``read_account_research_state`` serves the
+    claim), drops the field, chooses another admitted source, or finalizes with an honest gap.
+    Re-buying it is never the repair — the ledger already holds that purchase's outcome, including
+    an honest ``confirmed_missing`` or an unresolved ``conflict``.
+    """
+
+
+def _already_acquired_detail(
+    *,
+    requested: Sequence[str],
+    owning_field_sets: Sequence[Sequence[str]],
+) -> str:
+    """Name the bought fields AND the exact set to re-ask, which is the only legal exit.
+
+    An already-bought pair stays OUTSTANDING for a later job until that job attempts it, and
+    ``assess_account_coverage`` refuses to close while anything is outstanding. The one attempt
+    that succeeds is re-asking an owning operation's *exact* field set: the starter rejoins it
+    before compiling anything and replays it zero-spend, landing a result under the new job's own
+    tool request. Live job ``3cc0a4f2`` proved that a refusal naming only the overlap is not
+    enough — the agent read state, tried three subsets, and never found this move.
+    """
+
+    acquired = sorted(set(requested) & {key for fields in owning_field_sets for key in fields})
+    sets = " or ".join(f"[{', '.join(fields)}]" for fields in owning_field_sets)
+    return (
+        f"already acquired in this observation window: {', '.join(acquired)} — that purchase is "
+        f"durable and cannot be repeated. This window's operations acquired exactly {sets}; "
+        "re-ask one of those exact field sets to replay its durable outcome at zero spend (that "
+        "is what makes the field terminal for coverage), or finalize with the honest gap. "
+        "Re-asking a subset or a different overlapping set can never succeed."
+    )
+
+
 class SumbleAccountGapOutcome(StrEnum):
     COMPLETED = "completed"
     REPLAYED = "replayed"
@@ -167,7 +291,7 @@ class SumbleAccountGapPolicy(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     version: str = SUMBLE_ACCOUNT_GAP_FIELD_POLICY_VERSION
-    eligible_tiers: frozenset[str] = frozenset({"high"})
+    eligible_tiers: frozenset[str] = ACCOUNT_RESEARCH_ELIGIBLE_TIERS
     low_confidence_threshold: float = Field(default=0.8, ge=0, le=1)
     maximum_fields: int = Field(default=6, ge=1)
     jobs_limit: int = Field(default=1, ge=1, le=200)
@@ -245,8 +369,7 @@ async def _exact_selected_tier_claim(
         if not isinstance(value, dict):
             continue
         if (
-            claim.extraction_method.value == "human"
-            and claim.source_tier == 1
+            claim.source_tier <= TIER_CLAIM_MAX_SOURCE_TIER
             and value.get("decision_basis") == "discovery_criteria"
             and value.get("project_run_id") == str(project_run_id)
             and value.get("discovery_batch_id") == str(batch_id)
@@ -259,7 +382,7 @@ async def _exact_selected_tier_claim(
             matching.append(claim)
     if len(matching) != 1:
         raise SumbleAccountGapEligibilityError(
-            "account gap enrichment requires one exact live human-selected tier decision"
+            "account gap enrichment requires one exact live selected tier decision"
         )
     return matching[0]
 
@@ -291,12 +414,22 @@ async def compile_sumble_account_gap_preflight(
     if cents_per_credit < 0:
         raise SumbleAccountGapEligibilityError("Sumble cents-per-credit cannot be negative")
     field_keys = tuple(sorted(field_expected_value_credits))
-    if not field_keys or len(field_keys) > policy.maximum_fields:
+    # Only requestable fields consume the per-call cap: an unrequestable §3.1 row costs no
+    # provider call and settles as an honest unresolved plan row, so a comprehensive request
+    # naming all nine Sumble-owned fields (five requestable under the pinned v9 actions) must
+    # not be refused on raw count. An all-unrequestable set is refused separately below.
+    requestable_count = sum(1 for key in field_keys if _requestable(key))
+    if not field_keys or requestable_count > policy.maximum_fields:
         raise SumbleAccountGapEligibilityError("invalid Sumble account-gap field count")
     unknown = sorted(set(field_keys) - set(_SOURCE_BY_FIELD))
     if unknown:
         raise SumbleAccountGapEligibilityError(
             f"field(s) are not approved for Sumble S1: {', '.join(unknown)}"
+        )
+    if not any(_requestable(key) for key in field_keys):
+        raise SumbleAccountGapFieldsUnrequestable(
+            "the pinned Sumble v9 actions cannot request any selected field: "
+            f"{', '.join(field_keys)}"
         )
     values = {key: Decimal(field_expected_value_credits[key]) for key in field_keys}
     if any(value <= 0 for value in values.values()):
@@ -309,18 +442,44 @@ async def compile_sumble_account_gap_preflight(
         )
 
     reader = DbSealedDiscoveryAccountManifestReader(storage=storage, conn_factory=conn_factory)
+    discovery_receipt = None
     async with conn_factory() as conn:
         run = await get_project_run(conn, project_run_id)
         if run is None or run.workspace_id != workspace_id:
             raise SumbleAccountGapEligibilityError("Sumble account-gap project run does not exist")
-        if run.status is not ProjectRunStatus.ACTIVE:
-            raise SumbleAccountGapEligibilityError(
-                "Sumble account-gap enrichment requires an active project run"
-            )
-        if entity_research_job_id is None and run.phase is not ProjectPhase.DEEP:
-            raise SumbleAccountGapEligibilityError(
-                "historical Sumble account-gap enrichment requires an active deep-phase run"
-            )
+        if entity_research_job_id is not None:
+            exact_job = (
+                await conn.execute(
+                    text(
+                        "SELECT authorization_json FROM entity_research_job WHERE job_id=:job_id "
+                        "AND subject_type='account' AND subject_entity_id=:account_id "
+                        "AND workspace_id=:workspace_id AND project_id=:project_id "
+                        "AND project_run_id=:project_run_id"
+                    ),
+                    {
+                        "job_id": entity_research_job_id,
+                        "account_id": account_id,
+                        "workspace_id": workspace_id,
+                        "project_id": run.project_id,
+                        "project_run_id": project_run_id,
+                    },
+                )
+            ).scalar_one_or_none()
+            if exact_job is None:
+                raise SumbleAccountGapEligibilityError(
+                    "Sumble account-gap enrichment requires the exact Account research job"
+                )
+            job_authorization = EntityResearchJobAuthorization.model_validate(exact_job)
+            discovery_receipt = job_authorization.selection.discovery_receipt
+        if entity_research_job_id is None:
+            if run.status is not ProjectRunStatus.ACTIVE:
+                raise SumbleAccountGapEligibilityError(
+                    "Sumble account-gap enrichment requires an active project run"
+                )
+            if run.phase is not ProjectPhase.DEEP:
+                raise SumbleAccountGapEligibilityError(
+                    "historical Sumble account-gap enrichment requires an active deep-phase run"
+                )
     if entity_research_job_id is not None:
         # M8D account research is an independently confirmed action, not a projection of the
         # outer project phase.  Prove the exact running R6 job before compiling any provider
@@ -346,6 +505,7 @@ async def compile_sumble_account_gap_preflight(
             project_run_id=project_run_id,
             icp_key=run.icp_key,
             icp_version=run.icp_version,
+            discovery_receipt=discovery_receipt,
         )
     except DiscoverySealConflict as exc:
         raise SumbleAccountGapEligibilityError(
@@ -363,17 +523,19 @@ async def compile_sumble_account_gap_preflight(
             raise SumbleAccountGapEligibilityError(
                 "account lacks a workspace-local canonical primary domain"
             )
-        tier_claim = await _exact_selected_tier_claim(
-            conn=conn,
-            workspace_id=workspace_id,
-            account_id=account_id,
-            project_run_id=project_run_id,
-            batch_id=sealed.discovery_batch_id,
-            seal_sha256=sealed.seal_sha256,
-            icp_key=run.icp_key,
-            icp_version=run.icp_version,
-            policy=policy,
-        )
+        tier_claim = None
+        if entity_research_job_id is None:
+            tier_claim = await _exact_selected_tier_claim(
+                conn=conn,
+                workspace_id=workspace_id,
+                account_id=account_id,
+                project_run_id=project_run_id,
+                batch_id=sealed.discovery_batch_id,
+                seal_sha256=sealed.seal_sha256,
+                icp_key=run.icp_key,
+                icp_version=run.icp_version,
+                policy=policy,
+            )
         # FI-2 §6.3 species check.  The freshness ladder below reads the *workspace-merged*
         # current value, so "already answered, don't re-buy" is only a correct thing to say about
         # a **project_neutral** field: a project-relative value is one project's answer, and
@@ -403,8 +565,47 @@ async def compile_sumble_account_gap_preflight(
                 "Sumble account-gap enrichment answers project-neutral world facts only; "
                 f"declared project-relative: {', '.join(relative)}"
             )
+        # Pre-check the durable anti-double-spend rule *before* compiling a request that the
+        # ``account_gap_field_no_overlap`` trigger would refuse with a raw database error. The
+        # trigger stays the authority (this read can be raced, and the reservation converts its
+        # own raise); this exists so the ordinary case — a later job in the same project run
+        # asking again for a field an earlier job already bought, which the exact-field-set rejoin
+        # cannot serve — is a plain governed refusal instead of a suspended job.
+        #
+        # The refusal is whole-request even when only some fields overlap: dropping the bought
+        # ones silently would change the field set the agent authorized, and the agent can simply
+        # re-ask for the remainder. The message names exactly which fields to drop.
+        owners = await account_gap_window_field_owners(
+            conn,
+            workspace_id=workspace_id,
+            account_id=account_id,
+            observation_window=observation_window,
+            field_keys=field_keys,
+        )
+        if owners:
+            raise SumbleAccountGapFieldAlreadyAcquired(
+                _already_acquired_detail(requested=field_keys, owning_field_sets=owners)
+            )
         for field_key in field_keys:
             source_key = _SOURCE_BY_FIELD[field_key]
+            if not _requestable(field_key):
+                # Consumer obligation (contract §3.1 docstring): intersect ownership with what the
+                # pinned action can request *before* dispatch. The plan keeps the field so the
+                # durable ledger explains it and the R4 projection has a row for every requested
+                # key; ``_materialize`` settles it ``confirmed_missing``. No provider attribute is
+                # requested for it, so it costs nothing, and the registry's ``tier_plan`` is not
+                # consulted: that check gates *buying* a field from a source, and this field is
+                # not being bought from anyone.
+                field_plans.append(
+                    AccountGapFieldPlan(
+                        field_key=field_key,
+                        source_key=source_key,
+                        reason=AccountGapReason.MISSING,
+                        expected_value_credits=values[field_key],
+                        basis_claim_ids=(),
+                    )
+                )
+                continue
             definition = await get_effective_field(
                 conn,
                 scope=FieldRegistryScope.for_workspace(workspace_id),
@@ -442,13 +643,23 @@ async def compile_sumble_account_gap_preflight(
                 # expired.  The stale winner is the durable basis for the refresh.
                 reason = AccountGapReason.STALE
                 basis = (merged.provenance.claim_id,)
+            elif not merged.evidence_backed:
+                # The same span rule the completeness reader satisfies a field with
+                # (``CurrentValue.evidence_backed`` — one predicate, not two).  A fresh,
+                # confident, unconflicted winner carrying *no evidence span* is not an answer:
+                # refusing to re-buy it while nothing can ever count it as satisfied left the
+                # field permanently outstanding, so the account could never settle.  It is a gap
+                # like any other, and it is bought like any other; the span-less winner is the
+                # durable basis for the purchase.
+                reason = AccountGapReason.NO_EVIDENCE
+                basis = (merged.provenance.claim_id,)
             else:
                 # The one refusal §6.3(b) converts into a governed agent turn: the ladder found
                 # the field already answered.  Everything else in this function stays the base
                 # class and keeps suspending.
                 raise SumbleAccountGapNotEligible(
-                    f"{field_key} is already confidently resolved, fresh, and without an open "
-                    "conflict"
+                    f"{field_key} is already confidently resolved, fresh, evidence-backed, and "
+                    "without an open conflict"
                 )
             field_plans.append(
                 AccountGapFieldPlan(
@@ -460,17 +671,29 @@ async def compile_sumble_account_gap_preflight(
                 )
             )
 
-    org_fields = tuple(key for key in field_keys if key in _ORG_FIELDS)
     organization_body, organization_max = organization_request(
-        account.primary_domain, field_keys=org_fields
+        account.primary_domain, field_keys=_organization_request_fields(field_keys)
     )
     bounded = organization_max + (policy.jobs_limit if _HIRING in field_keys else 0)
-    if provider_credit_cap < bounded:
+    if provider_credit_cap < bounded and cap_refusal_is_enforced(
+        enforce_budget,
+        site=_SITE_GAP_PREFLIGHT,
+        reason="cap_below_bounded_maximum",
+        amounts={"provider_credit_cap": provider_credit_cap, "bounded_maximum": bounded},
+    ):
         raise SumbleAccountGapEligibilityError(
             f"provider cap {provider_credit_cap} is below bounded request maximum {bounded}"
         )
+    authorized_cap = _authorized_provider_credit_cap(
+        provider_credit_cap, bounded=bounded, enforce_budget=enforce_budget
+    )
     expected = sum(values.values(), Decimal(0))
-    if expected < provider_credit_cap:
+    if expected < authorized_cap and cap_refusal_is_enforced(
+        enforce_budget,
+        site=_SITE_GAP_PREFLIGHT,
+        reason="value_below_authorized_cap",
+        amounts={"expected_value_credits": expected, "provider_credit_cap": authorized_cap},
+    ):
         raise SumbleAccountGapEligibilityError(
             "expected field value does not justify the authorized provider-credit cap"
         )
@@ -485,16 +708,16 @@ async def compile_sumble_account_gap_preflight(
         discovery_seal_sha256=sealed.seal_sha256,
         account_id=account_id,
         primary_domain=account.primary_domain,
-        tier_claim_id=tier_claim.id,
+        tier_claim_id=tier_claim.id if tier_claim is not None else None,
         provider_api_version=SUMBLE_API_VERSION,
         provider_contract_version=SUMBLE_V9_CONTRACT_VERSION,
         pricing_policy_version=SUMBLE_ACCOUNT_GAP_PRICING_VERSION,
         field_policy_version=policy.version,
         observation_window=observation_window,
         fields=tuple(field_plans),
-        provider_credit_cap=provider_credit_cap,
+        provider_credit_cap=authorized_cap,
         expected_value_credits=expected,
-        money_budget_cap_cents=Decimal(provider_credit_cap) * cents_per_credit,
+        money_budget_cap_cents=Decimal(authorized_cap) * cents_per_credit,
         allow_unbounded_tech=allow_unbounded_tech,
     )
     return SumbleAccountGapPreflight(
@@ -545,7 +768,19 @@ class SumbleAccountGapCoordinator:
         *,
         before_dispatch: Callable[[AccountGapOperation], Awaitable[None]] | None = None,
     ) -> SumbleAccountGapResult:
-        operation, _created = await self._reserve(preflight)
+        try:
+            operation, _created = await self._reserve(preflight)
+        except AccountGapFieldWindowConflict as conflict:
+            # The pre-check lost a race with a concurrent create (or a caller reached the
+            # coordinator without one). The reservation transaction rolled back, so this is still
+            # zero-spend and zero-state; keep it the model-repairable species rather than letting
+            # a raw DBAPIError suspend the job.
+            raise SumbleAccountGapFieldAlreadyAcquired(
+                f"already acquired in this observation window: {conflict} — that purchase is "
+                "durable and cannot be repeated; re-ask the exact field set of the operation that "
+                "bought it to replay its durable outcome at zero spend, or finalize with the "
+                "honest gap"
+            ) from conflict
         terminal = self._terminal_result(operation, replay=True)
         if terminal is not None:
             return terminal
@@ -593,10 +828,8 @@ class SumbleAccountGapCoordinator:
             self._cents_per_credit,
         )
         provider_calls = 0
-        org_fields = tuple(
-            str(item.field_key)
-            for item in operation.request.fields
-            if item.source_key == ORGANIZATIONS_SOURCE_KEY
+        org_fields = _organization_request_fields(
+            [str(item.field_key) for item in operation.request.fields]
         )
         try:
             org, called = await self._drive_snapshot(
@@ -675,7 +908,20 @@ class SumbleAccountGapCoordinator:
             (Decimal(item.credits_used) for item in durable_snapshots.values()), Decimal(0)
         )
         cost = sum((item.cost_cents for item in durable_snapshots.values()), Decimal(0))
-        if charged > operation.request.provider_credit_cap:
+        # The money is already gone by the time this comparison can be made: ``/techs`` has no
+        # caller-side limit, so refusing here saves nothing and only destroys data we were billed
+        # for (it did exactly that live on 2026-08-19). Under the record-only posture the true
+        # charge is recorded and the operation is allowed to keep what it bought.
+        if charged > operation.request.provider_credit_cap and cap_refusal_is_enforced(
+            self._enforce_budget,
+            site=_SITE_GAP_DISPATCH,
+            reason="charge_above_authorized_cap",
+            amounts={
+                "provider_units_charged": charged,
+                "provider_credit_cap": operation.request.provider_credit_cap,
+                "cost_cents_charged": cost,
+            },
+        ):
             await self._fail_fields(operation, "sumble_unbounded_charge_exceeded_authorized_cap")
             receipt_key = await self._receipt(operation, durable_snapshots, claim_ids=())
             failed = operation.model_copy(
@@ -827,10 +1073,8 @@ class SumbleAccountGapCoordinator:
                     Decimal(
                         organization_request(
                             request.primary_domain,
-                            field_keys=tuple(
-                                str(item.field_key)
-                                for item in request.fields
-                                if item.source_key == ORGANIZATIONS_SOURCE_KEY
+                            field_keys=_organization_request_fields(
+                                [str(item.field_key) for item in request.fields]
                             ),
                         )[1]
                     )
@@ -1105,6 +1349,17 @@ class SumbleAccountGapCoordinator:
                     claim_ids.append(str(prior_result.sumble_claim_id))
                 continue
             source_key = plan.source_key
+            if not _requestable(str(plan.field_key)):
+                # Owned by this source under §3.1, unrequestable by its pinned v9 action: an
+                # honest terminal gap for the field's next authorized source, not a fabricated
+                # value and not a failure of this operation.
+                await self._put_field(
+                    operation,
+                    plan,
+                    state=AccountGapFieldState.CONFIRMED_MISSING,
+                    reason="source_cannot_request_field",
+                )
+                continue
             snapshot = snapshots.get(source_key)
             if snapshot is None:
                 await self._put_field(
@@ -1447,9 +1702,24 @@ class SumbleAccountGapStarter:
             expected = sum(
                 (Decimal(value) for value in field_expected_value_credits.values()), Decimal(0)
             )
+            organization_body, organization_max = organization_request(
+                existing.request.primary_domain,
+                field_keys=_organization_request_fields(
+                    [str(item.field_key) for item in existing.request.fields]
+                ),
+            )
+            # The stored cap is the *authorized* one, which the record-only posture may have
+            # raised to the bounded worst case. Re-derive it the same way, or an exact replay of
+            # the caller's own arguments would read as a changed authorization.
+            authorized_cap = _authorized_provider_credit_cap(
+                provider_credit_cap,
+                bounded=organization_max
+                + (self._policy.jobs_limit if _HIRING in field_keys else 0),
+                enforce_budget=self._enforce_budget,
+            )
             if (
                 existing.request.project_run_id != project_run_id
-                or existing.request.provider_credit_cap != provider_credit_cap
+                or existing.request.provider_credit_cap != authorized_cap
                 or existing.request.expected_value_credits != expected
                 or {
                     str(item.field_key): item.expected_value_credits
@@ -1464,14 +1734,6 @@ class SumbleAccountGapStarter:
             terminal = self._coordinator._terminal_result(existing, replay=True)
             if terminal is not None:
                 return terminal
-            organization_body, organization_max = organization_request(
-                existing.request.primary_domain,
-                field_keys=tuple(
-                    str(item.field_key)
-                    for item in existing.request.fields
-                    if item.source_key == ORGANIZATIONS_SOURCE_KEY
-                ),
-            )
             return await self._coordinator.start(
                 SumbleAccountGapPreflight(
                     request=existing.request,
@@ -1536,6 +1798,8 @@ __all__ = [
     "SumbleAccountGapCoordinator",
     "SumbleAccountGapEligibilityError",
     "SumbleAccountGapError",
+    "SumbleAccountGapFieldAlreadyAcquired",
+    "SumbleAccountGapFieldsUnrequestable",
     "SumbleAccountGapNotEligible",
     "SumbleAccountGapOutcome",
     "SumbleAccountGapPolicy",

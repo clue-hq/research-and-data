@@ -79,7 +79,19 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # v39 (genad2) is v38 with the entry promoted once more to `open_design_leg@4` (the scene
         # births ZERO pages; the design agent authors them, and the format inputs are deleted) and
         # prompt v7's route-and-delegate guidance, which states no dimension at all.
-        AgentRole.HEAD_OF_ABM: ("e90e0f9f53466a1d03af609f62c5fd214c204c1a590008001819e1740e36a8ed"),
+        # v41 (comprehensive research, Slice B wave 2) re-pins the directive draft tool at @4 and
+        # account-deep-steering at v7: a normal full-profile request now compiles deterministically
+        # to the fixed 21-field account profile instead of the v6 skill's three qualitative fields.
+        # v42 (Slice B browser-gate repair) re-pins the draft tool at @5 (omittable
+        # `directive.field_keys`) and account-deep-steering at v8, and re-pins the amended v8 sha
+        # after the committee co-definition section (founder ruling 2026-08-20: the deepagent
+        # settles product and the four persona positions with the user before drafting a
+        # committee-discovering directive, and the plan carries the outcome).
+        # v43 (ARV2-R0 merge) is v40 plus v42's directive contract — `draft_account_research_
+        # directive@5` and account-deep-steering v8 — and nothing else; v40 and v42 were divergent
+        # siblings (v42 pins the retired `open_design_leg@1`), so the merge minted the join rather
+        # than promoting either. Digest measured off the merged tree.
+        AgentRole.HEAD_OF_ABM: ("eebab7e415e87ad4f8ac5e7a5ea9376db3ad11247a9dcfbd3b895a5204aaed2e"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -154,7 +166,11 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # gates, FI-2's selected-Account launch and reads: 111 + 18 = 129). Brand Ad Assets v1 W2
     # adds its four ungranted lane envelopes, disclosed unavailable to every surface
     # (129 + 4 = 133).
-    assert len(by_address) == 133
+    # Slice B wave 2 installs `draft_account_research_directive@4` alongside its replayable
+    # predecessors, so the inventory gains exactly one address, and the Slice B browser-gate
+    # repair installs @5 the same way. The ARV2-R0 merge unions both lines' additions; 136 is
+    # measured off the merged tree, not derived from either side's arithmetic.
+    assert len(by_address) == 136
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -235,7 +251,10 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # (78 + 51 = 129); all but `open_design_leg` are role-unavailable to the Head of ABM.
     # Brand Ad Assets v1 W2's four ungranted lane envelopes join on the same terms as
     # `synthesize_entity_prose@1`: machine-invoked, disclosed, granted to nobody (129 + 4 = 133).
-    assert len(by_address) == 133
+    # Slice B wave 2 and the browser-gate repair install `draft_account_research_directive@4`
+    # and @5 alongside their replayable predecessors. The ARV2-R0 merge unions both lines'
+    # additions; 136 is measured off the merged tree, not derived from either side's arithmetic.
+    assert len(by_address) == 136
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -254,7 +273,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert by_address["inspect_product_claim@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["list_product_knowledge@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {
-        "draft_account_research_directive@3",
+        "draft_account_research_directive@5",
         "evaluate_stage0_readiness@2",
         "get_research_view@1",
         "inspect_readiness_history@1",
@@ -335,7 +354,7 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v39"
+    assert production.profile_ref.address == "profile:head-of-abm@v43"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
         "skill:stage0-interview@v20"
     )
@@ -383,7 +402,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
 
     assert len(disclosures) == 2
     assert disclosures[0].resource.address == "skill:stage0-interview@v20"
-    assert disclosures[1].resource.address == "skill:account-deep-steering@v6"
+    assert disclosures[1].resource.address == "skill:account-deep-steering@v8"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one compact question" in body
@@ -512,7 +531,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     head = narrowed.resolve(AgentRole.HEAD_OF_ABM)
     assert "evaluate_stage0_readiness@2" not in {pin.address for pin in head.profile.tools}
     assert [item.resource.address for item in head.skill_disclosures()] == [
-        "skill:account-deep-steering@v6"
+        "skill:account-deep-steering@v8"
     ]
 
 

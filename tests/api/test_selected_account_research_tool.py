@@ -70,6 +70,7 @@ def _wire_resolution(
     monkeypatch: pytest.MonkeyPatch,
     *,
     ref_type: str = "account",
+    discovery_ready: bool = True,
 ) -> SimpleNamespace:
     directive = SimpleNamespace(
         directive_id=_DIRECTIVE,
@@ -120,6 +121,15 @@ def _wire_resolution(
     async def estimate(*_args: object, **_kwargs: object):
         return SimpleNamespace(total_cents=Decimal("50"))
 
+    async def require_discovery(*_args: object, **_kwargs: object):
+        if not discovery_ready:
+            raise subject.AccountResearchDiscoveryNotReady(
+                "Account discovery is still in progress. Please wait and try account profiling "
+                "again after discovery finishes.",
+                reason_code="account_discovery_in_progress",
+            )
+        return SimpleNamespace(discovery_seal_sha256="b" * 64)
+
     monkeypatch.setattr(subject, "load_turn_identity", load_turn_identity)
     monkeypatch.setattr(subject, "get_membership", get_membership)
     monkeypatch.setattr(subject, "submission_context_refs", submission_context_refs)
@@ -128,6 +138,7 @@ def _wire_resolution(
     monkeypatch.setattr(subject, "get_latest_research_directive", get_directive)
     monkeypatch.setattr(subject, "research_directive_account_ids", directive_ids)
     monkeypatch.setattr(subject, "compute_account_research_estimate", estimate)
+    monkeypatch.setattr(subject, "require_sealed_account_discovery", require_discovery)
     return directive
 
 
@@ -193,6 +204,28 @@ def test_selected_launch_confirms_as_the_human_then_launches_the_exact_set(
     assert authority["actor"] == "user-1"
     assert authority["source_action_ref"] == _ACTION
     assert result.references["selected_accounts"] == 2
+
+
+def test_selected_launch_tells_the_agent_to_wait_for_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launcher = _Launcher()
+    _wire_resolution(monkeypatch, discovery_ready=False)
+
+    refused = asyncio.run(
+        LaunchSelectedAccountResearchTool(
+            launcher,
+            budget_controls_enabled=False,
+            conn_factory=_connection,
+        ).preconditions(_inputs(_ACCOUNT_A, _ACCOUNT_B), _context())
+    )
+
+    assert refused[0].reason_code == "account_discovery_in_progress"
+    assert refused[0].message == (
+        "Account discovery is still in progress. Please wait and try account profiling again "
+        "after discovery finishes."
+    )
+    assert launcher.calls == []
 
 
 def test_selected_launch_can_retry_an_already_confirmed_exact_directive(

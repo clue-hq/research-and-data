@@ -17,6 +17,7 @@ from clue_api.frontend_read.contact_email_lookup import build_contact_email_look
 from clue_api.narrative_wiring import register_narrative_wiring
 from clue_api.observability_wiring import build_observability_surface
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
+from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.projections_app import create_projections_app
 from clue_api.research_view_runtime import (
     ProductionResearchViewRuntime,
@@ -30,6 +31,9 @@ from clue_api.run_composition import (
 from clue_api.storage_wiring import build_storage_backend
 from clue_api.sumble_account_gaps import build_production_sumble_account_gap_starter
 from clue_api.toolbelt_wiring import build_toolbelt
+from clue_api.transactional_account_launch import (
+    build_transactional_account_launch_invoker_factory,
+)
 from clue_config import Secrets, Settings, load_settings
 from clue_db import transaction
 from clue_obs import get_logger
@@ -61,6 +65,9 @@ def build_application(
 
     resolved = settings if settings is not None else load_settings()
     resolved_secrets = secrets if secrets is not None else Secrets()
+    # Startup gate: a declared product path that is missing a provider credential refuses here,
+    # before any collaborator is composed, rather than serving silently-degraded provider slots.
+    assert_product_path_composition(resolved, resolved_secrets)
     storage = build_storage_backend(resolved)
     research_views: ProductionResearchViewRuntime | None = (
         build_production_research_view_runtime(storage=storage) if _c7_enabled(resolved) else None
@@ -291,6 +298,17 @@ def build_application(
         auth_service=auth_service,
         auth_closer=auth_closer,
         contact_email_lookup=contact_email_lookup,
+        # Slice B founder ruling: a budget-controls-disabled directive approval confirms and
+        # launches in one SQL transaction. This factory composes only the launch controller and
+        # queue writer over that request's connection — never the model/provider worker runtime.
+        transactional_tool_invoker_factory=(
+            build_transactional_account_launch_invoker_factory(
+                settings=resolved,
+                storage=storage,
+            )
+            if resolved.entity_research_runtime_enabled and not resolved.budget_controls_enabled
+            else None
+        ),
     )
 
 

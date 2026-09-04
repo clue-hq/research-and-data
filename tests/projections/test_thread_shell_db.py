@@ -659,6 +659,8 @@ def test_message_pages_carry_typed_refs_attributed_by_message_role(
 def test_message_pages_are_keyset_over_sequence_and_workspace_scoped(
     require_thread_db: None,
 ) -> None:
+    """Newest page first, before-cursor walking backward (Slice C C5's flipped read)."""
+
     del require_thread_db
 
     async def scenario() -> None:
@@ -694,7 +696,7 @@ def test_message_pages_are_keyset_over_sequence_and_workspace_scoped(
                 limit=2,
                 conn_factory=factory,
             )
-            assert [item.sequence for item in first.items] == [1, 2]
+            assert [item.sequence for item in first.items] == [4, 5]
 
             middle = await thread_messages(
                 workspace_id=project.workspace_id,
@@ -703,7 +705,7 @@ def test_message_pages_are_keyset_over_sequence_and_workspace_scoped(
                 cursor=first.next_cursor,
                 conn_factory=factory,
             )
-            assert [item.sequence for item in middle.items] == [3, 4]
+            assert [item.sequence for item in middle.items] == [2, 3]
 
             exact = await thread_messages(
                 workspace_id=project.workspace_id,
@@ -712,7 +714,7 @@ def test_message_pages_are_keyset_over_sequence_and_workspace_scoped(
                 cursor=middle.next_cursor,
                 conn_factory=factory,
             )
-            assert [item.sequence for item in exact.items] == [5]
+            assert [item.sequence for item in exact.items] == [1]
             assert exact.next_cursor is None
 
             assert (

@@ -637,7 +637,7 @@ def _p2_envelope(
                 "product_id": selection.product_id,
                 "project_run_id": selection.project_run_id,
                 "selection": selection,
-                "agent_profile_ref": "agent-profile:account-research:v1",
+                "agent_profile_ref": "agent-profile:account-research:v2",
                 "agent_profile_sha256": account_research_profile_sha256(),
             }
         ).model_dump(mode="python")
@@ -711,7 +711,10 @@ async def _run_p2(
         update={"active_worker_id": "fi2-s3-economics", "lease_generation": 1}
     )
     fence = EntityResearchExecutionFence(
-        task_id=uuid4(), worker_id="fi2-s3-economics", lease_generation=1
+        task_id=uuid4(),
+        worker_id="fi2-s3-economics",
+        lease_generation=1,
+        task_attempt=1,
     )
     contacts = (
         UUID(

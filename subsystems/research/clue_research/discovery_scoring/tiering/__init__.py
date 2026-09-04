@@ -29,6 +29,8 @@ from clue_research.discovery_scoring.tiering.config import (
     TieringConfig,
 )
 from clue_research.discovery_scoring.tiering.engine import (
+    ACCOUNT_RESEARCH_ELIGIBLE_TIERS,
+    TIER_CLAIM_MAX_SOURCE_TIER,
     TIER_FIELD,
     assign_tiers,
     cutoff_version,
@@ -72,6 +74,8 @@ __all__ = [
     "persist_tier",
     "persist_discovery_selection_tier",
     "TIER_FIELD",
+    "ACCOUNT_RESEARCH_ELIGIBLE_TIERS",
+    "TIER_CLAIM_MAX_SOURCE_TIER",
     # results + decision
     "AccountScoreView",
     "AccountTierView",

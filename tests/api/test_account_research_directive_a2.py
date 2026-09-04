@@ -832,3 +832,145 @@ def test_a2_draft_confirm_memory_override_pin_and_supersession(tmp_path: Path) -
             assert event_types.count("superseded") == 1
 
     run_async(scenario())
+
+
+def test_a_fresh_draft_supersedes_an_unconfirmed_latest_draft(tmp_path: Path) -> None:
+    """A draft is a proposal, not an authority — redrafting must never deadlock the lineage.
+
+    Found live at the Slice B browser gate: a draft whose effort tier could never price its
+    confirmation gate blocked every successor forever ("cannot append behind an unconfirmed
+    directive"), because confirmation is the only lifecycle exit and no reject path exists. A
+    fresh draft now supersedes an unconfirmed latest draft with an append-only ``superseded``
+    event naming its successor; confirmed history keeps the strict predecessor rule.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path / "artifacts")
+            fixture = await seed_insight_health_account_deep_fixture(
+                conn,
+                pages=_pages(),
+                storage=storage,
+            )
+            cf = conn_session_factory(conn)
+
+            def memory_factory(write_conn: AsyncConnection) -> WriteSeam:
+                return WriteSeam(
+                    write_conn,
+                    add_judge(),
+                    settings=make_settings(),
+                    caps=MemoryCaps(),
+                )
+
+            registry = ToolRegistry()
+            for tool in build_research_directive_tools(
+                memory_write_factory=memory_factory,
+                conn_factory=cf,
+            ):
+                registry.register(tool, make_default=tool.version == "2")
+
+            def draft_request() -> dict[str, object]:
+                return {
+                    "project_id": PROJECT_ID,
+                    "product_id": PRODUCT_ID,
+                    "icp_key": fixture.deep_icp_key,
+                    "icp_version": fixture.deep_icp_version,
+                    "body": _body(fixture.selected_account_id).model_dump(mode="json"),
+                    "account_overrides": [],
+                    "user_instruction": USER_DIRECTION,
+                    "source_turn_ref": "agent-turn:deep-direction-1",
+                }
+
+            first_operation = new_operation_id()
+            first = await invoke_tool(
+                registry,
+                "draft_account_research_directive",
+                draft_request(),
+                ToolContext(
+                    workspace_id=WORKSPACE_ID,
+                    actor="agent",
+                    conn_factory=cf,
+                    operation_id=first_operation,
+                ),
+                idempotency_ttl_s=TTL,
+            )
+            assert first.references["status"] == "draft"
+
+            second_operation = new_operation_id()
+            second = await invoke_tool(
+                registry,
+                "draft_account_research_directive",
+                draft_request(),
+                ToolContext(
+                    workspace_id=WORKSPACE_ID,
+                    actor="agent",
+                    conn_factory=cf,
+                    operation_id=second_operation,
+                ),
+                idempotency_ttl_s=TTL,
+            )
+            assert second.references["status"] == "draft"
+            assert int(second.references["version"]) == int(first.references["version"]) + 1
+
+            rows = {
+                str(row.directive_id): row
+                for row in (
+                    await conn.execute(
+                        text(
+                            "SELECT directive_id, status::text AS status, predecessor_id "
+                            "FROM account_research_directive WHERE workspace_id=:w "
+                            "AND project_id=:p ORDER BY version"
+                        ),
+                        {"w": WORKSPACE_ID, "p": PROJECT_ID},
+                    )
+                ).all()
+            }
+            first_row = rows[str(first_operation)]
+            second_row = rows[str(second_operation)]
+            assert first_row.status == "superseded"
+            assert second_row.status == "draft"
+            # The fresh draft inherits the superseded draft's own predecessor (None here, the
+            # lineage's confirmed directive when one exists) — never the superseded draft itself.
+            assert second_row.predecessor_id is None
+            superseded_event = (
+                await conn.execute(
+                    text(
+                        "SELECT successor_id FROM account_research_directive_event "
+                        "WHERE directive_id=:d AND event_type='superseded'"
+                    ),
+                    {"d": first_operation},
+                )
+            ).one()
+            assert str(superseded_event.successor_id) == str(second_operation)
+
+    run_async(scenario())
+
+
+def test_a_committee_intent_draft_without_a_capable_source_is_refused_repairably() -> None:
+    """A draft stating committee intent must be executable, or committee-off must be explicit.
+
+    Found live (directive 55c11b06 v3): a draft repair stripped ``sumble_people`` from the
+    allowed sources while keeping the human's explicit cap-200/depth-2 committee plan, so the
+    confirmation card showed committee discovery while the launched selection compiled zero
+    committee sources and every coverage row settled ``Committee research was not selected``.
+    The draft input now refuses the contradiction as an input validation error (the repairable
+    species), while both honest shapes stay accepted.
+    """
+
+    from clue_api.research_directive_tools import ResearchDirectiveBodyDraftInput
+
+    account_id = EntityId(UUID("10000000-0000-0000-0000-000000000099"))
+    intent_without_source = _body(account_id).model_dump(mode="json")
+    intent_without_source["source_policy"]["allowed_source_keys"] = ["exa_deep"]
+    intent_without_source["source_policy"]["preferred_source_keys"] = ["exa_deep"]
+    with pytest.raises(ValidationError, match="committee-capable source"):
+        ResearchDirectiveBodyDraftInput.model_validate(intent_without_source)
+
+    capable = _body(account_id).model_dump(mode="json")
+    ResearchDirectiveBodyDraftInput.model_validate(capable)
+
+    committee_off = _body(account_id).model_dump(mode="json")
+    committee_off["source_policy"]["allowed_source_keys"] = ["exa_deep"]
+    committee_off["source_policy"]["preferred_source_keys"] = ["exa_deep"]
+    committee_off["committee_plan"] = {}
+    ResearchDirectiveBodyDraftInput.model_validate(committee_off)

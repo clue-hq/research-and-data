@@ -17,9 +17,10 @@ Charter slice D4's acceptance criterion, end to end in one conversation:
    refused;
 6. and the whole chain is legible afterwards as one join: gate → confirming turn → launched run.
 
-The fixture is the A1 Insight Health account plus a second workspace-local account with its own
-human tier checkpoint, both carried by one drafted directive — the charter's "two accounts with
-approved tier checkpoints".
+The fixture is the A1 Insight Health account plus a second workspace-local, low-signal account,
+both carried by one drafted directive whose execution effort is ``standard``.  The deliberate
+signal-tier / effort-tier mismatch pins the founder ruling that scoring is advisory: explicit,
+attributable Account selection authorizes research regardless of a high/low signal label.
 """
 
 from __future__ import annotations
@@ -42,7 +43,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.account_research_estimate import compute_account_research_estimate
 from clue_api.account_research_fleet import (
     AccountResearchFleetPolicy,
+    AccountResearchFleetProjection,
     AccountResearchFleetService,
+    AccountResearchFleetState,
 )
 from clue_api.account_research_fleet_launch import (
     AccountResearchFleetLauncher,
@@ -51,10 +54,11 @@ from clue_api.account_research_fleet_launch import (
 )
 from clue_api.agent_gate import get_gate, money_text
 from clue_api.agent_gate_tools import OpenDirectiveConfirmationGateTool, gate_ref
-from clue_api.agent_turn_submission import insert_submission
+from clue_api.agent_turn_submission import insert_submission, submission_context_refs
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
 from clue_api.conversation_capture import persist_user_turn
+from clue_api.entity_research_launch_tools import LaunchSelectedAccountResearchTool
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.projections_app import create_projections_app
 from clue_api.research_directive_tools import build_research_directive_tools
@@ -94,6 +98,7 @@ from clue_toolbelt import (
     invoke_tool,
 )
 from tests._identity import seed_principal
+from tests.api.account_deep_test_support import in_progress_discovery_run
 from tests.api.test_account_deep_fixture_a1 import _pages
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
@@ -175,8 +180,10 @@ async def _seed_two_account_conversation(
     tmp_path: Path,
     *,
     create_turn_row: bool = True,
+    second_signal_tier: str | None = "low",
+    effort_tier: str = "standard",
 ) -> _Scenario:
-    """The canonical fixture: two tier-checkpointed accounts, one thread, one drafted directive.
+    """The canonical fixture: two selected accounts, one thread, one drafted directive.
 
     ``create_turn_row`` writes the worker's half of the opening turn's identity. It defaults on
     because a gate's presenting-turn FK needs it and this module never runs a real C5 execution;
@@ -191,33 +198,34 @@ async def _seed_two_account_conversation(
     product_id = fixture.discovery_fixture.product_id
     conn_factory = conn_session_factory(conn)
 
-    # A second account of the same workspace, with its own *human* tier checkpoint written by the
-    # real writer rather than hand-inserted — the launcher's proof of approval is exactly this row.
+    # A second account of the same workspace.  Its low signal tier is real checkpoint metadata,
+    # not launch authority: the current user turn's exact Account refs are the selection receipt.
     second_account_id = await insert_account_entity(
         conn,
         canonical_name="Northwind Care Group",
         primary_domain="northwindcare.example",
         workspace_id=workspace_id,
     )
-    await persist_discovery_selection_tier(
-        conn,
-        view=DiscoveryCriteriaAccountView(
-            account_id=second_account_id,
-            disposition=DiscoverySelectionDisposition.SELECTED,
-            criteria=(),
-            required_field_states={},
-        ),
-        tier="high",
-        selection_policy_version="d4-acceptance-v1",
-        decision_version="d4-acceptance-v1",
-        discovery_batch_id=str(fixture.discovery_batch_id),
-        discovery_seal_sha256=fixture.discovery_seal_sha256,
-        project_run_id=fixture.project_run_id,
-        run_id=RunId(uuid5(NAMESPACE_URL, "lane-d4:optionb:second-tier-run")),
-        workspace_id=workspace_id,
-        icp_key=fixture.deep_icp_key,
-        icp_version=fixture.deep_icp_version,
-    )
+    if second_signal_tier is not None:
+        await persist_discovery_selection_tier(
+            conn,
+            view=DiscoveryCriteriaAccountView(
+                account_id=second_account_id,
+                disposition=DiscoverySelectionDisposition.SELECTED,
+                criteria=(),
+                required_field_states={},
+            ),
+            tier=second_signal_tier,
+            selection_policy_version="d4-acceptance-v1",
+            decision_version="d4-acceptance-v1",
+            discovery_batch_id=str(fixture.discovery_batch_id),
+            discovery_seal_sha256=fixture.discovery_seal_sha256,
+            project_run_id=fixture.project_run_id,
+            run_id=RunId(uuid5(NAMESPACE_URL, "lane-d4:optionb:second-tier-run")),
+            workspace_id=workspace_id,
+            icp_key=fixture.deep_icp_key,
+            icp_version=fixture.deep_icp_version,
+        )
 
     await seed_principal(
         conn,
@@ -362,7 +370,7 @@ async def _seed_two_account_conversation(
             contact_reveals_allowed=False,
         ),
         effort_policy=ResearchEffortPolicy(
-            tier="high",
+            tier=effort_tier,
             max_depth=2,
             max_fanout=6,
             budget_cap_cents=_PER_ACCOUNT_CAP,
@@ -421,7 +429,13 @@ def _gate_tool_registry(conn_factory: Any) -> ToolRegistry:
     return registry
 
 
-def _app(conn: AsyncConnection, scenario: _Scenario) -> Any:
+def _app(
+    conn: AsyncConnection,
+    scenario: _Scenario,
+    *,
+    settings: Settings | None = None,
+    extra_tools: tuple[Any, ...] = (),
+) -> Any:
     cf = scenario.conn_factory
     registry = ToolRegistry()
     register_thread_tools(registry, conn_factory=cf)
@@ -430,6 +444,8 @@ def _app(conn: AsyncConnection, scenario: _Scenario) -> Any:
         conn_factory=cf,
     ):
         registry.register(tool, make_default=tool.version == "2")
+    for tool in extra_tools:
+        registry.register(tool, make_default=True)
 
     def resolve(workspace_id: str) -> RequestPrincipal:
         return RequestPrincipal(
@@ -441,16 +457,17 @@ def _app(conn: AsyncConnection, scenario: _Scenario) -> Any:
             authenticated_at=_AUTHENTICATED_AT,
         )
 
+    app_settings = settings if settings is not None else _settings()
     return create_projections_app(
         surface=build_surface(conn),
         tool_invoker=build_tool_invoker(
             registry=registry,
             idempotency_store=DbIdempotencyStore(conn_factory=cf),
             storage=_MemoryStorage(),
-            settings=_settings(),
+            settings=app_settings,
             conn_factory=cf,
         ),
-        settings=_settings(),
+        settings=app_settings,
         conn_factory=cf,
         manage_db_lifespan=False,
         ingestion_storage=scenario.storage,
@@ -458,14 +475,19 @@ def _app(conn: AsyncConnection, scenario: _Scenario) -> Any:
     )
 
 
-async def _open_gate(conn: AsyncConnection, scenario: _Scenario) -> Any:
+async def _open_gate(
+    conn: AsyncConnection,
+    scenario: _Scenario,
+    *,
+    project_run_id: ProjectRunId | None = None,
+) -> Any:
     """The agent's own act: present the gate through the governed tool."""
 
     result = await invoke_tool(
         _gate_tool_registry(scenario.conn_factory),
         "open_directive_confirmation_gate",
         {
-            "project_run_id": str(scenario.fixture.project_run_id),
+            "project_run_id": str(project_run_id or scenario.fixture.project_run_id),
             "research_directive_id": str(scenario.directive_id),
             "account_entity_ids": [str(value) for value in scenario.account_ids],
             "source_turn_ref": derive_turn_action_ref(scenario.presenting_turn_id),
@@ -485,7 +507,7 @@ async def _open_gate(conn: AsyncConnection, scenario: _Scenario) -> Any:
 
 
 def test_the_option_b_kickoff_flow_end_to_end(tmp_path: Path) -> None:
-    """Draft → gate → approve → confirm → launch, with one number and one receipt throughout."""
+    """A mixed high/low-signal set launches at standard effort from one explicit user selection."""
 
     async def scenario_body() -> None:
         async with rollback_conn() as conn:
@@ -739,46 +761,56 @@ def test_the_gate_amount_is_the_number_the_launcher_verifies(tmp_path: Path) -> 
     run_async(scenario_body())
 
 
-def test_a_gate_cannot_be_presented_for_an_account_without_a_human_tier_checkpoint(
+def test_a_selected_account_without_a_numeric_tier_can_still_be_presented_for_research(
     tmp_path: Path,
 ) -> None:
-    """The gate's precondition is the launcher's: an unapproved account earns no gate at all."""
+    """Numeric tiering is optional prioritization metadata, never an Account eligibility check."""
 
     async def scenario_body() -> None:
         async with rollback_conn() as conn:
-            scenario = await _seed_two_account_conversation(conn, tmp_path)
-            stranger_id = await insert_account_entity(
+            scenario = await _seed_two_account_conversation(
                 conn,
-                canonical_name="Unapproved Health Partners",
-                primary_domain="unapproved.example",
-                workspace_id=scenario.workspace_id,
+                tmp_path,
+                second_signal_tier=None,
+                effort_tier="high",
             )
-            with pytest.raises(PreconditionFailed) as caught:
-                await invoke_tool(
-                    _gate_tool_registry(scenario.conn_factory),
-                    "open_directive_confirmation_gate",
-                    {
-                        "project_run_id": str(scenario.fixture.project_run_id),
-                        "research_directive_id": str(scenario.directive_id),
-                        "account_entity_ids": [str(stranger_id)],
-                        "source_turn_ref": derive_turn_action_ref(scenario.presenting_turn_id),
-                    },
-                    ToolContext(
-                        workspace_id=scenario.workspace_id,
-                        actor="agent",
-                        conn_factory=scenario.conn_factory,
-                        operation_id=new_operation_id(),
-                    ),
-                    idempotency_ttl_s=60,
-                )
-            assert caught.value.failures[0].reason_code in {
-                "account_tier_checkpoint_missing",
-                "research_directive_invalid",
-            }
+            opened = await _open_gate(conn, scenario)
+            assert opened.references["account_count"] == 2
+            assert opened.references["max_spend_cents"] == money_text(2 * _PER_ACCOUNT_CAP)
             assert (
                 await conn.execute(
                     text("SELECT count(*) FROM agent_gate WHERE workspace_id = :ws"),
                     {"ws": scenario.workspace_id},
+                )
+            ).scalar_one() == 1
+
+    run_async(scenario_body())
+
+
+def test_agent_tells_user_to_wait_while_account_discovery_is_unsealed(tmp_path: Path) -> None:
+    async def scenario_body() -> None:
+        async with rollback_conn() as conn:
+            scenario = await _seed_two_account_conversation(conn, tmp_path)
+            pending_run_id = await in_progress_discovery_run(
+                conn,
+                workspace_id=scenario.workspace_id,
+                template_project_run_id=scenario.fixture.project_run_id,
+                template_discovery_plan_id=scenario.fixture.discovery_plan_id,
+            )
+
+            with pytest.raises(PreconditionFailed) as caught:
+                await _open_gate(conn, scenario, project_run_id=pending_run_id)
+
+            failure = caught.value.failures[0]
+            assert failure.reason_code == "account_discovery_in_progress"
+            assert failure.message == (
+                "Account discovery is still in progress. Please wait and try account profiling "
+                "again after discovery finishes."
+            )
+            assert (
+                await conn.execute(
+                    text("SELECT count(*) FROM agent_gate WHERE workspace_id = :workspace_id"),
+                    {"workspace_id": scenario.workspace_id},
                 )
             ).scalar_one() == 0
 
@@ -831,5 +863,136 @@ def test_presenting_the_same_gate_twice_in_one_turn_is_one_gate(tmp_path: Path) 
                     {"ws": scenario.workspace_id},
                 )
             ).scalar_one() == 1
+
+    run_async(scenario_body())
+
+
+class _StubLaunchService:
+    """Records the launch request the atomic approval hands the real launcher."""
+
+    def __init__(self, workspace_id: str, project_id: str, product_id: str) -> None:
+        self.workspace_id = workspace_id
+        self.project_id = project_id
+        self.product_id = product_id
+        self.requests: list[tuple[Any, str, str, Any]] = []
+
+    async def launch(
+        self,
+        request: AccountResearchFleetLaunchRequest,
+        *,
+        actor: str,
+        source_action_ref: str,
+        source_operation_id: Any,
+    ) -> AccountResearchFleetProjection:
+        self.requests.append((request, actor, source_action_ref, source_operation_id))
+        return AccountResearchFleetProjection(
+            research_run_id=uuid4(),
+            workspace_id=self.workspace_id,
+            project_id=self.project_id,
+            product_id=self.product_id,
+            project_run_id=request.project_run_id,
+            fleet_state=AccountResearchFleetState.OPEN,
+            run_state="active",
+            selected_accounts=0,
+            queued_accounts=0,
+            active_accounts=0,
+            waiting_accounts=0,
+            paused_accounts=0,
+            terminal_accounts=0,
+            completed_accounts=0,
+            needs_review_accounts=0,
+            spent_cents=Decimal(0),
+            budget_cap_cents=request.approved_budget_cap_cents,
+            jobs=(),
+            review_queue=(),
+            contact_research_request_count=0,
+        )
+
+
+def test_budget_disabled_approval_atomically_confirms_and_launches(tmp_path: Path) -> None:
+    """Founder ruling 2026-08-19 (Slice B): with budget controls DISABLED, the human's approval
+    of a directive-confirmation gate is one atomic act — the server confirms the reviewed draft
+    AND launches through ``launch_selected_account_research@1``. The tool's account authority is
+    the approval turn's durable context refs, which the capture path records from the gate's
+    frozen account set; budget-controls-enabled deployments keep the confirm-only gate unchanged
+    (the previous test).
+    """
+
+    async def scenario_body() -> None:
+        async with rollback_conn() as conn:
+            scenario = await _seed_two_account_conversation(conn, tmp_path)
+            opened = await _open_gate(conn, scenario)
+            gate_id = UUID(str(opened.references["gate_id"]))
+            view = await get_gate(conn, workspace_id=scenario.workspace_id, gate_id=gate_id)
+            assert view is not None
+
+            stub = _StubLaunchService(
+                scenario.workspace_id, scenario.project_id, scenario.product_id
+            )
+            launch_tool = LaunchSelectedAccountResearchTool(
+                service=stub,
+                budget_controls_enabled=False,
+                conn_factory=scenario.conn_factory,
+            )
+            app = _app(
+                conn,
+                scenario,
+                settings=_settings(budget_controls_enabled=False),
+                extra_tools=(launch_tool,),
+            )
+            transport = ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+                response = await client.post(
+                    f"/api/v1/projects/{scenario.project_id}/threads/{scenario.thread_id}/turns",
+                    json={
+                        "gate_response": {
+                            "gate_id": str(gate_id),
+                            "decision": "approved",
+                            "expected_subject_sha256": scenario.directive_sha256,
+                            "expected_estimated_cost_cents": money_text(view.gate.max_spend_cents),
+                        }
+                    },
+                    headers={
+                        "X-Workspace-Id": scenario.workspace_id,
+                        "Idempotency-Key": "optionb-approve-launch",
+                    },
+                )
+            assert response.status_code == 202, response.text
+            confirming_turn_id = UUID(response.json()["data"]["turn_id"])
+
+            # The approval turn's durable refs are the gate's frozen account set, in order.
+            refs = await submission_context_refs(
+                conn, workspace_id=scenario.workspace_id, turn_id=confirming_turn_id
+            )
+            assert [ref.object_id for ref in refs] == [str(v) for v in scenario.account_ids]
+            assert all(ref.object_type == "account" for ref in refs)
+
+            # Confirmed…
+            directive_row = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT status, confirmed_by FROM account_research_directive "
+                            "WHERE directive_id=:id"
+                        ),
+                        {"id": scenario.directive_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert directive_row["status"] == "confirmed"
+            assert directive_row["confirmed_by"] == USER_ID
+
+            # …and launched, atomically, from the same approval: the stub launcher received the
+            # gate's exact account set, the server-computed amount, and the turn-derived receipt.
+            assert len(stub.requests) == 1
+            request, actor, source_action_ref, _operation = stub.requests[0]
+            assert request.account_entity_ids == tuple(
+                UUID(str(value)) for value in scenario.account_ids
+            )
+            assert request.approved_budget_cap_cents == view.gate.max_spend_cents
+            assert actor == USER_ID
+            assert source_action_ref == derive_turn_action_ref(confirming_turn_id)
 
     run_async(scenario_body())

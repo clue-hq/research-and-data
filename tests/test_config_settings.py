@@ -13,6 +13,18 @@ from clue_config import (
 from clue_config.gateway import default_gateway_config
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_product_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Assert the *code* defaults, not the operator's deployment posture.
+
+    ``CLUE_PRODUCT_PATH=integration_pilot`` applies an overlay of default flag values, and the repo
+    workflow (``set -a; source .env; set +a``) exports it — so without this, a pilot shell flips the
+    default-off/default-on assertions below and the product-path tests stop testing the default
+    path. Every test here that *wants* a product path sets it after this cleanup.
+    """
+    monkeypatch.delenv("CLUE_PRODUCT_PATH", raising=False)
+
+
 def test_synthesis_model_default_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CLUE_SYNTHESIS_MODEL", raising=False)
     settings = load_settings(_env_file=None)  # type: ignore[call-arg]
@@ -263,3 +275,40 @@ def test_stage0_official_site_crawl_rejects_unsafe_bounds(
 ) -> None:
     with pytest.raises(ValidationError, match=message):
         load_settings(_env_file=None, **updates)
+
+
+def test_default_product_path_changes_no_default() -> None:
+    """CLUE_PRODUCT_PATH is default:'default' and the conservative defaults are untouched."""
+    s = load_settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.product_path == "default"
+    assert s.exa_account_deep_acquisition_enabled is False
+    assert s.sumble_committee_acquisition_enabled is False
+
+
+def test_integration_pilot_overlay_resolves_the_required_capability_state() -> None:
+    """Contract §9: the integration product path resolves acquisition, research, committee,
+    contact-deep, runtime, chat, and frontend-read to ON, and verification/budget to OFF —
+    from checked-in defaults, not terminal state."""
+    s = load_settings(_env_file=None, product_path="integration_pilot")  # type: ignore[call-arg]
+    assert s.exa_websets_lifecycle_enabled is True
+    assert s.exa_websets_acquisition_enabled is True
+    assert s.exa_account_deep_acquisition_enabled is True
+    assert s.sumble_account_gap_enrichment_enabled is True
+    assert s.sumble_committee_acquisition_enabled is True
+    assert s.exa_contact_deep_acquisition_enabled is True
+    assert s.entity_research_runtime_enabled is True
+    assert s.chat_enabled is True
+    assert s.frontend_read_enabled is True
+    assert s.verification_enabled is False
+    assert s.budget_controls_enabled is False
+    # Slice F/G extend the overlay; asserting the current phase honestly:
+    assert s.contact_channel_enrichment_enabled is False
+    assert s.frontend_contact_email_lookup_enabled is False
+    assert s.c7_research_view_read_enabled is False
+
+
+def test_explicit_env_value_beats_the_overlay() -> None:
+    s = load_settings(  # type: ignore[call-arg]
+        _env_file=None, product_path="integration_pilot", exa_account_deep_acquisition_enabled=False
+    )
+    assert s.exa_account_deep_acquisition_enabled is False

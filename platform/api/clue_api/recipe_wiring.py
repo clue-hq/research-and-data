@@ -99,6 +99,14 @@ HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES: tuple[str, ...] = (
     "recipe0-stage0-v16.json",
     "recipe0-stage0-v17.json",
     "recipe0-stage0-v18.json",
+    # recipe0 v20/v21 arrive from the comprehensive-account-contact-research line, where they were
+    # the promoted head (v20 = v16 plus ``draft_account_research_directive@4``, the
+    # comprehensive-profile directive contract; v21 = v20 with @5, the same contract behind a
+    # satisfiable schema whose ``directive.field_keys`` is omittable). On this branch the promoted
+    # revision stays v19 — the design-delegation lineage — so both land replay-only: their bytes
+    # stay resolvable for any execution already pinned to them, and no new seed promotes them.
+    "recipe0-stage0-v20.json",
+    "recipe0-stage0-v21.json",
 )
 
 

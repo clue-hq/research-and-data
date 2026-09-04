@@ -63,6 +63,7 @@ from clue_api.research_view_owner_refs import ProductionOwnerReferenceResolver
 from clue_api.stage0_setup import create_stage0_setup_router, setup_workspace_resolver
 from clue_api.stage0_setup_fleet import DbStage0ReconEnqueuer, Stage0ReconEnqueuer
 from clue_api.stream_tokens import consume_stream_token, mint_stream_token
+from clue_api.transactional_account_launch import TransactionalToolInvokerFactory
 from clue_auth import MembershipStateChanged, PrincipalService
 from clue_config import Settings, load_settings
 from clue_core import (
@@ -790,6 +791,7 @@ def create_projections_app(
     auth_closer: Callable[[], Awaitable[None]] | None = None,
     contact_email_lookup: Any | None = None,
     stage0_recon_enqueuer: Stage0ReconEnqueuer | None = None,
+    transactional_tool_invoker_factory: TransactionalToolInvokerFactory | None = None,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -861,6 +863,7 @@ def create_projections_app(
         # D2's turn submission captures the user's bytes as a durable artifact before enqueueing.
         # The same backend the ingestion surface already uses; nothing model-shaped is added here.
         storage=ingestion_storage,
+        transactional_tool_invoker_factory=transactional_tool_invoker_factory,
     )
 
     # FI Lane D D3: the turn stream (attach/stop/retry/hydrated cold load), behind the same

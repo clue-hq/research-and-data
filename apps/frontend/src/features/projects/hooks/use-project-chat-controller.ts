@@ -31,6 +31,7 @@ import {
   applyChatStreamEvent,
   composeTranscript,
   emptyTranscriptState,
+  mergeThreadMessages,
   type OptimisticTurn,
   type TranscriptMessage,
   type TranscriptState,
@@ -45,6 +46,11 @@ import {
   type ThreadStatus,
 } from "../model/chat-thread";
 import { useProjectCatalogInvalidation } from "../model/project-catalog-invalidation";
+import { withPolledResearchTasks } from "../model/research-task";
+import {
+  streamTaskWakeSignature,
+  useResearchTaskPoller,
+} from "./use-research-task-poller";
 import {
   applyTurnStateOverrides,
   isTerminalTurnState,
@@ -113,6 +119,10 @@ export interface ProjectChatController {
   /** True only when the current stream has observed an open design leg. */
   designLegOpen: boolean;
   submitting: boolean;
+  /** True while older transcript pages remain below the loaded window (C5). */
+  hasOlderMessages: boolean;
+  /** Fetch and prepend the preceding page. No-op when exhausted or in flight. */
+  loadOlderMessages(): Promise<void>;
   gateFor(part: ChatGatePart): GateCardModel | null;
   gateAnswerForTurn(turnId: string): GateAnswerDisplay | null;
   submitMessage(
@@ -168,6 +178,13 @@ export function useProjectChatController({
   // (single-mechanism rule, Phase R).
   const [activeThreadId] = useState<string | null>(initialThreadId ?? null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // C5 backward pagination: the durable read serves the *newest* page first and
+  // `olderCursor` names the preceding page. Seeded once per mount (a thread
+  // change is a remount), because later `loadConversation` reloads re-fetch the
+  // newest window and must not reset a scrollback boundary the user has moved.
+  const [olderCursor, setOlderCursor] = useState<string | null>(null);
+  const olderCursorSeeded = useRef(false);
+  const loadingOlder = useRef(false);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [turnStateOverrides, setTurnStateOverrides] = useState<
     ReadonlyMap<string, TurnState>
@@ -310,7 +327,13 @@ export function useProjectChatController({
         loadGates(threadId),
       ]);
       if (!mounted.current) return;
-      setMessages(messagePage.messages);
+      // Merge, never replace: the read serves the newest page, and replacing
+      // would throw away older pages the user has already scrolled in.
+      setMessages((current) => mergeThreadMessages(current, messagePage.messages));
+      if (!olderCursorSeeded.current) {
+        olderCursorSeeded.current = true;
+        setOlderCursor(messagePage.nextCursor);
+      }
       turnsRef.current = turnPage.turns;
       setTurns(turnPage.turns);
       setTurnStateOverrides((current) =>
@@ -331,6 +354,27 @@ export function useProjectChatController({
     },
     [loadGates, projectId, repositories],
   );
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!activeThreadId || olderCursor === null || loadingOlder.current) return;
+    loadingOlder.current = true;
+    try {
+      const page = await repositories.messages.list({
+        projectId,
+        threadId: activeThreadId,
+        cursor: olderCursor,
+        includeBodies: true,
+      });
+      if (!mounted.current) return;
+      setMessages((current) => mergeThreadMessages(current, page.messages));
+      // The walk's own cursor moves; `null` means history is exhausted.
+      setOlderCursor(page.nextCursor);
+    } catch (failure) {
+      report(failure);
+    } finally {
+      loadingOlder.current = false;
+    }
+  }, [activeThreadId, olderCursor, projectId, repositories, report]);
 
   useEffect(() => {
     let cancelled = false;
@@ -787,11 +831,30 @@ export function useProjectChatController({
     [loadThreads, projectId, repositories, report],
   );
 
+  // --- the durable research-task poll -------------------------------------
+
+  // Polls while any launched run is unsettled: on thread load (which also
+  // restores cards for turns past the stream-rehydration window) and whenever
+  // the stream projects a task part it has not seen. Polled snapshots merge
+  // into the same transcript the stream parts feed, so the card component is
+  // untouched.
+  const taskWake = useMemo(() => streamTaskWakeSignature(stream), [stream]);
+  const polledTasks = useResearchTaskPoller({
+    projectId,
+    threadId: activeThreadId,
+    enabled: !loading && access === null && route === null,
+    wake: taskWake,
+  });
+
   // --- derived -----------------------------------------------------------
 
   const transcript = useMemo(
-    () => composeTranscript({ messages, turns: effectiveTurns, stream, optimistic }),
-    [effectiveTurns, messages, optimistic, stream],
+    () =>
+      withPolledResearchTasks(
+        composeTranscript({ messages, turns: effectiveTurns, stream, optimistic }),
+        polledTasks,
+      ),
+    [effectiveTurns, messages, optimistic, polledTasks, stream],
   );
 
   const gatesById = useMemo(() => {
@@ -863,6 +926,8 @@ export function useProjectChatController({
     designRefresh,
     designLegOpen: stream.designLeg.open,
     submitting,
+    hasOlderMessages: olderCursor !== null,
+    loadOlderMessages,
     gateFor,
     gateAnswerForTurn,
     submitMessage,

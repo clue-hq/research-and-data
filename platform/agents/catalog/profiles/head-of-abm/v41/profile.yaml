@@ -1,0 +1,188 @@
+schema_version: "1"
+kind: profile
+name: head-of-abm
+version: v41
+status: active
+role: head_of_abm
+prompt:
+  name: head-of-abm
+  version: v4
+  sha256: 21a88b93c175bba3004cabbb605dae506f597daf99e5cf1ebfb5e003139965a6
+skills:
+  - name: stage0-interview
+    version: v20
+    sha256: a90443bb61a5570c61aa843e8c339d1981dcfea9641f145743b9294496de08e9
+  - name: account-deep-steering
+    version: v7
+    sha256: 20de42b03d1b353be55986331cc18e623557c510b855f57d12c523e5beda60ff
+tools:
+  - name: draft_account_research_directive
+    version: "4"
+    input_schema_sha256: 74cc2b6ab4388d387ef25514addf408256f3229700215b370540d1f6366e0ca0
+    output_schema_sha256: 1d805a759f731032c83ccb36b3b5f11b04b2e85682c6e6f1a503d2e0cb91bb8d
+  - name: evaluate_stage0_readiness
+    version: "2"
+    input_schema_sha256: 5946e16aa77e32627adb4c965430bec3685d40d914d723f6cfd6f93339b61fac
+    output_schema_sha256: ea352b21dea5627ce2a4c67b42a0e0df0450f0f0d3aead0262437142f671a195
+  - name: get_research_view
+    version: "1"
+    input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
+    output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+  - name: inspect_client_claim
+    version: "2"
+    input_schema_sha256: 0c1e2c591787315a378fd03d46c168dcc97d10c1905475aad377d8e008480332
+    output_schema_sha256: 56b3c39e22a1a211a09f048bf08f57871ac66437b55aa0988ee05faac8b0d651
+  - name: inspect_product_claim
+    version: "1"
+    input_schema_sha256: 7539c6f43c88939d68d93de0a7c11fbd3449517f44e052b16235cb9530e2c059
+    output_schema_sha256: afef8cd52819101907e66ddf068f0f3b8e54e7eade6e809772036140cf0a36e3
+  - name: inspect_readiness_history
+    version: "1"
+    input_schema_sha256: fb5d502f6dcea92f508ba311519aa4983bae89b2a74a2a1d4871c300683b4d99
+    output_schema_sha256: 70a4743f8a6705d07a1a18ed678b55a514ff3169b1d165d843641a9c51f7efd2
+  - name: inspect_statement_history
+    version: "1"
+    input_schema_sha256: 886263cab48572d3779e9a7d7dbb1b72f636f1441d0cd2d50c0dd696592daac6
+    output_schema_sha256: 6ce1ede45f5ab66f12b4530b58f1154df9f06167da45af785b4c11a5abf04875
+  - name: list_client_knowledge
+    version: "2"
+    input_schema_sha256: ca9da9bc7b2bc68d9d8ccc96a728d739d39da09d733c46e912ca4760a266db53
+    output_schema_sha256: 73fe02bf173589234a2e259a9e8c591272f524f87c773b28a7ce0a75f0f1c563
+  - name: list_product_knowledge
+    version: "1"
+    input_schema_sha256: b5be384b258252dee2fed66066e5b8c3fa427ac66316f57ea6f88f447a5d51b6
+    output_schema_sha256: 00d0bfc939da7b4ba83bb3aca4fa02fbb23d16dec5c1f82e0e77ae8e10e0d8e7
+  - name: launch_account_research
+    version: "1"
+    input_schema_sha256: 0353c1ee6f11954e96dea5b243ce36313a6b447d93af49aa75476238350cd9a2
+    output_schema_sha256: 1d8c05f105846db02c980f9da60d83b25a22f84ec3224b7cffd4d02a49d2f960
+  - name: launch_selected_account_research
+    version: "1"
+    input_schema_sha256: 9e4fa1021449e79ad4e0bb1851b445d896510fd0dc9ebbf2f63c769be74cfacc
+    output_schema_sha256: 1d8c05f105846db02c980f9da60d83b25a22f84ec3224b7cffd4d02a49d2f960
+  - name: launch_contact_research
+    version: "1"
+    input_schema_sha256: b3eed222972f43c1b46c49fe7c2aad74edb6674c6f80851b877e169441fe413c
+    output_schema_sha256: 564042e1d84be2e27e350c3acc1c123d936508430175584d16615c1cd3382b1d
+  # P3.5 revised the v1 schema in-train (reopen_leg_id + reopened — the §2.2 mis-exit
+  # recovery); digests refreshed per the P3.1 in-commit contract-delta ritual.
+  - name: open_design_leg
+    version: "1"
+    input_schema_sha256: 9dd301472627a6e8124534f674a85543966891a0549552d06360e0d9952ba050
+    output_schema_sha256: d7b61100ad386afcd0cb146b9fa7de4f959fe515bf6392ce60f34129fe417ac9
+  - name: open_directive_confirmation_gate
+    version: "1"
+    input_schema_sha256: 12d9a95bb3d8b4dc76fab84022edc45eeb1fb8fbd14aa18b0c6b597dff3dad69
+    output_schema_sha256: d07d0ec4416189ddf5395245bda7207587e256bfdc2f16b7e7a6f949e712786c
+  - name: open_icp_confirmation_gate
+    version: "1"
+    input_schema_sha256: 88ff08eb29f645d5f37a1be67e601f71c08ba29e5821a722bd28411f624a171e
+    output_schema_sha256: 048080bd8812b31b72b173b9e729f08045ba9dcac1cfa5b237bf155fc18634c7
+  - name: open_product_selection_gate
+    version: "1"
+    input_schema_sha256: 65ffd54bb0e0d25910084694bd52e586e31b7908692ebcf6e6b51b8b25d41ec1
+    output_schema_sha256: 26426ec23abb792730b0c7984fc2bad2dd2efe1e05eedec3f87495df10bffbd6
+  - name: propose_field
+    version: "2"
+    input_schema_sha256: 381ff072e572d2a4a11818b527d7b36fe1a64c0de63d7f34cebd70b44e26a4a2
+    output_schema_sha256: 3250d58ae68070d2e2112986d8c91befd06795a506770b1ed62cf2f6c99f9842
+  - name: propose_source
+    version: "1"
+    input_schema_sha256: 641252341ba5eab67aefcc7748a3cc27cac07a158418a1d9855c61fddc21ef5b
+    output_schema_sha256: 708d9b5075c72103232daa51c12cbb83a5fe5bdf638bfa79659193f2324a851e
+  - name: read_account_research_run
+    version: "1"
+    input_schema_sha256: 7435881a205953298a535dde450a17634f5f86beaa18848f9a1f0a505056ed52
+    output_schema_sha256: 5a2e786ce447ab94f9c61545b4fae1cfd8d020275f8ba3cf2f6fb042b716ffd0
+  - name: read_contact_research_run
+    version: "1"
+    input_schema_sha256: 7435881a205953298a535dde450a17634f5f86beaa18848f9a1f0a505056ed52
+    output_schema_sha256: 5a2e786ce447ab94f9c61545b4fae1cfd8d020275f8ba3cf2f6fb042b716ffd0
+  - name: record_interview_answer
+    version: "1"
+    input_schema_sha256: 6e597a939a364afc1774e32331256d02c14101d33b2641e3851d449eef7c7ecc
+    output_schema_sha256: 5f0e0fe7baad009e16af713744ef7abbc390615d627a69f5f25c43eb8734e7a8
+  - name: open_discovery_configuration_gate
+    version: "1"
+    input_schema_sha256: 1fc7b784763dc6cc9d574208b9cc06d76fb2acef49bd1c78b03bc8c28ad0f50a
+    output_schema_sha256: 90e9fa59733e71634152437ad5759e3d5be186404e647a7973b9b3ab290e1eef
+  - name: start_confirmed_project_run
+    version: "3"
+    input_schema_sha256: 6d26560908461c3550dd07c60db889277a0359256f734da56793f216dba4a6c0
+    output_schema_sha256: 24d5d9c0825ad1472b5260ca352d22b9fcf373688cf78e718db9f0d70a5c52ca
+  - name: start_recon
+    version: "1"
+    input_schema_sha256: f16f31180641f56f72c9027af7b0e4dfec65659d742740a27eda2eca48d80f9e
+    output_schema_sha256: a999f4e0508d93733369d35bb2d7f9c621ebf2f0fe8405fc7c605206b3d2eba4
+  - name: submit_ingestion
+    version: "1"
+    input_schema_sha256: 9b0a3d6ca25706d310fafd8a28969d6d39cff1272d904f3e4943eddb0b8b83c9
+    output_schema_sha256: 8e2acc7a8819cb1eaff07dc0fa6f8a90b824572e5fb39cbf34a5380f3f1319bf
+  - name: submit_onboarding_input
+    version: "1"
+    input_schema_sha256: bb13820587cbc37a309e1ff9882f6449940e0266d5c0e27f546c7dbd46194ce7
+    output_schema_sha256: db82dc8abe7cbb3d2e7537ad18328eb29e78c9c1e1671c2bd5ba3b370d818ecf
+  - name: synthesize_icps
+    version: "3"
+    input_schema_sha256: e06ee7f192138441fa0a865ec0f8bd07ce850beceb07fdb41c8ecab5133fe23d
+    output_schema_sha256: 371d250a72c679ae3bd492ebaeeef3fa2ec19e4cefd740282be777b214b443d3
+model:
+  model_id: openai/gpt-5.6-terra
+  timeout_s: 30.0
+  max_retries: 2
+  max_output_tokens: 8192
+  temperature: 0.1
+memory_policy: scoped-advisory-v1
+workspace:
+  virtual_mode: true
+  max_total_bytes: 10485760
+  max_file_bytes: 1048576
+  max_file_count: 200
+  allowed_extensions: [".json", ".md", ".txt", ".yaml"]
+  readable_prefixes: [".deepagent", "inputs", "context", "work", "outputs"]
+  writable_prefixes: ["work", "outputs"]
+  retention_class: agent-ephemeral-v1
+delegation_roles: [research, content_drafter, reviewer]
+delegation_tool_grants:
+  research:
+    - name: get_research_view
+      version: "1"
+      input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
+      output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+    - name: run_verification
+      version: "1"
+      input_schema_sha256: a331a001f6b269a9daa97f2d861342d7dfae86a0e75a942ca8f1f4f9d302b0b2
+      output_schema_sha256: d93aeddfdd146ca7bc8dba48b2fcac40415934659c495905255dae3ceb32d91b
+  content_drafter:
+    - name: compose_handoff
+      version: "1"
+      input_schema_sha256: 96917935663e83ac72f50764d2b65d3c837c5e3ba05206aa6b996d692fbf9a0d
+      output_schema_sha256: 986b87c66d09bbbbebeff5a386b103bd2a4202d0f02d5fb8aae64b8e15ab05c5
+    - name: compose_contact_content_handoff
+      version: "1"
+      input_schema_sha256: 6976ebe684c36bcbf112149ebad4d5046817ccf0ac6516bd9ced5429c89278db
+      output_schema_sha256: 4802b53a210dc2e07b73da4263e144d1e030e9315ecda31ba4383d17038274d2
+    - name: get_research_view
+      version: "1"
+      input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
+      output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+  reviewer:
+    - name: compose_handoff
+      version: "1"
+      input_schema_sha256: 96917935663e83ac72f50764d2b65d3c837c5e3ba05206aa6b996d692fbf9a0d
+      output_schema_sha256: 986b87c66d09bbbbebeff5a386b103bd2a4202d0f02d5fb8aae64b8e15ab05c5
+    - name: compose_contact_content_handoff
+      version: "1"
+      input_schema_sha256: 6976ebe684c36bcbf112149ebad4d5046817ccf0ac6516bd9ced5429c89278db
+      output_schema_sha256: 4802b53a210dc2e07b73da4263e144d1e030e9315ecda31ba4383d17038274d2
+    - name: get_research_view
+      version: "1"
+      input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
+      output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+max_delegation_depth: 1
+max_delegations: 6
+max_plan_nodes: 48
+turn_timeout_s: 300.0
+max_model_rounds: 24
+
+

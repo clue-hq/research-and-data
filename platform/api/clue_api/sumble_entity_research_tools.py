@@ -8,14 +8,16 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Final, Protocol, cast
+from typing import Final, NamedTuple, Protocol, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.account_entity_research import (
     AccountBuyingUnitScope,
+    AccountBuyingUnitScopeRequest,
     DiscoverBuyingCommitteeInput,
 )
 from clue_agents.entity_research_runtime import current_entity_research_tool_execution
@@ -31,9 +33,9 @@ from clue_api.entity_research_tools import (
     ProviderOperationReservation,
     ProviderResultLineage,
     ProviderResultLineageReader,
-    fold_rejected_operation_settlement,
 )
 from clue_api.sumble_account_gaps import (
+    SumbleAccountGapFieldAlreadyAcquired,
     SumbleAccountGapNotEligible,
     SumbleAccountGapOutcome,
     SumbleAccountGapStarter,
@@ -43,7 +45,11 @@ from clue_api.sumble_committee_acquisition import (
     SumbleCommitteeOutcome,
     SumbleCommitteePreflight,
 )
-from clue_api.sumble_committee_preparation import SumbleCommitteePreparationInputs
+from clue_api.sumble_committee_preparation import (
+    COMMITTEE_PROVIDER_ORGANIZATION_UNMATCHED,
+    SumbleCommitteePreparationInputs,
+    SumbleCommitteeProviderIdentityUnavailable,
+)
 from clue_api.sumble_committee_source import SumbleCommitteeSource
 from clue_core import (
     AccountGapFieldResult,
@@ -51,6 +57,7 @@ from clue_core import (
     AccountGapOperation,
     AccountGapOperationState,
     AccountGapSnapshotState,
+    ClaimId,
     CommitteeAcquisitionOperation,
     CommitteeEligibilityOutcome,
     EntityId,
@@ -58,11 +65,13 @@ from clue_core import (
     ProjectRunId,
     ResearchCommitteePlan,
     RunId,
+    decode_jsonb,
     decode_jsonb_scalar,
     serialize_value_json,
 )
 from clue_core.entity_research import (
     GovernedResearchToolRequest,
+    PersistedResearchToolResult,
     ResearchClaimDelta,
     ResearchDiscoveredSubjectProjection,
     ResearchEvidenceProjection,
@@ -70,7 +79,8 @@ from clue_core.entity_research import (
     ResearchFieldResultProjection,
     ResearchSubjectType,
 )
-from clue_research.claimstore import record_run_lineage
+from clue_obs import get_logger
+from clue_research.claimstore import WorkspaceScope, current_values, record_run_lineage
 from clue_research.durable import (
     bind_discovery_artifact_subject,
     capture_discovery_artifact,
@@ -90,10 +100,380 @@ from clue_research.profiling.committee import (
     discover_committee,
 )
 from clue_research.resolvers.sumble.people import PEOPLE_SOURCE_KEY
-from clue_storage import StorageBackend
+from clue_storage import StorageBackend, content_address, read_verified_artifact
 
 ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 _EVIDENCE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r5:sumble-account-evidence")
+#: One tool call, one durable scope id. Derived rather than model-invented so a repeat committee
+#: call can never reuse an earlier call's scope id (live run ``dc86340f``: the same invented uuid
+#: rode four attempts against one account, which would have silently left the later attempts with
+#: no scope row of their own and their coverage in ``committee_scope_missing_or_ambiguous``).
+_COMMITTEE_SCOPE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r5:account-committee-scope")
+_HQ_LOCATION_FIELD: Final[str] = "core.hq_location"
+_MAX_SCOPE_EVIDENCE_REFS: Final[int] = 20
+log = get_logger("clue_api.sumble_entity_research_tools")
+
+
+def _hq_office_values(value: object) -> Mapping[str, str]:
+    """The office discriminators an account's ``core.hq_location`` value actually evidences.
+
+    The shape every writer of that field produces (``exa_websets_materialization``,
+    ``sumble_discovery_gaps``) is ``{"raw", "city", "region", "country", "country_code"}``. Only
+    what is present and non-empty is returned: the engine declares the office the account's own
+    evidence supports and nothing beyond it.
+    """
+
+    if not isinstance(value, Mapping):
+        return {}
+    office: dict[str, str] = {}
+    for claim_key, scope_key in (
+        ("raw", "raw"),
+        ("city", "locality"),
+        ("region", "region"),
+        ("country", "country"),
+    ):
+        item = value.get(claim_key)
+        if isinstance(item, str) and item.strip():
+            office[scope_key] = item.strip()
+    return office
+
+
+def _committee_unavailable_detail(error: SumbleCommitteeProviderIdentityUnavailable) -> str:
+    """Tell the agent the axis is closed and name its one remaining move.
+
+    The manual's loop rule is the whole point: a refusal that only states a fact invites the agent
+    to re-send the identical call until the round budget dies (live jobs ``5d9dfe7b``/``16e846d6``
+    did exactly that on a different committee refusal). This one says the attempt is durable and
+    terminal, so the next call is coverage.
+    """
+
+    if error.code == COMMITTEE_PROVIDER_ORGANIZATION_UNMATCHED:
+        cause = (
+            "the committee provider's organization index has no exact match for this account, so "
+            "no committee call can be made for it"
+        )
+    else:
+        cause = (
+            "no committee-provider organization identity exists for this account in any durable "
+            "response, so no committee call can be made for it"
+        )
+    return (
+        f"{cause} ({error.detail}). Nothing was spent and nothing is pending. This attempt is "
+        "recorded and the committee axis is now terminal: the committee for this account is an "
+        "honest gap. Do not call discover_buying_committee again - call assess_account_coverage "
+        "and finalize."
+    )
+
+
+def _incomplete_scope_rejection(error: ValidationError) -> EntityResearchGovernedRejection:
+    """Render a resolved-scope violation with the exact repair, never a bare schema echo."""
+
+    items = error.errors(include_url=False, include_input=False)
+    faults = "; ".join(
+        f"{'.'.join(str(part) for part in item['loc']) or 'buying_unit_scope'}: {item['msg']}"
+        for item in items
+    )
+    corrections = " ".join(
+        dict.fromkeys(
+            correction
+            for item in items
+            if (correction := DiscoverBuyingCommitteeInput.validation_correction(item["loc"]))
+        )
+    )
+    return EntityResearchGovernedRejection(
+        "committee_scope_incomplete",
+        f"the buying unit this call resolves to is not complete ({faults}). {corrections}",
+    )
+
+
+async def resolve_account_buying_unit_scope(
+    conn: AsyncConnection,
+    *,
+    request: GovernedResearchToolRequest,
+    requested: AccountBuyingUnitScopeRequest,
+    workspace_id: str,
+) -> AccountBuyingUnitScope:
+    """Complete the model's declaration into the durable scope, from state the engine already holds.
+
+    Founder ruling 2026-08-20 — *the engine disposes, it never quizzes*. Five of the six values
+    this scope used to demand were never the model's to know better than the engine: the scope id
+    (this tool call), the account (the job is bound to exactly one), the office (the account's own
+    ``core.hq_location`` evidence), and the evidence references (this job's own result index).
+    Live run ``dc86340f`` paid for that: seven of eight committee calls died at the Pydantic
+    boundary on a missing ``evidence_refs`` — no provider call, no operation, no spend — and one
+    account burned its whole 900s runtime budget on four of them.
+
+    What the model still owns is preserved exactly: ``target_functions`` (advisory judgment),
+    ``match_policy``, and any deliberately narrower office or ``business_unit``. The engine fills
+    what was omitted and never overwrites what was sent — a *wrong* declaration (a foreign
+    ``account_entity_id``, an invented target function) still meets the same refusals it always
+    did, downstream of here.
+
+    Replay is durable-first: a scope already recorded for this tool request is returned exactly as
+    it was stored, so a historical scope replays byte-identically no matter how the account's
+    evidence has moved since, and ``scope_sha256`` stays stable for the job's state digest.
+    """
+
+    stored = (
+        await conn.execute(
+            text(
+                "SELECT scope_json FROM entity_research_account_committee_scope "
+                "WHERE tool_request_id=:tool_request_id"
+            ),
+            {"tool_request_id": request.tool_call_id},
+        )
+    ).scalar_one_or_none()
+    if stored is not None:
+        return AccountBuyingUnitScope.model_validate(decode_jsonb(stored))
+
+    values = dict(requested.model_dump())
+    values["scope_id"] = uuid5(_COMMITTEE_SCOPE_NAMESPACE, str(request.tool_call_id))
+    if values["account_entity_id"] is None:
+        values["account_entity_id"] = request.target_entity_id
+    account_id = EntityId(request.target_entity_id)
+    hq = (
+        await current_values(
+            conn,
+            [account_id],
+            [_HQ_LOCATION_FIELD],
+            scope=WorkspaceScope.for_workspace(workspace_id),
+        )
+    ).get((account_id, _HQ_LOCATION_FIELD))
+    office = _hq_office_values(hq.value_json) if hq is not None else {}
+    if not any(
+        values[key] is not None
+        for key in ("office_label", "facility_name", "locality", "region", "country")
+    ):
+        # Only when the model declared no geography at all: a model that named one office must not
+        # find a different city grafted onto it. ``business_unit`` is deliberately absent from that
+        # test and never filled — it is the one discriminator that still narrows admission, so the
+        # engine may not assert one on the agent's behalf.
+        for key in ("locality", "region", "country"):
+            values[key] = office.get(key)
+    if values["office_label"] is None:
+        account = await get_account(conn, account_id)
+        values["office_label"] = office.get("raw") or (
+            f"{account.canonical_name} (company-wide)" if account is not None else "company-wide"
+        )
+    if not values["evidence_refs"]:
+        values["evidence_refs"] = await _composed_scope_evidence_refs(
+            conn,
+            request=request,
+            hq_claim_id=None if hq is None else UUID(str(hq.provenance.claim_id)),
+        )
+        if not values["evidence_refs"]:
+            # The honest answer, recorded rather than fabricated: this account job holds no result
+            # and no current claim to cite, so the scope is persisted citing nothing and says so.
+            # The empty ``evidence_refs`` in the durable ``scope_json`` IS the audit trail (and it
+            # rides ``scope_sha256`` into the job's state digest). The alternative would be
+            # inventing a reference; refusing the call outright would put the committee behind
+            # research this job may not owe — an account whose every field was borrowed still owes
+            # its committee attempt.
+            log.warning(
+                "committee_scope_evidence_unavailable",
+                job_id=str(request.job_id),
+                account_entity_id=str(request.target_entity_id),
+                tool_request_id=str(request.tool_call_id),
+                detail="the account job holds no persisted result and no current claim to cite",
+            )
+    try:
+        return AccountBuyingUnitScope.model_validate(values)
+    except ValidationError as error:
+        raise _incomplete_scope_rejection(error) from error
+
+
+async def _composed_scope_evidence_refs(
+    conn: AsyncConnection,
+    *,
+    request: GovernedResearchToolRequest,
+    hq_claim_id: UUID | None,
+) -> tuple[str, ...]:
+    """This job's own retained account evidence, in the exact forms ``_persist_scope`` admits.
+
+    The HQ claim leads because it is the lineage of an engine-composed office; the job's persisted
+    results follow in creation order. Both are re-validated by ``_persist_scope`` against the same
+    job/account authority a model-authored reference meets, so composition can widen nothing.
+    """
+
+    refs: list[str] = []
+    if hq_claim_id is not None:
+        refs.append(f"claim:{hq_claim_id}")
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT result.result_id FROM entity_research_result result "
+                "JOIN entity_research_tool_request request_row "
+                "ON request_row.tool_request_id=result.tool_request_id "
+                "WHERE request_row.job_id=:job_id "
+                "ORDER BY result.created_at, result.result_id"
+            ),
+            {"job_id": request.job_id},
+        )
+    ).scalars()
+    refs.extend(f"research-result:{value}" for value in rows)
+    return tuple(dict.fromkeys(refs))[:_MAX_SCOPE_EVIDENCE_REFS]
+
+
+class _AdmittedProjection(NamedTuple):
+    """What this provider operation's FIRST admitted result actually recorded."""
+
+    snapshot_ref: str
+    result: PersistedResearchToolResult
+
+
+async def _first_admitted_projection(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    *,
+    operation_ref: str,
+) -> _AdmittedProjection | None:
+    """The projection the operation's earliest ``entity_research_result`` admitted, or ``None``.
+
+    The distinction the projection replay turns on. A projection is *history* only once a result
+    carrying it reached a turn — that is what an ``entity_research_result`` row records, and what
+    downstream consumed. An operation with no result row anywhere was shown to nobody, so its
+    stored first draft is a failed draft, not a fact about the past.
+
+    "A result exists" is NOT the same question as "the stored projection row is what was admitted",
+    and live (job 3cc0a4f2, 06:37:33) they diverged permanently: operation 7e29c0bf's stored row
+    was the pre-aa88e0b0 defective draft, its first replay served the fresh recomputation because
+    nothing had been admitted yet, and the result admitted from THAT recomputation then made the
+    next job serve the stored draft again — straight back into the span guard. So the answer is
+    read from the admitted result itself, which is correct in both worlds: an old-code admission
+    recorded the stored draft (unchanged behaviour), a new-code admission recorded the fresh
+    projection, and either way the served spans are the ones that passed the anti-fabrication guard
+    at admission.
+
+    The admitted result's own fields/evidence rows are the index; their content lives in the result
+    artifact the row pins by digest (``entity_research_result_evidence`` keeps only the span's
+    sha256, never its text), so the artifact is read the way every other reader of an admitted
+    result reads it — ``read_verified_artifact`` + a ``content_address`` check against
+    ``result_sha256`` (``EntityResearchResultStore._load_existing`` / ``read_result`` / the
+    follow-up parent read) — and then reconciled against the durable rows: every served span must
+    hash to an evidence row of that result, and an indexed value is rehydrated from the exact value
+    artifact its field row names.
+    """
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT result_id, result_artifact_key, result_sha256, workspace_id,
+                           provider_snapshot_ref
+                    FROM entity_research_result
+                    WHERE provider_operation_ref=:operation_ref
+                    ORDER BY created_at, result_id
+                    LIMIT 1
+                    """
+                ),
+                {"operation_ref": operation_ref},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if row is None:
+        return None
+    workspace_id = str(row["workspace_id"])
+    _, data = await read_verified_artifact(
+        conn,
+        storage,
+        storage_key=str(row["result_artifact_key"]),
+        workspace_id=workspace_id,
+    )
+    if content_address(data) != str(row["result_sha256"]):
+        raise EntityResearchResultIntegrityError(
+            "admitted result artifact differs from its durable digest"
+        )
+    result = PersistedResearchToolResult.model_validate_json(data)
+    admitted_evidence = {
+        (str(evidence["artifact_key"]), str(evidence["evidence_span_sha256"]))
+        for evidence in (
+            (
+                await conn.execute(
+                    text(
+                        "SELECT artifact_key, evidence_span_sha256 "
+                        "FROM entity_research_result_evidence WHERE result_id=:result_id"
+                    ),
+                    {"result_id": row["result_id"]},
+                )
+            )
+            .mappings()
+            .all()
+        )
+    }
+    value_keys = {
+        (cast(UUID, field["target_entity_id"]), str(field["field_key"])): str(
+            field["value_artifact_key"]
+        )
+        for field in (
+            (
+                await conn.execute(
+                    text(
+                        "SELECT target_entity_id, field_key, value_artifact_key "
+                        "FROM entity_research_result_field "
+                        "WHERE result_id=:result_id AND value_artifact_key IS NOT NULL"
+                    ),
+                    {"result_id": row["result_id"]},
+                )
+            )
+            .mappings()
+            .all()
+        )
+    }
+
+    async def restore(
+        fields: tuple[ResearchFieldResultProjection, ...], *, subject_entity_id: UUID
+    ) -> tuple[ResearchFieldResultProjection, ...]:
+        restored: list[ResearchFieldResultProjection] = []
+        for field in fields:
+            for evidence in field.evidence:
+                admitted = (
+                    evidence.artifact_ref.removeprefix("artifact:"),
+                    hashlib.sha256(evidence.evidence_span.encode()).hexdigest(),
+                )
+                if admitted not in admitted_evidence:
+                    raise EntityResearchResultIntegrityError(
+                        "admitted result artifact cites evidence its durable rows never recorded"
+                    )
+            value_key = value_keys.get((subject_entity_id, field.field_key))
+            if field.value_ref is None or value_key is None:
+                restored.append(field)
+                continue
+            _, value_data = await read_verified_artifact(
+                conn, storage, storage_key=value_key, workspace_id=workspace_id
+            )
+            payload = json.loads(value_data)
+            if payload.get("field_key") != field.field_key or payload.get(
+                "subject_entity_id"
+            ) != str(subject_entity_id):
+                raise EntityResearchResultIntegrityError(
+                    "indexed admitted value belongs to another subject or field"
+                )
+            restored.append(field.model_copy(update={"value": payload.get("value")}))
+        return tuple(restored)
+
+    subjects: list[ResearchDiscoveredSubjectProjection] = []
+    for subject in result.discovered_subjects:
+        subjects.append(
+            subject.model_copy(
+                update={
+                    "fields": await restore(
+                        subject.fields, subject_entity_id=subject.target_entity_id
+                    )
+                }
+            )
+        )
+    return _AdmittedProjection(
+        snapshot_ref=str(row["provider_snapshot_ref"]),
+        result=result.model_copy(
+            update={
+                "fields": await restore(result.fields, subject_entity_id=result.target_entity_id),
+                "discovered_subjects": tuple(subjects),
+            }
+        ),
+    )
 
 
 def _match_haystack(*values: object) -> str:
@@ -195,6 +575,17 @@ def _region_alternatives(region: str) -> tuple[str, ...]:
 def _location_scope_match(scope: AccountBuyingUnitScope, *, haystack: str) -> bool:
     """Match the office scope against provider-returned location values, most specific first.
 
+    Under the default ``company_wide`` policy this tier does not run at all: office placement is
+    never a veto, so the declared office is descriptive/audit context and every candidate passes
+    the location dimension. Founder ruling 2026-08-20, after the first complete live committee
+    execution (Millennium Physician Group — 913 people, multi-site) fetched seven real candidates
+    and admitted zero because no provider profile value could place anyone at the Fort Myers HQ.
+    Only the office-geography veto retires; the current-employer/organization-relationship and
+    target-function gates below are untouched and still decide admission.
+
+    Under the explicitly-selected ``same_office_strict`` policy the original contract stands, and
+    every historical scope replays under exactly the policy it recorded:
+
     The declared terms form a containment hierarchy (facility ⊂ locality ⊂ region ⊂ country).
     Only the most specific declared tier must be evidenced: once "Paramus" is present in the
     provider values, "New Jersey"/"United States" are containers of the same fact and requiring
@@ -203,6 +594,8 @@ def _location_scope_match(scope: AccountBuyingUnitScope, *, haystack: str) -> bo
     fails closed to review — profile metros are never inferred to be office assignments.
     """
 
+    if scope.match_policy == "company_wide":
+        return True
     if scope.facility_name is not None or scope.locality is not None:
         alternatives = tuple(
             value.casefold() for value in (scope.facility_name, scope.locality) if value is not None
@@ -270,7 +663,7 @@ class SumbleEntityResearchLineageReader(ProviderResultLineageReader):
                 .mappings()
                 .first()
             )
-            component_snapshot_refs = await self._component_snapshot_refs(
+            component_snapshot_refs, component_source_keys = await self._component_snapshots(
                 conn,
                 operation=operation,
             )
@@ -285,6 +678,7 @@ class SumbleEntityResearchLineageReader(ProviderResultLineageReader):
             operation=operation,
             snapshot_ref=snapshot_ref,
             claim_source_snapshot_refs=component_snapshot_refs,
+            claim_source_keys=component_source_keys,
             raw_response_artifact_refs=tuple(
                 str(value) for value in row["raw_response_artifact_refs"]
             ),
@@ -299,19 +693,24 @@ class SumbleEntityResearchLineageReader(ProviderResultLineageReader):
             settled_cost_cents=Decimal(row["settled_cost_cents"]),
         )
 
-    async def _component_snapshot_refs(
+    async def _component_snapshots(
         self,
         conn: AsyncConnection,
         *,
         operation: ProviderOperationReservation,
-    ) -> tuple[str, ...]:
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """Resolve claim-level snapshots from the immutable owning Sumble ledger.
+
+        Returns the component snapshot refs and the source keys that produced them.
 
         Account enrichment normalizes the organization lookup and the selected structured source
         into one aggregate entity-research snapshot, while every claim correctly retains the
         specific `account_gap_snapshot` that supplied it. Committee acquisition has the same
         shape for Teams and People. The generic result store must validate those claim refs against
-        provider-owned rows rather than incorrectly requiring the aggregate ref on every claim.
+        provider-owned rows rather than incorrectly requiring the aggregate ref on every claim —
+        or, for a discovered contact, the aggregate *source key*: a committee member the Teams
+        organization map returned carries only ``sumble_teams`` facts, and refusing those was the
+        last mechanical blocker on a provider-returned candidate.
         """
 
         try:
@@ -338,12 +737,15 @@ class SumbleEntityResearchLineageReader(ProviderResultLineageReader):
                 .mappings()
                 .all()
             )
-            return tuple(
-                sorted(
-                    f"account-gap-snapshot:{operation_id}:{row['source_key']}:"
-                    f"{row['request_fingerprint']}"
-                    for row in rows
-                )
+            return (
+                tuple(
+                    sorted(
+                        f"account-gap-snapshot:{operation_id}:{row['source_key']}:"
+                        f"{row['request_fingerprint']}"
+                        for row in rows
+                    )
+                ),
+                tuple(sorted({str(row["source_key"]) for row in rows})),
             )
         if self.provider_kind == "sumble_committee":
             rows = (
@@ -364,12 +766,15 @@ class SumbleEntityResearchLineageReader(ProviderResultLineageReader):
                 .mappings()
                 .all()
             )
-            return tuple(
-                sorted(
-                    f"committee-snapshot:{operation_id}:{row['source_key']}:"
-                    f"{row['request_fingerprint']}"
-                    for row in rows
-                )
+            return (
+                tuple(
+                    sorted(
+                        f"committee-snapshot:{operation_id}:{row['source_key']}:"
+                        f"{row['request_fingerprint']}"
+                        for row in rows
+                    )
+                ),
+                tuple(sorted({str(row["source_key"]) for row in rows})),
             )
         raise EntityResearchResultIntegrityError("unknown Sumble provider lineage kind")
 
@@ -413,6 +818,9 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
         before_dispatch: Callable[
             [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
         ],
+        settle_terminal: Callable[
+            [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
+        ],
     ) -> Sequence[ExternalResearchProjectionDraft]:
         if (
             request.subject_type is not ResearchSubjectType.ACCOUNT
@@ -453,10 +861,26 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
                 account_id=self._account_id,
                 field_expected_value_credits={key: self._values[key] for key in request.field_keys},
                 provider_credit_cap=self._provider_credit_cap,
-                allow_unbounded_tech=self._allow_unbounded_tech,
+                # One composed action serves independently partitioned Sumble source calls.  The
+                # directive-level authority may include tech, but only the tech partition should
+                # carry that provider-specific approval; applying it to a simultaneous jobs or
+                # organizations call makes the preflight correctly reject that non-tech call.
+                allow_unbounded_tech=(
+                    self._allow_unbounded_tech and "core.primary_tech_stack" in request.field_keys
+                ),
                 before_dispatch=bind_sumble_before_dispatch,
                 entity_research_job_id=self._entity_research_job_id,
             )
+        except SumbleAccountGapFieldAlreadyAcquired as exc:
+            # The same species, refused one rung earlier: this window already bought the field for
+            # this account, so no purchase is possible and none was attempted.  Its own code,
+            # because the repair differs from §6.3(b)'s — there is a durable operation holding the
+            # answer (which may itself be an honest ``confirmed_missing`` or an unresolved
+            # ``conflict``), and the agent must read it rather than re-ask for it.
+            raise EntityResearchGovernedRejection(
+                "account_gap_field_already_acquired",
+                f"Sumble account enrichment cannot re-buy this account's field: {exc}",
+            ) from exc
         except SumbleAccountGapNotEligible as exc:
             # FI-2 §6.3(b), and *only* §6.3(b): the ladder found the field already confidently and
             # freshly answered.  The preflight refuses before any operation row or dispatch, so
@@ -488,17 +912,57 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
             )
         if result.outcome is SumbleAccountGapOutcome.FAILED_TERMINAL:
             # Deterministic provider refusal: zero-charge, diagnostics durable on the gap ledger.
-            # The agent may pick another admitted source or finalize with an explicit gap.
-            await fold_rejected_operation_settlement(
-                self._conn_factory,
-                request=request,
-                operation_ref=_operation_ref(result.operation),
+            # The agent may pick another admitted source or finalize with an explicit gap. The
+            # settlement must carry the operation's real dispatch time as well as the fold —
+            # execution closure counts neither an undispatched operation nor a bare fold.
+            await settle_terminal(
+                self._descriptor(
+                    result.operation,
+                    source_key=request.source_keys[0],
+                    field_keys=request.field_keys,
+                    disposition=(
+                        ProviderObservationDisposition.CAUSED
+                        if caused
+                        else ProviderObservationDisposition.REPLAY
+                    ),
+                    include_dispatch=True,
+                )
             )
             raise EntityResearchGovernedRejection(
                 "provider_rejected",
                 "Sumble account enrichment was terminally rejected by the provider "
                 f"(failure_code={result.operation.failure_code or 'unrecorded'}); the durable "
                 "operation ledger retains the exact provider diagnostic",
+            )
+        if result.outcome is SumbleAccountGapOutcome.SPEND_OUTCOME_UNKNOWN:
+            # The provider may have charged for a dispatch we could not reconcile (a crash between
+            # dispatch and receipt quarantines the snapshot; an unreconciled paid dispatch marks
+            # the same state).  That is a *provider* outcome, not a violation of the result
+            # contract, and it is durably terminal: ``_terminal_result`` replays it forever, so
+            # raising here left the job re-suspending on every resume with nothing it could do.
+            # Settle it exactly like the deterministic refusal — the operation's real dispatch
+            # time plus an append-only zero-cost fold, so the (field, source) pair reaches a
+            # terminal attempt and coverage can close honestly — and refuse the call back to the
+            # agent, which may pick another admitted source or finalize with the gap.
+            await settle_terminal(
+                self._descriptor(
+                    result.operation,
+                    source_key=request.source_keys[0],
+                    field_keys=request.field_keys,
+                    disposition=(
+                        ProviderObservationDisposition.CAUSED
+                        if caused
+                        else ProviderObservationDisposition.REPLAY
+                    ),
+                    include_dispatch=True,
+                )
+            )
+            raise EntityResearchGovernedRejection(
+                "provider_spend_unreconciled",
+                "Sumble account enrichment dispatched but its spend outcome could not be "
+                f"reconciled (failure_code={result.operation.failure_code or 'unrecorded'}); the "
+                "durable operation ledger retains the exact provider diagnostic and the attempt "
+                "is terminal",
             )
         if (
             result.outcome
@@ -718,11 +1182,64 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
                 .mappings()
                 .one()
             )
-            if (
+            replay_differs = (
                 str(stored["provider_snapshot_ref"]) != snapshot_ref
                 or str(stored["normalized_result_artifact_key"]) != normalized_key
-            ):
-                raise EntityResearchResultIntegrityError("Sumble projection replay changed")
+            )
+            # First write wins — for ADMITTED history, and only for it, and what replays is what
+            # the ADMITTED RESULT recorded, never the stored projection row. The same lesson as
+            # the seal reader and the settlement fold: what a job was actually shown, and what
+            # downstream consumed, is served from durable history, never recomputed under newer
+            # code. A projection-composition improvement (live: aa88e0b0's conflict-evidence fix)
+            # legitimately changes what today's code would project for a terminal operation
+            # recorded yesterday; refusing that replay suspended the job ("Sumble projection replay
+            # changed").
+            #
+            # An operation with NO ``entity_research_result`` anywhere has no admitted history: no
+            # turn was ever shown its stored first write, so that write is a failed draft, not a
+            # fact about the past. Live (job eea48931), the pre-aa88e0b0 draft published a conflict
+            # contender's evidence span, the span-fidelity guard refused it at 02:14, and serving
+            # that same draft back at 03:46 raised the identical refusal, so the job re-wedged on
+            # every resume. For that draft the immutable truth is the retained provider snapshot,
+            # and the only projection of it that can ever pass the guard is the fresh one
+            # recomputed above from the durable gap-ledger snapshots — so it is returned.
+            # Supersession is by NON-ADOPTION: the projection table is append-only, so the refused
+            # first draft stays exactly where it is as the audit record of what defective code
+            # wrote, and the replay stays deterministic (same snapshot + same code = same fresh
+            # projection). One accepted residual follows: the lineage reader serves this
+            # append-only row, so a result admitted from the fresh projection carries a
+            # ``normalized_result_artifact_ref`` naming the superseded draft. Nothing recomputes
+            # or compares that artifact downstream (``_validate_artifacts`` only
+            # existence-verifies it), the snapshot_ref both sides cite is content-derived from
+            # the durable raw refs and therefore identical, and the fresh normalized artifact is
+            # captured and subject-bound above — both normalizations survive in storage.
+            #
+            # That residual is exactly why the admitted case may NOT read the stored row: "a result
+            # was admitted for this operation" is not "the stored row is what was admitted", and
+            # live (job 3cc0a4f2, 06:37:33) the two diverged permanently — eea48931's resume served
+            # the fresh recomputation while nothing was admitted, the result admitted from it
+            # (c8be9969) recorded that fresh projection, the append-only row still held the
+            # defective draft, and the next job to replay the operation was handed the refused span
+            # straight back into the guard. ``_first_admitted_projection`` answers with the earliest
+            # admitted result's own record instead: an old-code admission recorded the stored draft
+            # (c7d6da82's case, behaviour unchanged), a new-code admission recorded the fresh
+            # projection, and either way every span served is one that already passed the guard.
+            admitted = (
+                await _first_admitted_projection(
+                    conn, self._storage, operation_ref=provider_operation.operation_ref
+                )
+                if replay_differs
+                else None
+            )
+            if admitted is not None:
+                if {field.field_key for field in admitted.result.fields} != set(request.field_keys):
+                    # Fail closed rather than serve a projection that cannot answer this request.
+                    # The gap ledger keys an operation by its exact field set, so this is
+                    # unreachable unless that invariant breaks.
+                    raise EntityResearchResultIntegrityError(
+                        "admitted Sumble projection does not index this request's exact fields"
+                    )
+                return admitted.snapshot_ref, admitted.result.fields
         return snapshot_ref, projected
 
     def _field(
@@ -741,15 +1258,26 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
                 claim_delta=ResearchClaimDelta.NONE,
                 verification_status=field.reason_code or "confirmed_missing",
             )
-        ids = tuple(
-            UUID(str(value))
-            for value in (
-                field.conflicting_claim_ids
-                if field.state is AccountGapFieldState.CONFLICT
-                else ((field.sumble_claim_id,) if field.sumble_claim_id else ())
+        contenders: tuple[ClaimId | None, ...]
+        if field.state is AccountGapFieldState.CONFLICT:
+            # The provider's own contender is part of its conflict by definition; the corroborator
+            # is not required to list it, so name it explicitly rather than rely on the group.
+            contenders = field.conflicting_claim_ids + (
+                ()
+                if field.sumble_claim_id is None
+                or field.sumble_claim_id in field.conflicting_claim_ids
+                else (field.sumble_claim_id,)
             )
-        )
+        else:
+            contenders = (field.sumble_claim_id,) if field.sumble_claim_id else ()
+        ids = tuple(UUID(str(value)) for value in contenders)
         rows = tuple(claims_by_id[value] for value in ids)
+        # Evidence is this operation's own retained provenance, never a contender's.  A conflict's
+        # foreign claims are cited by *reference* (``claim_refs`` plus the durable conflict
+        # decision) and the agent reads them through the claim surface.  Projecting their spans
+        # here would have this tool vouch for artifacts it neither bought nor was authorized for:
+        # the engine's exact field/source authority refuses that, and rightly — a Sumble result
+        # citing an Exa artifact is provenance laundering, not corroboration.
         evidence = tuple(
             ResearchEvidenceProjection(
                 evidence_ref=(
@@ -762,6 +1290,7 @@ class SumbleAccountSemanticEnrichmentAction(EntityResearchProviderAction):
                 evidence_span=str(row["evidence_span"]),
             )
             for row in rows
+            if str(row["source_key"]) == str(field.source_key)
         )
         if field.state is AccountGapFieldState.CONFLICT:
             return ResearchFieldResultProjection(
@@ -811,7 +1340,7 @@ class SumbleCommitteeAgentInputResolver(Protocol):
 
 
 class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
-    """Acquire Teams/People, enforce the declared office, then project admitted members."""
+    """Acquire Teams/People, apply the declared buying-unit scope, then project admitted members."""
 
     provider_kind = "sumble_committee"
 
@@ -847,12 +1376,39 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
         before_dispatch: Callable[
             [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
         ],
+        settle_terminal: Callable[
+            [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
+        ],
     ) -> Sequence[ExternalResearchProjectionDraft]:
         active = current_entity_research_tool_execution()
         semantic = DiscoverBuyingCommitteeInput.model_validate(active.call.arguments)
-        scope = semantic.buying_unit_scope
-        preflight, committee_plan = await self._resolve_inputs()
+        try:
+            preflight, committee_plan = await self._resolve_inputs()
+        except SumbleCommitteeProviderIdentityUnavailable as unavailable:
+            # World fact, not model input and not job integrity: the provider's organization index
+            # cannot serve this account, so no committee call is possible for it — ever, for the
+            # unmatched case. Record the zero-cost terminal attempt, then refuse recoverably. The
+            # live ``dc86340f`` shape (Greater Chicago, 2026-08-20 21:36:47) raised this raw and
+            # killed the drive with ``execution_failed``.
+            await self._record_committee_axis_unavailable(
+                request=request,
+                workspace_id=active.context.authorization.workspace_id,
+                error=unavailable,
+            )
+            raise EntityResearchGovernedRejection(
+                unavailable.code, _committee_unavailable_detail(unavailable)
+            ) from unavailable
         durable = preflight.request
+        async with self._conn_factory() as conn:
+            # The engine composes what it already knows (scope id, account, office, evidence) so
+            # the model cannot get it wrong; everything the model *did* declare survives verbatim
+            # into the durable scope and meets every authority check below unchanged.
+            scope = await resolve_account_buying_unit_scope(
+                conn,
+                request=request,
+                requested=semantic.buying_unit_scope,
+                workspace_id=durable.workspace_id,
+            )
         self._validate_scope_against_plan(scope, plan=committee_plan)
         if (
             request.subject_type is not ResearchSubjectType.ACCOUNT
@@ -910,16 +1466,45 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
             # Deterministic provider refusal (for example a validated zero-charge HTTP 4xx): the
             # committee ledger retains the status and the provider's own bounded error body. The
             # agent decides — repair, another admitted source, or an explicit partial committee.
-            await fold_rejected_operation_settlement(
-                self._conn_factory,
-                request=request,
-                operation_ref=f"committee-operation:{acquired.operation.operation_id}",
+            await settle_terminal(
+                self._committee_descriptor(
+                    acquired.operation,
+                    disposition=(
+                        ProviderObservationDisposition.CAUSED
+                        if caused
+                        else ProviderObservationDisposition.REPLAY
+                    ),
+                    include_dispatch=True,
+                )
             )
             raise EntityResearchGovernedRejection(
                 "provider_rejected",
                 "Sumble committee acquisition was terminally rejected "
                 f"(failure_code={acquired.operation.failure_code or 'unrecorded'}); the durable "
                 "committee ledger retains the exact provider diagnostic",
+            )
+        if acquired.outcome is SumbleCommitteeOutcome.SPEND_OUTCOME_UNKNOWN:
+            # Same species as the account lane above: a dispatched committee call whose charge we
+            # cannot reconcile is a durably terminal provider outcome, not a result-contract
+            # violation.  Settle the attempt (real dispatch time + zero-cost fold) and refuse the
+            # call back to the agent instead of suspending the job on every resume.
+            await settle_terminal(
+                self._committee_descriptor(
+                    acquired.operation,
+                    disposition=(
+                        ProviderObservationDisposition.CAUSED
+                        if caused
+                        else ProviderObservationDisposition.REPLAY
+                    ),
+                    include_dispatch=True,
+                )
+            )
+            raise EntityResearchGovernedRejection(
+                "provider_spend_unreconciled",
+                "Sumble committee acquisition dispatched but its spend outcome could not be "
+                f"reconciled (failure_code={acquired.operation.failure_code or 'unrecorded'}); "
+                "the durable committee ledger retains the exact provider diagnostic and the "
+                "attempt is terminal",
             )
         if acquired.outcome not in {
             SumbleCommitteeOutcome.READY,
@@ -959,15 +1544,12 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                 project_id=durable.project_id,
                 project_run_id=UUID(str(durable.project_run_id)),
             )
-            committee = await discover_committee(
+            committee = await self._discover_committee_members(
                 conn,
                 account_entity_id=EntityId(request.target_entity_id),
                 run_id=run_id,
                 workspace_id=durable.workspace_id,
-                sources=(_PreparedCommitteeSource(selected),),
-                gateway=self._gateway,
-                role_model=self._role_model,
-                source_plan=(PEOPLE_SOURCE_KEY,),
+                selected=selected,
                 budget_cap_cents=durable.money_budget_cap_cents,
             )
         operation = self._committee_descriptor(
@@ -996,6 +1578,88 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
             ),
         )
 
+    async def _discover_committee_members(
+        self,
+        conn: AsyncConnection,
+        *,
+        account_entity_id: EntityId,
+        run_id: RunId,
+        workspace_id: str,
+        selected: Sequence[CommitteePersonCandidate],
+        budget_cap_cents: Decimal | None,
+    ) -> CommitteeResult:
+        """Discover + identity-resolve the admitted buying unit, WITHOUT judging roles.
+
+        Contract §5.2 steps 1-2: this provider action's job is discovery and identity — who is
+        really in the declared buying unit, with provider evidence behind them. The committee *role*
+        is a judgment the responsible account agent makes, on the evidence, and writes back through
+        its own governed tool. So discovery runs in ``agent_deferred`` mode: it makes no gateway
+        call and writes no role/persona claim, and the admitted members come back roleless (visible
+        as discovered subjects with their People facts). Between this and the agent's role write,
+        a committee legitimately has members and no roles — that is honest, not incomplete."""
+        return await discover_committee(
+            conn,
+            account_entity_id=account_entity_id,
+            run_id=run_id,
+            workspace_id=workspace_id,
+            sources=(_PreparedCommitteeSource(selected),),
+            gateway=self._gateway,
+            role_model=self._role_model,
+            source_plan=(PEOPLE_SOURCE_KEY,),
+            budget_cap_cents=budget_cap_cents,
+            role_inference="agent_deferred",
+        )
+
+    async def _record_committee_axis_unavailable(
+        self,
+        *,
+        request: GovernedResearchToolRequest,
+        workspace_id: str,
+        error: SumbleCommitteeProviderIdentityUnavailable,
+    ) -> None:
+        """Record this exact committee call as a real, zero-cost, terminal attempt.
+
+        There is deliberately no provider operation here: the refusal happens before any
+        reservation, so nothing was dispatched, nothing charged, and there is no settlement to
+        fold. Stamping a dispatch to reuse the fold machinery would fabricate an attempt the
+        provider never received — the one thing the settlement contract refuses. So the attempt is
+        recorded on its own terms, keyed on the journalled tool request (which exists only because
+        the agent really made this call under this job's authority), and
+        ``read_account_research_execution_completeness`` reads it as the committee axis's terminal
+        disposition. Idempotent: a checkpoint replay of the same tool call re-records nothing.
+        """
+
+        async with self._conn_factory() as conn:
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO entity_research_account_committee_unavailable
+                        (tool_request_id, research_run_id, job_id, workspace_id,
+                         account_entity_id, source_keys, reason_code, detail)
+                    VALUES (:tool_request_id, :run_id, :job_id, :workspace_id, :account_id,
+                            :source_keys, :reason_code, :detail)
+                    ON CONFLICT (tool_request_id) DO NOTHING
+                    """
+                ),
+                {
+                    "tool_request_id": request.tool_call_id,
+                    "run_id": request.research_run_id,
+                    "job_id": request.job_id,
+                    "workspace_id": workspace_id,
+                    "account_id": request.target_entity_id,
+                    "source_keys": list(request.source_keys),
+                    "reason_code": error.code,
+                    "detail": error.detail,
+                },
+            )
+        log.info(
+            "committee axis is unbuyable for this account",
+            job_id=str(request.job_id),
+            account_entity_id=str(request.target_entity_id),
+            reason_code=error.code,
+            source_keys=list(request.source_keys),
+        )
+
     async def _resolve_inputs(
         self,
     ) -> tuple[SumbleCommitteePreflight, ResearchCommitteePlan | None]:
@@ -1012,6 +1676,7 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
             prepared.preflight.request,
             authorization=prepared.authorization,
             proposed_cost_cents=prepared.preflight.maximum_cost_cents,
+            discovery_receipt=prepared.discovery_receipt,
         )
         if decision.outcome not in {
             CommitteeEligibilityOutcome.ELIGIBLE,
@@ -1073,6 +1738,8 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
             ref.startswith(("research-evidence:", "claim:", "research-result:"))
             for ref in scope.evidence_refs
         ):
+            # Unreachable from a model now — ``evidence_refs`` is shape-checked at the tool's own
+            # input boundary — and kept as the substrate backstop for any other caller.
             raise EntityResearchResultIntegrityError(
                 "buying-unit scope requires durable account evidence references"
             )
@@ -1116,8 +1783,19 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                         },
                     )
                 if found.scalar_one_or_none() is None:
-                    raise EntityResearchResultIntegrityError(
-                        "buying-unit scope cites evidence outside the exact account job"
+                    # A model-authored reference to something this job/account does not own is the
+                    # repairable species (the same class ``cd15398d`` converted across the read
+                    # tools), not a truth violation: refuse it back with the exact repair instead
+                    # of suspending the job. An engine-composed reference cannot land here — it is
+                    # read from this job's own results and the account's own claim.
+                    raise EntityResearchGovernedRejection(
+                        "committee_scope_evidence_outside_job",
+                        f"buying_unit_scope.evidence_refs cites {ref[:80]!r}, which this account "
+                        "job does not own. Use only references your own "
+                        "read_account_research_state result index surfaces "
+                        "('result_refs' like 'research-result:<uuid>', "
+                        "'existing_claims[].claim_ref' like 'claim:<uuid>'), or omit the key "
+                        "entirely and the engine cites the evidence this job already holds.",
                     )
             values = {
                 "scope_id": scope.scope_id,
@@ -1182,8 +1860,31 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
     def _office_candidates(
         candidates: Sequence[CommitteePersonCandidate], *, scope: AccountBuyingUnitScope
     ) -> tuple[tuple[CommitteePersonCandidate, ...], int, int]:
+        """Classify provider-returned candidates into selected / excluded / review-routed.
+
+        Under the default ``company_wide`` policy the floor is **provider-returned, and nothing
+        more** (founder rulings 2026-08-20). Three discriminators retired, in this order, each
+        after a live execution that admitted real people it should not have refused:
+
+        * office placement — a multi-site HQ committee is not evidenced by profile metros;
+        * the ``sumble_people`` grounding filter — a Teams-organization-map row is provider data
+          bought in the same paid operation, not a weaker species of truth;
+        * the ``target_functions`` string match — the provider's vocabulary is its own
+          ("Physician" where the plan says "Clinical", "Uncategorized" where it says nothing at
+          all), and reconciling vocabulary is agent judgment, not string equality.
+
+        What survives under ``company_wide`` is the one discriminator the agent *declares on
+        purpose*: a non-null ``business_unit`` is an assertion of organization membership, matched
+        against provider-returned team names and current-employer organization names. A candidate
+        the agent's own declared unit does not cover routes to review, never to silent admission.
+
+        ``same_office_strict``, selected by name, keeps all three retired tiers exactly as they
+        were, so every historical scope replays under the policy it recorded.
+        """
+
         selected: list[CommitteePersonCandidate] = []
         excluded = ambiguous = 0
+        strict = scope.match_policy == "same_office_strict"
         for candidate in candidates:
             people_facts = tuple(
                 fact
@@ -1218,15 +1919,25 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                 # never satisfy an office, facility, or business-unit discriminator.
                 candidate.title,
             )
+            # Always True under the default ``company_wide`` policy (founder ruling 2026-08-20):
+            # office placement can no longer send a candidate to review or exclusion. The
+            # business-unit discriminator below is organization membership, not geography, and
+            # stays live under both policies.
             location_match = _location_scope_match(scope, haystack=location_haystack)
             business_unit_match = (
                 scope.business_unit is None
                 or scope.business_unit.casefold() in business_unit_haystack
             )
-            function_match = any(
-                value.casefold() in function_haystack for value in scope.target_functions
+            # Retired under ``company_wide``: a provider-returned candidate is grounded by having
+            # been returned, whichever page returned them, and the provider's function vocabulary
+            # is not the confirmed plan's vocabulary.
+            grounded = bool(people_facts) if strict else True
+            function_match = (
+                any(value.casefold() in function_haystack for value in scope.target_functions)
+                if strict
+                else True
             )
-            if not people_facts:
+            if not grounded:
                 ambiguous += 1
             elif location_match and business_unit_match and function_match:
                 selected.append(candidate)
@@ -1284,10 +1995,29 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
             )
             if people_snapshot.response_artifact_key is None:
                 raise EntityResearchResultIntegrityError("People committee snapshot lacks evidence")
+            # The operation's snapshot_ref remains the People one: it names the whole semantic
+            # acquisition, and both component snapshots hang off the same operation id.
             snapshot_ref = (
                 f"committee-snapshot:{typed.operation_id}:{PEOPLE_SOURCE_KEY}:"
                 f"{people_snapshot.request_fingerprint}"
             )
+            # Every component snapshot this exact operation paid for is admissible provenance
+            # (founder ruling 2026-08-20 — the truth floor is provider-returned, and a Teams
+            # organization-map row is provider data bought in the same call). A member whose
+            # facts came only through Teams was previously refused here as "lacking direct People
+            # facts", which is how the live v9 review class would have suspended the job.
+            snapshot_ref_by_source = {
+                item.source_key: (
+                    f"committee-snapshot:{typed.operation_id}:{item.source_key}:"
+                    f"{item.request_fingerprint}"
+                )
+                for item in snapshots
+                if item.response_artifact_key is not None
+            }
+            provider_source_id_by_source = {
+                item.source_key: (item.provider_operation_id or str(typed.operation_id))
+                for item in snapshots
+            }
             subjects: list[ResearchDiscoveredSubjectProjection] = []
             for member in result.members:
                 candidate_claim_ids = [UUID(str(value)) for value in member.professional_claim_ids]
@@ -1301,17 +2031,17 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                                            artifact_key, evidence_span, confidence,
                                            verification_status::text
                                     FROM claim WHERE id=ANY(:claim_ids)
-                                      AND source_key=:source_key
+                                      AND source_key=ANY(:source_keys)
                                       AND source_operation_ref=:operation_ref
-                                      AND source_snapshot_ref=:snapshot_ref
+                                      AND source_snapshot_ref=ANY(:snapshot_refs)
                                     ORDER BY collected_at, id
                                     """
                                 ),
                                 {
                                     "claim_ids": candidate_claim_ids,
-                                    "source_key": PEOPLE_SOURCE_KEY,
+                                    "source_keys": list(snapshot_ref_by_source),
                                     "operation_ref": f"committee-operation:{typed.operation_id}",
-                                    "snapshot_ref": snapshot_ref,
+                                    "snapshot_refs": list(snapshot_ref_by_source.values()),
                                 },
                             )
                         )
@@ -1322,7 +2052,8 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                     rows = ()
                 if not rows:
                     raise EntityResearchResultIntegrityError(
-                        "office-admitted committee member lacks direct People facts"
+                        "admitted committee member lacks provider-returned facts from this "
+                        "operation"
                     )
                 fields = tuple(
                     ResearchFieldResultProjection(
@@ -1336,9 +2067,9 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                                 evidence_ref=self._committee_evidence_ref(
                                     typed.operation_id, row["id"]
                                 ),
-                                source_key=PEOPLE_SOURCE_KEY,
-                                provider_source_id=(
-                                    people_snapshot.provider_operation_id or str(typed.operation_id)
+                                source_key=str(row["source_key"]),
+                                provider_source_id=provider_source_id_by_source.get(
+                                    str(row["source_key"]), str(typed.operation_id)
                                 ),
                                 source_url=(str(row["source_url"]) if row["source_url"] else None),
                                 artifact_ref=f"artifact:{row['artifact_key']}",
@@ -1449,7 +2180,7 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                 .mappings()
                 .one()
             )
-            if (
+            replay_differs = (
                 str(stored["provider_snapshot_ref"]) != snapshot_ref
                 or str(stored["normalized_result_artifact_key"]) != normalized_key
                 or tuple(str(value) for value in stored["raw_response_artifact_refs"])
@@ -1462,10 +2193,25 @@ class SumbleCommitteeSemanticResearchAction(EntityResearchProviderAction):
                 or Decimal(str(stored["settled_cost_cents"]))
                 != Decimal(str(values["settled_cost"]))
                 or serialize_value_json(stored["metadata_json"]) != values["metadata"]
-            ):
-                raise EntityResearchResultIntegrityError(
-                    "Sumble committee projection replay changed"
+            )
+            # Same rule as the account projection above, with the same two boundaries: an operation
+            # whose replay differs and that carries an admitted result serves what THAT RESULT
+            # recorded (its discovered subjects, evidence spans and all), never the stored
+            # projection row — the row and the admitted record diverge permanently once a
+            # never-admitted operation's first replay serves fresh (live job 3cc0a4f2, 06:37:33) —
+            # and an operation with no admitted result anywhere was shown to no turn, so its stored
+            # first write is a failed draft and the fresh recomputation is returned. The
+            # append-only table keeps the first write at rest as audit either way (see the account
+            # branch for the live wedge this closes).
+            admitted = (
+                await _first_admitted_projection(
+                    conn, self._storage, operation_ref=provider_operation.operation_ref
                 )
+                if replay_differs
+                else None
+            )
+            if admitted is not None:
+                return admitted.snapshot_ref, admitted.result.discovered_subjects
         return snapshot_ref, tuple(subjects)
 
     @staticmethod
@@ -1478,4 +2224,5 @@ __all__ = [
     "SumbleAccountSemanticEnrichmentAction",
     "SumbleCommitteeSemanticResearchAction",
     "SumbleEntityResearchLineageReader",
+    "resolve_account_buying_unit_scope",
 ]

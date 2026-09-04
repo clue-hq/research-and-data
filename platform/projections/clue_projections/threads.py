@@ -583,14 +583,19 @@ def _parse_timestamp(position: str) -> datetime:
 
 # Keyset over the per-thread ``sequence``, which is already UNIQUE (workspace_id, thread_id,
 # sequence) and gap-free by construction — so it is a total order on its own and needs no tiebreak.
+#
+# Newest-first page *selection* (Slice C C5): the first page is the tail of the thread, and the
+# cursor is a *before*-key naming the preceding page — ``sequence < cursor`` walking backward.
+# Rows come back descending and are reversed in Python, so within any page the display order is
+# ascending, identical to the old read for a thread under one page.
 _PAGE_MESSAGES = text(
     """
     SELECT id, turn_id, sequence, role, body_artifact_key, body_sha256, created_at
     FROM agent_thread_message
     WHERE workspace_id = :workspace_id
       AND thread_id = :thread_id
-      AND (CAST(:cursor_sequence AS bigint) IS NULL OR sequence > CAST(:cursor_sequence AS bigint))
-    ORDER BY sequence
+      AND (CAST(:cursor_sequence AS bigint) IS NULL OR sequence < CAST(:cursor_sequence AS bigint))
+    ORDER BY sequence DESC
     LIMIT :row_limit
     """
 )
@@ -707,7 +712,14 @@ async def thread_messages(
     cursor: str | None = None,
     conn_factory: ConnFactory = transaction,
 ) -> ThreadMessagePage:
-    """One keyset page of a thread's durable messages, oldest first, with typed ``refs[]``.
+    """One keyset page of a thread's durable messages, **newest page first**, with typed ``refs[]``.
+
+    Slice C C5's read direction: with no cursor this serves the *latest* ``limit`` messages —
+    in ascending display order within the page — because the defect the flip fixes was a long
+    thread whose reload served the oldest 50 and lost the user's most recent prompts.
+    ``next_cursor`` is a *before*-cursor: passing it back serves the preceding (older) page, and
+    ``None`` means history is exhausted. A thread at or under one page is served whole, ascending,
+    with no cursor — byte-identical to the pre-flip read.
 
     Raises :class:`~clue_projections.pagination.InvalidCursorError` for a foreign cursor and
     ``ValueError`` for an out-of-range ``limit``.
@@ -739,7 +751,8 @@ async def thread_messages(
             .all()
         )
         has_more = len(rows) > limit
-        page = rows[:limit]
+        # Selected newest-first; reversed so the page reads in ascending display order.
+        page = list(reversed(rows[:limit]))
         refs = await _refs_by_turn(
             conn,
             workspace_id=workspace_id,
@@ -764,5 +777,6 @@ async def thread_messages(
         )
         for row in page
     )
-    next_cursor = encode_cursor(str(items[-1].sequence)) if has_more and items else None
+    # The before-cursor is the page's *oldest* row: older history continues below it.
+    next_cursor = encode_cursor(str(items[0].sequence)) if has_more and items else None
     return ThreadMessagePage(items=items, next_cursor=next_cursor)

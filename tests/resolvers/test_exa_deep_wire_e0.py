@@ -10,6 +10,7 @@ import copy
 import json
 from decimal import Decimal
 from pathlib import Path
+from typing import cast
 
 import pytest
 from pydantic import SecretStr, ValidationError
@@ -19,6 +20,7 @@ from clue_core import AccountEntity, FieldDef, PassKind, RetryableResolverError,
 from clue_research.resolvers.exa import (
     DEFAULT_EXA_CONFIG,
     ExaDeepConfig,
+    ExaDeepRequestBoundExceeded,
     ExaDeepRequestFailure,
     build_exa_request,
     compile_exa_deep_request,
@@ -29,11 +31,12 @@ from clue_research.resolvers.exa import (
 )
 from clue_research.resolvers.exa.deep_contract import (
     ACCOUNT_DEEP_CONTENT_MAX_CHARACTERS,
+    EXA_FIELD_ALIAS_CHARACTERS,
     ExaDeepFailureClass,
     ExaDeepFieldSpec,
     ExaDeepSearchRequest,
     exa_field_alias,
-    field_key_from_exa_alias,
+    legacy_exa_field_alias,
 )
 
 _FIXTURES = Path(__file__).parents[1] / "fixtures" / "providers" / "exa" / "search"
@@ -88,16 +91,44 @@ def _golden_request() -> ExaDeepSearchRequest:
     )
 
 
+def _as_legacy_alias_request(request: ExaDeepSearchRequest) -> ExaDeepSearchRequest:
+    """Rewrite a compiled request into the frozen v1 hex-alias generation.
+
+    Every request persisted before the short-alias cutover names its fields this way, so the
+    contract has to keep validating and resolving them. Deriving the v1 form from the live compiler
+    keeps the two generations provably the same request apart from the property names.
+    """
+
+    raw = request.model_dump(mode="json", by_alias=True, exclude_none=True)
+    rename = {
+        alias: legacy_exa_field_alias(field_key)
+        for alias, field_key in request.field_key_by_alias.items()
+    }
+    schema = raw["outputSchema"]
+    assert isinstance(schema, dict)
+    properties = schema["properties"]
+    assert isinstance(properties, dict)
+    schema["properties"] = {rename[alias]: value for alias, value in properties.items()}
+    schema["required"] = [rename[alias] for alias in properties]
+    prompt = raw["systemPrompt"]
+    assert isinstance(prompt, str)
+    for alias, legacy in rename.items():
+        prompt = prompt.replace(f"{alias}=", f"{legacy}=")
+    raw["systemPrompt"] = prompt
+    return type(request).model_validate(raw)
+
+
 def _one_field_payload(
     *,
     field_key: str = _PAIN,
     value: object = "Referral intake creates recurring administrative work.",
     include_cost: bool = True,
     include_highlight: bool = True,
+    alias: str | None = None,
 ) -> dict[str, object]:
     url = "https://cascade-gastro.example/careers/referral-coordinator"
     highlight = "Referral intake creates recurring administrative work."
-    field_alias = exa_field_alias(field_key)
+    field_alias = alias if alias is not None else exa_field_alias(field_key)
     payload: dict[str, object] = {
         "requestId": "exa-e0-one-field",
         "results": [
@@ -161,6 +192,21 @@ def test_target_lock_carries_available_alias_and_geography_hints() -> None:
     assert "Oregon" in request.query
 
 
+def test_an_over_long_research_intent_refuses_in_the_repairable_bound_species() -> None:
+    """The cap is a *caller* bound, not a contract violation, so it raises its own type.
+
+    A follow-up ``research_account_deep`` grows the planning sentence with the model's own reason
+    plus the prior result context; live, that overflowed the cap and the bare ``ValueError``
+    killed the whole account job. The typed refusal is what lets the tool layer convert it into a
+    repairable governed rejection, and it still reads as an ordinary ``ValueError`` so the greedy
+    bundle packer's split logic is unchanged.
+    """
+
+    with pytest.raises(ExaDeepRequestBoundExceeded, match="1000-character product cap"):
+        compile_exa_deep_request(_account(), (_spec(_PAIN),), research_intent="pain " * 300)
+    assert issubclass(ExaDeepRequestBoundExceeded, ValueError)
+
+
 def test_compiler_preserves_registry_schema_without_mutating_it() -> None:
     registry_schema: dict[str, object] = {
         "type": "array",
@@ -197,17 +243,31 @@ def test_compiler_preserves_registry_schema_without_mutating_it() -> None:
     }
 
 
-def test_provider_aliases_are_reversible_path_safe_and_prompt_pinned() -> None:
+def test_provider_aliases_are_short_deterministic_path_safe_and_prompt_pinned() -> None:
+    """Every requested field gets a ten-character alias the provider can copy verbatim.
+
+    The v1 encoding hex-expanded the field key, so a resonance field cost 66-74 characters of
+    meaningless copy work and the provider dropped or rewrote characters in the middle of it. The
+    alias length is now fixed and independent of the field name, and the readable mapping is still
+    pinned in the prompt, which is what makes the alias resolvable without a mutable table.
+    """
+
     request = _golden_request()
     properties = request.output_schema["properties"]
     assert isinstance(properties, dict)
-    expected = {_MOVES, _PAIN}
-    assert {field_key_from_exa_alias(alias) for alias in properties} == expected
+    assert set(request.field_key_by_alias.values()) == {_MOVES, _PAIN}
+    assert all(len(alias) == EXA_FIELD_ALIAS_CHARACTERS for alias in properties)
     assert all("." not in alias and "[" not in alias and "]" not in alias for alias in properties)
     assert all(
-        f"{alias}={field_key_from_exa_alias(alias)}" in request.system_prompt
-        for alias in properties
+        f"{alias}={field_key}" in request.system_prompt
+        for alias, field_key in request.field_key_by_alias.items()
     )
+    assert exa_field_alias(_PAIN) == exa_field_alias(_PAIN)
+    assert _golden_request().output_schema == request.output_schema
+
+    longest = "account.resonance.employee_sentiment"
+    assert len(legacy_exa_field_alias(longest)) == 74
+    assert len(exa_field_alias(longest)) == EXA_FIELD_ALIAS_CHARACTERS == 10
 
     raw = request.model_dump(mode="json", by_alias=True, exclude_none=True)
     raw_schema = raw["outputSchema"]
@@ -389,6 +449,116 @@ def test_unchanged_golden_normalizes_field_faithful_spans_cost_and_citations() -
         "Patient access expansion",
     }
     assert {citation.status for citation in normalization.citations} == {"selected"}
+
+
+def test_normalization_orders_by_field_key_not_by_payload_key_order() -> None:
+    """The stored normalization must survive a jsonb round trip of its request and response.
+
+    E1 persists this value and the snapshot materializer recomputes it from the retained wire
+    request and response, both of which are read back out of ``jsonb`` — which does not preserve
+    object key order. Ordering the citations by whatever order the payload happened to deserialize
+    in made that equality check depend on serialization luck, and the harness caught it as
+    ``stored Exa normalization differs from recomputation`` the moment aliases stopped sorting the
+    same way as their field keys.
+    """
+
+    request = _golden_request()
+    response = parse_exa_deep_response(request, _json("deep_response.json"))
+    expected = normalize_exa_deep_snapshot(request, response)
+    assert [citation.field_key for citation in expected.citations] == sorted(
+        citation.field_key for citation in expected.citations
+    )
+
+    def _reordered(value: dict[str, object]) -> dict[str, object]:
+        return {key: value[key] for key in sorted(value, reverse=True)}
+
+    shuffled_payload = _json("deep_response.json")
+    output = shuffled_payload["output"]
+    assert isinstance(output, dict)
+    content = output["content"]
+    assert isinstance(content, dict)
+    output["content"] = _reordered(content)
+    output["grounding"] = list(reversed(cast(list[object], output["grounding"])))
+
+    raw_request = request.model_dump(mode="json", by_alias=True, exclude_none=True)
+    schema = raw_request["outputSchema"]
+    assert isinstance(schema, dict)
+    properties = schema["properties"]
+    assert isinstance(properties, dict)
+    schema["properties"] = _reordered(properties)
+    shuffled_request = ExaDeepSearchRequest.model_validate(raw_request)
+
+    assert list(shuffled_request.field_key_by_alias) != list(request.field_key_by_alias)
+    shuffled_response = parse_exa_deep_response(shuffled_request, shuffled_payload)
+    assert normalize_exa_deep_snapshot(shuffled_request, shuffled_response) == expected
+
+
+def test_unique_legacy_alias_corruption_is_repaired_inside_the_requested_schema() -> None:
+    request = _as_legacy_alias_request(
+        compile_exa_deep_request(_account(), (_spec(_PAIN),), research_intent="pain evidence")
+    )
+    canonical = legacy_exa_field_alias(_PAIN)
+    payload = _one_field_payload(alias=canonical)
+    # Mirrors the live provider defect: a long canonical hex alias is partially rewritten as
+    # readable/Unicode text. Its intact byte-aligned prefix still identifies one requested field.
+    corrupted = f"{canonical[:26]}ெரrational_pain"
+    output = payload["output"]
+    assert isinstance(output, dict)
+    content = output["content"]
+    grounding = output["grounding"]
+    assert isinstance(content, dict) and isinstance(grounding, list)
+    content[corrupted] = content.pop(canonical)
+    assert isinstance(grounding[0], dict)
+    grounding[0]["field"] = corrupted
+
+    response = parse_exa_deep_response(request, payload)
+
+    assert set(response.output.content) == {canonical}
+    assert tuple(item.field for item in response.output.grounding) == (canonical,)
+
+
+def test_legacy_alias_repair_refuses_an_ambiguous_requested_prefix() -> None:
+    request = ExaDeepSearchRequest.model_validate(_json("legacy_alias_deep_request.json"))
+    payload = _json("legacy_alias_deep_response.json")
+    output = payload["output"]
+    assert isinstance(output, dict)
+    content = output["content"]
+    grounding = output["grounding"]
+    assert isinstance(content, dict) and isinstance(grounding, list)
+    pain_alias = legacy_exa_field_alias(_PAIN)
+    ambiguous = "f_6163636f756e742eெர"
+    content[ambiguous] = content.pop(pain_alias)
+    for item in grounding:
+        assert isinstance(item, dict)
+        if item["field"] == pain_alias:
+            item["field"] = ambiguous
+
+    with pytest.raises(ValidationError, match="canonical Exa field aliases"):
+        parse_exa_deep_response(request, payload)
+
+
+def test_a_corrupted_short_alias_fails_closed_and_is_never_repaired() -> None:
+    """The prefix salvage stays a v1-only rescue; a ten-character alias is not guessed at.
+
+    Salvaging a short alias would mean matching on three or four characters against a bundle of at
+    most eight fields, which is exactly how a value gets attributed to the wrong field. Refusing
+    keeps the honest outcome: the exchange is unsettleable and the fields close as gaps.
+    """
+
+    request = compile_exa_deep_request(_account(), (_spec(_PAIN),), research_intent="pain evidence")
+    canonical = exa_field_alias(_PAIN)
+    payload = _one_field_payload()
+    output = payload["output"]
+    assert isinstance(output, dict)
+    content = output["content"]
+    grounding = output["grounding"]
+    assert isinstance(content, dict) and isinstance(grounding, list)
+    content[canonical[:-2]] = content.pop(canonical)
+    assert isinstance(grounding[0], dict)
+    grounding[0]["field"] = canonical[:-2]
+
+    with pytest.raises(ValidationError, match="canonical Exa field aliases"):
+        parse_exa_deep_response(request, payload)
 
 
 def test_retained_text_can_supply_a_field_faithful_span_when_highlights_are_absent() -> None:

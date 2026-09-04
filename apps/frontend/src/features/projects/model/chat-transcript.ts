@@ -679,6 +679,36 @@ function livingParts(turn: TranscriptTurn | undefined): ChatPart[] {
   });
 }
 
+/**
+ * Fold one durable message page into what is already loaded (Slice C C5).
+ *
+ * The messages read serves the *newest* page first and pages backward on a
+ * before-cursor, so the controller holds a growing window that can receive a
+ * page at either end: an older page prepends during scrollback, and a reload's
+ * fresh newest page lands after older history is already loaded. One rule
+ * covers both: union by message id (the incoming durable row wins), ordered by
+ * the thread's own gap-free `sequence`. Deduplication against optimistic and
+ * streamed stand-ins is not re-implemented here — `composeTranscript`'s
+ * identity guards (turn id, durable-wins) are the merge seam, and they receive
+ * the merged list.
+ *
+ * Reference-preserving: a message already loaded and absent from the incoming
+ * page survives by identity, so React re-renders only what actually changed.
+ */
+export function mergeThreadMessages(
+  loaded: readonly ChatMessage[],
+  page: readonly ChatMessage[],
+): ChatMessage[] {
+  if (page.length === 0) return [...loaded];
+  const incoming = new Map(page.map((message) => [message.id, message]));
+  const merged = loaded.map((message) => incoming.get(message.id) ?? message);
+  const known = new Set(loaded.map((message) => message.id));
+  for (const message of page) {
+    if (!known.has(message.id)) merged.push(message);
+  }
+  return merged.sort((left, right) => left.sequence - right.sequence);
+}
+
 /** Every gate id the transcript currently shows a card for. */
 export function gateIdsInTranscript(
   transcript: readonly TranscriptMessage[],

@@ -16,7 +16,7 @@ import json
 import re
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any, cast
+from typing import Any, Final, cast
 from urllib.parse import parse_qsl, urlsplit
 from uuid import UUID, uuid4
 
@@ -63,8 +63,12 @@ from clue_research.durable.provider_spend import (
     ProviderSpendGuardError,
     require_provider_spend_capacity,
 )
+from clue_research.durable.spend_posture import cap_refusal_is_enforced
 from clue_storage import StorageBackend, artifact_key, content_address
 from clue_storage.artifacts import erase_if_unreferenced, record_artifact
+
+#: Attribution for the record-only spend-cap posture (founder ruling 2026-08-20).
+_SITE_DISCOVERY_RESERVATION: Final = "discovery_reservation"
 
 
 class DiscoveryRepositoryError(RuntimeError):
@@ -970,10 +974,12 @@ async def reserve_discovery_operation(
     never accepted from a caller.  An exact concurrent/restarted request returns the existing row
     with ``created=False``; it does not mint a second operation or increment the batch reservation.
 
-    ``enforce_budget`` is the FI pilot budget-controls switch and gates only the *project-run*
-    money check below. The immutable plan's own provider-unit and money caps above are a
-    consistency invariant of this operation's durable plan, not a spend-vs-budget stop, so they
-    hold in both modes.
+    ``enforce_budget`` is the FI pilot budget-controls switch. It gates the *project-run* money
+    check below **and** — since the 2026-08-20 ruling that our own spend caps are record-only in
+    the pilot posture — the immutable plan's two running-total caps. Both are still computed and
+    announced (:mod:`clue_research.durable.spend_posture`); only the refusal goes inert. Note the
+    running totals mean a record-only batch can overshoot its plan cap, which is exactly the point
+    (the true ceiling is the provider console); the durable reserved/charged numbers stay exact.
     """
 
     if operation.workspace_id != workspace_id:
@@ -1050,7 +1056,15 @@ async def reserve_discovery_operation(
         ).scalar_one()
     )
     reserved_after = reserved_before + operation.provider_units_reserved
-    if reserved_after > Decimal(plan.provider_credit_cap):
+    if reserved_after > Decimal(plan.provider_credit_cap) and cap_refusal_is_enforced(
+        enforce_budget,
+        site=_SITE_DISCOVERY_RESERVATION,
+        reason="batch_reserved_units_above_plan_cap",
+        amounts={
+            "batch_provider_units_reserved": reserved_after,
+            "provider_credit_cap": plan.provider_credit_cap,
+        },
+    ):
         raise DiscoveryBudgetExceeded(
             "discovery provider-unit reservation exceeds the immutable plan cap"
         )
@@ -1068,7 +1082,16 @@ async def reserve_discovery_operation(
             )
         ).scalar_one()
     )
-    if cost_reserved_before + operation.cost_cents_reserved > plan.money_budget_cap_cents:
+    cost_reserved_after = cost_reserved_before + operation.cost_cents_reserved
+    if cost_reserved_after > plan.money_budget_cap_cents and cap_refusal_is_enforced(
+        enforce_budget,
+        site=_SITE_DISCOVERY_RESERVATION,
+        reason="batch_reserved_cost_above_plan_cap",
+        amounts={
+            "batch_cost_cents_reserved": cost_reserved_after,
+            "money_budget_cap_cents": plan.money_budget_cap_cents,
+        },
+    ):
         raise DiscoveryBudgetExceeded(
             "discovery monetary reservation exceeds the immutable plan cap"
         )

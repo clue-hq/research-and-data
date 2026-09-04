@@ -580,7 +580,10 @@ def _bodies() -> dict[str, dict[str, object]]:
             "product_id": "product_missing",
             "icp_key": "matrix",
             "icp_version": 1,
-            "body": {
+            # The promoted @4 contract renames v2's ``body`` to ``directive`` and declares the
+            # field breadth; an explicit field list is the ``custom`` request.
+            "profile": "custom",
+            "directive": {
                 "account_scope": {"explicit_account_ids": [_UUID()]},
                 "field_keys": ["account.strategic_moves"],
                 "committee_plan": {},
@@ -1289,7 +1292,17 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The part-iii merge adds the design write envelopes and leg tools to the address
     # inventory as well (77 + 52 = 129). Brand Ad Assets v1 W2 adds four more, each at @1
     # only — the lane is new, so it has no historical contract to retain (129 → 133).
-    assert len(registry) == 133
+    # Slice B wave 2 registers draft_account_research_directive@4 — the comprehensive-profile
+    # directive contract — beside its replayable @1/@2/@3 predecessors.
+    # The Slice B live-gate repair then registers draft_account_research_directive@5 — @4's
+    # advertised input schema made ``directive.field_keys`` required, so a schema-honouring model
+    # could never draft the comprehensive profile the steering skill asks for; @5 makes the key
+    # omittable and inherits @4's expansion/ambiguity semantics unchanged, beside its replayable
+    # @1/@2/@3/@4 predecessors (still no new name).
+    # The ARV2-R0 merge unions both lines' registrations; 136 is measured off the merged tree,
+    # not derived from either side's arithmetic.
+    assert len(registry) == 136
+    assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
     assert registry.descriptor("start_confirmed_project_run").version == "3"
@@ -1311,8 +1324,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # envelopes: one ingestion enqueue and three lane writes (114 -> 118).
     assert len(registry.names()) == 118
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
-    # project-run-scoped profile_contact@2 as the name-only default.
-    assert len(registry) == 133
+    # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
+    # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
+    # no name. 136 is measured off the merged tree (see the note at the first count above).
+    assert len(registry) == 136
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {
@@ -1321,8 +1336,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
         "research_account_gaps@1",
         "research_account_gaps@2",
     }
-    # Slice 5 promoted presentation-bearing draft @3 as the default; confirm stays @2.
-    assert registry.descriptor("draft_account_research_directive").version == "3"
+    # Slice 5 promoted presentation-bearing draft @3 as the default; Slice B wave 2 promoted the
+    # comprehensive-profile @4, and the live-gate repair promoted the satisfiable-schema @5.
+    # Confirm stays @2.
+    assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("confirm_account_research_directive").version == "2"
 
 

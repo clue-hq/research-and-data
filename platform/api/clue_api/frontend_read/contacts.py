@@ -142,11 +142,13 @@ class RoleOnCommittee(WireModel):
     ``value`` is a :class:`~clue_core.Persona` value: the governed resolver refuses a member whose
     role and persona disagree, so the two are the same closed 4-value vocabulary, served raw.
     ``confidence`` is the role claim's own inference confidence (clamped by the M8.3 plausibility
-    gate), ``null`` when the claim carries none — never a fabricated 1.0.
+    gate), ``null`` when the claim carries none — never a fabricated 1.0. ``reasoning`` is the
+    agent-authored rationale from that same governed role claim, not a read-layer reconstruction.
     """
 
     value: str
     confidence: float | None = None
+    reasoning: str | None = None
 
 
 class ContactSignals(WireModel):
@@ -255,20 +257,27 @@ async def _resolve_account(
     return canonical, account.canonical_name
 
 
-def _role_confidence(member: GovernedCommitteeContact) -> float | None:
-    """The role claim's own ``confidence``, or ``None`` — never the claim-level confidence, which
-    is a source-quality score rather than the role inference's."""
+def _role_on_committee(member: GovernedCommitteeContact) -> RoleOnCommittee:
+    """Project the role claim's judgment without inventing confidence or reasoning."""
+
     role = next(
         (item.claim for item in member.claims if item.claim.id == member.role_claim_id), None
     )
     value = role.value_json if role is not None else None
     confidence = value.get("confidence") if isinstance(value, dict) else None
+    rationale = value.get("rationale") if isinstance(value, dict) else None
     # ``bool`` is an ``int`` in Python; a boolean confidence would be a schema violation, and
     # rendering it as 1.0/0.0 would invent a number the inference never produced.
-    return (
+    role_confidence = (
         float(confidence)
         if isinstance(confidence, int | float) and not isinstance(confidence, bool)
         else None
+    )
+    role_reasoning = rationale.strip() if isinstance(rationale, str) and rationale.strip() else None
+    return RoleOnCommittee(
+        value=member.role_on_committee,
+        confidence=role_confidence,
+        reasoning=role_reasoning,
     )
 
 
@@ -383,9 +392,7 @@ def _build_row(
         title=title if isinstance(title, str) else None,
         title_restricted=title_claim is not None and not shown,
         persona=member.persona,
-        role_on_committee=RoleOnCommittee(
-            value=member.role_on_committee, confidence=_role_confidence(member)
-        ),
+        role_on_committee=_role_on_committee(member),
         linkedin_url=None if entity is None else entity.linkedin_url,
         project_ids=tuple(project_ids),
         signals=ContactSignals(type_count=_signal_type_count(claims, policy)),

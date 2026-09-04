@@ -169,6 +169,7 @@ def test_postgres_journal_checkpoint_and_fresh_runtime_replay() -> None:
                     task_id=uuid4(),
                     worker_id="r3-db-test",
                     lease_generation=1,
+                    task_attempt=1,
                 ),
                 stop_requested=asyncio.Event(),
                 lease_lost=asyncio.Event(),

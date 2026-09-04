@@ -56,13 +56,14 @@ from clue_core import (
     ResearchSubjectRef,
     ResearchViewReadRequest,
     RunId,
+    SourceTier,
     UseClass,
     VerificationStatus,
     contact_claim,
     new_run_id,
 )
 from clue_fleet import EntityResearchRunEnvelope
-from clue_research.claimstore import insert_claim
+from clue_research.claimstore import WorkspaceScope, claims_by_ids, insert_claim
 from clue_research.durable import AccountRunStatus, insert_account_run, save_references
 from clue_research.identity import (
     insert_account_entity,
@@ -75,6 +76,7 @@ from clue_research.profiling.committee import (
     PERSONA,
     ROLE_ON_COMMITTEE,
     load_committee_pack,
+    write_committee_claim,
 )
 from clue_research.profiling.fields import FACET_NICKNAME
 from clue_spine import create_product, get_project
@@ -1027,6 +1029,265 @@ def test_the_contact_subject_read_of_the_c7_section_is_bridged_too() -> None:
             )
             assert [reference.subject.entity_id for reference in seed.references] == [
                 fixture.members[0]
+            ]
+
+    run_async(scenario())
+
+
+# --- Slice D / D4: honest role provenance keeps display continuity ------------------------------
+
+
+async def _agent_inferred_role_pair(
+    conn: AsyncConnection,
+    *,
+    contact: EntityId,
+    workspace_id: str,
+    product_id: str,
+    run_id: RunId,
+    persona: Persona,
+    title: str,
+) -> tuple[Claim, Claim]:
+    """The role/persona pair exactly as D3's ``record_committee_role_inferences`` writes it.
+
+    Written through the committee package's own ``write_committee_claim`` — the production writer
+    the D3 tool calls — rather than through this file's ``_claim`` helper, because the whole point
+    of D4 is that the *post-D1* shape serves: LLM_SYNTHESIS / tier 4 / PLATFORM_INFERRED, grounded
+    in a real URL + the member's own title span, and born UNVERIFIED. Stamping it by hand would
+    prove only that a fixture can be shaped to pass. ``write_committee_claim`` returns ids, so the
+    rows are read back to hand the coverage fixture the ``Claim`` objects it builds refs from.
+    """
+
+    source_url = f"https://{uuid4().hex[:10]}.example/team"
+    evidence_span = f"title: {title}"
+    role_claim_id = await write_committee_claim(
+        conn,
+        contact,
+        ROLE_ON_COMMITTEE,
+        {
+            "role": persona.value,
+            "confidence": 0.87,
+            "plausible": True,
+            "rationale": "the operations leader owns the workflow this product changes",
+        },
+        confidence=0.87,
+        method=ExtractionMethod.LLM_SYNTHESIS,
+        tier=SourceTier(4),
+        source_url=source_url,
+        evidence_span=evidence_span,
+        run_id=run_id,
+        workspace_id=workspace_id,
+        identity_binding=IdentityBinding.STRONG,
+        product_id=product_id,
+    )
+    persona_claim_id = await write_committee_claim(
+        conn,
+        contact,
+        PERSONA,
+        persona.value,
+        confidence=0.87,
+        method=ExtractionMethod.LLM_SYNTHESIS,
+        tier=SourceTier(4),
+        source_url=source_url,
+        evidence_span=evidence_span,
+        run_id=run_id,
+        workspace_id=workspace_id,
+        identity_binding=IdentityBinding.STRONG,
+        product_id=product_id,
+    )
+    written = await claims_by_ids(
+        conn,
+        (role_claim_id, persona_claim_id),
+        scope=WorkspaceScope.for_workspace(workspace_id),
+    )
+    return written[role_claim_id], written[persona_claim_id]
+
+
+@dataclass(frozen=True)
+class _AgentInferred:
+    """One coverage row holding both post-D3 member shapes: role-inferred, and honestly roleless."""
+
+    fixture: _M8D
+    coverage_id: UUID
+    inferred: EntityId
+    roleless: EntityId
+    role_claim: Claim
+    persona_claim: Claim
+
+
+async def _seed_agent_inferred(conn: AsyncConnection) -> _AgentInferred:
+    """One account whose committee is the post-D3 world: one member the account agent gave a role,
+    one member nobody could ground a role for (the D2 ``agent_deferred`` intermediate state, or a
+    member the D3 batch simply omitted — D3 never fills an omitted member)."""
+
+    await load_committee_pack(conn)
+    scope = await _scope(conn)
+    account = await insert_account_entity(
+        conn,
+        canonical_name=f"D4 Target {uuid4().hex[:6]}",
+        primary_domain=f"{uuid4().hex[:10]}.example",
+        status=AccountStatus.ACTIVE,
+        workspace_id=scope.workspace_id,
+    )
+    envelope = await _launch_for(conn, scope, (account,))
+    run_id = new_run_id()
+
+    inferred = await _contact(conn, account, name="Agent Inferred Person")
+    inferred_title = await _claim(
+        conn,
+        contact=inferred,
+        field_key=CURRENT_TITLE,
+        value="VP of Operations",
+        workspace_id=scope.workspace_id,
+        product_id=scope.product_id,
+        run_id=run_id,
+    )
+    role_claim, persona_claim = await _agent_inferred_role_pair(
+        conn,
+        contact=inferred,
+        workspace_id=scope.workspace_id,
+        product_id=scope.product_id,
+        run_id=run_id,
+        persona=Persona.ECONOMIC_BUYER,
+        title="VP of Operations",
+    )
+
+    roleless = await _contact(conn, account, name="Roleless Person")
+    roleless_title = await _claim(
+        conn,
+        contact=roleless,
+        field_key=CURRENT_TITLE,
+        value="Director of Finance",
+        workspace_id=scope.workspace_id,
+        product_id=scope.product_id,
+        run_id=run_id,
+    )
+
+    claims = (inferred_title, role_claim, persona_claim, roleless_title)
+    members = (inferred, roleless)
+    coverage_id = await _coverage(
+        conn,
+        envelope,
+        account_entity_id=account,
+        workspace_id=scope.workspace_id,
+        claims=claims,
+        members=members,
+        committee_status="needs_review",
+    )
+    return _AgentInferred(
+        fixture=_M8D(
+            scope=scope,
+            envelope=envelope,
+            account=account,
+            run_id=run_id,
+            members=members,
+            claims=claims,
+        ),
+        coverage_id=coverage_id,
+        inferred=inferred,
+        roleless=roleless,
+        role_claim=role_claim,
+        persona_claim=persona_claim,
+    )
+
+
+async def _persisted_member_ids(conn: AsyncConnection, coverage_id: UUID) -> list[EntityId]:
+    row = (
+        await conn.execute(
+            text(
+                "SELECT committee_member_ids FROM entity_research_account_coverage "
+                "WHERE coverage_id=:coverage_id"
+            ),
+            {"coverage_id": coverage_id},
+        )
+    ).scalar_one()
+    return [EntityId(UUID(str(value))) for value in row]
+
+
+def test_an_agent_inferred_member_serves_exactly_like_a_worker_inferred_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D4: the honest post-D1/D3 role provenance did not cost the contacts read a single member.
+
+    Every other scenario in this file writes the *pre-D1* role shape (tier-1 HUMAN), which is the
+    provenance D1 retired: an LLM's role judgment stamped as a human-asserted fact. D3 replaced it
+    with an agent-derived claim — LLM_SYNTHESIS, tier 4, PLATFORM_INFERRED, born UNVERIFIED. This
+    pins that the eligibility resolver's ``_resolve_contact_claims`` admits that shape by the same
+    route it admitted the old one (STRONG-bound role *and* persona, ``plausible`` not false,
+    ``role == persona``), which is why the ``role_claim_id``/``persona_claim_id`` identity check
+    below matters: it proves the seat came from the agent-written pair and not from some other row.
+
+    The second half is the contract's other half — a member with no grounded role is *not*
+    eligibility-committee material, but is still a discovered person. The coverage row keeps them
+    in ``committee_member_ids`` (the frontend contacts list reads members; their role simply renders
+    empty), so an honest refusal to guess a role never erases the person.
+
+    Toggle pinned to the pilot posture explicitly: the workspace ``.env`` runs the
+    ``integration_pilot`` overlay (verification disabled), and this test must state that dependence
+    rather than inherit it.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            monkeypatch.setenv("CLUE_VERIFICATION_ENABLED", "false")
+            seeded = await _seed_agent_inferred(conn)
+            # Coverage is again the only membership record — no legacy references index exists.
+            assert await _account_runs(conn) == 0
+
+            governed = await _resolver(conn, seeded.fixture).resolve_account(
+                account_entity_id=seeded.fixture.account,
+                workspace_id=seeded.fixture.scope.workspace_id,
+            )
+            assert [item.contact_entity_id for item in governed] == [seeded.inferred]
+            member = governed[0]
+            assert member.persona is Persona.ECONOMIC_BUYER
+            assert member.role_on_committee == Persona.ECONOMIC_BUYER.value
+            # The seat is the agent's pair, not an incidental row that happened to merge.
+            assert member.role_claim_id == seeded.role_claim.id
+            assert member.persona_claim_id == seeded.persona_claim.id
+            assert seeded.role_claim.extraction_method is ExtractionMethod.LLM_SYNTHESIS
+            assert seeded.role_claim.source_tier == 4
+            assert seeded.role_claim.verification_status is not VerificationStatus.VERIFIED
+            # The member's discovery-era professional facts ride along unchanged.
+            assert CURRENT_TITLE in {str(item.claim.field_key) for item in member.claims}
+
+            # The roleless member is not eligibility-committee material …
+            assert seeded.roleless not in {item.contact_entity_id for item in governed}
+            # … but is still a discovered person the contacts list must show.
+            assert await _persisted_member_ids(conn, seeded.coverage_id) == [
+                seeded.inferred,
+                seeded.roleless,
+            ]
+
+    run_async(scenario())
+
+
+def test_a_verification_enabled_deployment_withholds_the_unjudged_agent_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Continuity, not regression: with verification ENABLED the merge's verified-tier-4 gate
+    withholds the born-UNVERIFIED agent pair, so the member does not take a committee seat until
+    the M9.3 judge verifies it.
+
+    This is exact parity with a *worker*-written role after D1 — that pair is tier-4 UNVERIFIED at
+    birth too — so the toggle branch is a property of honest agent provenance, not of D3's tool.
+    The pre-D1 tier-1 HUMAN shape is what used to sail through both states (which is precisely the
+    false-provenance D1 retired); the sibling test above pins the pilot posture that serves these
+    roles today.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            monkeypatch.setenv("CLUE_VERIFICATION_ENABLED", "true")
+            seeded = await _seed_agent_inferred(conn)
+            governed = await _resolver(conn, seeded.fixture).resolve_account(
+                account_entity_id=seeded.fixture.account,
+                workspace_id=seeded.fixture.scope.workspace_id,
+            )
+            assert governed == ()
+            # Withheld from the seat, never erased from discovery: both members stay visible.
+            assert await _persisted_member_ids(conn, seeded.coverage_id) == [
+                seeded.inferred,
+                seeded.roleless,
             ]
 
     run_async(scenario())

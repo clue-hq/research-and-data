@@ -332,7 +332,7 @@ def _p2_envelope(
                 "product_id": selection.product_id,
                 "project_run_id": selection.project_run_id,
                 "selection": selection,
-                "agent_profile_ref": "agent-profile:account-research:v1",
+                "agent_profile_ref": "agent-profile:account-research:v2",
                 "agent_profile_sha256": profile_sha256,
             }
         ).model_dump(mode="python")
@@ -566,6 +566,10 @@ class _ScriptedModel(BaseChatModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     plan: list[dict[str, Any]]
+    #: Deliberately request the opposite finalization outcome from the one the coverage derives.
+    #: The engine owns the outcome, so the proposal must carry the derived value regardless —
+    #: the live GraphRecursionError loop started as a refusal of exactly this mismatch.
+    request_wrong_outcome: bool = False
     _result_refs: list[str] = PrivateAttr(default_factory=list)
     _next: int = PrivateAttr(default=0)
     _observed_state: dict[str, Any] | None = PrivateAttr(default=None)
@@ -627,14 +631,21 @@ class _ScriptedModel(BaseChatModel):
         if last.name == "read_account_research_state":
             self._observed_state = payload
         elif last.name == "assess_account_coverage":
+            if last.status == "error":
+                raise RuntimeError(
+                    "script observed governed assessment refusal: "
+                    + json.dumps(payload, sort_keys=True)
+                )
             self._observed_coverage = payload
-            outcome = (
-                "needs_review"
-                if payload["unresolved_field_keys"]
+            derived_needs_review = (
+                payload["unresolved_field_keys"]
                 or payload["review_flags"]
                 or payload["committee_status"] != "complete"
-                else "completed"
             )
+            if self.request_wrong_outcome:
+                outcome = "completed" if derived_needs_review else "needs_review"
+            else:
+                outcome = "needs_review" if derived_needs_review else "completed"
             return self._call(
                 "finalize_account_research",
                 {
@@ -668,6 +679,7 @@ async def _run_p2_agent(
     admitted: Sequence[str],
     plan: list[dict[str, Any]],
     tmp_path: Path,
+    request_wrong_outcome: bool = False,
 ) -> tuple[Any, _ScriptedModel, _EmptyCommitteeProviders, EntityResearchJobAuthorization]:
     storage = FsStorage(tmp_path / f"fi2-artifacts-{uuid4().hex[:8]}")
     envelope, connection = await _launch_p2_job(conn, fixture=fixture, admitted=admitted)
@@ -679,7 +691,10 @@ async def _run_p2_agent(
         update={"active_worker_id": "fi2-s3-t2-worker", "lease_generation": 1}
     )
     fence = EntityResearchExecutionFence(
-        task_id=uuid4(), worker_id="fi2-s3-t2-worker", lease_generation=1
+        task_id=uuid4(),
+        worker_id="fi2-s3-t2-worker",
+        lease_generation=1,
+        task_attempt=1,
     )
     lineage = _FixtureLineageReader()
     providers = _EmptyCommitteeProviders(
@@ -727,7 +742,7 @@ async def _run_p2_agent(
         conn_factory=connection,
     )
     definition = await resolver.resolve(job=live_job, fence=fence)
-    model = _ScriptedModel(plan=plan)
+    model = _ScriptedModel(plan=plan, request_wrong_outcome=request_wrong_outcome)
     journal = DbEntityResearchAgentJournal(conn_factory=connection)
     runtime = EntityResearchAgentRuntime(
         factory=EntityResearchAgentFactory(
@@ -764,58 +779,51 @@ def _committee_call(*, account_id: UUID, evidence_claim_id: UUID) -> dict[str, A
     }
 
 
-def test_fi2_61_a_job_that_calls_no_provider_at_all_finalizes_cleanly(
+def test_fi2_61_a_committee_authorized_job_cannot_finalize_without_attempting_it(
     tmp_path: Path,
     require_profiling_db: None,
 ) -> None:
-    """The prompt-obedient all-known job: **zero** provider calls, zero results, a real receipt.
+    """All-known Account fields do not excuse no-work committee settlement.
 
-    This is the shape a governed agent actually reaches when every admitted field is already
-    answered and it has no retained result to cite as committee-office evidence: it reads state,
-    sees nothing left to research, and closes. Coverage therefore carries an *empty* result set —
-    admissible only because every completed field is borrowed (the engine re-derives that, and
-    ``assess`` refuses an empty close over work that did complete a field). The committee is
-    honestly unresearched, so the outcome is ``NEEDS_REVIEW`` with the existing
-    ``committee_not_researched`` flag — a clean finalization, not a failed one.
+    The three Account fields need no provider work because each is already evidence-backed. But
+    the selection explicitly authorizes Sumble People committee discovery. Omitting that call is
+    now an incomplete execution, so assessment writes no coverage and no receipt can be minted.
     """
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
             fixture = await _seed_p1_research(conn, stale_culture=False)
             admitted = (_PAIN, _MOVES, _HIRING)
-            outcome, model, providers, authorization = await _run_p2_agent(
-                conn,
-                fixture=fixture,
-                admitted=admitted,
-                plan=[],
-                tmp_path=tmp_path,
-            )
-
-            assert isinstance(outcome, EntityResearchAgentResult)
-            receipt = outcome.finalization_receipt
-            assert receipt is not None
-            assert receipt.proposal.outcome is ResearchFinalizationOutcome.NEEDS_REVIEW
-            assert receipt.verification.all_passed()
-            assert receipt.verification.evidence_complete
-            assert set(receipt.proposal.completed_field_keys) == set(admitted)
-            assert receipt.proposal.unresolved_field_keys == ()
-            assert receipt.proposal.result_refs == ()
-            assert providers.calls == []
-            coverage = model.observed_coverage
-            assert coverage["review_flags"] == ["committee_not_researched"]
-            assert set(coverage["claim_refs"]) == {
-                f"claim:{fixture.p1_claim_ids[key]}" for key in admitted
-            }
-            assert set(coverage["skipped_field_reasons"]) == {
-                f"{key}:existing_claim_fresh" for key in admitted
-            }
-            spent = (
-                await conn.execute(
-                    text("SELECT spent_cents FROM entity_research_job WHERE job_id=:job_id"),
-                    {"job_id": authorization.job_id},
+            with pytest.raises(
+                RuntimeError,
+                match="every authorized field/source and committee attempt is terminal",
+            ):
+                await _run_p2_agent(
+                    conn,
+                    fixture=fixture,
+                    admitted=admitted,
+                    plan=[],
+                    tmp_path=tmp_path,
                 )
-            ).scalar_one()
-            assert Decimal(spent) == Decimal("0")
+
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM entity_research_account_coverage "
+                        "WHERE workspace_id=:workspace_id"
+                    ),
+                    {"workspace_id": fixture.workspace_id},
+                )
+            ).scalar_one() == 0
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM entity_research_provider_operation "
+                        "WHERE workspace_id=:workspace_id"
+                    ),
+                    {"workspace_id": fixture.workspace_id},
+                )
+            ).scalar_one() == 0
 
     run_async(scenario())
 
@@ -874,7 +882,12 @@ def test_fi2_61_an_empty_close_is_refused_over_a_field_that_was_not_borrowed(
             token = _ACTIVE_TOOL_EXECUTION.set(_active(authorization))
             try:
                 with pytest.raises(
-                    AccountResearchAuthorityError, match="answered by an existing claim"
+                    # ``sumble_jobs`` is named in this fixture's synthetic authority for every
+                    # field, but its pinned action can only ask for hiring velocity, so the
+                    # completeness reader no longer holds the unrequestable pairs outstanding
+                    # (``source_can_request``). The requestable half of the same field is.
+                    AccountResearchAuthorityError,
+                    match=r"account\.recent_funding@exa_deep",
                 ):
                     await store.assess(
                         AssessAccountCoverageInput(
@@ -921,10 +934,9 @@ def test_fi2_61_an_all_born_complete_job_spends_nothing_and_finalizes_completed(
     """The same economics with a committee call: no account-axis spend, ``COMPLETED`` receipt.
 
     The committee scope cites the account's own claim as its office evidence — production's Sumble
-    scope validation admits that (`sumble_entity_research_tools._persist_scope`), though the
-    governed prompt currently tells the agent to cite retained result refs only; sanctioning the
-    claim reference rides the next governed prompt bump. The zero-call test above covers the
-    prompt-obedient path; this one keeps the ``COMPLETED`` outcome under test.
+    scope validation admits that (`sumble_entity_research_tools._persist_scope`), and the governed
+    prompt explicitly permits that durable claim reference when the current run skips fresh
+    fields. This test keeps the ``COMPLETED`` outcome under test.
     """
 
     async def scenario() -> None:
@@ -973,53 +985,97 @@ def test_fi2_61_an_all_born_complete_job_spends_nothing_and_finalizes_completed(
     run_async(scenario())
 
 
-def test_fi2_61_stale_conflicted_and_relative_fields_are_researched_and_explained(
+def test_fi2_61_a_wrong_requested_outcome_is_normalized_to_the_engine_derived_one(
     tmp_path: Path,
     require_profiling_db: None,
 ) -> None:
-    """The ledger says why each field cost money — or did not — in one shared vocabulary."""
+    """The finalization outcome is engine-owned; a model's wrong request cannot wedge the job.
+
+    Live (job 2dd04bc4): the agent requested ``completed`` while the persisted coverage derived
+    ``needs_review``, the mismatch was refused, and the model looped back into re-buying
+    terminally-unproductive fields until the graph recursion cap suspended the job. The refusal is
+    gone: the proposal carries the derived outcome and the tool result is the correction the
+    model reads.
+    """
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
-            fixture = await _seed_p1_research(conn, conflicted_hiring=True)
-            admitted = (_PAIN, _MOVES, _CULTURE, _HIRING, _FIT)
+            fixture = await _seed_p1_research(conn, stale_culture=False)
+            admitted = (_PAIN, _MOVES, _HIRING)
             outcome, model, providers, _authorization = await _run_p2_agent(
                 conn,
                 fixture=fixture,
                 admitted=admitted,
                 plan=[
-                    {
-                        "name": "enrich_account",
-                        "args": {
-                            "field_keys": [_MOVES],
-                            "source_keys": ["sumble_jobs"],
-                            "questions": [_QUESTION],
-                        },
-                    },
                     _committee_call(
                         account_id=fixture.account_id,
                         evidence_claim_id=fixture.p1_claim_ids[_PAIN],
-                    ),
+                    )
                 ],
                 tmp_path=tmp_path,
+                request_wrong_outcome=True,
             )
 
             assert isinstance(outcome, EntityResearchAgentResult)
             receipt = outcome.finalization_receipt
             assert receipt is not None
-            assert receipt.proposal.outcome is ResearchFinalizationOutcome.NEEDS_REVIEW
+            # The model asked for needs_review; the engine derived (and proposed) COMPLETED.
+            assert receipt.proposal.outcome is ResearchFinalizationOutcome.COMPLETED
             assert receipt.verification.all_passed()
-            coverage = model.observed_coverage
-            assert set(coverage["unresolved_reasons"]) == {
-                f"{_CULTURE}:existing_claim_stale",
-                f"{_HIRING}:existing_claim_conflict",
-                f"{_FIT}:existing_claim_project_relative",
-            }
-            # `_MOVES` was researched by P2 even though P1 knew it — a re-research is always
-            # allowed; what §6.1 removes is the *obligation* to buy what is already fresh.
-            assert providers.calls == ["enrich_account", "discover_buying_committee"]
-            assert f"claim:{fixture.p1_claim_ids[_PAIN]}" in set(coverage["claim_refs"])
-            assert coverage["skipped_field_reasons"] == [f"{_PAIN}:existing_claim_fresh"]
+            assert providers.calls == ["discover_buying_committee"]
+            assert model.observed_coverage["unresolved_field_keys"] == []
+
+    run_async(scenario())
+
+
+def test_fi2_61_stale_conflicted_and_relative_fields_cannot_settle_unattempted(
+    tmp_path: Path,
+    require_profiling_db: None,
+) -> None:
+    """Known-but-unusable claims do not substitute for terminal provider attempts."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_p1_research(conn, conflicted_hiring=True)
+            admitted = (_PAIN, _MOVES, _CULTURE, _HIRING, _FIT)
+            with pytest.raises(
+                # See the note above: only the requestable half of this fixture's synthetic
+                # ``(sumble_jobs, exa_deep)`` authority can be outstanding.
+                RuntimeError,
+                match=r"account\.resonance\.culture@exa_deep",
+            ):
+                await _run_p2_agent(
+                    conn,
+                    fixture=fixture,
+                    admitted=admitted,
+                    plan=[
+                        {
+                            "name": "enrich_account",
+                            "args": {
+                                "field_keys": [_MOVES],
+                                "source_keys": ["sumble_jobs"],
+                                "questions": [_QUESTION],
+                            },
+                        },
+                        _committee_call(
+                            account_id=fixture.account_id,
+                            evidence_claim_id=fixture.p1_claim_ids[_PAIN],
+                        ),
+                    ],
+                    tmp_path=tmp_path,
+                )
+
+            # The attempted redundant refresh and committee result remain durable, but no
+            # coverage/finalization row may claim the other three fields were researched.
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM entity_research_account_coverage "
+                        "WHERE workspace_id=:workspace_id"
+                    ),
+                    {"workspace_id": fixture.workspace_id},
+                )
+            ).scalar_one() == 0
 
     run_async(scenario())
 

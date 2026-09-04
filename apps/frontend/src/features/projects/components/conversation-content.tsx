@@ -53,6 +53,11 @@ export function ConversationContent({
   );
   const { transcriptScrollRef } = useTranscriptAutoScroll({
     activeMessageRevision: activeUserMessageId,
+    // C5 scrollback: reaching the top of the list loads the preceding durable
+    // page; the hook re-anchors the view when it prepends. No new UI — the
+    // dummy build shows nothing during a scrollback fetch, so nothing renders.
+    canLoadOlder: chat.hasOlderMessages,
+    onLoadOlder: () => void chat.loadOlderMessages(),
     revision: chat.transcript.reduce(
       (total, message) => total + message.parts.length + (message.body ? 1 : 0),
       chat.transcript.length,

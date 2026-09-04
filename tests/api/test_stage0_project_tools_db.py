@@ -286,7 +286,7 @@ def test_empty_project_scope_is_explicitly_not_ready_instead_of_zero_over_zero_r
             assert output.verdict == "not_ready"
             assert output.coverage_ratio == 0.0
             assert output.available_field_keys == ()
-            assert "coverage_below_floor" in output.reason_codes
+            assert "coverage_below_floor" not in output.reason_codes
             assert "product_not_confirmed" in output.reason_codes
             assert "client_not_bound" in output.reason_codes
 
