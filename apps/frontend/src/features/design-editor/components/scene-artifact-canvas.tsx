@@ -17,7 +17,7 @@ import type { CanvasKit, Surface, TypefaceFontProvider } from "canvaskit-wasm";
 import { AlertTriangleIcon } from "lucide-react";
 import { textareaCommitKey } from "@/features/chat-shell/components/inspector-field-draft";
 import { sceneEngineBanners } from "../adapter/scene-engine-banners";
-import { scenePagelessNotice } from "../adapter/scene-pageless";
+import { effectiveScenePageId, scenePagelessNotice } from "../adapter/scene-pageless";
 import {
   ARTBOARD_BORDER_COLOR,
   ARTBOARD_SHADOW_COLOR,
@@ -613,7 +613,7 @@ function SceneDocumentCanvas({
     engineStatus,
     fontDiagnostics,
     loadGeneration,
-    pageId,
+    pageId: loadedPageId,
     redoDepth,
     refresh,
     scene,
@@ -685,20 +685,40 @@ function SceneDocumentCanvas({
   // after the first paint. AD4.C adds `preview`: a gesture in flight rebuilds
   // the tree with the dragged node's box substituted, which is how the moving
   // pixels reach the canvas without the scene being touched.
-  // genad2 Task 5: the loaded-but-pageless line, or null. Pure and derived —
-  // never a state that could survive the turn that authors the first page.
-  const pagelessNotice = scenePagelessNotice(scene, pageId);
-
-  // Rung B adds `editingNodeId`: the node under an open caret paints no glyphs,
-  // because the DOM overlay is drawing them. The STATE is passed, not the
-  // derived model — the model is built FROM this artboard, so feeding it back
-  // in would be circular; a stale id matches no node and suppresses nothing.
   // Task 9 adds `displayScene`: while the reveal pump is streaming, the tree is
   // built from the scene it is DRAWING rather than the one the document loaded
   // — the same one-derivation substitution `preview` above makes for a dragged
   // node's box, and just as narrow. Null (every route but a locked chat
   // surface) leaves this exactly as it was.
+  //
+  // Plan 2 item D: the scene being DRAWN (Task 9's `displayScene` while the
+  // reveal pump streams, else the loaded scene) and the page derived from it.
+  // A pageless load gets its page from the first streamed `add_page`, not
+  // from the next checkpoint reload. `loadedPageId` is still what the editing
+  // session receives (below): the inspector and layer tree read the LOADED
+  // scene, and a page id that scene does not contain would be a lie to them.
+  //
+  // Both lines stay BELOW every hook call in this component on purpose. Hoisted
+  // between `useSceneDocument` and the `useState`/`useRef` block above, the
+  // React Compiler stops recognising `setEditingNodeId` as a stable setter and
+  // skips optimizing the whole component (`preserve-manual-memoization` errors
+  // on `commitTextEdit`/`cancelTextEdit`). Nothing reads either value before
+  // here, so the position costs nothing and buys the compiled component back.
   const drawnScene = displayScene ?? scene;
+  const pageId = effectiveScenePageId(loadedPageId, drawnScene);
+
+  // genad2 Task 5: the loaded-but-pageless line, or null. Pure and derived —
+  // never a state that could survive the turn that authors the first page.
+  // Plan 2 item D points it at the DRAWN scene and the effective id, so the
+  // notice clears on the first streamed `add_page` rather than on the next
+  // checkpoint reload — the stage stops claiming there is no page while it is
+  // drawing one.
+  const pagelessNotice = scenePagelessNotice(drawnScene, pageId);
+
+  // Rung B adds `editingNodeId`: the node under an open caret paints no glyphs,
+  // because the DOM overlay is drawing them. The STATE is passed, not the
+  // derived model — the model is built FROM this artboard, so feeding it back
+  // in would be circular; a stale id matches no node and suppresses nothing.
   const artboard = useMemo(
     () =>
       drawnScene
@@ -870,7 +890,7 @@ function SceneDocumentCanvas({
           // fires afterwards with the final rendered (possibly relaid) scene;
           // that second setLoaded is idempotent. This is the MVP editor's own
           // shape: EditorApp installs result.scene in the accept path.
-          onSceneChangeRef.current?.(outcome.scene, pageId, documentId);
+          onSceneChangeRef.current?.(outcome.scene, loadedPageId, documentId);
         }
         return outcome;
       },
@@ -889,7 +909,7 @@ function SceneDocumentCanvas({
         // document on its very next render.
         if (outcome.accepted) {
           refresh();
-          onSceneChangeRef.current?.(outcome.scene, pageId, documentId);
+          onSceneChangeRef.current?.(outcome.scene, loadedPageId, documentId);
         }
         return outcome;
       },
@@ -926,6 +946,7 @@ function SceneDocumentCanvas({
       currentVersion,
       documentId,
       engine,
+      loadedPageId,
       pageId,
       refresh,
       scene,
@@ -1512,8 +1533,8 @@ function SceneDocumentCanvas({
   // that repeat is an idempotent `setLoaded` — the two are not redundant, they
   // cover different arrivals.
   useEffect(() => {
-    onSceneChangeRef.current?.(scene, pageId, documentId);
-  }, [documentId, pageId, scene]);
+    onSceneChangeRef.current?.(scene, loadedPageId, documentId);
+  }, [documentId, loadedPageId, scene]);
 
   /**
    * Press-selects, the gesture machine's own semantics (the source editor
