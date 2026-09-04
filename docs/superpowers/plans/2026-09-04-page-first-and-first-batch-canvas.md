@@ -530,3 +530,167 @@ Not delegated. Steps:
 3. Proof of item D: the artboard appears on the first `design.op_batch` (screenshot within the first minute) while `design_agent_run.status='running'` and BEFORE any `design.checkpoint`; the pageless notice is gone at that moment.
 4. Proof of item C: the run trace's first compile carries a `page` line; either no `*_refused_pageless` event appears (the prompt worked) or one appears with ZERO `image_generation_failed`/`image_registration_failed` after it (the guard worked). The run finishes with a repair round to spare (stop reason not `budget_exhausted_before_repair`).
 5. Records: `_memory/2026-09-04-plan2-page-first-and-first-batch.md` + README index line; roadmap status header ticks Plan 2; ledger closed; SDD workspace removed.
+
+---
+
+### Task 5: Every ledgered operation reaches the stream (found by the Task 4 live proof)
+
+**Why (verified 2026-09-04, run `run_b891860a…` / inner `run_8269352d…`):** the frontend cursor (`scene-stream-cursor.ts`, rule 5) applies an op frame only when it is CONTIGUOUS: `operations_total - operations.length === position`. The substrate appends to `self.operations_ledger` at 20 sites but only two of them push a frame (`compile_dsl_block`, `asset_placed`). On the fresh Apollo/Ramp document the compile auto-registered two kit assets (`brand_asset_registered`, ledger positions 1–2, no frame), so the first streamed batch ended at 20 with 18 ops and BEGAN at 2 while the cursor stood at 0 → dirty → every frame dropped until the first checkpoint. The stage kept the pageless notice for ~9 minutes although the frames had reached the browser (9 `design.op_batch` frames for the document, first at 11:00:05 IST). Task 3's canvas fix is correct but never got a frame to draw.
+
+**Fix (one chokepoint, no per-site edits):** `record()` is the only place a frame is pushed, and `operations_ledger` is the only ledger. So when a `sink_extra` carries `operations` + `operations_total`, the frame PREPENDS every ledger operation that was appended since the last streamed frame; the frame then begins exactly where the client's cursor stands. A checkpoint re-seats the client at its committed position, so `checkpoint_scene` advances the same marker. The frame contract becomes "everything ledgered since the last frame you got", which is the contract the cursor already assumes.
+
+**Files:**
+- Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/substrate.py` — `__init__` (~line 350, next to `self.operations_ledger`), `record()` (~line 4516; inside the lock, before `push` is built), `checkpoint_scene` (~line 4760, after `self._checkpointed_operations = len(operations)`).
+- Modify: `subsystems/clue-design/apps/agent_runtime/tests/test_streaming_sink.py` — two existing position tests move to the new contract; three new tests.
+
+**Interfaces:**
+- Produces: `LumenDesignTools._streamed_ledger_len: int` (ledger entries the stream has carried so far) and `LumenDesignTools._contiguous_sink_extra(self, sink_extra: JsonObject) -> JsonObject`.
+- Frontend unchanged (`scene-stream-cursor.ts` rule 5 already expects contiguity).
+
+- [ ] **Step 1: Write the failing tests** (append to `test_streaming_sink.py`)
+
+```python
+# --- (d) Plan 2 Task 5: frames are contiguous with the ledger -------------------
+
+
+def _upsert(asset_id):
+    return {"kind": "upsert_asset", "asset": {"id": asset_id}}
+
+
+def test_ops_ledgered_without_a_frame_ride_the_next_frame(tmp_path, monkeypatch):
+    """The Apollo/Ramp shape: a compile auto-registers two kit assets (ledger 1–2, no frame)
+    and then streams its own 3 ops ending at 5. The frame must BEGIN at 0 — the client's
+    cursor — so it carries all five, the two registrations first."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", _ThreeOpCore)
+    from lumen_agent.tools.substrate import LumenDesignTools
+
+    tools = LumenDesignTools(runtime_config(tmp_path), "design a launch poster")
+    pushes = _attach_sink(tools)
+    tools._log_scene_operations("brand_asset", [_upsert("asset_a"), _upsert("asset_b")])
+
+    tools.compile_dsl_block('page Test\n  text "Plan"')
+
+    push = _pushes_for(pushes, "dsl_compiled")[0]
+    assert push["operations_total"] == 5
+    assert [op["kind"] for op in push["operations"]] == [
+        "upsert_asset", "upsert_asset", "add_page", "insert_node", "set_text",
+    ]
+    assert push["operations_total"] - len(push["operations"]) == 0
+
+
+def test_a_second_frame_carries_only_its_own_ops(tmp_path, monkeypatch):
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", _ThreeOpCore)
+    from lumen_agent.tools.substrate import LumenDesignTools
+
+    tools = LumenDesignTools(runtime_config(tmp_path), "design a launch poster")
+    pushes = _attach_sink(tools)
+    tools._log_scene_operations("brand_asset", [_upsert("asset_a")])
+    tools.compile_dsl_block('page Test\n  text "Plan"')
+    tools.compile_dsl_block('page Test2\n  text "Plan"')
+
+    first, second = _pushes_for(pushes, "dsl_compiled")
+    assert first["operations_total"] == 4 and len(first["operations"]) == 4
+    assert second["operations_total"] == 7 and len(second["operations"]) == 3
+    # Contiguous: the second frame begins exactly where the first ended.
+    assert second["operations_total"] - len(second["operations"]) == first["operations_total"]
+
+
+def test_a_checkpoint_advances_the_streamed_marker(tmp_path, monkeypatch):
+    """Ops committed by a checkpoint are durable and the client reloads them (rung A), so a
+    frame after the checkpoint must not re-carry them — it begins at the checkpoint's position."""
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", _ThreeOpCore)
+    from lumen_agent.tools.substrate import LumenDesignTools
+
+    tools = LumenDesignTools(runtime_config(tmp_path), "design a launch poster")
+    tools.scene_checkpoint = lambda operations, meta: None
+    pushes = _attach_sink(tools)
+    tools._log_scene_operations("brand_asset", [_upsert("asset_a"), _upsert("asset_b")])
+    tools.checkpoint_scene("round_1")
+
+    tools.compile_dsl_block('page Test\n  text "Plan"')
+
+    push = _pushes_for(pushes, "dsl_compiled")[0]
+    assert push["operations_total"] == 5
+    assert len(push["operations"]) == 3
+    assert push["operations_total"] - len(push["operations"]) == 2
+```
+
+Also move the two existing position tests to the new contract (their seeds are unstreamed ledger entries, so the next frame now carries them):
+- `test_clean_compile_sink_push_carries_ledger_position`: `assert len(push["operations"]) == 11` with the comment `# 8 unstreamed seeds ride this frame ahead of the compile's 3 (Plan 2 Task 5).`; keep `operations_total == 11`.
+- `test_asset_placement_sink_push_carries_ledger_position`: `assert len(push["operations"]) == 5` with the same-shaped comment; keep `operations_total == 5`.
+
+- [ ] **Step 2: Run to verify failure**
+
+Run (from `subsystems/clue-design`): `... pytest apps/agent_runtime/tests/test_streaming_sink.py -q -p no:cacheprovider`
+Expected: the 3 new tests fail (frame carries only its own ops); the 2 edited ones fail (3 ≠ 11, 1 ≠ 5); the rest pass.
+
+- [ ] **Step 3: Implement**
+
+`__init__`, right after `self.operations_ledger: list[JsonObject] = []`:
+
+```python
+        #: Plan 2 Task 5: how much of `operations_ledger` the stream has carried. The client's
+        #: cursor applies a frame only when it BEGINS where the cursor stands, so a frame must
+        #: carry every ledger entry since the last frame — see `_contiguous_sink_extra`.
+        self._streamed_ledger_len = 0
+```
+
+On the class, next to `record()`:
+
+```python
+    def _contiguous_sink_extra(self, sink_extra: JsonObject) -> JsonObject:
+        """Make an op-bearing sink push begin where the client's cursor stands.
+
+        `operations_ledger` grows at ~20 sites (asset registration, autofix, pruning, …) but only
+        the authoring mutations push a frame. The frontend cursor (`scene-stream-cursor.ts`,
+        rule 5) applies a frame only when `operations_total - len(operations)` equals the
+        position it has been shown up to; a gap makes it dirty and it drops every frame until
+        a checkpoint. Live-proven 2026-09-04: two auto-registered kit assets (ledger 1–2, no
+        frame) left the fresh Apollo/Ramp document's first batch beginning at 2, and the stage
+        showed nothing for nine minutes. So every frame prepends the ledger entries streamed
+        since the last frame, and a checkpoint (which re-seats the client) advances the marker.
+        """
+        operations = sink_extra.get("operations")
+        total = sink_extra.get("operations_total")
+        if not isinstance(operations, list) or not isinstance(total, int):
+            return sink_extra
+        begin = total - len(operations)
+        if begin > self._streamed_ledger_len:
+            missing = [
+                entry["operation"]
+                for entry in self.operations_ledger[self._streamed_ledger_len : begin]
+                if isinstance(entry, dict) and "operation" in entry
+            ]
+            operations = missing + list(operations)
+        self._streamed_ledger_len = max(self._streamed_ledger_len, total)
+        return {**sink_extra, "operations": operations}
+```
+
+In `record()`, inside `with self._record_lock:` and before `push` is built, replace `if sink_extra:` / `push.update(sink_extra)` with:
+
+```python
+                    if sink_extra:
+                        push.update(self._contiguous_sink_extra(sink_extra))
+```
+
+In `checkpoint_scene`, immediately after `self._checkpointed_operations = len(operations)`:
+
+```python
+        # Plan 2 Task 5: the checkpoint re-seats the client at this position (rung A reloads
+        # the version it names), so nothing before it needs to ride a later frame.
+        self._streamed_ledger_len = max(self._streamed_ledger_len, len(operations))
+```
+
+- [ ] **Step 4: Run the sink tests and the neighbours**
+
+Run: `... pytest apps/agent_runtime/tests/test_streaming_sink.py apps/agent_runtime/tests/test_scene_checkpoint.py apps/agent_runtime/tests/test_deepagent_harness.py apps/agent_runtime/tests/test_fast_loop.py -q -p no:cacheprovider`
+Expected: all pass (record baseline counts for the three neighbour files BEFORE editing; they must match after).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add subsystems/clue-design/apps/agent_runtime/lumen_agent/tools/substrate.py subsystems/clue-design/apps/agent_runtime/tests/test_streaming_sink.py
+git commit -m "fix(design-agent): op frames carry every ledgered operation since the last frame, so the canvas cursor stays contiguous"
+```
+
+Task 4 (live proof) is then re-run by the controller on a fresh document.
