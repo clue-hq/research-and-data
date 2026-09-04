@@ -1,6 +1,6 @@
 # Editor Quality Roadmap — seven defects from the 2026-09-04 Apollo dry run
 
-**Status:** roadmap, founder-ordered 2026-09-04. **Plan 1 DONE 2026-09-04** (`2026-09-04-ingestion-type-units-and-faces.md`, live-proven on the Apollo ad; letter-spacing folded into item A on evidence; italic harvest was already present and is pinned by test). **Plan 2 DONE 2026-09-04** (`2026-09-04-page-first-and-first-batch-canvas.md`; the live proof found and fixed a second blocker for item D: ledgered-but-unstreamed ops broke the stream cursor's contiguity — Task 5). **Plan 3 DONE 2026-09-04** (`2026-09-04-selection-ladder.md`; the inspector breadcrumb is GATED on a founder preview — data helper shipped, no UI). Plan 4 not started. Each numbered plan below becomes its own SDD plan
+**Status:** roadmap, founder-ordered 2026-09-04. **Plan 1 DONE 2026-09-04** (`2026-09-04-ingestion-type-units-and-faces.md`, live-proven on the Apollo ad; letter-spacing folded into item A on evidence; italic harvest was already present and is pinned by test). **Plan 2 DONE 2026-09-04** (`2026-09-04-page-first-and-first-batch-canvas.md`; the live proof found and fixed a second blocker for item D: ledgered-but-unstreamed ops broke the stream cursor's contiguity — Task 5). **Plan 3 DONE 2026-09-04** (`2026-09-04-selection-ladder.md`; the inspector breadcrumb was DECLINED by the founder after a preview: Layers already covers ancestry). Plan 4 not started. Each numbered plan below becomes its own SDD plan
 file when it starts (`docs/superpowers/plans/2026-09-0X-<slug>.md`), implemented by Opus subagents
 with controller review, per the standing rules. This document is the reference the plans argue
 from; it records the verified root causes so no plan re-derives them.
@@ -117,7 +117,7 @@ before repair) and `run_b866…` (headline repair), the founder's screenshot of 
   (2) A button-shaped container (auto-layout whose only child is text) is selected as a unit on
   first click; double-click enters the label. Everything else keeps deepest-leaf first click.
   (3) A second click on the same spot, or modifier-click, walks up one ancestor; Escape walks up;
-  a breadcrumb in the inspector header shows the ancestry and jumps on click.
+  ~~a breadcrumb in the inspector header shows the ancestry and jumps on click~~ (declined by the founder 2026-09-04; Layers covers it).
 - **Tests.** Pure tests over hit stacks: button-first, walk-up, breadcrumb ancestry, hover target.
 - **Live proof.** Select the CTA with one click; edit its label by double-click; reach
   `left_col` with two clicks or the breadcrumb; the hover outline shows the target before the

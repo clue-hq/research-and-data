@@ -659,6 +659,6 @@ git commit -m "feat(design-editor): selection ladder on the canvas — button-fi
 5. Alt-click on the headline text → its parent is selected.
 6. Records: `_memory/2026-09-04-plan3-selection-ladder.md` + README index line; roadmap status ticks Plan 3 with the breadcrumb noted as gated; ledger closed; SDD workspace removed.
 
-### Task 5 (gated, not executed in this plan): the inspector breadcrumb
+### Task 5: the inspector breadcrumb — DECLINED (founder, 2026-09-04)
 
-`selectionBreadcrumb` (Task 1) is the data. Rendering it in the inspector header is new inspector UI and follows the founder's preview gate: a static preview of the header with the crumb row (labels, separators, truncation on long chains, click-to-jump) is shown first; nothing lands until approved. The Layers section already lets the user click any ancestor.
+The founder reviewed the preview and declined it: the Layers section already shows and selects the ancestry, and the walk-up gestures need no UI. `selectionBreadcrumb` and its test were removed.

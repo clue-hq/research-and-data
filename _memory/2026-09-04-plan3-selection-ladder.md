@@ -36,7 +36,8 @@ reviewed and every test re-run first-hand by the controller. The Next dev server
 - The feared double-click/walk-up interaction did not occur (the caret opened on the label), so
   no `detail === 1` guard was added.
 
-## Gated (founder preview): the inspector breadcrumb
-`selectionBreadcrumb` is the data; rendering it in the inspector header is new inspector UI and
-waits for the founder's look at a preview (`/tmp/plan3-evidence-keep/breadcrumb-preview.png`),
-per the dummy-frontend rule. The Layers section already lets the user click any ancestor.
+## Founder ruling 2026-09-04: NO inspector breadcrumb
+The founder looked at the preview and declined it ("I don't think we need it really"): the Layers
+section already shows the ancestry and selects on click, and the ladder gestures walk up without
+UI. `selectionBreadcrumb` was removed with its test (no consumer); the roadmap's item E is
+amended. Rule of thumb confirmed: no second navigation surface for something Layers already does.

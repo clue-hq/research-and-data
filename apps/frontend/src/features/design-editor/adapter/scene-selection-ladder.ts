@@ -1,5 +1,5 @@
 import type { NodeId, PageId, Scene } from "../engine/scene/contracts";
-import { nodeDisplayName, parentInfoForNode } from "../engine/scene/sceneQueries";
+import { parentInfoForNode } from "../engine/scene/sceneQueries";
 import { rootFrameId, sceneSelectionFor } from "./scene-hydrate";
 import { representableHit } from "./scene-selection";
 
@@ -143,26 +143,4 @@ export function escapeSelectionEffect({
     return { kind: "none" };
   }
   return { kind: "select", nodeId: selectionWalkUp(scene, pageId, selectedNodeId) };
-}
-
-/** R5: the representable ancestry, root frame first, ending at `nodeId`. Empty for null/unknown. */
-export function selectionBreadcrumb(
-  scene: Scene,
-  pageId: PageId | null,
-  nodeId: NodeId | null,
-): { nodeId: NodeId; label: string }[] {
-  if (nodeId === null || !scene.nodes[nodeId]) {
-    return [];
-  }
-  const chain: NodeId[] = [nodeId];
-  let current = nodeId;
-  for (;;) {
-    const up = selectionWalkUp(scene, pageId, current);
-    if (up === null) {
-      break;
-    }
-    chain.unshift(up);
-    current = up;
-  }
-  return chain.map((id) => ({ nodeId: id, label: nodeDisplayName(scene.nodes[id]) }));
 }

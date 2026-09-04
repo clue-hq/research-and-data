@@ -9,7 +9,6 @@ import {
   escapeSelectionEffect,
   isButtonShaped,
   sceneHoverTarget,
-  selectionBreadcrumb,
   selectionLadderHit,
   selectionWalkUp,
 } from "./scene-selection-ladder";
@@ -126,17 +125,6 @@ it("R3 Escape: a live gesture resets; a caret is left alone; otherwise the selec
     escapeSelectionEffect({ scene: null, pageId: null, gestureLive: false, textEditing: false, selectedNodeId: "x" }),
     { kind: "none" },
   );
-});
-
-it("breadcrumb: representable ancestry from the root frame down to the node, with display names", () => {
-  const crumbs = selectionBreadcrumb(HARVESTED_AD_PAGE, AD_PAGE_ID, "text_proof_stat");
-  assert.deepEqual(
-    crumbs.map((crumb) => crumb.nodeId),
-    ["frame_ad_root", "auto_row_copy", "group_proof", "text_proof_stat"],
-  );
-  assert.equal(crumbs[1].label, "Copy row");
-  assert.deepEqual(selectionBreadcrumb(HARVESTED_AD_PAGE, AD_PAGE_ID, null), []);
-  assert.deepEqual(selectionBreadcrumb(HARVESTED_AD_PAGE, AD_PAGE_ID, "no_such_node"), []);
 });
 
 it("the same-spot walk-up slop is four screen pixels", () => {
