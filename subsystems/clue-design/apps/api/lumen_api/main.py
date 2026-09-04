@@ -20,6 +20,7 @@ import sqlite3
 import time
 import zipfile
 import contextlib
+from collections.abc import Sequence
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -124,6 +125,7 @@ from .database import (
     NotFoundError,
     WebDocumentVersionConflict,
     WebPublishRevisionConflict,
+    fragment_references,
     utc_now,
 )
 from . import run_stream
@@ -2523,7 +2525,21 @@ def create_app(
     def get_document(
         document_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
-        return public_document(require_document(repo, document_id))
+        document = require_document(repo, document_id)
+        result = public_document(document)
+        # Only the READ route carries it. A create response and an operations response
+        # both describe a document the caller is holding, and this map is a snapshot of a
+        # registry that moves independently of it — served where it is read, not echoed
+        # where it is written. ``list_web_fragments`` is workspace-scoped through ``repo``,
+        # which is exactly the scoping a label needs — and it is read ONLY for a web
+        # document, so a scene GET does not pay for a registry scan whose answer it throws
+        # away.
+        is_web = document.get("doc_kind") == "web"
+        rows = repo.list_web_fragments() if is_web else ()
+        meta = fragment_meta_for_document(document, rows)
+        if meta is not None:
+            result["fragment_meta"] = meta
+        return result
 
     @app.put("/documents/{document_id}/agent-instructions")
     def set_agent_instructions(
@@ -7974,6 +7990,47 @@ def public_document(document: JsonObject) -> JsonObject:
             continue
         result[key] = value
     return result
+
+
+def fragment_meta_for_document(
+    document: JsonObject, fragment_rows: Sequence[JsonObject]
+) -> Optional[JsonObject]:
+    """Ruling R-A5 (founder, 2026-09-04): the registry facts a human name is made of —
+    ``label`` + ``section_role`` — for every fragment the document pins, on every page. A
+    pinned id the registry does not hold (unreleased, another workspace's) gets honest
+    nulls, so the frontend names it "Cloned section" instead of guessing. None for a scene
+    document.
+
+    This rides BESIDE the document rather than inside it: the body a client sends back is
+    the body it was served, byte for byte, and a registry label is not a document fact.
+    The walk is :func:`lumen_api.database.fragment_references` — the one reader of a web
+    document's pins in this codebase — so a page shape it accepts cannot mean two different
+    things here and there.
+    """
+    if document.get("doc_kind") != "web":
+        return None
+    by_id: JsonObject = {}
+    for row in fragment_rows:
+        fragment_id = row.get("fragment_id")
+        if isinstance(fragment_id, str):
+            label = row.get("label")
+            section_role = row.get("section_role")
+            by_id[fragment_id] = {
+                "label": label if isinstance(label, str) else None,
+                "section_role": section_role
+                if isinstance(section_role, str)
+                else None,
+            }
+    scene = document.get("scene")
+    if not isinstance(scene, dict):
+        return {}
+    meta: JsonObject = {}
+    for _node_id, fragment_id in fragment_references(scene).values():
+        if fragment_id not in meta:
+            meta[fragment_id] = by_id.get(
+                fragment_id, {"label": None, "section_role": None}
+            )
+    return meta
 
 
 def duplicate_brand_kit_error(brand_kit: JsonObject) -> HTTPException:
