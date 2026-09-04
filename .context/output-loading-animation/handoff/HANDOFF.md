@@ -11,17 +11,32 @@ the **whole output pane**, brand colours only (no blue).
 |---|---|
 | `generating.css` | The whole motion kit. Plain CSS, class-prefixed `clue-gen-*`, reads design-system tokens with hex fallbacks, has a `prefers-reduced-motion` block. Import once where the pane is composed. |
 | `clue-mark.tsx` | `ClueMark` — the production mark as three `<path>`s (order matters; the CSS animates by `:nth-child`). |
-| `generating-glow.tsx` | `GeneratingGlow` — perimeter haze around the pane. Decorative, `pointer-events: none`. |
-| `website-generating-veil.tsx` | `WebsiteGeneratingVeil` — blur + mark assembly + title/hint. For web documents. |
-| `ad-designing-lock.tsx` | `AdDesigningLock` — transparent input shield + frosted "Currently designing. Please wait to edit." pill. For scene / ad documents. |
+| `generating-glow.tsx` | `GeneratingGlow` — light at the pane's edges, four stacked layers (haze, bloom, 2px line, recess). `variant="aurora" \| "beam"`. Decorative, `pointer-events: none`. |
+| `website-generating-veil.tsx` | `WebsiteGeneratingVeil` — blur + mark assembly + title/hint. `tone="paper" \| "ink"`. For web documents. |
+| `ad-designing-lock.tsx` | `AdDesigningLock` — transparent input shield + 8px-radius chip "Agent is designing. Please wait." `appearance="frost" \| "ink"`. For scene / ad documents. |
 | `index.ts` | Barrel. |
-| `../v2/website.html`, `../v2/ad.html` | Browser previews that use this exact CSS. Open them to see the target. |
+| `../v3/website.html`, `../v3/ad.html` | Browser previews that use this exact CSS, with an A/B switch (`?v=a` aurora/paper/frost, `?v=b` beam/ink). These are the target. `../v2/` is the earlier flat-haze pass, kept for comparison. |
 
 Suggested home: `apps/frontend/src/features/design-editor/components/generating/`
 (copy the folder, keep `generating.css` next to the TSX, add `import "./generating.css"`
 in the file that mounts the pane). The components import `cn` from `@/lib/utils`,
 match the house style (named exports, `data-*` state, no default exports), and
 use no runtime dependency — no `motion/react` needed.
+
+## v3 notes (the glow that shipped after the Comet review)
+
+- The sweep animates a registered custom property (`@property --clue-gen-angle`)
+  so the conic gradient's stops travel along the rectangle's edges. Supported in
+  Chromium, Safari 16.4+, Firefox 128+; older browsers show a static frame.
+- The four layers are children of `.clue-gen-glow` (`__haze`, `__bloom`, `__line`,
+  `__rim`). The edge masks are defined on the child, not the parent, on purpose:
+  `--reach` is per layer and a custom property resolves where it is declared.
+- Stacking inside the host: veil 6 < glow 7 < lock 8. The glow is above the veil
+  so it stays visible over the website blur; the lock is above the glow so the
+  chip stays crisp.
+- Chip radius reads `--radius-lg` (8px in globals.css) with an 8px fallback.
+- Pick one variant per surface and delete the other's CSS block if you want a
+  smaller file; nothing else references it.
 
 ## Two behaviours, one rule each
 
@@ -80,7 +95,7 @@ const generating = chat.threadBusy && chat.designLegOpen;
 - Website title default: "Building your landing page". Hint is optional and
   must follow the founder rule in `design-leg.ts`: no percentage, no ETA, no
   countdown. `DESIGN_GENERATION_WAIT_NOTICE` is the sanctioned hint if one is wanted.
-- Ad pill default: "Currently designing. Please wait to edit." Keep it one line.
+- Ad chip default: "Agent is designing. Please wait." Keep it one line.
 
 ## Accessibility and motion
 

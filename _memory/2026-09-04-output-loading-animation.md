@@ -52,3 +52,20 @@ React 19.2 / Next 16.2 / Tailwind v4, `motion` present but unused here, no
 `bg-brand-*` utilities (brand colours are raw `var(--clue-ds-color-primitives-*)`),
 `accent-700 #5C7A82` is the only teal ramp (no `secondary`).
 Preview server: `python3 -m http.server 7000` from the folder (started this session).
+
+## Round 3 (same day) — depth at the edges
+
+Founder: v2 glow "scattered", not focused on the sides, chip too round; wants the
+Comet depth and excitement; two more versions each. Comet analysis at full res:
+crisp bright line on the edge + tight bloom + wide haze, bright part travels the
+perimeter, edge slightly recessed. Built as four child layers of `.clue-gen-glow`
+(`__haze/__bloom/__line/__rim`), conic gradients sweeping via
+`@property --clue-gen-angle` (a rotated square was why v2 scattered). Variants:
+`aurora` (11s, two bands) / `beam` (5.5s, one head). Chip → 8px radius
+(`--radius-lg`), copy "Agent is designing. Please wait.", `frost` / `ink`. Website
+veil gained `tone="ink"`. Previews `v3/{website,ad}.html?v=a|b`.
+Gotchas hit: (1) custom property holding `var(--reach)` must be declared on the
+layer, not the parent, or the mask silently drops; (2) cream/white light on a
+near-white page is invisible — the olive recess + sage/teal body is what makes it
+read; (3) the shell cwd drifted into `apps/frontend/` mid-session and a mkdir
+landed there (removed); use absolute paths.

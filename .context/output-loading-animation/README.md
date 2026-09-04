@@ -1,5 +1,16 @@
 # Output-pane loading animation — exploration (2026-09-04)
 
+## v3 — depth at the edges (third pass, same day)
+
+Founder review of v2: the glow was scattered and flat, the chip too round.
+Comet's frame is three stacked layers (crisp line on the edge, tight bloom,
+wide haze) with the bright part travelling the perimeter, over a slightly
+recessed edge. v3 rebuilds `GeneratingGlow` that way with two variants,
+`aurora` (two slow light-bands) and `beam` (one fast bright head), squares the
+chip to the frontend's 8px radius with `frost` and `ink` appearances, and adds
+an `ink` tone for the website veil. Previews: `v3/website.html`, `v3/ad.html`
+(A/B switch in the control bar; `?v=a` / `?v=b`).
+
 ## v2 — what ships (founder review, later the same day)
 
 Founder kept Option 1's aesthetic and asked for two production animations that

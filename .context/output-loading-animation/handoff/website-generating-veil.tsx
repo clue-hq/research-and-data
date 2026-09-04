@@ -11,6 +11,8 @@ export type WebsiteGeneratingVeilProps = {
    * no countdown. Pass DESIGN_GENERATION_WAIT_NOTICE or nothing.
    */
   hint?: string;
+  /** "paper" — light frosted veil (default). "ink" — deep-olive cinematic veil, cream mark. */
+  tone?: "paper" | "ink";
   className?: string;
 };
 
@@ -24,12 +26,14 @@ export function WebsiteGeneratingVeil({
   active,
   title = "Building your landing page",
   hint,
+  tone = "paper",
   className,
 }: WebsiteGeneratingVeilProps) {
   return (
     <div
       className={cn("clue-gen-veil", className)}
       data-active={active}
+      data-tone={tone}
       role="status"
       aria-live="polite"
       aria-hidden={!active}
