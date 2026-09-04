@@ -145,7 +145,12 @@ def _web_tools(tmp_path: Path) -> LumenWebTools:
 
 def _scene_tools(tmp_path: Path, monkeypatch) -> LumenDesignTools:
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
-    return LumenDesignTools(runtime_config(tmp_path), "Make an ABM poster")
+    tools = LumenDesignTools(runtime_config(tmp_path), "Make an ABM poster")
+    # Editor Quality Plan 2 (item C): fetch_logo refuses on a pageless scene
+    # BEFORE it calls the vendor, so these lane tests need the page the real
+    # author would have compiled first. FakeCoreClient plants `page_test`.
+    tools.compile_dsl_block("page page_test size(1080,1080,px)")
+    return tools
 
 
 # --------------------------------------------------------------------------- #

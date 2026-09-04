@@ -128,6 +128,15 @@ def _tools_only(config, prompt="Make a poster", initial_scene=None):
     return LumenDesignTools(config, prompt, initial_scene=initial_scene)
 
 
+def _give_page(tools):
+    """Editor Quality Plan 2 (item C): generate_image refuses on a pageless scene
+    BEFORE it calls the model, so an imagery test needs the page the real author
+    would have compiled first. FakeCoreClient.compile_dsl_into_scene plants
+    `page_test`; any source will do."""
+    tools.compile_dsl_block("page page_test size(1080,1080,px)")
+    assert tools.scene["pages"], "fixture must have planted a page"
+
+
 # --- 1. workspace scaffolding -----------------------------------------------
 
 
@@ -1114,6 +1123,7 @@ def test_generate_image_conditions_on_references(tmp_path, monkeypatch):
     _install_image_model(monkeypatch, captured, prov)
 
     tools = _tools_only(config, prompt="hero")
+    _give_page(tools)
     result = json.loads(tools.generate_image("a calm clinic reception"))
     assert result["image"]["status"] == "ok"
     assert result["image"]["mode"] == "model"
@@ -1146,6 +1156,7 @@ def test_generate_image_condition_on_references_false_skips(tmp_path, monkeypatc
     _install_image_model(monkeypatch, captured, prov)
 
     tools = _tools_only(config, prompt="hero")
+    _give_page(tools)
     result = json.loads(
         tools.generate_image("a calm clinic reception", condition_on_references=False)
     )
@@ -1163,6 +1174,7 @@ def test_generate_image_without_references_byte_identical_call(tmp_path, monkeyp
     _install_image_model(monkeypatch, captured, prov)
 
     tools = _tools_only(runtime_config(tmp_path), prompt="hero")
+    _give_page(tools)
     tools.generate_image("a serene mountain lake at dawn", brand_notes=["deep navy"])
     assert captured.pop("request_id").startswith("asset_img_")
     assert captured == {
@@ -1198,6 +1210,7 @@ def test_generate_image_missing_reference_blob_skipped_not_fatal(tmp_path, monke
     _install_image_model(monkeypatch, captured, prov)
 
     tools = _tools_only(config, prompt="hero")
+    _give_page(tools)
     result = json.loads(tools.generate_image("a calm clinic reception"))
     assert result["image"]["status"] == "ok"  # never dead-ends on a missing blob
 
@@ -1257,6 +1270,7 @@ def test_w17c_generation_failure_does_not_fail_the_turn(tmp_path, monkeypatch):
     )
 
     tools = _tools_only(runtime_config(tmp_path), prompt="hero")
+    _give_page(tools)
     result = json.loads(tools.generate_image("an abstract holographic yellow wash"))
 
     # NOT blocked: the tool returns a usable asset, not an error status.
@@ -1289,6 +1303,7 @@ def test_w17c_unconfigured_model_is_a_distinct_typed_fallback(tmp_path, monkeypa
     )
 
     tools = _tools_only(runtime_config(tmp_path), prompt="hero")
+    _give_page(tools)
     image = json.loads(tools.generate_image("an abstract wash"))["image"]
 
     assert image["status"] == "ok"  # still never blocks
@@ -1311,6 +1326,7 @@ def test_w17c_reference_conditioned_failure_reports_conditioning_lost(
     _install_failing_image_model(monkeypatch, RuntimeError("upstream exploded"))
 
     tools = _tools_only(config, prompt="hero")
+    _give_page(tools)
     image = json.loads(tools.generate_image("a calm clinic reception"))["image"]
 
     assert image["status"] == "ok"
@@ -1348,6 +1364,7 @@ def test_w17b_turn_sees_real_output_dimensions_not_its_own_request(
     )
 
     tools = _tools_only(runtime_config(tmp_path), prompt="hero")
+    _give_page(tools)
     image = json.loads(
         tools.generate_image("a holographic wash", aspect_ratio="16:9")
     )["image"]

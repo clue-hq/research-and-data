@@ -26,6 +26,11 @@ try:  # generation cache (request -> asset), so the loop doesn't re-pay per iter
 except Exception:  # pragma: no cover
     image_cache = None  # type: ignore[assignment]
 
+#: Editor Quality Plan 2 (item C): the asset tools refuse on a pageless scene BEFORE they spend.
+#: Registering an asset needs a page (engine rule LUMV0100); paying a model or a vendor first
+#: and discovering that afterwards cost `run_0452aae9…` ~10 minutes and its repair round.
+PAGE_REQUIRED_CODE = "scene.page_required"
+
 from ..autofix import AutofixResult, run_autofix
 from ..config import AgentRuntimeConfig
 from ..critique_fidelity import stamp_reference_fidelity
@@ -863,7 +868,12 @@ class LumenDesignTools:
         and register it in the scene. Use print_media=True for physical
         artifacts (error correction H); declare target_width_mm so print
         scannability diagnostics can fire. Place the returned asset with a
-        place_asset_in_node/place_asset_in_slot operation."""
+        place_asset_in_node/place_asset_in_slot operation. The scene must already
+        contain a page/artboard: on a pageless scene this tool REFUSES before
+        generating (error `scene.page_required`) — author the page first."""
+        refused = self._refuse_without_page("generate_qr")
+        if refused is not None:
+            return refused
         asset_id = f"asset_qr_{self.run_id[:8]}_{len(self.scene.get('assets', {}))}"
         try:
             response = self.core.generate_qr(
@@ -986,8 +996,9 @@ class LumenDesignTools:
         anchor the style) — describe the SUBJECT in the prompt, not the reference
         style. Set condition_on_references=false only when the brief demands imagery
         that deliberately diverges from the references. The scene must already
-        contain a page/artboard (author the layout first) or registration fails with
-        a retryable error. Returns the asset_id; place it with place_asset_in_node /
+        contain a page/artboard: on a pageless scene this tool REFUSES before
+        generating (error `scene.page_required`) — author the page first.
+        Returns the asset_id; place it with place_asset_in_node /
         place_asset_in_slot (a generated image is not auto-placed).
 
         Generation NEVER blocks the turn. If the model fails, you still get an
@@ -997,6 +1008,9 @@ class LumenDesignTools:
         ground and use a flat brand-token ground instead. `image.actual_width` /
         `actual_height` report what the model really returned, which can differ from
         the aspect ratio you asked for."""
+        refused = self._refuse_without_page("generate_image")
+        if refused is not None:
+            return refused
         asset_id = f"asset_img_{self.run_id[:8]}_{len(self.scene.get('assets', {}))}"
         width, height, aspect_ratio = self._image_constraints(
             target_node_id, target_slot_id, width, height, aspect_ratio
@@ -1392,7 +1406,14 @@ class LumenDesignTools:
 
         Static fetch only on the ladder fallback: a site that builds its header
         in JavaScript has no logo to read there, and reports that plainly.
+
+        The scene must already contain a page/artboard: on a pageless scene this
+        tool REFUSES before fetching (error `scene.page_required`) — author the
+        page first.
         """
+        refused = self._refuse_without_page("fetch_logo")
+        if refused is not None:
+            return refused
         requested = (domain or "").strip()
         if not requested:
             return self._tool_error(
@@ -2355,6 +2376,36 @@ class LumenDesignTools:
         """Uniform error envelope for the dispatcher tools (asset/inspect)."""
         payload: JsonObject = {"status": "error", "error_code": code, "message": message}
         payload.update(extra)
+        return json.dumps(payload, indent=2)
+
+    def _refuse_without_page(self, tool: str) -> Optional[str]:
+        """The pre-spend page guard: a JSON refusal when the scene has no page, else None.
+
+        Checked at the TOP of generate_image / generate_qr / fetch_logo, before any provider,
+        core or vendor call. The engine would refuse the registration anyway (LUMV0100); this
+        moves that answer in front of the spend, so a misordered author loses one tool call
+        and nothing else. The hint names the fix in the author's own vocabulary.
+        """
+        if self.scene.get("pages"):
+            return None
+        payload: JsonObject = {
+            "status": "error",
+            "error_code": PAGE_REQUIRED_CODE,
+            "message": (
+                f"{tool} refused: the scene has no page/artboard yet, so nothing can be "
+                "registered in it."
+            ),
+            "hint": (
+                "Author the page first — compile_dsl_block with a `page <id> size(...)` line, "
+                f"the whole design in one block — then call {tool} again."
+            ),
+        }
+        self.record(
+            "coordinator",
+            f"{tool}_refused_pageless",
+            output_summary=payload["message"],
+            payload=payload,
+        )
         return json.dumps(payload, indent=2)
 
     @_tool_span
