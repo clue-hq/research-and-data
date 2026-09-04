@@ -1,6 +1,6 @@
 # ARV2 MASTER PLAN — the complete roadmap for account research, contact research, and their display
 
-**This is the single authoritative plan. Version 1.1, 2026-09-04 (v1.1: lenient write gate, checks as flag-controlled annotations, human-stated facts need no URL, all fields optional). Both founders ratify by initialing
+**This is the single authoritative plan. Version 1.2, 2026-09-04 (v1.1: lenient write gate, checks as flag-controlled annotations, human-stated facts need no URL, all fields optional; v1.2: the interview never requires word-for-word recording). Both founders ratify by initialing
 §12.** It consolidates every decision taken so far into one present-tense document. The earlier
 documents in `docs/specs/ARV2-*.md` remain as the audit trail; where they differ from this one, this
 one wins. There is no history in this document, only what we are building and how.
@@ -34,9 +34,13 @@ one design source of truth (the dummy frontend, lifted screen by screen).
    origin, facet defaults, reuse scope) and stores the claim; a value that misses the field's schema
    is stored with `schema_valid=false`; an unregistered key is stored and auto-registered as a
    proposed field; a research claim with no source URL is stored with a `source_missing` marker.
-   **A fact the user states in chat is written with `extraction_method=human`, its evidence is the
-   user's own words, and no URL is ever asked for.** Strict refusals exist only when the flag is
-   turned off. (b) Human authority: product selection, ICP confirmation, cohort approval, launch,
+   **A fact the user states in chat is written with `extraction_method=human`, its provenance is the
+   conversation turn, and no URL is ever asked for.** The interview does **not** require the user's
+   words to be recorded character-for-character: the agent may write the fact in its own words, the
+   user's statement is attached as best-effort evidence when available, and the value is never
+   required to be a substring of that statement (`CLUE_INTERVIEW_ENTAILMENT_CHECK=off` by default).
+   Nothing on the Head-of-ABM path ever refuses a store for an evidence-shape reason. Strict
+   refusals exist only when the flags are turned off. (b) Human authority: product selection, ICP confirmation, cohort approval, launch,
    contact selection. The floor: `outreach_safe=false` claims never reach outreach copy;
    special-category personal data (health, faith, politics, sexuality, family tragedy, minors) is
    redacted, never used. Everything else — coverage ratios, confidence thresholds, corroboration,
@@ -287,7 +291,9 @@ the Exa MCP search tool on the main agent, brand context, and the chat-shell out
 handoff. The Head-of-ABM skills adopt the co-founder's refinements content with three edits: every
 "route to memory" becomes "record in project context"; the copy-voice lint/reviewer-judge lines are
 removed (the em-dash and no-fabrication rules stay as prompt rules the agent applies itself); recon
-and readiness assumptions are dropped. The corpus-acquisition program is backlog until the
+and readiness assumptions are dropped; the interview skill's "preserve exact statements /
+value must appear inside the quote" rule is removed — statements are recorded as the agent
+understands them, with the turn as provenance. The corpus-acquisition program is backlog until the
 onboarding rebuild ships.
 
 ### Phase 6 — deletion of quarantined code
