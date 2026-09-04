@@ -1,0 +1,42 @@
+# 2026-09-04 — Plan 3 shipped: the selection ladder (button-first click, walk-up, hover outline)
+
+Plan: `docs/superpowers/plans/2026-09-04-selection-ladder.md` (roadmap Plan 3, item E). Commits
+`843747f55..cb9f4ab89`, frontend only, engine untouched. SDD with Opus implementers; every diff
+reviewed and every test re-run first-hand by the controller. The Next dev server hot-reloads.
+
+## What changed
+- `adapter/scene-selection-ladder.ts` (new, pure): `isButtonShaped`/`buttonLabelId` (R1: an
+  `auto_layout` whose only present child is text), `selectionLadderHit` (representableHit, promoted
+  to the button when the hit is its label), `selectionWalkUp` (R2: nearest representable ancestor,
+  null from the root frame), `sceneHoverTarget` (never the selected node), `escapeSelectionEffect`
+  (live gesture → reset; caret → none; else walk up, null at the root = clear),
+  `selectionBreadcrumb` (root-first ancestry with display names), `WALK_UP_CLICK_SLOP_PX = 4`.
+- `sceneDoubleClickEffect`: a button resolves to its label before the text rule (lock first, then
+  the run gate). A button therefore no longer "drills out" on double-click; ancestors come from the
+  walk-up gestures or the Layers section.
+- `scene-artifact-canvas.tsx`: pointer-down and double-click use `selectionLadderHit`; Alt-click
+  walks up from the hit without starting a press; a click on the already-selected node walks up on
+  release when it travelled < 4 px and drew no drag preview; the Escape listener runs
+  `escapeSelectionEffect` (context via a ref written in a no-deps effect — the React Compiler
+  refuses ref writes in render and ref reads in JSX); pointer-move while idle hit-tests for a hover
+  target (only a CHANGE reaches state; cleared on press, pan start, leave, Escape); the hover
+  outline is `SelectionChrome variant="hover"` (`HOVER_OUTLINE_WIDTH = 1`, `HOVER_OUTLINE_OPACITY =
+  0.55`, `data-scene-hover-outline`, drawn under the selection chrome, hidden during caret/preview/pan).
+
+## Live proof (colombo, synthetic pointer events read back through the chrome attributes)
+- Apollo ad `doc_cf05190c…`: Alt-click on the headline → `left_col`; second click → parent; Escape
+  chain `split → card → artboard → cleared`; hover over the product image → `product`. The CTA
+  itself resolved to `split`: `left_col` (clip, y 83–979) ends above `cta_btn` (y 958–1034), so the
+  ENGINE's hit stack never contains the button — the roadmap's authoring-overflow note, Plan 4's
+  domain (layout-box hit-testing), not Plan 3's.
+- Brex ad `doc_f8668063…` (`cta_plate` = auto_layout with only `cta_label`, inside `footer`): hover
+  → `cta_plate`; one click → `cta_plate` (inspector "auto_layout cta_plate"); double-click → caret
+  on `cta_label` ("See how"); Escape closes the caret; click + second click → `footer`; hover over
+  the headline → `headline`. Evidence: `/tmp/plan3-evidence-keep/`.
+- The feared double-click/walk-up interaction did not occur (the caret opened on the label), so
+  no `detail === 1` guard was added.
+
+## Gated (founder preview): the inspector breadcrumb
+`selectionBreadcrumb` is the data; rendering it in the inspector header is new inspector UI and
+waits for the founder's look at a preview (`/tmp/plan3-evidence-keep/breadcrumb-preview.png`),
+per the dummy-frontend rule. The Layers section already lets the user click any ancestor.
