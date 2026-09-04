@@ -985,6 +985,15 @@ fn render_node(
             }
             out.push('"');
             node_attr(out);
+            // Slice 2 / R-A1: the bridge has to tell a clone ROOT from an ordinary
+            // vocabulary node, because everything INSIDE this wrapper is the artifact's
+            // own markup and carries no node id — an element in there is addressed by
+            // structural path from this wrapper, not by an id of its own. Editor-only,
+            // under the same condition `node_attr` emits `data-node-id` under: a
+            // delivery snapshot carries no instrumentation at all.
+            if editor && !suppress_node_ids {
+                out.push_str(" data-fragment-root=\"true\"");
+            }
             out.push('>');
             // F1.4: the artifact's markup with this NODE's slot values applied.
             // With nothing bound the walk is the identity function, so an
@@ -1704,7 +1713,7 @@ mod tests {
         assert!(
             editor.html.contains(
                 "<div class=\"lumen-fragment lumen-frag-0123456789abcdef w-full py-12\" \
-                 data-node-id=\"frg_hero\">"
+                 data-node-id=\"frg_hero\" data-fragment-root=\"true\">"
             ),
             "{}",
             editor.html
@@ -1728,6 +1737,41 @@ mod tests {
         ));
         assert!(delivery.html.contains(FRAGMENT_HTML));
         assert!(!delivery.html.contains("data-node-id"));
+    }
+
+    #[test]
+    fn a_fragment_wrapper_is_marked_as_a_clone_root_for_the_editor_bridge_only() {
+        // Slice 2 / R-A1: everything inside a cloned band is the artifact's own markup
+        // and carries no node id, so the bridge addresses an element in there by
+        // structural path from the wrapper. It can only know to do that if the wrapper
+        // says it is a clone root — and it must say so ONLY where the rest of the
+        // editor instrumentation lives, never in a delivered page.
+        let fragment_id = "frag_0123456789abcdef";
+        let (doc, theme) = fixture_with_fragment(fragment_id);
+
+        let editor = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &fragment_options(RenderMode::Editor, fragment_id),
+        )
+        .expect("editor render");
+        assert!(
+            editor
+                .html
+                .contains("data-node-id=\"frg_hero\" data-fragment-root=\"true\""),
+            "{}",
+            editor.html
+        );
+
+        let delivery = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &fragment_options(RenderMode::Delivery, fragment_id),
+        )
+        .expect("delivery render");
+        assert!(!delivery.html.contains("data-fragment-root"));
     }
 
     #[test]

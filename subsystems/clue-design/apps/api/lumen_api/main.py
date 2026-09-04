@@ -3691,7 +3691,18 @@ def create_app(
                     },
                 )
             try:
-                bridge_script = render_bridge_script(nonce or "", web_doc, page)
+                # R-A5: the same registry facts the GET route serves as `fragment_meta`,
+                # so the hover chip inside the iframe names a cloned band with the exact
+                # words the layers panel does. Read only for a bridge render — a
+                # delivery snapshot has no chip to name.
+                bridge_script = render_bridge_script(
+                    nonce or "",
+                    web_doc,
+                    page,
+                    fragment_meta=fragment_meta_for_document(
+                        document, repo.list_web_fragments()
+                    ),
+                )
             except ValueError as error:
                 raise HTTPException(
                     status_code=422,

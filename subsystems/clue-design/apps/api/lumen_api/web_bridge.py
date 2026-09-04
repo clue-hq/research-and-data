@@ -68,6 +68,20 @@ window, runtime contract, nonce, canonical node id, and artifact pin must all
 match the outer DOM. The outer frame then relays a nonce-scoped status through
 the existing parent bridge; a component never addresses the React shell
 directly.
+
+v11 (slice 2, rulings R-A1/R-A4/R-A5) makes EVERY element hoverable, not only the
+ones carrying a `data-node-id`. Inside a cloned band nothing carries one — the
+markup is the harvested artifact's own — and those are exactly the elements a
+marketer points at. Hover draws a box plus a name chip; the chip's words come
+from `__LUMEN_NODE_NAMES__`, the display name of every node on the page baked in
+at render in the same order the layers panel and the agent's TURN TARGET line
+use, so the chip and the panel never disagree. A click still SELECTS the owning
+node (everything downstream is node-shaped) and additionally posts
+`{type:"annotate", address:{nodeId, path?, slot?, tag}, name, geometry, textLike}`
+— a structural address, because an element with no id can only be named by its
+position under the clone root the engine marks with `data-fragment-root`. The
+shell posts `{type:"annotations", items:[{address, n}]}` back to draw numbered
+badges, and `items: []` to clear.
 """
 
 import json
@@ -90,8 +104,18 @@ _BRIDGE_V0_TEMPLATE = """
   // rendered one, because the point of a site-internal link is to leave this
   // page. Consulted only to translate an already-prevented anchor click.
   var PAGE_ROUTES = __LUMEN_PAGE_ROUTES__;
+  // R-A4/R-A5: the display name of every node on THIS page, in the same order the
+  // layers panel and the agent's TURN TARGET line use. Baked in so the hover chip can
+  // name a band without a round trip to the shell.
+  var NODE_NAMES = __LUMEN_NODE_NAMES__;
   var selected = null;
   var hoverEl = null;
+  var hoverBox = null;
+  var hoverLabel = null;
+  var badgeLayer = null;
+  var lastAnnotations = null;
+  var TEXT_LIKE =
+    /^(h[1-6]|p|span|a|button|li|blockquote|figcaption|label|strong|em|small|td|th|dt|dd)$/;
 
   var editing = null;
   var editingOriginal = "";
@@ -107,6 +131,10 @@ _BRIDGE_V0_TEMPLATE = """
 
   var style = document.createElement("style");
   style.textContent =
+    // v11: `lumen-hover` is VESTIGIAL — the node-level dashed outline was replaced by
+    // the element-level hover box + name chip below, so nothing adds the class any
+    // more. The rule and the several `classList.remove` calls are kept so a stale
+    // class surviving on a node (e.g. inside a drag clone) still cannot paint.
     "[data-node-id].lumen-hover{outline:1.5px dashed rgba(79,111,255,0.7);outline-offset:2px;}" +
     "[data-node-id].lumen-selected{outline:2px solid rgba(79,111,255,0.95);outline-offset:2px;}" +
     "[data-node-id].lumen-editing{outline:2px solid rgba(34,197,146,0.95);outline-offset:2px;cursor:text;}" +
@@ -122,7 +150,18 @@ _BRIDGE_V0_TEMPLATE = """
     ".lumen-rich-editor-root.is-structured ul{list-style-type:disc;}" +
     ".lumen-rich-editor-root.is-structured ol{list-style-type:decimal;}" +
     ".lumen-rich-editor-root.is-structured li:has(>ul:only-child,>ol:only-child){list-style-type:none;}" +
-    ".lumen-rich-editor-root.is-structured li+li{margin-top:.25em;}";
+    ".lumen-rich-editor-root.is-structured li+li{margin-top:.25em;}" +
+    ".lumen-hover-box{position:absolute;pointer-events:none;" +
+    "border:1.5px solid rgba(79,111,255,0.85);border-radius:2px;z-index:2147483000;}" +
+    ".lumen-hover-label{position:absolute;pointer-events:none;background:#4f6fff;" +
+    "color:#fff;font:11px/16px ui-monospace,Menlo,monospace;padding:1px 6px;" +
+    "border-radius:3px;z-index:2147483001;white-space:nowrap;}" +
+    ".lumen-annotation-outline{position:absolute;pointer-events:none;" +
+    "border:1.5px dashed rgba(234,179,8,0.95);z-index:2147482999;}" +
+    ".lumen-annotation-badge{position:absolute;pointer-events:none;min-width:18px;" +
+    "height:18px;border-radius:9px;background:#f0a;color:#fff;" +
+    "font:600 11px/18px system-ui,sans-serif;text-align:center;padding:0 5px;" +
+    "z-index:2147483002;}";
   document.head.appendChild(style);
 
   function rounded(value) {
@@ -238,6 +277,153 @@ _BRIDGE_V0_TEMPLATE = """
         opacity: computed.opacity
       }
     };
+  }
+
+  // --- Slice 2: element-level hover naming + `annotate` addresses -------------
+  // Everything the bridge itself injects into the page. It is chrome, never content:
+  // it is skipped when a structural path is measured and never annotated itself.
+  function isBridgeEl(el) {
+    return !!(el && el.closest && el.closest(".lumen-hover-box,.lumen-hover-label," +
+      ".lumen-annotation-layer,.lumen-annotation-outline,.lumen-annotation-badge," +
+      ".lumen-grip,.lumen-resize-handle,.lumen-resize-badge,.lumen-drop-marker," +
+      ".lumen-drag-ghost"));
+  }
+
+  function ownerNode(el) {
+    return el && el.closest ? el.closest("[data-node-id]") : null;
+  }
+
+  // Spec 3.1: structural path from the OWNING node's element to `el`, 1-based, element
+  // children only, bridge-injected nodes excluded (they are never inside a node's
+  // subtree). Inside a cloned band the markup is the artifact's own — it carries no
+  // node ids — so position is the only address there is.
+  function elementPath(el, owner) {
+    if (!el || !owner || el === owner) return null;
+    var parts = [], cur = el;
+    while (cur && cur !== owner) {
+      var parent = cur.parentElement;
+      if (!parent) return null;
+      var index = 0, sib = parent.firstElementChild, position = 0;
+      while (sib) {
+        if (!isBridgeEl(sib)) {
+          index += 1;
+          if (sib === cur) { position = index; break; }
+        }
+        sib = sib.nextElementSibling;
+      }
+      if (!position) return null;
+      parts.unshift(":nth-child(" + position + ")");
+      cur = parent;
+    }
+    return parts.join(" > ");
+  }
+
+  function addressOf(el) {
+    var owner = ownerNode(el);
+    if (!owner) return null;
+    var ownerId = owner.getAttribute("data-node-id");
+    var isFragment =
+      owner.hasAttribute("data-fragment-root") ||
+      (el !== owner && !el.hasAttribute("data-node-id"));
+    var path = isFragment ? elementPath(el, owner) : null;
+    var slot = el.getAttribute ? el.getAttribute("data-lumen-slot") : null;
+    return {
+      nodeId: ownerId,
+      path: path || undefined,
+      slot: slot || undefined,
+      tag: el.tagName.toLowerCase()
+    };
+  }
+
+  function labelFor(el, address) {
+    if (address.path) {
+      return address.slot ? address.tag + " \\u00b7 " + address.slot : address.tag;
+    }
+    return NODE_NAMES[address.nodeId] || address.tag;
+  }
+
+  function placeBox(box, rect) {
+    box.style.left = (rect.left + window.scrollX) + "px";
+    box.style.top = (rect.top + window.scrollY) + "px";
+    box.style.width = rect.width + "px";
+    box.style.height = rect.height + "px";
+  }
+
+  function showHover(el) {
+    if (!hoverBox) {
+      hoverBox = document.createElement("div");
+      hoverBox.className = "lumen-hover-box";
+      document.body.appendChild(hoverBox);
+      hoverLabel = document.createElement("div");
+      hoverLabel.className = "lumen-hover-label";
+      document.body.appendChild(hoverLabel);
+    }
+    var address = addressOf(el);
+    if (!address) return hideHover();
+    var rect = el.getBoundingClientRect();
+    placeBox(hoverBox, rect);
+    hoverLabel.textContent = labelFor(el, address);
+    hoverLabel.style.left = (rect.left + window.scrollX) + "px";
+    hoverLabel.style.top = Math.max(0, rect.top + window.scrollY - 18) + "px";
+    hoverBox.style.display = hoverLabel.style.display = "block";
+  }
+
+  function hideHover() {
+    if (hoverBox) {
+      hoverBox.style.display = "none";
+      hoverLabel.style.display = "none";
+    }
+  }
+
+  // The inverse of `addressOf`: an address the shell hands back becomes the element it
+  // was measured from. Same bridge-element exclusion, or a badge would drift the moment
+  // a grip or a hover box existed when the path was taken but not when it is resolved.
+  function resolveAddress(address) {
+    if (!address || typeof address.nodeId !== "string") return null;
+    var owner = document.querySelector(
+      '[data-node-id="' + CSS.escape(address.nodeId) + '"]'
+    );
+    if (!owner || !address.path) return owner;
+    var cur = owner, parts = address.path.split(" > ");
+    for (var i = 0; i < parts.length; i++) {
+      var m = /^:nth-child\\((\\d+)\\)$/.exec(parts[i]);
+      if (!m) return null;
+      var n = parseInt(m[1], 10), sib = cur.firstElementChild, count = 0, next = null;
+      while (sib) {
+        if (!isBridgeEl(sib)) {
+          count += 1;
+          if (count === n) { next = sib; break; }
+        }
+        sib = sib.nextElementSibling;
+      }
+      if (!next) return null;
+      cur = next;
+    }
+    return cur;
+  }
+
+  function renderAnnotations(items) {
+    if (!badgeLayer) {
+      badgeLayer = document.createElement("div");
+      badgeLayer.className = "lumen-annotation-layer";
+      document.body.appendChild(badgeLayer);
+    }
+    badgeLayer.innerHTML = "";
+    (items || []).forEach(function (item) {
+      var el = resolveAddress(item && item.address);
+      if (!el) return;
+      var rect = el.getBoundingClientRect();
+      var outline = document.createElement("div");
+      outline.className = "lumen-annotation-outline";
+      placeBox(outline, rect);
+      badgeLayer.appendChild(outline);
+      var badge = document.createElement("div");
+      badge.className = "lumen-annotation-badge";
+      badge.textContent = String(item.n);
+      badge.style.left = (rect.right + window.scrollX - 9) + "px";
+      badge.style.top = (rect.top + window.scrollY - 9) + "px";
+      badgeLayer.appendChild(badge);
+    });
   }
 
   function post(type, payload) {
@@ -359,21 +545,23 @@ _BRIDGE_V0_TEMPLATE = """
     showResizeHandlesFor(el);
   }
 
+  // R-A1: EVERY element is hoverable, not only the ones carrying a node id — inside a
+  // cloned band nothing carries one, and those are exactly the elements a marketer
+  // points at. The box + name chip replace the old node-only dashed outline.
   document.addEventListener("mouseover", function (event) {
-    var el =
-      event.target && event.target.closest
-        ? event.target.closest("[data-node-id]")
-        : null;
-    if (hoverEl && hoverEl !== el) hoverEl.classList.remove("lumen-hover");
-    if (el && el !== selected) el.classList.add("lumen-hover");
-    hoverEl = el;
+    var el = event.target;
+    if (!el || isBridgeEl(el) || el === document.body || el === document.documentElement) {
+      return hideHover();
+    }
+    if (editing && editing.contains(el)) return hideHover();
+    showHover(el);
+    var owner = ownerNode(el);
+    if (hoverEl && hoverEl !== owner) hoverEl.classList.remove("lumen-hover");
+    hoverEl = owner;
   });
 
-  document.addEventListener("mouseout", function () {
-    if (hoverEl) {
-      hoverEl.classList.remove("lumen-hover");
-      hoverEl = null;
-    }
+  document.addEventListener("mouseout", function (event) {
+    if (!event.relatedTarget) hideHover();
   });
 
   // Capture phase: links in the canvas must never navigate the iframe, and
@@ -420,6 +608,28 @@ _BRIDGE_V0_TEMPLATE = """
           ? event.target.closest("[data-node-id]")
           : null;
       setSelected(el);
+      // R-A1: selection still lands on the OWNING node (everything downstream — the
+      // inspector, the grips, the turn's scope — is node-shaped). The annotation is a
+      // SECOND, finer report about the exact element under the cursor, which inside a
+      // cloned band has no node id of its own.
+      var target = event.target;
+      if (target && !isBridgeEl(target) && target !== document.body) {
+        var address = addressOf(target);
+        if (address) {
+          var r = target.getBoundingClientRect();
+          post("annotate", {
+            address: address,
+            name: labelFor(target, address),
+            textLike:
+              TEXT_LIKE.test(address.tag) &&
+              (target.textContent || "").trim().length > 0,
+            geometry: {
+              viewport: rectInfo(r, 0, 0),
+              document: rectInfo(r, window.scrollX, window.scrollY)
+            }
+          });
+        }
+      }
     },
     true
   );
@@ -656,6 +866,13 @@ _BRIDGE_V0_TEMPLATE = """
         if (data.action === "open" && !el.open) el.showModal();
         if (data.action === "close" && el.open) el.close();
       }
+    }
+    if (data.type === "annotations") {
+      // The shell owns the numbering; the bridge only draws it. An empty list is the
+      // clear, so a settled turn erases its badges through the same one message.
+      lastAnnotations = Array.isArray(data.items) ? data.items : [];
+      renderAnnotations(lastAnnotations);
+      return;
     }
     if (data.type === "select-node") {
       var target = document.querySelector(
@@ -1163,6 +1380,7 @@ _BRIDGE_V0_TEMPLATE = """
     function () {
       if (selected) positionSelectionControls(selected);
       scheduleSelectedInfo();
+      if (lastAnnotations) renderAnnotations(lastAnnotations);
       if (editingSession) editingSession.refreshSelection();
     },
     { passive: true }
@@ -1172,6 +1390,11 @@ _BRIDGE_V0_TEMPLATE = """
     function () {
       if (selected) positionSelectionControls(selected);
       scheduleSelectedInfo();
+      hideHover();
+      // Badges are drawn in DOCUMENT coordinates, so a scroll does not move them — but
+      // a reflow does. Re-measure from the last payload the shell sent rather than
+      // leaving stale rectangles behind.
+      if (lastAnnotations) renderAnnotations(lastAnnotations);
       if (editingSession) editingSession.refreshSelection();
     },
     { passive: true }
@@ -1211,6 +1434,45 @@ def _bridge_page_routes(web_doc: dict[str, Any] | None) -> dict[str, str]:
         and isinstance(page.get("id"), str)
         and isinstance(page.get("route"), str)
     }
+
+
+def _bridge_node_names(
+    web_doc: dict[str, Any] | None,
+    page_id: str,
+    fragment_meta: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """Ruling R-A4/R-A5: the display name of every node on the rendered page, in the
+    shared order (:func:`lumen_api.main._web_node_label`), baked into the script so the
+    hover chip can name a band without a round trip.
+
+    A node with nothing cheap to say falls back to its KIND rather than dropping out of
+    the map: the script's own fallback is the raw tag name, and a chip reading
+    "Container" is worth more to a marketer than one reading "div".
+
+    Unlike :func:`_bridge_page_capabilities` this does NOT fall back to the first page
+    when ``page_id`` is unknown — a name map for the wrong page would put the wrong
+    words on the wrong band, which is worse than no words at all.
+    """
+    from lumen_api.main import _web_node_label  # shared order; import here to avoid a cycle
+
+    pages = web_doc.get("pages") if isinstance(web_doc, dict) else None
+    page = next(
+        (
+            candidate
+            for candidate in (pages or [])
+            if isinstance(candidate, dict) and candidate.get("id") == page_id
+        ),
+        None,
+    )
+    raw_nodes = (page or {}).get("nodes")
+    nodes = raw_nodes if isinstance(raw_nodes, dict) else {}
+    names: dict[str, str] = {}
+    for node_id, node in nodes.items():
+        if not isinstance(node_id, str) or not isinstance(node, dict):
+            continue
+        label = _web_node_label(node, nodes, fragment_meta)
+        names[node_id] = label or str(node.get("kind") or "node").capitalize()
+    return names
 
 
 def _bridge_page_capabilities(
@@ -1283,7 +1545,10 @@ def _bridge_page_capabilities(
 
 
 def render_bridge_script(
-    nonce: str, web_doc: dict[str, Any] | None = None, page_id: str = "home"
+    nonce: str,
+    web_doc: dict[str, Any] | None = None,
+    page_id: str = "home",
+    fragment_meta: dict[str, Any] | None = None,
 ) -> str:
     """The bridge script with the shell's nonce baked in. Raises ValueError on
     a nonce outside the strict charset — the caller maps that to a 422."""
@@ -1299,4 +1564,8 @@ def render_bridge_script(
         .replace("__LUMEN_RESIZABLE_NODE_IDS__", _script_json(resizable))
         .replace("__LUMEN_ROOT_NODE_ID__", _script_json(root_id))
         .replace("__LUMEN_PAGE_ROUTES__", _script_json(_bridge_page_routes(web_doc)))
+        .replace(
+            "__LUMEN_NODE_NAMES__",
+            _script_json(_bridge_node_names(web_doc, page_id, fragment_meta)),
+        )
     )
