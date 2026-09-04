@@ -151,11 +151,18 @@ Files: `subsystems/clue-design/apps/api/lumen_api/web_bridge.py` (+ new
   fragment/render suites 169 passed; `agent_runtime/test_web_fragment_preview.py` 11 passed;
   stack restarted from the repo root. Ruff: `web_bridge.py` back at its 4-E501 baseline
   (long CSS wrapped), `main.py` 398 before and after.
-- **New pre-existing residual, proven not argued:** the full `apps/api` suite fails 4 tests in
-  `test_api.py` (`test_w14_model_not_found_404_…`, `test_w17a_text_only_…`,
-  `test_w17b_aspect_ratio_…`, `test_w17b_result_reports_…`). All four fail identically at the
-  base commit `6527f298f` in a throwaway worktree — same class as the recorded non-hermetic
-  residual: a real `OPENROUTER_API_KEY` in `.env` makes the image route perform live calls.
+- **Full `apps/api` suite ran to completion: 2134 tests, 10 failed, all 10 PRE-EXISTING —
+  proven, not argued.** `test_api.py` ×4 (`test_w14_model_not_found_404_…`,
+  `test_w17a_text_only_…`, `test_w17b_aspect_ratio_…`, `test_w17b_result_reports_…`),
+  `test_asset_custody.py` ×2 (`test_pure_python_reads_survive_a_wiped_cache`,
+  `test_the_public_route_falls_back_to_sniffing_for_octet_stream_rows`),
+  `test_asset_store_serving.py::test_asset_store_serves_content_addressed_bytes`, and
+  `test_ingestion_grammar_audit.py` ×3. Each was re-run at base `6527f298f` in a throwaway
+  worktree (`git worktree add`, removed after — never `git stash`) and fails identically
+  there; the six non-`test_api` ones also fail in isolation, so it is not suite ordering.
+  Same class as the recorded non-hermetic residual: a real `OPENROUTER_API_KEY` in `.env`
+  makes these routes perform live model calls. **This is the number to diff against next
+  time: 10 pre-existing failures in `apps/api` on this box with a live key.**
 - **Residuals for later:** `lumen-hover` is now vestigial (nothing adds the class; comment
   left at the CSS rule); badges do not follow a reflow that is neither scroll nor resize, so
   the shell should re-post after a mutation (Task 6 owns the payload); `elementPath` is
