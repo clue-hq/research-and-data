@@ -1,6 +1,6 @@
 # ARV2 MASTER PLAN — the complete roadmap for account research, contact research, and their display
 
-**This is the single authoritative plan. Version 1.0, 2026-09-04. Both founders ratify by initialing
+**This is the single authoritative plan. Version 1.1, 2026-09-04 (v1.1: lenient write gate, checks as flag-controlled annotations, human-stated facts need no URL, all fields optional). Both founders ratify by initialing
 §12.** It consolidates every decision taken so far into one present-tense document. The earlier
 documents in `docs/specs/ARV2-*.md` remain as the audit trail; where they differ from this one, this
 one wins. There is no history in this document, only what we are building and how.
@@ -28,22 +28,35 @@ one design source of truth (the dummy frontend, lifted screen by screen).
 
 1. **A claim needs a quote and a URL or it is not written.** Empty is a correct output; fabrication
    is the only failure. Conflicts between sources are recorded, never smoothed.
-2. **Exactly two gates exist, plus one floor.** (a) The claim write-shape gate: the field must be in
-   the registered catalog, the value must match its schema, a source URL must be present; refusals
-   return an actionable message and never crash a job. (b) Human authority: product selection, ICP
-   confirmation, cohort approval, launch, contact selection. The floor: `outreach_safe=false` claims
-   never reach outreach copy; special-category personal data (health, faith, politics, sexuality,
-   family tragedy, minors) is never recorded. Everything else — coverage ratios, confidence
-   thresholds, corroboration, faithfulness judges, canary suspensions, budget vetoes — does not
-   exist in this lane. Judgment annotates; it never vetoes.
+2. **Exactly two gates exist, plus one floor — and no mechanical blocker ever stops information from
+   being stored.** (a) The claim write gate is a *shape* gate run in **lenient mode by default**
+   (`CLUE_CLAIM_WRITE_LENIENT=true`): it stamps what the agent did not say (tier from the tool of
+   origin, facet defaults, reuse scope) and stores the claim; a value that misses the field's schema
+   is stored with `schema_valid=false`; an unregistered key is stored and auto-registered as a
+   proposed field; a research claim with no source URL is stored with a `source_missing` marker.
+   **A fact the user states in chat is written with `extraction_method=human`, its evidence is the
+   user's own words, and no URL is ever asked for.** Strict refusals exist only when the flag is
+   turned off. (b) Human authority: product selection, ICP confirmation, cohort approval, launch,
+   contact selection. The floor: `outreach_safe=false` claims never reach outreach copy;
+   special-category personal data (health, faith, politics, sexuality, family tragedy, minors) is
+   redacted, never used. Everything else — coverage ratios, confidence thresholds, corroboration,
+   faithfulness judges, verbatim checks, canary suspensions, budget vetoes — does not exist as a
+   blocker in this lane. Judgment annotates; it never vetoes.
 3. **Money truth still blocks; money caps only record.** A 4xx or unknown-spend state stops the
    call; a budget ceiling is recorded and surfaced, never enforced mechanically on the pilot.
 4. **Free primary sources first, always.** Job-board APIs, RSS feeds, and the target's own site
    before any paid call. A known URL is fetched, never searched for.
 5. **The claim store is the only seam.** Research writes claims; the display layer and the frontend
    read claims; nothing passes between them any other way. Research never reads chat history.
-6. **Governance lives in code after the model, never in the prompt alone**: the sensitivity floor,
-   the unevidenced-row purge, exact-substring quote verification, the closed field catalog.
+6. **Quality checks are annotations, flag-controlled, off by default, and never block a store or a
+   page.** Verbatim-quote checking (`CLUE_EVIDENCE_VERBATIM_CHECK=off`), the unevidenced-row purge
+   (`CLUE_UNEVIDENCED_ROW_PURGE_ENABLED=false`), and the interview's text-entailment rule
+   (`CLUE_INTERVIEW_ENTAILMENT_CHECK=off`) only ever record a marker on the claim when turned on.
+   The one check that runs by default is the sensitivity floor
+   (`CLUE_SENSITIVITY_FLOOR_ENABLED=true`): it redacts references to minors from a value and marks
+   origin/faith/health-type facts `outreach_safe=false`; it never drops a claim. v1 is operational
+   first; verification is a later version, and when it comes it is fuzzy (token overlap), not
+   exact-match.
 7. **The dummy frontend is presentation truth.** No component is invented while wiring; screens are
    re-lifted from the dummy, never patched in place; data with no designed slot goes unserved.
 8. **Every configuration flag appears in `.env.example` with its value in the same commit that
@@ -63,7 +76,7 @@ one design source of truth (the dummy frontend, lifted screen by screen).
 | Deep research | Exa `/search` `type=deep-reasoning`, one call per subject | `systemPrompt` = target lock + same-name exclusions; `query` = the charter; `numResults 20`; `contents.text 10000 + highlights`; `outputSchema` with exactly one string property `report`; **silent-fail guard in the tool**: `len(text) < 3000 or (results ≤ 9 and cost ≤ $0.016)` → retry once |
 | Job postings, RSS, own site | Ashby / Greenhouse / Lever public APIs (slug fallback list; read `descriptionPlain`, `publishedAt`, `isListed`, compensation), podcast RSS (exact episode-number match), the target's own pages | Free; these decide rankings more often than paid calls |
 | Media (podcasts, videos) | Gemini: `gemini-3.5-flash-lite` for short items where timestamps matter; `gemini-3.5-transcribe` for anything long (Files API upload; text at `parts[].audioTranscription.text`, no timestamps); `gemini-embedding-2` (768-dim) on transcript **text** only | Duplicate-line loop detector on every transcript; every quote verified as an exact substring of the faithful transcript; pull the MP3 from RSS rather than YouTube (3.6× cheaper); YouTube's caption endpoint is dead, Exa `/contents` on a watch URL gives the words; never fetch LinkedIn- or X-native video; verify who speaks before quoting |
-| Structuring prose → claims | OpenRouter `openai/gpt-5-mini`, reasoning `minimal`, JSON mode, **one subject per call** | Closed field catalog validated in code; `proposed_fields[]` escape hatch; deterministic provider facts are assembled in code with `source_field_path`, never sent through the model |
+| Structuring prose → claims | OpenRouter `openai/gpt-5-mini`, reasoning `minimal`, JSON mode, **one subject per call** | The field catalog is the model's menu; an unregistered key is stored and auto-registered as a proposed field (lenient mode), never refused; deterministic provider facts are assembled in code with `source_field_path`, never sent through the model |
 | Display copy | OpenRouter `openai/gpt-5.6-luna`, default reasoning effort, one call per page section, sections in parallel | See §7 |
 | Apollo | Not built. Fallback only, if ever needed | — |
 | Sumble, Melissa, the M4 waterfall, memory subsystem, Stage-0 recon | Off (see §11) | — |
@@ -86,6 +99,24 @@ per person ≈ $0.07–0.13; display copy ≈ $0.05 per account with five contac
 - Other per-claim extras from the research runs (`claim_kind`, `media_url`, `media_timestamp`,
   `source_type`, `charter_category`, `source_field_path`, per-claim cost) ride `value_json`
   sub-fields and the existing provenance/lineage refs; no schema for them in v1.
+- **What a claim row needs to exist (the true minimum):** `entity_id` + `entity_type`, `field_key`,
+  `value_json`, `extraction_method` (`human` / `api` / `scrape` / `llm_synthesis` / `crm_import`),
+  `source_tier` (stamped from the method), `run_id` + `research_mode` (lineage — what makes it
+  visible on the project's pages), `workspace_id`, `confidence` (defaulted). **Optional:**
+  `source_url`, `evidence_span`, `observed_at`, `source_key`, artifact/snapshot refs,
+  `identity_binding`, `use_class`, `product_id`, `signal_priority` (defaults to 3),
+  `outreach_safe` (defaults to true). Two database rules are satisfied by **stamped defaults, never
+  by refusal**: a `contact.facet.*` claim gets `identity_binding=WEAK` + `use_class=professional-public`
+  when the writer did not say; tier 4 ⟺ `llm_synthesis` is stamped from the tool of origin.
+- **Leniency and check flags (all in `.env.example`):** `CLUE_CLAIM_WRITE_LENIENT=true` ·
+  `CLUE_EVIDENCE_VERBATIM_CHECK=off` · `CLUE_UNEVIDENCED_ROW_PURGE_ENABLED=false` ·
+  `CLUE_INTERVIEW_ENTAILMENT_CHECK=off` · `CLUE_SENSITIVITY_FLOOR_ENABLED=true`. When a check is
+  on, it records a marker on the claim (`schema_valid`, `source_missing`, `evidence_verbatim`,
+  `unevidenced`, `entailment`); it never refuses a write.
+- **Every field is optional.** The claim store is sparse: a field exists only when a claim for it was
+  written; a missing field is absent, listed under `coverage.unresolvedFieldKeys`, and blocks
+  nothing. Inside a field's own value schema every sub-field is optional except the one that
+  identifies an item.
 - **New registered fields (data rows, no code):** account — `account.open_requisitions` (list of
   `{title, dept, published, days_open, salary_band, still_listed, url}`), `account.gtm_tooling_stack`
   with an explicit `absent[]` array, `account.named_customers`, `account.reputation_risk` (born
@@ -184,10 +215,11 @@ design; generic field rendering exists only for `customFields`.
   claim ids into prose; write dates as "17 June 2026"; use the personal-hobby hook at most once per
   page. Output = the `ResearchSection` shape; every sentence carries the claim ids it used; the model
   never sees or types a URL.
-- **Mechanical checks in code, after the model** (a failed check regenerates the section once, then
-  marks it empty with a reason): every quoted span ≥4 words is a substring of a cited claim; every
-  number ≥13 appears in the claims; every claim id is valid and on-recipe; no `outreach_safe=false`
-  claim cited outside a restricted section; contact page items carry a send line.
+- **Checks after the model — annotations, not blockers.** Logged on the `display_block` row when
+  `CLUE_EVIDENCE_VERBATIM_CHECK` is on: quoted spans found in the cited claims, numbers found in the
+  claims, claim ids valid and on-recipe, send lines present. **The single hard rule** (the floor, on
+  by default): an `outreach_safe=false` claim cited outside a restricted section regenerates that
+  section once, then serves the section without the offending item. A page is never blocked.
 - **Generation policy:** a section is generated **once, on first request** (lazy — an unopened
   contact page costs nothing; the first open waits ~15 s), then **persisted and served as-is on every
   later visit**. It is regenerated **only on invalidation, and only the affected sections**.
@@ -241,8 +273,8 @@ design; generic field rendering exists only for `customFields`.
 | Stage | What | Exit gate |
 |---|---|---|
 | R1 providers | AI Ark client, Exa client (search / contents / deep-reasoning with the silent-fail guard), ATS resolvers (Ashby / Greenhouse / Lever), podcast RSS + YouTube probe, the Gemini media client, the OpenRouter structuring client — all with save-raw-before-parse, cost ledger, pre-spend estimate, retries honoring `Retry-After`, an enforced media-seconds ceiling; keys in `Secrets` + `.env.example` | Recorded live fixtures for every client against Zafran and Probook; no claim writes |
-| R2 account agent | One LangGraph agent per account on the existing fleet, behind `CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED`, own catalog folder (`entity-research/arv2-account/v1`: profile, prompt, dossier skill, audit skill, manual), own driver implementing the failure law (every tool error is a recoverable refusal; caps push to finalize, never raise). Charter: the ten-section dossier with a required reputation/negatives section and an "already established" block; free-first ordering (ATS → RSS → own site → AI Ark company + name-scoped people → Exa gap searches → one deep call). Two claim species: deterministic (from provider fields, in code) and synthesised (one structuring call per subject against the code-validated catalog); exact-substring span verification with failures quarantined | Probook and Zafran researched end-to-end; ≥15 claims each with quotes + URLs on the account screens; the negatives section present |
-| R3 committee + person agent | Web-first committee (team page, funding announcements, LinkedIn via Exa, ATS reporting lines) confirmed before any provider lookup; AI Ark name-scoped enrichment + email; one person agent per confirmed member with the personal-depth charter (background, life outside work as self-stated, voice with 3–5 verbatim quotes, professional identity, unique insight, three grounded openers); trimmed sweep (six angles), one deep call + one narrow unique-insight follow-up per person, media only where it exists; the **coded compliance pass** after structuring (minors absolute even if self-published; origin/nationality/faith recorded as biography only, `outreach_safe=false`, barred from hooks/openers; purge rows with no quote / no URL / value NOT FOUND; every action logged) | The 10-person answer-key set reproduced; committee with verified emails, hooks, openers and voice quotes on the contact screens |
+| R2 account agent | One LangGraph agent per account on the existing fleet, behind `CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED`, own catalog folder (`entity-research/arv2-account/v1`: profile, prompt, dossier skill, audit skill, manual), own driver implementing the failure law (every tool error is a recoverable refusal; caps push to finalize, never raise). Charter: the ten-section dossier with a required reputation/negatives section and an "already established" block; free-first ordering (ATS → RSS → own site → AI Ark company + name-scoped people → Exa gap searches → one deep call). Two claim species: deterministic (from provider fields, in code) and synthesised (one structuring call per subject against the code-validated catalog); verbatim checking as an annotation only (flag off by default) | Probook and Zafran researched end-to-end; ≥15 claims each with quotes + URLs on the account screens; the negatives section present |
+| R3 committee + person agent | Web-first committee (team page, funding announcements, LinkedIn via Exa, ATS reporting lines) confirmed before any provider lookup; AI Ark name-scoped enrichment + email; one person agent per confirmed member with the personal-depth charter (background, life outside work as self-stated, voice with 3–5 verbatim quotes, professional identity, unique insight, three grounded openers); trimmed sweep (six angles), one deep call + one narrow unique-insight follow-up per person, media only where it exists; the **coded compliance pass** after structuring (minors references redacted from the value even if self-published; origin/nationality/faith recorded as biography only, `outreach_safe=false`, barred from hooks/openers; mark rows with no quote / no URL as `unevidenced` (purge only if `CLUE_UNEVIDENCED_ROW_PURGE_ENABLED=true`); every action logged; nothing is dropped whole) | The 10-person answer-key set reproduced; committee with verified emails, hooks, openers and voice quotes on the contact screens |
 | R4 discovery + fleet | ICP-driven discovery (signal-first job-req search, free ATS boards, the $0.007 qualifier probe for stage + hiring gates), cohort approval, fleet fan-out over an approved cohort with a max-concurrency cap | A 20-account cohort discovered, approved, researched and displayed |
 
 R1 starts the day D1's migration lands. When R2/R3 go live, the loader retires; D2–D5 do not change.
@@ -334,10 +366,11 @@ boot-time audit refuses to start if an old tool is re-granted; the old tools are
 4. Deep-reasoning calls carry the target lock and same-name exclusions in the system prompt, the
    charter in the query, and an "already known" block; the silent-fail guard retries once.
 5. Deterministic provider facts become claims in code with the JSON path recorded; only prose goes
-   through the structuring model, one subject per call, against a code-validated catalog.
-6. Evidence spans are verified as exact substrings after normalization (fragments split on "…");
-   failures are quarantined, not merely flagged.
-7. The compliance pass runs after structuring, in code (§9 R3).
+   through the structuring model, one subject per call, with the field catalog as its menu
+   (unregistered keys become proposed fields, never refusals).
+6. Verbatim-quote checking, when enabled, is an annotation on the claim, never a blocker; v1 ships
+   with it off. If added later it is a fuzzy match, not exact-substring.
+7. The sensitivity floor runs after structuring, in code (§9 R3): it redacts and marks, never drops.
 8. Depth scores and hook counts are computed, never asked of a model.
 9. Free-first ordering; a known URL is fetched, never searched for; ATS slugs are read from the
    careers page, never guessed.
