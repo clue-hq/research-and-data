@@ -193,10 +193,10 @@
 }
 
 /* layer: haze — a soft spill just inside the line (founder v3 review: thin and minimal, Moda-like) */
-.clue-gen-glow[data-variant] .clue-gen-glow__haze  { --reach: 9%; inset: -2%; filter: blur(26px); opacity: .55;
+.clue-gen-glow[data-variant] .clue-gen-glow__haze  { --reach: 5.5%; inset: -1%; filter: blur(18px); opacity: .5;
   -webkit-mask: var(--clue-gen-edge-mask); mask: var(--clue-gen-edge-mask); -webkit-mask-composite: source-over; mask-composite: add; }
 /* layer: bloom — tight halo right against the line */
-.clue-gen-glow[data-variant] .clue-gen-glow__bloom { --reach: 3.5%; inset: 0; filter: blur(8px) saturate(1.15); opacity: .9;
+.clue-gen-glow[data-variant] .clue-gen-glow__bloom { --reach: 2.2%; inset: 0; filter: blur(6px) saturate(1.15); opacity: .9;
   -webkit-mask: var(--clue-gen-edge-mask); mask: var(--clue-gen-edge-mask); -webkit-mask-composite: source-over; mask-composite: add; }
 /* layer: line — 2px stroke on the edge itself: a faint olive frame all the way round, the bright head runs through it */
 .clue-gen-glow[data-variant] .clue-gen-glow__line  { padding: 2px;
@@ -220,12 +220,12 @@
 /* --- beam: one bright head with a long sage tail, faster, darker frame --- */
 .clue-gen-glow[data-variant="beam"] .clue-gen-glow__rim { box-shadow: inset 0 0 0 1px rgba(68,72,63,.14); }
 .clue-gen-glow[data-variant="beam"] .clue-gen-glow__haze {
-  --reach: 12%; opacity: .7;
+  --reach: 7%; opacity: .65;
   background: conic-gradient(from var(--clue-gen-angle) at 50% 50%,
     transparent 0deg, var(--clue-gen-teal-mid) 30deg, var(--clue-gen-sage-600) 52deg, var(--clue-gen-cream) 66deg, transparent 100deg, transparent 360deg);
 }
 .clue-gen-glow[data-variant="beam"] .clue-gen-glow__bloom {
-  --reach: 4%; filter: blur(10px);
+  --reach: 2.6%; filter: blur(7px);
   background: conic-gradient(from var(--clue-gen-angle) at 50% 50%,
     transparent 0deg, var(--clue-gen-teal-mid) 24deg, var(--clue-gen-sage-600) 42deg, var(--clue-gen-cream) 54deg, var(--clue-gen-white) 60deg, var(--clue-gen-teal-light) 66deg, transparent 86deg, transparent 360deg);
 }

@@ -77,3 +77,4 @@ bad. Thinned to a Moda-style line: haze reach 9% / blur 26px / opacity .55,
 bloom reach 3.5% / blur 8px, rim = 1px hairline only (no inset shadow), line base
 tint sage not olive; beam thinned proportionally (haze 12%, bloom 4%). Line width
 stays 2px (beam 2px). Same file, no component changes.
+Round 4b: founder wanted thinner still → haze reach 5.5% / blur 18px, bloom 2.2% / blur 6px; beam 7% / 2.6%.
