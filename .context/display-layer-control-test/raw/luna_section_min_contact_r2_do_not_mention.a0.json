@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788504672-lFk4HiZLr9uZZxWUapb4",
+ "object": "chat.completion",
+ "created": 1788504672,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"do_not_mention\",\"empty\":false,\"items\":[{\"h2\":\"Cisco strategic investment, not acquisition — Do not use\",\"body\":[{\"text\":\"Zafran confirmed a strategic investment from Cisco Investments and not an acquisition.\",\"claimIds\":[\"zaf-135\"]},{\"text\":\"This fact is marked outreachSafe=false and must not be used in outreach.\",\"claimIds\":[\"zaf-135\"]}],\"priority\":2},{\"h2\":\"Competitive differentiation and ARR questions — Do not use\",\"body\":[{\"text\":\"Third-party press raised questions about competitive differentiation and ARR growth pace, including an anonymous executive’s criticism.\",\"claimIds\":[\"zaf-138\"]},{\"text\":\"This fact is marked outreachSafe=false and must not be used in outreach.\",\"claimIds\":[\"zaf-138\"]}],\"priority\":2},{\"h2\":\"Amex Ventures investment — Do not use\",\"body\":[{\"text\":\"Zafran announced a strategic investment from Amex Ventures, with the amount reported as estimated at several million dollars.\",\"claimIds\":[\"zaf-139\"]},{\"text\":\"This fact is marked outreachSafe=false and must not be used in outreach.\",\"claimIds\":[\"zaf-139\"]}],\"priority\":2},{\"h2\":\"Snir Havdala departure to NVIDIA — Do not use\",\"body\":[{\"text\":\"CTech reported that co-founder and CPO Snir Havdala departed for NVIDIA, while Zafran said the transition was planned and Itay Nachum assumed product leadership.\",\"claimIds\":[\"zaf-142\"]},{\"text\":\"This fact is marked outreachSafe=false and must not be used in outreach.\",\"claimIds\":[\"zaf-142\"]}],\"priority\":2},{\"h2\":\"Nick Fisher’s Cocktail Chemistry hobby — Do not use\",\"body\":[{\"text\":\"Nick Fisher hosts Cocktail Chemistry videos as a side hobby, filming in his kitchen and running Patreon for support.\",\"claimIds\":[\"zaf-160\"]},{\"text\":\"This fact is marked outreachSafe=false and must not be used in outreach.\",\"claimIds\":[\"zaf-160\"]}],\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":2},{\"h2\":\"Cisco acquisition rumor — REFUTED; do not use\",\"body\":[{\"text\":\"The claim that Cisco acquired Zafran Security is marked REFUTED; the reported event was a strategic investment.\",\"claimIds\":[\"zaf-169\"]},{\"text\":\"This fact is marked outreachSafe=false and must not be used in outreach.\",\"claimIds\":[\"zaf-169\"]}],\"priority\":1},{\"h2\":\"Roughly $20M ARR and competitive struggles — UNRESOLVED; do not use\",\"body\":[{\"text\":\"A third-party claim about roughly $20 million in ARR, competitive struggles, and high burn is marked UNRESOLVED.\",\"claimIds\":[\"zaf-170\"]},{\"text\":\"This fact is marked outreachSafe=false and must not be used in outreach.\",\"claimIds\":[\"zaf-170\"]}],\"priority\":1},{\"h2\":\"Snir Havdala departure to NVIDIA — CONFIRMED; do not use\",\"body\":[{\"text\":\"The claim that founder and CPO Snir Havdala departed for NVIDIA is marked CONFIRMED, with Itay Nachum assuming product leadership.\",\"claimIds\":[\"zaf-171\"]},{\"text\":\"This fact is marked outreachSafe=false and must not be used in outreach.\",\"claimIds\":[\"zaf-171\"]}],\"priority\":1}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmpl1z0OXfpgWojUJklgB_cTkhSfZxKksbZ8EtEagZ1XJR7qov9HS8ZAx34yupwzwFERnLZ8HgjgoxGU4lfpCjoE6BWJt7_Kb35yGvkoxM0JCgW5XA9oahNc7tDXnk4nYN8YF9bOc1i5XtKZqRiLcuDi_gMdeAGsjILMUBv5J2xOozirnX8dJMuMfmqPVWHDBOPvsCi3txBdi7FRZdqoGG5zOTQ6LBph2n-PyPlGYq2_aX2Y0sevyW3-8b3wtesUtrMsYkoIahD2nzU4JyFBOyLNG0TPNcDwUhSn-OwQWHxDzPxW6kTyCwDM6b60w4oG4xb7I28dXEt--sIRFx8ZDB1Ic9sY7CBhPsaYVrokgpBvlrbOeMb25Gy-cA61EUS-HcLRlxQ4_OHXLMvxUf56EhtfFBHWk8dvQ1lSHKCmMrIwTf0HNyU-4-07BdZgk_iuN00XlIHb1wuAjaT6YioVP3FpXoT0uT9jH8uXMI_r3LPqFgykSoYXYZ1miUaLBUeO0zqavr-bxtujibNTww8f70K_gvr2jJo0tL_OebW-ifrpPeq9_HC9BtZwICejF3Ddmo0iHAnmq14N7_YyXUMgwSCtU4LXnklxlMaZuzfYyfWMNze-WTP28Oj1bHycbpU45qELtI4O_fqBckx5oG6fxZTBWWii1EcLRaPqVQfUqloB35fbmtm3zjil1SPmaukEn4yR1o7to0ZvuuAJggvCCx1yE4xKvT0f-9VAb-sD3Ot34BhRhLqTvXwS7ZBunfIYsLBiRPxxgzVMAxzWqDlDCG3lpP2nlhN6DYS1jPz9Qqtu_-Hug2Hjea-QjpJhcsjaoBIDVq4ke3kymUwZM3m_zFYHzJE6_TRUOnXa_-AAzBzdd2ObywHC6kgCGerTpGS8NS0FreoW1k6yI4bL4BtDsQDS8e3b5ywyZZCtfLwFiWAIG5GlBC_dJMHq6IpMLQeIixj7iDYE9e_aKGWWtiJGmY1gf7mX3_QAqdtvA15619hfavLmFlvLSazTH6xml3E6sb4YfHasl0S-EJQsL51w0MNPn076xfUEx6YbDxN3IVIERrRZr-vhq8flGIXfRokcqVpPyn50V_NepY5UkoeRugHDWSZcvfYm0_ZZNKZsCGMAF7D82PBWQQ5JSTZxJzzoWrnfKDnaQCQsVFq_odLsCE4JrNAZqk6QJw5p88KdwKi5Dp9xMSAgzLjbw7DRoLYNVVL6lfDfvV1zVmU-56yTUZvnxM11d7NA5CkRPvSKdg3NADXiJHfXsvvc9MADq9hbcJMJnum-m7VAVV7qMyobKX7IJ6S2WCSclyQmjoVGh7EVZi4aRowKiAKk9teiFGS_HKAQY2wr87sdMIScjLcAkxQyf2NY_L7_C_t6Qj8AIWxKU1WeCaYx9WcAva9D6LHuvMsxM0OT4CbLgTsjsyuYB6xOgyaL7XPi40IueaXz7hWAC8pQKaNgAT5gQjdYJEwX_iu1T1DAOQHILFmu6zuHfT8HeR6Q7WjqIf-z0fATZX2jENZgB0VJqnHRBNVXATkfbUFqHoNHnQa0fFSR0MY7aLYXP_6Tj8u5YaVnVhL8ig9TX_Gx6y7uBkkDCeYcKTbat31EK_ZDQwNRTW0O8bcDGVNNsV4_BySjJDjwmHHfRx724nViz4LPgO67Q2xvGqcYvIZUX9hEuIFS6reOJaLENkA-oRcrcn1rtyWC7F_JW4TDp4O1-25GSfZHX9ni7m29N63CRDTvVn02BknRI59swdBWQvIJQG_mA-trb-lWXAWGsQkRlLNgEG-EbxWhUyg-JYDBlcJKhEYKDjCjMeIdi36SAUyuyl8zfFpPmYjPmwVJCSAkPlk8mHIcQCdw9dRzjskrduM17mXZBDn6c2-QGmdOtwHUuPgLVprWPHPmgJQKblf5_XG7OWBNDY5G4NPBy3hXjwM4vmvCwVnONrlfaSlbE176j53riP1P53K3wAO1wAk702D-gF7ywcDhlzd_B0hcxmcWaVSlublYTRofJyATcUFMVYC_zoWjdyiOlmByshd7dAP8jvh9aWVh-XDrYjKkvLmLKaNOqHcKRf5W8--Zl9_H84sgb_3-cZXWB2IVhSUbUT3erKjbQ3rljuMQZSGAPdK-eE9WWIZqJ99rldvMG0sfs-LDwXMKVNpwqaFW87eSo1v0iINtUAFsPLdBC2y8FnoMdcBHdK7_sETbvZDNI69N--rVhbe-8bXv7XR_KEbrxo49ZBWmOS4M_ZRsto9-McvTeSKo-GeJZHUDvk94Xg9TX9VXC5j7UZmpiPJ54Us8u3u-1FBNWn1xKzSyuNolW-0J0d6u5dODn_AYTaHdluPyhoiA8IK3RZxsBGmTnKju9aj4aRmH8w-x77FTGF0Dvc1_rbpSCQC6utKBlEA-t6D2OoekPws_c-ZgBF_dW-W55kK3o4-8MraBvDSZu-RulwDXsF9Jt4-7zgj6FobYqrC33wBcti3gUFZD6DQqQYmlSTYRLZk5u0qeQON9abMQ86xCha57i9d7XqtDGBuH_w13le0rgaAMUgPMEIoA8DrifNv1X5tuqvwrsAKISJiqKKBfYEcgsEWLasY8QqfODTa8trto_TTjFZq4SklKz5LtLgqRF6vJKWaSPvaIOYRScG6nZFJwJqYMp2S2kGO1buzQL0uGXnLCzB5iHF9qJKzqZhS6qkbvh0QrN_OTf1gMwjAmiRFmcirE2MWOsBg34735wb-3uwSNbV6wBWqUSfGRKsrpP-Cx5_SKqHI40FH8rxViv83Eh5IXmr-nHUqV-Z93956ywDqWw-KnJ0_t4ggBWKD05IojoPpIfy0QT8sEFrensrx3u5FE8Y6V_pazOZOI0XJLKzeOk-YDKL9tknoOxpvRpYJ5TIzkQZMISGwdadNFPgiFDeG4aRaBqOhZ3bTHb93pAORQZbTIHQ8oTVK2STgnb0C86xvklNQmXO_bTRrtlRsL5DO_SjiCdl8hN3MOuCD9FmMdEYCz9Oi72YT5ysc5lQcXciEvNtdiFMsl4NOO1cLb7oSUegBer9km06V8FLnf3FxFOoDwxLlHRL4Bd6hUkiWSWLZzRx4P9ApuaWAILcmOztR3YwNczh2M4m-7QC1JBe2FNpZxt6YNmZqgxGQAGAFR6_jMlB2S0nsDUTVeNA2hMxw2LxreI57sk0RnDVtDtf7Xkkr_IdaQLN09mkh1zcUr40o3XIUZhPKahjCj7UWqygRuGUB6vrq9_EOXE4PAp5s_G_A4xKrC2DZJeVWkDqmJM3Ybw_rFOAa67MSdap7HpRLA9vZTP6SEiaT8rjV-jybCji6t7F8KUkIHmJ2nCnQY3J0xaksLrP9VA8xzCZ0V5jvRaiYv4cJ2bZo1tbbn23VezVGnIqP2lvEG2Fo98hSr8kDX4B_mJ3r7XfWSWtlK3K0Zxirw4pQDJPDLn6CnG_p8ic2u73Gbv7exERAChqBMoTV0TPXM2QgmkXt4PUzULKzZLXXZe8_ht4nM9vWyZwmOcTIkceBcWz5T44bJ0iILpR6AzN3z5IqlyIeMLeP3O3hFnA9562nM6mg-V5bORcPWbuM_uXVqcIw2HrAA4OpOMYyGGr3zpk2hw6wcacLHE5d8mR93DXsXjOGxNIyD9W2y9VCknE_CRduTRtmYDF-lwgHczPotdlXtHmlAvbevXNOOMbLBffGBo3hnJ1q8JFSoIKnejM7806T4e_xLVArGZOPlbrmvZLX7bY6WGO1ZBJ72OvWI4EW8S98kBWG2ZzyAwOsuqKBnvEdOYpD1OwG4FZcqUcuWqVUGlBzoaxEe08jpXJa78Bcc7xT7Lpnb-UL7wI2aSnPxrxq3tZKj1WRo_FFCht-sAvmGsffzlQAJb9qhL5upAWeAJdNdry89XJVIykA2jRmaxqtW819zIInGijC5CKpm2y5_2eeamXTPtXsnvE-RJXM2pfIwfNz-jgcyJkVAcm3_uq5R2Cn8Ei50ca5JY6ikbvCRqS1XoSfYd_bJq1ijUH75qrAaoDfrRMNj01Fb9bDMQ63SCg16lWWcdN7ce2KxoBuKapxcenkUspamLQonvyersFTa4cpdOM_h8WhP9c9JWL02CCEC-MFTphWbc5o5JI16XQmfhj6XvPkFaOB6TogzANcKMeL6gecNxTG7ZCf_CRl_X7w4mNvdlAHRrJoxnf0xRFSLorhCiNQqo20U6ZvRK1VwUubsFal6MyvDLmhJaHe6nC4RI6MrIz26PLannkqOAyXZRG--yZnJROYtBEPP_SvrWYGophhAZwLOZZafdayGuHDlGi0SxY6ysF9Hf51ASofkJdHDIrtZhwMHNHtgziOODHmvASetyb4o6rQNc4sGCt09o46DY87D1CDQmkm6kQJCqds31CLzi3PzyKm7IrutfsCjl1Bw5j7FfscIRmMFS7pthVQ7l8ttG9wRYmynkzkYReNa0mbpijrv0W6TKIXyeOHevb0ruEvaTJ8cnVkosgdnDOxFsipPBaty0zLv.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0021387350fdad33016a9a6a613a7c87d09158a58ec86c4eb2",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 2077,
+  "completion_tokens": 1231,
+  "total_tokens": 3308,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 2074,
+   "cache_write_tokens": 0,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00151928,
+   "upstream_inference_prompt_cost": 4.208e-05,
+   "upstream_inference_completions_cost": 0.0014772
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 516,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 8.8,
+ "_attempt": 0
+}

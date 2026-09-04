@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788504825-Oqr1HbgusaDNbxdjTIOj",
+ "object": "chat.completion",
+ "created": 1788504825,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"tools\",\"empty\":false,\"items\":[{\"h2\":\"GTM stack includes Salesforce, Outreach and major ABM platforms — observed 2026-09-02\",\"body\":[{\"text\":\"As of 2026-09-02, Zafran's GTM stack lists Salesforce, LinkedIn Sales Navigator, ZoomInfo, Outreach, HubSpot, and unnamed major ABM platforms.\",\"claimIds\":[\"zaf-089\"]},{\"text\":\"What it means for us: Their existing motion spans sales engagement, account data, CRM, marketing automation, and ABM.\",\"claimIds\":[\"zaf-089\"]},{\"text\":\"What it means for us: Position Clue as an addition to this stack rather than a replacement for these systems.\",\"claimIds\":[\"zaf-089\"]}],\"sendLine\":\"[EMAIL] Your team already has Salesforce, Outreach, ZoomInfo, LinkedIn Sales Navigator, HubSpot, and ABM platforms in the motion — Clue can add account research and personalised execution around them.\",\"contactRefs\":[],\"priority\":1},{\"h2\":\"Primary technology stack includes Google Cloud, Amazon S3 and HubSpot — 2026-09-02\",\"body\":[{\"text\":\"Zafran's listed primary technology stack includes Google Cloud, Amazon S3, Envoy, Cloudflare, HubSpot Hosted, and Zendesk Mail, observed on 2026-09-02.\",\"claimIds\":[\"zaf-019\"]},{\"text\":\"What it means for us: Their environment includes cloud infrastructure, web security, marketing hosting, and customer-support tooling.\",\"claimIds\":[\"zaf-019\"]}],\"sendLine\":\"[EMAIL] I noticed Zafran's stack includes Google Cloud, Amazon S3, Cloudflare, HubSpot Hosted, and Zendesk Mail — where does your team still rely on manual account research around that environment?\",\"contactRefs\":[],\"priority\":2},{\"h2\":\"Nick Fisher's article says 96% of vulnerabilities did not require patching\",\"body\":[{\"text\":\"Nick Fisher authored the LinkedIn article \\\"Why I joined Zafran Security,\\\" which says \\\"we revealed how 96% of vulnerabilities didn’t require patching and can be mitigated using existing controls.\\\"\",\"claimIds\":[\"zaf-158\",\"zaf-159\"]},{\"text\":\"What it means for us: Nick is publicly framing Zafran around proof of value, real risk exposure, and use of existing controls.\",\"claimIds\":[\"zaf-159\"]}],\"sendLine\":\"[LINKEDIN] Nick, your \\\"Why I joined Zafran Security\\\" article's 96% proof-of-value point is a strong framing for showing how account-specific research can focus attention on the risks that matter.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmr_4WN7twbNtEzI0ESAzxsqNpLuR1p_9rmHJKOkQZPh6SXJZvrgUC6vnNpopdcON5TZHSnmL-6ulK-42j1v0Se-V1PEup89axPaYTYlG98M-29CBzEZdD8WTw4ZxXe5NB9sdVT_ftOak0WXhRH0K0Ae0O29Yj5d2TyqeI4zxS_Yz4wL3iphJvICPiN_6aWAMggWU290GBevgioT0H9-p1_LkR0J35TsSw7hF2KGCyofpCYaR9XB955yqiMbSAkR8xUufhqK9dRNoipnjAtK7gYMuEc1GmSJyFY0HD0OyL_xsJfXy_5sqU9QBJ8FicRw1tnaHDu9hV8jl_76xTYMYTc9aaS6jrByl2ErLFbCTAkM8UofoeubvVAnXAoNmXI4yhYe9e26rvEgZ9dIuoUzuekw-uztX_00AbOAAr8q9q0uOPCa7AjZf70YDTPY41CG9IW92_pJIH2zk51ZKx-mddQKDplqC8I2Yvgz4r7NUqqbbEAPbUr1PllDd9aK-LH_q8v8e0-8Rt-ugf2sSQwI2-2znXaM1bsxN7a4vI0bk2WB257pBpYOhfkMqSVqmUo0hljTnmE6TxQJr0uA4qMhaBZkbOAOF1zWAQKJ5BbNk_caDesn26nUry0SZrjFl47k-QNkOxJ2fS2LL3Y1Ss_QdAEcD89mfK7EEicnIV9oMx8yMfMGrlzZP7YEw4-Jhb5ZwnuSpwBx5TehHOMM6m-bvNC9mk5gAbsLXdfCLINAdxHz3-g3aJmOxw_5VUw-XSoyqK6Ms25AjbX-IoImzbh6vsMahgKcKQbbiO0B0plbb031F5EBwu5NMCeHoAeIPeJT3NhqMJCnLDvxlaxMTjvZbBrjeMdKeMD7A7i-krSSiBhcnZKFnEZQeuF2orHBb8_L4IF4sY5yL00d2UEJFjE4z7f_LgDdr9T6YwA7-QcmZdgGQDgKP5c4AkoK-g_9VP3_DOyymZ2ms2xMdkfgDeJFygjMu10RnNsULWpR42AGI_clUrMuXg0v5d5H-RPbIYbRe3Dsd3JNHpRWecuoVcK5YRGVHVxJkMjkWmQ2IdV_PguQKqm_nJ6vhBqBeYmkQmrg8SAd7BeJNXCN1lTvzJrFbTUTXaCVdUQW6EByvFHl6gvILD5DGzsZW1NFopF8GPjscJuuLDb0x_sEzE4TUg3xzLdWveA_e5bFbBL9hvw_KUeiavXC0GCDa-Vfh265C0FITZwG_yT147cwoCdiDyIPVQ4BxkL0xZpplJch1S8TXNMMwnncCmOeuzA2VSY-4hQUAf-Zq7rctw0hF12jxVba-naoWViIoN1KmBSKSbModgyjYE0u7Ah6mSuESTgHD-bZBAm5wr3vfUMkgUZX2GYYMpvPjDD2bnGXCQwB2VFzBD28nMwWZ0IkRNHNA5VhXE5rb_ejJ5jR_np-fHF7d8HQBrs6UnZdvgp9xTT4X9DO0K6-6_sYvaCTd_shQblPq-gGqb1ujHFNuVGtz8S-FIYB3YhqYgNw-JCzvmAJXEtgM2PNIxUQQaehf9TBMDn7-o3fDSjeey6pqnUzSMtGjisT_hpmFRne1rof2GQsPMULbpCfyx02bHTjg-MMPjvxo1gTq-Gu20I-s9Qte61DludSzeYkgTLtyQn7CcSKtnBQbhF_e3fBtCUY7c69iRjjpYedM07gPKwqifV1_sYP7jtX_PWw_HPxroW6JCSzFJ3vIxp8eROJoZMYOyVHv79aiZP7UH2K5IVuvlUGenNQkNnR1Gct1E9XAisC_F4A2U85Wvt5sgXKRe92MMdI4AudZusN4ixMTdYsnbxawKxKjj-WK-3A4yC4TlUrFViJ2pSLTJledE7Jy5iNHMTvXq3QCuFOHYUG_7zXjsPffD98L-maiKBV148mRl8ycW0JNjR1EK4LQyf1w7_LOVRTsTyKOCJmU0gcfSyC9qlnanMjrvv0AT6M5W6zI-lIE19IU7kSXYWkiIduTRZMWZURDXEZIcIUx9vQ2cteKn8MlZrihorwrmZE4KhQWLPdqAllgNLVtL2fW34HiydZv78e_PvS_WLBq2hx1jAEfFAs-Hje0sGTu_eofPjRhxeleWuI0CrhFxXstHJECBoFZpsi8Jkpbq7Am-bRYHwWMaTmD6dZ4zXlHD-gDvfG1ohOOPkPgN1SnJGN-CpNYivfYI3bQ3CUCoOJ57DTB9tEyiTNCT5tiBEvIFx5KIOC9APN8Nv8IDF1Mu7fmFmljGS7_RmCvC_bRRfGnigbCUbudaCRFjHMC--XU9gVGSLa22URrsRE3VXU8KFNxhmQv2dFNOiPkGRBMrqzJuHv1ZOzibed1k5HaK8dBzEehMCedJAOJMAMmmzYCqV1PXBsx9T2yyi-KdH-a-ahTdl9U757t2ZoTqc2DTfb2_OF680LaMnIbk-0YrYeuVMFCXwbOedkiImO8zugpMuchs57AWhjee730ApQxYo8n1EwF_FnCfe8Zln9SuDWEoW2Y3o6bUUjF-3eamRWMf5jLliuJyLXQFYuGRm3LP9GGKXcZxeVqHzbHGXMNzkqVISqevb6Bm5Tt0VTdwe4gmd5tvJxCS0c9E68CalMjRnDnYCopbB6uygyRhUgkSXzKneT13K16KZBpBkrju5QZC7yLqsZnyJt0ASE_pp5JzG3DkSlRpjTFz4Jr7-iVH2DSMAHQIWx4MjlGsbVNGISDkti6E3mvm4JcbjB2XPwqSukhc-goGE1W9FV4zzQLp2sRhmSQ7ZGrx2U-CHUNNjj_ay1fkUh38m1lYLyyC9SemzdGeoC4VAwZgxR2YiIBPWT4oN6-oQSaO-LFYJT40Hl4hQChyjjSwEXQQE9kXFV3FMummuQ8PSN1V_mlcf15H3TauRX1jKWav-6jTqVsWuryQ94a7hM7Jz1w6Y6r3rFmEVaKlP2kgvZb8VjmrC0A0fgdFobDcIIS69amuXDJf3K58kmt1V11_gvXyWsB-k4Vjynfse62hxPZjjTkLfUpqbf6ZaUmb0Mxl052tq9MEicbDd4DzYR0iXfo0RT9_6lVxW0Tv8gmdJ-G76ml1lDeYvCSFQ2D6A36LDWtapJx8d8lU_3BHyIfLF4T4rFAnt5VqZTnnZ9SkKaPhURQPFyEUKz-rwps78WtlXKQ0T2K5pT5Ued8AeJSg7npkp1ZvF_ecWJZOdrMwKws5O9FyKknFGvY9y9jL73gj-Z23d9h23acdiCXGSWJQCZQTuLCyPc8KCg6-JXdBdSVaksYA7AMUIM0fkNPs9W3erKLxMAyqRcpM4MNNxMhzNUt3GOpCov3SIWKhuEvzHCmcmULOw0SP4a1KW-mbiXbLbhiXE3icGPpocAkq11qQ9LPQD80XUtQTVThcFM1SlbGDrONqLlqW2XZTPu5D21LxthugDXAgmkJbjAvu52XJNll-TJe89mzkhYtwtpl6V97BOK50vjrNCHFRCrfth1mhNBZQIecmqJCeIl_sRc_DN116MFEgcb5xJExsbiX73W_eaTSgyXJNNi3an6AhrgyCyQSFV_A1pKmGACOQhOPY1CxiyiNgWhhyrPGrTS08eYalIt3dxeZM9yl5J4E_PaJHLHLPF2u9RZ6-jPBKHQa5QBbmEG6KwQTRyYvyPQw8CEezbB2XEOGVIPhlvgbwltCewzuwBPvOFCRCn2DE2o1j0a_s0tBeIMuwpMsqhWX2Gze_l2bdB_5zEJ8Ik7M5SdV_ApWujoIwlu74BNZEofCXFxJNoyzhY9EXHZyWEt79-La7QEGG3hsnLTxsnFnGaDNKJsyQ59EWLYr6nZlJ3bMdZ9OV85gll4vuJecofnAMQF48LgizGyqxPbA6KZEEj5SrKM_ck9kVqJwQOOSQ-olVC8RTp9ExYtQUG921ClwjPahIHYPicwDj-8rgOyNu1bRVl7rCSrCVCy7IiBBxqve4spW-XCqIoqpTvmkTGvywvvtLCwnFrlJbznzU5zL5r7-j7GBloeyV8sXGB9hzA2Gnc6MStt-tHqdRyJaHiP6baGcp28MkMYUL2_84kwVrhmflV-itb90Np1xtGCR99Esk-a0BIHSXQD2YjnUKp6DZoEsZmEdFA_aNB5QFDqwsw8-5AxUrNv7jd7MY4LA3dz9960faBjbL7fnWXKbTaggN1amujRlcMADjhygEAjDg6Z_4pErLKjJlpOAXeOWrNLkkJdd7kFjK2rbUJryirsPMwmGWY3lBZ6wSQzHSZYy1cx6PJVRHmMl77GtQrxaujiMPkl9ABCzZcOwAEJpEBx5qeDlHse9Ww85aCqqM10kbM=.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0e09ecfdaccc8105016a9a6afae7a087d08a306dd290b16f84",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 25228,
+  "completion_tokens": 1098,
+  "total_tokens": 26326,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 0,
+   "cache_write_tokens": 25225,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00762445,
+   "upstream_inference_prompt_cost": 0.00630685,
+   "upstream_inference_completions_cost": 0.0013176
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 516,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 8.71,
+ "_attempt": 0
+}

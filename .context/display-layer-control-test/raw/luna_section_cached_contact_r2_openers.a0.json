@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788504661-js7UTuFl83ZDRTYHqs5i",
+ "object": "chat.completion",
+ "created": 1788504661,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"openers\",\"empty\":false,\"items\":[{\"h2\":\"Cocktail Chemistry is a distinctive personal hook\",\"body\":[{\"text\":\"Nick Fisher is described as the creator of the Cocktail Chemistry channel, created in 2014.\",\"claimIds\":[\"zaf-110\"]},{\"text\":\"Use this as a personal connection before shifting to the marketing conversation.\",\"claimIds\":[\"zaf-110\"]}],\"sendLine\":\"In your email: Nick, I noticed you created Cocktail Chemistry in 2014—an impressive side project alongside your work in marketing.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"His 96% proof-of-value point opens a risk conversation\",\"body\":[{\"text\":\"Nick Fisher wrote that “we revealed how 96% of vulnerabilities didn’t require patching and can be mitigated using existing controls.”\",\"claimIds\":[\"zaf-159\"]},{\"text\":\"That specific line gives us a direct way to acknowledge the point of view he has already shared publicly.\",\"claimIds\":[\"zaf-159\"]}],\"sendLine\":\"In your email: Nick, your point that 96% of vulnerabilities didn’t require patching—and could be mitigated using existing controls—stood out to me.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"Zafran is building ABM from scratch, creating a timely opener\",\"body\":[{\"text\":\"Zafran’s Senior Manager, ABM & Integrated Campaigns role describes the ABM program as “being built from scratch.”\",\"claimIds\":[\"zaf-090\"]},{\"text\":\"The role includes 1:1, 1:few, and 1:many programs plus buying-group mapping, making this a concrete planning context.\",\"claimIds\":[\"zaf-090\"]}],\"sendLine\":\"In your email: I saw that Zafran is building its ABM program from scratch, across 1:1, 1:few, and 1:many motions.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"His full-stack marketing background supports a scale-focused opener\",\"body\":[{\"text\":\"Nick Fisher describes himself as a “Full-stack B2B marketing leader / storyteller with experience building teams for early stage growth and post-IPO scale.”\",\"claimIds\":[\"zaf-044\"]},{\"text\":\"That self-summary provides a direct bridge to a conversation about building repeatable marketing motions as Zafran grows.\",\"claimIds\":[\"zaf-044\"]}],\"sendLine\":\"In your email: Your description of yourself as a full-stack B2B marketing leader who has built teams for early-stage growth and post-IPO scale caught my attention.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":2}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmpb2KdwpZkI0KYUBaWtvScZFoz1JPGq9lsmvJfUvO2KHm6SZchUWyC0emBsHmRCAknqWSs_2qJsOp7wFaPv4NwSx5hobtXnypJzpcm4JNUUjCZEdPUgG389y8c9Z8LOVUqAxPYbzh98b5j5OJJ3M_7EC9KegG92GZT4inyg4c4V6EyjaBzj0Y9j9lpdYf_sR17mLhuwpssDPrmKap5503kQ_JqNQWwAd_luAhOj48maEmnHMPUV-uT5J8491Scl3tbT42VR5OwtkmGbfMGXo6VdoMKIIXeG6aQ46n851bu8SCmHWcH3QPanOejNDL7165r4sk2ikFkMCovDRrlLaY9oU9xoMFaZvpO8hibSZT82urvRCydXVXxJcY1REKmZT9Z5vNLfUsBKWkLltjJAbyOjck2vEbtIyew8H5ahdnWBSOdpgPWIKYkzfjN4xEpIdOqmt2oT0H5Z9RhreOp_kNgiu9tkJ3YguXn8fgP1djke44E3N4wr7oSCdCXJiT_qmxWe9ndcje7_wdTZj5B6OQkFLplvTrCiQDgx3GBtzjmyBtgAXZiDBtGk2huAqEEsNUgMLLPJ5WIODXhDJa2D_yjoON448Rs5WtT6Wshxd31XOjSKxdyQhpZBh_PcdfMMWrp3Ea2sTUBTxE1s0KdE_dNURzxAZ2amdRkXAuOgz8JgQlmUF_T079LzCclQBwwm_HevvVUQMF7SEpPaT0wXxNY-g9HdivFUL__Iia582VJo6LRdqQU0ex2tnUR8gb6DnW2TNr7buJryJzdD5V6BudApiXcFGJvCQgz6w8ybs1RQgnLcKZ7UyKF2sehuuxp3sQaI9-NKu7Y8_bh-xSmNmyUqYhflgVGOf7sycUS22K2nb304TH7w-CF28ET1--bxDZ_lLuHQe_7CjztsBSuoATvFY0BsNXNTnn-sUzJ9szJT7HqRQ4ossDnW6PmdSQ6q1k9PRPJ-FYQGeMO5jsmssc7qMGTpDprd2erjN9-U2h7QGtPc6GJ_qcXQfmFWewUYoGG5zUC1l8MYv9t3MA6JaY71ROo7o2ds_hcdBQozl7LN_NAmCIlamBI8Sgfu0mJ_v_2TP_W0BCZqmDvdD5uwJ4J9OdwoC7yL-1yVcqfMLA3soyulV4lDSelSdo6awrNg5DS1Ew2fLs988L3veYZZ8M2kT_q27VFZjJ8yVDC05n2M24UJjd2DSRJhOV7e4BQLZuOD4oD-QHSnzIC7Jzu4LCSb_IhUkxF8wFpF_m3FgspXSOmON5fua5bC9vC0GLZCrlMSFJnW0MtFBF0K9tgjyovlOWpSMxGUORoCM99hO1Tvbeaty0V0K8vaXfcqFq2cLZ95KycBWR_x22uV4l3FSYwRszdIkzSWZ035R250X2yKuL0LtFW1I9a69DvZrP89C96haloc64zkY-PxoiB5aef_hiK6Fijb0WJGA0tGmdQBOpSsBj7zorw1Zd-kFCn71Nv3IiNAWrhueZbtSgXcXKCzSKIv8sg8ybEaUIa-yXPunM3QMeyB2Wgko2F3hI_bXTtWqMT3ZSYBSSCPUTaId1T-HIPT7IT6RsMnUlvwq2ZphKKcW5UMjIZJW0b9oAsyIGGWEP353q2L9t0Fgi9jks8PHJ2uM8TuPt3tFbHU3x-84NjMa8m2PbOOqyLQiMJgcsSc_tFmthv3I_Z8Dc-bIndZyyV-ufLUmiE2-p9w5sh_w55ejMZt_f2g13JVkzw9gOxtP7Am4x5HyfhoBckqLAGVFSHx0Q4HPHwEXzrDGLkrvvqGklrG0y-QZuTSeBZqHcO68Nor5JGgTQ3lJ_6MnTZk7x5dnR-qI9GntvNHEqefYb90qQYVDOCV14gBOZcVyMNSqAxiKUso_dvQFsRNsfNX0mxniP7vL1p9dG85I3-JHfTh5-7rlx02xsyIjb5uPMf-jOvvjCoTw6QHxIbvmIc2md7zaZDMBCL7QUEBfNK5YuDScirVBXV9h9N3LRpqjFJF8Zd9f9bRZpLL2k0Bf2YcQg3I7harLayG4ZBZpgz2AKj77jaqIVq_rrUQLqu5Zmvij70O4CbWvQUX5JV7V_k5dKhlXDAdpgioCl5TW-ncb88a0juNjn8Pk4fkNRKlbWLEex9IOBOBaTN61i2pB_29v2yVvp_vxGmrifTyktBHQaTvZeTI9qtOq4SOfi50A4eh9au9pDKx2o0HIfflYxibm6mJWxcz8Tm8qDqZpYYGN-JQHXfwg-yYH2ccxLYZW0tby5onEugq9GxMGnbSE11_xrtXkrpDfBj5xoDYLzEwVr0iSfdQ66Ylmv9NjkiQ8_Na9Tp209zln7E0_EhDFgbvhRUkMhRlwAvdqn8AnbBew91cwjnxRHemHwEPVqEpoX4ve-98fZFwNwa98dEItvRn0kFkut1yi9z5QX1FQUKmcAeYu2q1LHcFXfXgU-AvFtRTd5z8bdmuE_TCdCLngwYFohSZyAg7FyN2Ifr7sbxyGz7LIR_tD9v-b8Ff65aB70yBdFnpKHj_C6uMWy0vT1ZUWC-QkoZCcSJw1WvbNUsMZmhernE0jdtH5SSAlJ6thn8cBf6QmFG9yj0mMVhv2Oh0T3CK9pPfCJkRnu80oG3MTq9uJZ_AemVtG813DX3e9mBmzWZ722W5wtk2qHaEDL8EVCHmAyhARTo4OKIbpFd8sETMTD_wosAtKRaRVc6xrYDPuXQ68a5MIoIItIbrivy5hbRvPuD8nebjff9bpv6yJv6aetJFQZli4r40zvFgU1x_IOBmffVsCYewo892Qj7N3JObqRXTBOU7IakiQnB5Z_jlh5_JphI7Ql0-m-dMYBZRl5ZXdJX4BSx8gjVACHl8P90InOmC8hNZyMxjvkBiGFDANtv7AJuNQSCNdBlmqgNuZaPU5xdBpUL3HDB-qrR_YK90QvEGZwzVqnf0crzLuZNeCwQPo68adVx8s9F1aAd6FFRpWvyvFEwcfwrN3niRjbpqGTFY1VcbxtVYmAmsHmI05tvjtW87t7a1UYxP_hcpuEhiTpYfKV8v0wg-1Ao6nslYYLL_XCDp_a5B5iyog03RwF0GkeK1Hp_6_IBMiX8u_2Octfvyp60inbHiwjk1e7vqY4X1eyoULfEd_FeqqFp7POsn3g5Pn8C8dt6-Bg0BS467UbXyejPhXdsG8PTMvSlLSI3DSmvk73f6W8hFNVK0mctx8N5m5A3TrYzhjj8QoD7p11SSxwzXdiRZuSqaNkW2BQ7lJI1qX7cRPWGK-g7yYR83x69ldlM5EdwSWjxwrLRcJH7YmTGL1DdXpiURwzjsETMEdVULlIjBSHLfl-ZnVWpkOAseFzLJPwmhTo7hvVZKKUkuAA8E9jihSmsCYtK-0-6hObJ_G2a_OmvqNrBRWwDzcDHzVyUG4yV_jgLbAFV9Y69ncvMyxnZ2RdtqSpn_R8RH0QF5k0hLU7H4DVIIIGNSd7B9QZh-CRp6B1lZ1XNjN4fEIpXw6NdYZJfyF3Z52K8BWV6Kh0IhK-Nd802QeCIi5Kcdphkwh9z3rSAZJ6NBw1nH6Es7DvHu_JvXILXo3Sl1xHBlBVEUs93yHSe7tab4vZ4-Ux6WCzhpoe8de7ogQb8kGv36GlxEukjUC_X-EY9A3g1_q-Hi2mMd1kiXU5dXKQipNEyQQ_YMLOKvJ5gTNP4-yQi9U-c445nH13Hrag9Bt8Ap1IiURNsqMwdM2PQatntqGvPx7lB2jNbTzox-FqoSxP9eIKh2U29fculT9Ob5ia3Cw7Kgh4FXzzQ1lMujS7r-IfzQ4hSaoXtcdSuzcxpXf_teV70QDN-h_FctgU3Jaw5m0EX-3X3u_ikgaL-usd_0-COzN9ZLMEENIYMWi7mRB6gmyyPhPr2jYf01tDxb45S7hFKr34iyMEGv87aeYHrGjV93HCje-x9wpDX9TZowzN_4w-gr2C_ne4XRWeGZDTXgyIT514AZxNYRgSHqj6PUPDiTeX-a6gEJWTfOTBF0qaj5roFKA5Pxr5Udj8G_J6gua6m3Fy61HnGp6eYaSORBPFVlvTZ15SCvwVG9zlTbkU0kEoaY26zIpDXdyqAHzNOETth7MWL_wW10guU9tEZch4cOSqdTWNeweEyJatqEx_RjkfOQx9utdh8RgIXsyHkZOJHjFJxJpEg08kSbTGVswjO_BxaOqcz9C0MlAJfOGNf7eMBBjw-Zn7WCmFhv_PAJcgdQg6IU3XMku9JU54p9B3cuj9aJvdicUAke02RE9JMv0fYt1tyFLg6nTjBRkUZ3Y1X6qxjCeiROKR4mCgUGvvQtmPdOvH62BHmRKH_DLsAWP_nY9I7F07gQ07HQOzNJlyWYndFuuqFxYDL0WBQwrtmre8rpLqrliqYZeUizs8VxTK3jKyT6gGOTsnG9p2ZpvE3Ukms4ROY=.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0039a5ec2a418f9d016a9a6a5700e487d09947f1d87636e703",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 15372,
+  "completion_tokens": 1097,
+  "total_tokens": 16469,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 15369,
+   "cache_write_tokens": 0,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00162438,
+   "upstream_inference_prompt_cost": 0.00030798,
+   "upstream_inference_completions_cost": 0.0013164
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 516,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 9.0,
+ "_attempt": 0
+}

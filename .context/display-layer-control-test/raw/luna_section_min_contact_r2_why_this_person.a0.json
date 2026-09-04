@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788504629-euExKs1OQntU4TKTHIsv",
+ "object": "chat.completion",
+ "created": 1788504629,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"why_this_person\",\"empty\":false,\"items\":[{\"h2\":\"VP of Marketing with full-stack B2B growth experience\",\"body\":[{\"text\":\"Nick is VP of Marketing at Zafran Security.\",\"claimIds\":[\"zaf-038\"]},{\"text\":\"He describes himself as a full-stack B2B marketing leader and storyteller with experience building teams for early stage growth and post-IPO scale.\",\"claimIds\":[\"zaf-044\"]}],\"sendLine\":\"In your email: Your experience building B2B marketing teams across early-stage growth and post-IPO scale stood out.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":2},{\"h2\":\"His Zafran point of view centers on prioritising real risk exposure\",\"body\":[{\"text\":\"Nick authored a LinkedIn article titled \\\"Why I joined Zafran Security\\\" describing his rationale for joining and market framing.\",\"claimIds\":[\"zaf-158\"]},{\"text\":\"His Zafran point of view says, \\\"we revealed how 96% of vulnerabilities didn’t require patching and can be mitigated using existing controls.\\\"\",\"claimIds\":[\"zaf-159\"]}],\"sendLine\":\"In your email: Your point of view on prioritising real risk exposure over unnecessary patching is a strong lens for account-based messaging.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"He is an economic buyer as Zafran builds ABM from scratch\",\"body\":[{\"text\":\"Nick is classified as an economic buyer and holds a VP-level role.\",\"claimIds\":[\"zaf-039\",\"zaf-041\"]},{\"text\":\"Zafran Security is building its ABM program from scratch, including 1:1 programs for strategic targets, 1:few cluster plays, and scaled 1:many motions.\",\"claimIds\":[\"zaf-090\"]}],\"sendLine\":\"In the platform: Prioritise Nick for an economic-buyer motion tied to Zafran’s new 1:1, 1:few, and 1:many ABM program.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmo60I70BtuaEVh0qSKIBMOKZvpFTFls7Q0dMWDR6wL8SF4buZQP0AeMttPUk4tWMY04cso7dhmrmY8kLSWZMS1avEX8LI_Pp8eYSHVusCt9udkzXBaMnlRdaFlNVtAUXyY0JHko4msmKzxkNDw1IHW54yDv87yiqwglRJxSco6VY-EwVgyNYBIQ8HcRBBdK6d6GgqDjDZv_PT2_mUxLeuO0DHEM6LWt0ZbIjLFx3-O88cTCp7CrUhkaPqF4C543FwhEM3SPg7p5wppytgJmSkYWGmS76BsfFSp6JXV_XdUZazDLM9LwYwcXObAacb1CKRZIa1ig4zNL9V6tiXY81eFoB4hV8y1uOfWA2On51gitXKEOilZF8PoREolMAHVT_BWt8jw1-7Y5SV9vublWAcAv_lCk6VOnj83Wlscxj3bSsZjgnmmgOW8kF0OR9AsKosHN7qpJvTyBMtgI45SRQLrViRnEceN8hTpXEWnIt4wA2xFdLuNXYSUiDSeOX8mcpuORx2_SBIT01pNabWs9WexUjOk2120nNCr_QpyqKwDnjPwhp6CY2ZTLsBnFb0JgMaK96MEBWdrXSToaZRKxu7fAOHnrHSitoZZKHHTIY-rwrL32hHOiLYWpkUrFs_AobSuCKMRemBq5v1V3ixtae25YomhU4c1ag-Pu5Fo8utw8aQXSglfQfln3YV0r1Q7rLEuAaN2qp6zXivdOQCMiaPyVFD2_bPADRpT43Ej74zBuSJ-uQjsYFPoga-rJ51yuYAU3c1sYU0sQrk8EHSR8xNEdmGS46oLUBxjzWoDUtwsQvHAGfRk6upANwUcFNh0T9ZkB7cSYdSrh5HHxo-1yeKQdCwKrgGkCAwRBVlhIYjepSBSn1OAxLltQ9k6K7UfPjAngvHwD382s3_IZUJPGIYAxsG5013WTGKDrNd2diV7qG4P5oyQEzCh9roGGETfDLC5rrPJ5PmMTyCExO3xPV9GZ1pXrGYzZmctMOZqIAOxhTPF1RVGANwi4fRNc0DUK8QBtf0g1AhhJigB43AMAtbYgx6nX_TBiYDxuPp0CiwhB1-LHqUnoK8b05lthjbNcBZ5xzPxG7Hd-YJMSRb24DNndKfgLu6Xt22NJSZ8rkgyjNT8eMPsKw3WJNFcWZ9EJfbL04htv268I1QbmMyy10-ju-F4g3btqP0dq0nxDAhgJcqmEpjrdB-nZb9oEgBgJ_7iRDgtCb2TVRBTpyKu_KCi5HRWq0ddahWEBLixcyijahfvAgZQ0hG1WNdeoYJacdX1yHXu4vUWdps1ieFbWGgsrqewWzMJ7XBw3G8kGmrUSl2Np7JUBEbbZk7E-Huci5HlTtqoCf4lyYo7G3ZokTl0PgZsUwS-OJ0eVA9Tj1DRzKit4xYxF0LAi2O6I_YUhnRnwqV87WA2fvBTpiNlGWSDaKNalwLVrNXIa0vCt7ELxE_kYa8itFR6aRPu11C4siVvJBlT2y6Yl_3441L7vSG09YmpG67xt52LIPy5tYor6r7q3KYG8w8EhhzErLmVCEoQwrtL_tg5XD05E2UYyxh5yZKEjWysEDuZJI8mY9repSa6OGHENdAoIOdjCWrWP-Gx7we6ljTkYR1LxBf-qYopX-f_yB-OWmQmJ_4S7nnFNoNnpw-PW4jFp_1gRli5o1lXLNFCbLnuhwenGelmaAZZVMng9utQEdMF61pmlVC-KK4w-78G-jF79r4CK3IB2MHcZ9PXjhMOGZO4eesa7-S9rNnPqJOkJljhgqFlpTPus8bZqxAD2QhSWGmL7bFHDrMh-frM_JN0zL2fDy6wh1XwLdDGYMIB1S0dRZdIa2pHr5jgu2mA_TcEDbonKMHrn77HtYQZZElExhFpUZ-kjIRk-nXY0moRyQHmL98tDn4RoN6BEyiDJMggNRDVsXA337eIFQatSBONmInbhOObQ5WkRNjo8wbwdnhEaUBdVapzpaAapIsIDX9SCa6tFWIhpIFq5NiasuNO_RfB_ApXv1C3IDk8DeAurQsVxzzWiCcyubjU8_in7Ig81_cOwuBnGcb8eAotcMmcPPamc2w_IgmQpSKo9ug_pMVgbF90iHpdaIgKY6-reV-EAHu9XZFbhUCdrA4px4Xl4nklUNSOx3ARnUFm36O29u9qUvgHlQHwAmNmYTxPRMKYsxIXd2rzD9fr4zrZgjsU2wDdBxcWq58PFhZ3H14uGKZdmCyzeDzkEnbSn2mLk_2IDKTee-Wr9YNJvF917dwJkXO6BZPTYgg_KHEL116A6hmb3z4WJnS4fsib5CXmmjFNFinQ5LcN4XbPrawWnHocqgwb5xsajLgr0OGpUn_rApqTfPAnLFkvjAt9WemSURpq747i0stuuTB9knrUtv00m1bZexEOIZpXp5I2OwfmIeN_6LqfzCIM3XrCaBwpmO9Cs0JsyjZ0hKKYCfXFv8yIiqUMKiG5iVBzR_-KoqBdotdP2Bz6vFwODmv5ZPzoa0kHTkFAQZ_uU62N8gce_wQBVgktCkpE_l-m2JX043m0IEidGzexaWisarFskF7GK3jyex0FQB1ar6VKb574ll455yNt6JoczOkYcZ7nOAtTzRKcP1SlKFl78nu6RMTl36G7w5ZiPKIK8VsvBsvOuuM2kbZ7_DszBHaqc5UB5IAGgv0BIJIMbvjH_Tztf5tfRrZt1LuHZn4YLWVTLk5qr77a2KX6RhaJL_RMSDeytOmAVOFG4uuSBsdxsZjLDsVXKX-ec3bxWTHpOco8HPKzjYx1j21p4EtDys2mjrO0u_FzqnOlZiYKnNxH8I10zpH6ZOjrJsBJCPmsXzUDpt-mylCYffBqUz5UQj8axdbmDFyRiKo6JJLdiRWy6bflIwUeouGSBEswo1k1r-F2kLkuvSBOUphi-uNgQc9XNLFSBD14qcHV64s2dnuveR-vKNrwCTkX53zmdYJeMgaiBjoOz69RT8E9AkBKfI_GA9R7wExQD4VfrAY4l-URFHQduqxs52gMhwWMxmrxcgq8_n2BNknrW1PzmAZTeTJDRbDDF-2zMzKlUieBWSgclMl2tJW8kDQbCxAC809T1YY8pBDV2XhcQUyivagomsbG6ehmN917F0llmTIqlR7szH08xmVIMZiOx1t35oyvkCz4acDAF3ccX19uYEs7GAk33zGnjzGVlsLOwZ9J7cipyFgDxvMnuGOUKZHarFo-ZxFfmIAmN_CVji_XfKUqXKq2S5XIMX16-pVR_1Psrfk3xfpg1HHD5znf3zzgn5YPIJWL2yGjdwBOUNvI2IGyGDquoKtCZy7EC9JziZ3wtx8-FNwmfVZw6hqYZqKfXXzDYAGr2Vw-yciKFHK1HACqNW_944XsNuQoMTap3KCyak6G33zKWvJSW8luUC_D19svbCJst44_n4re1iK774ONlHh8jwVOirzVqiKBWK-k7bJymy3PvZSoifI622-gqdUE5ZtlzclN87j33Dmrp_08uqXib6kFtQ2eFTTdJ03QwjXhn0i2ZCMw7OfkZkMMxmyFUZBvtB6Dvac6dDi11G7PtVxJlYDVRuGZoCKsnmDsmX0A-LtqtNRtti_fEf9xz7YodM6O2FNgYNjQaE2XDUJjy-1Q_tdeJQxUtZuPLmk9Cp7pQcAnOcCg8RnKY_fD6WrBrFXtkbusgvXlvL8FxC3GDAwbL94eb465bU8qFoL5jSOAK06xfs4sqQaA9McsIbh0FoqpCMDjtLq6gWHxga46mLGKUwChRTuYD-m9DfAJ-QOw48SlkW3fQxn72O1eoykcpJVvzMfemCjkJtbYNCTw4d7e1Eyff1qYP3q_e8g-xN9g2OBnL9gdWmRT5RNYpB-yMMXvaW1TkuHX4YxGuuV40dCdQiAXeYkBoLNfTBfAxI_9JPknk6GuwTL8bSNFzheArSBHcnsKJFwFnrp7y6wfU3oUXfT4dMEYTGaPF1BL_4qYlL3-zym0R2WJ3hdTM7iE5ZTM7Thj1YCnjX_F_nYu0SBOSSjapIxho446vOfyKlOCoG40UEao5hhZOjeaBHsEC3PcEU68viOhLObawyax5fDOaNeGdN9mwOi41jDlLWg02BPZPd5h67UnhNaFgZtLBYG0Qx3f2jNSTIW4_DmhvRGp66Pe9l6sz6DT3uDaXjmRRbVFXC99g159PWKDW4FnZ-bYyCzSpwZn6sUec0F1YldeTD8Ia6CevPoc7El4Cs2QEjviaSUSoZswCY5V73Kx8VCkY2R3z0B3XLOA3dKpY4ZTH8w==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_049ffe0e407f14a5016a9a6a36f86487d095c4316f49ee07c5",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 3128,
+  "completion_tokens": 969,
+  "total_tokens": 4097,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 3125,
+   "cache_write_tokens": 0,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.0012259,
+   "upstream_inference_prompt_cost": 6.31e-05,
+   "upstream_inference_completions_cost": 0.0011628
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 516,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 7.57,
+ "_attempt": 0
+}

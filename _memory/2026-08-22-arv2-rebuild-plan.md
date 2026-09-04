@@ -364,3 +364,26 @@ appear only under Context only / Do not mention; the cocktail hook is used once,
 every sentence chips to a claim; empty section → "No {section} information found for {name}."
 v1 has no email send, so contact-page bodies are the copy the user pastes (Copy affordance); v2
 seeds the email draft from the same body.
+
+## Addendum 2026-09-03 (evening) — display-layer control test IN PROGRESS
+
+Founder review of the page content: (1) the Gong paragraph's intent was unclear → rewritten as a
+strength (he researches by hand; the gap is scale) under "Why this person"; (2) "Reach" is not an
+H1 — email/LinkedIn/location/best-channel are rail rows; (3) rail shows numbers only, never the
+provider name; (4) tenure figures were wrong (Nick 2y5m not 17 months; Vari 16 months not 4) —
+committed a95e9943. Founder's Meta model = `meta/muse-spark-1.3-contributor` on OpenRouter
+($0.10/$0.20 per M) — GATED behind an 18+ attestation at openrouter.ai/settings/preferences on this
+account (HTTP 403 `age_18plus`); `meta/muse-glimmer-30b` is callable and used as the Meta stand-in.
+
+Harness: `.context/display-layer-control-test/control_test.py` (--smoke/--run/--rescore/--judge/
+--report). Real Zafran claims → two pages (contact=Nick, insights=account), fixed H1 templates,
+per-section recipes; variants: Luna whole / section_min / section_cached, plus 9 cheaper models
+whole-page, n=2. Mechanical checks (quotes verbatim, numbers in payload, claimIds valid, unsafe
+leaks, off-recipe citations, P1 coverage, use-lines, ids typed into prose) + blind judge
+(claude-sonnet-5). Harness lessons: (a) "every quotation mark wraps verbatim claim text" collided
+with "put the sendable line in quotes" → separate `sendLine` field; (b) models type claim ids
+into prose → strip before number checks, count as `ids_in_text`; (c) straight-quote pairing must
+be sequential, not regex-paired. Luna whole-page had one structural slip in 3 calls (closed the
+sections array after section 1). Logo/favicon research done: Google s2 favicons (free, no key),
+DuckDuckGo icons, Brandfetch Logo API (free, client id, 500k/mo, no attribution), logo.dev
+(publishable key, free tier needs attribution for commercial use, 500k/mo). Clearbit logo API dead.

@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788504795-Bu06X5YdFWAOFhEtGfBd",
+ "object": "chat.completion",
+ "created": 1788504795,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"buying_signals\",\"empty\":false,\"items\":[{\"h2\":\"27 open requisitions, including 11 in Sales and 3 published in Marketing\",\"body\":[{\"text\":\"Zafran has 27 open requisitions: 11 in Sales, 8 in R&D, 3 in Marketing, and 4 published in the last 7 days. What it means for us: Zafran is hiring across revenue and product functions, so our outreach should connect account research, campaigns, and sales execution. What it means for us: The 77-day-old longest-open Marketing requisition may make campaign support especially timely.\",\"claimIds\":[\"zaf-088\"]}],\"priority\":1},{\"h2\":\"ABM role published June 17, 2026 and open for 77 days\",\"body\":[{\"text\":\"Zafran is hiring a Senior Manager, ABM & Integrated Campaigns, published June 17, 2026 and open for 77 days. The role says, \\\"Own ABM from the ground up: 1:1 programs for your most strategic targets, 1:few cluster plays for high-potential segments, and scaled 1:many motions where volume matters.\\\" What it means for us: We should lead with how Clue can support ABM programs across those three scales while Zafran builds the function.\",\"claimIds\":[\"zaf-090\"]}],\"priority\":1},{\"h2\":\"Director of Alliances role opened September 1, 2026 to build the channel from zero\",\"body\":[{\"text\":\"Zafran published a Director of Alliances requisition on September 1, 2026 to build its partner and alliances channel from zero. The role says, \\\"Our partner ecosystem is becoming one of the fastest ways security teams discover and adopt Zafran, and we're looking for a Director of Alliances to build that engine from scratch.\\\" What it means for us: Partner-led discovery and adoption is an active strategic move, so our outreach can position Clue around coordinated account and buying-committee engagement.\",\"claimIds\":[\"zaf-091\"]}],\"priority\":1},{\"h2\":\"Agentic Exposure Management launched with a core platform and two add-ons\",\"body\":[{\"text\":\"Zafran launched Agentic Exposure Management and is packaging \\\"the core platform plus two add-ons,\\\" including \\\"Zafran Discover\\\" and \\\"Zafran Autonomous Workflows.\\\" The company also says hiring will span engineering, sales, customer success, and core infrastructure because \\\"The development in AI is very fast, and we need more people.\\\" What it means for us: Our message should account for a broader product story and hiring across the teams involved in bringing it to market.\",\"claimIds\":[\"zaf-128\",\"zaf-129\"]}],\"priority\":1}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmrfyWqxg-rOA43E9CiV2vuE4bOqIWos5Qt1AouViT7C4vrJ-oUNfrXr4E6ZVO1xoG07Qs_mMXsQVOm05vpbj-1AnDHNVakqwn-v46Q1w093XPg-ILUI084Qdnf4LnZudEj7Kv-ugN9PL7fV27FtMf3Fh0uHm9VpUYlJzHkyRcGeTNz6HBEIuItCAfDBO21Pq5XEmCwfdDhmVgznTM9Ak88XqIFQ1u0BlxCp7ctcWYd89_QuFjxMlFDrDWroc1Hz1ci1u-cbMLtf0PUQG_i2xdRDQlT6K5UrUqauaznpBW2jHtMDf3gbkS2iSlLDvrhAYxJTSs4o2sQ8fUYwaYDBb_3Anz8t5rrJtwX7vmeWV7rV0XHKTDxG1SjF3ma-n8G4vQh3BwoTtoKJn5ggLdprJ7CS1JYNcGUj1830xL9P_WiftE-mhI-OF0soGnKirxTuE_vj2P3kXgKKxtt94GSHQg876ymnq9G4QI9MGrZeDJHTmOcemyDq2vAY3K4V3emn_4IJ82vJUa1HYgLSsNeXJa1Cgsyt6YVTLUw9ITkoXWQGSlsF-QHIDwS26r3ePv6DcfE7UC0aBQvyDtcT9LfV4mOcwqrfu9CsM0Wp6mEdJAzgzQZSF1NIjMxeqm6wxmZCKGxdFOa4YpbenpSxTLu97d5dI_m-XEobUV1OuQYf1XsbnuU1JZeKrKDHUM96XeL7d96bY9Mf59Dd9w7r7bYWVjbxs1kQXj3HdtV8mnMv_SQsrah63O_b0pZaIKCOPz2zdymulYwSOVH4KYhxNz_47rMD74KW4P6cw6hQhIXXgvndv4ONZ9pQjLcZH8xFk4WO5A6hFa4dQyBqc28SZqEv4iU4zB1PWtSpT_eNRuIyI254NYda-HQQZkWg66u4TuEqQm8HOU8CfWzrPvHDAAuPxDhdxKqbkSpPoyu9oxQ_rKpTtDVQDbSLCMzf_DIe_HYHorLu6CAhPC2uBjdwigZmmBMKHnuHncaWWnGUr9mevYtCkLcEIcRMu3oZ07z4oRBHAKsG9pDCL81N8pmmGWC5WAIpoSyIsSUhazU48D8ifY5SDETUERhCa6HxRhj_LTpHKqYn4yN-CvNsxWc_NzGgSsxqjB9r6vgIbbg9CGFWffbLsOY5-vBGnOufxvwpAZfq2LAT24a37FygTjGK_7PcUtop0WrwNw8bAc_4Jx8zXe1N_iTWCQOtEAOkrH0sJYlVdKl6MhlxZvhO_TvlmH2jufappIdGjrnOtiywUHxoyYXOFG-fowyU9Ajx9V8HMRn6vR1huyrpstLY305QHH2vInCrIbo6JTk3Ht5101-iYNA1V2w8uad4SzOdlS-tl1V02TDWphSFDGsxwieO1pbZux2PvbpsRdT8RLjl-rjPUOJzjZQuHIgCVCEWWO5cCUQtlhsRMy2vzQKZXiLywNFoVwq4UMyf1GaqscJbm82JYBUNZq6hF-TmHHix46m58Fg-sh-g2POFdfn21v_jOkfvc3q1j7plWIhgOVLjvfIc50RjbIF1zqCuEvh3dREYWb02G1Rhr-ZOyRXv6dDEmIkRj8XOxgTa7zxjekXmu-q_85k_3YDs_AZZqi7TCOmH1inWswYzUFFSC9o9L4Yarl87pG7bvllY_uWzXncaq5tVvcsjGCtQ_YbHtD3bqB3xmNm6dTi64QWLvceE5MDt2eZllHUK-lDcIbwRxpy8mzgOjaqkG4CnscB1iNNou23-2Puz0phtgwcTJ7X5v0pco4ybS5FzK_-vSoMrGivGO0VQebPNm3-Eb8LEdUeDI_2m0OwaPxz2R-Ga6_GftiDrhjSuazkwURBk7dUVVS1brmR5n7dxNHcVuTuSK7s8JnXvSFdEV6myVQsHkl261BHvVlw50J87_hhbjc1m8GwmOKXpPkdhH1pPTSIdplwrgWQpPnVD-vxKiTyyOOH-yMVzb1yMSN55iJt9uWwLpFDt9M-JrKYQbmU-8vQeftxflLweGRDNhvctX0UYmKW_JYur5aHF1Z1Dtvkg5iFEuRbGPqg7Ms8tFQZXCgHUIIAFAAFaoa_cc2AlME2G83f9slkd8RMsThZx2rtTJI-LrCDkV-GZ-JUKKK676OpSRqyysAGbMUmoFjf5hZGLM2lus_PEFIctPaaGLmN50OGMPiZM7j3eg71_v4F27-zcN0ZTd4T3w_EVFOyLjOAm3u4DXMMLFTSjp6ODKUYaH7yAVr7qKHdsWWUrmo24BrKfTHzS3FAIOqjZ9JypQolo3yFKlidMMR6UU1lJT3Nk3FTWdjGrJNjDXhTWPYxtXSnMVuPSaxQONR6d_aZ-d8FQfdhLqXeakLoREawSw607DvSVPxmHO4iNTjWzOYgb8JjsNNdRkNI5iAG4VzPyvXsmgrSEFXeshTDlWJ1hOcu1keLtQx8Ptn4szQwcTMIct_7xeGWsuZH6KpvrotH9GpPr7oKCoq_A5IruT6KR9GUwQFd_Ay5ln7Ya9AzqxGl7w2TZJ4pnM3E65kpjCQ3VVCn83w9Qk4VEI1nhXybfa93JaMWqAoSN7OawXByPPLL4B7taib6bZUNfPVC2PtFR6aAVBj5w9pnuPsjiv15Sa87VrIRDQLQu8USBcqz-ug9FX78CoJF6Z4ITE_yG12858eXxAK9780rh9xXmxfkA2pyMihxYEvYtvLmzuekP1Mcb1PDOk8SY3ByGPqiDQ8yt8jUp-jjQqd680zGw0E4zz9SMLjYhfVGGpmLPk1ljmg4hTmvAnrcGIhUuuH4CneOcqS3VZddWYdnHdT_cbMtAw24YYDVVjM4s0ubOMsq7gUUqdZ2AtNBudbzWgGRg88C2ERaubKhe8zZCPJe-TQf7sRDb1GypP_9OZ48BOj13_gbCuTDRRjc1tdaC6rzCueS3cGfGvunfOtLiPguyU-kJj7cHCf8a9lR-hsGoI8fwadebIGrPgidGn9WfCpr7ZSTJEJCPd8v92bFZ6BiAmbZLCZb3Bu2HTBZPI39jOEoviYoHSROfeKOqHgy_UmGjZnjXbeRP9hFSEr4dIIVbr7ZqyHkCrdWpSslUsBABnWP426lVhsDa3kSfL-ckMkntQoqDv4EzA0uTqgFbUTnRy4WQXElD6mdmAQQN2d4SA5_GATg6mQ0cTUi7gyKsqNY7wwgJP8eA69tCoJhRflVtEMDRyMD3W4XfVTwomyDudpCRIkucBLWQ62IB-95ZwoIajHoOKH21nPxJDwfAZminO_HkDPedZGSyWu2cbF-pFJjqWoRALkNjoRlSL6s6ShnqHo5j6os1ztWuPU2GT-clfLe6aJY_EeeiRyNFYYOj779N92CdN0ytqKuZUBUg4Uj2D2I4hwCuPJ5zLKzikFMJTXvQIA==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_04eb97a4564b9994016a9a6adce5ac87d08918da859e9b1781",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 2712,
+  "completion_tokens": 948,
+  "total_tokens": 3660,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 0,
+   "cache_write_tokens": 2709,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00181545,
+   "upstream_inference_prompt_cost": 0.00067785,
+   "upstream_inference_completions_cost": 0.0011376
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 360,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 9.73,
+ "_attempt": 0
+}

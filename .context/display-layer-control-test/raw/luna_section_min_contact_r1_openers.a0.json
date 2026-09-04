@@ -1,0 +1,71 @@
+{
+ "id": "gen-1788504528-papCZvXuAMtKbIXC7H2o",
+ "object": "chat.completion",
+ "created": 1788504528,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"openers\",\"empty\":false,\"items\":[{\"h2\":\"Cocktail Chemistry is a specific personal opener\",\"body\":[{\"text\":\"You created the Cocktail Chemistry YouTube channel in 2014 and authored the book Cocktail Chemistry.\",\"claimIds\":[\"zaf-110\"]},{\"text\":\"Use once, first line only.\",\"claimIds\":[\"zaf-110\"]}],\"sendLine\":\"In your email: I saw that you created Cocktail Chemistry and authored Cocktail Chemistry—the art and science of drinks is a fascinating side project.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"Zafran’s 96% finding offers a precise marketing conversation starter\",\"body\":[{\"text\":\"Your LinkedIn article says that 96% of vulnerabilities did not require patching and could be mitigated using existing controls.\",\"claimIds\":[\"zaf-159\"]},{\"text\":\"That gives us a concrete way to open a conversation about how Zafran frames real risk exposure.\",\"claimIds\":[\"zaf-159\"]}],\"sendLine\":\"In your email: I saw your point that 96% of vulnerabilities didn’t require patching and can be mitigated using existing controls—how is that shaping your account-level marketing?\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"Zafran is building ABM from the ground up\",\"body\":[{\"text\":\"Zafran’s open Senior Manager, ABM & Integrated Campaigns role describes building ABM from the ground up across 1:1, 1:few, and 1:many programs.\",\"claimIds\":[\"zaf-090\"]},{\"text\":\"That makes the role a timely opening to discuss how we can support coordinated account plays.\",\"claimIds\":[\"zaf-090\"]}],\"sendLine\":\"In your email: I noticed Zafran is building ABM from the ground up across 1:1, 1:few, and 1:many plays—where could we help you operationalize that?\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"His Why I joined Zafran Security article creates a relevant opener\",\"body\":[{\"text\":\"You authored the LinkedIn article Why I joined Zafran Security, which describes your rationale for joining and your market and problem framing.\",\"claimIds\":[\"zaf-158\"]},{\"text\":\"That gives us a direct way to ask what part of that rationale is shaping your marketing priorities now.\",\"claimIds\":[\"zaf-158\"]}],\"sendLine\":\"In your email: I read Why I joined Zafran Security and would be curious what part of that rationale is shaping your marketing priorities now.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmnVdOw_3NTLRUoMk3JC_cXAuoV7XFbUkY_2rp-bu3JRFQSPDtHm_2IcmliStDHgaZOYBfbNVQjjduTrNUW0qIpwsrZ6TeeevZYyr9ArDpeW109dFqPjZk7Jl0jTC6pQ20te5vxojtpJZ2pSav52nsi6kK0_zw8FCcCwvEwQ0en82WoAbcx1GGW69cvWUVk4hwGFdMyCc2mtibMRCDlxd-NrgNWqOSN0TAipRzGIrAFVlfsGuobL8k77Zm2wmNpSLoUHCY2DKWfJUtDFEaxEg25rM4StlkevAj41vf8DO2PXFyWDb3LGDz88UZhyU9FQRzgaSW46KjWOUz4AIG7ZjU7HF_QkjWJ1WaJ2Y85MfS-U78c_uKH-wm7pJti5ZFwgseFxrAxM1k3NOlq9REaRxZmKfEKNPhOa_z6teZr3NlSm2-Ly8XZ4oM0J9-zjC96l45eUT2T5BcyxDLp40YELlIGIqBkXH7knSHgwKR6X5BE5cez2o0gN6lVVDo-zYQNh4QCC_GgeNzB5rVh0kqinGNRZkl3_wrcKGpTGM_h7O0DhV1NRCNSSPBZNBV9WHNF3MvT-cLK1kWYFeWEldwOS2RihKvaUzizFSIo81hiXxoBK7zXttBeJAfpyLhUDA9HfAO4xv18hpB9xjuLbscyNDMa4rhFMYoXn_qR65cYWeYZPir30TB7eIJCDcuWgFGA1YMAjz7CoJRPH6bwbJ4QNbUOq8_NKGnWVaKp62hyrVmr4iuxqzP2eA2aprtmWymkhUJ6TFerAYh28GscrKxbMkUaweRHr4r-lnIQMRr-EDyy2Mu7rYqEmxplkPx9DcvWXiioZE6bBC5q33freUNJtFRXmQIY9goJqy0_MsyYpgi0IyZQhQiBYlxEICkbVsCb-LVtjYIE-TJ0mjVGbCwYtBAVLd5khmLZTQshclKQgr5J27Ze-l5xap3W-T_axP2E1s770jW6piaWVf7r3j0-UFCEgkBcaWXXpMeTK7Ic2WPTR9TvdW36cHpyrD7tY0u5uRicWOVrXbxNTNepRm8Ot0ywhS6cUhFen6BXOgZDEB_b5S95YmE6422I6hEP29P4o0PneuxEYMNTgxSnqH8gx-BHljsaN1nsDnBjMqKW0xHJ_-wpzpYBD0KPGHdNIpi2lbJLxr2neo4VeDmvmb43avcW86Pp8kBfn95iBYS4b7V7XMySWMCkgOCUCHNJrHXa9Vjz0JwQ70xkeAjQIkigOCqBk5wW20yLQLJD1ovd3f6WUgNmzQXzS0QrZb8tad5IhBvhjwLQU6K1JM0QzwJiTwF-fTA8GfNxKsRz_pFYPkulKO-G45qYqr8Ci5L2qnMf3g6Ag-jF2ku02oTxBaehYyFt_Dx7hWMSBCUM-9U3rui8TIMyGajJQ4vUvXdCEvPmIoLtixUOTpSURGfuOgCjZX9L-7AUiMsi_alcRwSieCuBBPJfSMhInpYit-3GQzPlh8i536BvnaMuyhOSUOuywpT-4oP68PUVNt34I8wiWBz_2iJNfR8vFHy5uAhTs-TogJDEweuwAaoF69Uy2aVoMlvfbaILFCr1SoN1A_yBVElLsVtOXxNtXfL7PjHmBIHh1BWvaLE3RhiGQ9ozmq9HaqSbH2726a8gp3cSMeon3Bc0upQP3AvcxqQ_rL3yD__2HpBC03LOOPsyOq4qubnDqR1a7qHx5baoyXfULSIqLnGx9gn3fPdpFl_J7vif-6Wf6r_JBXunSsUXcjW-TvY_ztLXcyxW80xrXw_ASWCfeUJnYLhKTWfsdRt7F4grtDlwuQiNzlY8m6xZUlyf519YXlG_6uNnGV4k9LmnjoGhhUX83UchTbtiSkG46zsdDMKE21i442RtiXXY0PGJlYmWi6yjx_bJ-zIDRkcxpfFEmt5pCOZ7hPQ0RSvN2TZ2z5_1BemXprmHTRRIcTp7ha7pvEG2XQ5Ev6ZozbQiYE6ZxSiMEeQ3_mhMvHhaDIgI4utXIGu2l7y1z7eu6g2SzDhLprXB5Z1KHE-ESbuDavAI1UB-aYrnX7gLMepr_wkGuKgtXTyI3mfaQwIBI4jcVHoUc2_qgMCbpEDQ8cueC4jl41b7fcbC934upsAIDXEyRi-ocEabMyrDYeqddvOFMVrUlqZGJGYegtGiG81Tg4dYmLR2vSeE1miq9SWpveZ_MYY4fZ5hjmAcXBQGZbyf5e8nWzv8FxsjQ85G64rXH-sg7ishtQTUiwgHYdUrOcNJKIlBgWrjBB-g7pRNm5kkdPlnpaBm7pgsLuhPWK7hP7JEl-EzM9CZGsKrdgO248tJSqedMa2xw--gTyAXkQiz7TCVVEz6IYAvQdAW6bVcDvPQf_hTtkeYbRxEv98VX-85pc3n_YcxOewiccKbFv1xhq5uvoDgFd-SFLXSKgx963sGVuGeoloK3qAx4e2kDARP9Ev9Y2hxQLzlPx4DxzFLdgYwJjp3T4vbP7SvJAu2anPWsGB5-2r1s6sx7iTcCiI6qM3svL-PkjApJ_bT1kMlj1CCUBWTYdhX7nGtbgJ-ukyUQ1UYQgBrI7VnQ5jJN12gwYEvhAgti0TFx9NBqu_BE2wn8jKwXFwNegHslx65mcfufVECwJYe1MPYDXElP-x1uZoB4itjkL1moD57pzLCKvBz7R00TgRlEEVFvRiGbE3g0RQAzNZX04KtLb3TTK9hGtgPycU-L8WJrB8RRI4iTaXoSAxuXOtKY6MWrv25cAt9CwoCiL4of7xg5lzvLBNOCPJo5uE6TlKO8TlMidVlIxS4EebbvvRcclRM9MgHIlE6jvPlzVBIix_hEOag_8IozZY1b_u6R0UTfF0NwttgknoS8xiJAdxVpAVNwU2Oqr9tCJCBFhkq_TvNaajahn94I2xUn7zv_z5lJN40VYdd2xr2JCX40kk5Ac4rMFd_gTCLJIWlaJI-Kr002XASsTlIp4IG5Bz7Aw0T6qE6gzTYCLH3yTPbbG7nxte8hPmoi0Pg1nmswjcy8T3uhNXtcQTiGBFRiVtWPkIMtsxI86RCbjZAZ3zC3a1WxtvOLosyqC15-wHpOZTl_MXa3byfbKVMeDJN4jxx14GIzW5rAumFLeL3qDbh73TujBG5a_RP2xlTJ6KvbTogz3ycDcq9kYf8njCjhtnNKqkBqIUvxxBTdRUmcqnjFPQBIPzYI2v6gfWNwC-GnyKdAg-GFXWSrAxBERa-umnGDsFGQ-UkKgp6gu9VJ0RQqCnj_cnCuS8wV9-gs2Z83JxcpArEi8n9X3NAPtbElPbecSVwE3x7sjehfEGnR2VLJdfRLNJDNRHwgMcjdyRblZ_qwzCE2hqwoU75GcD2BuzGlBzC7Y2StthDheFCPkHYomBwxmDAyu8CN9R_6AzSjcjg3iCzI7uvs_kzVwMd4iN3ByUoSAEfrDq8fxvX5GE_rBCwqxOPM0RTj_rgs1nKcv86wRAKPaCQWG4-ZiZNxCdl9ST7Ptd1fNTo5b9A1-8oqvShMQIV9mNnyePqpgL5lzLhG1NIq9B65H6BkcB0HapOaDhZM4QhKOIBFYXRNzkeiJcwZ60T_l4gJ8SwjLtTS8N7p3xYzXfPJDbxYeVYv1AFBHmNDT1RBIwVMT4x234j6NxMYxodyVY3LOG_vgZ88K0Xc_COtev47yTwLOAVbptY1nCvFzn9rhXTjh3NB2iCsFXtky3z8jp77F-D_4JaabRsXJzqlV8OIfBuPsMGfflsUZfj8-1nh9sDDpinl6lpIWk6jJNEnusOk-P5FSuNTWBotnxYSMxWnGn1-eiVHV-9fvLog-2JNTHzPVp31gULP0KIyDXhlfqImTvLFH9jx6V3V6GboWtDdY7QdE2wZJBV6jaPL5QJYS_PyyOO-bwIXRP6ajVJs0EVd2U2ZudMEJP46yNpV5YnzH2WTSwjHtpPPbRHMb3l5h3lcrnYWprjelysHqDnW2v0PNAXtsAsnp0u_j0uXSiXfL-K073rRmNU9O1m4hxWF7zGO_xdnfQWdy4J1TEH8jSYr3mBGLeAuJYyf1Ns5X99mOAWeswYyxFnuOe3Jlz_LRMgbMIOP-eH74adk9nz2eAEk8h3rrA4B9rWtIpygjJkYW3GsHqhsord7z3k0PfByES2ovcZEswH95SolVt7eiPNQ_Gtvde8RVN_bov__40dgujgC75GnYlYLcBrAPdlppoIbQju4_7ffQ5Yr85SugewA--z-ZMhgWnvmHQf5KGvlf3E7S5-Pkjp0jP3FNVEHfiOZU6cQCd7AnntNQZPA2G8M4pKRZsYgB4DVn8hUTKiXE2grQEuEJa5Q6W5R8vo2jWD-JhWkh0fS-8wYiL4svHMYnn8cEsouvDkDY3WbNS5uVzjIuNUN2IE7euMN5iQmDsCve2D9fySMLg3tP1UXrcUTfDPEZaLB3Cm3c6qV1PWHzm2kn5KhybD2rlG7qyJNqrsCbq1tZti525hXFWvqBB9fZJGRkKgQC7jeiOnC4GtyNJ74L9AWVITL.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_056857c8f425bc71016a9a69d13d4487d0ac3caeaa1ad181db",
+      "index": 0
+     },
+     {
+      "type": "reasoning.summary",
+      "summary": "**Clarifying quote requirements**\n\nI'm thinking about the quote requirements. It seems I only need quotation marks, and I'm considering whether I can embed an exact quote using sendLine without additional punctuation. I'll include the exact phrase, like \"I saw your point that 96%...\" and make sure it’s a verbatim copy. So, I'll structure it to have the quote correctly represented, emphasizing that there’s no extra punctuation needed around the phrase. That seems fine!",
+      "format": "openai-responses-v1",
+      "index": 1
+     },
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmnaAFfxUyojjmWQ7tKcUl1T0c1Yiy3k3C3RspfmMW3esKBrfgYlRxQ9H5rBVqb6r5bkbVqSk-oswoIBy-egQMXR82-58VpzeB5DIYD5ktYTFYNhuUMrQHULtJv_rGz7es5kIZiDwy1OWqCfIR3rLc7R0ELUUBmGJQ73wraNKaDUuc0WBU5ogYMVFmVt2Euk34dKibeQGvVwbAC5n1MahxMKGcykMuBdUEcX5SGMQnBhVIk5R4dGEphJCF4qyfxQ7YK2-720ps1oSgmVKMfnR0Ykba32GePAruw7Lok5N8LYOMUsCiqiuBn9wm4ivbW8LqJxpqM9L5wgE8wgO_V7hr1uyPZSwZqDxxJosz_V1R_XGzBYSDZn8BWfAgOFbolIViDMy8lJaWOO_9kJB9hgUBk5j0VBADcQB3mLqoYPe8-FO7XLsWjFbb-Jh_btaYQYfCe8sEmpWF6a9-VCLR9r3cwW70L3_Mf9qgdHf9aeiDLDv046e_qrrq02NVkOI2p-0pBpMqJpsV4Ay6g4HaJjYsNkR8PO0XF6_dLxNlshwUwNOL2mDEwhMC-DDjOoyPVtA1XOVjky1OsbE92j2dR7Ql-nUy8BPiAHzriyh9iJHZC210wgoyyBiWCNXyVcikYvTS1X_jPECNV8nWzm3ITBIO262Oy1K4PKHXgNh4F2RyObbxiFmKz17kyvaUKVsxMbt7qowps9h2OTsXdzNAdiE6Ah28EUPQlFT0NIm31YKiBXrlbg3xuIKbJPhLZWqJ6dkFoqUs-IXiJLWs2sGaMMfhKTq-iZM3XPnsbdmurTsGc_VcsP3SQMRrfl1hJGSz2cjxyMBiKjzHSR5xDCFwlTDwvwBZnqZguYVXerdmKTKizqEjQn0A7ZUfjM3m71s4Tl5-kSq8W6yrpIQVtHKdjPAF-dETbvUJZx4LdPWGvDFesVrHExNISs4Je6mbWNc56i2d09oRajdCA-V_O2G5tj8BZwHio6HkMV8osCSC1a9rwoQr8Qp1XH8VhEc3emGnZCgBh6a65F0q_xVznI36TjnWlYIkStlTud3saZUkz_L0bureFqVaBqvCmPtuExQy33oFvyLf6MEGb9S4WcVxw3ixwymAdulkrNtPPiMy6uYCAVOQgb1-svOMFrHB74gHPsUnVzPyIQAr2Mr8JB0Wk1PEqHClxsBxHq_KL_pDVncl7XmNGZpothEoaFhEetqJls38Ze6tqesmBJz-rJFFhkVUNG_1IERkLJDgJuAVBjwkU-YtskSKuR2xqkkZr9HpgXdEX9QItZLutdSi4c0baLCNWv2mF-lEqyXTBdIx1ldIlV0oi6DSIPkBc-rtYEASDHL4jddMVmzstpmOJ7fLwoKHlW-4CnCyQNMKsdsnvAdlLlRe9jS3DLoevCIKwXHzM7i8bBPj7L50rDKRPz06T79yi9y5pPuWlrc-oY7FcyEHXcXbllIpBI1Dt_l-7RxRo-1PkN9xra963Y2jYdhsbaJ6NEbvdZhmnSaUY7wmHdhmBrgYL2V9Uggffyb_sssZNkMeiRLa5y4rHQjLY_HRmfsclFgOXQOo334SGGNT1cD_HSr00wM92nnPhnlqB-gUUHEZ8LprcYWGfwvDe8uiB1EivVn4wZJIMz9zZvvlfoBvNCEfWVk33FpvAScKFnJPA9UsLIDMlbCpJNpI1Rgs8d5vYFUPLzM11qJoXD2ZWRkqE85aJoYK0NXoz2JVXDjawuBvep_SqLZlk1otEktUX6X9HZZT-Wa8HyNNSOOnOI1nszZyRNfQhsh8tcZHSu8qsIV7BilXspMtGl1YuS4-7z-Dy-KGMY4Q0E1rrdWnvnuWNTCEIkap9Ue7qW1SFLN1-_zt_IjUyykJKfzKggbm81tLoqI6TgpEO271UxNVPrEOhFlIbD8DSdpwnL3yPZdLaOCnpiAkw9pO-pPqbXC8-cF_4NKNbvh7bHfIMDJ7_0thnShounotoF76_aj8ASGPevOFQXD_50b_yzseO4FZh_Ce3eTMbQdCVwJqOzkBmyJ-kWavNlBU6y_aHGsdxvVLxMhXjyPyS_BEVrwPuzPfP90j4Q4G9iKG2jSTZ8knJYHB_CTLMGYCPUdfGZhr9H2tcQQZa_9SDRhvAmtwhpY0mgesJ_uAlcloA3jBzo3V6AeqoWK8xn2SPXrRA7ljSYJW7bgU-UaiZu8KIfFzanaxlwpQBLg4cWYCzOsaPIY2XZLUJyurgduJfQdvIoCkNNYYvemp676NbouqBG-2mBPR738Ao-a87mUVS_JDrGfV5j9QmKLUXIcRkgHuqZ5zxL3zv6T4Y6R3WMvw7AnTQOa8tp1QkCfY8ZOYu5_xUZoP7l5ATpMnjHNc5QO_naxW-052DQbPRrWit6iwjwcTEphKlsrFRZpIeHQRcsUK9rlvquscqq1Z1K8jVAM4zp8d_7Ckb8Re7YXPIpl_AqV7hEpME-vjgYxwiLGryO4Rg7y-WVnR4y6CrAVlNM8XVMSWauLvfGDqJoBWJecPOyXlhd6G9k4Ocm-b6fRxMWTS_71QQMYqI9wTt2gehsUbiYWR6nqmKDBlQzv910ga88B5Ndml3R8ZWClbqnXF1McYhRxs8EDBWP6s_UVnsXxStXmvxDKVvBmrp6bjCCqrD8rjGB4MaHfawIVD8BTQJr08s4aNqtndnESary5deaKTrw34RUb9ikd--qrW7L9f3oChkc_bLp2wIwpmJvh9BHo3EbYn_j16-CnNqm89h_2Fa0JXt9h-NZXHlXHtKr76CgY5Aoqi4Gib2Imim3thZ3UImZeAu7h1KxZ1YClmFxjDlciMawr5r-AEanqVUCZ4lLn32aCeXmtOXgcS_RxGf22JuLxBkkce_oaOq2uR5NqqFC4S3PJIB6qx3-zcYkjpQKfc2I6wuJBYcA0wYYRBUs-meWwE042aHVrErTTpvGsGb76qkpwOW84SbRFzkUMuksLOWEcQ2eyvzFaI-xYsLZHWA9w0ngOSDf8Jj9IdaFSLSMmI-K-zoOQU4WCLMsKDUUpFI5FCkfEuM0vYgouANkmv4PtvVyY7yru0zX5gzry3IxH9Hk7pcsCbVXDYzLQi9VriXqSAjGJTyaP7Rwlt-kMxMIyt_O56aziWUnjkRNiG7_HBvvaPsRtZPw95VcUBa6nmDotgSmV4_vtV5slVOMuHpkgvvnQKbUAoSwcpfGjGzVUhc1dLwNuTqSolOzHNNgwo0JrnRAltP2rbSCYukPKfGm_DN_aIcajYvs26deHNoCdoe54SkIHeI5bdaty77ysfzamyMblQhlKEw48OAIZVro08CXVmzn5Ry8JYWra7HOTP0EmZR72t04TrmhV83lCsMQDpUtN79RqGUB1nleaiNja7MeZYfIn9nUeazwW2KzDlI-3i5a5MUC_yttAV8m1lNw1s8sBQDMMqJzjkhSm1DVf-bWxUujSQ8XI1fyNlE6QQ4U8IuHNrn7j32Q5M6ah_adWwiB-QGhOZvmSU1wBRN8whIliBGbhu2fZaK0Dtngqw7dbXRYa_Jo8Y_LlMzJcx95U3nh0CKRwpivQmzGI64QZQ-umsVsC2UU8E01t2A7TYGU-qNAm8L_9NE0tMie7MUrruaYZIgB3RwSGoaTRcwqU93z2kZ_nP3kJC2fzpBUsdfu9jIWyM2SkK1nyIpWxfjadQk6CpBRuUSkyEzN26Z2c2MNwFKYRnVMn2L1qxGglS_0pnjugouN4jZfMtpvc3MWhPTMdZhaK74wOqHdKiS0LLxztif6GXgTIBu1KLkY2OyFp4HvoXWgjuB2gtcbOjADVxvzWu10LKAgvKky4b5RW1CVqUxmh8MU6Sf3GZiJU1T8kFwyRGFyOlxoSD3309uEUsdB45HFJEvN0ZhMZoOOuw9H6xSSX9I5zEz7uGH6Zh8dG4aLo21oPx8lVXmHvQ8xM9lSlHW3heMUgUwgsIEzu1ee0-BvAhNzNN9DIglopJ2zpcwWdvbksklEl6T70lqyGhObg-c3K8jQgn4W8rJ58vgGeBLq3vWuMBubJF_tFqbhbYGMQMtRHEl7cMHXfZHJ5qAi6xg7sNFzbM_pM8f26aIW-q00SjKmHkgXdIjrQz0is3_92fgZSHdTMB4J-0wZ3LjGvLVwlvjXMN7P4QskjBxIpMCXalLV9mT2P3uzGzP6t5Mqgmv_WltguIBY_bv1YYrPAnaV6Qeae5dF0cvtX09i9JaoFiWO4Lm2hdb9nfkACgvoQv-OFjEa0N8hlaJm0KtoZmJuRFwg0qdPTiveIwfuBXRlMU9_ym6-TBzHhS2_E0Gt2ZG7Jb4UjDAM9Al4UgO00DyDwwRKp1ueDpVPYqz1zH2BTtFdIP7eRqds81yT9BODyaqG1LNRvEyAk4EVSZ-QJEV9ewxOg9HQ2zBG5Uxtt-tMR9iNb1tSMgUmi2q9NWpxzAmhFkZ9cj6PU1fcG6YdVLfyCQ==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_056857c8f425bc71016a9a69d557a887d0a4a3385c38dfe9ae",
+      "index": 2
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 3978,
+  "completion_tokens": 1610,
+  "total_tokens": 5588,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 0,
+   "cache_write_tokens": 3975,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00292635,
+   "upstream_inference_prompt_cost": 0.00099435,
+   "upstream_inference_completions_cost": 0.001932
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 1034,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 12.28,
+ "_attempt": 0
+}

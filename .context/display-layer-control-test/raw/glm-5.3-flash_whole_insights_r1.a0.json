@@ -1,0 +1,26 @@
+{
+ "id": "gen-1788504968-9JIvLN4DjykktBhiMHo8",
+ "object": "chat.completion",
+ "created": 1788504968,
+ "model": "z-ai/glm-5.3-flash",
+ "provider": "Together",
+ "system_fingerprint": "default",
+ "service_tier": null,
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "error",
+   "native_finish_reason": null,
+   "message": {
+    "role": "assistant",
+    "content": null,
+    "refusal": null,
+    "reasoning": null
+   }
+  }
+ ],
+ "_http_status": 200,
+ "_elapsed_s": 233.94,
+ "_attempt": 0
+}

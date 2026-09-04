@@ -114,6 +114,25 @@ contact page, expect roughly **$0.02 per account and $0.01 per contact page** �
 for Zafran's account + five people. Structuring (gpt-5-mini) remains the expensive layer; Luna is
 the cheap one.
 
+## 3b. Decided after the control test (4 Sep 2026)
+
+`.context/display-layer-control-test/REPORT.md` tested the three open questions on the real Zafran
+claims (52 page generations, 11 models, blind judge). The decisions it produced:
+
+- **One call per section, sections fired in parallel, `gpt-5.6-luna`.** Same faithfulness as one
+  whole-page call (zero unsafe leaks, zero non-verbatim quotes in every Luna run), zero off-recipe
+  citations (whole-page drifted 3–6 per page), each section regenerable alone, page ready in ~15 s.
+- **No cheaper model.** Every cheaper OpenRouter model failed a non-negotiable (unsafe facts in
+  outreach copy, paraphrase inside quotation marks, invented product claims) or took 2–16 minutes.
+  Luna is ~$0.005 per page, ~5 cents per account with five contacts.
+- **Three prompt lines added to the production prompt:** never type claim ids into prose; write dates
+  as "17 June 2026"; the hobby hook at most once per page.
+- **Two upstream fixes:** one fact, one `outreach_safe` flag (the store held the cocktail hobby twice,
+  once safe, once unsafe); dedupe the near-duplicate unsafe rows before they reach the display layer.
+- **Cost levers, in order:** regenerate only the sections whose claims changed; generate P2/P3
+  contact pages lazily on first open; stable prefix + section suffix so the provider cache hits
+  (measured 3× cheaper warm); `:batch` endpoints for nightly refreshes.
+
 ## 4. What the frontend needs that it does not have today
 
 Today's Zod slots: `summary: ProseReadSchema` = `paragraphs: string[]` (no link slots);
