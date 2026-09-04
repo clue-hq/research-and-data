@@ -299,8 +299,9 @@ export interface InspectorEventAddressing {
   selectionId: string | null;
 }
 
-/** Exported for the addressing unit test; production callers go through the
- * controller hooks. */
+/** Exported for the addressing unit test and for the ad text inspector's
+ * Fit-to-text button (a one-shot property change with no state key of its
+ * own); every other production caller goes through the controller hooks. */
 export function dispatchInspectorEvent(
   name: string,
   detail: Record<string, unknown>,

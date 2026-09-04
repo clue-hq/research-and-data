@@ -145,6 +145,9 @@ import {
  *     does not have would be the very drift this rule prevents.
  *   • `fillMode` → image only, because hydrate states it for an image node and
  *     for nothing else (`scene-hydrate.ts:687-691`).
+ *   • `fitToText` (Plan 4 item F) → text only. Its control lives on the text
+ *     schema alone and its write states a text fact — the box hugs its copy —
+ *     so there is nothing for it to mean on any other kind.
  *   • §1.4's AUTO LAYOUT rows (direction / wrap / gap / grow / padding / align)
  *     → `auto_layout` only. Ruling L10 makes hydrate state the whole set for
  *     every auto-layout node (defaults included) and for no other kind's
@@ -1122,6 +1125,18 @@ export function sceneChangeToOperation(
         dimension = { kind: "fixed", value: size };
       }
       return updateNodeSize(node, { ...node.size, [axis]: dimension });
+    }
+
+    // ── Plan 4 item F: "Fit to text" — the text box hugs its copy ────────────
+    // ONE write, one document version: the height flips to hug (the authoring
+    // default Plan 4 restores) and nothing else moves. Width is deliberately
+    // untouched — a fixed width is the wrap width the author chose. The value
+    // is not read; the button carries "1" for the event's sake only.
+    case "fitToText": {
+      if (!text || node.size.height.kind === "hug") {
+        return null;
+      }
+      return updateNodeSize(node, { ...node.size, height: { kind: "hug" } });
     }
 
     // ── §1.4 Auto Layout: Direction (AD4.B step 2) ───────────────────────────

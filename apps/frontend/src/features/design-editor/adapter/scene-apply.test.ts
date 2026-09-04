@@ -959,6 +959,44 @@ it("§1.4/OQ-2 Mode: a label outside Fixed/Hug/Fill writes nothing", () => {
   }
 });
 
+// ══ Plan 4 item F: "Fit to text" ═══════════════════════════════════════════
+//
+// The text inspector's one-click way out of a fixed height the copy outgrew.
+// UNCOVERED-by-harvest: both harvested texts HUG, so the fixed-height case is
+// the harvested stat with its height (and only its height) replaced — the
+// width the fixture carries (256) rides through untouched, which is the whole
+// point of ruling R6.
+
+it("Plan 4 Fit to text: a fixed-height text box flips its height to hug, width untouched", () => {
+  const { node, scene } = adSpannedText();
+  const fixed = {
+    ...node,
+    size: {
+      width: { kind: "fixed" as const, value: 256 },
+      height: { kind: "fixed" as const, value: 216 },
+    },
+  };
+  assert.deepEqual(
+    apply(fixed, "fitToText", "1", scene),
+    updateNode(fixed.id, {
+      size: set({
+        height: { kind: "hug" },
+        width: { kind: "fixed", value: 256 },
+      }),
+    }),
+  );
+});
+
+it("Plan 4 Fit to text: a hugging text box writes nothing; a non-text node writes nothing", () => {
+  const { node, scene } = adSpannedText();
+  const hugging = {
+    ...node,
+    size: { ...node.size, height: { kind: "hug" as const } },
+  };
+  assert.equal(apply(hugging, "fitToText", "1", scene), null);
+  assert.equal(apply(adRect(), "fitToText", "1"), null);
+});
+
 // ══ §1.4 Auto Layout — Direction · Wrap · Gap · Grow · Pad · Align ══════════
 //
 // AD4.B step 2. TWO homes, so two kinds of operation: Direction and Wrap live

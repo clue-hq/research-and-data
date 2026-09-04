@@ -12,6 +12,7 @@ import type { SceneArrangeBinding } from "@/features/design-editor/hooks/use-sce
 import type { SceneAssetLibraryBinding } from "@/features/design-editor/hooks/use-scene-asset-library";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import {
+  dispatchInspectorEvent,
   useInspectorController,
   useInspectorLayerTree,
   type HorizontalAlignment,
@@ -418,6 +419,29 @@ function AdTextInspector({
           </div>
         </InspectorField>
         <InspectorField label="Rotation"><InspectorInput ariaLabel="Rotation" disabled={inert} onCommitValue={(value) => setValue("rotation", value)} suffix="°" value={state.rotation} /></InspectorField>
+        {/* Plan 4 item F: the one-click way out of a fixed height the copy
+            outgrew (the selection then outlines the glyphs and drops its
+            dashed frame). One property-change event, one write — two
+            `setValue` calls would be two document versions and the second
+            can be dropped by the one-in-flight write discipline. Dead while
+            the box already hugs. */}
+        <InspectorField label="Text box">
+          <button
+            className={styles.sharePrimaryButtonWide}
+            disabled={inert || state.heightMode === "Hug"}
+            onClick={() => {
+              if (inspectorDisabled || locked) return;
+              dispatchInspectorEvent(
+                "clue:inspector-property-change",
+                { property: "fitToText", selectionType: "text", value: "1" },
+                addressing,
+              );
+            }}
+            type="button"
+          >
+            Fit to text
+          </button>
+        </InspectorField>
       </Section>
       <Section id="arrange" label="Arrange" open={state.openSections.arrange} toggle={() => toggleSection("arrange")}>
         <ArrangeControls arrange={arrange} disabled={inert} onAction={(action) => requestAction(`arrange:${action}`)} />
