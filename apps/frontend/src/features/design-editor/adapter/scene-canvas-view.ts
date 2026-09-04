@@ -653,6 +653,9 @@ function pinnedDrawNodes(
  */
 export const SELECTION_OUTLINE_COLOR = "#4F46E5";
 export const SELECTION_OUTLINE_WIDTH = 1.5;
+/** Plan 3 R4: the hover outline — the selection colour, 1px, translucent, no handles. */
+export const HOVER_OUTLINE_WIDTH = 1;
+export const HOVER_OUTLINE_OPACITY = 0.55;
 
 /**
  * The four corner handles of the same G-A ruling — **approved, and LIVE since

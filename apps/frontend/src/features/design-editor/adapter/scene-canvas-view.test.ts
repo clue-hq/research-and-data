@@ -9,6 +9,8 @@ import {
   ARTBOARD_FIT_MARGIN,
   ARTBOARD_SHADOW_BLUR_PX,
   ARTBOARD_SHADOW_OFFSET_PX,
+  HOVER_OUTLINE_OPACITY,
+  HOVER_OUTLINE_WIDTH,
   SELECTION_HANDLE_CORNER_RADIUS,
   SELECTION_HANDLE_FILL,
   SELECTION_HANDLE_SIZE,
@@ -873,4 +875,10 @@ test("G-A: the approved Variant B stroke is the one the overlay uses", () => {
   assert.equal(SELECTION_HANDLE_FILL, "#FFFFFF");
   assert.equal(SELECTION_HANDLE_STROKE, "#4F46E5");
   assert.equal(SELECTION_HANDLE_STROKE_WIDTH, 1.5);
+});
+
+test("Plan 3 R4: the hover outline is the selection colour, thinner and translucent", () => {
+  assert.equal(HOVER_OUTLINE_WIDTH, 1);
+  assert.equal(HOVER_OUTLINE_OPACITY, 0.55);
+  assert.ok(HOVER_OUTLINE_WIDTH < SELECTION_OUTLINE_WIDTH);
 });

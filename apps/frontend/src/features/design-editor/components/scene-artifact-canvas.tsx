@@ -21,6 +21,8 @@ import { effectiveScenePageId, scenePagelessNotice } from "../adapter/scene-page
 import {
   ARTBOARD_BORDER_COLOR,
   ARTBOARD_SHADOW_COLOR,
+  HOVER_OUTLINE_OPACITY,
+  HOVER_OUTLINE_WIDTH,
   SELECTION_HANDLE_CORNER_RADIUS,
   SELECTION_HANDLE_FILL,
   SELECTION_HANDLE_STROKE,
@@ -53,10 +55,14 @@ import {
   sceneSelectionHandlesVisible,
   shouldFreezeLayoutOnPress,
 } from "../adapter/scene-gestures";
+import { sceneHitPoint } from "../adapter/scene-selection";
 import {
-  representableHit,
-  sceneHitPoint,
-} from "../adapter/scene-selection";
+  WALK_UP_CLICK_SLOP_PX,
+  escapeSelectionEffect,
+  sceneHoverTarget,
+  selectionLadderHit,
+  selectionWalkUp,
+} from "../adapter/scene-selection-ladder";
 import type { ScenePalette } from "../adapter/scene-palette";
 import {
   SCENE_TEXT_EDIT_INTENT,
@@ -607,6 +613,10 @@ function SceneDocumentCanvas({
   const [ownSelectedNodeId, setOwnSelectedNodeId] = useState<NodeId | null>(
     null,
   );
+  // Plan 3 R4: the node an idle pointer is over — what a click would select,
+  // resolved through the same ladder the press uses. Null whenever nothing is
+  // hovered, a caret is open, a gesture is running, or the pointer has left.
+  const [hoverNodeId, setHoverNodeId] = useState<NodeId | null>(null);
   const {
     currentVersion,
     engine,
@@ -998,6 +1008,24 @@ function SceneDocumentCanvas({
     [activeSelectedNodeId, artboard, pageId, preview, scene, viewport],
   );
 
+  // Plan 3 R4: the hover outline — the same derivation as the selection
+  // outline over the hover target, so it sits exactly where a click's outline
+  // would. Never on the selected node (the hover target is already null there).
+  const hoverOutline = useMemo(
+    () =>
+      artboard && hoverNodeId
+        ? sceneSelectionOutline({
+            artboard,
+            pageId,
+            preview: null,
+            scene,
+            selectedNodeId: hoverNodeId,
+            viewport,
+          })
+        : null,
+    [artboard, hoverNodeId, pageId, scene, viewport],
+  );
+
   // AD4.C step 2 (Gate G-A): the four approved corner handles, drawn at last —
   // exactly when the document, the engine and the G-H gate all allow the drag
   // they promise. The outline itself is unconditional; only the grab affordance
@@ -1239,6 +1267,18 @@ function SceneDocumentCanvas({
     origin: { point: { x: number; y: number }; pan: { x: number; y: number } };
   } | null>(null);
   const [panning, setPanning] = useState(false);
+  /**
+   * Plan 3 R3: a press on the node that is ALREADY selected — the walk-up
+   * candidate. It is only a candidate on the way down, because a press that
+   * turns into a drag is a MOVE, not a walk-up; the release decides, once the
+   * pointer's travel and the preview are both known.
+   */
+  const walkUpRef = useRef<{
+    pointerId: number;
+    nodeId: NodeId;
+    x: number;
+    y: number;
+  } | null>(null);
 
   const stagePoint = (event: ReactPointerEvent<HTMLDivElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -1272,6 +1312,8 @@ function SceneDocumentCanvas({
   const resetGesture = () => {
     gestureRef.current = initialGestureState;
     gestureArmedRef.current = false;
+    // Plan 3 R3: a cancelled press is not a click, so it cannot walk up.
+    walkUpRef.current = null;
     setPreview(null);
   };
 
@@ -1381,6 +1423,9 @@ function SceneDocumentCanvas({
     target: PressTarget,
     armed: boolean,
   ) => {
+    // Plan 3 R4: a press ends the hover — the selection outline takes over,
+    // and nothing recomputes hover again until the pointer is idle.
+    setHoverNodeId(null);
     gestureArmedRef.current = armed;
     if (armed) {
       // Only a press that can actually become a gesture captures the pointer —
@@ -1441,6 +1486,35 @@ function SceneDocumentCanvas({
     // manipulation. An unarmed press never gets here, which is what keeps a
     // locked node still, an empty press out of marquee, and G-H honoured.
     if (!gestureArmedRef.current || gestureRef.current.kind === "idle") {
+      // Plan 3 R4: an idle pointer hovers. Same coordinate chain as a press
+      // (`handlePointerDown`), same ladder, and only a CHANGE reaches state.
+      const element = stageRef.current;
+      if (textEdit || !element || !artboard || !scene || engineStatus.engineDisabled) {
+        if (hoverNodeId !== null) {
+          setHoverNodeId(null);
+        }
+        return;
+      }
+      const bounds = element.getBoundingClientRect();
+      const workspacePoint = screenToWorkspace(
+        { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+        viewport,
+      );
+      const scenePoint = sceneHitPoint(workspacePoint, artboard);
+      const result = scenePoint
+        ? controls.hitTest(scenePoint.x, scenePoint.y)
+        : null;
+      const target = result
+        ? sceneHoverTarget({
+            stack: result.stack,
+            scene,
+            pageId,
+            selectedNodeId: activeSelectedNodeId,
+          })
+        : null;
+      if (target !== hoverNodeId) {
+        setHoverNodeId(target);
+      }
       return;
     }
     const point = descriptorPoint(event);
@@ -1465,6 +1539,26 @@ function SceneDocumentCanvas({
     if (panned) {
       return;
     }
+    // Plan 3 R3: the second click on the same node walks up — only when the
+    // press travelled less than the slop and drew no drag preview.
+    const candidate = walkUpRef.current;
+    walkUpRef.current = null;
+    if (
+      candidate &&
+      candidate.pointerId === event.pointerId &&
+      preview === null &&
+      Math.hypot(
+        event.clientX - candidate.x,
+        event.clientY - candidate.y,
+      ) < WALK_UP_CLICK_SLOP_PX &&
+      scene &&
+      candidate.nodeId === activeSelectedNodeId
+    ) {
+      const up = selectionWalkUp(scene, pageId, candidate.nodeId);
+      if (up !== null) {
+        commitSelection(up);
+      }
+    }
     if (gestureRef.current.kind !== "idle") {
       const point = descriptorPoint(event);
       // The reducer commits on `up` and returns to idle.
@@ -1488,33 +1582,73 @@ function SceneDocumentCanvas({
     resetGesture();
   };
 
-  // Ruling C-2: Escape cancels a live gesture. Registered once and inert
-  // otherwise — an Escape with no gesture running reaches whatever else wants
-  // it (this canvas has never cleared a selection on Escape, and this task does
-  // not add that).
+  /**
+   * Plan 3 R3: everything the Escape listener needs, held in a ref because the
+   * listener is registered ONCE (`[]`) and must never read a first-render
+   * scene. Published from an effect with no deps array — the file's own idiom
+   * for a per-render ref (`onSelectRef`, `gestureInputsRef` above) — rather
+   * than written during render, which the React Compiler refuses.
+   */
+  const escapeContextRef = useRef<{
+    scene: typeof scene;
+    pageId: typeof pageId;
+    selectedNodeId: NodeId | null;
+    textEditing: boolean;
+  }>({
+    scene,
+    pageId,
+    selectedNodeId: activeSelectedNodeId,
+    textEditing: Boolean(textEdit),
+  });
+  useEffect(() => {
+    escapeContextRef.current = {
+      scene,
+      pageId,
+      selectedNodeId: activeSelectedNodeId,
+      textEditing: Boolean(textEdit),
+    };
+  });
+
+  // Ruling C-2: Escape cancels a live gesture. Registered once, and now — Plan
+  // 3 R3 — it also WALKS THE SELECTION UP when no gesture is running and no
+  // caret is open, clearing the selection at the root frame. (Before Plan 3
+  // this canvas never touched the selection on Escape.) An Escape that resolves
+  // to nothing still reaches whatever else wants it.
   //
-  // The guard is ARMED **and** non-idle, not non-idle alone: this is a global
-  // key handler, so its inertness must not rest on a state machine that a
-  // missed `pointerup` could leave dirty. Only an armed gesture has anything to
-  // cancel, and after `beginPress`/`handlePointerUp` above, armed and non-idle
-  // are the same condition — the second half is belt-and-braces on a handler
-  // that can `preventDefault` a key the whole app shares.
+  // The gesture guard is ARMED **and** non-idle, not non-idle alone: this is a
+  // global key handler, so its inertness must not rest on a state machine that
+  // a missed `pointerup` could leave dirty. Only an armed gesture has anything
+  // to cancel, and after `beginPress`/`handlePointerUp` above, armed and
+  // non-idle are the same condition — the second half is belt-and-braces on a
+  // handler that can `preventDefault` a key the whole app shares.
+  //
+  // `commitSelection` and `resetGesture` are captured from the first render on
+  // purpose: both write only stable setters and refs, so a stale closure of
+  // either is the same function.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.key !== "Escape" ||
-        !gestureArmedRef.current ||
-        gestureRef.current.kind === "idle"
-      ) {
-        return;
-      }
       // The same guard the space-pan listener uses: Escape inside an inspector
-      // field is that field's, never the canvas's.
-      if (typingTarget(event.target)) {
+      // field is that field's, never the canvas's. It runs FIRST now, because
+      // every branch below it acts.
+      if (event.key !== "Escape" || typingTarget(event.target)) {
         return;
       }
-      event.preventDefault();
-      resetGesture();
+      const context = escapeContextRef.current;
+      const effect = escapeSelectionEffect({
+        gestureLive:
+          gestureArmedRef.current && gestureRef.current.kind !== "idle",
+        textEditing: context.textEditing,
+        selectedNodeId: context.selectedNodeId,
+        scene: context.scene,
+        pageId: context.pageId,
+      });
+      if (effect.kind === "reset-gesture") {
+        event.preventDefault();
+        resetGesture();
+      } else if (effect.kind === "select") {
+        event.preventDefault();
+        commitSelection(effect.nodeId);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -1548,7 +1682,9 @@ function SceneDocumentCanvas({
    *     → minus the artboard's workspace origin     artboard-local descriptor px
    *     → `descriptorToScene(local, unitScale)`     the engine's own units
    *     → `controls.hitTest(x, y)`                  bottom-to-top hit stack
-   *     → `representableHit(stack, scene, pageId)`  §5's nearest schema-bearing node
+   *     → `selectionLadderHit(stack, scene, pageId)`  §5's nearest
+   *       schema-bearing node, promoted to the BUTTON when the hit is its
+   *       label (Plan 3 R1)
    *
    * The last two conversions are the trap: `hitTest` takes SCENE units, not
    * descriptor px, and the two are identical on a `pt`/`px` page (this ad), so
@@ -1576,6 +1712,9 @@ function SceneDocumentCanvas({
         origin: { point: stagePoint(event), pan: viewport.pan },
       };
       setPanning(true);
+      // Plan 3 R4: a pan is not a hover either — the surface moves under the
+      // pointer, so the last hover target is no longer what a click would hit.
+      setHoverNodeId(null);
       event.currentTarget.setPointerCapture?.(event.pointerId);
       event.preventDefault();
       return;
@@ -1635,7 +1774,23 @@ function SceneDocumentCanvas({
     // `HitResult.stack` is bottom-to-top and its last member IS `hit` (the
     // engine's `hit_test` is literally `hit_stack(..).pop()`), so the stack
     // alone is the complete answer.
-    const hitNodeId = representableHit(result.stack, scene, pageId);
+    const hitNodeId = selectionLadderHit(result.stack, scene, pageId);
+    // Plan 3 R3: Alt/Option-click walks up from the hit and starts no press.
+    if (event.altKey && hitNodeId !== null) {
+      commitSelection(selectionWalkUp(scene, pageId, hitNodeId) ?? hitNodeId);
+      return;
+    }
+    // A click on the node that is ALREADY selected is a walk-up candidate; it
+    // is decided on release, once we know the pointer did not drag.
+    walkUpRef.current =
+      hitNodeId !== null && hitNodeId === activeSelectedNodeId
+        ? {
+            pointerId: event.pointerId,
+            nodeId: hitNodeId,
+            x: event.clientX,
+            y: event.clientY,
+          }
+        : null;
     const press = scenePressNodeTarget({
       artboard,
       gesturesEnabled: !gestureDisabled,
@@ -1712,7 +1867,7 @@ function SceneDocumentCanvas({
       : null;
     const effect = sceneDoubleClickEffect({
       gestureDisabled,
-      nodeId: result ? representableHit(result.stack, scene, pageId) : null,
+      nodeId: result ? selectionLadderHit(result.stack, scene, pageId) : null,
       scene,
       selectedNodeId: activeSelectedNodeId,
     });
@@ -1800,6 +1955,7 @@ function SceneDocumentCanvas({
       onDrop={handleDrop}
       onPointerCancel={handlePointerCancel}
       onPointerDown={handlePointerDown}
+      onPointerLeave={() => setHoverNodeId(null)}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       ref={stageRef}
@@ -1815,6 +1971,21 @@ function SceneDocumentCanvas({
         dataFontDiagnostics={fontDiagnostics.length}
         dataSelectedNode={activeSelectedNodeId ?? "none"}
         viewport={viewport}
+      />
+      {/* Plan 3 R4: the hover outline — the click target, previewed. Drawn
+          UNDER the selection chrome (same absolute overlay, earlier sibling)
+          so a selection outline is never overdrawn by a hover one, and taken
+          down entirely while a caret or a gesture owns the surface.
+
+          The gesture guard is the STATE pair `preview`/`panning`, not
+          `gestureRef.current`: the React Compiler refuses a ref read during
+          render, and these say the same thing here — `beginPress` and the pan
+          branch both drop the hover target on the way in, and the hover branch
+          of `handlePointerMove` never runs while a gesture is armed, so a
+          pressed-but-not-yet-dragging gesture already has no hover to draw. */}
+      <SelectionChrome
+        outline={textEdit || preview || panning ? null : hoverOutline}
+        variant="hover"
       />
       {/* The selection overlay: an absolutely-positioned sibling of the canvas
           (never a canvas draw), so selection never triggers a wasm redraw.
@@ -2023,23 +2194,33 @@ function SceneEngineBanners({
  * live engine, and no in-flight agent turn). It keeps its `false` default so a
  * caller that has no drag behaviour behind it still cannot draw a fake
  * affordance.
+ *
+ * Plan 3 R4 adds the HOVER variant: the same box, the same colour, stroked
+ * thinner and translucent, with no handles ever — a preview of what a click
+ * would select, not a thing you can grab. It carries its own
+ * `data-scene-hover-outline` attribute so the two overlays stay separately
+ * readable.
  */
 function SelectionChrome({
   handles = false,
   outline,
+  variant = "selection",
 }: {
   handles?: boolean;
   outline: SceneSelectionOutline | null;
+  variant?: "selection" | "hover";
 }) {
   // No selection → no element at all, not an empty overlay.
   if (!outline) {
     return null;
   }
+  const hover = variant === "hover";
   return (
     <svg
       aria-hidden="true"
       className={styles.selectionChrome}
-      data-scene-selection-outline={outline.nodeId}
+      data-scene-hover-outline={hover ? outline.nodeId : undefined}
+      data-scene-selection-outline={hover ? undefined : outline.nodeId}
     >
       <g
         transform={
@@ -2052,12 +2233,13 @@ function SelectionChrome({
           fill="none"
           height={outline.height}
           stroke={SELECTION_OUTLINE_COLOR}
-          strokeWidth={SELECTION_OUTLINE_WIDTH}
+          strokeOpacity={hover ? HOVER_OUTLINE_OPACITY : undefined}
+          strokeWidth={hover ? HOVER_OUTLINE_WIDTH : SELECTION_OUTLINE_WIDTH}
           width={outline.width}
           x={outline.x}
           y={outline.y}
         />
-        {handles
+        {handles && !hover
           ? selectionHandleRects(outline).map((handle) => (
               <rect
                 fill={SELECTION_HANDLE_FILL}
