@@ -1315,6 +1315,15 @@ pub struct Rect {
 pub struct ComputedGeometry {
     pub layout_bounds: Rect,
     pub render_bounds: Rect,
+    /// Editor Quality Plan 4 (item F): the PAINTED line boxes of a text node —
+    /// page-space and unrotated, the frame `layout_bounds` is in — one per
+    /// measured line, placed where the renderers put the glyphs (`align`
+    /// across the box's horizontal slack, `valign` across its vertical slack;
+    /// `layout::painted_text_lines`). Empty for every non-text node and for a
+    /// text node no layout pass has placed. Never serialized when empty, so
+    /// pre-Plan-4 scene JSON and every non-text node stay byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub text_lines: Vec<Rect>,
 }
 
 #[cfg(test)]

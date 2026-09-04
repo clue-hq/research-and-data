@@ -1,10 +1,11 @@
 use lumen_core::{
     layout_operations, layout_scene, validate_layout, AssetId, AutoLayoutDirection, AutoLayoutNode,
-    AutoLayoutProps, Cardinality, ConditionalRule, ContentType, Diagnostic, DiagnosticSeverity,
-    Dimension, DocumentId, EmptyBehavior, FocalPoint, ImageFitMode, ImageNode, ImagePolicy,
-    LayoutAnchor, Node, NodeId, NodeKind, Operation, Orientation, OverflowPolicy, Page, PageId,
-    PagePreset, PageSize, ParentRef, Rect, ReflowPolicy, RepeaterRule, Scene, SizeSpec, Slot,
-    SlotId, SlotKey, TextAlign, TextNode, Unit, ValidationFixtures,
+    AutoLayoutProps, Cardinality, ComputedGeometry, ConditionalRule, ContentType, Diagnostic,
+    DiagnosticSeverity, Dimension, DocumentId, EmptyBehavior, FocalPoint, HeuristicTextMeasurer,
+    ImageFitMode, ImageNode, ImagePolicy, LayoutAnchor, Node, NodeId, NodeKind, Operation,
+    Orientation, OverflowPolicy, Page, PageId, PagePreset, PageSize, ParentRef, Rect, ReflowPolicy,
+    RepeaterRule, Scene, SizeSpec, Slot, SlotId, SlotKey, TextAlign, TextMeasureInput,
+    TextMeasurer, TextNode, Unit, ValidationFixtures, VerticalAlign,
 };
 
 fn page(width: f64, height: f64) -> Page {
@@ -1238,4 +1239,84 @@ fn spans_with_paragraph_spacing_advise_lumv0907() {
         lumen_core::LayoutOptions { validate_slots: false, ..Default::default() },
     );
     assert!(!has_code(&result.diagnostics, "LUMV0907"), "{:#?}", result.diagnostics);
+}
+
+// ── Editor Quality Plan 4, item F: painted line boxes ride in `computed` ────
+
+#[test]
+fn computed_text_lines_are_the_painted_line_boxes() {
+    // A right-aligned, vertically centred text in a fixed 300×200 box records
+    // ONE line box placed where the painters draw it — not the layout box.
+    // Under the heuristic measurer the extent is the measurer's own answer, so
+    // the expectation is read back from it rather than hard-coded.
+    let mut scene = scene_with_page(400.0, 300.0);
+    let mut headline = text_node("headline", "Hello", 20.0, 30.0, 300.0, 200.0);
+    let NodeKind::Text(text) = &mut headline.kind else {
+        unreachable!("text_node builds a text node");
+    };
+    text.align = TextAlign::Right;
+    text.valign = VerticalAlign::Center;
+    let text = text.clone();
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), headline);
+
+    let result = layout_scene(&scene, lumen_core::LayoutOptions::default());
+    let geometry = &result.geometry[&NodeId::from("headline")];
+    assert_eq!(geometry.layout_bounds.x, 20.0);
+    assert_eq!(geometry.layout_bounds.width, 300.0);
+
+    let measured = HeuristicTextMeasurer
+        .measure(&TextMeasureInput::from_text_node(&text).with_bounds(&geometry.layout_bounds));
+    assert_eq!(measured.lines.len(), 1, "one short line");
+    assert_eq!(geometry.text_lines.len(), 1, "{:#?}", geometry.text_lines);
+    let line = &geometry.text_lines[0];
+    assert_eq!(line.width, measured.lines[0].width);
+    assert_eq!(line.height, measured.lines[0].height);
+    // Right-aligned: the line ends at the box's right edge.
+    assert_eq!(line.x, 20.0 + (300.0 - measured.lines[0].width));
+    // Vertically centred: the stack sits in the middle of the box's slack.
+    assert_eq!(line.y, 30.0 + (200.0 - measured.height) / 2.0);
+}
+
+#[test]
+fn non_text_nodes_record_no_text_lines() {
+    let mut scene = scene_with_page(400.0, 300.0);
+    let mut rect = Node::new(NodeId::from("plate"), NodeKind::Rect);
+    rect.size = SizeSpec::fixed(100.0, 50.0);
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), rect);
+
+    let result = layout_scene(&scene, lumen_core::LayoutOptions::default());
+    assert!(result.geometry[&NodeId::from("plate")]
+        .text_lines
+        .is_empty());
+}
+
+#[test]
+fn text_lines_serialize_only_when_present_and_default_when_absent() {
+    let rect = Rect {
+        x: 1.0,
+        y: 2.0,
+        width: 3.0,
+        height: 4.0,
+    };
+    let empty = ComputedGeometry {
+        layout_bounds: rect.clone(),
+        render_bounds: rect.clone(),
+        text_lines: Vec::new(),
+    };
+    let json = serde_json::to_value(&empty).expect("serializes");
+    assert!(json.get("text_lines").is_none(), "{json}");
+
+    let legacy: ComputedGeometry = serde_json::from_value(serde_json::json!({
+        "layout_bounds": { "x": 1.0, "y": 2.0, "width": 3.0, "height": 4.0 },
+        "render_bounds": { "x": 1.0, "y": 2.0, "width": 3.0, "height": 4.0 }
+    }))
+    .expect("pre-Plan-4 JSON deserializes");
+    assert!(legacy.text_lines.is_empty());
+
+    let placed = ComputedGeometry {
+        text_lines: vec![rect.clone()],
+        ..empty
+    };
+    let json = serde_json::to_value(&placed).expect("serializes");
+    assert_eq!(json["text_lines"][0]["width"], 3.0);
 }

@@ -74,6 +74,7 @@ fn text_scene(bleed: Option<Rect>) -> Scene {
             width: 160.0,
             height: 40.0,
         },
+        text_lines: Vec::new(),
     });
     node.fills = vec![solid_fill("paint_headline", "#ffffff")];
     scene.nodes.insert(node.id.clone(), node);

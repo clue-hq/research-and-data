@@ -2204,6 +2204,7 @@ fn scene_with_pinned_badge(parent_origin: lumen_core::Rect, badge_box: lumen_cor
     frame.computed = Some(ComputedGeometry {
         layout_bounds: parent_origin.clone(),
         render_bounds: parent_origin.clone(),
+        text_lines: Vec::new(),
     });
     scene
         .apply_operation(Operation::InsertNode {
@@ -3389,6 +3390,7 @@ fn scene_p1r6_pin_then_managed_mark() -> Scene {
     pin.computed = Some(ComputedGeometry {
         layout_bounds: pin_box.clone(),
         render_bounds: pin_box.clone(),
+        text_lines: Vec::new(),
     });
     scene
         .apply_operation(Operation::InsertNode {
@@ -3411,6 +3413,7 @@ fn scene_p1r6_pin_then_managed_mark() -> Scene {
     mark.computed = Some(ComputedGeometry {
         layout_bounds: mark_box.clone(),
         render_bounds: mark_box.clone(),
+        text_lines: Vec::new(),
     });
     scene
         .apply_operation(Operation::InsertNode {

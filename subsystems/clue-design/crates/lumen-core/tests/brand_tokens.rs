@@ -1272,6 +1272,7 @@ fn scene_brand_governance_uses_computed_logo_size_when_available() {
             width: 40.0,
             height: 80.0,
         },
+        text_lines: Vec::new(),
     });
 
     let diagnostics =

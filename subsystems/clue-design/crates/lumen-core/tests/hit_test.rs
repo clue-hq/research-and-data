@@ -15,6 +15,7 @@ fn bounds(x: f64, y: f64, w: f64, h: f64) -> Option<ComputedGeometry> {
     Some(ComputedGeometry {
         layout_bounds: r.clone(),
         render_bounds: r,
+        text_lines: Vec::new(),
     })
 }
 

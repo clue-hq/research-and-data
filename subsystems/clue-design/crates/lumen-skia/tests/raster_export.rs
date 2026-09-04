@@ -188,6 +188,7 @@ fn png_export_uses_computed_xy_for_layouted_nodes() {
             width: 10.0,
             height: 10.0,
         },
+        text_lines: Vec::new(),
     });
     node.fills = vec![solid_fill("paint_computed_rect", "#ff0000")];
     scene.nodes.insert(node.id.clone(), node);
@@ -458,6 +459,7 @@ fn unresolved_token_fill_paints_visible_sentinel_and_errors() {
             width: 100.0,
             height: 100.0,
         },
+        text_lines: Vec::new(),
     });
     node.fills = vec![Fill {
         id: PaintId::from("paint_token_fill"),

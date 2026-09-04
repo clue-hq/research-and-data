@@ -98,7 +98,10 @@ pub use instance::{
     InstanceAuditKind, InstanceFitReport, InstanceFitStatus, SlotFitEntry, SlotFitVerdict,
     TemplateRepairRequest,
 };
-pub use layout::{layout_operations, layout_scene, validate_layout, LayoutOptions, LayoutResult};
+pub use layout::{
+    layout_operations, layout_scene, painted_text_lines, validate_layout, LayoutOptions,
+    LayoutResult,
+};
 pub use operations::{
     DocumentPatch, FieldPatch, NodePatch, Operation, OperationError, OperationReport,
     OperationResult, OptionalFieldPatch, PagePatch,
