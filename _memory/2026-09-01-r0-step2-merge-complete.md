@@ -114,3 +114,21 @@ Read first-hand: `.context/arv2-person-depth/`, `.context/arv2-one-account-aiark
 not order) + three amendments applied to the seam-freeze DRAFT. Two coordination facts: chicago
 does NOT have the R0 commits (push/merge before R1); Aryan's memory note reports Apollo + AI Ark
 keys pasted in an untracked chat attachment — rotate both.
+
+## ADDENDUM 2026-09-04 — plan v2 (accounts integration) + name correction
+- **Name correction:** git authorship shows the chicago PoC/spec commits are by Shashank Keshri;
+  this machine's git user is akeshri003. So **Aryan = tech founder (this session's user): platform
+  agent/onboarding/ICP/project context. Shashank = non-technical co-founder: research PoCs, frontend
+  specs, accounts integration.** The R0 plan and 09-03 delta used the names swapped in places —
+  read by role. New docs are written by role.
+- New inputs read first-hand: `chicago/.context/frontend-page-content/` (display grammar: fixed H1
+  sections, recipes as config, Luna per section, claimIds on every sentence, display_block rows),
+  `chicago/.context/display-layer-control-test/REPORT.md` (per-section + Luna + default effort;
+  no cheaper model passes; ~5c/account; two upstream dedupe fixes), and `clue-frontend/port-of-spain`
+  @ 6b623fe (~80% implemented; 18 cut points incl. overview rendering only "Why now"; zero
+  contract-doc updates; gendered hard-codes).
+- Written: **`docs/specs/ARV2-plan-2026-09-04-accounts-integration.md`** — two tracks meeting at the
+  claim store: Track D (load PoC claims → display layer → read surface → re-lift; starts now) and
+  Track R (R1–R4 as amended 09-03); 13 D0 rulings; contract v1 = port-of-spain models + backend
+  semantics; operating model for a non-technical co-founder (charters, agents never merge, tech
+  founder owns four integration points).
