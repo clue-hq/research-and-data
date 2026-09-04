@@ -1,10 +1,7 @@
 # ARV2 R0 — Foundations plan for the research-lane rebuild
 
 **Status: RATIFIED by founder (Shashank), 2026-09-01.**
-> **Name correction (2026-09-04):** git authorship shows the ratifying/tech founder is **Aryan**
-> and the PoC/spec author and accounts-lane co-founder is **Shashank**. This document's owner
-> labels are swapped in places; read them by role: "Shashank" rows = the tech founder (Aryan),
-> "Aryan" rows = the co-founder (Shashank). Body left as ratified. The base-branch decision (Part 2) also
+The base-branch decision (Part 2) also
 needs Aryan's sign-off per its own terms (it merges his branch). Authored 2026-09-01 from a
 six-agent parallel study of this branch (`integration/design-improvement`, worktree `semarang`)
 with every load-bearing claim re-verified first-hand against the code: the two kill-switch
@@ -12,6 +9,12 @@ inversions, the C7 read gate, the flag defaults, the DEEP-slot handler, the R1 q
 and the catalog version collision. Companions: the ARV2 spec set in `docs/specs/ARV2-*.md` on the
 `install-agent-browser-global` branch (chicago worktree) and the proof-of-concept evidence in that
 worktree's `.context/` (sample runs v1–v3, the AI Ark canary, the cluehq.ai smoke test).
+
+> **Name correction (2026-09-04):** git authorship shows the ratifying/tech founder is **Aryan**
+> and the PoC/spec author and accounts-lane co-founder is **Shashank**. This document's owner
+> labels are swapped in places; read them by role: "Shashank" rows = the tech founder (Aryan),
+> "Aryan" rows = the co-founder (Shashank). Body left as ratified.
+
 
 **Program context this plan serves (founder rulings, 2026-09-01):**
 
