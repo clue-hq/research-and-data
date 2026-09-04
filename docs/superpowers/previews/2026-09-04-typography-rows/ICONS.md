@@ -16,7 +16,6 @@ whose `InspectorIconName` union is the vocabulary a new icon must join.
 | --- | --- | --- | --- | --- | --- |
 | Line height | `move-vertical` | inspector local set (authored in-house, no upstream licence) | `apps/frontend/public/icons/chat-shell/inspector/shared/move-vertical.svg` | **yes** | A vertical double-headed arrow is the "how far apart, top to bottom" glyph, which is exactly what a line-height multiplier sets. It is already in the set, already in `InspectorIconName`, and — decisively — it pairs with `move-horizontal` on the very next row, so the two distance rows read as one pair in one drawing style. Reused meaning is this panel's own house style: `ArrangeControls` already uses the same `align-top`/`align-middle`/`align-bottom` glyphs for *both* Layer order and Alignment. |
 | Letter spacing | `move-horizontal` | inspector local set (authored in-house, no upstream licence) | `apps/frontend/public/icons/chat-shell/inspector/shared/move-horizontal.svg` | **yes** | The horizontal twin of the row above, and the conventional tracking glyph. Vendored, in the name union, no new asset. |
-| Vertical alignment | `align-middle` | inspector local set (authored in-house, no upstream licence) | `apps/frontend/public/icons/chat-shell/inspector/shared/align-middle.svg` | **yes** | This row *already ships* — it is the second group of the Alignment row — and `align-middle` is literally one of the three glyphs that control already paints. Labelling the row with a glyph it already contains is the only choice that does not invent a second name for the same thing. |
 | Max lines | `rows-3` | lucide-react · 1.28.0 · ISC | `apps/frontend/node_modules/lucide-react/dist/esm/icons/rows-3.mjs` | **no** — would be added as `rows-3.svg` in `apps/frontend/public/icons/chat-shell/inspector/shared/` in the existing `align-*` export style (viewBox trimmed to the artwork, `stroke="#5E636C"`, round caps/joins, `fill="none"`) and added to `InspectorIconName` | A framed box divided into three bands: "the box holds N lines". It is about a *count of lines inside a box*, which is what a max-lines cap means, and it collides with nothing in the set. |
 | Wrap | `wrap-text` | lucide-react · 1.28.0 · ISC | `apps/frontend/node_modules/lucide-react/dist/esm/icons/wrap-text.mjs` (a re-export; the node list lives in `.../icons/text-wrap.mjs`) | **no** — would be added as `wrap-text.svg` in `apps/frontend/public/icons/chat-shell/inspector/shared/` in the same style, and added to `InspectorIconName` | The universal wrap glyph (a line turning back on itself under two full-width rules). The local set has no wrapping glyph of any kind, and no local icon comes close enough to bend. |
 | Resize | `scan` | inspector local set (authored in-house, no upstream licence) | `apps/frontend/public/icons/chat-shell/inspector/shared/scan.svg` | **yes** | Resize mode is a statement about the *box*, and `scan` is the set's box-with-corner-brackets glyph — a frame being measured. It is vendored, it is currently unused by either inspector (nothing references `name="scan"`; the radius control uses the separate `radius-scan.svg`), so adopting it introduces no collision at all. |
@@ -63,12 +62,14 @@ Three things, and only these three:
 
 1. **The rows.** Line height, Letter spacing, Max lines, Wrap and Resize as
    typography controls on the ad text inspector — the right set, in this order,
-   with Max lines and Wrap two-up. Vertical alignment is on the page for context
-   only: it already ships as the second group of the Alignment row and needs no
-   decision. One row does carry a second question: **Resize** overlaps the
-   already-shipped "Fit to text" button in the Layout section, which makes the
-   same statement in one click — do both belong on the panel?
-2. **The icons.** The six glyphs above, at the panel's 12px, in front of each
+   with Line height and Letter spacing two-up and Max lines and Wrap two-up
+   (founder ruling 2026-09-04). The duplicate Vertical alignment row was dropped
+   by the same ruling: that control already ships as the second group of the
+   Alignment row and needs no decision. One row does carry a second question:
+   **Resize** overlaps the already-shipped "Fit to text" button in the Layout
+   section, which makes the same statement in one click — do both belong on the
+   panel?
+2. **The icons.** The five glyphs above, at the panel's 12px, in front of each
    label. Four are already in the product (`move-vertical`, `move-horizontal`,
    `align-middle`, `scan`); two are not (`rows-3`, `wrap-text`).
 3. **The icon source.** That when the local set has no glyph, the icon comes
