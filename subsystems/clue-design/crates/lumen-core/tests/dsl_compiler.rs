@@ -4143,3 +4143,32 @@ fn slot_modify_image_policy_refuses_values_preflight_would_reject() {
         bad_fit.compile_output.diagnostics
     );
 }
+
+#[test]
+fn unsized_text_element_hugs_both_axes_and_an_explicit_size_still_wins() {
+    // Editor Quality Plan 4 (item F, ruling R7): a text element with no s(...)
+    // used to inherit Node::new's 0×0 fixed box (LUMV0901 collapsed bounds).
+    // It now hugs its copy; an authored size — fixed height included — is
+    // never rewritten.
+    let mut scene = Scene::new(
+        lumen_core::DocumentId::from("doc_text_default"),
+        "Text default",
+    );
+    let output = compile_dsl_into_scene(
+        "page page_a4 preset(a4,portrait)\n  copy text \"Hi\" p(0,0)\n  boxed text \"Hi\" p(0,40) s(300,80)\n  wide text \"Hi\" p(0,140) s(fill,hug)",
+        &mut scene,
+    );
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+
+    let copy = &scene.nodes[&NodeId::from("copy")];
+    assert_eq!(copy.size.width, Dimension::Hug);
+    assert_eq!(copy.size.height, Dimension::Hug);
+
+    let boxed = &scene.nodes[&NodeId::from("boxed")];
+    assert_eq!(boxed.size.width, Dimension::Fixed(300.0));
+    assert_eq!(boxed.size.height, Dimension::Fixed(80.0));
+
+    let wide = &scene.nodes[&NodeId::from("wide")];
+    assert_eq!(wide.size.width, Dimension::Fill { weight: 1.0 });
+    assert_eq!(wide.size.height, Dimension::Hug);
+}

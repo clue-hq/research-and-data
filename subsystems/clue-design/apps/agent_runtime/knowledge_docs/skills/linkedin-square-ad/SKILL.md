@@ -86,6 +86,9 @@ pour copy into the shell.
 
 ## Type
 
+- **Text height is always hug.** Write `s(W,hug)` or `s(fill,hug)`; never a
+  fixed height on a text node — the box stops following the copy and the editor
+  outlines empty space. Widths may be fixed or fill.
 - Headline: `style($type.headline) font_size($type.size.7xl)` (80) — or
   `$type.display` when the kit ships a distinct display role. **Floor
   `$type.size.6xl` (64)**; the role default 56 does not dominate 1080. ≤7 words,

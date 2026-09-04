@@ -326,6 +326,10 @@ Hard syntax rules:
 - Use line-oriented indentation, for example: `page page_a4 preset(a4,portrait)`.
 - Use element lines such as `hero fr p(32,32) s(520,260) fill(#ffffff) rd(16)`.
 - Use quoted text inline, for example: `headline text "Clear headline" p(24,24) s(460,hug)`.
+- TEXT HEIGHT IS HUG. Size every text node `s(W,hug)` or `s(fill,hug)`; a text
+  element with no `s(...)` hugs on both axes. Never give a text node a fixed
+  height: the box stops following the copy, the editor outlines empty space, and
+  glyphs that overflow the box cannot be clicked. Fixed and fill WIDTHS are fine.
 - MODIFY LINES are different from element lines: on a `#<id>` modify line every
   property is a parenthesized CALL. Write `#headline text("New copy") font_size(64)`;
   the element-style `#headline text "New copy"` is invalid on a modify line

@@ -4727,7 +4727,20 @@ fn node_from_element(element: &DslElement, line_number: usize) -> Result<Node, D
         },
     };
 
-    Ok(Node::new(element.id.clone(), kind))
+    let mut node = Node::new(element.id.clone(), kind);
+    if matches!(node.kind, NodeKind::Text(_)) {
+        // Editor Quality Plan 4 (item F, ruling R7): a text element that names
+        // no size hugs its copy on both axes. `Node::new`'s 0×0 fixed box
+        // collapsed (LUMV0901), and the fixed heights authors reached for
+        // instead stopped following the copy — the selection box then
+        // outlined empty space. An explicit `s(...)` is applied after this
+        // and wins; no authored size is ever rewritten.
+        node.size = SizeSpec {
+            width: crate::Dimension::Hug,
+            height: crate::Dimension::Hug,
+        };
+    }
+    Ok(node)
 }
 
 /// Materialize a reconcile block's staged `(indent, element)` list into a
