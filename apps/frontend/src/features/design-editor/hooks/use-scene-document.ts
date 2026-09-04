@@ -5,6 +5,7 @@ import { textMeasurementSignature } from "../adapter/scene-canvas-view";
 import { designBffConfig } from "../data/design-bff";
 import { loadCanvasKit } from "../engine/scene/canvaskit/loadCanvasKit";
 import {
+  injectSkiaMeasurements,
   skiaLineMeasurements,
   skiaMeasurements,
 } from "../engine/scene/canvaskit/skiaMeasurements";
@@ -455,23 +456,22 @@ export function useSceneDocument(
       if (cancelled || !bundle?.fontProvider) {
         return;
       }
+      // Bound once: the narrowing above does not reach inside the pass
+      // closures below.
+      const { ck, fontProvider } = bundle;
       // Pass 1 (Wave 3 C4): unconstrained extents, so hug boxes take Skia's
       // size. Pass 2 (Plan 4 item F): the line boxes, keyed on the boxes pass
-      // 1 solved. Both sets ride the second call — `setMeasurements`
-      // REPLACES the override set. The effect's signature includes each text
-      // node's solved size, so a box that changes here re-runs the effect;
-      // the injection is deterministic, so that stops at the first pass that
-      // changes nothing.
-      const unconstrained = skiaMeasurements(
-        bundle.ck,
-        bundle.fontProvider,
-        engine.scene,
-      );
-      engine.setMeasurements(unconstrained);
-      engine.setMeasurements([
-        ...unconstrained,
-        ...skiaLineMeasurements(bundle.ck, bundle.fontProvider, engine.scene),
-      ]);
+      // 1 solved. It ITERATES because the line records move boxes themselves
+      // — the taffy-keyed record gives a wrapped hug box CanvasKit's height,
+      // which the validate-keyed record from the same round has already
+      // named at its old value — so the pass re-runs until the solved sizes
+      // stop changing (bounded; see `injectSkiaMeasurements`). The effect's
+      // own signature includes those sizes, so its outer re-run then finds
+      // nothing left to change.
+      injectSkiaMeasurements(engine, {
+        unconstrained: (scene) => skiaMeasurements(ck, fontProvider, scene),
+        lines: (scene) => skiaLineMeasurements(ck, fontProvider, scene),
+      });
       if (!cancelled) {
         setLoad((current) =>
           current.kind === "ready" && current.engine === engine

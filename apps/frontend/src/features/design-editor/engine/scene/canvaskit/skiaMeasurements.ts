@@ -179,6 +179,85 @@ export function skiaLineMeasurements(
   return out;
 }
 
+/** The slice of `WasmEngine` the injection loop drives: read the solved scene,
+ * install a measurement set (which relayouts and replaces the snapshot). */
+export interface MeasurementEngine {
+  readonly scene: Scene;
+  setMeasurements(measurements: TextMeasurement[]): void;
+}
+
+/** Hard cap on line-pass rounds. The loop is monotone over deterministic
+ * measurements, so it settles well inside this; the cap is what guarantees a
+ * pathological scene cannot spin the effect. */
+export const MEASUREMENT_ROUNDS_MAX = 4;
+
+/**
+ * Plan 4 item F: measure-then-inject, converged. Pass 1 injects the
+ * unconstrained extents; then the line pass is re-run, keyed on the boxes the
+ * previous round solved, until a round leaves every text node's solved size
+ * unchanged.
+ *
+ * The loop is not belt-and-braces: the line records CHANGE boxes. The
+ * taffy-keyed record hands a wrapped hug-height box CanvasKit's height, so the
+ * validate-keyed record emitted in the SAME round still names the height the
+ * engine had before it — and for exactly those nodes `validate_text_nodes`'
+ * `with_bounds` lookup misses and `text_lines` stays heuristic. Re-running the
+ * line pass against the new boxes closes that gap; the effect's outer re-run
+ * cannot, because it repeats the same two calls from scratch and lands in the
+ * same state. Deterministic input → the loop is monotone and stops;
+ * `MEASUREMENT_ROUNDS_MAX` caps it regardless.
+ *
+ * Returns the number of `setMeasurements` calls made (the tests' handle on
+ * convergence; nothing in the editor reads it).
+ */
+export function injectSkiaMeasurements(
+  engine: MeasurementEngine,
+  passes: {
+    unconstrained: (scene: Scene) => TextMeasurement[];
+    lines: (scene: Scene) => TextMeasurement[];
+  }
+): number {
+  // Both sets ride every line call — `setMeasurements` REPLACES the override
+  // set, so dropping the unconstrained records would take hug boxes back to
+  // the heuristic.
+  const unconstrained = passes.unconstrained(engine.scene);
+  engine.setMeasurements(unconstrained);
+  let calls = 1;
+  let previous = textSizeSignature(engine.scene);
+  for (let round = 0; round < MEASUREMENT_ROUNDS_MAX; round += 1) {
+    engine.setMeasurements([...unconstrained, ...passes.lines(engine.scene)]);
+    calls += 1;
+    const next = textSizeSignature(engine.scene);
+    if (next === previous) {
+      break;
+    }
+    previous = next;
+  }
+  return calls;
+}
+
+/**
+ * Every text node's SOLVED box, the only thing the line pass keys on — so two
+ * rounds with the same signature would send byte-identical records and the
+ * loop is done. Fixed-point formatting matches the measurements' own rounding,
+ * so float noise below a thousandth cannot keep the loop alive. Local rather
+ * than the adapter's `textMeasurementSignature`: the engine layer never
+ * imports the adapter layer.
+ */
+function textSizeSignature(scene: Scene): string {
+  const parts: string[] = [];
+  for (const node of Object.values(scene.nodes)) {
+    if (node.kind.kind !== "text") {
+      continue;
+    }
+    const box = node.computed?.layout_bounds;
+    parts.push(
+      box ? `${node.id}|${box.width.toFixed(3)}x${box.height.toFixed(3)}` : `${node.id}|_`
+    );
+  }
+  return parts.sort().join("\n");
+}
+
 /** The measured extent and painted line boxes of one text node at one width. */
 interface MeasuredLines {
   width: number;

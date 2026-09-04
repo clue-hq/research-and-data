@@ -6,10 +6,14 @@ import type { CanvasKit, TypefaceFontProvider } from "canvaskit-wasm";
 import type { Node, Scene, TextSpan } from "../contracts";
 import { minimalScene } from "./__fixtures__/minimalScene";
 import {
+  injectSkiaMeasurements,
+  MEASUREMENT_ROUNDS_MAX,
   measureParagraph,
   skiaLineMeasurements,
   skiaMeasurements
 } from "../canvaskit/skiaMeasurements";
+import type { MeasurementEngine } from "../canvaskit/skiaMeasurements";
+import type { TextMeasurement } from "../wasmEngine";
 
 /**
  * Wave 3 C4: the SkParagraph measurement provider. Verified with a system
@@ -242,5 +246,114 @@ describe.skipIf(!present)("SkParagraph measurement provider (Wave 3 C4)", () => 
     };
     const [record] = skiaLineMeasurements(ck, fontMgr, scene);
     expect(record.lines!.length).toBe(2);
+  });
+});
+
+/**
+ * Plan 4 item F (R4 amendment): the injection loop itself, with a SCRIPTED
+ * engine and no CanvasKit — the line pass moves boxes (a taffy-keyed record
+ * hands a wrapped hug box CanvasKit's height), so the validate-keyed record
+ * from the same round can name a box the round replaced. The loop re-runs the
+ * line pass until the solved text sizes stop moving.
+ */
+describe("measure-then-inject convergence (Plan 4 item F)", () => {
+  const NODE = "node_contact_name";
+
+  const record = (max_width: number, max_height?: number): TextMeasurement => ({
+    content: "Dr. Priya Sharma",
+    font_family: "Inter",
+    font_size: 18,
+    font_weight: 600,
+    line_height: 1.2,
+    letter_spacing: 0,
+    wrap: "wrap",
+    max_lines: null,
+    direction: "ltr",
+    ...(max_height === undefined ? {} : { max_height }),
+    max_width,
+    width: 60,
+    height: 21.6
+  });
+
+  /**
+   * A fake engine whose every `setMeasurements` re-solves the one text node's
+   * box to `nextHeight(callNumber)` — the scripted stand-in for taffy taking
+   * the injected extent.
+   */
+  function scriptedEngine(nextHeight: (call: number) => number): {
+    engine: MeasurementEngine;
+    payloads: TextMeasurement[][];
+  } {
+    const scene = JSON.parse(JSON.stringify(minimalScene)) as Scene;
+    scene.nodes[NODE].computed = {
+      layout_bounds: { x: 24, y: 40, width: 160, height: 28 },
+      render_bounds: { x: 24, y: 40, width: 160, height: 28 }
+    };
+    const payloads: TextMeasurement[][] = [];
+    let call = 0;
+    const engine: MeasurementEngine = {
+      get scene() {
+        return scene;
+      },
+      setMeasurements(measurements: TextMeasurement[]) {
+        payloads.push(measurements);
+        call += 1;
+        const height = nextHeight(call);
+        const computed = scene.nodes[NODE].computed!;
+        computed.layout_bounds.height = height;
+        computed.render_bounds.height = height;
+      }
+    };
+    return { engine, payloads };
+  }
+
+  /** The line pass, keyed on whatever box the engine has solved right now. */
+  const linePass = (scene: Scene): TextMeasurement[] => {
+    const box = scene.nodes[NODE].computed!.layout_bounds;
+    return [record(box.width, box.height), record(box.width)];
+  };
+  const unconstrainedPass = (): TextMeasurement[] => [record(0)];
+
+  it("re-runs the line pass until the solved boxes stop moving", () => {
+    const heights = [100, 90, 80, 80];
+    const { engine, payloads } = scriptedEngine(
+      (call) => heights[Math.min(call - 1, heights.length - 1)]
+    );
+
+    const calls = injectSkiaMeasurements(engine, {
+      unconstrained: unconstrainedPass,
+      lines: linePass
+    });
+
+    // 1 unconstrained + 3 line rounds; the third round changes nothing.
+    expect(calls).toBe(4);
+    expect(payloads).toHaveLength(4);
+    expect(payloads[0]).toHaveLength(1);
+    // The last payload's validate key names the FINAL box, not an earlier one.
+    const last = payloads[3];
+    expect(last).toHaveLength(3);
+    expect(last[1].max_width).toBe(160);
+    expect(last[1].max_height).toBe(80);
+    expect(last[2].max_height).toBeUndefined();
+  });
+
+  it("stops after one line round when nothing moves", () => {
+    const { engine, payloads } = scriptedEngine(() => 100);
+    const calls = injectSkiaMeasurements(engine, {
+      unconstrained: unconstrainedPass,
+      lines: linePass
+    });
+    expect(calls).toBe(2);
+    expect(payloads).toHaveLength(2);
+  });
+
+  it("is bounded when the boxes never settle", () => {
+    const { engine, payloads } = scriptedEngine((call) => 100 + call);
+    const calls = injectSkiaMeasurements(engine, {
+      unconstrained: unconstrainedPass,
+      lines: linePass
+    });
+    expect(calls).toBe(1 + MEASUREMENT_ROUNDS_MAX);
+    expect(payloads).toHaveLength(1 + MEASUREMENT_ROUNDS_MAX);
   });
 });
