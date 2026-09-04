@@ -387,3 +387,30 @@ be sequential, not regex-paired. Luna whole-page had one structural slip in 3 ca
 sections array after section 1). Logo/favicon research done: Google s2 favicons (free, no key),
 DuckDuckGo icons, Brandfetch Logo API (free, client id, 500k/mo, no attribution), logo.dev
 (publishable key, free tier needs attribution for commercial use, 500k/mo). Clearbit logo API dead.
+
+## Addendum 2026-09-04 — display-layer control test RESULTS (`.context/display-layer-control-test/REPORT.md`)
+
+52 page generations (Luna whole / section_min / section_cached ×2 pages ×2 reps; 9 other models
+whole-page), $0.47 generation, ~$9 judging. Decisions:
+- **Per section, in parallel, Luna.** All Luna variants: 0 unsafe leaks, 0 non-verbatim quotes, 0
+  numbers outside payload. Whole-page drifted off-recipe 3–6 cites/page; section_min 0 (physically
+  impossible). Judge within noise at n=2. Per-section Luna typed claim ids into prose (prompt fix).
+  Whole-page fails as a page (1 of 3 Luna smoke calls malformed; nano 1-of-6 sections twice).
+- **No cheaper model passes.** Gemini 2.5 Flash Lite / GPT-5 mini / Llama 4 Maverick leaked unsafe
+  claims into outreach sections; Mistral/GLM/Gemini paraphrased inside quotes; Qwen invented a product
+  claim in a send line; DeepSeek states inferences as facts (84–240 s); GLM 5.3 Flash returned empty
+  on the contact page twice and took 16 min on Insights; nano/mini/qwen/llama 2–2.5 min. Muse Glimmer
+  30B = best cheap model on the contact page only. Muse Spark 1.3 contributor = HTTP 403 `age_18plus`
+  attestation on the OpenRouter account; `--run` fills it in once ticked.
+- **Cost:** Luna $0.004–0.011/page cold, ~$0.004–0.008 warm; ~5¢ per account (overview+insights+5
+  contacts); ~$50 per 1,000 accounts. Cache measured: 76,634/76,649 prefix tokens cached → $0.0251 →
+  $0.0077. Levers: regenerate only changed sections; lazy contact pages; stable prefix; `:batch`.
+- **Upstream defects found:** same fact stored twice with different `outreach_safe` (zaf-110 safe vs
+  zaf-160 unsafe, cocktail hobby) confused every model and the judge; unsafe rows have 3 near-duplicate
+  pairs → do-not-mention lists padded or incomplete. Fix in the claim store, not the prompt.
+- Judge rubric v1 penalised missing sendLine on Insights (not asked there) → re-judged under a
+  page-aware rubric (`judge_v1` kept in results.jsonl).
+- Logo/links: Google s2 favicon endpoint works (free, no key, ~150 ms); Brandfetch Logo API free
+  (client id, 500k/mo, no attribution); logo.dev needs a publishable key and attribution on the free
+  tier for commercial use; Clearbit logo API is dead. Recommend resolving favicons server-side at claim
+  write time and serving from our store.

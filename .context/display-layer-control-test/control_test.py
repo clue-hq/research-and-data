@@ -270,8 +270,9 @@ def run_config(model_key, mode, page, rep):
     model = MODELS[model_key]
     calls = []
     sections = []
-    if mode == "whole":
-        out = call(model, SYSTEM, user_whole(page), label=key.replace("|", "_"))
+    if mode in ("whole", "whole_low"):
+        out = call(model, SYSTEM, user_whole(page), label=key.replace("|", "_"),
+                   reasoning={"effort": "low"} if mode == "whole_low" else None)
         u = usage_of(out); calls.append(u)
         obj = parse_json((out.get("choices") or [{}])[0].get("message", {}).get("content"))
         sections = (obj or {}).get("sections") if isinstance(obj, dict) else None
@@ -483,6 +484,7 @@ def configs():
             cfgs.append(("luna", "whole", page, rep))
             cfgs.append(("luna", "section_min", page, rep))
             cfgs.append(("luna", "section_cached", page, rep))
+            cfgs.append(("luna", "whole_low", page, rep))
             for mk in MODELS:
                 if mk != "luna": cfgs.append((mk, "whole", page, rep))
     return cfgs

@@ -455,6 +455,41 @@
   "j_overall": 6
  },
  {
+  "page": "contact",
+  "model": "luna",
+  "mode": "whole_low",
+  "n": 2,
+  "json_ok": 2,
+  "cost": 0.01,
+  "lat_sum": 21.7,
+  "lat_max": 21.7,
+  "in_tok": 15159,
+  "out_tok": 2439,
+  "cached": 0,
+  "items": 19.5,
+  "words": 1040.5,
+  "no_claim": 0,
+  "bad_ids": 0,
+  "q_bad": 0,
+  "q_tot": 7.5,
+  "n_bad": 0,
+  "n_tot": 9,
+  "leaks": 3,
+  "off_recipe": 5.5,
+  "p1": 0.52,
+  "useline": 1.0,
+  "h2_long": 0,
+  "ids_txt": 0,
+  "fail_secs": 0,
+  "empty_secs": 0,
+  "j_faith": 4,
+  "j_spec": 4,
+  "j_act": 3,
+  "j_clar": 4,
+  "j_struct": 2,
+  "j_overall": 3
+ },
+ {
   "page": "insights",
   "model": "luna",
   "mode": "whole",
@@ -483,11 +518,11 @@
   "fail_secs": 0,
   "empty_secs": 0,
   "j_faith": 4,
-  "j_spec": 4.5,
+  "j_spec": 4,
   "j_act": 3,
-  "j_clar": 4,
-  "j_struct": 3.5,
-  "j_overall": 7
+  "j_clar": 3.5,
+  "j_struct": 2.5,
+  "j_overall": 6
  },
  {
   "page": "insights",
@@ -517,12 +552,12 @@
   "ids_txt": 0,
   "fail_secs": 0,
   "empty_secs": 0,
-  "j_faith": 3.5,
-  "j_spec": 4.5,
-  "j_act": 2.5,
-  "j_clar": 4,
+  "j_faith": 3,
+  "j_spec": 4,
+  "j_act": 3,
+  "j_clar": 3.5,
   "j_struct": 2,
-  "j_overall": 4.5
+  "j_overall": 4
  },
  {
   "page": "insights",
@@ -552,12 +587,12 @@
   "ids_txt": 0,
   "fail_secs": 0,
   "empty_secs": 0,
-  "j_faith": 3.5,
+  "j_faith": 3,
   "j_spec": 4,
   "j_act": 2.5,
-  "j_clar": 3.5,
-  "j_struct": 2,
-  "j_overall": 4
+  "j_clar": 3,
+  "j_struct": 2.5,
+  "j_overall": 3
  },
  {
   "page": "insights",
@@ -589,7 +624,7 @@
   "empty_secs": 0,
   "j_faith": 3.5,
   "j_spec": 5,
-  "j_act": 3.5,
+  "j_act": 4,
   "j_clar": 4,
   "j_struct": 3.5,
   "j_overall": 7
@@ -624,10 +659,10 @@
   "empty_secs": 0,
   "j_faith": 4,
   "j_spec": 4,
-  "j_act": 1.5,
-  "j_clar": 3.5,
-  "j_struct": 2,
-  "j_overall": 3.5
+  "j_act": 3,
+  "j_clar": 4,
+  "j_struct": 2.5,
+  "j_overall": 5.5
  },
  {
   "page": "insights",
@@ -657,10 +692,10 @@
   "ids_txt": 0,
   "fail_secs": 0,
   "empty_secs": 0,
-  "j_faith": 3.5,
-  "j_spec": 2.5,
+  "j_faith": 3,
+  "j_spec": 3,
   "j_act": 2,
-  "j_clar": 2.5,
+  "j_clar": 3.5,
   "j_struct": 1.5,
   "j_overall": 2.5
  },
@@ -694,10 +729,10 @@
   "empty_secs": 0,
   "j_faith": 3,
   "j_spec": 4,
-  "j_act": 2.5,
-  "j_clar": 3.5,
-  "j_struct": 2.5,
-  "j_overall": 4
+  "j_act": 2,
+  "j_clar": 3,
+  "j_struct": 2,
+  "j_overall": 3
  },
  {
   "page": "insights",
@@ -727,12 +762,12 @@
   "ids_txt": 0,
   "fail_secs": 0,
   "empty_secs": 0,
-  "j_faith": 2.5,
-  "j_spec": 3.5,
-  "j_act": 2.5,
+  "j_faith": 3,
+  "j_spec": 4,
+  "j_act": 3,
   "j_clar": 2.5,
   "j_struct": 2,
-  "j_overall": 4
+  "j_overall": 4.5
  },
  {
   "page": "insights",
@@ -798,11 +833,11 @@
   "fail_secs": 0,
   "empty_secs": 0.5,
   "j_faith": 4,
-  "j_spec": 5,
-  "j_act": 2,
+  "j_spec": 3.5,
+  "j_act": 3,
   "j_clar": 3,
-  "j_struct": 2.5,
-  "j_overall": 4
+  "j_struct": 3,
+  "j_overall": 5.5
  },
  {
   "page": "insights",
@@ -833,11 +868,11 @@
   "fail_secs": 0,
   "empty_secs": 0,
   "j_faith": 3,
-  "j_spec": 4,
-  "j_act": 2.5,
-  "j_clar": 3.5,
-  "j_struct": 2,
-  "j_overall": 4.5
+  "j_spec": 4.5,
+  "j_act": 3.5,
+  "j_clar": 4,
+  "j_struct": 2.5,
+  "j_overall": 3.5
  },
  {
   "page": "insights",
@@ -870,9 +905,9 @@
   "j_faith": 4,
   "j_spec": 4.5,
   "j_act": 2.5,
-  "j_clar": 3.5,
+  "j_clar": 2.5,
   "j_struct": 3.5,
-  "j_overall": 5.5
+  "j_overall": 5
  },
  {
   "page": "insights",
@@ -903,10 +938,45 @@
   "fail_secs": 0,
   "empty_secs": 0,
   "j_faith": 4,
-  "j_spec": 5,
+  "j_spec": 4,
   "j_act": 3,
-  "j_clar": 4,
-  "j_struct": 4,
+  "j_clar": 3,
+  "j_struct": 3,
+  "j_overall": 6
+ },
+ {
+  "page": "insights",
+  "model": "luna",
+  "mode": "whole_low",
+  "n": 2,
+  "json_ok": 2,
+  "cost": 0.01,
+  "lat_sum": 24.55,
+  "lat_max": 24.55,
+  "in_tok": 25097,
+  "out_tok": 2958.5,
+  "cached": 12547,
+  "items": 20,
+  "words": 1164,
+  "no_claim": 0,
+  "bad_ids": 0,
+  "q_bad": 0,
+  "q_tot": 11.5,
+  "n_bad": 0,
+  "n_tot": 33.5,
+  "leaks": 0,
+  "off_recipe": 11.5,
+  "p1": 0.44,
+  "useline": null,
+  "h2_long": 0,
+  "ids_txt": 0,
+  "fail_secs": 0,
+  "empty_secs": 0,
+  "j_faith": 4.5,
+  "j_spec": 4,
+  "j_act": 3,
+  "j_clar": 3.5,
+  "j_struct": 2.5,
   "j_overall": 6.5
  }
 ]

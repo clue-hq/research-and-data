@@ -30,7 +30,10 @@ Three questions were asked:
 - **The savings that matter:** regenerate only sections whose cited claims changed (per-section mode
   makes this possible); keep a stable prompt prefix so OpenAI's cache pays (measured: 76,634 of 76,649
   prefix tokens served from cache, $0.0251 → $0.0077); generate contact pages lazily on first open;
-  use the `:batch` endpoints (50% off) for nightly refreshes.
+  use the `:batch` endpoints (50% off) for nightly refreshes. **Do not lower Luna's reasoning effort:**
+  at `effort: low` the contact page leaked unsafe claims into outreach sections in both runs (3 each,
+  against 0 in every default-effort run) and it was not cheaper ($0.0067 vs $0.0044–0.0052). The
+  reasoning budget is what enforces the safety rule.
 - **Two defects belong upstream, not in the prompt:** (a) the same fact stored twice with different
   `outreach_safe` flags (the cocktail hobby: `zaf-110` safe, `zaf-160` unsafe because it adds a Patreon
   detail) confused every model *and* the judge; (b) the eight unsafe rows contain three near-duplicate
@@ -77,12 +80,16 @@ for one.
 | contact | section_cached | r2 | $0.0077 | 5 | 42.0s / 9.4s | 76,649 | 76,634 | 5,150 | 6 | 4 | 5 | 0 | 22 |
 | contact | section_min | r1 | $0.0125 | 5 | 56.4s / 14.3s | 17,260 | 0 | 6,814 | 5 | 4 | 0 | 8 | 23 |
 | contact | section_min | r2 | $0.0081 | 5 | 51.6s / 14.8s | 17,260 | 17,245 | 6,449 | 7 | 4 | 0 | 0 | 23 |
-| insights | whole | r1 | $0.0112 | 1 | 28.6s / 28.6s | 25,097 | 0 | 4,142 | — | — | 3 | 0 | 24 |
-| insights | whole | r2 | $0.0041 | 1 | 20.1s / 20.1s | 25,097 | 25,094 | 3,014 | — | — | 3 | 0 | 22 |
-| insights | section_cached | r1 | $0.0464 | 6 | 68.7s / 17.0s | 151,407 | 0 | 7,162 | — | — | 7 | 19 | 23 |
-| insights | section_cached | r2 | $0.0118 | 6 | 57.0s / 12.7s | 151,407 | 151,389 | 7,273 | — | — | 2 | 36 | 24 |
-| insights | section_min | r1 | $0.0149 | 6 | 66.2s / 14.5s | 20,841 | 0 | 8,077 | — | — | 0 | 14 | 27 |
-| insights | section_min | r2 | $0.0106 | 6 | 63.0s / 12.2s | 20,841 | 20,823 | 8,496 | — | — | 0 | 12 | 27 |
+| contact | whole_low | r1 | $0.0067 | 1 | 22.0s / 22.0s | 15,159 | 0 | 2,441 | 3 | 4 | 6 | 0 | 20 |
+| contact | whole_low | r2 | $0.0067 | 1 | 21.4s / 21.4s | 15,159 | 0 | 2,437 | 3 | 4 | 5 | 0 | 19 |
+| insights | whole | r1 | $0.0112 | 1 | 28.6s / 28.6s | 25,097 | 0 | 4,142 | 5 | 4 | 3 | 0 | 24 |
+| insights | whole | r2 | $0.0041 | 1 | 20.1s / 20.1s | 25,097 | 25,094 | 3,014 | 7 | 4 | 3 | 0 | 22 |
+| insights | section_cached | r1 | $0.0464 | 6 | 68.7s / 17.0s | 151,407 | 0 | 7,162 | 6 | 4 | 7 | 19 | 23 |
+| insights | section_cached | r2 | $0.0118 | 6 | 57.0s / 12.7s | 151,407 | 151,389 | 7,273 | 6 | 4 | 2 | 36 | 24 |
+| insights | section_min | r1 | $0.0149 | 6 | 66.2s / 14.5s | 20,841 | 0 | 8,077 | 6 | 4 | 0 | 14 | 27 |
+| insights | section_min | r2 | $0.0106 | 6 | 63.0s / 12.2s | 20,841 | 20,823 | 8,496 | 4 | 4 | 0 | 12 | 27 |
+| insights | whole_low | r1 | $0.0095 | 1 | 22.2s / 22.2s | 25,097 | 0 | 2,690 | 7 | 5 | 9 | 0 | 20 |
+| insights | whole_low | r2 | $0.0044 | 1 | 26.9s / 26.9s | 25,097 | 25,094 | 3,227 | 6 | 4 | 14 | 0 | 20 |
 
 ### Table B-contact — every model, whole page in one call (mean of 2 runs)
 
@@ -104,17 +111,17 @@ for one.
 
 | model | $/M in / out | cost per page | latency | usable JSON | judge /10 | faith /5 | action /5 | unsafe leaks | quotes not verbatim | numbers not in payload | off-recipe cites | ids typed in prose | items |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| gpt-5.6-luna | 0.20 / 1.20 | $0.0100 | 24s | 2/2 | — | — | — | 0 | 0 / 8 | 0 / 38 | 3 | 0 | 23 |
-| meta/muse-glimmer-30b | 0.30 / 1.10 | $0.0100 | 110s | 2/2 | — | — | — | 0 | 0 / 14 | 0 / 42 | 0.50 | 0 | 21 |
+| glm-5.3-flash | 0.075 / 0.25 | $0.0200 | 960s | 2/2 | 7 | 3.50 | 4 | 0 | 1 / 59 | 0 / 74 | 0.50 | 0 | 25 |
+| gpt-5.6-luna | 0.20 / 1.20 | $0.0100 | 24s | 2/2 | 6 | 4 | 3 | 0 | 0 / 8 | 0 / 38 | 3 | 0 | 23 |
+| meta/muse-glimmer-30b | 0.30 / 1.10 | $0.0100 | 110s | 2/2 | 5.50 | 4 | 3 | 0 | 0 / 14 | 0 / 42 | 0.50 | 0 | 21 |
+| gpt-5-mini | 0.25 / 2.00 | $0.0300 | 139s | 2/2 | 5.50 | 4 | 3 | 0 | 1 / 16 | 0 / 38 | 9.50 | 4 | 24 |
+| mistral-small-2603 | 0.15 / 0.60 | $0.0100 | 19s | 2/2 | 4.50 | 3 | 3 | 0 | 4 / 8 | 0.50 / 40 | 9.50 | 0 | 20 |
+| deepseek-v4-flash | 0.089 / 0.177 | $0.0000 | 239s | 2/2 | 4 | 3 | 3 | 0 | 0 / 8 | 0.50 / 34 | 8 | 0 | 22 |
+| qwen3.7-flash | 0.03 / 0.13 | $0.0000 | 156s | 2/2 | 3.50 | 3 | 3.50 | 0 | 0 / 16 | 0 / 34 | 11 | 0 | 20 |
+| gemini-2.5-flash-lite | 0.10 / 0.40 | $0.0000 | 14s | 2/2 | 3 | 3 | 2.50 | 2.50 | 0.50 / 5 | 0 / 22 | 10.50 | 0 | 22 |
+| llama-4-maverick | 0.20 / 0.70 | $0.0100 | 138s | 2/2 | 3 | 3 | 2 | 0 | 0.50 / 6 | 0 / 28 | 5 | 40.50 | 20 |
+| gpt-5-nano | 0.05 / 0.40 | $0.0100 | 150s | 2/2 | 2.50 | 3 | 2 | 0 | 0 / 1 | 0 / 16 | 2.50 | 0 | 12 |
 | meta/muse-spark-1.3-contributor | 0.10 / 0.20 | $0.0000 | 0s | 0/2 | — | — | — | 0 | 0 / 0 | 0 / 0 | 0 | 0 | 0 |
-| gpt-5-nano | 0.05 / 0.40 | $0.0100 | 150s | 2/2 | — | — | — | 0 | 0 / 1 | 0 / 16 | 2.50 | 0 | 12 |
-| gpt-5-mini | 0.25 / 2.00 | $0.0300 | 139s | 2/2 | — | — | — | 0 | 1 / 16 | 0 / 38 | 9.50 | 4 | 24 |
-| gemini-2.5-flash-lite | 0.10 / 0.40 | $0.0000 | 14s | 2/2 | — | — | — | 2.50 | 0.50 / 5 | 0 / 22 | 10.50 | 0 | 22 |
-| deepseek-v4-flash | 0.089 / 0.177 | $0.0000 | 239s | 2/2 | — | — | — | 0 | 0 / 8 | 0.50 / 34 | 8 | 0 | 22 |
-| qwen3.7-flash | 0.03 / 0.13 | $0.0000 | 156s | 2/2 | — | — | — | 0 | 0 / 16 | 0 / 34 | 11 | 0 | 20 |
-| glm-5.3-flash | 0.075 / 0.25 | $0.0200 | 960s | 2/2 | — | — | — | 0 | 1 / 59 | 0 / 74 | 0.50 | 0 | 25 |
-| mistral-small-2603 | 0.15 / 0.60 | $0.0100 | 19s | 2/2 | — | — | — | 0 | 4 / 8 | 0.50 / 40 | 9.50 | 0 | 20 |
-| llama-4-maverick | 0.20 / 0.70 | $0.0100 | 138s | 2/2 | — | — | — | 0 | 0.50 / 6 | 0 / 28 | 5 | 40.50 | 20 |
 
 ### Table C — the judge's single worst problem per model (contact page, run 2)
 
@@ -129,7 +136,7 @@ for one.
 | mistral-small-2603 | Both 'Angles' items and one 'Openers' item pull from fieldKeys explicitly disallowed for those sections (account.hiring_velocity, account.abm_program_maturity, account.gtm_tooling_stack, contact.facet.self_summary), and a real unsafe fact (the Amex Ventures fu |
 | llama-4-maverick | Nearly every 'problem_now' and 'angles' item ignores the instruction to describe the person's problem and instead inserts generic Clue-pitch filler ('Clue can support this effort by providing account discovery, research...') tagged to claims that don't support |
 
-Spend: generation $0.472 across 52 page runs; judging $6.04.
+Spend: generation $0.499 across 56 page runs; judging $10.19.
 <!-- /TABLES -->
 
 ## 2. Question 1 — per section or whole page?
@@ -143,9 +150,11 @@ What the numbers say (Table A):
   `section_min` that is physically impossible: the model only receives the section's claims. The
   `section_cached` variant, which sees everything, drifted again (2–7).
 - **Judge scores are within noise at n=2:** contact 5.5 (whole) vs 6.0 (section_min) vs 6.5
-  (section_cached); insights roughly level. The judge's repeated complaint about per-section output
-  was repetition across sections (the ABM-req fact appearing in three sections) — the price of sections
-  not seeing each other.
+  (section_cached); insights, page-aware rubric, 6.0 (whole) vs 5.0 (section_min) vs 6.0
+  (section_cached). The one section_min insights run that scored 4 had left every "What it means for
+  us:" line blank in Contact insights — a formatting failure a schema check catches, not a quality
+  ceiling. The judge's repeated complaint about per-section output was repetition across sections (the
+  ABM-req fact appearing in three sections) — the price of sections not seeing each other.
 - **Formatting differed:** per-section Luna typed claim ids into prose (6–36 per page), whole-page never
   did. A one-line prompt fix, but real.
 - **Cost:** whole $0.004–0.011; `section_min` $0.008–0.015; `section_cached` $0.008 warm / $0.025–0.046
@@ -212,9 +221,12 @@ cold-equivalent of ~$0.011. So the levers, in order of what they save:
 5. **Trim the payload:** drop P3 `core.*` boilerplate and truncate long arrays (career histories are
    ~300 tokens each) — the Insights payload is 25k tokens and could be ~15k. Untested here; expected
    30–40% off cold input.
-6. **Reasoning effort:** Luna spent 415–5,237 reasoning tokens per call at default effort. `reasoning:
-   {effort: "low"}` is worth one more run; not measured here because the judge was writing
-   `results.jsonl` at the time.
+6. **Reasoning effort — measured, and rejected.** At `reasoning: {effort: "low"}` Luna used ~110–170
+   reasoning tokens instead of 415–5,237, was *not* cheaper on a cold call ($0.0067 vs $0.0044–0.0052),
+   and on the contact page cited unsafe claims (`zaf-160`, `zaf-135`, `zaf-139`) inside "Why this
+   person", "Their problem right now" and "Openers" in both runs. The judge still gave it 3/10 with
+   faithfulness 4 — the leak is invisible to a reader, which is exactly why the mechanical check exists.
+   Keep the default effort.
 
 And the two upstream fixes from §0: one fact one flag, and dedupe the unsafe near-duplicates in the
 claim store. They cost nothing and remove the single most common judge complaint.
