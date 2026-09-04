@@ -322,9 +322,16 @@ _BRIDGE_V0_TEMPLATE = """
     var owner = ownerNode(el);
     if (!owner) return null;
     var ownerId = owner.getAttribute("data-node-id");
-    var isFragment =
-      owner.hasAttribute("data-fragment-root") ||
-      (el !== owner && !el.hasAttribute("data-node-id"));
+    // Spec 3.1: a structural path exists ONLY inside a clone. `data-fragment-root` —
+    // which the engine stamps on every clone wrapper in editor mode — is the whole
+    // truth here, and deliberately the ONLY test. An earlier draft also pathed any
+    // id-less element under any owner, which caught a `<strong>` inside a vocabulary
+    // text node's rich-text markup and a plain child of a section: those are not in a
+    // clone, so the path would later be resolved against a fragment HTML that does not
+    // exist. A vocabulary node's descendants therefore address as `{nodeId, tag}` with
+    // no path, `labelFor` shows the owner's display name, and `resolveAddress` returns
+    // the owner element.
+    var isFragment = owner.hasAttribute("data-fragment-root");
     var path = isFragment ? elementPath(el, owner) : null;
     var slot = el.getAttribute ? el.getAttribute("data-lumen-slot") : null;
     return {

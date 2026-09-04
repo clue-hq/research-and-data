@@ -84,3 +84,21 @@ def test_names_are_escaped_so_a_label_can_never_close_the_script():
 def test_an_unknown_page_yields_no_names_rather_than_the_wrong_page_s():
     assert _bridge_node_names(_doc(), "pricing", {}) == {}
     assert _bridge_node_names(None, "home", None) == {}
+
+
+def test_only_a_clone_root_gets_a_structural_path():
+    """Spec 3.1: vocabulary nodes have `path` absent.
+
+    `data-fragment-root` — stamped by the engine on every clone wrapper in editor mode —
+    is the whole truth about "am I inside somebody else's markup", and must be the ONLY
+    test. An earlier draft ALSO pathed any id-less element under any owner, which caught
+    a `<strong>` inside a vocabulary text node's rich-text markup and a plain child of a
+    section or container. Those are not inside a clone, so the path travelled downstream
+    and would be resolved against a fragment HTML that does not exist. Asserted at the
+    source level because the branch lives in the injected script, not in Python.
+    """
+    script = render_bridge_script("nonce-12345678", _doc(), "home", fragment_meta={})
+    assert 'var isFragment = owner.hasAttribute("data-fragment-root");' in script
+    assert "var path = isFragment ? elementPath(el, owner) : null;" in script
+    # The retired clause, in the exact shape it had. Its absence is the fix.
+    assert '!el.hasAttribute("data-node-id")' not in script
