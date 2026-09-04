@@ -41,3 +41,17 @@ operations (name "Home", route "/") at base_version 6 → version 7.
 - Two architectural asks queued for a spec: select-and-annotate (extend ad "edit targets" to
   web + per-target comment box) and human text edits on cloned sections (amends D-F3; needs a
   per-node text-override or richer slot value).
+
+## Follow-up (same day): add_page refused by a STALE HELPER BINARY
+After the Page section fix the founder's Add page failed with `unknown variant add_page, expected
+one of insert_node, …, set_page_meta, set_custom_css` — the engine's serde enum as compiled into
+`subsystems/clue-design/target/release/lumen-api-helper` built **Aug 28**, while
+`WebOperation::AddPage/RemovePage` landed **Sep 3** (`e123ae68e`). `scripts/dev_stack.sh` pins
+`LUMEN_CORE_HELPER` to that release binary for the DESIGN API only (the fleet worker leaves it
+empty → `cargo run`, debug profile, rebuilt on demand — which is why agent runs never hit it).
+The wasm handshake stamps only lumen-core, so the stale helper passed (AGENTS.md §1 caveat,
+now bitten a second time). Fix: `cargo build -p lumen-api-helper --release` + stack cycle;
+`LUMEN_CORE_HELPER=` now declared in root/subsystem `.env.example` and `.env` with the rebuild
+rule beside it. **Class fix still open:** a helper-freshness preflight in the design API (compare
+the binary's build stamp against the crates' content hash across the FULL crate graph, refuse
+loudly), or have dev_stack.sh run the release build before `up`.
