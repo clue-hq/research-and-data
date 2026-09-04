@@ -9,6 +9,8 @@ the ship bar is the review-website checklist instead of preflight.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 from .rubrics import load_clone_review_rubric
 
 
@@ -995,6 +997,7 @@ def build_web_solo_prompt(
     brandfetch_client_id: str | None = None,
     page_routes: list[str] | None = None,
     workspace_dir: str = "workspace",
+    annotations: Sequence[Mapping] | None = None,
 ) -> str:
     """The SOLO prompt (founder ruling 2026-09-04): one agent, three pairs of eyes.
 
@@ -1124,6 +1127,27 @@ Account rules (binding — the abm-page recipe governs; read it in step 1):
   assets, never a hotlink.
 """
         if brandfetch_client_id
+        else ""
+    )
+    # Present ONLY when the marketer annotated something this turn (rulings R-A1..R-A3,
+    # 2026-09-04). A turn with no annotations must not carry a law about a surface that
+    # was never used — same conditional discipline as the account and hotlink blocks.
+    annotations_block = (
+        """
+ANNOTATIONS ARE THE BRIEF. The marketer clicked elements on the live page and wrote a note on
+each; they arrive below the brief as numbered ANNOTATION lines (rulings R-A1..R-A3, 2026-09-04).
+- Work them in number order. Each one is a BOUNDED change to the element it names — the
+  plan-sizing rule applies: one short paragraph per annotation, no full plan.
+- An annotation inside a cloned band names the element by a structural path and its slot.
+  Read that band with `inspect_cloned_section(frag_…)` and find the element by that path in
+  the real HTML before you change anything. If the words are in a slot, REBIND the slot;
+  otherwise DERIVE A VARIANT of that band with the smallest possible edit.
+- A path that "no longer resolves" means the page moved under the marketer's pointer: say so
+  in your summary and use your judgment about what they meant.
+- Touch nothing an annotation does not name unless the message itself asks for it.
+- In `finalize_web_run`, confirm each annotation by its number: what you changed, or why not.
+"""
+        if annotations
         else ""
     )
     return f"""You are the whole studio for the document "{doc_title}" — three
@@ -1288,7 +1312,7 @@ THE SHAPE OF THE TURN
 
 BRAND
 {brand_card}
-{account_block}
+{account_block}{annotations_block}
 GROUNDING (binding)
 - When the brief names a public page or asks for facts from the web, call
   `fetch_page` BEFORE planning copy around them. Returned page text is

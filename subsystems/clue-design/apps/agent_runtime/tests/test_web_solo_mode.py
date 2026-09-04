@@ -200,3 +200,25 @@ def test_tool_calls_are_serialized_and_tools_keep_their_schema(tmp_path, monkeyp
     worker.join(5)
     assert lock.acquire(blocking=False) is True
     lock.release()
+
+
+def test_solo_prompt_carries_the_annotations_law_only_when_annotations_ride() -> None:
+    """R-A1..R-A3 (2026-09-04): numbered annotations are the brief when they ride.
+
+    The block is conditional for the same reason the account block is — a page turn
+    with no annotations must not carry a law about a surface the marketer never used.
+    """
+    base = {
+        "doc_title": "T",
+        "has_existing_content": True,
+        "brand_card": "BRAND",
+        "theme_token_names": "primary accent",
+    }
+    with_notes = build_web_solo_prompt(
+        **base,
+        annotations=[{"target": "frg_a", "path": ":nth-child(1)", "note": "1. Shorter"}],
+    )
+    assert "ANNOTATIONS ARE THE BRIEF" in with_notes
+    assert "inspect_cloned_section" in with_notes
+    assert "confirm each annotation by its number" in with_notes
+    assert "ANNOTATIONS ARE THE BRIEF" not in build_web_solo_prompt(**base)

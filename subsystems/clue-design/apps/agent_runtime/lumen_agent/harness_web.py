@@ -524,6 +524,10 @@ def create_web_deepagent(
             # relative "workspace/" resolved there and leaked one brief's plan into the
             # next run (the Ramp run inherited the billing campaign's 380-line plan).
             workspace_dir=workspace_str,
+            # The marketer's numbered annotations (R-A1..R-A3, 2026-09-04): when they ride
+            # the turn, the prompt carries the law for honouring them; when they do not,
+            # the block is absent.
+            annotations=runtime_config.turn_target_notes,
         )
     else:
         system_prompt = build_web_orchestrator_prompt(
