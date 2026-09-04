@@ -52,8 +52,11 @@ never change an existing one) · the shared base branch itself (he never merges 
 
 ## 2. The starter kit — what Aryan hands Shashank before he begins (all of it, once)
 
-1. **The shared base branch, pushed**, with R0 and every plan document on it (`docs/specs/ARV2-MASTER-PLAN.md`,
-   `ARV2-WORK-SPLIT.md`, `ARV2-ROADMAP.md`). Until this is pushed, nothing else can start.
+1. **The shared base, pushed as `origin/install-agent-browser-global`** — the current platform line
+   merged into Shashank's branch, with R0 and every plan document on it (`ARV2-MASTER-PLAN.md`,
+   `ARV2-WORK-SPLIT.md`, `ARV2-AGENT-BRIEFING.md`, `ARV2-GETTING-STARTED-SHASHANK.md`,
+   `ARV2-ROADMAP.md`). Aryan keeps it in sync with the platform line. Until this is pushed, nothing
+   else can start.
 2. **Keys and access:** the Apollo and AI Ark keys rotated; the AI Ark paid tier bought;
    `CLUE_GEMINI_API_KEY`, `CLUE_EXA_API_KEY`, `CLUE_AI_ARK_API_KEY`, `CLUE_OPENROUTER_API_KEY` in his
    local `.env` (never in any artifact); the local Postgres for db-gated tests documented in
