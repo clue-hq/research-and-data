@@ -1,6 +1,6 @@
 # Editor Quality Roadmap — seven defects from the 2026-09-04 Apollo dry run
 
-**Status:** roadmap, founder-ordered 2026-09-04. **Plan 1 DONE 2026-09-04** (`2026-09-04-ingestion-type-units-and-faces.md`, live-proven on the Apollo ad; letter-spacing folded into item A on evidence; italic harvest was already present and is pinned by test). Plans 2–4 not started. Each numbered plan below becomes its own SDD plan
+**Status:** roadmap, founder-ordered 2026-09-04. **Plan 1 DONE 2026-09-04** (`2026-09-04-ingestion-type-units-and-faces.md`, live-proven on the Apollo ad; letter-spacing folded into item A on evidence; italic harvest was already present and is pinned by test). **Plan 2 DONE 2026-09-04** (`2026-09-04-page-first-and-first-batch-canvas.md`; the live proof found and fixed a second blocker for item D: ledgered-but-unstreamed ops broke the stream cursor's contiguity — Task 5). Plans 3–4 not started. Each numbered plan below becomes its own SDD plan
 file when it starts (`docs/superpowers/plans/2026-09-0X-<slug>.md`), implemented by Opus subagents
 with controller review, per the standing rules. This document is the reference the plans argue
 from; it records the verified root causes so no plan re-derives them.
