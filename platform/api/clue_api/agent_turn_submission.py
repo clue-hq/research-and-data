@@ -146,7 +146,7 @@ class AgentTurnSubmissionRow(BaseModel):
 
 
 class SubmissionContextRefRow(BaseModel):
-    """One ordered account/contact ref captured with a human submission."""
+    """One ordered ref captured with a human submission, and the note the human left on it."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -156,6 +156,7 @@ class SubmissionContextRefRow(BaseModel):
     object_type: str
     object_id: str
     object_version: int | None
+    note: str | None = None
 
 
 async def insert_submission(
@@ -225,9 +226,10 @@ async def insert_submission(
             await conn.execute(
                 text(
                     "INSERT INTO agent_turn_submission_context_ref "
-                    "(turn_id, workspace_id, ordinal, object_type, object_id, object_version) "
+                    "(turn_id, workspace_id, ordinal, object_type, object_id, object_version, "
+                    " note) "
                     "VALUES (:turn_id, :workspace_id, :ordinal, :object_type, :object_id, "
-                    " :object_version)"
+                    " :object_version, :note)"
                 ),
                 {
                     "turn_id": turn_id,
@@ -236,6 +238,7 @@ async def insert_submission(
                     "object_type": ref.object_type,
                     "object_id": ref.object_id,
                     "object_version": ref.version,
+                    "note": ref.note,
                 },
             )
         return row, True
@@ -298,7 +301,7 @@ async def submission_context_refs(
             await conn.execute(
                 text(
                     "SELECT turn_id, workspace_id, ordinal, object_type, object_id, "
-                    "object_version FROM agent_turn_submission_context_ref "
+                    "object_version, note FROM agent_turn_submission_context_ref "
                     "WHERE turn_id=:turn_id AND workspace_id=:workspace_id ORDER BY ordinal"
                 ),
                 {"turn_id": turn_id, "workspace_id": workspace_id},
@@ -314,6 +317,7 @@ async def submission_context_refs(
             object_type=item.object_type,
             object_id=item.object_id,
             version=item.object_version,
+            note=item.note,
         )
         for item in receipts
     )
@@ -333,7 +337,7 @@ async def submission_context_refs_for_turns(
         (
             await conn.execute(
                 text(
-                    "SELECT turn_id, ordinal, object_type, object_id, object_version "
+                    "SELECT turn_id, ordinal, object_type, object_id, object_version, note "
                     "FROM agent_turn_submission_context_ref "
                     "WHERE workspace_id=:workspace_id "
                     "AND turn_id=ANY(CAST(:turn_ids AS uuid[])) "
@@ -357,6 +361,7 @@ async def submission_context_refs_for_turns(
                 object_type=str(row["object_type"]),
                 object_id=str(row["object_id"]),
                 version=(None if row["object_version"] is None else int(row["object_version"])),
+                note=(None if row["note"] is None else str(row["note"])),
             )
         )
     return {turn_id: tuple(refs) for turn_id, refs in grouped.items()}

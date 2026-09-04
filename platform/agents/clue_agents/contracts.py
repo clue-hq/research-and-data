@@ -253,12 +253,18 @@ class ArtifactRef(FrozenContract):
 
 
 class DomainObjectRef(FrozenContract):
-    """Typed, scoped reference to domain state owned outside the agent runtime."""
+    """Typed, scoped reference to domain state owned outside the agent runtime.
+
+    ``note`` carries the human's own words about this one reference — the per-element annotation
+    a marketer writes in the web editor. It is human intent about a target, never authority: it
+    selects nothing and grants nothing. Optional, so every existing construction stays valid.
+    """
 
     workspace_id: StableId
     object_type: StableId
     object_id: StableId
     version: int | None = Field(default=None, ge=1)
+    note: str | None = Field(default=None, max_length=2_000)
 
 
 class AgentResourceRef(FrozenContract):
