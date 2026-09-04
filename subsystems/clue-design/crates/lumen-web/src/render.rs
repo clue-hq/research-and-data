@@ -905,7 +905,9 @@ fn render_node(
                 ));
             }
         },
-        WebNodeKind::Fragment { fragment_id, slots } => {
+        WebNodeKind::Fragment {
+            fragment_id, slots, ..
+        } => {
             // The wrapper is the ONLY markup this arm authors. Everything
             // inside it is the artifact's own sanitized HTML, emitted
             // verbatim: the fragment was made safe ONCE, at creation, and
@@ -1601,6 +1603,7 @@ mod tests {
                 kind: WebNodeKind::Fragment {
                     fragment_id: fragment_id.to_owned(),
                     slots,
+                    text_overrides: Default::default(),
                 },
                 classes: "w-full py-12".to_owned(),
                 children: Vec::new(),
@@ -1891,6 +1894,7 @@ mod tests {
                 kind: WebNodeKind::Fragment {
                     fragment_id: fragment_id.to_owned(),
                     slots: Default::default(),
+                    text_overrides: Default::default(),
                 },
                 classes: String::new(),
                 children: Vec::new(),
@@ -1905,6 +1909,7 @@ mod tests {
                 kind: WebNodeKind::Fragment {
                     fragment_id: "frag_fedcba9876543210".to_owned(),
                     slots: Default::default(),
+                    text_overrides: Default::default(),
                 },
                 classes: String::new(),
                 children: Vec::new(),

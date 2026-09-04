@@ -9,8 +9,9 @@
 use crate::derive::web_slot_key_is_valid;
 use crate::doc::{
     calendly_url_is_valid, custom_component_artifact_id_is_valid, custom_component_props_issue,
-    custom_component_slug_is_valid, fragment_id_is_valid, fragment_slots_issue, ButtonAction,
-    EmbedProvider, TextVariant, WebDoc, WebNode, WebNodeKind, WebThemeRef,
+    custom_component_slug_is_valid, fragment_id_is_valid, fragment_override_path_is_valid,
+    fragment_slots_issue, ButtonAction, EmbedProvider, FragmentTextOverride, TextVariant, WebDoc,
+    WebNode, WebNodeKind, WebThemeRef,
 };
 use crate::inline::sanitize_inline;
 use crate::rich_text::RichTextDocument;
@@ -89,6 +90,18 @@ pub enum WebOperation {
         id: NodeId,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         slot_key: Option<SlotKey>,
+    },
+    /// Set (or clear, with a `None` override) the text a human substituted for
+    /// one element inside a cloned section. Ruling R-A6: the ONE interior edit
+    /// a clone allows. Clearing is `None`, which is also the inverse of a first
+    /// write, so undo restores the artifact's own text by removing the entry
+    /// rather than by writing the old string back.
+    SetFragmentTextOverride {
+        page_id: PageId,
+        id: NodeId,
+        path: String,
+        #[serde(rename = "override", default, skip_serializing_if = "Option::is_none")]
+        r#override: Option<FragmentTextOverride>,
     },
     SetText {
         page_id: PageId,
@@ -299,7 +312,9 @@ fn canonicalize_incoming_kind(kind: &mut WebNodeKind) -> Result<(), WebOpError> 
                 ));
             }
         }
-        WebNodeKind::Fragment { fragment_id, slots } => {
+        WebNodeKind::Fragment {
+            fragment_id, slots, ..
+        } => {
             // Both the artifact pin and the slot values are checked here, so
             // InsertNode and SetNodeProps (which routes props through this
             // function) enforce the same bounds: props arriving via an op are
@@ -599,6 +614,25 @@ fn apply_operation_in_place(
             }
             let mut incoming = props.clone();
             canonicalize_incoming_kind(&mut incoming)?;
+            // Text overrides are owned by SetFragmentTextOverride alone — a
+            // props write never touches them. This arm replaces `kind` whole
+            // and an incoming Fragment deserializes its override map to empty
+            // by `#[serde(default)]`, so without this carry every slot-value
+            // write (the agent's bind/rebind, a future inspector) would
+            // silently wipe a human's edits. The incoming map is ignored.
+            if let (
+                WebNodeKind::Fragment {
+                    text_overrides: existing,
+                    ..
+                },
+                WebNodeKind::Fragment {
+                    text_overrides: incoming_overrides,
+                    ..
+                },
+            ) = (&node.kind, &mut incoming)
+            {
+                *incoming_overrides = existing.clone();
+            }
             let previous = std::mem::replace(&mut node.kind, incoming);
             Ok(WebOperation::SetNodeProps {
                 page_id: page_id.clone(),
@@ -631,6 +665,42 @@ fn apply_operation_in_place(
                 page_id: page_id.clone(),
                 id: id.clone(),
                 slot_key: previous,
+            })
+        }
+        WebOperation::SetFragmentTextOverride {
+            page_id,
+            id,
+            path,
+            r#override,
+        } => {
+            // The path is checked before anything is looked up: a key that is
+            // not structural must never reach the arena, whether or not the
+            // page and node it names exist.
+            if !fragment_override_path_is_valid(path) {
+                return Err(WebOpError::new(
+                    "op.override_path_invalid",
+                    format!("override path `{path}` is not a structural path"),
+                ));
+            }
+            let page = require_page_mut(doc, page_id)?;
+            let node = page.nodes.get_mut(id).ok_or_else(|| {
+                WebOpError::new("op.node_missing", format!("node `{id}` not found"))
+            })?;
+            let WebNodeKind::Fragment { text_overrides, .. } = &mut node.kind else {
+                return Err(WebOpError::new(
+                    "op.node_kind_mismatch",
+                    format!("node `{id}` is not a cloned section"),
+                ));
+            };
+            let previous = match r#override {
+                Some(value) => text_overrides.insert(path.clone(), value.clone()),
+                None => text_overrides.remove(path),
+            };
+            Ok(WebOperation::SetFragmentTextOverride {
+                page_id: page_id.clone(),
+                id: id.clone(),
+                path: path.clone(),
+                r#override: previous,
             })
         }
         WebOperation::SetText {
@@ -1190,6 +1260,7 @@ mod tests {
                         crate::doc::FragmentSlotValue::Visible(true),
                     ),
                 ]),
+                text_overrides: BTreeMap::new(),
             },
             classes: "w-full".to_owned(),
             children: Vec::new(),
@@ -1230,6 +1301,7 @@ mod tests {
                             crate::doc::FragmentSlotValue::Visible(false),
                         ),
                     ]),
+                    text_overrides: BTreeMap::new(),
                 },
             },
             WebOperation::SetNodeClasses {
@@ -1288,6 +1360,361 @@ mod tests {
         apply_operations_checked(&mut doc, &edit_inverse).expect("undo edit batch");
         apply_operations_checked(&mut doc, &insert_inverse).expect("undo insert");
         assert_eq!(doc, base);
+    }
+
+    /// A document with one inserted fragment under `stack`, built from the
+    /// same helpers the other fragment tests use so the node ids and the slot
+    /// shape are the real ones.
+    fn doc_with_pinned_fragment() -> WebDoc {
+        let mut doc = fixture_with_logo();
+        apply_operations(
+            &mut doc,
+            &[WebOperation::InsertNode {
+                page_id: page_id(),
+                parent: NodeId::from("stack"),
+                index: 2,
+                nodes: vec![fragment_node("frg_hero", 'a')],
+                root: NodeId::from("frg_hero"),
+            }],
+        )
+        .expect("insert fragment");
+        doc
+    }
+
+    fn text_overrides_of(doc: &WebDoc, id: &str) -> BTreeMap<String, FragmentTextOverride> {
+        let node = doc.pages[0].node(&NodeId::from(id)).expect("node");
+        let WebNodeKind::Fragment { text_overrides, .. } = &node.kind else {
+            panic!("fragment");
+        };
+        text_overrides.clone()
+    }
+
+    #[test]
+    fn set_fragment_text_override_applies_and_inverts() {
+        let base = doc_with_pinned_fragment();
+        let mut doc = base.clone();
+        let set = WebOperation::SetFragmentTextOverride {
+            page_id: page_id(),
+            id: NodeId::from("frg_hero"),
+            path: ":nth-child(1)".to_owned(),
+            r#override: Some(FragmentTextOverride {
+                text: "Shorter".to_owned(),
+                bold: true,
+                italic: false,
+                underline: false,
+                size: Some(1),
+            }),
+        };
+        let inverse = apply_operations(&mut doc, std::slice::from_ref(&set)).expect("applies");
+        let overrides = text_overrides_of(&doc, "frg_hero");
+        assert_eq!(overrides[":nth-child(1)"].text, "Shorter");
+        assert!(overrides[":nth-child(1)"].bold);
+        assert_eq!(overrides[":nth-child(1)"].size, Some(1));
+
+        // The inverse of a FIRST write is a clear, not the old string: before
+        // the edit the artifact's own text was what rendered, and nothing in
+        // the document held it.
+        assert_eq!(
+            inverse,
+            vec![WebOperation::SetFragmentTextOverride {
+                page_id: page_id(),
+                id: NodeId::from("frg_hero"),
+                path: ":nth-child(1)".to_owned(),
+                r#override: None,
+            }]
+        );
+        apply_operations(&mut doc, &inverse).expect("inverse applies");
+        assert!(text_overrides_of(&doc, "frg_hero").is_empty());
+        assert_eq!(doc, base);
+
+        // A SECOND write returns the displaced override, so undo restores the
+        // human's previous edit rather than the artifact's text.
+        let mut doc = base.clone();
+        apply_operations(&mut doc, std::slice::from_ref(&set)).expect("first write");
+        let second = WebOperation::SetFragmentTextOverride {
+            page_id: page_id(),
+            id: NodeId::from("frg_hero"),
+            path: ":nth-child(1)".to_owned(),
+            r#override: Some(FragmentTextOverride {
+                text: "Shorter still".to_owned(),
+                bold: false,
+                italic: true,
+                underline: false,
+                size: None,
+            }),
+        };
+        let inverse = apply_operations(&mut doc, &[second]).expect("second write");
+        assert_eq!(
+            text_overrides_of(&doc, "frg_hero")[":nth-child(1)"].text,
+            "Shorter still"
+        );
+        apply_operations(&mut doc, &inverse).expect("undo second write");
+        let restored = text_overrides_of(&doc, "frg_hero");
+        assert_eq!(restored[":nth-child(1)"].text, "Shorter");
+        assert!(restored[":nth-child(1)"].bold);
+
+        // A clear on a path carrying nothing is a no-op whose inverse is also
+        // a clear — the op is total, not conditional on prior state.
+        let mut doc = base.clone();
+        let inverse = apply_operations(
+            &mut doc,
+            &[WebOperation::SetFragmentTextOverride {
+                page_id: page_id(),
+                id: NodeId::from("frg_hero"),
+                path: ":nth-child(7)".to_owned(),
+                r#override: None,
+            }],
+        )
+        .expect("clear of nothing");
+        assert_eq!(doc, base);
+        assert_eq!(
+            inverse,
+            vec![WebOperation::SetFragmentTextOverride {
+                page_id: page_id(),
+                id: NodeId::from("frg_hero"),
+                path: ":nth-child(7)".to_owned(),
+                r#override: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn set_fragment_text_override_refuses_non_fragments_and_bad_paths() {
+        let base = doc_with_pinned_fragment();
+
+        // The path grammar is checked BEFORE the page and node are looked up,
+        // so a bad path is refused even when it names something real.
+        for bad_path in [
+            "div > h2",
+            ":nth-child(0)",
+            ":nth-child(1) > ",
+            "",
+            ".headline",
+        ] {
+            let mut doc = base.clone();
+            let error = apply_operations(
+                &mut doc,
+                &[WebOperation::SetFragmentTextOverride {
+                    page_id: page_id(),
+                    id: NodeId::from("frg_hero"),
+                    path: bad_path.to_owned(),
+                    r#override: Some(FragmentTextOverride {
+                        text: "x".to_owned(),
+                        bold: false,
+                        italic: false,
+                        underline: false,
+                        size: None,
+                    }),
+                }],
+            )
+            .expect_err("bad override path");
+            assert_eq!(error.code, "op.override_path_invalid", "{bad_path:?}");
+            assert_eq!(doc, base, "rejected op must not mutate");
+        }
+
+        // Only a clone carries overrides. `stack` is a plain container.
+        let mut doc = base.clone();
+        let error = apply_operations(
+            &mut doc,
+            &[WebOperation::SetFragmentTextOverride {
+                page_id: page_id(),
+                id: NodeId::from("stack"),
+                path: ":nth-child(1)".to_owned(),
+                r#override: None,
+            }],
+        )
+        .expect_err("not a fragment");
+        assert_eq!(error.code, "op.node_kind_mismatch");
+        assert_eq!(doc, base, "rejected op must not mutate");
+
+        // A missing node and a missing page are refused by name too.
+        let mut doc = base.clone();
+        let error = apply_operations(
+            &mut doc,
+            &[WebOperation::SetFragmentTextOverride {
+                page_id: page_id(),
+                id: NodeId::from("frg_ghost"),
+                path: ":nth-child(1)".to_owned(),
+                r#override: None,
+            }],
+        )
+        .expect_err("missing node");
+        assert_eq!(error.code, "op.node_missing");
+        let error = apply_operations(
+            &mut doc,
+            &[WebOperation::SetFragmentTextOverride {
+                page_id: PageId::from("ghost"),
+                id: NodeId::from("frg_hero"),
+                path: ":nth-child(1)".to_owned(),
+                r#override: None,
+            }],
+        )
+        .expect_err("missing page");
+        assert_eq!(error.code, "op.page_missing");
+        assert_eq!(doc, base, "rejected op must not mutate");
+    }
+
+    #[test]
+    fn set_node_props_preserves_a_humans_text_overrides() {
+        // Text overrides are owned by SetFragmentTextOverride alone. Every
+        // slot-value writer goes through SetNodeProps, which replaces `kind`
+        // whole; without the carry, the agent rebinding a slot would silently
+        // wipe the human's edit.
+        let mut doc = doc_with_pinned_fragment();
+        apply_operations(
+            &mut doc,
+            &[WebOperation::SetFragmentTextOverride {
+                page_id: page_id(),
+                id: NodeId::from("frg_hero"),
+                path: ":nth-child(1)".to_owned(),
+                r#override: Some(FragmentTextOverride {
+                    text: "Human copy".to_owned(),
+                    bold: true,
+                    italic: false,
+                    underline: false,
+                    size: Some(-1),
+                }),
+            }],
+        )
+        .expect("override");
+        let before = doc.clone();
+
+        let props = WebNodeKind::Fragment {
+            fragment_id: format!("frag_{}", "a".repeat(16)),
+            slots: BTreeMap::from([(
+                "headline".to_owned(),
+                crate::doc::FragmentSlotValue::Text("Agent copy".to_owned()),
+            )]),
+            // The incoming map is empty — as it always is off the wire, where
+            // `text_overrides` is `#[serde(default)]`.
+            text_overrides: BTreeMap::new(),
+        };
+        let inverse = apply_operations(
+            &mut doc,
+            &[WebOperation::SetNodeProps {
+                page_id: page_id(),
+                id: NodeId::from("frg_hero"),
+                props,
+            }],
+        )
+        .expect("props write");
+
+        let node = doc.pages[0]
+            .node(&NodeId::from("frg_hero"))
+            .expect("fragment");
+        let WebNodeKind::Fragment {
+            slots,
+            text_overrides,
+            ..
+        } = &node.kind
+        else {
+            panic!("fragment");
+        };
+        assert_eq!(
+            slots.get("headline"),
+            Some(&crate::doc::FragmentSlotValue::Text(
+                "Agent copy".to_owned()
+            )),
+            "the slot write still lands"
+        );
+        assert_eq!(slots.get("logo"), None, "props replacement is whole-map");
+        assert_eq!(
+            text_overrides[":nth-child(1)"].text, "Human copy",
+            "a props write never touches text overrides"
+        );
+
+        // An incoming map that DOES carry overrides is ignored, not merged.
+        let mut carrying = doc.clone();
+        apply_operations(
+            &mut carrying,
+            &[WebOperation::SetNodeProps {
+                page_id: page_id(),
+                id: NodeId::from("frg_hero"),
+                props: WebNodeKind::Fragment {
+                    fragment_id: format!("frag_{}", "a".repeat(16)),
+                    slots: BTreeMap::new(),
+                    text_overrides: BTreeMap::from([(
+                        ":nth-child(9)".to_owned(),
+                        FragmentTextOverride {
+                            text: "Smuggled".to_owned(),
+                            bold: false,
+                            italic: false,
+                            underline: false,
+                            size: None,
+                        },
+                    )]),
+                },
+            }],
+        )
+        .expect("props write");
+        assert_eq!(
+            text_overrides_of(&carrying, "frg_hero"),
+            text_overrides_of(&doc, "frg_hero")
+        );
+
+        // The inverse is the previous kind, so undo restores both.
+        apply_operations(&mut doc, &inverse).expect("undo props write");
+        assert_eq!(doc, before);
+    }
+
+    #[test]
+    fn set_fragment_text_override_round_trips_on_the_wire() {
+        let op = WebOperation::SetFragmentTextOverride {
+            page_id: page_id(),
+            id: NodeId::from("frg_hero"),
+            path: ":nth-child(1)".to_owned(),
+            r#override: Some(FragmentTextOverride {
+                text: "Shorter".to_owned(),
+                bold: true,
+                italic: false,
+                underline: false,
+                size: Some(1),
+            }),
+        };
+        let value = serde_json::to_value(&op).expect("serialize");
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "kind": "set_fragment_text_override",
+                "page_id": "home",
+                "id": "frg_hero",
+                "path": ":nth-child(1)",
+                "override": {
+                    "text": "Shorter",
+                    "bold": true,
+                    "italic": false,
+                    "underline": false,
+                    "size": 1,
+                },
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<WebOperation>(value).expect("deserialize"),
+            op
+        );
+
+        // A clear: `null` and an absent key both mean None, and None is
+        // written back out without the key at all.
+        let clear = WebOperation::SetFragmentTextOverride {
+            page_id: page_id(),
+            id: NodeId::from("frg_hero"),
+            path: ":nth-child(1)".to_owned(),
+            r#override: None,
+        };
+        let json = serde_json::to_string(&clear).expect("serialize");
+        // The KEY, not the substring: `"override"` also occurs inside the
+        // kind name `set_fragment_text_override`.
+        assert!(!json.contains(r#""override":"#), "{json}");
+        for wire in [
+            r#"{"kind":"set_fragment_text_override","page_id":"home","id":"frg_hero","path":":nth-child(1)"}"#,
+            r#"{"kind":"set_fragment_text_override","page_id":"home","id":"frg_hero","path":":nth-child(1)","override":null}"#,
+        ] {
+            assert_eq!(
+                serde_json::from_str::<WebOperation>(wire).expect("deserialize"),
+                clear,
+                "{wire}"
+            );
+        }
     }
 
     #[test]
@@ -1394,6 +1821,7 @@ mod tests {
                 WebNodeKind::Fragment {
                     fragment_id: "frag_not_hex_at_all".to_owned(),
                     slots: BTreeMap::new(),
+                    text_overrides: BTreeMap::new(),
                 },
                 "op.fragment_id_invalid",
             ),
@@ -1404,6 +1832,7 @@ mod tests {
                         "logo".to_owned(),
                         crate::doc::FragmentSlotValue::Asset("not an asset id".to_owned()),
                     )]),
+                    text_overrides: BTreeMap::new(),
                 },
                 "op.fragment_slots_invalid",
             ),
@@ -1414,6 +1843,7 @@ mod tests {
                         "k".repeat(crate::doc::MAX_FRAGMENT_SLOT_KEY_CHARS + 1),
                         crate::doc::FragmentSlotValue::Visible(true),
                     )]),
+                    text_overrides: BTreeMap::new(),
                 },
                 "op.fragment_slots_invalid",
             ),
@@ -1428,6 +1858,7 @@ mod tests {
                             )
                         })
                         .collect(),
+                    text_overrides: BTreeMap::new(),
                 },
                 "op.fragment_slots_invalid",
             ),
