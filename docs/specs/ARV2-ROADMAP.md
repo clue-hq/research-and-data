@@ -1,4 +1,6 @@
-# ARV2 roadmap — the index (read this first)
+# ARV2 roadmap — the index
+
+**The single authoritative plan is `ARV2-MASTER-PLAN.md`. Read that first; the documents below are its audit trail.**
 
 **Updated 2026-09-04.** One page that says where every plan document lives, what each one decides,
 and where we are. Roles: **Aryan = tech founder** (platform deepagent, onboarding, brand context,
