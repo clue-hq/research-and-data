@@ -1,0 +1,29 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Clue — output-pane loading animation options</title>
+<style>
+@font-face{font-family:"Satoshi";src:url("fonts/satoshi-regular.woff2") format("woff2");font-weight:400}
+@font-face{font-family:"Satoshi";src:url("fonts/satoshi-medium.woff2") format("woff2");font-weight:500}
+body{margin:0;font-family:"Satoshi",Arial,sans-serif;background:#F7F8F8;color:#1F211D;padding:40px;max-width:1100px}
+h1{font-weight:500;font-size:24px;margin:0 0 6px}h2{font-weight:500;font-size:16px;margin:36px 0 12px}
+p{color:#5D625A;font-size:14px;line-height:1.55;margin:0 0 10px}
+.list{display:grid;gap:12px}
+.opt{background:#fff;border:1px solid #E6E8E6;border-radius:12px;padding:16px 18px;display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center}
+.opt b{font-weight:500;font-size:15px}.opt p{margin:4px 0 0}
+.opt a.btn{font-size:13px;font-weight:500;color:#F8F5DC;background:#33372E;border-radius:8px;padding:8px 14px;text-decoration:none;white-space:nowrap}
+.ref{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.ref img{width:100%;border:1px solid #E6E8E6;border-radius:8px;background:#fff}
+a{color:#44483F}
+</style></head><body>
+<h1>Output-pane loading animation — options for Clue</h1>
+<p>While the model generates an artifact (a LinkedIn ad, a landing page, an email), the right-hand output pane is blank. These four self-contained pages show what that pane could do instead. Each opens in a browser, loops until you press <b>Finish generation</b>, then plays the hand-off to the finished artifact. <b>Replay</b> restarts it.</p>
+<div class="list">
+ <div class="opt"><div><b>Option 1 — Assembly</b><p>The three pieces of the Clue mark drift in, lock together, breathe, ease apart, and re-assemble. Behind it a slow "light on paper" drift. Calm, brand-led, no fake progress.</p></div><a class="btn" href="animations/01-assembly.html">Open</a></div>
+ <div class="opt"><div><b>Option 2 — Segments</b><p>Closest to the Play reference: a frosted ghost of the artifact behind, and four brand segments (the three mark pieces plus a slate-teal ring) that pop in one after another, then each idles with its own motion.</p></div><a class="btn" href="animations/02-segments.html">Open</a></div>
+ <div class="opt"><div><b>Option 3 — Blueprint</b><p>The card becomes a wireframe of the artifact being made. Blocks draw in and fill as each generation step completes; a mark-shaped spinner and a step list say what is happening now. Most informative; shape changes per artifact type.</p></div><a class="btn" href="animations/03-blueprint.html">Open</a></div>
+ <div class="opt"><div><b>Option 4 — Develop</b><p>The artifact develops like a photograph: blurred and washed out at first, sharpening a notch per step, while a crescent progress arc grows around the mark. Progress-aware; the marketer feels it getting closer.</p></div><a class="btn" href="animations/04-develop.html">Open</a></div>
+</div>
+<h2>Logo files</h2>
+<p>Five standalone SVGs of the current production mark and lockup, in a <a href="logos/index.html">gallery page</a>.</p>
+<h2>Reference — what Play does</h2>
+<p>Frames from the recording. The previous page is blurred and desaturated, four 3D toys pop in one by one and idle, "Loading preview…" shimmers, then the blur clears and the new page fades in.</p>
+<div class="ref"><img src="reference/play-t0.7s.png"><img src="reference/play-t3.0s.png"><img src="reference/play-t5.4s.png"></div>
+<p style="margin-top:10px">Frame-by-frame of the pop-in, 6 fps: <a href="reference/play-glyph-stagger-6fps.png">play-glyph-stagger-6fps.png</a>. Today's Clue output pane: <a href="reference/clue-output-pane-today.png">clue-output-pane-today.png</a>.</p>
+</body></html>
