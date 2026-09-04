@@ -302,3 +302,9 @@ turn (97s for a one-section change — a "small edit → short plan" rule would 
 this variant IS a lineage successor of `frag_90b5f22c…` (a run-3 raw composition, itself
 Ramp-specific), which is fine — but it means the library-pollution question above now has a
 3-deep Ramp lineage in it.
+
+Follow-up shipped (`0cb70f806`): the solo prompt's plan step now SIZES THE PLAN TO THE CHANGE —
+full plan only for a new page/rebuild; a bounded edit gets one short paragraph per touched
+section (brief words verbatim, rung + why lower rungs cannot, imagery decision, one proving
+check) and "untouched" for the rest. Pinned in `test_web_solo_mode.py`. Needs a fleet-worker
+restart to take effect (prompt is built in-process).
