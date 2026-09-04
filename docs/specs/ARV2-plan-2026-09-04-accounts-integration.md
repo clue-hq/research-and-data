@@ -140,8 +140,17 @@ generic `fieldKey` rendering exists only for `customFields`. Record this as a ru
 
 - **`display_block` table (one migration, alongside `signal_priority` + `outreach_safe`):**
   `(workspace_id, subject_kind account|contact, subject_id, page, section_key, body_json, cited_claim_ids[],
-  model, prompt_version, generated_at, superseded_at)`; regenerate a section when any cited claim is
-  superseded; lazy generation for P2/P3 contacts; `:batch` for nightly.
+  model, prompt_version, generated_at, superseded_at)`.
+  **Generation policy (founder ruling 2026-09-04):** a section is generated **once, on the first
+  request** for that page/subject (lazy — an unopened contact page costs nothing; the first open
+  waits ~15 s for the parallel section calls), then **persisted and served as-is on every later
+  visit**. It is regenerated **only on invalidation, and only the affected sections**. Invalidation
+  is **recipe-scoped, not cited-claim-scoped**: a section is stale when any claim for that subject
+  whose `field_key` is in the section's recipe is added, superseded, or has its `outreach_safe`
+  flag changed — or when the recipe/prompt version changes (cited-claim-only invalidation would
+  miss a brand-new matching claim). On invalidation, serve the persisted block and regenerate in the
+  background (stale-while-regenerating), swapping the new row in when it lands. No scheduled
+  regeneration; `:batch` only for an accumulated invalidated set.
 - **Section recipes as config** (registry-backed rows): `(page, section_key, h1, order, allowed_field_keys[],
   restricted, default_open, instruction_version)` seeded from the spec module's recipe table (README §2).
 - **The Luna section runner:** stable prefix (system + client context + claims) / section suffix;
