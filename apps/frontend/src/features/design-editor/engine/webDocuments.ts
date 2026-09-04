@@ -275,6 +275,9 @@ export interface LoadedWebDocument {
    * for — both null on a plain (non-derived) web doc. */
   templateDocumentId: string | null;
   accountId: string | null;
+  /** Task 1/2: registry facts for pinned fragments, keyed by fragment_id. `{}` when the
+   * API did not send any (older API) — names then fall back to "Cloned section". */
+  fragmentMeta: Record<string, { label: string | null; section_role: string | null }>;
 }
 
 /** Pull the human-facing message off a non-2xx response. FastAPI returns
@@ -371,6 +374,19 @@ export async function fetchWebDocument(
     template_document_id?: unknown;
     account_id?: unknown;
   };
+  const rawMeta = (payload as { fragment_meta?: unknown }).fragment_meta;
+  const fragmentMeta: LoadedWebDocument["fragmentMeta"] = {};
+  if (rawMeta && typeof rawMeta === "object") {
+    for (const [id, value] of Object.entries(rawMeta as Record<string, unknown>)) {
+      if (value && typeof value === "object") {
+        const v = value as { label?: unknown; section_role?: unknown };
+        fragmentMeta[id] = {
+          label: typeof v.label === "string" ? v.label : null,
+          section_role: typeof v.section_role === "string" ? v.section_role : null,
+        };
+      }
+    }
+  }
   return {
     documentId: typeof payload.id === "string" ? payload.id : documentId,
     docKind: typeof payload.doc_kind === "string" ? payload.doc_kind : "scene",
@@ -384,7 +400,8 @@ export async function fetchWebDocument(
     isTemplate: payload.is_template === true || payload.is_template === 1,
     templateDocumentId:
       typeof payload.template_document_id === "string" ? payload.template_document_id : null,
-    accountId: typeof payload.account_id === "string" ? payload.account_id : null
+    accountId: typeof payload.account_id === "string" ? payload.account_id : null,
+    fragmentMeta
   };
 }
 

@@ -1,4 +1,5 @@
 import type { WebNode } from "../engine/webDocuments";
+import { displayNameForNode, type FragmentMetaMap } from "./node-names";
 
 /**
  * W2.3: layer rows from the real document node hierarchy, replacing the
@@ -52,15 +53,10 @@ function iconFor(node: WebNode): WebLayerIcon {
   return KIND_TO_ICON[node.kind] ?? "div";
 }
 
-function labelFor(node: WebNode): string {
-  return typeof node.name === "string" && node.name.length > 0
-    ? node.name
-    : node.id;
-}
-
 export function buildWebLayerRows(
   page: WebLayerPage,
   activeNodeId: string | null,
+  fragmentMeta?: FragmentMetaMap,
 ): WebLayerRow[] {
   const root = page.nodes[page.page_root];
   if (!root) return [];
@@ -74,7 +70,7 @@ export function buildWebLayerRows(
       depth: 0,
       expandable: childIds.length > 0,
       icon: iconFor(top),
-      label: labelFor(top),
+      label: displayNameForNode(top, page.nodes, fragmentMeta),
       nodeId: top.id,
       parentId: null,
     });
@@ -86,7 +82,7 @@ export function buildWebLayerRows(
         // Ruling 41: depth-1 subtrees never render, so nothing to expand.
         expandable: false,
         icon: iconFor(child),
-        label: labelFor(child),
+        label: displayNameForNode(child, page.nodes, fragmentMeta),
         nodeId: child.id,
         parentId: top.id,
       });

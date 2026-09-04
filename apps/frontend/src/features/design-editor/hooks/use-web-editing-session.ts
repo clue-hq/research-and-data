@@ -338,6 +338,7 @@ export function useWebEditingSession({
       ? buildWebLayerRows(
           { nodes: page.nodes, page_root: page.root },
           webSelection.selection?.node.id ?? null,
+          webSelection.document?.fragmentMeta,
         )
       : undefined;
 
