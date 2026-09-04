@@ -308,3 +308,24 @@ full plan only for a new page/rebuild; a bounded edit gets one short paragraph p
 section (brief words verbatim, rung + why lower rungs cannot, imagery decision, one proving
 check) and "untouched" for the rest. Pinned in `test_web_solo_mode.py`. Needs a fleet-worker
 restart to take effect (prompt is built in-process).
+
+## Multi-page turn: fill a hand-added /issuing page + one home link (2026-09-04 14:14 IST) — ACCEPTED in 20.7 min
+
+Run `run_7b137c26991b4bdebac5dac6ce1fe8dd`. Founder added the page from the (repaired) inspector
+Page section (doc v8), then briefed: fill /issuing (7 sections, Issuing-only proof facts, same
+header/close/footer as home) and change ONE thing on home (a secondary hero link to /issuing).
+Wall 1241s, model 1189s over 47 calls, 2 compactions, zero transient errors; committed → doc v9,
+both pages 7 sections. Longest call 190s = the full plan (10.7k tokens) — correct per the
+plan-sizing rule (a NEW page gets the full plan; the home change got the bounded paragraph).
+Behaviour: `list_pages` on call 2; `switch_page` to issuing BEFORE the assemble; 7 clones pinned
+in one call (home's header/hero/proof/session/close/footer + the why band as the levers'
+ancestor); hero and proof handled by REBIND alone; two DERIVE-VARIANTs (levers, session);
+provenance cited on stripe.com/issuing + the earn-revenue guide + docs (the "$1 or $1M same APIs"
+stat traces to the issuing page copy); switched back to home, derived a hero variant for the
+link (first side-by-side, then restacked under the CTA after its own render check); home ops =
+2 remove + 2 insert on the hero only — verified in the final render. Pins render exact fragment
+bytes (no lineage resolution at render), so the home hero variant did not leak into /issuing's
+pinned hero; the agent inspected that itself (Amendment 3).
+Residual to watch: the raw-lane repair of a non-variant lineage still releases as a successor
+("future pins of those lineages may resolve to the last repair") — the library-pollution
+ruling above now has a 4-deep Ramp lineage in it.
