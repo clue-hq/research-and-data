@@ -102,3 +102,62 @@ Gate residuals (all pre-existing, verified at the pre-slice commit): compiler te
 ingestion tests are not hermetic — a real OpenRouter key in `.env` activates the brand-brief agent
 and the live model call exceeds the 60s job timeout (pass with the key blanked); three trio tests
 fail only under LUMEN_AGENT_WEB_SOLO=1. See the SDD ledger for detail.
+
+## Slice 2 — Task 5 (bridge: hover chip, `annotate`, badges) — landed `d28b94402`
+Files: `subsystems/clue-design/apps/api/lumen_api/web_bridge.py` (+ new
+`apps/api/tests/test_web_bridge_annotations.py`), the `/web/render` bridge branch in
+`main.py`, and one attribute in `crates/lumen-web/src/render.rs`.
+
+- **Python.** New `_bridge_node_names(web_doc, page_id, fragment_meta=None)` — the display
+  name of EVERY node on the rendered page, via the shared `main._web_node_label` (imported
+  lazily inside the function; a module-level import is a cycle). A node with nothing cheap
+  to say falls back to its capitalised kind, so the chip says "Container" rather than the
+  script's own fallback "div". Unknown `page_id` returns `{}` — deliberately NOT
+  `_bridge_page_capabilities`' fall-back-to-first-page, because a name map for the wrong
+  page puts the wrong words on the wrong band. `render_bridge_script` gained a
+  `fragment_meta` kwarg and substitutes `__LUMEN_NODE_NAMES__` through `_script_json`.
+  The render route passes `fragment_meta_for_document(document, repo.list_web_fragments())`
+  — the same call the GET route makes — only when `bridge=1`.
+- **Script (template v11).** Every element is hoverable now, not only `[data-node-id]`
+  ones: a hover box + name chip (`isBridgeEl`/`ownerNode`/`elementPath`/`addressOf`/
+  `labelFor`/`showHover`/`hideHover`). Click still `setSelected`s the OWNING node and
+  additionally posts `{type:"annotate", address:{nodeId,path?,slot?,tag}, name, geometry,
+  textLike}`. Inbound `{type:"annotations", items:[{address,n}]}` draws numbered badges via
+  `resolveAddress` (a true inverse of `addressOf`, same bridge-chrome exclusion);
+  `items:[]` clears. `lastAnnotations` is re-rendered on scroll/resize.
+- **Engine.** The Fragment arm's real wrapper emits `data-fragment-root="true"` under
+  exactly `node_attr`'s condition (`editor && !suppress_node_ids`) so the bridge can tell a
+  clone root from a vocabulary node. NOT emitted on the unresolved-pin placeholder branch
+  (engine-authored markup, nothing to address by path). The existing exact-wrapper-string
+  test had to grow the attribute; a new test pins editor-yes / delivery-no.
+- **Brief defects found and fixed, worth remembering:** (a) the brief's step-1 test and its
+  step-3 implementation contradicted each other — the impl maps every node so the fixture's
+  `root` yields "Container", the expected dict omitted it; kept the impl, amended the test.
+  (b) the brief's escaping assertion was a tautology (`script.split(...)[-1][:0]` is `""`),
+  replaced with a real one that plants `</script><img src=x>` as a node name.
+- **Live verification** (headless `browse`; note `$B frame` does NOT exist in the installed
+  build — use Playwright's `iframe >> internal:control=enter-frame >> <sel>`): chip reads
+  `h1 · headline` on a clone's headline; a real `annotate` message was captured in the shell
+  with path `:nth-child(1) > :nth-child(1) > :nth-child(2) > :nth-child(2)`; posting
+  `annotations` back drew badge 1 on the h1 (path-resolved) and badge 2 on the whole hero
+  band (node-resolved); `items:[]` cleared both. Screenshots `/tmp/task5-{hover,badges,cleared}.png`.
+  NOT photographed: the band-name chip variant (`labelFor`'s no-path branch) — `browse` can
+  only hover an element CENTRE and every band's wrapper is fully covered by a full-bleed
+  child, and the sandboxed iframe cannot be scripted from the parent. Hover the gap between
+  two bands by hand to close it.
+- **Gate.** `cargo test --workspace` 0 failures; `cargo build -p lumen-api-helper --release`;
+  wasm rebuild + `HANDSHAKE OK` (`2f8c4edaf3b6` both sides, unchanged — lumen-core untouched,
+  tracked wasm artifacts unmodified); the four brief suites 51 passed; 9 adjacent
+  fragment/render suites 169 passed; `agent_runtime/test_web_fragment_preview.py` 11 passed;
+  stack restarted from the repo root. Ruff: `web_bridge.py` back at its 4-E501 baseline
+  (long CSS wrapped), `main.py` 398 before and after.
+- **New pre-existing residual, proven not argued:** the full `apps/api` suite fails 4 tests in
+  `test_api.py` (`test_w14_model_not_found_404_…`, `test_w17a_text_only_…`,
+  `test_w17b_aspect_ratio_…`, `test_w17b_result_reports_…`). All four fail identically at the
+  base commit `6527f298f` in a throwaway worktree — same class as the recorded non-hermetic
+  residual: a real `OPENROUTER_API_KEY` in `.env` makes the image route perform live calls.
+- **Residuals for later:** `lumen-hover` is now vestigial (nothing adds the class; comment
+  left at the CSS rule); badges do not follow a reflow that is neither scroll nor resize, so
+  the shell should re-post after a mutation (Task 6 owns the payload); `elementPath` is
+  positional, so a structural edit inside a clone invalidates an address and
+  `renderAnnotations` silently skips it (the safe direction).
