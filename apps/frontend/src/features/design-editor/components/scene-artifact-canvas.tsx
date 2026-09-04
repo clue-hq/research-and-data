@@ -2200,6 +2200,14 @@ function SceneEngineBanners({
  * would select, not a thing you can grab. It carries its own
  * `data-scene-hover-outline` attribute so the two overlays stay separately
  * readable.
+ *
+ * Plan 4 item F (ruling R5) adds the dashed FRAME: when the selected text's
+ * painted lines do not fill its layout box, the outline carries that box too.
+ * It is stroked dashed, it is what the handles ride (a resize changes the box,
+ * not the glyphs), and it is the rotation pivot — so the chrome says "this is
+ * the text, and this is the box around it" in one read. Never on hover: a
+ * hover preview answers "what would a click select", and two boxes there would
+ * be noise over a node the user has not chosen yet.
  */
 function SelectionChrome({
   handles = false,
@@ -2215,6 +2223,10 @@ function SelectionChrome({
     return null;
   }
   const hover = variant === "hover";
+  // Plan 4 item F: the box the chrome pivots on and hangs its handles from —
+  // the dashed layout frame when a text selection has one, the outline itself
+  // otherwise. The hover variant never draws a frame, so it never has one.
+  const pivot = outline.frame ?? outline;
   return (
     <svg
       aria-hidden="true"
@@ -2225,7 +2237,7 @@ function SelectionChrome({
       <g
         transform={
           outline.rotation
-            ? `rotate(${outline.rotation} ${outline.x} ${outline.y})`
+            ? `rotate(${outline.rotation} ${pivot.x} ${pivot.y})`
             : undefined
         }
       >
@@ -2239,8 +2251,24 @@ function SelectionChrome({
           x={outline.x}
           y={outline.y}
         />
+        {outline.frame && !hover ? (
+          // Plan 4 item F: the layout box of a text node whose painted lines
+          // do not fill it — dashed, so the eye reads "the box you can
+          // resize" apart from "the text you selected". Never on hover.
+          <rect
+            data-scene-selection-frame={outline.nodeId}
+            fill="none"
+            height={outline.frame.height}
+            stroke={SELECTION_OUTLINE_COLOR}
+            strokeDasharray="4 3"
+            strokeWidth={HOVER_OUTLINE_WIDTH}
+            width={outline.frame.width}
+            x={outline.frame.x}
+            y={outline.frame.y}
+          />
+        ) : null}
         {handles && !hover
-          ? selectionHandleRects(outline).map((handle) => (
+          ? selectionHandleRects(pivot).map((handle) => (
               <rect
                 fill={SELECTION_HANDLE_FILL}
                 height={handle.size}

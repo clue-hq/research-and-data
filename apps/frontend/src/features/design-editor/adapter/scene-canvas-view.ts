@@ -2,6 +2,7 @@ import { DESIGN_PUBLIC_BFF_PREFIX } from "../data/design-bff";
 import type { DrawNode } from "../engine/scene/canvaskit/drawDescriptors";
 import type {
   AssetRecord,
+  Node,
   NodeId,
   Page,
   PageId,
@@ -696,6 +697,65 @@ export interface SceneSelectionOutline {
    * rotates a node about (`drawDescriptors`: translate to the origin, then
    * `rotate(rotation, 0, 0)`). */
   rotation: number;
+  /** Plan 4 item F: for a text node whose layout box differs from its painted
+   * lines, the layout box — drawn dashed, and where the resize handles sit
+   * (a resize changes the BOX). Null for every other selection, for a hug box,
+   * and during a gesture preview (the preview IS the box). Screen px, like
+   * the outline itself; rotation pivots on its origin when present. */
+  frame: { x: number; y: number; width: number; height: number } | null;
+}
+
+/** Plan 4 item F: the layout box may differ from the painted box by taffy's
+ * whole-pixel rounding (a hug box sits up to half a pixel under the measured
+ * height — `layout.rs` ROUNDING_TOLERANCE); only a larger difference is a
+ * fixed size worth a frame. Scene units. */
+const TEXT_FRAME_TOLERANCE = 0.5;
+
+/**
+ * The union of a text node's PAINTED line boxes (page space, unrotated — the
+ * frame `layout_bounds` is in), or null when the node is not text or carries
+ * no positive-area line (a stored scene, an engine that predates the lines, an
+ * empty string).
+ *
+ * This is what a text selection outlines: the glyphs, not the box the author
+ * typed. A fixed box the copy does not fill outlined empty space, and a glyph
+ * painted past a box the copy outgrew was outlined nowhere near where it sits.
+ */
+export function sceneTextPaintedBox(node: Node): Box | null {
+  if (node.kind.kind !== "text") {
+    return null;
+  }
+  let left = Number.POSITIVE_INFINITY;
+  let top = Number.POSITIVE_INFINITY;
+  let right = Number.NEGATIVE_INFINITY;
+  let bottom = Number.NEGATIVE_INFINITY;
+  for (const line of node.computed?.text_lines ?? []) {
+    if (!(line.width > 0) || !(line.height > 0)) {
+      continue;
+    }
+    left = Math.min(left, line.x);
+    top = Math.min(top, line.y);
+    right = Math.max(right, line.x + line.width);
+    bottom = Math.max(bottom, line.y + line.height);
+  }
+  if (!Number.isFinite(left) || !Number.isFinite(top)) {
+    return null;
+  }
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+/** Plan 4 item F: does the layout box stand apart from the painted glyphs by
+ * more than the rounding contract — i.e. is there a box worth drawing dashed
+ * alongside the text? Both boxes are page-space scene units. */
+export function sceneTextFrameDiffers(layout: Box, painted: Box): boolean {
+  return (
+    Math.abs(layout.x - painted.x) > TEXT_FRAME_TOLERANCE ||
+    Math.abs(layout.y - painted.y) > TEXT_FRAME_TOLERANCE ||
+    Math.abs(layout.x + layout.width - (painted.x + painted.width)) >
+      TEXT_FRAME_TOLERANCE ||
+    Math.abs(layout.y + layout.height - (painted.y + painted.height)) >
+      TEXT_FRAME_TOLERANCE
+  );
 }
 
 /**
@@ -757,6 +817,9 @@ export function selectionOutlineForBox({
     width: screen.width,
     height: screen.height,
     rotation: Number.isFinite(rotation) ? rotation : 0,
+    // Plan 4 item F: one box in, one box out. The dashed layout frame is a
+    // TEXT selection's second box, so it is `sceneSelectionOutline`'s to add.
+    frame: null,
   };
 }
 
@@ -777,6 +840,12 @@ export function selectionOutlineForBox({
  * click can select anything at all — AD2.5) the geometry is there; without it
  * there is no outline rather than a box guessed from `transform`, which for an
  * auto-laid-out child would be drawn somewhere the node is not.
+ *
+ * Plan 4 item F (ruling R5): for a TEXT node the engine has placed lines for,
+ * the stroked box is the union of those painted lines and the layout box rides
+ * along as `frame` when the two differ. The chrome model's box is untouched —
+ * gesture geometry stays the layout box, because that is what a drag or a
+ * resize changes.
  */
 export function sceneSelectionOutline({
   artboard,
@@ -820,13 +889,46 @@ export function sceneSelectionOutline({
   if (!selectionBox) {
     return null;
   }
-  return selectionOutlineForBox({
+  // Plan 4 item F (ruling R5): a text node is outlined by the glyphs it paints.
+  // `selectionBox.box` stays the layout box everywhere else — it is the gesture
+  // box, and a resize changes the BOX — so the painted union is only ever the
+  // stroke, with the layout box returned alongside it as the dashed frame.
+  const node = scene.nodes[selectedNodeId];
+  const painted = node ? sceneTextPaintedBox(node) : null;
+  if (!painted) {
+    return selectionOutlineForBox({
+      artboard,
+      box: selectionBox.box,
+      nodeId: selectionBox.nodeId,
+      rotation: selectionBox.rotation,
+      viewport,
+    });
+  }
+  const outline = selectionOutlineForBox({
     artboard,
-    box: selectionBox.box,
+    box: painted,
     nodeId: selectionBox.nodeId,
     rotation: selectionBox.rotation,
     viewport,
   });
+  if (!outline) {
+    return null;
+  }
+  const frame = sceneTextFrameDiffers(selectionBox.box, painted)
+    ? selectionOutlineForBox({
+        artboard,
+        box: selectionBox.box,
+        nodeId: selectionBox.nodeId,
+        rotation: selectionBox.rotation,
+        viewport,
+      })
+    : null;
+  return {
+    ...outline,
+    frame: frame
+      ? { x: frame.x, y: frame.y, width: frame.width, height: frame.height }
+      : null,
+  };
 }
 
 /** A descriptor-px box back in the scene units `selectionOutlineForBox` takes
@@ -849,10 +951,17 @@ function sceneBoxFromDescriptor(box: Box, unitScale: number): Box {
  *
  * G-A-approved geometry, **rendered since AD4.C** (see the handle constants
  * above).
+ *
+ * Plan 4 item F: any box, not only the outline itself — a text selection whose
+ * stroke is its painted lines hands its dashed `frame` here instead, since the
+ * box is what a resize changes.
  */
-export function selectionHandleRects(
-  outline: SceneSelectionOutline,
-): Array<{ x: number; y: number; size: number }> {
+export function selectionHandleRects(outline: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): Array<{ x: number; y: number; size: number }> {
   const half = SELECTION_HANDLE_SIZE / 2;
   const right = outline.x + outline.width;
   const bottom = outline.y + outline.height;
