@@ -34,6 +34,8 @@ mid-run: `knowledge/design/layout-recipes` (the six-archetype canon),
   1080 × 1080 pt. Give the root artboard `pad(96) s(fill,fill) clip(true)`.
   The validated margin is 96pt. **64pt is the hard safe-margin floor.** The
   content column between the default margins is 888pt wide.
+  Author it in your FIRST compile, before any imagery or logo — a pageless
+  scene registers nothing.
 - One ad = one audience, one promise, one ask. Kill every secondary message.
 - Brand adherence: **strict** = kit tokens/faces/assets only · **balanced** = kit
   defaults + limited complementary accents · **loose** = brand-inspired, kit

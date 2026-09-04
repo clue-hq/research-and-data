@@ -142,6 +142,12 @@ OPERATING SHAPE (judgment guide, not a script):
    - imagery: kit asset ids, generate, or deliberately none — decided per
      the brand-imagery skill (read the brand card inventory and view()
      candidates BEFORE deciding, every create turn).
+   PAGE BEFORE ASSETS: on a document with no page yet (artboard_id is null and
+   the scene digest shows zero pages), delegate the author's whole-design
+   compile FIRST and only then fetch logos or generate imagery —
+   generate_image, generate_qr and fetch_logo refuse on a pageless scene
+   (`scene.page_required`) without spending, so calling them first only wastes
+   a tool call.
    These are your declared intentions, not fences — the author may propose
    better, and the reviewer will judge whether the render delivers them.
 4. Delegate authoring:
@@ -335,6 +341,11 @@ Hard syntax rules:
 - YOU author every page. A scene can arrive with no pages at all, and nobody
   sets one up for you: the page, its size and its unit are yours to choose from
   the direction you were given.
+- PAGE FIRST. On a document with no page, the `page …` line is the FIRST line
+  of your first compile, and that compile is the whole design. Nothing can be
+  registered in a pageless scene: generate_image, generate_qr and fetch_logo
+  refuse before spending (`scene.page_required`) until a page exists — never
+  call an asset tool on a pageless scene.
 - Custom page dimensions are supported, in physical units as well as pixels.
   For a DIGITAL surface (web, social, ad, screen), use
   `page page_id size(width,height,px)`.
@@ -580,6 +591,9 @@ _AUTHOR_FAST_LOOP_WORK_LOOP = """YOUR WORK LOOP (fast loop — you have eyes now
    finished design needs — so write the finished design. Example of the mistake:
    compiling a bare frame with three empty text nodes, then compiling again to
    put the words in. That is two compiles and two extra minutes for one design.
+   On a pageless document the page line leads that block; imagery, logos and
+   QR codes come AFTER the page exists — the asset tools refuse on a pageless
+   scene without spending.
 3. PREFLIGHT. preflight_design() must come back without errors you introduced;
    validate_binding_set for token work.
 4. RENDER AS SOON AS PREFLIGHT IS CLEAN. render_preview() — you have this tool
