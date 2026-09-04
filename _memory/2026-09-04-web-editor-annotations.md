@@ -168,3 +168,26 @@ Files: `subsystems/clue-design/apps/api/lumen_api/web_bridge.py` (+ new
   the shell should re-post after a mutation (Task 6 owns the payload); `elementPath` is
   positional, so a structural edit inside a clone invalidates an address and
   `renderAnnotations` silently skips it (the safe direction).
+
+### Fix round 1 (review) — `0dca9621f`
+`addressOf`'s `isFragment` also treated any id-less element under any owner as
+fragment-like (`el !== owner && !el.hasAttribute("data-node-id")`), so a `<strong>` in a
+vocabulary text node's rich-text markup, or a plain child of a section/container, got a
+structural path that nothing downstream could resolve (it would be looked up against a
+fragment HTML that does not exist). Spec 3.1: vocabulary nodes have `path` absent. Now
+`var isFragment = owner.hasAttribute("data-fragment-root");` and nothing else — the
+engine stamps that on every clone wrapper in editor mode, so it is the whole truth.
+Consequence kept: an id-less element under a vocabulary node addresses as
+`{nodeId, tag}`, `labelFor` shows the owner's display name, `resolveAddress` returns the
+owner. Pinned by a SOURCE-LEVEL test (the branch lives in the injected script):
+`test_only_a_clone_root_gets_a_structural_path` asserts the gate line is present and the
+retired clause appears nowhere. 7 passed with `test_fragment_mobility.py`.
+
+**Technique worth reusing:** the Ramp doc is clone-only and cannot exercise the
+vocabulary branch, and `browse` cannot script a sandboxed iframe. Fix: render a document
+that has BOTH kinds (`doc_d6492814b017542ca1a4dbd9c56e673b` — 42 text/33 container/9
+button/8 section + 1 fragment) through the real `bridge=1` route, then mount the served
+HTML in a local `sandbox="allow-scripts"` harness page whose parent listens for
+`annotate` (`/tmp/task5-harness.html`). Same trust shape as production, fully
+controllable, and a red-proof is one string replacement away — restoring the retired
+clause in the same DOM reproduced `path ":nth-child(1)"` on the id-less `<p>`.
