@@ -32,6 +32,7 @@
 - **R5 — Outline.** For a text node with painted lines the selection outline (and Plan 3's hover outline) is the union of the lines. When the layout box differs from that union by more than 0.5 scene units on any edge, a dashed frame is drawn on the layout box and the resize handles sit on the frame (the box is what a resize changes). Rotation pivots on the frame's origin when there is one. Gesture geometry (`selectionBox.box`, drag and resize math) stays the layout box.
 - **R6 — Fit to text.** One write: the height flips to hug, the width is untouched (a fixed width is the wrap width the author chose). The button is enabled while the height mode is not Hug.
 - **R7 — DSL default.** A text element with no `s(...)` lowers to `s(hug,hug)` instead of `Node::new`'s 0×0 fixed box (which collapsed with LUMV0901). An explicit `s(...)` still wins.
+- **R8 — Hug height is measured at the wrap width (found by the Task 8 live proof).** Outside a taffy solve (`resolve_manual_size`: page children, frame children, children of a frozen Stack), a text node's hug height came from `natural_size`, which measures with NO width bound — so a fixed-width wrapped headline hugged its unwrapped line count (Apollo's "Pipeline that / shows up on time." hugged 2 lines while the painters wrap it to 3 at 503 wide; the box was 142 tall under 213 of glyphs). Inside a taffy solve the closure measured at the container's available width instead of the leaf's own definite width. Both now measure at the width the text is painted at: the resolved width when it is fixed or fill, unbounded only when the width itself hugs. The editor's line pass already sends the `(max_width = box width)` record, so the wasm engine takes CanvasKit's height under the corrected key with no frontend change. This corrects server-side hug heights for wrapped text as well — that is the point: "text height is hug" (R7) is only sane if hug follows the copy.
 
 ---
 
@@ -984,6 +985,199 @@ engine's per-line detail — and now its painted text_lines — was heuristic. A
 second pass measures every laid-out text node at its box width and sends the
 line boxes under the validate key and the taffy key; the measurement signature
 includes the solved size so a resized box re-measures. Plan 4 item F, step 4."
+```
+
+---
+
+### Task 5b (added after the Task 8 live proof): hug height measures at the wrap width
+
+**Files:**
+- Modify: `subsystems/clue-design/crates/lumen-core/src/layout.rs` (`resolve_manual_size` ~line 684, `measure_taffy_node` ~line 1738)
+- Test: `subsystems/clue-design/crates/lumen-core/tests/layout_engine.rs`
+- Test: `subsystems/clue-design/crates/lumen-wasm/tests/engine.rs`
+
+**Interfaces:**
+- Consumes: `TextMeasureInput::from_text_node` / `max_width` (existing); the editor's `(max_width = box width)` records (Task 5).
+- Produces: no new names; the hug height of a fixed- or fill-width text node equals `measure(from_text_node(text) with max_width = width).height` on every layout path.
+
+- [ ] **Step 1: Write the failing tests** (`layout_engine.rs`; `HeuristicTextMeasurer`, `TextMeasureInput`, `TextMeasurer`, `AutoLayoutNode`/`AutoLayoutProps`/`AutoLayoutDirection` are already imported there)
+
+```rust
+// ── Plan 4 ruling R8: hug height follows the wrap width ──────────────────────
+
+const R8_COPY: &str = "Pipeline that shows up on time for every rep on the team";
+
+fn r8_expected_height(text: &TextNode, width: f64) -> f64 {
+    let mut input = TextMeasureInput::from_text_node(text);
+    input.max_width = Some(width);
+    HeuristicTextMeasurer.measure(&input).height
+}
+
+#[test]
+fn fixed_width_text_under_a_page_hugs_its_wrapped_height() {
+    let mut scene = scene_with_page(600.0, 400.0);
+    let mut copy = text_node("copy", R8_COPY, 20.0, 20.0, 120.0, 0.0);
+    copy.size.height = Dimension::Hug;
+    let NodeKind::Text(text) = &mut copy.kind else { unreachable!() };
+    text.wrap = lumen_core::TextWrap::Wrap;
+    let text = text.clone();
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), copy);
+
+    let result = layout_scene(&scene, lumen_core::LayoutOptions::default());
+    let bounds = &result.geometry[&NodeId::from("copy")].layout_bounds;
+    let expected = r8_expected_height(&text, 120.0);
+    let unbounded = HeuristicTextMeasurer.measure(&TextMeasureInput::from_text_node(&text)).height;
+    assert!(expected > unbounded, "the copy must wrap at 120 for this test to mean anything");
+    assert_eq!(bounds.width, 120.0);
+    assert_eq!(bounds.height, expected, "hug height is the WRAPPED height, not {unbounded}");
+}
+
+#[test]
+fn fixed_width_text_inside_a_stack_hugs_its_wrapped_height() {
+    // The taffy path: the leaf's own definite width is the wrap width, not the
+    // 600-wide column's available space.
+    let mut scene = scene_with_page(600.0, 400.0);
+    let mut column = Node::new(
+        NodeId::from("column"),
+        NodeKind::AutoLayout(AutoLayoutNode { direction: AutoLayoutDirection::Column, ..AutoLayoutNode::default() }),
+    );
+    column.size = SizeSpec { width: Dimension::Fixed(600.0), height: Dimension::Hug };
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), column);
+    let mut copy = text_node("copy", R8_COPY, 0.0, 0.0, 120.0, 0.0);
+    copy.size.height = Dimension::Hug;
+    let NodeKind::Text(text) = &mut copy.kind else { unreachable!() };
+    text.wrap = lumen_core::TextWrap::Wrap;
+    let text = text.clone();
+    insert(&mut scene, ParentRef::Node(NodeId::from("column")), copy);
+
+    let result = layout_scene(&scene, lumen_core::LayoutOptions::default());
+    let bounds = &result.geometry[&NodeId::from("copy")].layout_bounds;
+    // Taffy rounds to whole pixels; the plan's own ROUNDING_TOLERANCE.
+    assert!((bounds.height - r8_expected_height(&text, 120.0)).abs() <= 0.51, "{bounds:?}");
+}
+
+#[test]
+fn hug_width_text_still_measures_unbounded() {
+    let mut scene = scene_with_page(600.0, 400.0);
+    let mut copy = text_node("copy", R8_COPY, 20.0, 20.0, 0.0, 0.0);
+    copy.size = SizeSpec { width: Dimension::Hug, height: Dimension::Hug };
+    let NodeKind::Text(text) = &mut copy.kind else { unreachable!() };
+    text.wrap = lumen_core::TextWrap::Wrap;
+    let text = text.clone();
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), copy);
+
+    let result = layout_scene(&scene, lumen_core::LayoutOptions::default());
+    let bounds = &result.geometry[&NodeId::from("copy")].layout_bounds;
+    let unbounded = HeuristicTextMeasurer.measure(&TextMeasureInput::from_text_node(&text));
+    assert_eq!(bounds.width, unbounded.width);
+    assert_eq!(bounds.height, unbounded.height);
+}
+```
+
+(Read `AutoLayoutNode`'s real fields and `ParentRef`'s variants in the file's existing tests and build the column the way they do; the shape above is illustrative for those two constructors only.)
+
+`lumen-wasm/tests/engine.rs`:
+
+```rust
+#[test]
+fn fixed_width_hug_text_takes_the_editor_height_measured_at_its_width() {
+    // Ruling R8: `node_contact_name` fixed 160 wide, hug height. The editor's
+    // line pass keys its record on `max_width = 160` with no height; that is
+    // now the key the manual path measures with, so the injected height lands.
+    let mut scene: Value = serde_json::from_str(MINIMAL_SCENE).expect("scene json");
+    scene["nodes"]["node_contact_name"]["size"] =
+        json!({ "width": { "kind": "fixed", "value": 160.0 }, "height": { "kind": "hug" } });
+    let mut engine = Engine::from_scene_json(&scene.to_string()).expect("scene loads");
+    let measurements = json!([{
+        "content": "Dr. Priya Sharma", "font_family": "Inter", "font_size": 18.0, "font_weight": 600,
+        "line_height": 1.2, "letter_spacing": 0.0, "wrap": "wrap", "max_lines": null, "direction": "ltr",
+        "max_width": 160.0, "width": 100.0, "height": 99.0
+    }]);
+    let ack = parse(engine.set_measurements(&measurements.to_string()));
+    assert_eq!(ack["ok"], true, "{ack:#?}");
+    let scene: Value = serde_json::from_str(&engine.scene_json()).expect("scene");
+    assert_eq!(scene["nodes"]["node_contact_name"]["computed"]["layout_bounds"]["height"], 99.0);
+    assert_eq!(scene["nodes"]["node_contact_name"]["computed"]["layout_bounds"]["width"], 160.0);
+}
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `cd subsystems/clue-design && cargo test -p lumen-core --test layout_engine r8_ hugs_its 2>&1 | tail -20; cargo test -p lumen-wasm fixed_width_hug 2>&1 | tail -8`
+Expected: the two "hugs_its_wrapped_height" tests fail (height = the unbounded / container-width height); the hug-width test passes already; the wasm test fails (height stays the heuristic 21.6).
+
+- [ ] **Step 3: Implement**
+
+`resolve_manual_size` resolves the width first and measures the height at it:
+
+```rust
+    fn resolve_manual_size(&self, node: &Node, parent_size: Size2) -> Size2 {
+        let width = match &node.size.width {
+            Dimension::Fixed(value) => *value,
+            Dimension::Fill { .. } => parent_size.width,
+            Dimension::Hug | Dimension::Token { .. } => self.natural_size(node).width,
+        };
+        let height = match &node.size.height {
+            Dimension::Fixed(value) => *value,
+            Dimension::Fill { .. } => parent_size.height,
+            Dimension::Hug | Dimension::Token { .. } => self.natural_height_at_width(node, width),
+        };
+        Size2 { width, height }
+    }
+
+    /// Editor Quality Plan 4 (ruling R8): a text node's hug height is measured
+    /// at the width it is PAINTED at. The painters lay wrapped text out at the
+    /// box width, so a fixed- or fill-width text node measured without a bound
+    /// hugged its unwrapped line count — a 503-wide headline that paints three
+    /// lines hugged two, and the box stopped following the copy. Only a text
+    /// node whose width itself hugs measures unbounded (that IS its width).
+    /// Every other kind keeps `natural_size`.
+    fn natural_height_at_width(&self, node: &Node, width: f64) -> f64 {
+        match &node.kind {
+            NodeKind::Text(text)
+                if !matches!(node.size.width, Dimension::Hug | Dimension::Token { .. }) =>
+            {
+                let mut input = TextMeasureInput::from_text_node(text);
+                input.max_width = Some(width.max(0.0));
+                self.measurer.measure(&input).height
+            }
+            _ => self.natural_size(node).height,
+        }
+    }
+```
+
+`measure_taffy_node`'s text arm:
+
+```rust
+        Some(MeasureContext::Text(input)) => {
+            // Plan 4 (ruling R8): a leaf with a definite width wraps at THAT
+            // width — the painters lay out at the box, not at the container's
+            // available space. A width-less leaf keeps the available bound.
+            input.max_width = match known_dimensions.width {
+                Some(width) => Some(f64::from(width)),
+                None => available_width(available_space.width),
+            };
+            let measured = measurer.measure(input);
+            Size2 { width: measured.width, height: measured.height }
+        }
+```
+
+- [ ] **Step 4: Run the crate suites and analyze every change**
+
+Run: `cd subsystems/clue-design && cargo test -p lumen-core --lib --test layout_engine --test hit_test --test editing --test dsl_compiler --test preflight_pipeline --test freehand_layout --test personalization --test a6b_spans 2>&1 | grep -E "^test result|FAILED|panicked"; cargo test -p lumen-wasm 2>&1 | grep -E "^test result|FAILED"; cargo test -p lumen-export -p lumen-skia 2>&1 | grep -E "^test result|FAILED|panicked"`
+Expected: the new tests pass. Any pre-existing test that now fails encoded the old unbounded hug height; for each, state in the report which test, what it expected, what it gets now, and why the new number is the wrapped height — then update ONLY that expectation with a one-line comment naming ruling R8. A failure that is not explained by the wrap width is a stop: report NEEDS_CONTEXT. `lumen-skia`'s golden tests compare against untracked PNGs that were generated from the pre-plan commit; a golden that drifts because a hug box grew is expected — report which and by how many pixels; do not regenerate goldens.
+
+- [ ] **Step 5: Commit** (explicit paths; `rustfmt --edition 2021 --check` on the touched files first, fixing only your hunks)
+
+```bash
+git add subsystems/clue-design/crates/lumen-core/src/layout.rs subsystems/clue-design/crates/lumen-core/tests/layout_engine.rs subsystems/clue-design/crates/lumen-wasm/tests/engine.rs
+git commit -m "fix(lumen-core): a text node's hug height is measured at its wrap width
+
+Outside a taffy solve the hug height came from an unbounded measurement, so a
+fixed-width wrapped headline hugged its unwrapped line count; inside one the
+closure wrapped at the container's available width instead of the leaf's own.
+Both now measure at the width the text is painted at. Plan 4 ruling R8, found
+by the live proof (Apollo headline: 2 lines hugged, 3 painted)."
 ```
 
 ---
