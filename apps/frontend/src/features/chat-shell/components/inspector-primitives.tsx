@@ -1706,7 +1706,9 @@ export function InspectorLayerRow({
       <span className={styles.layerRowContent}>
         <span className={styles.layerRowLabel}>
           <InspectorIcon name={icon} size={16} />
-          <span>{label}</span>
+          <span className={styles.layerRowLabelText} title={label}>
+            {label}
+          </span>
         </span>
         {trailing ? <InspectorIcon name="layer-ellipsis" size={16} /> : null}
       </span>

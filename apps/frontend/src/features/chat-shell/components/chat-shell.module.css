@@ -3076,8 +3076,23 @@
 .layerRowLabel {
   display: inline-flex;
   align-items: center;
+  /* Human display names (e.g. "Hero — Repaired x3 — ABM hero") are far longer
+   * than the short node ids this row was built for. The label must be allowed
+   * to SHRINK inside the fixed-height (32px) row, otherwise its text wraps to a
+   * second line that spills over the next row. */
+  flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
   gap: 8px;
+}
+
+/* Single-line, ellipsized label text; the full name lives on the element's
+ * `title`, so a hover reveals what the ellipsis hides. */
+.layerRowLabelText {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 @keyframes inspector-enter {
