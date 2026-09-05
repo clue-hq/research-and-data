@@ -60,7 +60,7 @@ import {
   deepSelectTarget,
   escapeSelectionEffect,
   sceneHoverTarget,
-  selectionClickTarget,
+  selectionPressTarget,
   selectionWalkUp,
 } from "../adapter/scene-selection-ladder";
 import type { ScenePalette } from "../adapter/scene-palette";
@@ -1648,9 +1648,11 @@ function SceneDocumentCanvas({
    *     → minus the artboard's workspace origin     artboard-local descriptor px
    *     → `descriptorToScene(local, unitScale)`     the engine's own units
    *     → `controls.hitTest(x, y)`                  bottom-to-top hit stack
-   *     → `selectionClickTarget(stack, scene, pageId)`  selection v2's R1: the
-   *       outermost UNIT on the path (a button-shaped auto-layout or a group),
-   *       or else the deepest schema-bearing node
+   *     → `selectionPressTarget({ stack, scene, pageId, selectedNodeId })`
+   *       selection v2's R1 target — the outermost UNIT on the path (a
+   *       button-shaped auto-layout or a group), or else the deepest
+   *       schema-bearing node — kept at the current selection when that
+   *       selection is itself under the pointer (R6)
    *
    * The last two conversions are the trap: `hitTest` takes SCENE units, not
    * descriptor px, and the two are identical on a `pt`/`px` page (this ad), so
@@ -1662,7 +1664,11 @@ function SceneDocumentCanvas({
    * and opens the caret only once the text itself is the selection. R3:
    * Cmd/Ctrl-click selects the deepest node and cycles one level shallower per
    * repeat. R4: Alt-click and Escape walk up. R5: the hover outline previews
-   * R1. R6: the press drags whatever the click just selected. The earlier
+   * what the press would act on. R6: the press drags whatever the click just
+   * selected — R1's target, except that a press on the node ALREADY selected
+   * keeps it, so a label reached by drilling can be dragged inside its own
+   * button instead of re-selecting the button (live proof 2026-09-04). The
+   * earlier
    * model's "a second click on the selected node walks up" (and its 4 px
    * same-spot slop) is gone: a double-click IS two clicks at one spot, so the
    * two rules could not coexist — walking up is Alt-click's and Escape's now.
@@ -1760,7 +1766,12 @@ function SceneDocumentCanvas({
           pageId,
           selectedNodeId: activeSelectedNodeId,
         })
-      : selectionClickTarget(result.stack, scene, pageId);
+      : selectionPressTarget({
+          stack: result.stack,
+          scene,
+          pageId,
+          selectedNodeId: activeSelectedNodeId,
+        });
     // R4: Alt/Option-click walks up from the click target and starts no press.
     if (event.altKey && hitNodeId !== null) {
       commitSelection(selectionWalkUp(scene, pageId, hitNodeId) ?? hitNodeId);

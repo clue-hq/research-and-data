@@ -27,7 +27,10 @@ import { rootFrameId, sceneSelectionFor } from "./scene-hydrate";
  *   R4 Alt-click and Escape walk up (`selectionWalkUp`, `escapeSelectionEffect`
  *      — both unchanged from Plan 3);
  *   R5 the hover outline previews R1's click target (`sceneHoverTarget`);
- *   R6 a press drags whatever the click selected — geometry, not this module.
+ *   R6 a press drags whatever the click selected (`selectionPressTarget`) —
+ *      which is R1's target UNLESS the node already selected is under the
+ *      pointer at or below it, in which case the press keeps the selection so
+ *      a drilled-into label can actually be dragged (live proof 2026-09-04).
  *
  * The component around it owns events; everything decidable is decided here and
  * proven over the harvested ad.
@@ -189,7 +192,40 @@ export function selectionWalkUp(
   }
 }
 
-/** R5: what the hover outline shows — the click target, unless it is already selected. */
+/**
+ * R6: what a plain press acts on. R1's click target — unless the node that is
+ * ALREADY selected sits under the pointer at or below that target, in which
+ * case the press keeps the selection and drags it. This is what makes a label
+ * reached by drill-down movable: without it the press re-selected the enclosing
+ * button and moved the button (Brex ad, live proof 2026-09-04, undone). An
+ * ancestor selection does NOT survive — pressing a child inside a selected
+ * container selects the child, the ordinary R1 answer.
+ */
+export function selectionPressTarget({
+  stack,
+  scene,
+  pageId,
+  selectedNodeId,
+}: {
+  stack: NodeId[];
+  scene: Scene;
+  pageId: PageId | null;
+  selectedNodeId: NodeId | null;
+}): NodeId | null {
+  const target = selectionClickTarget(stack, scene, pageId);
+  if (target === null || selectedNodeId === null) {
+    return target;
+  }
+  const selectedAt = stack.indexOf(selectedNodeId);
+  return selectedAt >= stack.indexOf(target) ? selectedNodeId : target;
+}
+
+/**
+ * R5: what the hover outline shows — the node a press would act on, unless
+ * that is already the selection (an outline over its own selection says
+ * nothing). It follows R6 rather than R1 so the preview never promises the
+ * button while the selected label under the pointer is what the press moves.
+ */
 export function sceneHoverTarget({
   stack,
   scene,
@@ -201,7 +237,7 @@ export function sceneHoverTarget({
   pageId: PageId | null;
   selectedNodeId: NodeId | null;
 }): NodeId | null {
-  const hit = selectionClickTarget(stack, scene, pageId);
+  const hit = selectionPressTarget({ stack, scene, pageId, selectedNodeId });
   return hit !== null && hit !== selectedNodeId ? hit : null;
 }
 

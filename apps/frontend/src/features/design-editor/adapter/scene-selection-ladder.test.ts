@@ -12,6 +12,7 @@ import {
   sceneHoverTarget,
   selectionClickTarget,
   selectionDrillDown,
+  selectionPressTarget,
   selectionWalkUp,
 } from "./scene-selection-ladder";
 
@@ -243,5 +244,43 @@ it("Escape: a live gesture resets; a caret is left alone; otherwise the selectio
   assert.deepEqual(
     escapeSelectionEffect({ scene: null, pageId: null, gestureLive: false, textEditing: false, selectedNodeId: "x" }),
     { kind: "none" },
+  );
+});
+
+it("R6: a press on the already-selected node keeps it, even inside a unit; an ancestor selection yields the click target", () => {
+  const scene = sceneWithButton();
+  const stack = ["frame_ad_root", "auto_row_copy", "text_headline"];
+  // Nothing / something unrelated selected: the click target (the button).
+  assert.equal(
+    selectionPressTarget({ stack, scene, pageId: AD_PAGE_ID, selectedNodeId: null }),
+    "auto_row_copy",
+  );
+  assert.equal(
+    selectionPressTarget({ stack, scene, pageId: AD_PAGE_ID, selectedNodeId: "group_proof" }),
+    "auto_row_copy",
+  );
+  // The label is selected (reached by drill-down): a press on it drags the LABEL.
+  assert.equal(
+    selectionPressTarget({ stack, scene, pageId: AD_PAGE_ID, selectedNodeId: "text_headline" }),
+    "text_headline",
+  );
+  // The button itself selected: the button.
+  assert.equal(
+    selectionPressTarget({ stack, scene, pageId: AD_PAGE_ID, selectedNodeId: "auto_row_copy" }),
+    "auto_row_copy",
+  );
+  // An ANCESTOR of the click target selected: the click target, not the ancestor.
+  assert.equal(
+    selectionPressTarget({ stack, scene, pageId: AD_PAGE_ID, selectedNodeId: "frame_ad_root" }),
+    "auto_row_copy",
+  );
+  // Hover follows the press rule and stays silent on the selection itself.
+  assert.equal(
+    sceneHoverTarget({ stack, scene, pageId: AD_PAGE_ID, selectedNodeId: "text_headline" }),
+    null,
+  );
+  assert.equal(
+    sceneHoverTarget({ stack, scene, pageId: AD_PAGE_ID, selectedNodeId: "group_proof" }),
+    "auto_row_copy",
   );
 });
