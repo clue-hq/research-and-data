@@ -906,7 +906,9 @@ fn render_node(
             }
         },
         WebNodeKind::Fragment {
-            fragment_id, slots, ..
+            fragment_id,
+            slots,
+            text_overrides,
         } => {
             // The wrapper is the ONLY markup this arm authors. Everything
             // inside it is the artifact's own sanitized HTML, emitted
@@ -1000,12 +1002,24 @@ fn render_node(
             // F1.4: the artifact's markup with this NODE's slot values applied.
             // With nothing bound the walk is the identity function, so an
             // unpersonalized fragment still renders byte-for-byte as stored.
-            out.push_str(&crate::fragment::substitute_fragment_slots(
+            let substituted = crate::fragment::substitute_fragment_slots(
                 &content.html,
                 slots,
                 &content.slot_kinds,
                 doc,
                 &options.asset_base_url,
+                &node.id,
+                diagnostics,
+            );
+            // R-A6: the marketer's own words, second and last. The slot pass is
+            // the agent's personalization; an override is a human overruling it
+            // on ONE element, so it runs after — and on that pass's OUTPUT,
+            // because the markup the editor measured the path against is the
+            // rendered markup, not the stored artifact. Both passes are
+            // identity functions when nothing is bound.
+            out.push_str(&crate::fragment::apply_fragment_text_overrides(
+                &substituted,
+                text_overrides,
                 &node.id,
                 diagnostics,
             ));
@@ -1620,6 +1634,21 @@ mod tests {
         fixture_with_fragment_slots(fragment_id, BTreeMap::new())
     }
 
+    /// The same page whose fragment node carries R-A6 text overrides — the one
+    /// interior edit a clone allows.
+    fn fixture_with_fragment_overrides(
+        fragment_id: &str,
+        text_overrides: BTreeMap<String, crate::doc::FragmentTextOverride>,
+    ) -> (WebDoc, WebTheme) {
+        let (mut doc, theme) = fixture_with_fragment(fragment_id);
+        let page = doc.pages.get_mut(0).expect("page");
+        let node = page.nodes.get_mut(&NodeId::from("frg_hero")).expect("frg");
+        if let WebNodeKind::Fragment { text_overrides: on_node, .. } = &mut node.kind {
+            *on_node = text_overrides;
+        }
+        (doc, theme)
+    }
+
     const FRAGMENT_HTML: &str =
         "<section class=\"hero\"><h1 data-lumen-slot=\"headline\">Care, on your terms</h1></section>";
 
@@ -1697,6 +1726,79 @@ mod tests {
         assert!(delivery
             .html
             .contains("<h1 data-lumen-slot=\"headline\">Talk to us</h1>"));
+    }
+
+    #[test]
+    fn fragment_text_overrides_render_after_the_slot_pass_and_the_document_is_untouched() {
+        // R-A6: the marketer's own words, applied at render on top of the
+        // artifact's frozen markup. The artifact is never rewritten and neither
+        // is the stored document — an override exists only in these bytes.
+        let fragment_id = "frag_0123456789abcdef";
+        let (doc, theme) = fixture_with_fragment_overrides(
+            fragment_id,
+            BTreeMap::from([(
+                ":nth-child(1) > :nth-child(1)".to_owned(),
+                crate::doc::FragmentTextOverride {
+                    text: "Care, on OUR terms".to_owned(),
+                    bold: true,
+                    italic: false,
+                    underline: false,
+                    size: Some(1),
+                },
+            )]),
+        );
+        let before = serde_json::to_string(&doc).expect("doc json");
+
+        let rendered = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &fragment_options(RenderMode::Editor, fragment_id),
+        )
+        .expect("editor render");
+        assert!(
+            rendered.html.contains(
+                "<h1 data-lumen-slot=\"headline\" \
+                 data-lumen-override=\":nth-child(1) &gt; :nth-child(1)\" \
+                 data-lumen-size=\"1\" style=\"font-size:1.125em\">\
+                 <strong>Care, on OUR terms</strong></h1>"
+            ),
+            "{}",
+            rendered.html
+        );
+        // The artifact's own words for THAT element are gone from the render.
+        assert!(!rendered.html.contains("Care, on your terms"), "{}", rendered.html);
+        // …and the edit lands INSIDE the clone's wrapper, not beside it.
+        let wrapper_at = rendered
+            .html
+            .find("data-fragment-root=\"true\"")
+            .expect("wrapper");
+        let override_at = rendered
+            .html
+            .find("data-lumen-override")
+            .expect("override");
+        assert!(wrapper_at < override_at);
+        assert!(rendered.diagnostics.is_empty(), "{:#?}", rendered.diagnostics);
+        assert_eq!(
+            serde_json::to_string(&doc).expect("doc json"),
+            before,
+            "an override must never touch the stored document"
+        );
+
+        // Delivery renders the same edit (no instrumentation around it).
+        let delivery = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &fragment_options(RenderMode::Delivery, fragment_id),
+        )
+        .expect("delivery render");
+        assert!(
+            delivery.html.contains("<strong>Care, on OUR terms</strong>"),
+            "{}",
+            delivery.html
+        );
+        assert!(!delivery.html.contains("Care, on your terms"));
     }
 
     #[test]
