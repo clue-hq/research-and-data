@@ -25,7 +25,66 @@
 - **R3 Deep select.** Cmd/Ctrl-click selects D. If the current selection is already in the stack's representable list, it selects the next SHALLOWER representable node instead (cycle), wrapping from the outermost back to D. The press that follows drags whatever was selected. **Amendment (controller, after Task 1):** the root frame IS representable — `sceneSelectionFor` answers the *canvas* schema for it, not null — so the cycle would climb into the artboard. Ruling: the deep-select cycle EXCLUDES the root frame (Escape and Alt-click still reach it); it wraps from the outermost non-root node back to D. Walk-up and Escape keep Plan 3's behaviour (a direct child walks up to the root/canvas selection, then Escape clears).
 - **R4 Walk up.** Alt-click walks up from the click target; Escape walks up from the selection and clears at the root. Unchanged from Plan 3. The "second click on the selected node walks up" rule and its 4 px slop are REMOVED.
 - **R5 Hover.** The hover outline previews the R1 click target (unchanged rule, new function name).
-- **R6 Drag.** A press drags the node the click selected (the click target, or the deep-select target). Freeze-on-grab stays.
+- **R6 Drag.** A press drags the node the click selected (the click target, or the deep-select target). Freeze-on-grab stays. **Amendment (controller, Task 4 live proof):** a press on a node that is ALREADY selected keeps that selection and drags it, even when R1 would have resolved the click to an enclosing unit. Concretely: when the selected node is in the hit stack at or deeper than the R1 click target, the press target is the selection. Without this, the label reached by drill-down could never be dragged — the press re-selected the plate and moved it (found live on the Brex ad, document v98→v99, undone). An ancestor selection (the footer, above the plate) still yields the click target. The hover preview follows the same rule, so it never previews the plate while the label under the pointer is the selection.
+
+### Task 3b (added after the Task 4 live proof): the press keeps the selection
+
+**Files:**
+- Modify: `apps/frontend/src/features/design-editor/adapter/scene-selection-ladder.ts` (new `selectionPressTarget`; `sceneHoverTarget` over it)
+- Modify: `apps/frontend/src/features/design-editor/adapter/scene-selection-ladder.test.ts`
+- Modify: `apps/frontend/src/features/design-editor/components/scene-artifact-canvas.tsx` (`handlePointerDown`'s plain-click branch)
+
+**Interfaces:**
+- Produces: `selectionPressTarget({ stack, scene, pageId, selectedNodeId }): NodeId | null` — the R1 click target, unless `selectedNodeId` sits in `stack` at an index ≥ the click target's index, in which case `selectedNodeId`. `sceneHoverTarget` returns `selectionPressTarget(...)` unless it equals the selection (then null).
+
+- [ ] **Step 1: Tests** (append to the ladder test file)
+
+```ts
+it("R6: a press on the already-selected node keeps it, even inside a unit; an ancestor selection yields the click target", () => {
+  const scene = sceneWithButton();
+  const stack = ["frame_ad_root", "auto_row_copy", "text_headline"];
+  // Nothing / something unrelated selected: the click target (the button).
+  assert.equal(selectionPressTarget({ stack, scene, pageId: AD_PAGE_ID, selectedNodeId: null }), "auto_row_copy");
+  assert.equal(selectionPressTarget({ stack, scene, pageId: AD_PAGE_ID, selectedNodeId: "group_proof" }), "auto_row_copy");
+  // The label is selected (reached by drill-down): a press on it drags the LABEL.
+  assert.equal(selectionPressTarget({ stack, scene, pageId: AD_PAGE_ID, selectedNodeId: "text_headline" }), "text_headline");
+  // The button itself selected: the button.
+  assert.equal(selectionPressTarget({ stack, scene, pageId: AD_PAGE_ID, selectedNodeId: "auto_row_copy" }), "auto_row_copy");
+  // An ANCESTOR of the click target selected: the click target, not the ancestor.
+  assert.equal(selectionPressTarget({ stack, scene, pageId: AD_PAGE_ID, selectedNodeId: "frame_ad_root" }), "auto_row_copy");
+  // Hover follows the press rule and stays silent on the selection itself.
+  assert.equal(sceneHoverTarget({ stack, scene, pageId: AD_PAGE_ID, selectedNodeId: "text_headline" }), null);
+  assert.equal(sceneHoverTarget({ stack, scene, pageId: AD_PAGE_ID, selectedNodeId: "group_proof" }), "auto_row_copy");
+});
+```
+
+- [ ] **Step 2: Implement**
+
+```ts
+/**
+ * R6: what a plain press acts on. R1's click target — unless the node that is
+ * ALREADY selected sits under the pointer at or below that target, in which
+ * case the press keeps the selection and drags it. This is what makes a label
+ * reached by drill-down movable: without it the press re-selected the button
+ * and moved the button (Brex ad, live proof 2026-09-04). An ancestor selection
+ * does not survive: pressing a child inside a selected container selects the
+ * child, the ordinary R1 answer.
+ */
+export function selectionPressTarget({ stack, scene, pageId, selectedNodeId }: {
+  stack: NodeId[]; scene: Scene; pageId: PageId | null; selectedNodeId: NodeId | null;
+}): NodeId | null {
+  const target = selectionClickTarget(stack, scene, pageId);
+  if (target === null || selectedNodeId === null) {
+    return target;
+  }
+  const selectedAt = stack.indexOf(selectedNodeId);
+  return selectedAt >= stack.indexOf(target) ? selectedNodeId : target;
+}
+```
+
+`sceneHoverTarget` calls `selectionPressTarget` with the same arguments and returns null when the answer equals `selectedNodeId`. In `handlePointerDown`, the non-modifier branch becomes `selectionPressTarget({ stack: result.stack, scene, pageId, selectedNodeId: activeSelectedNodeId })`; Alt-click keeps walking up from that target. The existing hover memo already passes `selectedNodeId`.
+
+- [ ] **Step 3: Gates and commit** — the ladder test file, `npm run lint`, `npm test`; commit the three files with `feat(design-editor): a press on the selected node keeps it — the drilled label is draggable inside its button`.
 
 ---
 
