@@ -82,6 +82,18 @@ node (everything downstream is node-shaped) and additionally posts
 position under the clone root the engine marks with `data-fragment-root`. The
 shell posts `{type:"annotations", items:[{address, n}]}` back to draw numbered
 badges, and `items: []` to clear.
+
+v12 (slice 3, ruling R-A6) adds the ONE interior edit a clone allows: a double-click
+on a text-like element inside a `data-fragment-root` opens a constrained in-frame
+editor — plain text, bold/italic/underline, and one relative size step on the engine's
+own -3..+3 em ramp — settling as `{type:"clone-text-commit", address, override}` (or
+`clone-text-cancel`), which the shell persists as one `set_fragment_text_override`.
+That editor's initial marks/size/words for an ALREADY-overridden element come from
+`__LUMEN_TEXT_OVERRIDES__` (`{node_id: {path: override}}` for the rendered page) and
+never from the DOM: the engine renders an override wrapped in `strong > em > u`, so
+reading the marks back out of the markup would be a second, divergent parser. The same
+session opens from the shell with `{type:"edit-text", address}` — the comment box's
+"Edit text" quick action.
 """
 
 import json
@@ -108,6 +120,10 @@ _BRIDGE_V0_TEMPLATE = """
   // layers panel and the agent's TURN TARGET line use. Baked in so the hover chip can
   // name a band without a round trip to the shell.
   var NODE_NAMES = __LUMEN_NODE_NAMES__;
+  // R-A6: `{node_id: {path: override}}` for every fragment pin on THIS page carrying a
+  // human text edit. The in-frame editor's initial state — see the module docstring for
+  // why the DOM cannot supply it.
+  var TEXT_OVERRIDES = __LUMEN_TEXT_OVERRIDES__;
   var selected = null;
   var hoverEl = null;
   var hoverBox = null;
@@ -161,7 +177,26 @@ _BRIDGE_V0_TEMPLATE = """
     ".lumen-annotation-badge{position:absolute;pointer-events:none;min-width:18px;" +
     "height:18px;border-radius:9px;background:#f0a;color:#fff;" +
     "font:600 11px/18px system-ui,sans-serif;text-align:center;padding:0 5px;" +
-    "z-index:2147483002;}";
+    "z-index:2147483002;}" +
+    // R-A6: the constrained clone editor. Deliberately the same green as the rich-text
+    // session's outline — to a marketer these are one gesture with two vocabularies.
+    "[data-fragment-root] .lumen-clone-editing{outline:2px solid rgba(34,197,146,0.95);" +
+    "outline-offset:2px;cursor:text;}" +
+    ".lumen-clone-bold{font-weight:700;}" +
+    ".lumen-clone-italic{font-style:italic;}" +
+    ".lumen-clone-underline{text-decoration:underline;}" +
+    ".lumen-clone-toolbar{position:absolute;z-index:2147483004;display:flex;" +
+    "align-items:center;gap:2px;padding:3px 4px;border-radius:6px;background:#fff;" +
+    "border:1px solid rgba(31,41,90,.18);box-shadow:0 3px 10px rgba(31,41,90,.24);" +
+    "font:12px/1 system-ui,sans-serif;}" +
+    ".lumen-clone-toolbar button{min-width:24px;height:22px;padding:0 5px;border:0;" +
+    "border-radius:4px;background:transparent;color:#172033;font:inherit;cursor:pointer;}" +
+    ".lumen-clone-toolbar button.is-on{background:rgba(79,111,255,.16);color:#4f6fff;}" +
+    ".lumen-clone-toolbar [data-mark='bold']{font-weight:700;}" +
+    ".lumen-clone-toolbar [data-mark='italic']{font-style:italic;}" +
+    ".lumen-clone-toolbar [data-mark='underline']{text-decoration:underline;}" +
+    ".lumen-clone-size{min-width:22px;text-align:center;color:#172033;" +
+    "font:11px/1 ui-monospace,Menlo,monospace;}";
   document.head.appendChild(style);
 
   function rounded(value) {
@@ -286,7 +321,7 @@ _BRIDGE_V0_TEMPLATE = """
     return !!(el && el.closest && el.closest(".lumen-hover-box,.lumen-hover-label," +
       ".lumen-annotation-layer,.lumen-annotation-outline,.lumen-annotation-badge," +
       ".lumen-grip,.lumen-resize-handle,.lumen-resize-badge,.lumen-drop-marker," +
-      ".lumen-drag-ghost"));
+      ".lumen-drag-ghost,.lumen-clone-toolbar"));
   }
 
   function ownerNode(el) {
@@ -561,6 +596,7 @@ _BRIDGE_V0_TEMPLATE = """
       return hideHover();
     }
     if (editing && editing.contains(el)) return hideHover();
+    if (cloneEditing && cloneEditing.el.contains(el)) return hideHover();
     showHover(el);
     var owner = ownerNode(el);
     if (hoverEl && hoverEl !== owner) hoverEl.classList.remove("lumen-hover");
@@ -608,6 +644,18 @@ _BRIDGE_V0_TEMPLATE = """
       }
       // Clicks inside the element being edited belong to the caret. A click on
       // another canvas node explicitly settles the whole local edit first.
+      // R-A6: the clone editor obeys the same rule, and its toolbar counts as INSIDE
+      // (its buttons ARE the edit, not a click away from it) — so neither selection nor
+      // an `annotate` fires while the human is toggling a mark.
+      if (cloneEditing) {
+        if (
+          cloneEditing.el.contains(event.target) ||
+          (cloneToolbar && cloneToolbar.el.contains(event.target))
+        ) {
+          return;
+        }
+        settleCloneEditing(true);
+      }
       if (editing && editing.contains(event.target)) return;
       if (editing) stopEditing(true);
       var el =
@@ -769,6 +817,268 @@ _BRIDGE_V0_TEMPLATE = """
       });
   }
 
+
+  // --- Slice 3 (R-A6): the constrained clone text editor ----------------------------
+  // A cloned band's markup is the harvested artifact's own: it carries no node ids and
+  // no vocabulary, so the Lexical session above (which commits a whole RichTextDocument
+  // for a `data-tv` node) cannot address anything inside it. What a marketer actually
+  // wants there is small and bounded — retype this line, embolden it, nudge its size —
+  // so that is the WHOLE editor. Anything richer would be a second styling system
+  // quietly disagreeing with the pinned CSS.
+  var cloneEditing = null;
+  var cloneToolbar = null;
+  // The engine's own em ramp (the `data-lumen-size` steps it renders). The live preview
+  // uses the SAME numbers, so what is typed is what the committed override looks like.
+  var CLONE_SIZE_EM = {
+    "-3": "0.75em",
+    "-2": "0.8125em",
+    "-1": "0.875em",
+    "0": "",
+    "1": "1.125em",
+    "2": "1.25em",
+    "3": "1.5em"
+  };
+
+  function cloneClamp(step) {
+    return Math.max(-3, Math.min(3, step));
+  }
+
+  function cloneOverrideFor(address) {
+    if (!address || !address.path) return null;
+    var byPath = Object.prototype.hasOwnProperty.call(TEXT_OVERRIDES, address.nodeId)
+      ? TEXT_OVERRIDES[address.nodeId]
+      : null;
+    if (!byPath || !Object.prototype.hasOwnProperty.call(byPath, address.path)) {
+      return null;
+    }
+    return byPath[address.path];
+  }
+
+  // An override is ONE line of plain text: the field may physically hold a newline
+  // (a paste, a Shift+Enter), and it is read back folded rather than refused.
+  function cloneEditText(el) {
+    return (el.textContent || "").replace(/[\\r\\n]+/g, " ").trim();
+  }
+
+  function applyCloneStyle() {
+    if (!cloneEditing) return;
+    var el = cloneEditing.el;
+    el.classList.toggle("lumen-clone-bold", cloneEditing.marks.bold);
+    el.classList.toggle("lumen-clone-italic", cloneEditing.marks.italic);
+    el.classList.toggle("lumen-clone-underline", cloneEditing.marks.underline);
+    el.style.fontSize = CLONE_SIZE_EM[String(cloneEditing.size)] || "";
+  }
+
+  function placeCloneToolbar() {
+    if (!cloneEditing || !cloneToolbar) return;
+    var rect = cloneEditing.el.getBoundingClientRect();
+    var bar = cloneToolbar.el;
+    var height = bar.offsetHeight || 28;
+    // Document coordinates, and the above/below choice is made in document space too —
+    // measured against the viewport it would flip mid-scroll and the toolbar would jump.
+    var above = rect.top + window.scrollY - height - 6;
+    bar.style.left = (rect.left + window.scrollX) + "px";
+    bar.style.top =
+      (above >= 0 ? above : rect.bottom + window.scrollY + 6) + "px";
+  }
+
+  function syncCloneToolbar() {
+    if (!cloneEditing || !cloneToolbar) return;
+    ["bold", "italic", "underline"].forEach(function (mark) {
+      var button = cloneToolbar.buttons[mark];
+      var on = cloneEditing.marks[mark] === true;
+      button.setAttribute("aria-pressed", on ? "true" : "false");
+      button.classList.toggle("is-on", on);
+    });
+    var size = cloneEditing.size;
+    cloneToolbar.readout.textContent = size > 0 ? "+" + size : String(size);
+    placeCloneToolbar();
+  }
+
+  function buildCloneToolbar() {
+    var bar = document.createElement("div");
+    bar.className = "lumen-clone-toolbar";
+    // Load-bearing: a mousedown that reached the document would blur the field and
+    // settle the edit before the button's own click ever fired.
+    bar.addEventListener("mousedown", function (event) {
+      event.preventDefault();
+    });
+    var buttons = {};
+    [["bold", "B"], ["italic", "I"], ["underline", "U"]].forEach(function (entry) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("data-mark", entry[0]);
+      button.setAttribute("aria-label", entry[0]);
+      button.textContent = entry[1];
+      button.addEventListener("click", function (event) {
+        event.preventDefault();
+        if (!cloneEditing) return;
+        cloneEditing.marks[entry[0]] = !cloneEditing.marks[entry[0]];
+        applyCloneStyle();
+        syncCloneToolbar();
+      });
+      buttons[entry[0]] = button;
+      bar.appendChild(button);
+    });
+    function stepper(label, delta) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("data-step", String(delta));
+      button.textContent = label;
+      button.addEventListener("click", function (event) {
+        event.preventDefault();
+        if (!cloneEditing) return;
+        cloneEditing.size = cloneClamp(cloneEditing.size + delta);
+        applyCloneStyle();
+        syncCloneToolbar();
+      });
+      return button;
+    }
+    var readout = document.createElement("span");
+    readout.className = "lumen-clone-size";
+    bar.appendChild(stepper("A−", -1));
+    bar.appendChild(readout);
+    bar.appendChild(stepper("A+", 1));
+    document.body.appendChild(bar);
+    return { el: bar, buttons: buttons, readout: readout };
+  }
+
+  function removeCloneToolbar() {
+    if (cloneToolbar && cloneToolbar.el.parentNode) {
+      cloneToolbar.el.parentNode.removeChild(cloneToolbar.el);
+    }
+    cloneToolbar = null;
+  }
+
+  // The OUTERMOST text-like element between the double-clicked node and the clone root.
+  // An override replaces a whole element's text, and a `<strong>` or `<em>` is part of
+  // its heading's text, not a thing to edit on its own — so a double-click on the mark
+  // edits the heading. Nothing text-like in the chain (a bare `<div>` of copy) is left
+  // alone rather than guessed at.
+  function cloneEditTarget(target, owner) {
+    var cur = target;
+    var found = null;
+    while (cur && cur !== owner) {
+      if (!isBridgeEl(cur) && TEXT_LIKE.test(cur.tagName.toLowerCase())) {
+        found = cur;
+      }
+      cur = cur.parentElement;
+    }
+    return found;
+  }
+
+  function beginCloneEditing(el) {
+    if (!el) return;
+    if (cloneEditing && cloneEditing.el === el) return;
+    // One local edit at a time, and starting a second settles the first as a commit —
+    // the same rule the rich-text session already follows.
+    if (cloneEditing) settleCloneEditing(true);
+    if (editing) stopEditing(true);
+    var address = addressOf(el);
+    // No path means the element is not inside a clone, so there is no override to write.
+    if (!address || !address.path) return;
+    var existing = cloneOverrideFor(address);
+    cloneEditing = {
+      el: el,
+      address: address,
+      original: el.innerHTML,
+      originalFontSize: el.style.fontSize,
+      marks: {
+        bold: Boolean(existing && existing.bold),
+        italic: Boolean(existing && existing.italic),
+        underline: Boolean(existing && existing.underline)
+      },
+      size:
+        existing && typeof existing.size === "number" && isFinite(existing.size)
+          ? cloneClamp(Math.round(existing.size))
+          : 0,
+      pasteGuard: null
+    };
+    var text =
+      existing && typeof existing.text === "string"
+        ? existing.text
+        : cloneEditText(el);
+    // The field is PLAIN text while it is being edited: the engine's mark wrappers are
+    // replaced by the three classes above, so what is typed cannot pick up markup.
+    el.textContent = text;
+    el.setAttribute("contenteditable", "plaintext-only");
+    if (el.contentEditable !== "plaintext-only") {
+      // Not every engine implements plaintext-only. Fall back, and enforce plainness at
+      // the one place rich markup could still get in.
+      el.setAttribute("contenteditable", "true");
+      cloneEditing.pasteGuard = function (event) {
+        event.preventDefault();
+        var plain =
+          (event.clipboardData && event.clipboardData.getData("text/plain")) || "";
+        plain = plain.replace(/[\\r\\n]+/g, " ");
+        if (!document.execCommand("insertText", false, plain)) {
+          var selection = window.getSelection();
+          if (selection && selection.rangeCount) {
+            var range = selection.getRangeAt(0);
+            range.deleteContents();
+            range.insertNode(document.createTextNode(plain));
+            range.collapse(false);
+          }
+        }
+      };
+      el.addEventListener("paste", cloneEditing.pasteGuard);
+    }
+    el.classList.remove("lumen-hover");
+    el.classList.add("lumen-clone-editing");
+    hideHover();
+    cloneToolbar = buildCloneToolbar();
+    applyCloneStyle();
+    syncCloneToolbar();
+    el.focus();
+    var selection = window.getSelection();
+    if (selection) {
+      var caret = document.createRange();
+      caret.selectNodeContents(el);
+      caret.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(caret);
+    }
+  }
+
+  function settleCloneEditing(commit) {
+    if (!cloneEditing) return;
+    var session = cloneEditing;
+    cloneEditing = null;
+    var el = session.el;
+    var text = commit ? cloneEditText(el) : "";
+    if (session.pasteGuard) el.removeEventListener("paste", session.pasteGuard);
+    removeCloneToolbar();
+    // The artifact's own markup goes back UNCONDITIONALLY. A committed override returns
+    // through a re-render of the page, which is the only thing that knows how the engine
+    // wraps marks; leaving the local preview standing would show two different answers.
+    el.removeAttribute("contenteditable");
+    el.classList.remove(
+      "lumen-clone-editing",
+      "lumen-clone-bold",
+      "lumen-clone-italic",
+      "lumen-clone-underline"
+    );
+    el.style.fontSize = session.originalFontSize || "";
+    el.innerHTML = session.original;
+    // An empty override is not a thing — emptying the field is a cancel, not a write of
+    // nothing (the way to REMOVE an override is the inspector's Clear).
+    if (commit && text) {
+      post("clone-text-commit", {
+        address: session.address,
+        override: {
+          text: text,
+          bold: session.marks.bold,
+          italic: session.marks.italic,
+          underline: session.marks.underline,
+          // Always a number, 0 included; the shell normalises 0 to "no step".
+          size: session.size
+        }
+      });
+    } else {
+      post("clone-text-cancel", { address: session.address });
+    }
+  }
+
   document.addEventListener(
     "dblclick",
     function (event) {
@@ -776,7 +1086,19 @@ _BRIDGE_V0_TEMPLATE = """
         event.target && event.target.closest
           ? event.target.closest("[data-node-id][data-tv]")
           : null;
-      beginEditing(el);
+      if (el) {
+        beginEditing(el);
+        return;
+      }
+      // R-A6: inside a clone there is no `data-tv` node to edit — the markup is the
+      // harvested artifact's own — so the very same gesture opens the constrained
+      // override editor on the text-like element the human pointed at.
+      var target = event.target;
+      if (!target || !target.closest || isBridgeEl(target)) return;
+      var owner = ownerNode(target);
+      if (!owner || !owner.hasAttribute("data-fragment-root")) return;
+      var editable = cloneEditTarget(target, owner);
+      if (editable) beginCloneEditing(editable);
     },
     true
   );
@@ -784,6 +1106,15 @@ _BRIDGE_V0_TEMPLATE = """
   document.addEventListener(
     "focusout",
     function (event) {
+      if (cloneEditing && cloneEditing.el.contains(event.target)) {
+        // Focus moving INTO the toolbar is not the human leaving the field. (The
+        // toolbar also prevents its own mousedown, so in practice focus never moves —
+        // this is the belt to that suspenders.)
+        var next = event.relatedTarget;
+        if (next && cloneToolbar && cloneToolbar.el.contains(next)) return;
+        settleCloneEditing(true);
+        return;
+      }
       if (!editing || !editing.contains(event.target)) return;
       scheduleEditingBlurCommit();
     },
@@ -791,6 +1122,23 @@ _BRIDGE_V0_TEMPLATE = """
   );
 
   document.addEventListener("keydown", function (event) {
+    if (cloneEditing) {
+      // One line of plain text, so a bare Enter is the COMMIT rather than a break.
+      if (event.key === "Escape") {
+        event.preventDefault();
+        settleCloneEditing(false);
+      } else if (
+        event.key === "Enter" &&
+        !event.shiftKey &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey
+      ) {
+        event.preventDefault();
+        settleCloneEditing(true);
+      }
+      return;
+    }
     if (editing) {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -849,7 +1197,22 @@ _BRIDGE_V0_TEMPLATE = """
         stopEditing(data.action === "commit");
       }
     }
+    // R-A6: the comment box's "Edit text" quick action — the same session a
+    // double-click opens, started from the shell. An address WITH a path is an element
+    // inside a clone (the constrained override editor); one WITHOUT is a vocabulary
+    // node, which owns its copy and edits it through the rich-text session instead.
+    if (data.type === "edit-text") {
+      var wanted =
+        data.address && typeof data.address === "object" ? data.address : null;
+      var addressed = wanted ? resolveAddress(wanted) : null;
+      if (addressed) {
+        if (wanted.path) beginCloneEditing(addressed);
+        else if (addressed.hasAttribute("data-tv")) beginEditing(addressed);
+      }
+      return;
+    }
     if (data.type === "clear") {
+      if (cloneEditing) settleCloneEditing(true);
       if (editing) stopEditing(true);
       if (selected) {
         selected.classList.remove("lumen-selected");
@@ -1400,8 +1763,10 @@ _BRIDGE_V0_TEMPLATE = """
       hideHover();
       // Badges are drawn in DOCUMENT coordinates, so a scroll does not move them — but
       // a reflow does. Re-measure from the last payload the shell sent rather than
-      // leaving stale rectangles behind.
+      // leaving stale rectangles behind. The clone editor's toolbar is anchored the
+      // same way, for the same reason.
       if (lastAnnotations) renderAnnotations(lastAnnotations);
+      if (cloneEditing) placeCloneToolbar();
       if (editingSession) editingSession.refreshSelection();
     },
     { passive: true }
@@ -1480,6 +1845,50 @@ def _bridge_node_names(
         label = _web_node_label(node, nodes, fragment_meta)
         names[node_id] = label or str(node.get("kind") or "node").capitalize()
     return names
+
+
+def _bridge_text_overrides(
+    web_doc: dict[str, Any] | None, page_id: str
+) -> dict[str, dict[str, Any]]:
+    """Ruling R-A6: every human text override on the RENDERED page's fragment pins,
+    keyed ``{node_id: {path: override}}``, baked into the script.
+
+    This is the in-frame editor's INITIAL state for an element that already carries an
+    override, and it cannot be recovered from the DOM: the engine renders an overridden
+    element's text wrapped in ``strong > em > u``, so reading the marks back out of the
+    markup would be a second parser free to disagree with the engine's. A pin with no
+    overrides (or an empty map) is simply absent, so the common page bakes ``{}``.
+
+    Same page discipline as :func:`_bridge_node_names`, and for the same reason: an
+    unknown page yields nothing rather than another page's edits, which would open the
+    editor on the wrong words.
+    """
+    pages = web_doc.get("pages") if isinstance(web_doc, dict) else None
+    page = next(
+        (
+            candidate
+            for candidate in (pages or [])
+            if isinstance(candidate, dict) and candidate.get("id") == page_id
+        ),
+        None,
+    )
+    raw_nodes = (page or {}).get("nodes")
+    nodes = raw_nodes if isinstance(raw_nodes, dict) else {}
+    overrides: dict[str, dict[str, Any]] = {}
+    for node_id, node in nodes.items():
+        if not isinstance(node_id, str) or not isinstance(node, dict):
+            continue
+        raw = node.get("text_overrides")
+        if not isinstance(raw, dict):
+            continue
+        by_path = {
+            path: value
+            for path, value in raw.items()
+            if isinstance(path, str) and isinstance(value, dict)
+        }
+        if by_path:
+            overrides[node_id] = by_path
+    return overrides
 
 
 def _bridge_page_capabilities(
@@ -1574,5 +1983,9 @@ def render_bridge_script(
         .replace(
             "__LUMEN_NODE_NAMES__",
             _script_json(_bridge_node_names(web_doc, page_id, fragment_meta)),
+        )
+        .replace(
+            "__LUMEN_TEXT_OVERRIDES__",
+            _script_json(_bridge_text_overrides(web_doc, page_id)),
         )
     )

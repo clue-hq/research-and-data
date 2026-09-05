@@ -6,6 +6,7 @@ import {
   addressObjectId,
   validateBridgeMessage,
   webBridgeAnnotationsMessage,
+  webBridgeEditTextMessage,
   WEB_BRIDGE_CHANNEL,
 } from "./webBridge";
 
@@ -170,4 +171,165 @@ test("the annotations message posted INTO the frame carries the render nonce", (
     }
   );
   assert.deepEqual(webBridgeAnnotationsMessage(NONCE, []).items, []);
+});
+
+/** Slice 3 (R-A6): the clone text-edit gesture. A double-click on an element
+ * inside a cloned band opens a constrained in-frame editor; committing it posts
+ * one override, addressed by the very same structural path an annotation uses. */
+test("a clone-text-commit validates into an address plus a normalised override", () => {
+  const message = validateBridgeMessage(
+    bridgeEvent({
+      channel: WEB_BRIDGE_CHANNEL,
+      nonce: NONCE,
+      type: "clone-text-commit",
+      address: { nodeId: "frg_a", path: ":nth-child(1) > :nth-child(2)", tag: "h2" },
+      override: {
+        text: "Better economics",
+        bold: true,
+        italic: false,
+        underline: "yes",
+        size: 2,
+      },
+    }),
+    NONCE,
+    SOURCE
+  );
+
+  assert.equal(message?.type, "clone-text-commit");
+  assert.deepEqual(
+    message?.type === "clone-text-commit" ? message.address : null,
+    { nodeId: "frg_a", path: ":nth-child(1) > :nth-child(2)", slot: undefined, tag: "h2" }
+  );
+  assert.deepEqual(
+    message?.type === "clone-text-commit" ? message.override : null,
+    // Only a literal `true` is a mark: the frame is untrusted, so a truthy
+    // string must not silently become an underline.
+    { text: "Better economics", bold: true, italic: false, underline: false, size: 2 }
+  );
+});
+
+test("the override's size step is clamped to the engine's ramp, and 0 is omitted", () => {
+  const commit = (size: unknown) =>
+    validateBridgeMessage(
+      bridgeEvent({
+        channel: WEB_BRIDGE_CHANNEL,
+        nonce: NONCE,
+        type: "clone-text-commit",
+        address: { nodeId: "frg_a", path: ":nth-child(1)", tag: "h2" },
+        override: { text: "x", bold: false, italic: false, underline: false, size },
+      }),
+      NONCE,
+      SOURCE
+    );
+
+  const big = commit(99);
+  assert.equal(big?.type === "clone-text-commit" ? big.override.size : null, 3);
+  const small = commit(-99);
+  assert.equal(small?.type === "clone-text-commit" ? small.override.size : null, -3);
+  // `size` is OPTIONAL on the engine's override and 0 means "no step" — so a
+  // zero, an absent one and a non-numeric one all leave the key off entirely.
+  for (const absent of [0, undefined, "2", Number.NaN]) {
+    const none = commit(absent);
+    assert.equal(none?.type, "clone-text-commit");
+    assert.equal(
+      none?.type === "clone-text-commit" ? "size" in none.override : true,
+      false,
+      `size ${String(absent)} must be omitted`
+    );
+  }
+});
+
+test("the override's text is capped at 8192 BYTES, never split mid-character", () => {
+  // A 3-byte character straddling the cap: 8191 ASCII bytes then one "€". The
+  // cap is measured in UTF-8 bytes (what the server stores), so the euro sign
+  // cannot fit and must be dropped WHOLE rather than truncated into a lone
+  // surrogate/continuation byte.
+  const text = "a".repeat(8191) + "\u20ac" + "tail";
+  const message = validateBridgeMessage(
+    bridgeEvent({
+      channel: WEB_BRIDGE_CHANNEL,
+      nonce: NONCE,
+      type: "clone-text-commit",
+      address: { nodeId: "frg_a", path: ":nth-child(1)", tag: "h2" },
+      override: { text, bold: false, italic: false, underline: false },
+    }),
+    NONCE,
+    SOURCE
+  );
+
+  const capped =
+    message?.type === "clone-text-commit" ? message.override.text : "";
+  assert.equal(capped, "a".repeat(8191));
+  assert.ok(new TextEncoder().encode(capped).length <= 8192);
+});
+
+test("a clone-text-commit without a path, or with a malformed override, is dropped", () => {
+  // A clone edit has no meaning on a vocabulary node — that text is the
+  // engine's own, edited through the rich-text session, not an override.
+  assert.equal(
+    validateBridgeMessage(
+      bridgeEvent({
+        channel: WEB_BRIDGE_CHANNEL,
+        nonce: NONCE,
+        type: "clone-text-commit",
+        address: { nodeId: "txt", tag: "p" },
+        override: { text: "x", bold: false, italic: false, underline: false },
+      }),
+      NONCE,
+      SOURCE
+    ),
+    null
+  );
+
+  for (const override of [undefined, null, "text", { text: 7 }, {}]) {
+    assert.equal(
+      validateBridgeMessage(
+        bridgeEvent({
+          channel: WEB_BRIDGE_CHANNEL,
+          nonce: NONCE,
+          type: "clone-text-commit",
+          address: { nodeId: "frg_a", path: ":nth-child(1)", tag: "h2" },
+          override,
+        }),
+        NONCE,
+        SOURCE
+      ),
+      null,
+      `override ${JSON.stringify(override)} must be dropped`
+    );
+  }
+});
+
+test("a clone-text-cancel validates into the bare address", () => {
+  const message = validateBridgeMessage(
+    bridgeEvent({
+      channel: WEB_BRIDGE_CHANNEL,
+      nonce: NONCE,
+      type: "clone-text-cancel",
+      address: { nodeId: "frg_a", path: ":nth-child(1)", slot: "headline", tag: "h2" },
+    }),
+    NONCE,
+    SOURCE
+  );
+
+  assert.deepEqual(message, {
+    type: "clone-text-cancel",
+    address: { nodeId: "frg_a", path: ":nth-child(1)", slot: "headline", tag: "h2" },
+  });
+});
+
+test("the edit-text message posted INTO the frame carries the render nonce", () => {
+  assert.deepEqual(
+    webBridgeEditTextMessage(NONCE, {
+      nodeId: "frg_a",
+      path: ":nth-child(1)",
+      tag: "h2",
+    }),
+    {
+      channel: WEB_BRIDGE_CHANNEL,
+      nonce: NONCE,
+      type: "edit-text",
+      address: { nodeId: "frg_a", path: ":nth-child(1)", tag: "h2" },
+    }
+  );
 });

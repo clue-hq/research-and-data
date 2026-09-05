@@ -29,9 +29,13 @@ import type {
   Scene,
 } from "@/features/design-editor/engine/scene/contracts";
 import type { SceneExportStatus } from "@/features/design-editor/adapter/scene-export";
-import type { WebSelection } from "@/features/design-editor/engine/webBridge";
+import type {
+  WebElementAddress,
+  WebSelection,
+} from "@/features/design-editor/engine/webBridge";
 import type {
   RichTextDocument,
+  WebFragmentTextOverride,
   WebTheme,
 } from "@/features/design-editor/engine/webDocuments";
 import { useState, type RefObject } from "react";
@@ -68,6 +72,7 @@ export function ArtifactStage({
   exportStatus,
   onActivateArtifact,
   onCanvasSelect,
+  onCloneTextCommit,
   onRequestExportPreview,
   onRichTextCommit,
   onRichTextSessionChange,
@@ -151,6 +156,12 @@ export function ArtifactStage({
   onCanvasSelect?: (selection: WebSelection | null) => void;
   /** W4.8a: a text node's in-iframe rich-text session committed. */
   onRichTextCommit?: (nodeId: string, content: RichTextDocument) => void;
+  /** Slice 3 (R-A6): the in-frame clone text editor committed — the session
+   * persists ONE `set_fragment_text_override` op. */
+  onCloneTextCommit?: (
+    address: WebElementAddress,
+    override: WebFragmentTextOverride,
+  ) => void;
   /** W4.8a: the rich-text session state, mirrored up on every change. */
   onRichTextSessionChange?: (state: WebRichTextSessionState) => void;
   /** W4.8a: a write is already in flight — the toolbar disables itself. */
@@ -319,6 +330,7 @@ export function ArtifactStage({
                      * canvas switches the page through the very same session
                      * setter the header's switcher uses — one active page, one
                      * writer, so the two surfaces can never disagree. */
+                    onCloneTextCommit={onCloneTextCommit}
                     onNavigate={onPageChange}
                     onRichTextCommit={onRichTextCommit}
                     onRichTextSessionChange={onRichTextSessionChange}

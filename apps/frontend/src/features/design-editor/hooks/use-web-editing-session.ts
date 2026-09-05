@@ -24,13 +24,18 @@ import type {
   WebArtifactCanvasControls,
   WebRichTextSessionState,
 } from "../components/web-artifact-canvas";
-import type { RichTextDocument, WebPageSummary } from "../engine/webDocuments";
+import type {
+  RichTextDocument,
+  WebFragmentTextOverride,
+  WebPageSummary,
+} from "../engine/webDocuments";
 import { useCustomComponentArtifact } from "./use-custom-component-artifact";
 import { useInspectorWrites } from "./use-inspector-writes";
 import { useReplaceImage } from "./use-replace-image";
 import { useWebAnnotations } from "./use-web-annotations";
 import { useWebArtifactSelection } from "./use-web-artifact-selection";
 import { useWebTheme } from "./use-web-theme";
+import type { WebElementAddress } from "../engine/webBridge";
 import type { InspectorPresentationState } from "@/features/chat-shell/hooks/use-inspector-controller";
 
 // Chat-flow slice 2: the web editing session, extracted VERBATIM from
@@ -476,6 +481,25 @@ export function useWebEditingSession({
         }
       : null;
 
+  // R-A6 (slice 3): the in-frame clone text editor settled. The canvas renders
+  // `activePageId`, so that is the page the commit belongs to — the same one the
+  // Clone-text-edits section clears against. A pathless address cannot be an
+  // override (the validator already drops one), so it is ignored rather than
+  // written to the whole node.
+  const setFragmentTextOverride = writes.setFragmentTextOverride;
+  const onCloneTextCommit = useCallback(
+    (address: WebElementAddress, override: WebFragmentTextOverride) => {
+      if (!address.path || !activePageId) return;
+      setFragmentTextOverride(
+        activePageId,
+        address.nodeId,
+        address.path,
+        override,
+      );
+    },
+    [activePageId, setFragmentTextOverride],
+  );
+
   // R-A6 (slice 3): the selected clone's human text edits. Present whenever the
   // selection resolves to a fragment (itself, or the wrapper section a pin is
   // born in); the list may be empty, and the section decides what to do with
@@ -514,6 +538,7 @@ export function useWebEditingSession({
     customComponentForm,
     inspectorError,
     layerRows,
+    onCloneTextCommit,
     onReplaceImage,
     onRichTextCommit,
     onRichTextSessionChange: setRichTextSession,

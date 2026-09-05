@@ -738,6 +738,7 @@ export function ChatSurface({
         onCanvasSelect={session.webSelection.onSelect}
         onCloseArtifact={shell.closeArtifact}
         onOpenGallery={shell.openGallery}
+        onCloneTextCommit={session.onCloneTextCommit}
         onRichTextCommit={session.onRichTextCommit}
         onRichTextSessionChange={session.onRichTextSessionChange}
         richTextBusy={session.writes.busy}

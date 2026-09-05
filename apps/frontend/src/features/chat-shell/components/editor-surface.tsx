@@ -274,6 +274,7 @@ export function EditorSurface({
         onCanvasSelect={session.webSelection.onSelect}
         onCloseArtifact={controller.closeArtifact}
         onOpenGallery={controller.openGallery}
+        onCloneTextCommit={session.onCloneTextCommit}
         onRichTextCommit={session.onRichTextCommit}
         onRichTextSessionChange={session.onRichTextSessionChange}
         richTextBusy={session.writes.busy}

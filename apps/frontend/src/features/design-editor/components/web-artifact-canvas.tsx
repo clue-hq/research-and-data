@@ -12,7 +12,11 @@ import {
   type WebElementAddress,
   type WebSelection,
 } from "../engine/webBridge";
-import type { RichTextDocument, WebTheme } from "../engine/webDocuments";
+import type {
+  RichTextDocument,
+  WebFragmentTextOverride,
+  WebTheme,
+} from "../engine/webDocuments";
 import { useWebBridgeSelection } from "../hooks/use-web-bridge-selection";
 import { useWebRender } from "../hooks/use-web-render";
 import { WebAnnotationPopover } from "./web-annotation-popover";
@@ -113,6 +117,7 @@ export function WebArtifactCanvas({
   controlsRef,
   documentId,
   editing = false,
+  onCloneTextCommit,
   onNavigate,
   onRichTextCommit,
   onRichTextSessionChange,
@@ -133,6 +138,13 @@ export function WebArtifactCanvas({
   /** W4 addendum: the mode switch. False (the default) mounts the bridge-free
    * view render — an actual website, links opening in new tabs. */
   editing?: boolean;
+  /** Slice 3 (R-A6): the in-frame clone text editor committed — the owner
+   * persists ONE `set_fragment_text_override` op. The address always carries a
+   * structural path (the validator drops one that does not). */
+  onCloneTextCommit?: (
+    address: WebElementAddress,
+    override: WebFragmentTextOverride,
+  ) => void;
   /** F5 task 20: the user clicked a site-internal link in the canvas. The
    * injected bridge always prevents the iframe navigation; when the link's raw
    * href is one of the document's routes it reports the page it points at, and
@@ -180,6 +192,7 @@ export function WebArtifactCanvas({
       controlsRef={controlsRef}
       documentId={documentId}
       editing={editing}
+      onCloneTextCommit={onCloneTextCommit}
       onNavigate={onNavigate}
       onRichTextCommit={onRichTextCommit}
       onRichTextSessionChange={onRichTextSessionChange}
@@ -199,6 +212,7 @@ function DocumentRender({
   controlsRef,
   documentId,
   editing,
+  onCloneTextCommit,
   onNavigate,
   onRichTextCommit,
   onRichTextSessionChange,
@@ -214,6 +228,10 @@ function DocumentRender({
   controlsRef?: RefObject<WebArtifactCanvasControls | null>;
   documentId: string;
   editing: boolean;
+  onCloneTextCommit?: (
+    address: WebElementAddress,
+    override: WebFragmentTextOverride,
+  ) => void;
   onNavigate?: (pageId: string) => void;
   onRichTextCommit?: (nodeId: string, content: RichTextDocument) => void;
   onRichTextSessionChange?: (state: WebRichTextSessionState) => void;
@@ -249,6 +267,7 @@ function DocumentRender({
     iframeRef,
     nonceRef,
     onAnnotate,
+    onCloneTextCommit,
     onNavigate,
     onRichTextCommit,
     onSelect,
