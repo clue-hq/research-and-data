@@ -1,23 +1,37 @@
 import type { NodeId, PageId, Scene } from "../engine/scene/contracts";
 import { parentInfoForNode } from "../engine/scene/sceneQueries";
 import { rootFrameId, sceneSelectionFor } from "./scene-hydrate";
-import { representableHit } from "./scene-selection";
 
 /**
- * Editor Quality Plan 3 (item E) — the selection ladder, as pure decisions.
+ * Selection model v2 (founder rulings 2026-09-04) — the pointer's selection
+ * decisions, as pure functions.
  *
- * `representableHit` (AD2.5) picks the topmost node under the pointer that has
- * an inspector schema. Inside a button that is always the label text, so the
- * button itself was selectable only in its padding; there was no hover
- * feedback and no way to reach a parent from the canvas. This module adds the
- * rungs the roadmap ruled: button-as-a-unit on the first click, walk-up
- * (second click / Alt-click / Escape), a hover target, and the breadcrumb's
- * ancestry. The component around it owns events; everything decidable is
- * decided here and proven over the harvested ad.
+ * `representableHit` (AD2.5) picks the DEEPEST node under the pointer that has
+ * an inspector schema, which on a real ad means a click almost always lands on
+ * a leaf: the group is unreachable except through its padding, and a button is
+ * selectable only in the gap around its label. Plan 3 answered that with a
+ * button promotion plus "a second click on the already-selected node walks up".
+ * That second-click rule is now REMOVED — a double-click is two clicks at one
+ * spot, so walking up on the second click and drilling down on the double-click
+ * cannot both be true of the same gesture. (Its 4 px slop constant,
+ * `WALK_UP_CLICK_SLOP_PX`, and `selectionLadderHit` go with it.)
+ *
+ * What replaces it, per the six rules:
+ *   R1 a click selects the OUTERMOST unit — a button or a group — on the path,
+ *      or else the deepest representable node (`selectionClickTarget`);
+ *   R2 a double-click drills one representable level toward the pointer
+ *      (`selectionDrillDown`), and opens the caret only once the text itself is
+ *      the selection (that gate lives in `scene-text-edit`);
+ *   R3 Cmd/Ctrl-click selects the deepest node and cycles shallower on repeat
+ *      (`deepSelectTarget`);
+ *   R4 Alt-click and Escape walk up (`selectionWalkUp`, `escapeSelectionEffect`
+ *      — both unchanged from Plan 3);
+ *   R5 the hover outline previews R1's click target (`sceneHoverTarget`);
+ *   R6 a press drags whatever the click selected — geometry, not this module.
+ *
+ * The component around it owns events; everything decidable is decided here and
+ * proven over the harvested ad.
  */
-
-/** Pointer travel (screen px) under which a press-and-release counts as a click. */
-export const WALK_UP_CLICK_SLOP_PX = 4;
 
 function presentChildren(scene: Scene, nodeId: NodeId): NodeId[] {
   const node = scene.nodes[nodeId];
@@ -52,34 +66,99 @@ function representable(scene: Scene, pageId: PageId | null, nodeId: NodeId): boo
 }
 
 /**
- * The first-click selection: `representableHit`, promoted to the parent when
- * the hit is a button's label and the button is itself representable.
+ * R1: a node the click treats as one thing rather than as scaffolding — a
+ * button (Plan 3's shape) or a group. Frames and ordinary stacks are
+ * pass-through: they hold their children apart, they are not the thing the
+ * pointer is aiming at.
  */
-export function selectionLadderHit(
+export function isUnit(scene: Scene, nodeId: NodeId): boolean {
+  const node = scene.nodes[nodeId];
+  if (!node) {
+    return false;
+  }
+  return node.kind.kind === "group" || isButtonShaped(scene, nodeId);
+}
+
+/** The stack's representable members, outer→inner. */
+function representableStack(stack: NodeId[], scene: Scene, pageId: PageId | null): NodeId[] {
+  return stack.filter((id) => representable(scene, pageId, id));
+}
+
+/**
+ * R1: the click target. The OUTERMOST representable unit on the path wins; a
+ * path without a unit selects the deepest representable node. Pass-through
+ * containers therefore win a click only on their own empty area, where they
+ * are the deepest hit.
+ */
+export function selectionClickTarget(
   stack: NodeId[],
   scene: Scene,
   pageId: PageId | null,
 ): NodeId | null {
-  const hit = representableHit(stack, scene, pageId);
-  if (hit === null) {
-    return null;
-  }
-  const node = scene.nodes[hit];
-  if (node?.kind.kind !== "text") {
-    return hit;
-  }
-  const info = parentInfoForNode(scene, hit);
-  if (!info || info.parent.kind !== "node") {
-    return hit;
-  }
-  const parentId = info.parent.id;
-  if (buttonLabelId(scene, parentId) === hit && representable(scene, pageId, parentId)) {
-    return parentId;
-  }
-  return hit;
+  const candidates = representableStack(stack, scene, pageId);
+  const unit = candidates.find((id) => isUnit(scene, id));
+  return unit ?? candidates[candidates.length - 1] ?? null;
 }
 
-/** R2: the nearest representable ancestor; null from the root frame or an unknown node. */
+/**
+ * R2: one level down toward the pointer — the representable child of the
+ * selection on the path to the deepest hit. Null when the selection is not a
+ * proper ancestor of the hit (nothing to drill into), which is what lets the
+ * caller fall through to the caret.
+ */
+export function selectionDrillDown({
+  stack,
+  scene,
+  pageId,
+  selectedNodeId,
+}: {
+  stack: NodeId[];
+  scene: Scene;
+  pageId: PageId | null;
+  selectedNodeId: NodeId | null;
+}): NodeId | null {
+  if (selectedNodeId === null) {
+    return null;
+  }
+  const candidates = representableStack(stack, scene, pageId);
+  const at = stack.indexOf(selectedNodeId);
+  if (at === -1 || at === stack.length - 1) {
+    return null;
+  }
+  return candidates.find((id) => stack.indexOf(id) > at) ?? null;
+}
+
+/**
+ * R3: Cmd/Ctrl-click — the deepest representable node, so any leaf is one
+ * gesture away however deep it sits; when the selection is already one of the
+ * stack's representable members, the next SHALLOWER one, wrapping from the
+ * outermost back to the deepest, so repeating the gesture walks the whole
+ * stack without ever dead-ending.
+ */
+export function deepSelectTarget({
+  stack,
+  scene,
+  pageId,
+  selectedNodeId,
+}: {
+  stack: NodeId[];
+  scene: Scene;
+  pageId: PageId | null;
+  selectedNodeId: NodeId | null;
+}): NodeId | null {
+  const candidates = representableStack(stack, scene, pageId);
+  if (candidates.length === 0) {
+    return null;
+  }
+  const deepest = candidates[candidates.length - 1];
+  const at = selectedNodeId === null ? -1 : candidates.indexOf(selectedNodeId);
+  if (at === -1) {
+    return deepest;
+  }
+  return at === 0 ? deepest : candidates[at - 1];
+}
+
+/** R4: the nearest representable ancestor; null from the root frame or an unknown node. */
 export function selectionWalkUp(
   scene: Scene,
   pageId: PageId | null,
@@ -101,7 +180,7 @@ export function selectionWalkUp(
   }
 }
 
-/** R4: what the hover outline shows — the click target, unless it is already selected. */
+/** R5: what the hover outline shows — the click target, unless it is already selected. */
 export function sceneHoverTarget({
   stack,
   scene,
@@ -113,7 +192,7 @@ export function sceneHoverTarget({
   pageId: PageId | null;
   selectedNodeId: NodeId | null;
 }): NodeId | null {
-  const hit = selectionLadderHit(stack, scene, pageId);
+  const hit = selectionClickTarget(stack, scene, pageId);
   return hit !== null && hit !== selectedNodeId ? hit : null;
 }
 
@@ -122,7 +201,7 @@ export type EscapeSelectionEffect =
   | { kind: "select"; nodeId: NodeId | null }
   | { kind: "none" };
 
-/** R3: Escape — a live gesture resets (ruling C-2, unchanged); a caret owns its own Escape; otherwise walk up, clearing at the root. */
+/** R4: Escape — a live gesture resets (ruling C-2, unchanged); a caret owns its own Escape; otherwise walk up, clearing at the root. */
 export function escapeSelectionEffect({
   gestureLive,
   textEditing,

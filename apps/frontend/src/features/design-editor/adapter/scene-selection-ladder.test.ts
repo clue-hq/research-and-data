@@ -4,20 +4,33 @@ import type { Scene } from "../engine/scene/contracts";
 import { AD_PAGE_ID, HARVESTED_AD_PAGE } from "./__fixtures__/scene-nodes";
 import { representableHit } from "./scene-selection";
 import {
-  WALK_UP_CLICK_SLOP_PX,
   buttonLabelId,
+  deepSelectTarget,
   escapeSelectionEffect,
   isButtonShaped,
+  isUnit,
   sceneHoverTarget,
-  selectionLadderHit,
+  selectionClickTarget,
+  selectionDrillDown,
   selectionWalkUp,
 } from "./scene-selection-ladder";
 
 /**
- * Editor Quality Plan 3 (item E): the selection ladder. Every case runs over
- * the harvested ad; the one shape the harvest lacks — a BUTTON, an auto-layout
- * whose only child is text — is made by moving the real headline into the real
- * copy row (AD2.4's one-field-edit technique), never by inventing a node.
+ * Selection model v2 (founder rulings 2026-09-04): the click/drill/deep-select
+ * decisions. Every case runs over the harvested ad; the one shape the harvest
+ * lacks — a BUTTON, an auto-layout whose only child is text — is made by moving
+ * the real headline into the real copy row (AD2.4's one-field-edit technique),
+ * never by inventing a node.
+ *
+ * Plan 3's "second click on the selected node walks up" is gone (a double-click
+ * is two clicks at one spot, so it cannot coexist with drilling), and with it
+ * the slop constant and `selectionLadderHit`; the Escape and Alt-click walk-ups
+ * are unchanged and keep their Plan 3 cases verbatim.
+ *
+ * On the harvest, the ROOT FRAME IS REPRESENTABLE — `sceneSelectionFor` maps it
+ * to the "canvas" selection — so it is the outermost rung of the R3 cycle and
+ * the last stop of a walk-up. (The plan's prose claimed the opposite; the
+ * fixture is the truth, and these cases pin it.)
  */
 
 function clone(scene: Scene): Scene {
@@ -42,29 +55,120 @@ it("R1: an auto-layout whose only child is text is button-shaped; the harvest's 
   assert.equal(isButtonShaped(scene, "auto_row_copy"), true);
   assert.equal(buttonLabelId(scene, "auto_row_copy"), "text_headline");
   assert.equal(isButtonShaped(HARVESTED_AD_PAGE, "auto_row_copy"), false);
-  assert.equal(buttonLabelId(HARVESTED_AD_PAGE, "auto_row_copy"), null);
-  // A text node, a group and the root frame are never buttons.
   assert.equal(isButtonShaped(scene, "text_headline"), false);
   assert.equal(isButtonShaped(scene, "group_proof"), false);
-  assert.equal(isButtonShaped(scene, "frame_ad_root"), false);
 });
 
-it("button-first: a hit on the label selects the BUTTON, while representableHit still says the label", () => {
+it("units are buttons and groups; frames, stacks and leaves are pass-through", () => {
   const scene = sceneWithButton();
-  const stack = ["frame_ad_root", "auto_row_copy", "text_headline"];
-  assert.equal(representableHit(stack, scene, AD_PAGE_ID), "text_headline");
-  assert.equal(selectionLadderHit(stack, scene, AD_PAGE_ID), "auto_row_copy");
+  assert.equal(isUnit(scene, "auto_row_copy"), true);
+  assert.equal(isUnit(HARVESTED_AD_PAGE, "group_proof"), true);
+  assert.equal(isUnit(HARVESTED_AD_PAGE, "auto_row_copy"), false);
+  assert.equal(isUnit(HARVESTED_AD_PAGE, "frame_ad_root"), false);
+  assert.equal(isUnit(HARVESTED_AD_PAGE, "text_proof_stat"), false);
 });
 
-it("everything else keeps deepest-leaf first click", () => {
-  // The harvest's row is not a button, so its text descendant wins as before.
+it("R1 click: the OUTERMOST unit on the path wins; without a unit, the deepest representable node", () => {
+  const scene = sceneWithButton();
+  assert.equal(
+    selectionClickTarget(["frame_ad_root", "auto_row_copy", "text_headline"], scene, AD_PAGE_ID),
+    "auto_row_copy",
+  );
+  // The harvest's row is not a unit but `group_proof` is: the group wins over its member.
   const stack = ["frame_ad_root", "auto_row_copy", "group_proof", "text_proof_stat"];
-  assert.equal(selectionLadderHit(stack, HARVESTED_AD_PAGE, AD_PAGE_ID), "text_proof_stat");
-  assert.equal(selectionLadderHit([], HARVESTED_AD_PAGE, AD_PAGE_ID), null);
-  assert.equal(selectionLadderHit(["line_divider"], HARVESTED_AD_PAGE, AD_PAGE_ID), null);
+  assert.equal(representableHit(stack, HARVESTED_AD_PAGE, AD_PAGE_ID), "text_proof_stat");
+  assert.equal(selectionClickTarget(stack, HARVESTED_AD_PAGE, AD_PAGE_ID), "group_proof");
+  // No unit on the path: deepest representable.
+  assert.equal(
+    selectionClickTarget(["frame_ad_root", "auto_row_copy", "text_proof_stat"], HARVESTED_AD_PAGE, AD_PAGE_ID),
+    "text_proof_stat",
+  );
+  // A pass-through container is the target only on its own empty area.
+  assert.equal(
+    selectionClickTarget(["frame_ad_root", "auto_row_copy"], HARVESTED_AD_PAGE, AD_PAGE_ID),
+    "auto_row_copy",
+  );
+  assert.equal(selectionClickTarget([], HARVESTED_AD_PAGE, AD_PAGE_ID), null);
+  // An unrepresentable-only stack clears the selection rather than guessing.
+  assert.equal(selectionClickTarget(["line_divider"], HARVESTED_AD_PAGE, AD_PAGE_ID), null);
 });
 
-it("R2: walk-up climbs to the nearest representable ancestor and stops at the root frame", () => {
+it("R2 drill: from an ancestor, one representable level toward the pointer; from the leaf, nothing", () => {
+  const stack = ["frame_ad_root", "auto_row_copy", "group_proof", "text_proof_stat"];
+  assert.equal(
+    selectionDrillDown({
+      stack,
+      scene: HARVESTED_AD_PAGE,
+      pageId: AD_PAGE_ID,
+      selectedNodeId: "auto_row_copy",
+    }),
+    "group_proof",
+  );
+  assert.equal(
+    selectionDrillDown({
+      stack,
+      scene: HARVESTED_AD_PAGE,
+      pageId: AD_PAGE_ID,
+      selectedNodeId: "group_proof",
+    }),
+    "text_proof_stat",
+  );
+  assert.equal(
+    selectionDrillDown({
+      stack,
+      scene: HARVESTED_AD_PAGE,
+      pageId: AD_PAGE_ID,
+      selectedNodeId: "text_proof_stat",
+    }),
+    null,
+  );
+  // Not an ancestor of the hit: nothing to drill.
+  assert.equal(
+    selectionDrillDown({
+      stack,
+      scene: HARVESTED_AD_PAGE,
+      pageId: AD_PAGE_ID,
+      selectedNodeId: "text_headline",
+    }),
+    null,
+  );
+  assert.equal(
+    selectionDrillDown({ stack, scene: HARVESTED_AD_PAGE, pageId: AD_PAGE_ID, selectedNodeId: null }),
+    null,
+  );
+  // The button: plate selected, a double-click on the label drills to the label.
+  const button = sceneWithButton();
+  assert.equal(
+    selectionDrillDown({
+      stack: ["frame_ad_root", "auto_row_copy", "text_headline"],
+      scene: button,
+      pageId: AD_PAGE_ID,
+      selectedNodeId: "auto_row_copy",
+    }),
+    "text_headline",
+  );
+});
+
+it("R3 deep select: the deepest node, then one shallower per repeat, wrapping to the deepest", () => {
+  const stack = ["frame_ad_root", "auto_row_copy", "group_proof", "text_proof_stat"];
+  const at = (selectedNodeId: string | null) =>
+    deepSelectTarget({ stack, scene: HARVESTED_AD_PAGE, pageId: AD_PAGE_ID, selectedNodeId });
+  assert.equal(at(null), "text_proof_stat");
+  assert.equal(at("text_proof_stat"), "group_proof");
+  assert.equal(at("group_proof"), "auto_row_copy");
+  // The root frame IS representable (it is the canvas selection), so it is the
+  // cycle's outermost rung and the wrap happens there, not at the row.
+  assert.equal(at("auto_row_copy"), "frame_ad_root");
+  assert.equal(at("frame_ad_root"), "text_proof_stat");
+  // A selection outside the stack starts over at the deepest.
+  assert.equal(at("text_headline"), "text_proof_stat");
+  assert.equal(
+    deepSelectTarget({ stack: [], scene: HARVESTED_AD_PAGE, pageId: AD_PAGE_ID, selectedNodeId: null }),
+    null,
+  );
+});
+
+it("R4 walk-up climbs to the nearest representable ancestor and stops at the root frame", () => {
   assert.equal(selectionWalkUp(HARVESTED_AD_PAGE, AD_PAGE_ID, "text_proof_stat"), "group_proof");
   assert.equal(selectionWalkUp(HARVESTED_AD_PAGE, AD_PAGE_ID, "group_proof"), "auto_row_copy");
   assert.equal(selectionWalkUp(HARVESTED_AD_PAGE, AD_PAGE_ID, "auto_row_copy"), "frame_ad_root");
@@ -72,22 +176,21 @@ it("R2: walk-up climbs to the nearest representable ancestor and stops at the ro
   assert.equal(selectionWalkUp(HARVESTED_AD_PAGE, AD_PAGE_ID, "no_such_node"), null);
 });
 
-it("hover: the ladder hit, unless it is the selected node itself", () => {
+it("R5 hover: the click target, unless it is the selected node itself", () => {
   const stack = ["frame_ad_root", "auto_row_copy", "group_proof", "text_proof_stat"];
   assert.equal(
     sceneHoverTarget({ stack, scene: HARVESTED_AD_PAGE, pageId: AD_PAGE_ID, selectedNodeId: null }),
-    "text_proof_stat",
+    "group_proof",
   );
   assert.equal(
-    sceneHoverTarget({ stack, scene: HARVESTED_AD_PAGE, pageId: AD_PAGE_ID, selectedNodeId: "text_proof_stat" }),
+    sceneHoverTarget({ stack, scene: HARVESTED_AD_PAGE, pageId: AD_PAGE_ID, selectedNodeId: "group_proof" }),
     null,
   );
-  // Over a button, the hover target is the button (what a click would select).
-  const scene = sceneWithButton();
+  // Over a button, the hover target is the button — what a click would select.
   assert.equal(
     sceneHoverTarget({
       stack: ["frame_ad_root", "auto_row_copy", "text_headline"],
-      scene,
+      scene: sceneWithButton(),
       pageId: AD_PAGE_ID,
       selectedNodeId: null,
     }),
@@ -99,7 +202,7 @@ it("hover: the ladder hit, unless it is the selected node itself", () => {
   );
 });
 
-it("R3 Escape: a live gesture resets; a caret is left alone; otherwise the selection walks up, and clears at the root", () => {
+it("Escape: a live gesture resets; a caret is left alone; otherwise the selection walks up, and clears at the root", () => {
   const base = { scene: HARVESTED_AD_PAGE, pageId: AD_PAGE_ID };
   assert.deepEqual(
     escapeSelectionEffect({ ...base, gestureLive: true, textEditing: false, selectedNodeId: "group_proof" }),
@@ -108,6 +211,10 @@ it("R3 Escape: a live gesture resets; a caret is left alone; otherwise the selec
   assert.deepEqual(
     escapeSelectionEffect({ ...base, gestureLive: false, textEditing: true, selectedNodeId: "group_proof" }),
     { kind: "none" },
+  );
+  assert.deepEqual(
+    escapeSelectionEffect({ ...base, gestureLive: false, textEditing: false, selectedNodeId: "text_proof_stat" }),
+    { kind: "select", nodeId: "group_proof" },
   );
   assert.deepEqual(
     escapeSelectionEffect({ ...base, gestureLive: false, textEditing: false, selectedNodeId: "group_proof" }),
@@ -125,8 +232,4 @@ it("R3 Escape: a live gesture resets; a caret is left alone; otherwise the selec
     escapeSelectionEffect({ scene: null, pageId: null, gestureLive: false, textEditing: false, selectedNodeId: "x" }),
     { kind: "none" },
   );
-});
-
-it("the same-spot walk-up slop is four screen pixels", () => {
-  assert.equal(WALK_UP_CLICK_SLOP_PX, 4);
 });
