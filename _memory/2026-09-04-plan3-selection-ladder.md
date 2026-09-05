@@ -1,5 +1,10 @@
 # 2026-09-04 — Plan 3 shipped: the selection ladder (button-first click, walk-up, hover outline)
 
+**SUPERSEDED the same day by selection model v2** (`2026-09-04-selection-model-v2.md`): the founder
+found the ladder impractical — the button-as-unit click left the label unreachable and unmovable, and
+the second-click walk-up collided with double-click. Kept: hover outline, Alt-click/Escape walk-up,
+the button shape rule. Removed: second-click walk-up + slop, the button double-click caret shortcut.
+
 Plan: `docs/superpowers/plans/2026-09-04-selection-ladder.md` (roadmap Plan 3, item E). Commits
 `843747f55..cb9f4ab89`, frontend only, engine untouched. SDD with Opus implementers; every diff
 reviewed and every test re-run first-hand by the controller. The Next dev server hot-reloads.
