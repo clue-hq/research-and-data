@@ -227,3 +227,54 @@ def test_a_note_on_a_vanished_node_says_so_instead_of_inventing_a_section():
     assert "ANNOTATION 3" in text
     assert "no longer exists in the page" in text
     assert '"3. Drop it"' in text
+
+
+def test_an_annotation_path_is_counted_over_the_markup_the_browser_actually_saw():
+    """Slice 3: the path rides in from the BROWSER, which measured it against the RENDERED
+    clone — and a slot bound `{"visible": false}` drops its whole element from that render.
+    Counted naively over the stored artifact the same address lands one element early (here:
+    on the badge nobody can see instead of the headline the marketer wrote about), and the
+    agent is told the wrong words. The node's own hidden slot keys are what reconcile the
+    two walks."""
+    from lumen_api.main import _describe_web_turn_targets
+
+    frag = "frag_" + "cd" * 8
+    doc = {
+        "pages": [
+            {
+                "id": "home",
+                "root": "r",
+                "nodes": {
+                    "r": {"id": "r", "kind": "container", "children": ["s"]},
+                    "s": {"id": "s", "kind": "section", "children": ["f"]},
+                    "f": {
+                        "id": "f",
+                        "kind": "fragment",
+                        "fragment_id": frag,
+                        "slots": {"badge": {"visible": False}},
+                    },
+                },
+            }
+        ]
+    }
+    html = (
+        "<section>"
+        '<span data-lumen-slot="badge">New</span>'
+        "<h2>Card economics</h2>"
+        "</section>"
+    )
+    text = _describe_web_turn_targets(
+        doc,
+        ["f"],
+        fragment_meta={frag: {"label": "Stripe hero", "section_role": "hero"}},
+        target_notes=[
+            {
+                "target": "f",
+                "path": ":nth-child(1) > :nth-child(1)",
+                "note": "1. Make this shorter",
+            }
+        ],
+        read_source=lambda fid: {"html": html},
+    )
+    assert 'element `h2` at path `:nth-child(1) > :nth-child(1)` reading "Card economics"' in text
+    assert "New" not in text

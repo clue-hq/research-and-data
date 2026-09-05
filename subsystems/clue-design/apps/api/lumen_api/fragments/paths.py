@@ -19,12 +19,19 @@ names a top-level element of the artifact, and the two walks agree step for step
 made against can legitimately have moved on — a later turn rewrote the band — and the honest
 answer is to tell the agent the path is dead and let it use its judgment. Guessing at "the
 nearest heading" would put words in the marketer's mouth.
+
+**The browser measured the path against the RENDERED clone, not the stored artifact.** Between
+the two sits the slot pass: a slot bound ``{"visible": false}`` DROPS its whole element from the
+render (``fragment.rs``), so counted naively over the stored HTML the same address lands one
+element early per hidden sibling before the target — a note about the headline resolving to the
+badge nobody can see. ``hidden_slot_keys`` is how a caller that holds the node reconciles the two
+walks: those elements are skipped, and not descended into, exactly the way the render drops them.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Collection
 
 from selectolax.lexbor import LexborHTMLParser
 
@@ -44,13 +51,21 @@ _STEP_RE = re.compile(r":nth-child\((\d+)\)")
 _NON_ELEMENT_TAGS = frozenset({"-text", "-comment", "-undef", "_text", "_comment"})
 
 
-def resolve_structural_path(html: str, path: str | None) -> dict[str, Any] | None:
+def resolve_structural_path(
+    html: str, path: str | None, hidden_slot_keys: Collection[str] = ()
+) -> dict[str, Any] | None:
     """Walk ``path`` through ``html`` and describe what it lands on.
 
     Returns ``{"tag": …, "text": …, "slot": …}`` — the element's tag name, its whitespace-
     collapsed visible text (inline markup flattened, the way a human reads it), and its
     ``data-lumen-slot`` key when it carries one — or ``None`` when the path is malformed,
     steps outside the closed grammar, or names a child the markup does not have.
+
+    ``hidden_slot_keys`` are the node's slot keys bound ``{"visible": false}``. An element
+    carrying one of them is not on the rendered page at all, so it is neither counted as a
+    sibling nor enterable as a parent — the second half is what stops an address from landing
+    INSIDE something invisible. Empty (the default) walks the stored artifact as-is, which is
+    correct for an unpersonalized clone.
     """
 
     if not path or not PATH_RE.match(path):
@@ -65,11 +80,13 @@ def resolve_structural_path(html: str, path: str | None) -> dict[str, Any] | Non
     current: Any = tree.body
     if current is None:
         return None
+    hidden = frozenset(hidden_slot_keys)
     for step in _STEP_RE.findall(path):
         index = int(step)
         children = [
             child for child in current.iter(include_text=False)
             if child.tag not in _NON_ELEMENT_TAGS
+            and child.attributes.get("data-lumen-slot") not in hidden
         ]
         if index < 1 or index > len(children):
             return None

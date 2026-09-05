@@ -54,3 +54,42 @@ def test_a_dead_or_malformed_path_is_none():
     assert resolve_structural_path(HTML, "") is None
     assert resolve_structural_path(HTML, None) is None
     assert resolve_structural_path("", ":nth-child(1)") is None
+
+
+# --------------------------------------------------------------------------- #
+# The hidden-slot mirror
+# --------------------------------------------------------------------------- #
+
+HIDDEN_HTML = '<section><span data-lumen-slot="badge">New</span><h2>Title</h2></section>'
+
+
+def test_a_hidden_slot_is_not_counted_when_the_walk_is_told_which_slots_are_hidden():
+    """The path the browser measured was measured against the RENDERED markup, and a
+    `Visible(false)` slot value drops its whole element from that render (the engine's slot
+    pass). So the same address counted over the STORED artifact is off by one per hidden
+    sibling before the target — which is how a note on the headline resolved to the badge
+    nobody can see. Told which slots the node hides, the walk skips them exactly the way the
+    render does."""
+    assert resolve_structural_path(
+        HIDDEN_HTML, ":nth-child(1) > :nth-child(1)", hidden_slot_keys={"badge"}
+    ) == {"tag": "h2", "text": "Title", "slot": None}
+    # Without the hidden set — an unpersonalized clone — the very same path is the badge.
+    assert resolve_structural_path(HIDDEN_HTML, ":nth-child(1) > :nth-child(1)") == {
+        "tag": "span",
+        "text": "New",
+        "slot": "badge",
+    }
+
+
+def test_a_hidden_element_is_not_descended_into_either():
+    """A hidden element is not on the page at all, so nothing inside it is addressable:
+    the walk must not count it AND must not be able to land within it."""
+    html = (
+        '<section><div data-lumen-slot="badge"><b>Inner</b></div><h2>Title</h2></section>'
+    )
+    assert (
+        resolve_structural_path(
+            html, ":nth-child(1) > :nth-child(1) > :nth-child(1)", hidden_slot_keys={"badge"}
+        )
+        is None
+    )

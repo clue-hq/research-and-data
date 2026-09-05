@@ -9,8 +9,10 @@ import {
 import {
   addPageOp,
   removePageOp,
+  setFragmentTextOverrideOp,
   setPageMetaOp,
   type LoadedWebDocument,
+  type WebFragmentTextOverride,
 } from "../engine/webDocuments";
 import type { WebArtifactSelection } from "./use-web-artifact-selection";
 import {
@@ -46,6 +48,16 @@ export interface InspectorWrites extends WebManualEdits {
   addPage: (page: { id: string; name: string; route: string }) => void;
   /** Remove a page (`remove_page`). The engine refuses a document's last one. */
   removePage: (pageId: string) => void;
+  /** R-A6 (slice 3): set — or clear, with `null` — the human's text override on
+   * ONE element inside a cloned section (`set_fragment_text_override`). Same
+   * one-op-through-`applyOps` write path as every other inspector edit; the
+   * intent tells a set from a take-it-back in the run history. */
+  setFragmentTextOverride: (
+    pageId: string,
+    nodeId: string,
+    path: string,
+    override: WebFragmentTextOverride | null,
+  ) => void;
 }
 
 export function useInspectorWrites({
@@ -207,6 +219,20 @@ export function useInspectorWrites({
   const removePage = useCallback((pageId: string) => {
     applyOpsRef.current([removePageOp(pageId)], "remove_page");
   }, []);
+  const setFragmentTextOverride = useCallback(
+    (
+      pageId: string,
+      nodeId: string,
+      path: string,
+      override: WebFragmentTextOverride | null,
+    ) => {
+      applyOpsRef.current(
+        [setFragmentTextOverrideOp(pageId, nodeId, path, override)],
+        override ? "clone_text_edit" : "clone_text_clear",
+      );
+    },
+    [],
+  );
 
-  return { ...edits, addPage, removePage, setPageMeta };
+  return { ...edits, addPage, removePage, setFragmentTextOverride, setPageMeta };
 }

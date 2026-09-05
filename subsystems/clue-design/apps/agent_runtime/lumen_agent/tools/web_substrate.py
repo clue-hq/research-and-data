@@ -5028,6 +5028,52 @@ class LumenWebTools:
             "Compose the section instead.",
         )
 
+    def _fragment_text_overrides(self, fragment_id: str) -> List[JsonObject]:
+        """Every human text override on every pin of this clone, across every page.
+
+        The overrides live on the DOCUMENT's fragment NODE, not on the artifact: the artifact is
+        immutable and shared, an override is one person's edit to one instance. So this reads
+        the working doc rather than the registry, and the same clone pinned twice reports two
+        (possibly different) sets. Ordered by page, node and path so the listing is stable
+        between turns.
+        """
+        found: List[JsonObject] = []
+        doc = self.web_doc if isinstance(self.web_doc, dict) else {}
+        for page in doc.get("pages") or []:
+            if not isinstance(page, dict):
+                continue
+            page_id = page.get("id") if isinstance(page.get("id"), str) else ""
+            nodes = page.get("nodes")
+            if not isinstance(nodes, dict):
+                continue
+            for node_id, node in nodes.items():
+                if not isinstance(node, dict) or node.get("kind") != "fragment":
+                    continue
+                if node.get("fragment_id") != fragment_id:
+                    continue
+                overrides = node.get("text_overrides")
+                if not isinstance(overrides, dict):
+                    continue
+                for path, override in overrides.items():
+                    if not isinstance(path, str) or not isinstance(override, dict):
+                        continue
+                    found.append(
+                        {
+                            "page_id": page_id,
+                            "node_id": node_id,
+                            "path": path,
+                            "text": override.get("text"),
+                            "bold": bool(override.get("bold")),
+                            "italic": bool(override.get("italic")),
+                            "underline": bool(override.get("underline")),
+                            # A step, not a value, and genuinely optional: `null` means the
+                            # clone's own type size stands.
+                            "size": override.get("size"),
+                        }
+                    )
+        found.sort(key=lambda entry: (entry["page_id"], entry["node_id"], entry["path"]))
+        return found
+
     def inspect_cloned_section(self, fragment_id: str) -> str:
         """Read a cloned section's REAL SOURCE: its captured HTML and its scoped CSS, plus
         its slots. This is what a derived variant (`repair_cloned_section(..., css=…)`) and a
@@ -5037,7 +5083,13 @@ class LumenWebTools:
         markup; `view("cloned_section:<id>")` shows the picture, this shows the bytes.
         The clone's source lives in the library, never in the workspace filesystem —
         searching files for it finds nothing. Long sources are truncated; the response
-        says so and gives the full sizes."""
+        says so and gives the full sizes.
+
+        `text_overrides` lists the HUMAN's own edits to individual elements of the pins of this
+        clone on the page — the one interior change a person may make to a cloned band — and
+        they are to be respected, never rewritten: re-binding a slot preserves them (the engine
+        keeps an override across `set_node_props`), and nothing you author should undo the
+        marketer's words."""
         clean_id = (fragment_id or "").strip()
         if not clean_id:
             return self._tool_error(
@@ -5064,6 +5116,7 @@ class LumenWebTools:
             "fragment_status": source.get("status"),
             "derived_from": source.get("derived_from"),
             "slots": source.get("slots"),
+            "text_overrides": self._fragment_text_overrides(clean_id),
             "html_chars": len(html),
             "html_truncated": len(html) > cap,
             "html": html[:cap],

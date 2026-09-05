@@ -6,6 +6,7 @@ import {
   applyWebOperations,
   fetchWebRenderHtml,
   removePageOp,
+  setFragmentTextOverrideOp,
   setPageMetaOp,
   WebOperationsError,
 } from "./webDocuments";
@@ -87,4 +88,36 @@ test("an error without an engine code reads as null", async () => {
 
   assert.ok(error instanceof WebOperationsError);
   assert.equal(error.engineCode, null);
+});
+
+/** Slice 3 (R-A6): the ONE interior edit a human may make to a clone — the text
+ * of one element inside it, addressed by the same structural path an annotation
+ * uses. The builder is pinned because the engine's op is a serde struct where
+ * `override` is an OPTION: absent (or null) means CLEAR, and a `{override:
+ * undefined}` key would serialize to `"override": null` in some encoders and to
+ * nothing in others. Spelling the clear as an OMITTED key is what makes the two
+ * agree. */
+test("the override op builder spells the engine's wire shape", () => {
+  assert.deepEqual(
+    setFragmentTextOverrideOp("home", "frg_a", ":nth-child(1)", {
+      text: "New",
+      bold: true,
+      italic: false,
+      underline: false,
+      size: 1,
+    }),
+    {
+      kind: "set_fragment_text_override",
+      page_id: "home",
+      id: "frg_a",
+      path: ":nth-child(1)",
+      override: { text: "New", bold: true, italic: false, underline: false, size: 1 },
+    },
+  );
+  assert.deepEqual(setFragmentTextOverrideOp("home", "frg_a", ":nth-child(1)", null), {
+    kind: "set_fragment_text_override",
+    page_id: "home",
+    id: "frg_a",
+    path: ":nth-child(1)",
+  });
 });

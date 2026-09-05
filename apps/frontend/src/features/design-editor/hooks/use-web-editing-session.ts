@@ -6,6 +6,10 @@ import {
   type CustomComponentFormBinding,
   type CustomComponentPropCommit,
 } from "../adapter/custom-component-form";
+import {
+  cloneTextEditsFor,
+  type CloneTextEditRow,
+} from "../adapter/clone-text-edits";
 import { buildWebLayerRows } from "../adapter/layers";
 import { richTextCommitToOperation } from "../adapter/rich-text-commit";
 import {
@@ -70,6 +74,25 @@ export interface WebPageSectionBinding {
   onAddPage: (page: { id: string; name: string; route: string }) => void;
   onRemovePage: (pageId: string) => void;
   onSetPageMeta: (pageId: string, meta: { name?: string; route?: string }) => void;
+}
+
+/**
+ * R-A6 (slice 3): the human's own text edits inside the selected cloned band —
+ * everything the inspector's "Cloned text edits" section needs, or `null` when
+ * the selection owns no such list at all.
+ *
+ * `nodeId` is the FRAGMENT's, never the wrapper section's, because that is the
+ * node the write op must be addressed to. Which node owns the list is decided by
+ * one pure rule (`adapter/clone-text-edits`), so a wrapper and its clone cannot
+ * disagree about whose edits these are.
+ */
+export interface WebCloneTextEditsBinding {
+  pageId: string;
+  nodeId: string;
+  overrides: readonly CloneTextEditRow[];
+  /** A write is in flight (the one-in-flight rule) — Clear goes inert. */
+  busy: boolean;
+  onClear: (path: string) => void;
 }
 
 /**
@@ -453,11 +476,38 @@ export function useWebEditingSession({
         }
       : null;
 
+  // R-A6 (slice 3): the selected clone's human text edits. Present whenever the
+  // selection resolves to a fragment (itself, or the wrapper section a pin is
+  // born in); the list may be empty, and the section decides what to do with
+  // that. `page` is the loaded document's own active page, so the write is
+  // addressed to the page the canvas is actually on.
+  const cloneTextEditsSelection = cloneTextEditsFor(
+    page,
+    webSelection.selection?.node.id ?? null,
+  );
+  const cloneTextEdits: WebCloneTextEditsBinding | null =
+    page && cloneTextEditsSelection
+      ? {
+          busy: writes.busy,
+          nodeId: cloneTextEditsSelection.nodeId,
+          onClear: (path: string) =>
+            writes.setFragmentTextOverride(
+              page.id,
+              cloneTextEditsSelection.nodeId,
+              path,
+              null,
+            ),
+          overrides: cloneTextEditsSelection.overrides,
+          pageId: page.id,
+        }
+      : null;
+
   return {
     activeDocumentId,
     activePageId,
     addressing,
     annotations,
+    cloneTextEdits,
     canvasAnnotations,
     canvasControls,
     canvasHydrated,

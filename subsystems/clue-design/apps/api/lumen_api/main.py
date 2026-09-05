@@ -3904,6 +3904,92 @@ def create_app(
             },
         )
 
+    def _refuse_dead_override_paths(
+        repo: HybridRepository, web_doc: JsonObject, operations: List[JsonObject]
+    ) -> None:
+        """Spec §3.6: "a path that does not resolve in the fragment's HTML at apply time is
+        refused".
+
+        The ENGINE checks only that an override's path is a *structural* address
+        (`op.override_path_invalid`); whether it lands on anything is a question about the
+        artifact's markup, which the op arena has never read. Nobody else asks it either — the
+        render pass keeps the clone's own words and warns — so an override stored against a
+        dead path is a human edit that silently does nothing. This is where it is caught.
+
+        Only a SET is checked. A clear (`override` absent or null) is the human taking their
+        edit back, and refusing that because the address has since died would trap the override
+        in the document with no way out. Anything else the op names wrongly — a missing node, a
+        node that is not a clone, a fragment this workspace cannot read — is left to the
+        engine's own refusal codes rather than pre-empted here in different words.
+        """
+        pages = web_doc.get("pages") if isinstance(web_doc, dict) else None
+        if not isinstance(pages, list):
+            return
+        sources: Dict[str, Optional[JsonObject]] = {}
+        for operation in operations:
+            if not isinstance(operation, dict):
+                continue
+            if operation.get("kind") != "set_fragment_text_override":
+                continue
+            if operation.get("override") is None:
+                continue
+            path = operation.get("path")
+            node_id = operation.get("id")
+            page_id = operation.get("page_id")
+            if not isinstance(path, str) or not isinstance(node_id, str):
+                continue
+            page = next(
+                (
+                    candidate
+                    for candidate in pages
+                    if isinstance(candidate, dict) and candidate.get("id") == page_id
+                ),
+                None,
+            )
+            nodes = page.get("nodes") if isinstance(page, dict) else None
+            node = nodes.get(node_id) if isinstance(nodes, dict) else None
+            if not isinstance(node, dict) or node.get("kind") != "fragment":
+                continue
+            fragment_id = node.get("fragment_id")
+            if not isinstance(fragment_id, str) or not fragment_id:
+                continue
+            if fragment_id not in sources:
+                try:
+                    loaded = read_web_fragment(
+                        app.state.storage,
+                        workspace_id=store_workspace_id(repo),
+                        fragment_id=fragment_id,
+                    )
+                    sources[fragment_id] = loaded.payload
+                except Exception:
+                    # An unreadable artifact is not this check's refusal to make: the pin may be
+                    # one the gate already tolerates (an existing dead reference), and the write
+                    # path will say so in its own words.
+                    sources[fragment_id] = None
+            payload = sources[fragment_id]
+            if payload is None:
+                continue
+            resolved = resolve_structural_path(
+                str(payload.get("html") or ""),
+                path,
+                hidden_slot_keys=_fragment_hidden_slot_keys(node),
+            )
+            if resolved is not None:
+                continue
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "web_operations.invalid",
+                    "engine_code": "op.override_path_unresolved",
+                    "message": (
+                        f"the text override path `{path}` does not resolve to an element in "
+                        f"the cloned section pinned at node `{node_id}` — the band was probably "
+                        "regenerated after the edit was made"
+                    ),
+                    "diagnostics": [],
+                },
+            )
+
     @app.post("/documents/{document_id}/web/operations")
     def apply_web_operations(
         document_id: str,
@@ -3927,6 +4013,7 @@ def create_app(
         require_draft_document(document, "apply operations")
         require_base_version(document, payload.base_version)
         web_doc = document["scene"]
+        _refuse_dead_override_paths(repo, web_doc, payload.operations)
         try:
             result = app.state.core.web_apply_ops(
                 web_doc, payload.operations, raise_on_error=False
@@ -9105,6 +9192,25 @@ _ANNOTATION_NUMBER_RE = re.compile(r"^\s*(\d{1,3})\s*[.)]\s")
 _ANNOTATED_TEXT_CHARS = 160
 
 
+def _fragment_hidden_slot_keys(node: JsonObject) -> List[str]:
+    """The node's slot keys bound `{"visible": false}` — the elements the render DROPS.
+
+    A structural path is measured in the browser, against the rendered clone, so any element a
+    slot has hidden was never in the count. Every server-side walk over the STORED artifact
+    therefore needs this set, or it counts siblings the page does not have (spec §3.1). The wire
+    shape is the engine's externally-tagged `FragmentSlotValue` — `{"text": …}` / `{"asset": …}`
+    / `{"visible": false}` — so only the third form, and only when false, hides anything.
+    """
+    slots = node.get("slots")
+    if not isinstance(slots, dict):
+        return []
+    return [
+        key
+        for key, value in slots.items()
+        if isinstance(key, str) and isinstance(value, dict) and value.get("visible") is False
+    ]
+
+
 def _annotation_number(note: str, order: int) -> int:
     """The number this annotation should be called by: the human's own leading `N.` when
     they wrote one, else its 1-based position in the submission."""
@@ -9123,7 +9229,11 @@ def _describe_annotated_element(
 
     The path is only meaningful inside a cloned band (the bridge emits one only under
     `data-fragment-root`), so a path on any other node kind is treated as dead rather than
-    resolved against markup that does not exist."""
+    resolved against markup that does not exist.
+
+    The walk is told THIS NODE's hidden slot keys, because the path was counted over what the
+    browser rendered and a hidden slot's element is not in that render — without them a note on
+    the headline of a clone whose badge is switched off names the badge instead."""
     fragment_id = node.get("fragment_id")
     resolved: Optional[JsonObject] = None
     if node.get("kind") == "fragment" and isinstance(fragment_id, str) and fragment_id:
@@ -9142,7 +9252,11 @@ def _describe_annotated_element(
             cache[fragment_id] = source
         source = cache[fragment_id]
         if source is not None:
-            resolved = resolve_structural_path(str(source.get("html") or ""), path)
+            resolved = resolve_structural_path(
+                str(source.get("html") or ""),
+                path,
+                hidden_slot_keys=_fragment_hidden_slot_keys(node),
+            )
     if resolved is None:
         return ""
     name = (

@@ -20,7 +20,10 @@ import {
   richTextLinkPrefill,
   type RichTextLinkBinding,
 } from "@/features/design-editor/adapter/rich-text-link-section";
-import type { WebPageSectionBinding } from "@/features/design-editor/hooks/use-web-editing-session";
+import type {
+  WebCloneTextEditsBinding,
+  WebPageSectionBinding,
+} from "@/features/design-editor/hooks/use-web-editing-session";
 import {
   themeColorForToken,
   type ThemeColorOption,
@@ -1526,8 +1529,50 @@ function PageSection({ binding }: { binding: WebPageSectionBinding }) {
   );
 }
 
+// R-A6 (slice 3): the human's own text edits inside the selected cloned band.
+//
+// A plain list in the inspector's existing field styling — deliberately, per the
+// founder's ruling for this slice: the visual treatment is reviewed separately,
+// and inventing chrome for it here would be inventing UI while wiring. Each row
+// says the structural PATH verbatim (the client holds no HTML, so there is no
+// honest human name for the element — the API resolves that when the agent is
+// briefed) and the words the human typed, with a Clear that takes the edit back.
+//
+// Nothing renders when the selection owns no list, and nothing renders when the
+// list is empty: an unedited clone has nothing to say here.
+function CloneTextEditsSection({ binding }: { binding: WebCloneTextEditsBinding }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <InspectorSection label="Cloned text edits" onOpenChange={setOpen} open={open}>
+      <div className={styles.inspectorCloneEdits}>
+        {binding.overrides.map((row) => (
+          <InspectorField key={row.path} label={row.path}>
+            <span className={styles.inspectorCloneEditRow}>
+              <span className={styles.inspectorCloneEditText} title={row.override.text}>
+                {row.override.text}
+              </span>
+              <button
+                className={styles.inspectorPageButton}
+                disabled={binding.busy}
+                onClick={() => {
+                  if (binding.busy) return;
+                  binding.onClear(row.path);
+                }}
+                type="button"
+              >
+                Clear
+              </button>
+            </span>
+          </InspectorField>
+        ))}
+      </div>
+    </InspectorSection>
+  );
+}
+
 export function WebInspector({
   addressing,
+  cloneTextEdits = null,
   customComponentForm = null,
   error = null,
   hydrated,
@@ -1554,6 +1599,12 @@ export function WebInspector({
   /** W3.1: write addressing stamped onto every inspector event this panel
    * dispatches — passed through to the controllers verbatim. */
   addressing?: InspectorEventAddressing;
+  /** R-A6 (slice 3): the selected cloned band's human text edits, each with the
+   * Clear that takes it back. The session decides whether the selection owns a
+   * list at all (the fragment, or the section a pin is born wrapped in);
+   * absent/null — and an empty list — render no section, which is every dummy
+   * state and every non-clone selection. */
+  cloneTextEdits?: WebCloneTextEditsBinding | null;
   /** W4.7 (contract item 34): the selected custom component's pinned artifact
    * + live props, feeding the schema-driven props form. A custom component
    * falls to the §5 layout-only fallback, so ONLY that view (ContainerControls)
@@ -1726,6 +1777,9 @@ export function WebInspector({
           </p>
         ) : null}
         {pageSection ? <PageSection binding={pageSection} /> : null}
+        {cloneTextEdits && cloneTextEdits.overrides.length > 0 ? (
+          <CloneTextEditsSection binding={cloneTextEdits} />
+        ) : null}
         <ThemeColorsContext.Provider value={themeColors}>
           <DocumentLayersContext.Provider value={documentLayers}>
             {webSelection === "canvas" ? <CanvasControls controller={canvasController} layerTree={canvasLayerTree} onSelectionChange={onSelectionChange} showLayers={showLayers} /> : null}

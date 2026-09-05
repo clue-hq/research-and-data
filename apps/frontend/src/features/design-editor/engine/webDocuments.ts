@@ -89,12 +89,30 @@ export interface WebNode {
   // the only thing that says which cloned section it is.
   fragment_id?: string;
   slots?: Record<string, WebFragmentSlotValue>;
+  // R-A6 (slice 3): the human's own text edits inside this clone, keyed by the
+  // structural path of the element each replaces. Absent on an unedited pin
+  // (the engine omits an empty map), and absent on every other node kind.
+  text_overrides?: Record<string, WebFragmentTextOverride>;
   // personalization hedge — carried by the schema, ignored by every v0 path.
   slot_key?: string | null;
 }
 
 /** A fragment slot's value: exactly one flat scalar, externally tagged by the
  * engine so an asset slot can never decay into a text slot on the wire. */
+/** R-A6: ONE element's text inside a cloned band, as a human retyped it.
+ *
+ * `text` is PLAIN text — never markup. The three marks and the relative `size`
+ * STEP are the whole vocabulary: a clone's typography belongs to the artifact,
+ * so this is a nudge rather than a second styling system that could disagree
+ * with the pinned CSS. */
+export type WebFragmentTextOverride = {
+  text: string;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  size?: number;
+};
+
 export type WebFragmentSlotValue =
   | { text: string }
   | { asset: string }
@@ -745,6 +763,13 @@ export type WebOperation =
   | { kind: "replace_asset"; page_id: string; id: string; asset_id: string }
   | { kind: "upsert_asset"; record: AssetRecord }
   | { kind: "set_slot_key"; page_id: string; id: string; slot_key: string | null }
+  | {
+      kind: "set_fragment_text_override";
+      page_id: string;
+      id: string;
+      path: string;
+      override?: WebFragmentTextOverride;
+    }
   | { kind: "set_page_meta"; page_id: string; name?: string; route?: string }
   | {
       kind: "add_page";
@@ -811,6 +836,32 @@ export function upsertAssetOp(record: AssetRecord): WebOperation {
  * Section/Container on binding presence (see {@link slotKeyParts}). */
 export function setSlotKeyOp(pageId: string, id: string, slotKey: string | null): WebOperation {
   return { kind: "set_slot_key", page_id: pageId, id, slot_key: slotKey };
+}
+
+/** Set — or CLEAR, with `null` — the human's text override on one element inside
+ * a cloned section, addressed by the same structural path an annotation uses.
+ *
+ * A clear is spelled as an OMITTED `override` key rather than an explicit null:
+ * the engine's field is an `Option`, and a present `override: undefined` would
+ * serialize as `"override": null` in some encoders and vanish in others. Omitting
+ * it means both readings agree on "clear". */
+export function setFragmentTextOverrideOp(
+  pageId: string,
+  id: string,
+  path: string,
+  override: WebFragmentTextOverride | null
+): WebOperation {
+  const op: {
+    kind: "set_fragment_text_override";
+    page_id: string;
+    id: string;
+    path: string;
+    override?: WebFragmentTextOverride;
+  } = { kind: "set_fragment_text_override", page_id: pageId, id, path };
+  if (override !== null) {
+    op.override = override;
+  }
+  return op;
 }
 
 /** Rename a page and/or repoint its route. Only the keys actually supplied are

@@ -3250,6 +3250,49 @@
   cursor: default;
 }
 
+/* Slice 3 (R-A6): the "Cloned text edits" rows. No designed slot either — the
+ * same minimal, borrowed treatment the Page section documents above: the row is
+ * the inspector's ordinary field control line, and the Clear button IS
+ * `.inspectorPageButton`, not a second button shape. The founder reviews the
+ * visual separately; do not grow this into designed chrome first. */
+.inspectorCloneEdits {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The row's LABEL is the structural path, verbatim — the client holds no HTML,
+ * so there is no honest human name for the element and a mono face is the one
+ * thing that says "this is an address, not a sentence". */
+.inspectorCloneEdits .inspectorFieldLabel {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.inspectorCloneEditRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.inspectorCloneEditText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--chat-shell-content);
+}
+
+.inspectorCloneEditRow .inspectorPageButton {
+  flex: 0 0 auto;
+}
+
 /* W3.4: the action menu's Undo/Redo disable at empty engine stacks (native
  * button disabled; the dummy shipped no disabled treatment for menu items). */
 .artifactMenuItem:disabled {

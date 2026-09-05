@@ -497,6 +497,10 @@ export function ChatSurface({
                 error={session.inspectorError}
                 note={session.writes.note}
                 addressing={session.addressing}
+                // R-A6 (slice 3): the human's own text edits inside the selected
+                // cloned band, each with its Clear (the session decides whether
+                // the selection owns a list at all).
+                cloneTextEdits={session.cloneTextEdits}
                 hydrated={session.webSelection.selection?.hydrated ?? session.canvasHydrated}
                 layers={session.layerRows}
                 // W5.1 (§5): the mapper's fallback flag — embeds (item 32) and

@@ -1300,3 +1300,66 @@ def test_pin_display_name_degrades_honestly() -> None:
     assert pin_display_name({"section_role": "cta", "label": ""}) == "Cta"
     assert pin_display_name({"label": "Only a label"}) == "Only a label"
     assert pin_display_name({}) == "Cloned section"
+
+
+# --------------------------------------------------------------------------- #
+# A human's interior text edits are visible to the agent (R-A6, slice 3)
+# --------------------------------------------------------------------------- #
+
+
+def test_inspect_lists_the_human_text_overrides_on_every_pin_of_that_clone(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """An override is the ONE interior edit a human may make to a clone, and the agent has to
+    be able to see it — otherwise the next turn rewrites the band and silently argues with the
+    marketer about their own headline. `inspect_cloned_section` reads them off the DOCUMENT
+    (the artifact is immutable; an override is per-instance), so the list is per pinned node."""
+    tools = _tools(tmp_path, registry)
+    pin = json.loads(tools.insert_cloned_section(HERO_ID))
+    node_id = pin["node_id"]
+
+    applied = json.loads(
+        tools.web_ops(
+            json.dumps(
+                [
+                    {
+                        "kind": "set_fragment_text_override",
+                        "page_id": "home",
+                        "id": node_id,
+                        "path": ":nth-child(1)",
+                        "override": {
+                            "text": "Care, your way",
+                            "bold": True,
+                            "italic": False,
+                            "underline": False,
+                            "size": 1,
+                        },
+                    }
+                ]
+            )
+        )
+    )
+    assert applied["status"] == "ok", applied
+
+    result = json.loads(tools.inspect_cloned_section(HERO_ID))
+    assert result["status"] == "ok"
+    assert result["text_overrides"] == [
+        {
+            "page_id": "home",
+            "node_id": node_id,
+            "path": ":nth-child(1)",
+            "text": "Care, your way",
+            "bold": True,
+            "italic": False,
+            "underline": False,
+            "size": 1,
+        }
+    ]
+
+
+def test_a_clone_nobody_has_edited_lists_no_overrides(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    tools = _tools(tmp_path, registry)
+    tools.insert_cloned_section(HERO_ID)
+    assert json.loads(tools.inspect_cloned_section(HERO_ID))["text_overrides"] == []
