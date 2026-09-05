@@ -29,9 +29,15 @@ import { WebRichTextToolbar } from "./web-rich-text-toolbar";
  * composer chips read the same list); the canvas only opens the box on a click,
  * renders it, and draws the badges the list implies.
  *
- * `onSend` and `onEditText` are optional and their controls are simply absent
- * without them — "Send to chat" belongs to the composer (task 7) and "Edit
- * text" to the constrained clone editor (task 16).
+ * `onSend` is optional and its control is simply absent without it — "Send to
+ * chat" belongs to the composer (task 7).
+ *
+ * Slice 4 (R-A6): "Edit text" is NOT optional in that sense any more. The
+ * canvas supplies its own handler (dismiss the box, then post `edit-text` into
+ * the frame), so the button is there whenever the box is open on a text-like
+ * element, whoever owns the session. The `onEditText` slot below stays declared
+ * for a future owner that wants to intercept the action; no caller does today,
+ * and the canvas default is what the popover receives.
  */
 export interface WebAnnotationsCanvasBinding {
   pending: PendingAnnotation | null;
@@ -277,6 +283,7 @@ function DocumentRender({
     commandRichText,
     editingNodeId,
     postAnnotations,
+    postEditText,
     ready,
     resetSelection,
     richTextError,
@@ -300,6 +307,31 @@ function DocumentRender({
     if (!ready) return;
     postAnnotations(annotationItems);
   }, [annotationItems, postAnnotations, ready]);
+
+  // Slice 4 (R-A6): the comment box's "Edit text" quick action. It is defined
+  // HERE, not up in the annotation session, because the sender it needs
+  // (`postEditText`) belongs to the bridge hook this component owns — a handler
+  // that lived anywhere else would have to carry the iframe window and the
+  // render nonce with it.
+  //
+  // Order is load-bearing: DISMISS the pending box first, then post. The
+  // frame's `edit-text` handler starts `beginCloneEditing` (or the vocabulary
+  // rich-text session for a bare `[data-tv]` node), which hides its hover box
+  // and takes focus — a comment box left open beside/over the element would sit
+  // on top of the editor it just opened.
+  //
+  // Which editor opens is the FRAME's decision, made from the address alone
+  // (path present → the clone's constrained editor; no path → `beginEditing`),
+  // so this quick action treats both cases identically.
+  const dismissAnnotation = annotations?.dismiss;
+  const onEditText = useCallback(
+    (address: WebElementAddress) => {
+      dismissAnnotation?.();
+      postEditText(address);
+    },
+    [dismissAnnotation, postEditText],
+  );
+
   useEffect(() => {
     if (!controlsRef) return;
     controlsRef.current = {
@@ -446,7 +478,7 @@ function DocumentRender({
                 onAdd={annotations.add}
                 onDismiss={annotations.dismiss}
                 onEditNote={annotations.editNote}
-                onEditText={annotations.onEditText}
+                onEditText={onEditText}
                 onSend={annotations.onSend}
                 pending={annotations.pending}
               />,

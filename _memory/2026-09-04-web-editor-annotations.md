@@ -206,3 +206,46 @@ the iframe band; an annotated target replaces its TURN TARGET line. Live accepta
 one real turn) is the founder's walk: in Edit mode click three elements (one inside a clone), Add each,
 press send with an empty composer; expect "See annotations." as the message, three noted refs, ANNOTATION
 1–3 lines in the worker's brief, and the finalize summary confirming each by number.
+
+## Slice 3 + 4 — closed 2026-09-05
+
+Commits: T12 `19730a98a` (engine model + `set_fragment_text_override`) → T13 `5558f8662` (render) →
+T14 `5fc307cbc` (manual-edit endpoint + inspector list) → T15 `345101546` + `64bc67c90` (in-frame clone
+text editor; the nearest-text-like fix) → T16 this commit ("Edit text" quick action, the D-F3 amendment
+recorded everywhere the ruling is quoted, this entry, the CLAUDE.md backlog bullet).
+
+Load-bearing rulings, one line each:
+
+- **`SetNodeProps` preserves `text_overrides`.** A prop write on a fragment node never silently drops
+  the override map — the overrides are a sibling of the slot values, not part of the props being replaced.
+- **Render emits `data-lumen-override` + `data-lumen-size`, and the size step is an `em` font-size.**
+  Relative, so the clone's own type scale still governs; the two attributes are how the frame and the
+  inspector recognize an overridden element without re-deriving anything.
+- **Paths are wrapper-relative, and the hidden-slot mirror (`hidden_slot_keys`) reconciles rendered vs
+  stored counting.** The first step of a path is a top-level element of the STORED artifact HTML; slots
+  the render hides would otherwise shift the child indices, so the mirror keeps the stored and rendered
+  counts talking about the same element.
+- **The API refuses dead paths only at the manual-edit endpoint.** A path that resolves to nothing is
+  rejected where a HUMAN writes it; render and inspect stay tolerant (a stale override is skipped, never
+  an error), so a structural change to a clone can never break an existing document's render.
+- **The double-click target is the NEAREST text-like element**, not the clone wrapper and not the deepest
+  node — the same element a single click would have annotated.
+- **The inspector list is read from the document node.** Overrides are per-instance values on the
+  fragment node; the fragment card (a registry read about the harvested artifact) does not and must not
+  carry them.
+- **D-F3 amended by R-A6** — recorded in `docs/superpowers/plans/2026-08-27-clone-fidelity-master-plan.md`
+  under the D-F3 bullet, and woven into the four places the ruling is quoted in code
+  (`web_bridge.py` allowlists, `webDocuments.ts` allowlists, `model/fragment-card.ts`,
+  `fragment_inspector.py`). A clone moves as a whole and exposes slot values AND per-element text
+  overrides; nothing else inside it is editable.
+
+### Founder's live acceptance walk (not run by the implementer)
+
+1. Layers panel on the Ramp page: every row is a human name.
+2. Hover the Visa image inside a clone: outline + `img`; hover a band: "Hero — …".
+3. Three annotations (one inside a clone), Add each, badges 1–3, send with empty composer → agent run
+   confirms 1–3 by number; the inner one edited via a variant or rebind, nothing else touched.
+4. Single-click a clone headline → Edit text quick action → type, B, Enter → override rendered; inspector
+   lists it; Clear removes it; undo/redo round-trip.
+5. Double-click does the same directly.
+6. Reload drops chips and badges (R-A3); the document keeps the override (it is an operation).

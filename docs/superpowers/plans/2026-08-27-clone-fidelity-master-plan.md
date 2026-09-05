@@ -253,6 +253,18 @@ default. A dedicated fragment inspector card (slot values from the manifest) lan
   resized; a drop target for ordinary nodes; internally re-laid-out; or detached into editable
   nested elements. Mechanically: `Fragment` joins `movable_kinds`, stays out of
   `resizable_kinds`/`parent_kinds` (`web_bridge.py:1199-1240`), remains a leaf in the engine.
+
+  **Amended 2026-09-04 (R-A6, founder):** a human may also edit the TEXT of ONE element inside a
+  clone — its plain text, bold/italic/underline, and a −3…+3 relative size step — and nothing
+  else. Mechanically this is not a hole in Option A: the edit is a per-instance `text_overrides`
+  entry ON the fragment node, keyed by the element's structural path inside the clone, applied at
+  render AFTER slot values; the harvested artifact is never rewritten, and no other instance of
+  the same clone is touched. The fragment stays a leaf, stays out of
+  `resizable_kinds`/`parent_kinds`, and is otherwise still movable-only — nothing inside it
+  becomes a selectable, draggable, or re-layoutable node. So the ruling now reads: a clone moves
+  as a whole and exposes slot values AND per-element text overrides; nothing else inside it is
+  editable. Spec:
+  `docs/superpowers/specs/2026-09-04-web-editor-annotations-and-clone-text-edits-design.md` §3.6.
 - **D-F4 — sanitizer strictness: ADOPTED BY DEFAULT (not explicitly ruled; reversible on founder
   word):** strip `script`, `on*` handlers, `iframe/object/embed/form/meta/base/link`,
   `javascript:`/`data:` hrefs; every `src/srcset/url()` must resolve to a rehosted digest —

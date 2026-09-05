@@ -1559,11 +1559,14 @@ export interface CanvasNodeMovePlan {
   intent: "reorder_node" | "reparent_node";
 }
 
-// `fragment` is movable and is in NEITHER set below — founder ruling D-F3 (Option A, top-level
-// reordering only), the same one wired into the bridge's allowlists (`web_bridge.py`). A whole
-// cloned band moves up or down the page; it is never manually resized (its proportions ARE the
-// clone), never a drop target (an ordinary node dropped inside would be an internal edit of
-// somebody else's section), and it stays a leaf, so there is nothing in it to re-lay-out.
+// `fragment` is movable and is in NEITHER set below — D-F3 (Option A) + R-A6 amendment
+// (2026-09-04): a clone moves as a whole and exposes slot values AND per-element text overrides;
+// nothing else inside it is editable. The same ruling is wired into the bridge's allowlists
+// (`web_bridge.py`). A whole cloned band moves up or down the page; it is never manually resized
+// (its proportions ARE the clone), never a drop target (an ordinary node dropped inside would be
+// an internal edit of somebody else's section), and it stays a leaf, so there is nothing in it to
+// re-lay-out. A text override changes none of that — it is a per-instance value on the fragment
+// node, applied at render, not a gesture on some node inside the clone.
 // These two sides must agree: the bridge decides which nodes the iframe OFFERS a gesture, this
 // decides which gestures become an operation, and a fragment offered a drag the planner then
 // refuses is a dead handle.
