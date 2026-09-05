@@ -32,12 +32,11 @@ import { WebRichTextToolbar } from "./web-rich-text-toolbar";
  * `onSend` is optional and its control is simply absent without it — "Send to
  * chat" belongs to the composer (task 7).
  *
- * Slice 4 (R-A6): "Edit text" is NOT optional in that sense any more. The
- * canvas supplies its own handler (dismiss the box, then post `edit-text` into
- * the frame), so the button is there whenever the box is open on a text-like
- * element, whoever owns the session. The `onEditText` slot below stays declared
- * for a future owner that wants to intercept the action; no caller does today,
- * and the canvas default is what the popover receives.
+ * Slice 4 (R-A6): "Edit text" is NOT part of this binding at all. The CANVAS
+ * owns that quick action — it dismisses the box and posts `edit-text` into the
+ * frame with its own bridge sender — so the button is there whenever the box is
+ * open on a text-like element, whoever owns the session. There is deliberately
+ * no slot for it here: a session owner has nothing to say about it.
  */
 export interface WebAnnotationsCanvasBinding {
   pending: PendingAnnotation | null;
@@ -47,7 +46,6 @@ export interface WebAnnotationsCanvasBinding {
   dismiss: () => void;
   add: (note?: string) => void;
   onSend?: (note: string) => void;
-  onEditText?: (address: WebElementAddress) => void;
 }
 
 /** W2.3: imperative controls the canvas publishes for its owner — layer-row
