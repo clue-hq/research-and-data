@@ -249,3 +249,15 @@ Load-bearing rulings, one line each:
    lists it; Clear removes it; undo/redo round-trip.
 5. Double-click does the same directly.
 6. Reload drops chips and badges (R-A3); the document keeps the override (it is an operation).
+
+## Controller close-out — Slices 3 + 4 (2026-09-05)
+Every task reviewed first-hand at its gate (no reviewer subagents, per the founder's rule). Live-verified
+in a headless browser on the Ramp page: double-click → in-frame editor → B + A+ → Enter → the re-render
+carried `data-lumen-override`/`data-lumen-size="1"`/`font-size:1.125em` with `<strong>`; `design_document`
+v10 stored the override; the inspector listed it with Clear; Clear restored the clone's words. The comment
+box's "Edit text" dismissed the box and opened the same editor; Escape closed it. Final gates on
+b6f188b61: platform targeted 17, lumen-web 252, design api 27, agent_runtime 62 (SOLO=0), frontend
+2137/2137 + lint + tsc 49 + build. Known env-dependence: `.env` sets `LUMEN_AGENT_WEB_SOLO=1`, so the
+trio-shape tests (`test_web_solo_mode.py` flag-off case, `test_the_author_holds_both_halves…`) need
+`LUMEN_AGENT_WEB_SOLO=0`. Still the founder's: the live annotation send (three notes → one turn) and the
+Slice 4 walk items 1–6; undo/redo of an override was not exercised live (engine-tested).
