@@ -134,6 +134,14 @@ export function selectionDrillDown({
  * stack's representable members, the next SHALLOWER one, wrapping from the
  * outermost back to the deepest, so repeating the gesture walks the whole
  * stack without ever dead-ending.
+ *
+ * The ROOT FRAME is excluded from the cycle (founder ruling 2026-09-04). It is
+ * representable — `sceneSelectionFor` maps it to the page's "canvas" selection
+ * — but the artboard is the page itself, not a thing under the pointer: it is
+ * what Escape lands on after everything else has been left, so a Cmd-click
+ * should never stop there mid-cycle. It therefore wraps from the outermost
+ * NON-root node, and a stack of nothing but the root selects nothing.
+ * Escape and Alt-click still reach it, unchanged.
  */
 export function deepSelectTarget({
   stack,
@@ -146,7 +154,8 @@ export function deepSelectTarget({
   pageId: PageId | null;
   selectedNodeId: NodeId | null;
 }): NodeId | null {
-  const candidates = representableStack(stack, scene, pageId);
+  const root = pageId ? rootFrameId(scene, pageId) : null;
+  const candidates = representableStack(stack, scene, pageId).filter((id) => id !== root);
   if (candidates.length === 0) {
     return null;
   }

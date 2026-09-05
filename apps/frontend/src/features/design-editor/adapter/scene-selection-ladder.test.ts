@@ -28,9 +28,10 @@ import {
  * are unchanged and keep their Plan 3 cases verbatim.
  *
  * On the harvest, the ROOT FRAME IS REPRESENTABLE — `sceneSelectionFor` maps it
- * to the "canvas" selection — so it is the outermost rung of the R3 cycle and
- * the last stop of a walk-up. (The plan's prose claimed the opposite; the
- * fixture is the truth, and these cases pin it.)
+ * to the page's "canvas" selection — so it is the last stop of a walk-up. The
+ * R3 cycle nonetheless EXCLUDES it (founder ruling 2026-09-04): the artboard is
+ * the page, reached by Escape, not something a Cmd-click should land on
+ * mid-cycle. These cases pin both halves of that.
  */
 
 function clone(scene: Scene): Scene {
@@ -156,12 +157,23 @@ it("R3 deep select: the deepest node, then one shallower per repeat, wrapping to
   assert.equal(at(null), "text_proof_stat");
   assert.equal(at("text_proof_stat"), "group_proof");
   assert.equal(at("group_proof"), "auto_row_copy");
-  // The root frame IS representable (it is the canvas selection), so it is the
-  // cycle's outermost rung and the wrap happens there, not at the row.
-  assert.equal(at("auto_row_copy"), "frame_ad_root");
+  // The root frame is representable (it is the canvas selection) but is EXCLUDED
+  // from the cycle, so the wrap happens at the row and a canvas selection starts
+  // the cycle over rather than continuing from it.
+  assert.equal(at("auto_row_copy"), "text_proof_stat");
   assert.equal(at("frame_ad_root"), "text_proof_stat");
   // A selection outside the stack starts over at the deepest.
   assert.equal(at("text_headline"), "text_proof_stat");
+  // Nothing but the root under the pointer: nothing to deep-select.
+  assert.equal(
+    deepSelectTarget({
+      stack: ["frame_ad_root"],
+      scene: HARVESTED_AD_PAGE,
+      pageId: AD_PAGE_ID,
+      selectedNodeId: null,
+    }),
+    null,
+  );
   assert.equal(
     deepSelectTarget({ stack: [], scene: HARVESTED_AD_PAGE, pageId: AD_PAGE_ID, selectedNodeId: null }),
     null,
