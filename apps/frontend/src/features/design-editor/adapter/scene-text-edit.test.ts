@@ -94,43 +94,108 @@ function modelFor(
 }
 
 /* -------------------------------------------------------------------------
- * The double-click itself — open a session, or drill out
+ * The double-click itself — drill one level, then the caret
+ *
+ * Selection model v2 (founder rulings 2026-09-04) replaces Rung B's drill-OUT
+ * to the top-level container and Plan 3's button shortcut: the double-click
+ * now drills one representable level TOWARD the pointer, and opens the caret
+ * only once the text itself is what is selected. The engine's hit stack
+ * (outer→inner) is the input, so these cases name real ancestry from the
+ * harvest — `text_proof_stat` in `group_proof` in `auto_row_copy` in
+ * `frame_ad_root`.
  * ---------------------------------------------------------------------- */
 
-test("a double-click on a text node opens an edit session on it", () => {
-  const effect = sceneDoubleClickEffect({
-    gestureDisabled: false,
-    nodeId: "text_headline",
-    scene: HARVESTED_AD_PAGE,
-    selectedNodeId: "text_headline",
-  });
-  assert.deepEqual(effect, { kind: "edit", nodeId: "text_headline" });
+const stackToHeadline = ["frame_ad_root", "auto_row_copy", "text_headline"];
+const stackToStat = [
+  "frame_ad_root",
+  "auto_row_copy",
+  "group_proof",
+  "text_proof_stat",
+];
+
+test("R2: a double-click on a selected text node opens an edit session on it", () => {
+  assert.deepEqual(
+    sceneDoubleClickEffect({
+      gestureDisabled: false,
+      stack: stackToStat,
+      pageId: AD_PAGE_ID,
+      scene: HARVESTED_AD_PAGE,
+      selectedNodeId: "text_proof_stat",
+    }),
+    { kind: "edit", nodeId: "text_proof_stat" },
+  );
 });
 
-test("a LOCKED text node opens no session — the lock gates every write path", () => {
-  const scene = clone(HARVESTED_AD_PAGE);
+test("R2: with an ancestor selected, a double-click drills one level and opens no caret", () => {
+  assert.deepEqual(
+    sceneDoubleClickEffect({
+      gestureDisabled: false,
+      stack: stackToStat,
+      pageId: AD_PAGE_ID,
+      scene: HARVESTED_AD_PAGE,
+      selectedNodeId: "auto_row_copy",
+    }),
+    { kind: "select", nodeId: "group_proof" },
+  );
+  assert.deepEqual(
+    sceneDoubleClickEffect({
+      gestureDisabled: false,
+      stack: stackToStat,
+      pageId: AD_PAGE_ID,
+      scene: HARVESTED_AD_PAGE,
+      selectedNodeId: "group_proof",
+    }),
+    { kind: "select", nodeId: "text_proof_stat" },
+  );
+});
+
+test("R2: the button — plate selected drills to the label; label selected opens the caret", () => {
+  const scene = sceneWithButton();
+  assert.deepEqual(
+    sceneDoubleClickEffect({
+      gestureDisabled: false,
+      stack: stackToHeadline,
+      pageId: AD_PAGE_ID,
+      scene,
+      selectedNodeId: "auto_row_copy",
+    }),
+    { kind: "select", nodeId: "text_headline" },
+  );
+  assert.deepEqual(
+    sceneDoubleClickEffect({
+      gestureDisabled: false,
+      stack: stackToHeadline,
+      pageId: AD_PAGE_ID,
+      scene,
+      selectedNodeId: "text_headline",
+    }),
+    { kind: "edit", nodeId: "text_headline" },
+  );
+});
+
+test("the caret's refusals hold: a locked node decides nothing, a locked run says so", () => {
+  // Gate G-H (task 4, scene live-streaming rung A): the run's refusal is its
+  // own kind rather than `none`, so the host can put the lock's sentence in
+  // front of the human instead of leaving a caret that mysteriously never
+  // appears.
+  const scene = sceneWithButton();
   scene.nodes.text_headline.locked = true;
   assert.deepEqual(
     sceneDoubleClickEffect({
       gestureDisabled: false,
-      nodeId: "text_headline",
+      stack: stackToHeadline,
+      pageId: AD_PAGE_ID,
       scene,
       selectedNodeId: "text_headline",
     }),
     { kind: "none" },
   );
-});
-
-test("Gate G-H: no session opens while an agent turn is in flight, and it SAYS so", () => {
-  // Task 4 (scene live-streaming rung A): the refusal used to be `none`, i.e.
-  // indistinguishable from a double-click on nothing, so the host had no way to
-  // tell the human why the caret never appeared. It is now its own kind, which
-  // is what carries the lock's note to the inspector's note slot.
   assert.deepEqual(
     sceneDoubleClickEffect({
       gestureDisabled: true,
-      nodeId: "text_headline",
-      scene: HARVESTED_AD_PAGE,
+      stack: stackToHeadline,
+      pageId: AD_PAGE_ID,
+      scene: sceneWithButton(),
       selectedNodeId: "text_headline",
     }),
     { kind: "locked" },
@@ -146,7 +211,8 @@ test("a LOCKED node under an agent run still reports the node lock, not the run"
   assert.deepEqual(
     sceneDoubleClickEffect({
       gestureDisabled: true,
-      nodeId: "text_headline",
+      stack: stackToHeadline,
+      pageId: AD_PAGE_ID,
       scene,
       selectedNodeId: "text_headline",
     }),
@@ -154,24 +220,21 @@ test("a LOCKED node under an agent run still reports the node lock, not the run"
   );
 });
 
-test("selection-for-inspection survives the lock: the drill-out still works", () => {
-  // The whole of what the lock forbids is CHANGING the document. Looking at it
-  // — including double-clicking through to a container to inspect it — stays
-  // live, so this must resolve exactly as it does with the lock off.
-  const unlocked = sceneDoubleClickEffect({
-    gestureDisabled: false,
-    nodeId: "ellipse_proof_dot",
+test("selection-for-inspection survives the lock: a locked run still DRILLS", () => {
+  // The whole of what the lock forbids is CHANGING the document. Drilling is a
+  // selection, not a write — looking at what is inside a container to inspect
+  // it stays live — so it must resolve exactly as it does with the lock off.
+  // Only the caret above is gated.
+  const drill = {
+    stack: stackToStat,
+    pageId: AD_PAGE_ID,
     scene: HARVESTED_AD_PAGE,
-    selectedNodeId: "ellipse_proof_dot",
-  });
-  assert.equal(unlocked.kind, "select");
+    selectedNodeId: "auto_row_copy",
+  };
+  const unlocked = sceneDoubleClickEffect({ ...drill, gestureDisabled: false });
+  assert.deepEqual(unlocked, { kind: "select", nodeId: "group_proof" });
   assert.deepEqual(
-    sceneDoubleClickEffect({
-      gestureDisabled: true,
-      nodeId: "ellipse_proof_dot",
-      scene: HARVESTED_AD_PAGE,
-      selectedNodeId: "ellipse_proof_dot",
-    }),
+    sceneDoubleClickEffect({ ...drill, gestureDisabled: true }),
     unlocked,
   );
 });
@@ -182,7 +245,8 @@ test("Ruling C-9 does not apply: a layout-MANAGED text node still opens a sessio
   assert.deepEqual(
     sceneDoubleClickEffect({
       gestureDisabled: false,
-      nodeId: "text_headline",
+      stack: stackToHeadline,
+      pageId: AD_PAGE_ID,
       scene: HARVESTED_AD_PAGE,
       selectedNodeId: "text_headline",
     }),
@@ -190,93 +254,39 @@ test("Ruling C-9 does not apply: a layout-MANAGED text node still opens a sessio
   );
 });
 
-test("a non-text hit drills out to its top-level container", () => {
+test("a double-click whose selection is neither the hit nor its ancestor re-selects the click target", () => {
   assert.deepEqual(
     sceneDoubleClickEffect({
       gestureDisabled: false,
-      nodeId: "ellipse_proof_dot",
+      stack: stackToStat,
+      pageId: AD_PAGE_ID,
       scene: HARVESTED_AD_PAGE,
-      selectedNodeId: "ellipse_proof_dot",
+      selectedNodeId: "text_headline",
     }),
-    { kind: "select", nodeId: "frame_ad_root" },
+    { kind: "select", nodeId: "group_proof" },
   );
 });
 
-test("a hit that is already top-level drills nowhere", () => {
+test("a double-click on nothing, or with no scene, decides nothing", () => {
   assert.deepEqual(
     sceneDoubleClickEffect({
       gestureDisabled: false,
-      nodeId: "frame_ad_root",
+      stack: [],
+      pageId: AD_PAGE_ID,
       scene: HARVESTED_AD_PAGE,
-      selectedNodeId: "frame_ad_root",
+      selectedNodeId: "group_proof",
     }),
     { kind: "none" },
   );
-});
-
-test("a double-click on nothing drills out from the current selection", () => {
   assert.deepEqual(
     sceneDoubleClickEffect({
       gestureDisabled: false,
-      nodeId: null,
-      scene: HARVESTED_AD_PAGE,
-      selectedNodeId: "ellipse_proof_dot",
-    }),
-    { kind: "select", nodeId: "frame_ad_root" },
-  );
-});
-
-test("a double-click on nothing with nothing selected decides nothing", () => {
-  assert.deepEqual(
-    sceneDoubleClickEffect({
-      gestureDisabled: false,
-      nodeId: null,
-      scene: HARVESTED_AD_PAGE,
+      stack: stackToStat,
+      pageId: AD_PAGE_ID,
+      scene: null,
       selectedNodeId: null,
     }),
     { kind: "none" },
-  );
-});
-
-test("no scene — no session and no drill-out", () => {
-  assert.deepEqual(
-    sceneDoubleClickEffect({
-      gestureDisabled: false,
-      nodeId: "text_headline",
-      scene: null,
-      selectedNodeId: "text_headline",
-    }),
-    { kind: "none" },
-  );
-});
-
-test("Plan 3: a double-click on a button opens the caret on its LABEL", () => {
-  const scene = sceneWithButton();
-  assert.deepEqual(
-    sceneDoubleClickEffect({ gestureDisabled: false, nodeId: "auto_row_copy", scene, selectedNodeId: "auto_row_copy" }),
-    { kind: "edit", nodeId: "text_headline" },
-  );
-});
-
-test("Plan 3: a button whose label is locked decides nothing; a locked run says so", () => {
-  const scene = sceneWithButton();
-  scene.nodes.text_headline.locked = true;
-  assert.deepEqual(
-    sceneDoubleClickEffect({ gestureDisabled: false, nodeId: "auto_row_copy", scene, selectedNodeId: null }),
-    { kind: "none" },
-  );
-  const unlocked = sceneWithButton();
-  assert.deepEqual(
-    sceneDoubleClickEffect({ gestureDisabled: true, nodeId: "auto_row_copy", scene: unlocked, selectedNodeId: null }),
-    { kind: "locked" },
-  );
-});
-
-test("Plan 3: a double-click on a non-button container still drills out as before", () => {
-  // The harvest's row is not a button: the existing top-level drill-out holds.
-  assert.deepEqual(
-    sceneDoubleClickEffect({ gestureDisabled: false, nodeId: "group_proof", scene: HARVESTED_AD_PAGE, selectedNodeId: "group_proof" }),
-    { kind: "select", nodeId: "frame_ad_root" },
   );
 });
 

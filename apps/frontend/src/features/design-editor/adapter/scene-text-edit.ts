@@ -9,11 +9,7 @@ import type {
 } from "../engine/scene/contracts";
 import { updateTextNode } from "../engine/scene/operations";
 import { nodeDescriptor } from "../engine/scene/renderAdapter";
-import {
-  getNode,
-  parentComputedOrigin,
-  topLevelAncestorId,
-} from "../engine/scene/sceneQueries";
+import { getNode, parentComputedOrigin } from "../engine/scene/sceneQueries";
 import {
   normalizeSpans,
   spanValidationIssues,
@@ -26,7 +22,11 @@ import {
   selectionOutlineForBox,
   type SceneArtboardModel,
 } from "./scene-canvas-view";
-import { buttonLabelId } from "./scene-selection-ladder";
+import { representableHit } from "./scene-selection";
+import {
+  selectionClickTarget,
+  selectionDrillDown,
+} from "./scene-selection-ladder";
 
 /**
  * Rung B of the rich-text ladder (`docs/superpowers/plans/2026-08-24-rich-text-editing.md`,
@@ -100,13 +100,26 @@ export type SceneDoubleClickEffect =
   | { kind: "none" };
 
 /**
- * The double-click decision: open a caret session, drill out to a container,
- * or do nothing.
+ * The double-click decision: drill one level toward the pointer, open a caret
+ * session, or do nothing.
  *
- * Upstream's order exactly (`CanvasKitCanvas.tsx:800-832`): a TEXT hit opens
- * the session; anything else — including a click on empty workspace — drills
- * the selection out to its top-level container, which is how a container whose
- * background is fully covered by its children is reachable at all.
+ * ── R2, THE DRILL (selection model v2, founder rulings 2026-09-04) ────────
+ * This SUPERSEDES Rung B's drill-OUT. Upstream (`CanvasKitCanvas.tsx:800-832`)
+ * opened a session on a text hit and otherwise drilled the selection OUT to its
+ * top-level container — the only way a container fully covered by its children
+ * was reachable at all. Plan 3 then added a button shortcut (a double-click on
+ * a button opened the caret on its label). Both are gone: R1 now selects the
+ * outermost UNIT on the click itself, so the container is reachable without
+ * this function, and what a double-click owes the user is the opposite motion —
+ * a way IN.
+ *
+ * So the order is: with the selection a proper ancestor of the pointer's
+ * deepest hit, select the next representable level down (`selectionDrillDown`);
+ * with the selection already that deepest node and text, open the caret; and
+ * with the selection somewhere else entirely, re-sync to R1's click target
+ * (the pointer-down that preceded this double-click normally makes that a
+ * no-op). A double-click therefore walks a group → its member → the caret, one
+ * click-pair per level, and never has to guess at a level it skipped.
  *
  * Two refusals are the platform's, and both are the standing constraints
  * rather than new policy:
@@ -126,9 +139,9 @@ export type SceneDoubleClickEffect =
  *    first (`engageSceneWriteLock` in `hooks/use-scene-manual-edits.ts`), so
  *    typed work lands rather than being stranded behind a closed gate.
  *
- * Neither refusal falls through to the drill-out: the pointer-down that
- * preceded this double-click already selected the node, so there is nothing
- * left to say.
+ * Neither refusal falls through to anything else: the drill above has already
+ * had its say, and the pointer-down that preceded this double-click already
+ * selected the node, so a refused caret leaves nothing left to do.
  *
  * ── C-9, TRUTHFULLY (F5, review 2026-08-24) ──────────────────────────────
  * This docstring used to claim the C-9 freeze "does NOT fire" for a text-edit
@@ -148,46 +161,52 @@ export type SceneDoubleClickEffect =
  */
 export function sceneDoubleClickEffect({
   gestureDisabled,
-  nodeId,
+  stack,
+  pageId,
   scene,
   selectedNodeId,
 }: {
   gestureDisabled: boolean;
-  /** The representable hit (§5's nearest schema-bearing node), or null for a
+  /** The engine's hit stack under the double-click, outer→inner; empty for a
    * double-click that landed on nothing. */
-  nodeId: NodeId | null;
+  stack: NodeId[];
+  pageId: PageId | null;
   scene: Scene | null;
   selectedNodeId: NodeId | null;
 }): SceneDoubleClickEffect {
   if (!scene) {
     return { kind: "none" };
   }
-  const node = getNode(scene, nodeId);
-  // Plan 3 (item E): a button is selected as one unit, so the double-click
-  // that used to land on its label now lands on the button — resolve it to the
-  // label and let the text rule below decide (lock first, then the run gate).
-  const labelId = node ? buttonLabelId(scene, node.id) : null;
-  const target = labelId !== null ? getNode(scene, labelId) : node;
-  if (target?.kind.kind === "text") {
+  const deepest = representableHit(stack, scene, pageId);
+  if (deepest === null) {
+    return { kind: "none" };
+  }
+  // R2, first: one level toward the pointer. Selection is never a write, so a
+  // locked node and a locked run both still drill — only the caret below is
+  // gated.
+  const drill = selectionDrillDown({ stack, scene, pageId, selectedNodeId });
+  if (drill !== null) {
+    return { kind: "select", nodeId: drill };
+  }
+  const selected = getNode(scene, selectedNodeId);
+  if (selected && selected.id === deepest && selected.kind.kind === "text") {
     // The NODE's own lock is asked first and answers `none`: it is a document
     // fact that outlives the run, so "editing unlocks when it finishes" would
     // be a promise this node is not going to keep.
-    if (target.locked) {
+    if (selected.locked) {
       return { kind: "none" };
     }
     if (gestureDisabled) {
       return { kind: "locked" };
     }
-    return { kind: "edit", nodeId: target.id };
+    return { kind: "edit", nodeId: selected.id };
   }
-  const from = selectedNodeId ?? nodeId;
-  const top = topLevelAncestorId(scene, from);
-  if (!top || top === from) {
-    // Already at the top of its chain (or nothing to drill from): upstream
-    // re-selects what is already selected, which changes nothing.
-    return { kind: "none" };
-  }
-  return { kind: "select", nodeId: top };
+  // Neither the hit nor its ancestor is selected (the pointer-down that
+  // preceded us normally makes that untrue): re-sync to R1's click target.
+  const target = selectionClickTarget(stack, scene, pageId);
+  return target !== null && target !== selectedNodeId
+    ? { kind: "select", nodeId: target }
+    : { kind: "none" };
 }
 
 /**
