@@ -57,10 +57,10 @@ import {
 } from "../adapter/scene-gestures";
 import { sceneHitPoint } from "../adapter/scene-selection";
 import {
-  WALK_UP_CLICK_SLOP_PX,
+  deepSelectTarget,
   escapeSelectionEffect,
   sceneHoverTarget,
-  selectionLadderHit,
+  selectionClickTarget,
   selectionWalkUp,
 } from "../adapter/scene-selection-ladder";
 import type { ScenePalette } from "../adapter/scene-palette";
@@ -1267,18 +1267,6 @@ function SceneDocumentCanvas({
     origin: { point: { x: number; y: number }; pan: { x: number; y: number } };
   } | null>(null);
   const [panning, setPanning] = useState(false);
-  /**
-   * Plan 3 R3: a press on the node that is ALREADY selected — the walk-up
-   * candidate. It is only a candidate on the way down, because a press that
-   * turns into a drag is a MOVE, not a walk-up; the release decides, once the
-   * pointer's travel and the preview are both known.
-   */
-  const walkUpRef = useRef<{
-    pointerId: number;
-    nodeId: NodeId;
-    x: number;
-    y: number;
-  } | null>(null);
 
   const stagePoint = (event: ReactPointerEvent<HTMLDivElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -1312,8 +1300,6 @@ function SceneDocumentCanvas({
   const resetGesture = () => {
     gestureRef.current = initialGestureState;
     gestureArmedRef.current = false;
-    // Plan 3 R3: a cancelled press is not a click, so it cannot walk up.
-    walkUpRef.current = null;
     setPreview(null);
   };
 
@@ -1539,26 +1525,6 @@ function SceneDocumentCanvas({
     if (panned) {
       return;
     }
-    // Plan 3 R3: the second click on the same node walks up — only when the
-    // press travelled less than the slop and drew no drag preview.
-    const candidate = walkUpRef.current;
-    walkUpRef.current = null;
-    if (
-      candidate &&
-      candidate.pointerId === event.pointerId &&
-      preview === null &&
-      Math.hypot(
-        event.clientX - candidate.x,
-        event.clientY - candidate.y,
-      ) < WALK_UP_CLICK_SLOP_PX &&
-      scene &&
-      candidate.nodeId === activeSelectedNodeId
-    ) {
-      const up = selectionWalkUp(scene, pageId, candidate.nodeId);
-      if (up !== null) {
-        commitSelection(up);
-      }
-    }
     if (gestureRef.current.kind !== "idle") {
       const point = descriptorPoint(event);
       // The reducer commits on `up` and returns to idle.
@@ -1583,7 +1549,7 @@ function SceneDocumentCanvas({
   };
 
   /**
-   * Plan 3 R3: everything the Escape listener needs, held in a ref because the
+   * R4 (walk up): everything the Escape listener needs, held in a ref because the
    * listener is registered ONCE (`[]`) and must never read a first-render
    * scene. Published from an effect with no deps array — the file's own idiom
    * for a per-render ref (`onSelectRef`, `gestureInputsRef` above) — rather
@@ -1609,11 +1575,11 @@ function SceneDocumentCanvas({
     };
   });
 
-  // Ruling C-2: Escape cancels a live gesture. Registered once, and now — Plan
-  // 3 R3 — it also WALKS THE SELECTION UP when no gesture is running and no
-  // caret is open, clearing the selection at the root frame. (Before Plan 3
-  // this canvas never touched the selection on Escape.) An Escape that resolves
-  // to nothing still reaches whatever else wants it.
+  // Ruling C-2: Escape cancels a live gesture. Registered once, and — R4 — it
+  // also WALKS THE SELECTION UP when no gesture is running and no caret is
+  // open, clearing the selection at the root frame. (Before the selection
+  // ladder landed, this canvas never touched the selection on Escape.) An
+  // Escape that resolves to nothing still reaches whatever else wants it.
   //
   // The gesture guard is ARMED **and** non-idle, not non-idle alone: this is a
   // global key handler, so its inertness must not rest on a state machine that
@@ -1682,14 +1648,24 @@ function SceneDocumentCanvas({
    *     → minus the artboard's workspace origin     artboard-local descriptor px
    *     → `descriptorToScene(local, unitScale)`     the engine's own units
    *     → `controls.hitTest(x, y)`                  bottom-to-top hit stack
-   *     → `selectionLadderHit(stack, scene, pageId)`  §5's nearest
-   *       schema-bearing node, promoted to the BUTTON when the hit is its
-   *       label (Plan 3 R1)
+   *     → `selectionClickTarget(stack, scene, pageId)`  selection v2's R1: the
+   *       outermost UNIT on the path (a button-shaped auto-layout or a group),
+   *       or else the deepest schema-bearing node
    *
    * The last two conversions are the trap: `hitTest` takes SCENE units, not
    * descriptor px, and the two are identical on a `pt`/`px` page (this ad), so
    * a missing division is invisible here and wrong everywhere else. Both live
    * in `sceneHitPoint`, where they are unit-tested against a non-identity unit.
+   *
+   * The selection model (founder rulings 2026-09-04) in one paragraph. R1 is
+   * that click target. R2: a double-click drills one level toward the pointer
+   * and opens the caret only once the text itself is the selection. R3:
+   * Cmd/Ctrl-click selects the deepest node and cycles one level shallower per
+   * repeat. R4: Alt-click and Escape walk up. R5: the hover outline previews
+   * R1. R6: the press drags whatever the click just selected. The earlier
+   * model's "a second click on the selected node walks up" (and its 4 px
+   * same-spot slop) is gone: a double-click IS two clicks at one spot, so the
+   * two rules could not coexist — walking up is Alt-click's and Escape's now.
    */
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     // Rung B: while a caret session is open the textarea owns the pointer, and
@@ -1774,23 +1750,22 @@ function SceneDocumentCanvas({
     // `HitResult.stack` is bottom-to-top and its last member IS `hit` (the
     // engine's `hit_test` is literally `hit_stack(..).pop()`), so the stack
     // alone is the complete answer.
-    const hitNodeId = selectionLadderHit(result.stack, scene, pageId);
-    // Plan 3 R3: Alt/Option-click walks up from the hit and starts no press.
+    // R3: Cmd/Ctrl-click deep-selects (and cycles shallower on repeat);
+    // otherwise R1's click target. Either way the press that follows drags
+    // what was just selected (R6).
+    const hitNodeId = event.metaKey || event.ctrlKey
+      ? deepSelectTarget({
+          stack: result.stack,
+          scene,
+          pageId,
+          selectedNodeId: activeSelectedNodeId,
+        })
+      : selectionClickTarget(result.stack, scene, pageId);
+    // R4: Alt/Option-click walks up from the click target and starts no press.
     if (event.altKey && hitNodeId !== null) {
       commitSelection(selectionWalkUp(scene, pageId, hitNodeId) ?? hitNodeId);
       return;
     }
-    // A click on the node that is ALREADY selected is a walk-up candidate; it
-    // is decided on release, once we know the pointer did not drag.
-    walkUpRef.current =
-      hitNodeId !== null && hitNodeId === activeSelectedNodeId
-        ? {
-            pointerId: event.pointerId,
-            nodeId: hitNodeId,
-            x: event.clientX,
-            y: event.clientY,
-          }
-        : null;
     const press = scenePressNodeTarget({
       artboard,
       gesturesEnabled: !gestureDisabled,
@@ -1826,8 +1801,13 @@ function SceneDocumentCanvas({
 
   /**
    * Rung B (rich-text plan, 2026-08-24 — this SUPERSEDES §1.9/§7's "no
-   * double-click text"): a double-click opens a caret on a text node, and
-   * drills the selection out to its top-level container on anything else.
+   * double-click text"), as re-ruled by selection v2's R2 (2026-09-04): a
+   * double-click drills the selection one level DOWN toward the pointer, and
+   * opens a caret only once the text node itself is what is selected. (Rung
+   * B's original answer — drill OUT to the top-level container — is gone with
+   * the rest of the walk-up-on-click model; walking up is Alt-click's and
+   * Escape's.) The whole stack under the pointer is handed to the pure rule,
+   * because "one level down" is a question about the path, not about a node.
    *
    * The coordinate chain is `handlePointerDown`'s, unchanged and reused whole —
    * the same hit test answers both, so a double-click can never resolve to a
@@ -1867,7 +1847,8 @@ function SceneDocumentCanvas({
       : null;
     const effect = sceneDoubleClickEffect({
       gestureDisabled,
-      nodeId: result ? selectionLadderHit(result.stack, scene, pageId) : null,
+      stack: result ? result.stack : [],
+      pageId,
       scene,
       selectedNodeId: activeSelectedNodeId,
     });
