@@ -877,7 +877,17 @@ _BRIDGE_V0_TEMPLATE = """
     // Document coordinates, and the above/below choice is made in document space too —
     // measured against the viewport it would flip mid-scroll and the toolbar would jump.
     var above = rect.top + window.scrollY - height - 6;
-    bar.style.left = (rect.left + window.scrollX) + "px";
+    // Clamped horizontally so an element flush against either edge of a narrow page does
+    // not push its toolbar off-screen; `Math.max` last so a bar wider than the viewport
+    // still starts at the left edge rather than at a negative offset.
+    var maxLeft =
+      window.scrollX +
+      Math.max(0, document.documentElement.clientWidth - bar.offsetWidth);
+    var left = Math.max(
+      window.scrollX,
+      Math.min(rect.left + window.scrollX, maxLeft)
+    );
+    bar.style.left = left + "px";
     bar.style.top =
       (above >= 0 ? above : rect.bottom + window.scrollY + 6) + "px";
   }
@@ -950,21 +960,20 @@ _BRIDGE_V0_TEMPLATE = """
     cloneToolbar = null;
   }
 
-  // The OUTERMOST text-like element between the double-clicked node and the clone root.
-  // An override replaces a whole element's text, and a `<strong>` or `<em>` is part of
-  // its heading's text, not a thing to edit on its own — so a double-click on the mark
-  // edits the heading. Nothing text-like in the chain (a bare `<div>` of copy) is left
-  // alone rather than guessed at.
+  // The NEAREST text-like element at or above the double-clicked one, stopping at the
+  // clone root: the editor must open on the very element the hover chip just named, and
+  // climbing further would let a double-click on a nav link's words write an override on
+  // the whole `<li>` — which erases the anchor from the render. Nothing text-like in the
+  // chain (a bare `<div>` of copy) is left alone rather than guessed at.
   function cloneEditTarget(target, owner) {
     var cur = target;
-    var found = null;
     while (cur && cur !== owner) {
       if (!isBridgeEl(cur) && TEXT_LIKE.test(cur.tagName.toLowerCase())) {
-        found = cur;
+        return cur;
       }
       cur = cur.parentElement;
     }
-    return found;
+    return null;
   }
 
   function beginCloneEditing(el) {
