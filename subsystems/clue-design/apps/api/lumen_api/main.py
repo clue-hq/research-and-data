@@ -3786,14 +3786,52 @@ def create_app(
                     scene = document["scene"]
                     cache_dir = request_cache_dir(repo)
                     materialize_scene_assets(blobs, cache_dir, [scene])
+                    # 2026-09-06: render what the editor and the export show, not the
+                    # raw stored scene. Agent-authored ads carry brand TOKENS and
+                    # hug/fill sizes with no stored geometry; exported raw they fail
+                    # LUME0209 / LUME0205 on every node and the PNG came back white
+                    # — a 200 with nothing in it. So: the document's effective brand
+                    # (the export route's own chooser, default request = the pinned
+                    # kit, platform default as the last resort), its mode and fonts,
+                    # one preflight, and the PREFLIGHTED scene goes to the renderer.
+                    # Best-effort by contract — preflight diagnostics are logged,
+                    # never a refusal (a card is a preview, not a deliverable) — and
+                    # READ-ONLY: nothing here persists (no `_persist_preflight`),
+                    # keeping the route's never-in-the-write-path rule.
+                    source, brand_kit = choose_effective_brand(
+                        app.state.core,
+                        repo,
+                        document,
+                        PreflightRequest(persist_effective_brand=False),
+                    )
+                    mode = choose_effective_brand_mode(document, brand_kit, None)
+                    brand_fonts = (
+                        brand_kit_font_spec(repo, brand_kit, blobs, cache_dir)
+                        if brand_kit is not None
+                        else scene_brand_fonts(repo, scene, blobs, cache_dir)
+                    )
+                    preflight_result = app.state.core.preflight_scene(
+                        scene, brand_kit, mode, brand_fonts=brand_fonts
+                    )
+                    preflight_diagnostics = preflight_result.get("diagnostics", [])
+                    log_event(
+                        api_logger,
+                        logging.INFO,
+                        "document_thumbnail_preflight",
+                        document_id=document_id,
+                        version=version,
+                        effective_brand_source=source,
+                        **diagnostic_summary(preflight_diagnostics),
+                    )
+                    export_scene = preflight_result.get("scene") or scene
                     result = app.state.core.export_preview(
-                        scene,
+                        export_scene,
                         "png",
-                        document_thumbnails.first_page_ids(scene),
+                        document_thumbnails.first_page_ids(export_scene),
                         default_export_profile("png"),
                         raise_on_error=False,
                         asset_store_root=cache_dir,
-                        brand_fonts=scene_brand_fonts(repo, scene, blobs, cache_dir),
+                        brand_fonts=brand_fonts,
                     )
                     data = document_thumbnails.downscale_png(
                         document_thumbnails.png_from_export_result(result)
@@ -3803,13 +3841,17 @@ def create_app(
                     status_code=502,
                     detail={"code": error.code, "message": str(error)},
                 ) from error
-            except CoreError as error:
+            except (CoreError, NotFoundError) as error:
                 # The helper can fail BEFORE `raise_on_error` is consulted (a dead
                 # subprocess, an unparseable response), so `raise_on_error=False`
                 # above does not make this unreachable — `/export-preview` catches
                 # CoreError for the same reason. A thumbnail's contract is 502
                 # `thumbnail.*`, so it is normalized here rather than left to
                 # `core_http_error`'s 422.
+                # `NotFoundError` (a KeyError, NOT a CoreError) joins it because the
+                # scene branch's `choose_effective_brand` reads the brand-kit library:
+                # a document pinned to a kit version that is gone would otherwise
+                # escape as an untyped 500.
                 raise HTTPException(
                     status_code=502,
                     detail={
