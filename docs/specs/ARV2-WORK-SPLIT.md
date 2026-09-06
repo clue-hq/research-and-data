@@ -160,7 +160,8 @@ order: (R1) render `verifiedAt` (and `publishedAt` when present) in the source h
 stay compact; (R4) remove the 4-line clamp on the hover-card quote; (R5) resolve the contact
 email chip via `emailClaimId`, delete the substring match; (R6) `resolveAccountOwner` returns
 "Unassigned" when `owner` and `createdBy` are both null — never the current viewer; (R7)
-`createLocalAccount` sets `fitScore: null` and leaves `overallFit` unset; (R8) the contact page
+`createLocalAccount` sets `fitScore: null` and `overallFit: null`, making `overallFit` nullable in
+`model/account.ts` and `model/account-detail.ts` (render "—"; a contract-v1 change to record in S2); (R8) the contact page
 "Updated" shows the contact's latest `verifiedAt`, and tenure prefers the served `tenureLabel`;
 (R9) delete the client-side h1 count stripping and the "Overall fit" regex — read `overallFit`
 and `items.length`; delete the dead `ResearchDigest`. Exit gate: the frontend gate green with the

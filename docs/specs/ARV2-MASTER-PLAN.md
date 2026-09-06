@@ -168,11 +168,16 @@ shapes; its vendored `data/zafran/FRONTEND-SPEC-ZAFRAN.md` plus the fidelity tes
 (`data/zafran/zafran-content-fidelity.test.ts`, `zafran-implementation.test.ts`) define what
 "faithful to the research" means for the Zafran answer key. Contract v1 is recorded in
 `apps/frontend/docs/api-contracts/accounts.md` and served on `/frontend/v1` (workspace-scoped),
-with the frontend's repository adapters pointed at it. The five payloads:
+with the frontend's repository adapters pointed at it.
+
+**How to read the field lists:** `name?` = optional (may be absent); `name|null` or "(nullable)"
+= present but may be `null`; `name[]` = a list (may be empty); `a|b|c` or `∈` = exactly one of
+those values; everything not marked is required and non-null. "Served" means the backend computes
+it and the frontend displays it unchanged. The five payloads:
 
 - **Account list:** `id, name, logoPath, websiteUrl, researchStatus, researchStatusLabel?,
-  researchIsRefreshing, overallFit (High|Medium|Low), fitScore (0–100 | null — never 0 for
-  unknown), revenueBand, employeeBand, locationCount, locationsLabel?, owner (nullable),
+  researchIsRefreshing, overallFit (High|Medium|Low|null — nullable per ruling R7), fitScore (0–100 |
+  null — never 0 for unknown), revenueBand, employeeBand, locationCount, locationsLabel?, owner (nullable),
   createdBy (nullable), industryLabels[], socials[], createdAt?, lastModifiedAt?, primaryProjectId,
   projects[], customFields[] {id,label,value,presentation,primary}` + `meta {total, nextCursor}`.
 - **Account detail:** the above plus `previewTitle, websiteLabel, headcountLabel, locationsLabel,
@@ -192,7 +197,7 @@ with the frontend's repository adapters pointed at it. The five payloads:
   bestFirstChannelLabel?, educationLabel?, tenureLabel?, employmentStartedAt?, linkedinFollowers?,
   linkedinCreator?, reports[], overviewParagraphs[], evidence[], researchEvidence[], contactDisplay
   (DisplayBlock, page "contact")`.
-- **Activity (list, detail, workspace):** `{id, kind ∈ contacts|summary|created|artifact|updated,
+- **Activity (on account detail and on the workspace payload; not on the list row):** `{id, kind ∈ contacts|summary|created|artifact|updated,
   text, timeLabel, actor? ({type:"clue"} | {type:"person", id, name, avatarUrl?}), action?,
   occurredAt?, isSample?}`.
 - **Shared:** `ResearchEvidence {claimId, sourceUrl|null, sourceDomain, faviconUrl|null, title,
@@ -215,11 +220,11 @@ with the frontend's repository adapters pointed at it. The five payloads:
 | `restricted` sections | `do-not-mention` / `context-only` / `watch-outs` are the only sections that ever receive `outreach_safe=false` claims; the frontend shows them under an "Internal notes" control and omits `watch-outs` from the overview |
 | `sendLine` | contact page only; a separate field, never inside quotation marks; `channel` is served text |
 | `h1` / counts / overall fit | `h1` is the section's served vocabulary **without counts or parentheticals**; counts are `items.length`; the overall fit is `overallFit`, never text inside an `h1` |
-| `insightSummary` | computed: `"{n} insights"` (items across non-restricted sections), `"{m} people"`; no declared totals |
+| `insightSummary` | computed by the backend: `"{n} insights"` where n = items across non-restricted sections, and `"{m} people"` where m = committee members; the fixture's "42 reported in research" declared total is a fixture artifact and does not exist in production |
 | `newSinceLastVisit` | the **frontend** computes it from `ResearchEvidence.verifiedAt` against a locally stored last-visit stamp; the backend serves `false` and no visit row (decision D5 resolved) |
-| `fitScore` | `null` when unknown; never `0`; `overallFit` still required |
-| `owner` / `createdBy` | workspace users (CRM data, never agent-written); `owner` nullable, `createdBy` recorded at creation; display precedence assigned owner → creator → (ruling R6 below) |
-| `tenureLabel` / `employmentStartedAt` | the backend serves the start date; the frontend may format tenure, but the served `tenureLabel` is authoritative when present |
+| `fitScore` / `overallFit` | both `null` when the account has not been scored (never `0`, never a guessed band); scoring writes both together (ruling R7 makes `overallFit` nullable) |
+| `owner` / `createdBy` | workspace users (CRM data, never agent-written); `owner` nullable, `createdBy` recorded at creation; display precedence: assigned `owner`, else `createdBy`, else "Unassigned" (ruling R6) — never the current viewer |
+| `tenureLabel` / `employmentStartedAt` | the backend serves both; the frontend displays `tenureLabel` as-is (it never computes tenure from the browser clock); `employmentStartedAt` exists for sorting and date display |
 | `artifacts[]` | the workspace endpoint projects account-associated generated artifacts with `accountId`; `updatedAt` from the artifact record; no invented dates |
 | `activity[]` | actor is `clue` for agent actions and `person {id,name}` for user actions; `occurredAt` ISO; unattributed events carry no actor; `isSample` only in fixtures |
 | `customFields` | registry custom variables whose values are claims; `presentation` from the registry row |
@@ -234,9 +239,11 @@ frontend-owned and travel with the re-lift.
 - **Page grammar:** each page is a fixed template of H1 sections (product vocabulary).
   Insights: Buying signals · Money & momentum · Tools they already use · How they sell, and who they
   win · Contact insights · Context only (restricted). Account overview: What they do · Why they fit ·
-  Why now · Buying committee · How to approach · Watch-outs (restricted); rail: Core / Custom /
-  Contacts / Activity. Contact: Why this person · Their problem right now · Openers · Angles · Do not
-  mention (restricted, always open); rail: email, LinkedIn, location, best channel, education,
+  Why now · Buying committee · How to approach · Watch-outs (restricted — served in the payload,
+  shown only under the Insights page's Internal notes; the overview page omits it); rail: Core /
+  Custom / Contacts / Activity. Contact: Why this person · Their problem right now · Openers ·
+  Angles · Do not mention (restricted — shown under the contact page's Internal notes control,
+  never in the main reading flow); rail: email, LinkedIn, location, best channel, education,
   tenure, reports.
 - **Recipes:** each section lists the field keys it may draw from (config rows, §4). A custom
   variable is just another key appended to a recipe. Rail rows are plain fields, never sent to the
@@ -272,9 +279,12 @@ frontend-owned and travel with the re-lift.
   overview shows "What they do" and "Why they fit" statically and "Why now / Buying committee /
   How to approach" as closed toggles, and omits "Watch-outs"; inline sources are favicon + compact
   domain; unknown fit score renders "—" from `null`.
-- **Source chips:** rendered by the client from `claimId → ResearchEvidence`; favicon and domain
-  resolved server-side and cached; a private record (email check, database row) shows a lock icon
-  and a date, never a provider name on the page.
+- **Source chips:** rendered by the client from `claimId → ResearchEvidence`. The backend serves
+  `sourceDomain`; the frontend fetches the favicon for that domain through its own `/api/source-favicon`
+  proxy (so `faviconUrl` may be `null`). A chip shows favicon + compact domain only. A private record
+  (`verificationKind: "record"`: an email check, a database row) shows a lock icon and the label
+  "Record"; the provider name appears only in the hover card. Dates appear in the hover card per
+  ruling R1, never on the chip.
 
 ## 8. Rulings on the dummy frontend (D0)
 
@@ -295,12 +305,12 @@ featured-contact hard-code is gone (`profileAction`); lint/build/tests green (11
 | R4 | Hover-card quote clamped to 4 lines (`account-research.module.css:371-380`) | Show the full quote; it is the evidence |
 | R5 | Email chip found by substring match on evidence text (`contact-profile-content.tsx:91-95`) | Resolve via `emailClaimId` |
 | R6 | Unowned accounts display the **current viewer** as owner (`account-owner.ts:16`) | Show "Unassigned" when both `owner` and `createdBy` are null; never fabricate ownership |
-| R7 | `createLocalAccount` invents `fitScore: 0`, `overallFit: "Medium"` (`create-account.ts:7,15`) | `fitScore: null`, `overallFit` unset until scored; the create flow POSTs `{name, websiteUrl}` and the backend returns the row |
+| R7 | `createLocalAccount` invents `fitScore: 0`, `overallFit: "Medium"` (`create-account.ts:7,15`) | `fitScore: null` until scored, and **make `overallFit` nullable in the model** (a contract-v1 change: `High|Medium|Low|null`, rendered "—"); the create flow POSTs `{name, websiteUrl}` and the backend returns the row |
 | R8 | Contact page header shows the **account's** `lastModifiedAt`; tenure is computed from the browser clock (`account-workspace-shell.tsx:179-185`, `contact-profile-content.tsx:217`) | Serve `tenureLabel` from the backend; contact "Updated" = the contact's own latest `verifiedAt` |
 | R9 | Section `h1` counts and "Overall fit: High" are stripped/parsed client-side (`research-content.tsx:551-554, 787-805`) | Contract: `h1` is served bare; counts = `items.length`; overall fit = `overallFit` — remove the parsers |
 | R10 | The four non-Nick contact pages synthesize an "Account context" section (`data/zafran/contacts.ts:147-152`) | Fixture-only; production pages come from `contactDisplay`; note it in the contract doc |
 | R11 | The fixture markdown parser uses `readFileSync(process.cwd() …)` (`spec-content.ts:15-20`) | Fixture-only; must never reach a client bundle; the re-lift keeps fixtures server-side |
-| R12 | `defaultOpen`, `empty`, `outreachSafe`, `emailClaimId`, `publishedAt`, `verificationKind` are on the wire but unread by components | Keep them in contract v1 (R1, R5 consume three of them); the rest are free to serve |
+| R12 | `defaultOpen`, `empty`, `outreachSafe`, `emailClaimId`, `publishedAt`, `verificationKind` are on the wire but unread by components | Keep all six in contract v1: R1 makes the frontend render `publishedAt`, R5 makes it use `emailClaimId`; the other four are served now and rendered later if a design needs them |
 | R13 | The contract doc (`docs/api-contracts/accounts.md`) has none of the new fields | Record contract v1 (§6) — D0 task |
 
 ## 9. The roadmap — three tracks that meet at the claim store
