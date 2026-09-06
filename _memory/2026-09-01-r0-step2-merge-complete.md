@@ -132,3 +132,16 @@ keys pasted in an untracked chat attachment — rotate both.
   Track R (R1–R4 as amended 09-03); 13 D0 rulings; contract v1 = port-of-spain models + backend
   semantics; operating model for a non-technical co-founder (charters, agents never merge, tech
   founder owns four integration points).
+
+## ADDENDUM 2026-09-05 — plan re-based on the 5 Sep frontend (`clue-frontend` `integration/live-backend-v1` @ 84f8ee7)
+Read first-hand: the model diffs (+segments, researchExcerpt, verificationKind, fitDisposition,
+intro/emptyMessage, actor-based activity, account artifacts ad/email + accountId/projectName/
+updatedAt, owner/createdBy nullable, fitScore nullable, contact employmentStartedAt/
+linkedinFollowers/linkedinCreator/locationClaimId), Shashank's `docs/zafran-content-implementation.md`
+and `docs/account-owner-motion.md` (5 Sep presentation rulings: closed toggles, no truncation,
+Internal notes, Watch-outs omitted from overview, compact favicon+domain chips), and a Fable study
+of components/fixtures/gates (118 tests green; fixtures parsed from the vendored spec markdown).
+Updated: MASTER PLAN v1.3 (§6 contract v1 re-based, §7 output shape + presentation, §8 rulings
+reduced to R1–R13, D5 resolved frontend-side), WORK-SPLIT (S1/S2/S8 + charter 6.1), GETTING-STARTED
+(§3 dummy branch, PoC map, week 1), AGENT-BRIEFING (truth commit, new vocabulary, no client-side
+rewriting rule). Contract doc in the dummy still not updated (D0-b).

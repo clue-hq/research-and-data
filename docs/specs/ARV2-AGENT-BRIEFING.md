@@ -34,10 +34,15 @@ Do not treat `CLAUDE.md`'s backlog bullets as tasks; they describe the codebase'
 5. A **display layer** turns claims into page text: fixed sections per page, each section drawing
    only from the field keys its recipe allows, written once by a small model (Luna), persisted,
    regenerated only when the claims in that recipe change.
-6. The frontend that shows those pages is the monorepo's `apps/frontend`; its design truth is a
-   separate dummy frontend that runs on fixtures. Screens are lifted from the dummy, never invented.
+6. The frontend that shows those pages is the monorepo's `apps/frontend`; its design truth is the
+   separate dummy frontend `clue-frontend` (branch `integration/live-backend-v1`, truth commit
+   `84f8ee7`), which runs on fixtures parsed from a vendored Zafran spec markdown and pins them
+   with fidelity tests. Screens are lifted from the dummy, never invented; presentation decisions
+   recorded in its `docs/zafran-content-implementation.md` are binding.
 7. The contract between backend and frontend is written in `apps/frontend/docs/api-contracts/accounts.md`
-   (contract v1) — the dummy's Zod models are the wire shapes.
+   (contract v1) — the dummy's Zod models are the wire shapes. Section titles, counts, overall fit,
+   tenure and insight summaries are **served fields**; the frontend never strips, parses, or
+   recomputes served text.
 8. Two founders work in parallel: Shashank on content, specs, screens, leaf code (via you), and
    acceptance; Aryan on the database migration, the claim loader, the read endpoints, the fleet
    wiring, and every merge.
@@ -56,7 +61,8 @@ Do not treat `CLAUDE.md`'s backlog bullets as tasks; they describe the codebase'
   `platform/api/clue_api/frontend_read/**`, `subsystems/research/**`, auth/tenancy/storage code,
   existing values in `.env.example`, or the base branch. These are Aryan's.
 - **Never invent UI.** If a screen needs a component that the dummy frontend does not have, that is
-  a QUESTION, not a component.
+  a QUESTION, not a component. Never rewrite served text client-side (no stripping counts from
+  titles, no parsing values out of strings, no invented scores or owners).
 - **Every new flag** your code reads goes into `.env.example` with its default, in the same commit.
 - **Every provider response is saved raw before it is parsed**, and every paid call writes a ledger
   row (provider, operation, cost, credits, latency, HTTP status).
@@ -87,7 +93,13 @@ Do not treat `CLAUDE.md`'s backlog bullets as tasks; they describe the codebase'
 - **Recipe** — for one section of one page, the list of field keys it may draw from. Config, not code.
 - **Display block** — the persisted text for one section of one page for one subject, with the claim
   ids every sentence cites.
-- **Evidence** — the wire object the frontend renders as a source chip, resolved from a claim id.
+- **Evidence** — the wire object the frontend renders as a source chip, resolved from a claim id;
+  carries a verbatim `quote` or, when none exists, a `researchExcerpt` (never a fabricated
+  quotation); `verificationKind: record` marks private records (email checks, database rows).
+- **Segments** — clause-level pieces of a display sentence, each with the claim ids supporting that
+  clause; chips render after the clause.
+- **Internal notes** — the frontend control under which restricted (`outreach_safe=false`) research
+  is shown; it is never part of the main reading flow and never in outreach copy.
 - **Answer key** — a proof-of-concept run whose outputs are the expected result of a production run:
   Probook (`.context/arv2-clue-sample-v3/`), Zafran (`.context/arv2-one-account-aiark/`), the ten
   people (`.context/arv2-person-depth/`), the three Zafran pages (`.context/frontend-page-content/`),
