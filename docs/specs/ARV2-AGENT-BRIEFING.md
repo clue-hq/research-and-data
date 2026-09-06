@@ -10,8 +10,11 @@ whole context; you do not need to reconstruct it from the codebase or from memor
 1. `docs/specs/ARV2-MASTER-PLAN.md` — the complete plan (what we build, the rules, the stack, the
    data model, the contract, the display layer, the roadmap). **Authoritative.** Where any other
    document, memory note, or code comment disagrees with it, the master plan wins.
-2. `docs/specs/ARV2-WORK-SPLIT.md` — who owns what (§1 is the boundary line; §6 has the charters).
-3. `docs/specs/ARV2-GETTING-STARTED-SHASHANK.md` — the environment, the branch rules, the task loop.
+2. `docs/specs/ARV2-DATA-SOURCE-MAP.md` — for any task that serves or renders accounts data: the
+   endpoint, SQL, table.column or claim `field_key` behind every element on the screens, and the
+   list of client-side derivations the re-lift removes. Production reads Postgres rows, never files.
+3. `docs/specs/ARV2-WORK-SPLIT.md` — who owns what (§1 is the boundary line; §6 has the charters).
+4. `docs/specs/ARV2-GETTING-STARTED-SHASHANK.md` — the environment, the branch rules, the task loop.
 4. The charter Shashank pastes to you for this task.
 5. Only if the charter points you there: the earlier plan documents (`ARV2-R0-*.md`,
    `ARV2-plan-delta-2026-09-03.md`, `ARV2-plan-2026-09-04-accounts-integration.md`) and the

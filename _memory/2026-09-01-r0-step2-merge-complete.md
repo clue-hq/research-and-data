@@ -145,3 +145,14 @@ Updated: MASTER PLAN v1.3 (§6 contract v1 re-based, §7 output shape + presenta
 reduced to R1–R13, D5 resolved frontend-side), WORK-SPLIT (S1/S2/S8 + charter 6.1), GETTING-STARTED
 (§3 dummy branch, PoC map, week 1), AGENT-BRIEFING (truth commit, new vocabulary, no client-side
 rewriting rule). Contract doc in the dummy still not updated (D0-b).
+
+## ADDENDUM 2026-09-07 — data-source map
+Founder asked for an exact element → endpoint → SQL/column map so the frontend never derives and the
+backend never reads markdown/JSON files. Two Opus study agents (backend `frontend_read/` routes with
+SQL; dummy components with the field each element reads) + first-hand spot checks. Written as
+`docs/specs/ARV2-DATA-SOURCE-MAP.md` (master plan v1.4 §6 pointer, D13, `display_section_recipe`
+name). Load-bearing findings: (1) `display_allowed` requires STRONG identity binding by default —
+lenient WEAK stamping would hide every ARV2 contact fact (ruling S10); (2) a `recipe` table already
+exists (Stage-0), so display recipes are `display_section_recipe`; (3) no owner/logo/artifact-account
+columns exist — S1/S2/S9; (4) `/workspace` endpoint does not exist yet (E3, new module);
+(5) existing detail route returns a bare object, dummy expects `{data}`.

@@ -1,6 +1,6 @@
 # ARV2 MASTER PLAN — the complete roadmap for account research, contact research, and their display
 
-**This is the single authoritative plan. Version 1.3, 2026-09-05 (v1.1: lenient write gate, checks as flag-controlled annotations, human-stated facts need no URL, all fields optional; v1.2: the interview never requires word-for-word recording; v1.3: contract v1 re-based on the 5 Sep frontend `live-backend-v1` @ `84f8ee7` — clause-level citation segments, research excerpts, actor-based activity, account artifacts, owner/creator, nullable fit score — and the D0 rulings reduced to what remains). Both founders ratify by initialing
+**This is the single authoritative plan. Version 1.4, 2026-09-07 (v1.4: data-source map child doc, `display_section_recipe` name, D13; v1.1: lenient write gate, checks as flag-controlled annotations, human-stated facts need no URL, all fields optional; v1.2: the interview never requires word-for-word recording; v1.3: contract v1 re-based on the 5 Sep frontend `live-backend-v1` @ `84f8ee7` — clause-level citation segments, research excerpts, actor-based activity, account artifacts, owner/creator, nullable fit score — and the D0 rulings reduced to what remains). Both founders ratify by initialing
 §12.** It consolidates every decision taken so far into one present-tense document. The earlier
 documents in `docs/specs/ARV2-*.md` remain as the audit trail; where they differ from this one, this
 one wins. There is no history in this document, only what we are building and how.
@@ -96,8 +96,9 @@ per person ≈ $0.07–0.13; display copy ≈ $0.05 per account with five contac
   accuracy. One fact, one flag: near-duplicate rows are deduped before they reach the display layer.
 - `display_block` table: `(workspace_id, subject_kind account|contact, subject_id, page, section_key,
   body_json, cited_claim_ids[], model, prompt_version, generated_at, superseded_at)`.
-- Section recipes as registry-backed config rows: `(page, section_key, h1, order, allowed_field_keys[],
-  restricted, default_open, instruction_version)`.
+- Section recipes as config rows in a table named **`display_section_recipe`** (not `recipe` — that
+  name is already taken by Stage-0 execution recipes): `(page, section_key, h1, position,
+  allowed_field_keys[], restricted, default_open, instruction_version, workspace_id NULL = system row)`.
 - No visit table: "new since your last visit" is computed by the frontend from
   `ResearchEvidence.verifiedAt` against a locally stored last-visit stamp (decision D5 resolved).
 - Other per-claim extras from the research runs (`claim_kind`, `media_url`, `media_timestamp`,
@@ -161,6 +162,11 @@ own phrasing of who they sell to; the qualification-floor verdict. Stored in the
 store; materialized read-only into the deepagent's workspace via the project-context path.
 
 ## 6. Contract v1 — what the backend serves to the accounts screens
+
+**Where each value comes from — endpoint, SQL, table.column or claim `field_key` — is specified
+element by element in `docs/specs/ARV2-DATA-SOURCE-MAP.md`.** This section states the wire shapes
+and the semantics; that document states the sources. The dummy frontend defines what data is
+needed, never where it is read from; production reads Postgres rows, never files.
 
 **Presentation truth:** the dummy frontend `clue-frontend`, branch `integration/live-backend-v1`,
 commit `84f8ee7` (5 Sep 2026). Its Zod models in `src/features/accounts/model/*.ts` are the wire
@@ -397,6 +403,7 @@ boot-time audit refuses to start if an old tool is re-granted; the old tools are
 | D10 | Keep the four compliance floors (pre-spend authority, born identity-binding, use gate, DSAR) | Keep all four | ☐ | ☐ |
 | D11 | The 11 pre-existing test failures on the base: pay off now or with the lane work | With the lane work, one owner | ☐ | ☐ |
 | D12 | The operating model (§10), esp. "agents never merge" | Yes | ☐ | ☐ |
+| D13 | The data-source rulings S1–S12 in `ARV2-DATA-SOURCE-MAP.md` §5 — owner columns, nullable logo/title, fit thresholds, legacy slots default `[]`, artifacts `[]` in v1, the display-gate vs lenient-binding question (S10), the five-value `researchStatus` enum | As written; S10 needs an explicit choice | ☐ | ☐ |
 
 ## 13. The first ten steps, in order
 
