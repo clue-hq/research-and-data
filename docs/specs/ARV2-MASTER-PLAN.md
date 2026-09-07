@@ -1,6 +1,6 @@
 # ARV2 MASTER PLAN — the complete roadmap for account research, contact research, and their display
 
-**This is the single authoritative plan. Version 1.2, 2026-09-04 (v1.1: lenient write gate, checks as flag-controlled annotations, human-stated facts need no URL, all fields optional; v1.2: the interview never requires word-for-word recording). Both founders ratify by initialing
+**This is the single authoritative plan. Version 1.5, 2026-09-07 (v1.5: Aryan's rulings recorded — §8 R1–R13, §12 D1–D8 and D10–D13, data-source rulings S1–S12 with S10 = read-time relaxation; v1.4: data-source map child doc, `display_section_recipe` name, D13; v1.1: lenient write gate, checks as flag-controlled annotations, human-stated facts need no URL, all fields optional; v1.2: the interview never requires word-for-word recording; v1.3: contract v1 re-based on the 5 Sep frontend `live-backend-v1` @ `84f8ee7` — clause-level citation segments, research excerpts, actor-based activity, account artifacts, owner/creator, nullable fit score — and the D0 rulings reduced to what remains). Both founders ratify by initialing
 §12.** It consolidates every decision taken so far into one present-tense document. The earlier
 documents in `docs/specs/ARV2-*.md` remain as the audit trail; where they differ from this one, this
 one wins. There is no history in this document, only what we are building and how.
@@ -96,10 +96,11 @@ per person ≈ $0.07–0.13; display copy ≈ $0.05 per account with five contac
   accuracy. One fact, one flag: near-duplicate rows are deduped before they reach the display layer.
 - `display_block` table: `(workspace_id, subject_kind account|contact, subject_id, page, section_key,
   body_json, cited_claim_ids[], model, prompt_version, generated_at, superseded_at)`.
-- Section recipes as registry-backed config rows: `(page, section_key, h1, order, allowed_field_keys[],
-  restricted, default_open, instruction_version)`.
-- Optional `account_visit (workspace_id, user_id, subject_id, last_visited_at)` for "new since your
-  last visit" — or ship `newSinceLastVisit=false` in v1 (decision D5 in §12).
+- Section recipes as config rows in a table named **`display_section_recipe`** (not `recipe` — that
+  name is already taken by Stage-0 execution recipes): `(page, section_key, h1, position,
+  allowed_field_keys[], restricted, default_open, instruction_version, workspace_id NULL = system row)`.
+- No visit table: "new since your last visit" is computed by the frontend from
+  `ResearchEvidence.verifiedAt` against a locally stored last-visit stamp (decision D5 resolved).
 - Other per-claim extras from the research runs (`claim_kind`, `media_url`, `media_timestamp`,
   `source_type`, `charter_category`, `source_field_path`, per-claim cost) ride `value_json`
   sub-fields and the existing provenance/lineage refs; no schema for them in v1.
@@ -162,57 +163,101 @@ store; materialized read-only into the deepagent's workspace via the project-con
 
 ## 6. Contract v1 — what the backend serves to the accounts screens
 
-The wire shapes are the dummy frontend's Zod models (`clue-frontend` accounts feature, `research-
-display.ts` and the account/contact/workspace models), frozen after the §8 rulings, recorded in
-`apps/frontend/docs/api-contracts/accounts.md`, served on `/frontend/v1` (workspace-scoped) with the
-frontend's repository adapters pointed at it. The five payloads:
+**Where each value comes from — endpoint, SQL, table.column or claim `field_key` — is specified
+element by element in `docs/specs/ARV2-DATA-SOURCE-MAP.md`.** This section states the wire shapes
+and the semantics; that document states the sources. The dummy frontend defines what data is
+needed, never where it is read from; production reads Postgres rows, never files.
 
-- **Account list:** `id, name, logoPath, websiteUrl, researchStatus, researchIsRefreshing, overallFit
-  (High|Medium|Low), fitScore (0–100), revenueBand, employeeBand, locationCount, locationsLabel,
-  owner?, industryLabels[], socials[], createdAt, lastModifiedAt, primaryProjectId, projects[],
-  customFields[] {id,label,value,presentation,primary}` + `meta {total, nextCursor}`.
-- **Account detail:** the above plus `previewTitle, websiteLabel, researchStatusLabel, headcountLabel,
-  revenueLabel, foundedLabel, fundingLabel, fitScoreLabel, summaryParagraphs[], businessParagraphs[],
-  fitCriteria[] {id,title,evidence,matched}, contacts[] {id,name,avatarUrl?,title?,persona?,
-  emailVerified?,hasDetail}, activity[], researchEvidence[], overviewDisplay (DisplayBlock),
-  buyingCommittee[] {contactId,name,title,persona,email|null,emailClaimId|null,linkedinUrl,whyTheyMatter}`.
-- **Account workspace / insights:** `insightSummary[], researchEvidence[], insightsDisplay
-  (DisplayBlock), artifacts[], activity[]`.
-- **Contacts list:** `id, name, title, persona, personaTone, influence, avatarUrl?, emailStatus,
-  emailLabel?, socials[], profileAction (none|preview|page)`.
+**Presentation truth:** the dummy frontend `clue-frontend`, branch `integration/live-backend-v1`,
+commit `84f8ee7` (5 Sep 2026). Its Zod models in `src/features/accounts/model/*.ts` are the wire
+shapes; its vendored `data/zafran/FRONTEND-SPEC-ZAFRAN.md` plus the fidelity tests
+(`data/zafran/zafran-content-fidelity.test.ts`, `zafran-implementation.test.ts`) define what
+"faithful to the research" means for the Zafran answer key. Contract v1 is recorded in
+`apps/frontend/docs/api-contracts/accounts.md` and served on `/frontend/v1` (workspace-scoped),
+with the frontend's repository adapters pointed at it.
+
+**How to read the field lists:** `name?` = optional (may be absent); `name|null` or "(nullable)"
+= present but may be `null`; `name[]` = a list (may be empty); `a|b|c` or `∈` = exactly one of
+those values; everything not marked is required and non-null. "Served" means the backend computes
+it and the frontend displays it unchanged. The five payloads:
+
+- **Account list:** `id, name, logoPath, websiteUrl, researchStatus, researchStatusLabel?,
+  researchIsRefreshing, overallFit (High|Medium|Low|null — nullable per ruling R7), fitScore (0–100 |
+  null — never 0 for unknown), revenueBand, employeeBand, locationCount, locationsLabel?, owner (nullable),
+  createdBy (nullable), industryLabels[], socials[], createdAt?, lastModifiedAt?, primaryProjectId,
+  projects[], customFields[] {id,label,value,presentation,primary}` + `meta {total, nextCursor}`.
+- **Account detail:** the above plus `previewTitle, websiteLabel, headcountLabel, locationsLabel,
+  revenueLabel, foundedLabel?, fundingLabel?, fitScoreLabel?, createdAt, lastModifiedAt (required),
+  summaryParagraphs[], businessParagraphs[], fitCriteria[] (legacy, may be empty), contacts[]
+  {id,name,avatarUrl?,title?,persona?,emailVerified?,hasDetail}, activity[] (see below),
+  researchEvidence[], overviewDisplay (DisplayBlock, page "overview"), buyingCommittee[]
+  {contactId,name,title,persona,email|null,emailClaimId|null,linkedinUrl,whyTheyMatter}`.
+- **Account workspace / insights:** `insightSummary[] (computed: "N insights", "M people"),
+  researchEvidence[], insightsDisplay (DisplayBlock, page "insights"), artifacts[] {id,title,
+  type ∈ presentation|document|web|ad|email, accountId?, projectName?, updatedAt?, thumbnailPath,
+  lastEditedLabel}, activity[]`.
+- **Contacts list:** `id, name, title, persona, personaTone, influence, avatarUrl?, emailStatus
+  (available|lookup), emailLabel?, socials[], profileAction (none|preview|page)`.
 - **Contact detail:** the row plus `accountId, accountName, accountLogoPath, recentSignalsLabel,
-  linkedinLabel, linkedinUrl, xLabel?, xUrl?, emailVerifiedAt?, locationLabel?, bestFirstChannelLabel?,
-  educationLabel?, tenureLabel?, reports[], overviewParagraphs[], evidence[], researchEvidence[],
-  contactDisplay (DisplayBlock)`.
-- **Shared:** `ResearchEvidence {claimId, sourceUrl|null, sourceDomain, faviconUrl, title, quote,
-  publishedAt, verifiedAt, mediaTimestamp, provider, outreachSafe}`; `DisplayBlock {page, sections[]
-  {key, h1, empty, restricted, defaultOpen, items[] {id, h2, body[] {text, claimIds[]}, sendLine
-  {channel, text, claimIds[]}|null, contactRefs[], priority 1|2|3, newSinceLastVisit}}}`.
+  linkedinLabel, linkedinUrl, xLabel?, xUrl?, emailVerifiedAt?, locationLabel?, locationClaimId?,
+  bestFirstChannelLabel?, educationLabel?, tenureLabel?, employmentStartedAt?, linkedinFollowers?,
+  linkedinCreator?, reports[], overviewParagraphs[], evidence[], researchEvidence[], contactDisplay
+  (DisplayBlock, page "contact")`.
+- **Activity (on account detail and on the workspace payload; not on the list row):** `{id, kind ∈ contacts|summary|created|artifact|updated,
+  text, timeLabel, actor? ({type:"clue"} | {type:"person", id, name, avatarUrl?}), action?,
+  occurredAt?, isSample?}`.
+- **Shared:** `ResearchEvidence {claimId, sourceUrl|null, sourceDomain, faviconUrl|null, title,
+  quote|null, researchExcerpt?, publishedAt, verifiedAt, verificationKind ∈ verified|record,
+  mediaTimestamp, provider, outreachSafe}`; `DisplayBlock {page, sections[] {key, h1, empty,
+  emptyMessage?, intro[]?, restricted, defaultOpen, items[] {id, h2, body[] {text, claimIds[],
+  segments[]? {text, claimIds[]}}, sendLine {channel, text, claimIds[]}|null, contactRefs[],
+  subject?, inlineLead?, fitDisposition? ∈ support|caveat, priority 1|2|3, newSinceLastVisit}}}`.
 
-**Backend-owned semantics (the frontend never re-derives these):** `ResearchEvidence` is one row per
-claim cited on the page, mapped 1:1 from the claim (`quote` = evidence span, `verifiedAt` =
-observed_at, `outreachSafe` = the column), with `sourceDomain`, `faviconUrl` and page `title`
-resolved server-side; `item.priority` = the best `signal_priority` among its cited claims, P1 first
-within a section; `section.empty` = the recipe matched nothing and the display model was not called;
-only `restricted` sections ever receive `outreach_safe=false` claims; `sendLine` is a separate field,
-never inside quotation marks; `insightSummary` is computed (item count, latest observed_at, new
-count); every `h1` and `sendLine.channel` is served vocabulary — the client never retitles;
-`customFields` are registry custom variables whose values are claims; `owner` is a workspace user
-(CRM datum, never agent-written). `field_key`, `use_class`, `source_type` are not on the wire by
-design; generic field rendering exists only for `customFields`.
+**Backend-owned semantics (the frontend never re-derives these):**
+
+| Wire field | Backend rule |
+|---|---|
+| `ResearchEvidence` | one row per claim cited on the page; `claimId` = claim id, `quote` = the verbatim evidence span **or `null`** with `researchExcerpt` = the research sentence when no original-source quote exists (never a fabricated quotation); `sourceUrl` = source URL or `null` for private records (`verificationKind: "record"`: email checks, database rows); `verifiedAt` = observed_at; `publishedAt` = source date when known; `mediaTimestamp` from the claim's media sub-fields; `outreachSafe` = the claim column; `sourceDomain` resolved server-side; `faviconUrl` may be `null` — the frontend resolves favicons by domain through its own proxy route; `title` = page title when captured |
+| `body[].segments` | the display model's output is split into clause-level segments, each with the claim ids that support that clause; chips render after the clause, not the sentence |
+| `ResearchItem.priority` | the best (lowest number) `signal_priority` among the item's cited claims |
+| `fitDisposition` | on "Why they fit" items: `support` when the fit claim is satisfied, `caveat` when it is the honest negative |
+| `intro[]` | narrative sections ("What they do", "Why they fit") carry their paragraphs as `intro`, items carry the evidence rows |
+| `ResearchSection.empty` / `emptyMessage` | `empty` when the recipe matched nothing and the display model was not called; `emptyMessage` optional server text, else the client prints "No {section} information found for {name}." |
+| `restricted` sections | `do-not-mention` / `context-only` / `watch-outs` are the only sections that ever receive `outreach_safe=false` claims; the frontend shows them under an "Internal notes" control and omits `watch-outs` from the overview |
+| `sendLine` | contact page only; a separate field, never inside quotation marks; `channel` is served text |
+| `h1` / counts / overall fit | `h1` is the section's served vocabulary **without counts or parentheticals**; counts are `items.length`; the overall fit is `overallFit`, never text inside an `h1` |
+| `insightSummary` | computed by the backend: `"{n} insights"` where n = items across non-restricted sections, and `"{m} people"` where m = committee members; the fixture's "42 reported in research" declared total is a fixture artifact and does not exist in production |
+| `newSinceLastVisit` | the **frontend** computes it from `ResearchEvidence.verifiedAt` against a locally stored last-visit stamp; the backend serves `false` and no visit row (decision D5 resolved) |
+| `fitScore` / `overallFit` | both `null` when the account has not been scored (never `0`, never a guessed band); scoring writes both together (ruling R7 makes `overallFit` nullable) |
+| `owner` / `createdBy` | workspace users (CRM data, never agent-written); `owner` nullable, `createdBy` recorded at creation; display precedence: assigned `owner`, else `createdBy`, else "Unassigned" (ruling R6) — never the current viewer |
+| `tenureLabel` / `employmentStartedAt` | the backend serves both; the frontend displays `tenureLabel` as-is (it never computes tenure from the browser clock); `employmentStartedAt` exists for sorting and date display |
+| `artifacts[]` | the workspace endpoint projects account-associated generated artifacts with `accountId`; `updatedAt` from the artifact record; no invented dates |
+| `activity[]` | actor is `clue` for agent actions and `person {id,name}` for user actions; `occurredAt` ISO; unattributed events carry no actor; `isSample` only in fixtures |
+| `customFields` | registry custom variables whose values are claims; `presentation` from the registry row |
+| `BuyingCommitteeMember.email` + `emailClaimId` | from the `core.work_email` claim; verification state lives in the evidence hover, not inline |
+
+Not on the wire by design: `field_key`, `use_class`, `source_type`; generic field rendering exists
+only for `customFields`. The Next.js `/api/source-favicon` route and the accounts layout shell are
+frontend-owned and travel with the re-lift.
 
 ## 7. The display layer
 
 - **Page grammar:** each page is a fixed template of H1 sections (product vocabulary).
   Insights: Buying signals · Money & momentum · Tools they already use · How they sell, and who they
   win · Contact insights · Context only (restricted). Account overview: What they do · Why they fit ·
-  Why now · Buying committee · How to approach · Watch-outs (restricted); rail: Core / Custom /
-  Contacts / Activity. Contact: Why this person · Their problem right now · Openers · Angles · Do not
-  mention (restricted, always open); rail: email, LinkedIn, location, best channel, education,
+  Why now · Buying committee · How to approach · Watch-outs (restricted — served in the payload,
+  shown only under the Insights page's Internal notes; the overview page omits it); rail: Core /
+  Custom / Contacts / Activity. Contact: Why this person · Their problem right now · Openers ·
+  Angles · Do not mention (restricted — shown under the contact page's Internal notes control,
+  never in the main reading flow); rail: email, LinkedIn, location, best channel, education,
   tenure, reports.
 - **Recipes:** each section lists the field keys it may draw from (config rows, §4). A custom
   variable is just another key appended to a recipe. Rail rows are plain fields, never sent to the
   display model.
+- **Output shape:** each section returns `intro[]` (narrative sections) and `items[]`; each item's
+  body sentences carry `segments[] {text, claimIds[]}` — clause-level citations — plus the
+  sentence-level `claimIds`; contact-page items carry a `sendLine`; "Why they fit" items carry
+  `fitDisposition`. Section `h1` is served without counts.
 - **Generation:** one Luna call per section, all sections of a page in parallel, default reasoning
   effort (a lower effort leaks unsafe claims and is not cheaper). Prompt: stable prefix (system +
   client context + the section's claims) then the section instruction; three fixed lines: never type
@@ -233,45 +278,57 @@ design; generic field rendering exists only for `customFields`.
   regenerate in the background, swapping the new row in when it lands. No scheduled regeneration;
   `:batch` only for an accumulated invalidated set.
 - **Empty state:** "No {section} information found for {name}." The H1 is never hidden.
-- **Source chips:** rendered by the client from `claimId → ResearchEvidence`; favicon and domain
-  resolved server-side and cached; a private record (email check, database row) shows a lock icon
-  and a date, never a provider name on the page.
+- **Presentation (frontend-owned, decided 5 Sep):** Notion-style heading toggles, closed by
+  default and independently expandable; no tabs, no jump menu, no priority accents, no boxed copy
+  callouts; every item rendered in source order **without truncation** (P3 included); restricted
+  content under a top "Internal notes" control; a "Sources" panel listing every cited URL; the
+  overview shows "What they do" and "Why they fit" statically and "Why now / Buying committee /
+  How to approach" as closed toggles, and omits "Watch-outs"; inline sources are favicon + compact
+  domain; unknown fit score renders "—" from `null`.
+- **Source chips:** rendered by the client from `claimId → ResearchEvidence`. The backend serves
+  `sourceDomain`; the frontend fetches the favicon for that domain through its own `/api/source-favicon`
+  proxy (so `faviconUrl` may be `null`). A chip shows favicon + compact domain only. A private record
+  (`verificationKind: "record"`: an email check, a database row) shows a lock icon and the label
+  "Record"; the provider name appears only in the hover card. No dates appear on the chip or in the hover card (ruling R1); `verifiedAt` and `publishedAt` stay on the wire for the frontend's own computations.
 
-## 8. Rulings applied to the dummy frontend before serving starts (D0)
+## 8. Rulings on the dummy frontend (D0)
 
-1. The account overview renders **all five sections, stacked, in template order** (not only "Why
-   now"); "Why now" keeps its top-3 digest with full bodies and contact chips; "Open all insights"
-   stays.
-2. Within a section: **P1 and P2 items visible, P3 collapsed** under "Show N more" — never a
-   positional cut at three.
-3. Sections are a **stacked document with every H1 visible**; only `restricted` sections are
-   collapsed by default on Insights and always open on the contact page. No tab strip.
-4. The evidence hover card shows the **full verbatim quote** (expandable), not a 4-line clamp.
-5. The source chip may ellipsise at 152 px; the card carries the full label.
-6. Rail contacts show three with "See all" and a count line "Contacts · N (M with verified email)".
-7. Rail "See all" progressive disclosure stays; Founded and Funding join the visible set.
-8. **All client-side relabel maps are deleted** — section H1s and send-line channel labels come from
-   the payload; **no gendered titles anywhere**.
-9. The served fields `section.empty` (empty-state line), `outreachSafe`, `emailClaimId` ("✓ verified
-   {date}"), `emailState`/`persona` on contact chips, and the per-item "new since your last visit"
-   divider are all rendered.
-10. One source chip per clause it supports (not a per-sentence carousel).
-11. The fixture heuristics are removed: `insightSummary` is computed, the fit score is one value
-    everywhere, the email chip resolves `emailClaimId`.
-12. Contract v1 (§6) is written into `apps/frontend/docs/api-contracts/accounts.md` with the rulings
-    above.
+**Resolved by Shashank's 5 Sep commits (`clue-frontend` @ `84f8ee7`):** the overview renders every
+section except Watch-outs; the positional 3-item cut and "Show N more" are gone; tabs are gone
+(independent closed toggles); the client-side section-title and channel relabel maps are gone; the
+digest is dead code; contact chips show title/persona/email state on hover; `insightSummary` is
+computed; unknown fit score is `null`; the hard-coded "Last updated yesterday" is gone; the
+featured-contact hard-code is gone (`profileAction`); lint/build/tests green (118 tests).
+
+**Rulings — ruled by Aryan on 2026-09-07; Shashank's confirmation pending.** Every row is decided as its Recommendation column reads, except R1, whose ruling replaced the recommendation:
+
+| # | Item (file:line in `live-backend-v1`) | Recommendation |
+|---|---|---|
+| R1 | Dates on source chips and hover cards are not rendered (`research-content.tsx:40-44, 90-93`); the spec asks for "posted … · verified …" | **Ruled: no dates anywhere** — not on the chip, not in the hover card. `verifiedAt` stays on the wire (it feeds the frontend's new-since-last-visit computation, D5); `publishedAt` stays on the wire, unrendered |
+| R2 | Restricted sections live in the hidden "Internal notes" panel; the spec said "always open on the contact screen" | Accept Internal notes (it is the newer design decision); record it in the contract doc |
+| R3 | Priority presentation dropped (no P1 accent, no P1-first sort) | Accept for v1; `priority` stays on the wire for ordering within a section (backend sorts P1 first) |
+| R4 | Hover-card quote clamped to 4 lines (`account-research.module.css:371-380`) | Show the full quote; it is the evidence |
+| R5 | Email chip found by substring match on evidence text (`contact-profile-content.tsx:91-95`) | Resolve via `emailClaimId` |
+| R6 | Unowned accounts display the **current viewer** as owner (`account-owner.ts:16`) | Show "Unassigned" when both `owner` and `createdBy` are null; never fabricate ownership |
+| R7 | `createLocalAccount` invents `fitScore: 0`, `overallFit: "Medium"` (`create-account.ts:7,15`) | `fitScore: null` until scored, and **make `overallFit` nullable in the model** (a contract-v1 change: `High|Medium|Low|null`, rendered "—"); the create flow POSTs `{name, websiteUrl}` and the backend returns the row |
+| R8 | Contact page header shows the **account's** `lastModifiedAt`; tenure is computed from the browser clock (`account-workspace-shell.tsx:179-185`, `contact-profile-content.tsx:217`) | Serve `tenureLabel` from the backend; contact "Updated" = the contact's own latest `verifiedAt` |
+| R9 | Section `h1` counts and "Overall fit: High" are stripped/parsed client-side (`research-content.tsx:551-554, 787-805`) | Contract: `h1` is served bare; counts = `items.length`; overall fit = `overallFit` — remove the parsers |
+| R10 | The four non-Nick contact pages synthesize an "Account context" section (`data/zafran/contacts.ts:147-152`) | Fixture-only; production pages come from `contactDisplay`; note it in the contract doc |
+| R11 | The fixture markdown parser uses `readFileSync(process.cwd() …)` (`spec-content.ts:15-20`) | Fixture-only; must never reach a client bundle; the re-lift keeps fixtures server-side |
+| R12 | `defaultOpen`, `empty`, `outreachSafe`, `emailClaimId`, `publishedAt`, `verificationKind` are on the wire but unread by components | Keep all six in contract v1: R5 makes the frontend use `emailClaimId`; the other five are served now and rendered later only if a design needs them (R1 rules `publishedAt` unrendered) |
+| R13 | The contract doc (`docs/api-contracts/accounts.md`) has none of the new fields | Record contract v1 (§6) — D0 task |
 
 ## 9. The roadmap — three tracks that meet at the claim store
 
 ### Track D — display and frontend integration (starts now)
 | Step | What | Owner | Exit gate |
 |---|---|---|---|
-| D0 | Apply the §8 rulings in the dummy frontend; write contract v1 into `accounts.md` | Shashank via agent; Aryan signs | Dummy lint/build/tests green; Zafran renders every section from fixtures |
+| D0 | Apply the remaining §8 rulings (R1, R4–R9) in the dummy frontend; write contract v1 (§6) into `accounts.md` | Shashank via agent; Aryan signs | Dummy lint/build/tests green (≥118 tests); the fidelity tests still pass; Zafran renders every section from fixtures |
 | D1 | The §4 migration; the **claim loader** — a governed one-off writer that turns the Zafran and person research outputs into real claims through `insert_claim` (register the new fields first, unify `use_class`, stamp priority + `outreach_safe`, write run lineage, snapshot media transcripts, dedupe one-fact-one-flag) | Aryan (agent-built, founder-reviewed) | 174 + 119 rows in the store, catalog-valid, lineage-pinned; single alembic head; `make db-smoke` green |
 | D2 | Section recipes seeded; the Luna section runner with the §7 checks; the evidence resolver; `display_block` persistence with the §7 generation policy | Agent under Aryan's review; Shashank owns recipes and prompts | Zafran overview, insights and Nick Fisher pages generated from the store; checks 0 leaks / 0 non-verbatim / 0 off-recipe |
-| D3 | The five §6 payloads on `/frontend/v1` | Aryan | Payloads validate against the dummy's Zod models byte-for-byte |
-| D4 | Re-lift the dummy's accounts feature into `apps/frontend` (with the design-system token changes it depends on); adapters → `/frontend/v1`; no new components | Shashank via agent; Aryan merges | With `CLUE_API_BASE_URL` set, Zafran pages render from the real backend; fixtures still demo offline |
-| D5 | Acceptance: the three Zafran spec pages vs the live pages, section by section; the four remaining contact pages generated lazily on first open | Both | Founder walk-through signed; drift list empty |
+| D3 | The five §6 payloads on `/frontend/v1`, including `researchEvidence`, the three DisplayBlocks with `segments`, `buyingCommittee`, actor-based `activity`, account-scoped `artifacts` | Aryan | Payloads validate against the dummy's Zod models (`live-backend-v1` @ `84f8ee7`) byte-for-byte |
+| D4 | Re-lift the dummy's accounts feature from `live-backend-v1` into `apps/frontend` — the feature folder, the accounts layout shell, the `/api/source-favicon` route, and the design-system token changes; adapters → `/frontend/v1`; no new components | Shashank via agent; Aryan merges | With `CLUE_API_BASE_URL` set, Zafran pages render from the real backend; fixtures still demo offline |
+| D5 | Acceptance: the three Zafran spec pages vs the live pages, section by section, with the dummy's fidelity tests as the mechanical check; the four remaining contact pages generated lazily on first open | Both | Founder walk-through signed; drift list empty |
 
 ### Track R — the research lane (in parallel; writes the same claim rows the loader wrote)
 | Stage | What | Exit gate |
@@ -329,22 +386,23 @@ By construction: the new lane is new files with its own driver and imports none 
 a static test asserts nothing under the new lane imports a quarantined module; the toolbelt's
 boot-time audit refuses to start if an old tool is re-granted; the old tools are replay-only stubs.
 
-## 12. Open decisions (initial each line)
+## 12. Decisions (initial each line) — Aryan ruled 2026-09-07 on every line except D9; Shashank's column is open
 
 | # | Decision | Recommendation | Aryan | Shashank |
 |---|---|---|---|---|
-| D1 | Ratify the two-track split; Track D starts before Track R is live | Yes | ☐ | ☐ |
-| D2 | The §8 rulings on the dummy frontend (12 lines) | As written | ☐ | ☐ |
-| D3 | Contract v1 = the dummy's models + §6 semantics, incl. "no field_key on the wire" | Yes | ☐ | ☐ |
-| D4 | The §4 migration bundled (priority + outreach_safe + display_block + recipes) | Yes | ☐ | ☐ |
-| D5 | `newSinceLastVisit`: ship `false` in v1 or add the visit row now | Ship `false` in v1 | ☐ | ☐ |
-| D6 | Seam 1: structured block in `directive_text` (effort rung + committee cap) | Yes | ☐ | ☐ |
-| D7 | Seam 1: launch requires existing `account_entity` rows | Yes | ☐ | ☐ |
-| D8 | Seam 2: add `user` to the `Persona` enum now | Yes | ☐ | ☐ |
-| D9 | Seam 2: the "Series A and above" gate gets an equivalence clause for self-funded operators | Founders' call | ☐ | ☐ |
-| D10 | Keep the four compliance floors (pre-spend authority, born identity-binding, use gate, DSAR) | Keep all four | ☐ | ☐ |
-| D11 | The 11 pre-existing test failures on the base: pay off now or with the lane work | With the lane work, one owner | ☐ | ☐ |
-| D12 | The operating model (§10), esp. "agents never merge" | Yes | ☐ | ☐ |
+| D1 | Ratify the two-track split; Track D starts before Track R is live | Yes | ✓ (2026-09-07) | ☐ |
+| D2 | The remaining §8 rulings R1–R13 | As written | ✓ (2026-09-07) | ☐ |
+| D3 | Contract v1 = the dummy's models at `live-backend-v1` @ `84f8ee7` + §6 semantics, incl. "no field_key on the wire" and "h1 served bare" | Yes | ✓ (2026-09-07) | ☐ |
+| D4 | The §4 migration bundled (priority + outreach_safe + display_block + recipes) | Yes | ✓ (2026-09-07) | ☐ |
+| D5 | `newSinceLastVisit`: frontend-computed from `verifiedAt` + local last-visit; backend serves `false`, no visit row | Resolved by the 5 Sep frontend | ✓ (2026-09-07) | ☐ |
+| D6 | Seam 1: structured block in `directive_text` (effort rung + committee cap) | Yes | ✓ (2026-09-07) | ☐ |
+| D7 | Seam 1: launch requires existing `account_entity` rows | Yes | ✓ (2026-09-07) | ☐ |
+| D8 | Seam 2: add `user` to the `Persona` enum now | Yes | ✓ (2026-09-07) | ☐ |
+| D9 | Seam 2: the "Series A and above" gate gets an equivalence clause for self-funded operators | Founders' call — **still open** (no recommendation was made, so it is not covered by the 2026-09-07 rulings) | ☐ | ☐ |
+| D10 | Keep the four compliance floors (pre-spend authority, born identity-binding, use gate, DSAR) | Keep all four | ✓ (2026-09-07) | ☐ |
+| D11 | The 11 pre-existing test failures on the base: pay off now or with the lane work | With the lane work, one owner | ✓ (2026-09-07) | ☐ |
+| D12 | The operating model (§10), esp. "agents never merge" | Yes | ✓ (2026-09-07) | ☐ |
+| D13 | The data-source rulings S1–S12 in `ARV2-DATA-SOURCE-MAP.md` §5 — owner columns, nullable logo/title, fit thresholds, legacy slots default `[]`, artifacts `[]` in v1, the five-value `researchStatus` enum, and **S10 = read-time relaxation**: the new accounts endpoints (E2–E5) use an ARV2 display predicate that keeps the use-class rules and the sensitive fail-close but does not refuse a `WEAK`-bound contact claim that is `outreach_safe = true`; the old C7 `display_allowed` is left unchanged | As written | ✓ (2026-09-07) | ☐ |
 
 ## 13. The first ten steps, in order
 

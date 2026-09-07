@@ -1,6 +1,6 @@
 # ARV2 R0 — Seam freeze: the launch contract and the ICP artifact
 
-**Status: DRAFT for the joint founder session (R0 checklist step 6).** Parent plan:
+**Status: DRAFT — Aryan ruled boxes 1a (structured block: yes), 1b (entities must exist: yes) and 2c (add `user` to the enum: yes) on 2026-09-07 via master plan §12 D6–D8; boxes 2a and 2b remain open for the joint session; Shashank's column is unsigned.** Parent plan:
 `docs/specs/ARV2-R0-foundations-plan.md` (ratified 2026-09-01). Purpose: freeze the two seams
 that let the two workstreams run fully parallel — Aryan (tech founder) on the platform
 deepagent / onboarding / ICP / project context, Shashank (co-founder) on the ARV2 research lane +

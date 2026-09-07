@@ -132,3 +132,34 @@ keys pasted in an untracked chat attachment — rotate both.
   Track R (R1–R4 as amended 09-03); 13 D0 rulings; contract v1 = port-of-spain models + backend
   semantics; operating model for a non-technical co-founder (charters, agents never merge, tech
   founder owns four integration points).
+
+## ADDENDUM 2026-09-05 — plan re-based on the 5 Sep frontend (`clue-frontend` `integration/live-backend-v1` @ 84f8ee7)
+Read first-hand: the model diffs (+segments, researchExcerpt, verificationKind, fitDisposition,
+intro/emptyMessage, actor-based activity, account artifacts ad/email + accountId/projectName/
+updatedAt, owner/createdBy nullable, fitScore nullable, contact employmentStartedAt/
+linkedinFollowers/linkedinCreator/locationClaimId), Shashank's `docs/zafran-content-implementation.md`
+and `docs/account-owner-motion.md` (5 Sep presentation rulings: closed toggles, no truncation,
+Internal notes, Watch-outs omitted from overview, compact favicon+domain chips), and a Fable study
+of components/fixtures/gates (118 tests green; fixtures parsed from the vendored spec markdown).
+Updated: MASTER PLAN v1.3 (§6 contract v1 re-based, §7 output shape + presentation, §8 rulings
+reduced to R1–R13, D5 resolved frontend-side), WORK-SPLIT (S1/S2/S8 + charter 6.1), GETTING-STARTED
+(§3 dummy branch, PoC map, week 1), AGENT-BRIEFING (truth commit, new vocabulary, no client-side
+rewriting rule). Contract doc in the dummy still not updated (D0-b).
+
+## ADDENDUM 2026-09-07 — data-source map
+Founder asked for an exact element → endpoint → SQL/column map so the frontend never derives and the
+backend never reads markdown/JSON files. Two Opus study agents (backend `frontend_read/` routes with
+SQL; dummy components with the field each element reads) + first-hand spot checks. Written as
+`docs/specs/ARV2-DATA-SOURCE-MAP.md` (master plan v1.4 §6 pointer, D13, `display_section_recipe`
+name). Load-bearing findings: (1) `display_allowed` requires STRONG identity binding by default —
+lenient WEAK stamping would hide every ARV2 contact fact (ruling S10); (2) a `recipe` table already
+exists (Stage-0), so display recipes are `display_section_recipe`; (3) no owner/logo/artifact-account
+columns exist — S1/S2/S9; (4) `/workspace` endpoint does not exist yet (E3, new module);
+(5) existing detail route returns a bare object, dummy expects `{data}`.
+
+## ADDENDUM 2026-09-07 (later) — Aryan's rulings recorded
+R1 → no dates anywhere (chips or hover); verifiedAt/publishedAt stay on the wire unrendered.
+S10 → Option 2: `arv2_display_allowed` on E2–E5 (use-class + sensitive fail-close kept; WEAK binding
+no longer hides outreach_safe=true claims; C7 `display_allowed` untouched). Everything else in §8
+R2–R13, §12 D1–D8/D10–D13, source-map S1–S9/S11–S12 ruled as recommended. Still open: D9 (Series A
+equivalence clause), seam-freeze box 2b (auto-register qualifier fields), Shashank's confirmations.

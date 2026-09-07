@@ -19,7 +19,7 @@ wiring into the fleet/composition roots.
 ### 1.1 What Shashank touches (and his agents may edit)
 | Area | Path | Notes |
 |---|---|---|
-| The dummy frontend | `clue-frontend` repo (port-of-spain line), all of it | Presentation truth. He is the only owner. |
+| The dummy frontend | `clue-frontend` repo, branch `integration/live-backend-v1` (truth commit `84f8ee7`, 5 Sep), all of it | Presentation truth. He is the only owner. |
 | Contract documents | `apps/frontend/docs/api-contracts/*.md` | He writes; Aryan signs. |
 | Plans, specs, charters | `docs/specs/ARV2-*.md`, `.context/**` | Evidence and answer keys live in `.context/<run>/`. |
 | The accounts feature re-lift | `apps/frontend/src/features/accounts/**` (D4 only) | Agent-executed from a charter; Aryan merges. |
@@ -79,14 +79,14 @@ never change an existing one) · the shared base branch itself (he never merges 
 
 | # | Step | Inputs he needs | Exit gate (he checks it himself) | Hand-back to Aryan |
 |---|---|---|---|---|
-| S1 | **D0-a — apply the twelve rulings to the dummy frontend** (master plan §8) | port-of-spain, the rulings list | `npm run design-system:build && npm run lint && npm run build && npm test` green; Zafran renders all five overview sections stacked, P3 collapsed, no tab strip, full quotes in the hover card, no relabel maps, no gendered titles, empty-state lines, verified-email chips | The dummy commit sha + screenshots of the three Zafran pages |
+| S1 | **D0-a — apply the remaining rulings to the dummy frontend** (master plan §8: R1 no dates on chips or in hover cards, R4 full quote, R5 email via `emailClaimId`, R6 "Unassigned" owner, R7 null score on create, R8 contact date + served tenure, R9 remove the h1/overall-fit parsers, delete the dead digest) | `live-backend-v1` @ `84f8ee7`, the rulings list | `npm run design-system:build && npm run lint && npm run build && npm test` green (≥118 tests, fidelity tests untouched); Zafran pages render per the 5 Sep presentation | The dummy commit sha + screenshots of the three Zafran pages |
 | S2 | **D0-b — write contract v1** into `apps/frontend/docs/api-contracts/accounts.md` (master plan §6, every field, every backend-owned semantic, the "no field_key on the wire" ruling) | master plan §6, the dummy's `model/*.ts` | The doc lists all five payloads field-for-field and matches the Zod models exactly (an agent diff) | Task branch for Aryan to sign; this is the frozen wire contract |
 | S3 | **Catalog seed rows** — the new registered fields (master plan §4) as data with a one-sentence researcher-facing description each, every sub-field optional | master plan §4; the PoC field lists | A test loads the rows into a throwaway registry and validates every value schema | Task branch (leaf) |
 | S4 | **Section recipes + Luna section prompts** — the recipe seed (page → section → allowed field keys, h1, order, restricted, default_open) and one instruction file per section, with the three fixed prompt lines | `frontend-page-content/README.md` §2–3, the control-test decisions | A test asserts every field key in every recipe is a registered key; prompts contain the three lines | Task branch; content files inside the module Aryan created in D2 |
 | S5 | **R1 charters and runs — the provider clients** (one charter per client: AI Ark, Exa, ATS, RSS/YouTube probe, Gemini media, OpenRouter structuring), each with save-raw-before-parse, ledger, pre-spend estimate, retries, and the client-specific laws (master plan §3 + Appendix A) | master plan §3; the PoC scripts as reference; live keys | Recorded live fixtures under `tests/arv2/fixtures/<provider>/` for Zafran + Probook; fixture tests green; **no claim writes**; every flag the client introduces added to `.env.example` | One task branch per client |
 | S6 | **The compliance pass module** (leaf) — sensitivity floor (redact minors references; mark origin/faith/health `outreach_safe=false`), unevidenced marking, all flag-driven, never dropping a claim | master plan §2 items 2 and 6; the PoC `p5b_redact.py` as reference | Tests: the Sanaz children case is redacted, the origin line is marked, nothing is dropped, flags off ⇒ no-op | Task branch |
 | S7 | **Research-agent content** — `arv2-account/v1` and `arv2-contact/v1` catalog folders: profile, prompt, the dossier skill (the ten-section charter), the contact-depth skill (the personal charter), the audit skill, the manual (refusal → reaction table) | the PoC charters (`z5_exa_deep.py`, `p3_deep.py`), master plan §9 R2/R3 | An agent dry-runs each prompt against the Zafran/Probook fixtures and the output matches the answer-key sections | Task branch; Aryan sha-pins at composition |
-| S8 | **D4 — the accounts re-lift** into `apps/frontend` (the dummy's accounts feature folder + the design-system token changes it depends on; adapters re-pointed at `/frontend/v1`; no new components) | the dummy at its D0 commit; Aryan's D3 endpoints live | `apps/frontend` gates green; with `CLUE_API_BASE_URL` set the three Zafran pages render from the real backend; fixtures still demo offline | Task branch; Aryan merges |
+| S8 | **D4 — the accounts re-lift** into `apps/frontend` (the dummy's accounts feature folder, the accounts layout shell, the `/api/source-favicon` route, and the design-system token changes; adapters re-pointed at `/frontend/v1`; no new components) | the dummy at its D0 commit; Aryan's D3 endpoints live | `apps/frontend` gates green; with `CLUE_API_BASE_URL` set the three Zafran pages render from the real backend; fixtures still demo offline | Task branch; Aryan merges |
 | S9 | **D5 — acceptance walk-through** — the three Zafran spec pages vs the live pages, section by section; drift list | D2–D4 merged | A signed checklist in `.context/d5-acceptance/` with screenshots; drift list empty or ruled | The checklist |
 | S10 | **R2/R3 acceptance** — when Aryan has composed the lane: run Probook, Zafran, the ten people; compare to the answer keys; cost ledgers reviewed | the composed lane | The exit gates in master plan §9 met, evidence in `.context/` | The evidence folders |
 
@@ -119,14 +119,14 @@ arrive first; A7–A9 are the larger builds. Nothing in the S list needs him exc
 
 ```
 A1 push + kit ─────────────► S1 D0-a  S2 D0-b  S3 seed rows  S5 R1 clients  S6 compliance  S7 content
-                                │        │         │             │             │             │
-A2 migration ◄───────────── (S3 rows) ◄──┘         │             │             │             │
+                                │        │          │             │             │             │
+A2 migration ◄───────────── (S3 rows) ◄──┘          │             │             │             │
 A3 loader ──────────────────────────────────────────┘             │             │             │
 A4 display module ──── needs S4 recipes/prompts ◄─────────────────┼─────────────┼─────────────┤
 A5 read surface ──── needs S2 contract v1 signed                  │             │             │
 S8 re-lift ──── needs A4 + A5 merged                              │             │             │
-S9 D5 acceptance ── needs S8                                       │             │             │
-A7 R2 composition ── needs S5 clients + S7 content + A2 ◄──────────┘─────────────┘─────────────┘
+S9 D5 acceptance ── needs S8                                      │             │             │
+A7 R2 composition ── needs S5 clients + S7 content + A2 ◄─────────┘─────────────┘─────────────┘
 S10 R2/R3 acceptance ── needs A7/A8
 ```
 Parallel by design: S1/S2/S3/S5/S6/S7 all start the day A1 lands and need nothing from Aryan but
@@ -151,24 +151,27 @@ Report: what changed (file:line), the exit-gate evidence (command output / scree
   the commit sha, any QUESTION.
 ```
 
-### 6.1 S1 — D0-a: apply the rulings to the dummy frontend
-Goal: make the port-of-spain accounts screens match master plan §8 exactly. Inputs: `docs/specs/
-ARV2-MASTER-PLAN.md` §7–§8; `clue-frontend/src/features/accounts/**`; the Zafran fixtures. Files:
-`src/features/accounts/**` only. Work, in order: (1) `account-research-overview.tsx` renders every
-section of `overviewDisplay` stacked in order; (2) `research-content.tsx`: remove `TopicNavigator`
-tabs — stacked document, all H1s visible, `restricted` sections collapsed by default on Insights and
-open on Contact; P1+P2 items visible, P3 under "Show N more"; one source chip per clause; remove
-`sectionPresentation` and the channel-relabel map — `h1` and `sendLine.channel` come from the
-payload; (3) `contact-profile-content.tsx`: remove the H1 retitle map; (4) hover card: full quote;
-(5) render `section.empty` ("No {section} information found for {name}."), `outreachSafe`,
-`emailClaimId` → "✓ verified {date}", chip hover with title/persona/emailState, the "new since your
-last visit" divider; (6) fix the fixtures: computed `insightSummary`, one fit score, email chip via
-`emailClaimId`. Exit gate: gates green; screenshots of the three Zafran pages showing each of (1)–(6).
-
+### 6.1 S1 — D0-a: apply the remaining rulings to the dummy frontend
+Goal: make `clue-frontend` (`integration/live-backend-v1`) match master plan §8's remaining rulings
+without changing the 5 Sep presentation decisions. Inputs: `docs/specs/ARV2-MASTER-PLAN.md` §6–§8;
+`src/features/accounts/**`; `docs/zafran-content-implementation.md` (the presentation decisions —
+do not undo them). Files: `src/features/accounts/**` and `src/app/accounts/**` only. Work, in
+order: (R1) no dates on chips or in the hover card — remove any date rendering; `verifiedAt` and `publishedAt` stay on the wire untouched; (R4) remove the 4-line clamp on the hover-card quote; (R5) resolve the contact
+email chip via `emailClaimId`, delete the substring match; (R6) `resolveAccountOwner` returns
+"Unassigned" when `owner` and `createdBy` are both null — never the current viewer; (R7)
+`createLocalAccount` sets `fitScore: null` and `overallFit: null`, making `overallFit` nullable in
+`model/account.ts` and `model/account-detail.ts` (render "—"; a contract-v1 change to record in S2); (R8) the contact page
+"Updated" shows the contact's latest `verifiedAt`, and tenure prefers the served `tenureLabel`;
+(R9) delete the client-side h1 count stripping and the "Overall fit" regex — read `overallFit`
+and `items.length`; delete the dead `ResearchDigest`. Exit gate: the frontend gate green with the
+fidelity tests unchanged; screenshots of the three Zafran pages showing R1, R4, R6.
 ### 6.2 S2 — D0-b: contract v1 into `accounts.md`
 Goal: `apps/frontend/docs/api-contracts/accounts.md` states the five payloads and the shared types
-field-for-field as the dummy's `model/*.ts` define them, plus master plan §6's backend-owned
-semantics and the ruling that `field_key`/`use_class`/`source_type` are not on the wire. Files:
+field-for-field as the dummy's `model/*.ts` define them at `live-backend-v1` @ `84f8ee7` (incl.
+`segments`, `researchExcerpt`, `verificationKind`, `fitDisposition`, `intro`, actor-based
+activity, account artifacts, `owner`/`createdBy`, nullable `fitScore`), plus master plan §6's
+backend-owned semantics and the rulings that `field_key`/`use_class`/`source_type` are not on the
+wire and that `h1` is served bare. Files:
 that one file. Exit gate: an agent-produced diff between the doc's field lists and the Zod schemas is
 empty; the doc has a "Backend-owned semantics" section and a "Not on the wire" section.
 

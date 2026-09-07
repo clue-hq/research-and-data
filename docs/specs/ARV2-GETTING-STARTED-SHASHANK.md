@@ -94,13 +94,18 @@ cd apps/frontend && npm ci && npm run design-system:build && cd ../..
 Read `DEV_STACK.md` once — it names the ports (3020 app, 8020 platform API, 8010 design API) and the
 `.env` keys that break the stack when missing. Do not change ports.
 
-**The dummy frontend (`clue-frontend`, your design truth)** — where S1 (D0-a) happens:
+**The dummy frontend (`clue-frontend`, your design truth)** — where S1 (D0-a) happens. Your
+Conductor workspace `clue-frontend/live-backend-v1` on branch `integration/live-backend-v1` (truth
+commit `84f8ee7`, 5 Sep) is it:
 ```bash
-git clone <clue-frontend remote> clue-frontend && cd clue-frontend
-git checkout integration/live-backend-v1        # the port-of-spain line
+cd <your clue-frontend workspace> && git checkout integration/live-backend-v1 && git pull --ff-only
 npm ci && npm run dev                            # fixture mode; open the printed localhost URL
-npm run design-system:build && npm run lint && npm run build && npm test   # its gate
+npm run design-system:build && npm run lint && npm run build && npm test   # its gate (118 tests today)
 ```
+The Zafran fixtures are parsed at import time from the vendored
+`src/features/accounts/data/zafran/FRONTEND-SPEC-ZAFRAN.md`; the fidelity tests pin every
+authored block to that markdown. Never edit the markdown to make a screen fit — change the
+presentation, or raise a ruling.
 It runs on fixtures with no backend. Later, setting `CLUE_API_BASE_URL` in its `.env` points its
 repositories at the monorepo backend for a quick check — but the shipping path is always the re-lift
 into `apps/frontend`, never the dummy talking to production.
@@ -132,7 +137,7 @@ into the production module shapes; nothing is copied as-is.
 | `p5b_redact.py`, `p5_tables.py` regexes | `compliance.py` (redact and mark, never drop) | you (S6) |
 | `claims_zafran.json`, `claims_people.json` | the **claim loader** that writes them into the real store | Aryan (A3) |
 | `frontend-page-content/README.md` §2–3 + the control test | the section recipes and Luna prompts | you (S4) |
-| `FRONTEND-SPEC-ZAFRAN.md`, `ZAFRAN-PAGES.md`, `VARI-KAUR-CONTACT-PAGE.md` | the D5 acceptance answer key | you (S9) |
+| `FRONTEND-SPEC-ZAFRAN.md`, `ZAFRAN-PAGES.md`, `VARI-KAUR-CONTACT-PAGE.md` | the D5 acceptance answer key — the dummy already vendors the spec and parses it into fixtures (`data/zafran/spec-content.ts`); in production the backend's DisplayBlocks replace that parser | you (S9) |
 
 ## 6. The loop for every task
 
@@ -156,7 +161,7 @@ into the production module shapes; nothing is copied as-is.
 
 | Day | Step | Needs from Aryan | Where |
 |---|---|---|---|
-| 1 | **S1 D0-a** — the twelve rulings applied to the dummy frontend (charter §6.1) | nothing | `clue-frontend` |
+| 1 | **S1 D0-a** — the remaining rulings applied to the dummy frontend (charter §6.1; the 5 Sep presentation stays) | nothing | `clue-frontend` |
 | 1–2 | **S2 D0-b** — contract v1 into `apps/frontend/docs/api-contracts/accounts.md` (charter §6.2) | Aryan signs the doc | monorepo, task branch |
 | 2 | **S3** — the catalog seed rows (every sub-field optional) | nothing | monorepo, task branch |
 | 2–4 | **S5** — the six provider clients, one charter each (start with AI Ark, §6.3, then Exa, ATS, RSS/YouTube probe, Gemini, structuring) | the `arv2/` skeleton (in the base) + the keys | monorepo, one task branch per client |
