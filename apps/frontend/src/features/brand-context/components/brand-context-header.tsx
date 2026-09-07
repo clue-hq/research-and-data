@@ -82,18 +82,12 @@ export function BrandContextHeader({
 
         <header className={styles.documentTitleBar}>
           <h1>{controller.selectedDocument.name}</h1>
+          {/* No Preview/Edit control here: every knowledge document — the
+              onboarding documents and the kit's Design brief alike — is the
+              platform's own writing, and this page only reads it (founder
+              ruling, 2026-09-08). */}
           <div className={styles.headerActions}>
             <BrandKitActionsRow controller={brandKitActions} />
-            <div aria-label="Document mode" className={styles.documentModeControl}>
-              <Segment active={controller.documentMode === "preview"} onClick={() => controller.setDocumentMode("preview")}>
-                <BrandContextIcon name="eye" size={12} />
-                Preview
-              </Segment>
-              <Segment active={controller.documentMode === "edit"} onClick={() => controller.setDocumentMode("edit")}>
-                <BrandContextIcon name="code" size={12} />
-                Edit
-              </Segment>
-            </div>
           </div>
         </header>
       </div>

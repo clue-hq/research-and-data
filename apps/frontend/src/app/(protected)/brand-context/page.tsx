@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import {
   authenticatedBackendContext,
+  type AuthenticatedBackendContext,
+  fetchAuthenticatedClueBackend,
   fetchAuthenticatedDesignBackend,
 } from "@/auth/authenticated-backend";
 import { BrandContextScreen } from "@/features/brand-context/components/brand-context-screen";
@@ -9,7 +11,6 @@ import {
   BrandAssetViewSchema,
   BrandColorModeSchema,
   BrandContextSectionSchema,
-  BrandDocumentModeSchema,
 } from "@/features/brand-context/model/brand-context";
 
 export const metadata: Metadata = {
@@ -26,7 +27,6 @@ interface BrandContextPageProps {
   searchParams: Promise<{
     asset?: string;
     file?: string;
-    mode?: string;
     section?: string;
     theme?: string;
     view?: string;
@@ -34,29 +34,47 @@ interface BrandContextPageProps {
 }
 
 /**
- * Slice 1: the read seam's server-side transport. A Server Component cannot
- * call its own origin-relative BFF, so it uses the same provider-proof and
- * workspace-stamping primitive the BFF uses (the W2.1 artifact-route pattern).
- * The session is resolved ONCE and shared by every call of this render — a
- * kit's assets are a read apiece, and re-proving the session for each would
- * multiply the platform round trips.
+ * The read seam's server-side transports — one per backend, over ONE session.
+ *
+ * A Server Component cannot call its own origin-relative BFF, so it uses the same
+ * provider-proof and workspace-stamping primitives the BFF uses (the W2.1
+ * artifact-route pattern). This page reads both stores: the brand kit from the
+ * design backend, the onboarding documents from the platform. The session is
+ * proven at most ONCE per render and shared by both — a kit's assets and the
+ * documents are a read apiece, and re-proving for each would multiply the round
+ * trips. It is proven lazily, so the unconfigured fixture path (which calls
+ * neither) never opens a transport at all.
  */
-async function designFetch(): Promise<typeof fetch> {
-  const context = await authenticatedBackendContext();
-  return (input, init) =>
-    fetchAuthenticatedDesignBackend(String(input), init, context);
+function backendFetches(): {
+  clueFetch: () => Promise<typeof fetch>;
+  designFetch: () => Promise<typeof fetch>;
+} {
+  let pending: Promise<AuthenticatedBackendContext> | null = null;
+  const sharedContext = () => (pending ??= authenticatedBackendContext());
+  return {
+    async clueFetch() {
+      const context = await sharedContext();
+      return (input, init) =>
+        fetchAuthenticatedClueBackend(String(input), init, context);
+    },
+    async designFetch() {
+      const context = await sharedContext();
+      return (input, init) =>
+        fetchAuthenticatedDesignBackend(String(input), init, context);
+    },
+  };
 }
 
 export default async function BrandContextPage({ searchParams }: BrandContextPageProps) {
+  const { clueFetch, designFetch } = backendFetches();
   const [view, query] = await Promise.all([
-    getBrandContextWorkspace(designFetch),
+    getBrandContextWorkspace(designFetch, clueFetch),
     searchParams,
   ]);
 
   const section = BrandContextSectionSchema.safeParse(query.section);
   const assetView = BrandAssetViewSchema.safeParse(query.view);
   const colorMode = BrandColorModeSchema.safeParse(query.theme);
-  const documentMode = BrandDocumentModeSchema.safeParse(query.mode);
 
   return (
     <BrandContextScreen
@@ -64,7 +82,6 @@ export default async function BrandContextPage({ searchParams }: BrandContextPag
         assetId: query.asset,
         assetView: assetView.success ? assetView.data : "grid",
         colorMode: colorMode.success ? colorMode.data : "light",
-        documentMode: documentMode.success ? documentMode.data : "preview",
         filePath: query.file,
         section: section.success ? section.data : "colors",
       }}

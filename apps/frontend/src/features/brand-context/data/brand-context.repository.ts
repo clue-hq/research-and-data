@@ -1,6 +1,7 @@
 import {
   BrandContextWorkspaceSchema,
   type BrandContextWorkspace,
+  type BrandKnowledgeFolder,
 } from "../model/brand-context";
 import {
   brandKitAssetIds,
@@ -19,6 +20,7 @@ import {
   type BrandKitMeta,
 } from "../model/brand-kit-actions";
 import { brandContextFixture } from "./brand-context.fixture";
+import { readBrandKnowledgeFolders } from "./brand-knowledge.repository";
 
 /**
  * What one render of the Brand-context page reads.
@@ -49,32 +51,53 @@ export interface BrandContextRepository {
  * from the session and stamps `X-Workspace-Id` itself. A browser-supplied
  * workspace is never trusted on either path.
  *
+ * `clueFetch` is its platform-backend sibling, over the same proven session. The
+ * Knowledge section is served by BOTH stores: the onboarding documents (Company,
+ * Product, Audience, Proof) come from the platform read, the Design brief from the
+ * brand kit. They are independent — the platform's documents exist before any kit
+ * is ingested, and a kit's brief renders whether or not the platform read answers.
+ *
  * `getWorkspace` NEVER rejects. A workspace with no kit, a design-API refusal
  * and an unprovable session all render the same designed empty states — the
  * page is a review surface, and a 500 (or worse, the dummy's fixture content)
  * would be a lie about the client's brand.
  */
 export function httpBrandContextRepository({
+  clueFetch,
   designFetch,
 }: {
+  clueFetch: () => Promise<typeof fetch> | typeof fetch;
   designFetch: () => Promise<typeof fetch> | typeof fetch;
 }): BrandContextRepository {
   return {
     async getWorkspace() {
+      // Started first and awaited last, so the two backends are read concurrently.
+      // It never rejects, which is what lets the catch below still serve the
+      // onboarding documents when it is the DESIGN store that is unavailable.
+      const platformFolders = readPlatformKnowledgeFolders(clueFetch);
       try {
-        return await readWorkspace(await designFetch());
+        return await readWorkspace(await designFetch(), platformFolders);
       } catch (error) {
         console.warn(
           "[brand-context] serving the empty workspace; the brand-kit read failed:",
           error,
         );
-        return { kit: null, workspace: emptyBrandContextWorkspace() };
+        return {
+          kit: null,
+          workspace: withPlatformFolders(
+            emptyBrandContextWorkspace(),
+            await platformFolders,
+          ),
+        };
       }
     },
   };
 }
 
-async function readWorkspace(designFetch: typeof fetch): Promise<BrandContextView> {
+async function readWorkspace(
+  designFetch: typeof fetch,
+  platformFolders: Promise<BrandKnowledgeFolder[]>,
+): Promise<BrandContextView> {
   const read = async (path: string): Promise<unknown> => {
     const response = await designFetch(path, { cache: "no-store" });
     if (!response.ok) {
@@ -85,7 +108,14 @@ async function readWorkspace(designFetch: typeof fetch): Promise<BrandContextVie
 
   const kits = BrandKitSummaryListSchema.parse(await read("/brand-kits"));
   const selected = selectBrandKit(kits);
-  if (!selected) return { kit: null, workspace: emptyBrandContextWorkspace() };
+  // The onboarding documents do not need a kit: they are written during
+  // onboarding, long before any brand kit is ingested.
+  if (!selected) {
+    return {
+      kit: null,
+      workspace: withPlatformFolders(emptyBrandContextWorkspace(), await platformFolders),
+    };
+  }
 
   const kit = BrandKitDetailSchema.parse(
     await read(`/brand-kits/${encodeURIComponent(selected.id)}`),
@@ -110,10 +140,41 @@ async function readWorkspace(designFetch: typeof fetch): Promise<BrandContextVie
 
   return {
     kit: toBrandKitMeta(kit),
-    workspace: BrandContextWorkspaceSchema.parse(
+    workspace: withPlatformFolders(
       toBrandContextWorkspace(kit, { assetRecords }),
+      await platformFolders,
     ),
   };
+}
+
+/**
+ * The platform's Knowledge folders, or none of them. `readBrandKnowledgeFolders`
+ * already absorbs every read failure; this also absorbs a transport that cannot
+ * be opened at all, so a refused platform session never costs the page its kit.
+ */
+async function readPlatformKnowledgeFolders(
+  clueFetch: () => Promise<typeof fetch> | typeof fetch,
+): Promise<BrandKnowledgeFolder[]> {
+  try {
+    return await readBrandKnowledgeFolders(await clueFetch());
+  } catch (error) {
+    console.warn(
+      "[brand-context] the platform knowledge read is unavailable; serving none:",
+      error,
+    );
+    return [];
+  }
+}
+
+/** Platform folders first (Company, Product, Audience, Proof), then the kit's Design. */
+function withPlatformFolders(
+  workspace: BrandContextWorkspace,
+  platformFolders: readonly BrandKnowledgeFolder[],
+): BrandContextWorkspace {
+  return BrandContextWorkspaceSchema.parse({
+    ...workspace,
+    knowledgeFolders: [...platformFolders, ...workspace.knowledgeFolders],
+  });
 }
 
 /**
@@ -154,14 +215,16 @@ const fixtureBrandContextRepository: BrandContextRepository = {
  */
 export function getBrandContextRepository(
   designFetch: () => Promise<typeof fetch> | typeof fetch,
+  clueFetch: () => Promise<typeof fetch> | typeof fetch,
 ): BrandContextRepository {
   return process.env.CLUE_API_BASE_URL?.trim()
-    ? httpBrandContextRepository({ designFetch })
+    ? httpBrandContextRepository({ clueFetch, designFetch })
     : fixtureBrandContextRepository;
 }
 
 export async function getBrandContextWorkspace(
   designFetch: () => Promise<typeof fetch> | typeof fetch,
+  clueFetch: () => Promise<typeof fetch> | typeof fetch,
 ) {
-  return getBrandContextRepository(designFetch).getWorkspace();
+  return getBrandContextRepository(designFetch, clueFetch).getWorkspace();
 }

@@ -114,10 +114,10 @@ export function toBrandContextWorkspace(
  * design rules", which is a different (and false) claim from "we have not
  * extracted them".
  *
- * The dummy's other folders (Company, Product, Audience, Proof, Memories) stay
- * absent: nothing in the store fills them, and an empty folder is the honest
- * report. They remain the future work `docs/api-contracts/brand-context.md`
- * already records.
+ * The dummy's other folders are not this mapping's to serve: Company, Product,
+ * Audience and Proof hold the platform's onboarding documents, which the
+ * repository reads separately and lists BEFORE this Design folder. Memories stays
+ * absent — nothing writes it yet, and an empty folder is the honest report.
  */
 function toKnowledgeFolders(kit: BrandKitDetail): BrandKnowledgeFolder[] {
   const brief: BrandBrief | null | undefined = kit.brand_kit_json.brief;

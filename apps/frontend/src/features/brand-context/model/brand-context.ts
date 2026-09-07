@@ -17,7 +17,6 @@ export const BrandAssetCategorySchema = z.enum([
 ]);
 export const BrandAssetSortKeySchema = z.enum(["name", "type", "size", "created"]);
 export const BrandAssetSortDirectionSchema = z.enum(["ascending", "descending"]);
-export const BrandDocumentModeSchema = z.enum(["preview", "edit"]);
 
 export const BrandColorSwatchSchema = z.object({
   id: z.string(),
@@ -106,7 +105,6 @@ export type BrandAssetView = z.infer<typeof BrandAssetViewSchema>;
 export type BrandColorMode = z.infer<typeof BrandColorModeSchema>;
 export type BrandContextSection = z.infer<typeof BrandContextSectionSchema>;
 export type BrandContextWorkspace = z.infer<typeof BrandContextWorkspaceSchema>;
-export type BrandDocumentMode = z.infer<typeof BrandDocumentModeSchema>;
 export type BrandKnowledgeDocument = z.infer<typeof BrandKnowledgeDocumentSchema>;
 export type BrandKnowledgeFolder = z.infer<typeof BrandKnowledgeFolderSchema>;
 export type BrandTextStyle = z.infer<typeof BrandTextStyleSchema>;
@@ -116,7 +114,6 @@ export interface BrandContextInitialState {
   assetId?: string;
   assetView: BrandAssetView;
   colorMode: BrandColorMode;
-  documentMode: BrandDocumentMode;
   filePath?: string;
   section: BrandContextSection;
 }
