@@ -18,7 +18,7 @@ which of them a project is about. Four things are fixed here:
 
 1. the shape the Exa search request asks for (the provider shape);
 2. the platform artifact the onboarding research agent writes (the platform shape);
-3. how that artifact becomes a claim, product rows, and a human gate;
+3. how that artifact becomes product rows and a human gate (no company claim — §5);
 4. **the ruling that a project targets a set of products, not one** (P1), with its two
    sub-rulings (P2, P3), and that a project has exactly one ICP which targets the whole set (P4).
 
@@ -31,8 +31,7 @@ onboarding research agent
   └─ Exa /search, type deep-reasoning, outputSchema = §3        (provider shape)
        └─ Exa client maps output.content + output.grounding
             └─ ProductCatalogResearch@1 artifact (markdown + front matter)   (platform shape, §4)
-                 └─ one account-wide claim: client.product_catalog            (§5)
-                      └─ ProductCatalogSynchronizer → product rows + lineage  (§5)
+                 └─ ProductCatalogSynchronizer (input = the artifact ref) → product rows + lineage  (§5)
                            └─ product_set_selection gate (snapshot = catalog)  (§6, §7)
                                 └─ human answers selected_option_refs[]
                                      └─ project_product rows, selection_version n (§6)
@@ -40,7 +39,8 @@ onboarding research agent
 ```
 
 The model never mints a `product_id`. Ids are minted by the synchronizer, carried by the gate
-snapshot, and chosen by a human. That rule is unchanged from S5.0.
+snapshot, and chosen by a human. That rule is unchanged from S5.0. What changed (2026-09-07 amendment):
+no Client-KB claim or version sits anywhere on this chain — see §5 and §10.
 
 ## 3. The Exa request shape (provider shape) — FINAL
 
@@ -149,22 +149,25 @@ Mapping rules:
   not belong here. They are product-scoped research, one artifact per selected product, produced
   after selection (§6).
 
-## 5. Claim and synchronization deltas
+## 5. Synchronization deltas — the artifact is the input; no company claim is written
 
-- The artifact's `products[]` becomes the value of one account-wide claim, field key
-  `client.product_catalog` (`product_id IS NULL`), `extraction_method = llm_synthesis`,
-  `source_url` = the client's domain, run lineage stamped. This is the same field the old
-  official-site path wrote; the registered value schema in
-  `subsystems/research/clue_research/stage0/fields.py` is extended, not replaced: `offering_kind`,
-  `family`, `lifecycle`, `official_url`, `sources`, `grounding_confidence` are added as optional
-  members; `name` + `short_description` stay the only required ones.
+**Amended 2026-09-07 (Aryan, same day):** the new onboarding lane stores seller-company knowledge as
+markdown artifacts, never as Client-KB claims. The synchronizer therefore takes the
+`ProductCatalogResearch@1` artifact (its ref + digest) as input and records lineage against that
+artifact ref, not against a `client.product_catalog` claim or a Client-KB version. The registered
+`client.product_catalog` field and its old official-site writer stay as replay-only history.
+
 - `platform/api/clue_api/product_catalog_sync.py::CatalogEntry` currently forbids extra keys. It
-  accepts the new optional members. Matching stays conservative: normalized name, then alias.
+  accepts the new optional members (`offering_kind`, `family`, `lifecycle`, `official_url`,
+  `sources`, `grounding_confidence`); `name` + `short_description` stay the only required ones.
+  `CatalogLineage` gains `catalog_artifact_ref` (+ sha256) and drops the `company_client_kb_version`
+  / `catalog_claim_id` requirement for new-lane runs. Matching stays conservative: normalized name,
+  then alias.
   With `aliases` empty on this path the match is effectively name-only; a product is created
   once, and renames stay a human act (S5.0 §7 unchanged).
 - Every entry becomes a `product` row regardless of `offering_kind`. Kind is a grouping label,
   not a filter: a partner program is a legitimate ABM motion.
-- `lifecycle` is recorded on the claim and shown as a label. The spine `product.status`
+- `lifecycle` is recorded on the artifact entry and shown as a label. The spine `product.status`
   (`active` / `archived`) is human-controlled and is never set from research.
 - `official_url` is threaded into `OfficialSiteProductTarget` so the later per-product research
   never searches for a page it already knows (Appendix A law).
@@ -223,10 +226,13 @@ New gate kind `product_set_selection` on the existing `agent_gate` substrate. Th
 - Subject ref: `client-product-catalog:{client_entity_id}:v{company_client_kb_version}`;
   subject snapshot: §7.1. Digest, addressee, permitted decisions, privacy bindings: unchanged
   from the combined human-gate amendment.
-- The tool that opens it is the existing `open_product_selection_gate@1` re-pointed at the new
-  kind (a new tool version). It derives every candidate from the synchronized catalog; the model
-  supplies only the trusted turn ref. A gate may be opened again on a project that already has a
-  set (P2); "already confirmed" is no longer a refusal.
+- The tool that opens it is a new version of `open_product_selection_gate` pointed at the new
+  kind. **It derives every candidate from the spine `product` rows for the workspace brand plus
+  the current catalog artifact ref — never from `ClientKnowledgeCard@2` or a Client-KB version.**
+  The `@1` refusals `product_catalog_unavailable` (no Client-KB) and
+  `project_product_already_confirmed` do not exist in the new tool; the only refusals are "no
+  human addressee" and "no product rows yet". The model supplies only the trusted turn ref. A gate
+  may be opened again on a project that already has a set (P2).
 - The answer route validates membership, inserts the immutable receipt, then writes
   `project_product` rows at `max(selection_version) + 1` in the same transaction.
 
@@ -337,6 +343,10 @@ single-product variant stays for historical gate replay.
 
 ## 9. Files this contract touches when implemented (for the charter, not done here)
 
+> Note (2026-09-07 amendment): the `fields.py` value-schema row below is no longer needed — the
+> artifact, not a claim, is the synchronizer input (§5). Kept in the table for the historical
+> replay-only field only.
+
 | Area | Change |
 |---|---|
 | `subsystems/research/clue_research/stage0/fields.py` | extend `_PRODUCT_CATALOG` value schema with the optional members (§5) |
@@ -348,3 +358,16 @@ single-product variant stays for historical gate replay.
 | `apps/frontend/src/features/projects/model/chat-gate.ts` + `components/chat-gate-card.tsx` | set-valued option list and decision (§7.3) |
 | `apps/frontend/docs/api-contracts/projects.md` | the amendment pointer (added 2026-09-07) |
 | `.env.example` | any new flag the Exa client introduces, at introduction (parity rule) |
+
+## 10. Standing rule — no old-lane gate may block a new-lane turn (Aryan, 2026-09-07)
+
+Master plan §2 principle 2 is the law here: exactly two gates plus one floor. Human authority
+(product-set selection, ICP confirmation, cohort approval, launch, contact selection) and the lenient
+claim-write shape gate. Nothing else may refuse a turn. Because the new lane keeps seller-company
+knowledge as artifacts, **no mechanism that demands a Client-KB version, a readiness decision, or a
+Stage-0 run pin may sit on any new-lane path**: not the gate tool (§6.3), not the scope pin (which
+becomes an artifact-ref receipt), not the profile grants (readiness / Client-KB / Product-KB tools
+are not granted; the boot-time audit refuses a re-grant), not the launch preconditions. The
+per-stage checklist lives in `_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md` and is
+run at every charter, review and merge. A failure is a defect against §2, fixed on the path, never
+with a bypass flag.

@@ -27,6 +27,11 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-09-07-no-old-lane-gate-may-block-new-lane.md` — **STANDING RULE, re-check at every stage:**
+  no Client-KB / readiness / Stage-0-pin mechanism may block a new-lane (ARV2 / Track O) turn; only
+  human-authority gates + the lenient claim shape gate exist; disposition table + 7-item checklist.
+- `2026-09-07-product-catalog-contract-and-multi-product-ruling.md` — Exa catalog schema final,
+  `ProductCatalogResearch@1`, rulings P1–P4 (a project targets a SET of products; one ICP per project).
 - `2026-08-19-live-research-queued-ui-and-fleet-failure.md` — timestamped browser, database, and
   worker evidence for the Insight Health ten-Account approval: why the frontend remains honestly
   queued, the unsealed-discovery-manifest Sumble refusal, the separate cancellation/closed-DB-
