@@ -100,6 +100,35 @@ are pure, so `KnowledgeDocument.cost` is the settling call's `CallCost` when bui
 The Agent surface is synchronous like the rest of R1: the onboarding driver (O3) calls
 `agent_run` through `asyncio.to_thread`, one `ProviderCaller` per worker task.
 
+## The onboarding run driver (O3)
+
+`onboarding_driver.py` is one fleet work handler (`FleetTaskKind.ONBOARDING_RUN`) that runs one
+`onboarding_run` end to end: the fast recon lane (overview ∥ lineup ∥ reviews) in parallel, then
+the catalog sync, then the synthesis turn — through the `SynthesisLauncher` seam O4 fills — running
+alongside the capped per-product background fan-out (`onboarding_max_parallel_runs`).
+
+Three rules it exists to keep:
+
+- **Every provider call goes through `asyncio.to_thread`, one `ProviderCaller` per step.** R1's
+  caller is synchronous and its Agent poll loop blocks; a step's raw records and ledger live under
+  `arv2_raw_root/onboarding/<run_id>/<step_label>/`, so "what did this step cost" needs no
+  de-interleaving.
+- **The failure law.** A provider failure, timeout or empty answer is a *step outcome*, never an
+  exception: the step lands `failed`/`empty` with its reason, its document is closed without a
+  body, and the run keeps going. Everything else is contained inside `handle`, which fails the run
+  row rather than letting the fleet strand it on `running`.
+- **The driver holds at most one connection at a time.** Its row writes are small ordered facts
+  about one run and the parallelism that matters is off the loop entirely, so they are serialized
+  behind one lock — which also lets a caller inject a single-connection factory.
+
+The lineup step runs the *same* question twice (own domain, then the open web) and unions the two
+answers by normalized name, the own-domain pass winning. Only the own-domain pass's `grounding`
+survives the merge: grounding field paths are indexed (`products[i]`) against the pass that
+produced them, and the merged list has its own ordering, so carrying the open-web paths through
+would attach that pass's citations to whatever entry landed at the same index. **Open-web-only
+entries therefore reach the catalog with no per-entry sources** — honest, where a wrong citation
+would not be.
+
 ## D1 — the display substrate, the lenient writer, the answer-key loader
 
 D1 is the step that gives the lane a place to put things. It lands as one Alembic revision plus
