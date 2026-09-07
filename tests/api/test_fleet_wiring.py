@@ -261,6 +261,30 @@ def test_multi_worker_accepts_kind_guarded_optional_handlers() -> None:
         )
 
 
+def test_onboarding_handler_is_composed_when_given_and_kind_guarded() -> None:
+    # Track O (O3): the onboarding-run drain joins on the same terms as its neighbours — optional
+    # (a deployment without ``onboarding_v2_enabled`` composes no driver and nothing enqueues the
+    # kind) and kind-guarded at construction rather than at claim time.
+    graph = _CompositionHandler(FleetTaskKind.EXECUTE_GRAPH)
+    handler = _CompositionHandler(FleetTaskKind.ONBOARDING_RUN)
+    worker = build_multi_work_worker(
+        _settings(),
+        driver=build_fleet_run_driver(),
+        graph_handler=graph,
+        onboarding_handler=handler,
+        worker_id="shared-worker",
+    )
+    assert worker._handlers[FleetTaskKind.ONBOARDING_RUN] is handler
+
+    with pytest.raises(ValueError, match="must own onboarding_run"):
+        build_multi_work_worker(
+            _settings(),
+            driver=build_fleet_run_driver(),
+            graph_handler=graph,
+            onboarding_handler=_CompositionHandler(FleetTaskKind.DESIGN_JOB),
+        )
+
+
 def test_the_design_handler_is_off_unless_the_runtime_switch_is_set() -> None:
     """The production gate: no switch, no handler — and therefore no import of the design app."""
     from clue_api.design_fleet import build_design_job_handler
