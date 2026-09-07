@@ -250,4 +250,42 @@ def test_a_synthesis_turn_materializes_inputs_and_registers_its_outputs_as_docum
             assert project_row["name"].startswith("Onboarding ·")
             assert project_row["status"] == "archived"
 
+            # A re-synthesis on the same brand writes version 2 of each path, names the version it
+            # replaces, and retires that version. Walking `supersedes_document_id` backwards has to
+            # land on a row that really is `superseded`.
+            second = await launcher.launch(
+                workspace_id=ws,
+                brand_id=brand_id,
+                run_id=uuid4(),
+                step_id=uuid4(),
+            )
+            assert second.status == "completed", (second.failure_code, second.failure_message)
+            chain = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT path, version, status, document_id, supersedes_document_id "
+                            "FROM brand_knowledge_document "
+                            "WHERE workspace_id = :ws AND folder = 'audience' "
+                            "ORDER BY path, version"
+                        ),
+                        {"ws": ws},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            by_path: dict[str, dict[int, Any]] = {}
+            for row in chain:
+                by_path.setdefault(row["path"], {})[row["version"]] = row
+            assert set(by_path) == {
+                "audience/icp-gi-groups.md",
+                "audience/persona-gi-groups.md",
+            }
+            for path, versions in by_path.items():
+                assert set(versions) == {1, 2}, path
+                assert versions[1]["status"] == "superseded", path
+                assert versions[1]["supersedes_document_id"] is None, path
+                assert versions[2]["supersedes_document_id"] == versions[1]["document_id"], path
+
     run_async(scenario())

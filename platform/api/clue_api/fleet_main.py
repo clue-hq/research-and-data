@@ -48,8 +48,12 @@ import contextlib
 from collections.abc import Awaitable, Callable
 
 from clue_api.agent_cleanup import AgentWorkspaceCleanupJob
+from clue_api.agent_execution_wiring import DbAgentPlanJournal
 from clue_api.agent_model_wiring import build_agent_model_provider
-from clue_api.agent_platform_wiring import build_agent_platform_components
+from clue_api.agent_platform_wiring import (
+    AgentPlatformComponents,
+    build_agent_platform_components,
+)
 from clue_api.agent_turn_fleet_wiring import (
     AgentTurnWorkHandler,
     build_agent_turn_work_handler,
@@ -103,6 +107,10 @@ from clue_api.fleet_wiring import build_multi_work_worker, enqueue_run_drive, re
 from clue_api.memory_wiring import memory_assembly_factory, memory_write_factory_builder
 from clue_api.narrative_wiring import build_client_knowledge_retriever, register_narrative_wiring
 from clue_api.official_site_crawl_wiring import build_official_site_crawl_fleet
+from clue_api.onboarding_synthesis_wiring import (
+    OnboardingSynthesisLauncher,
+    build_onboarding_synthesis_launcher,
+)
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
 from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.production_metrics import production_metrics_lifespan
@@ -650,6 +658,11 @@ async def _serve() -> None:
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
+            # ARV2 O4: ``build_toolbelt(secrets=...)`` is fail-closed — the default ``None`` means
+            # *no credentials*, and ``exa_search_evidence@1`` would then refuse
+            # ``exa_not_configured`` before any spend. This production root passes the real
+            # secrets so the synthesis turn's one evidence call can actually reach Exa.
+            secrets=secrets,
             gateway=gateway,
             # FI-4 slice 2 / slice 3: same live scrape composition as projections_main, behind the
             # same flag, and now with the same REAL extractor — reusing the gateway built above, so
@@ -745,8 +758,12 @@ async def _serve() -> None:
         # run-control tools registered below are the human/API run-control plane sharing this
         # registry object, not model-surface tools, and composing after them fails the audit
         # at boot.
+        # ARV2 O4: the onboarding synthesis turn needs the SAME agent platform components as the
+        # conversation turn (profiles, models, workspaces, artifacts, turn journal), so the one
+        # composition is shared by both switches rather than duplicated per surface.
         agent_turn_handler: AgentTurnWorkHandler | None = None
-        if settings.chat_enabled:
+        platform_components: AgentPlatformComponents | None = None
+        if settings.chat_enabled or settings.onboarding_v2_enabled:
             platform_components = build_agent_platform_components(
                 settings=settings,
                 secrets=secrets,
@@ -754,6 +771,7 @@ async def _serve() -> None:
                 storage=storage,
                 tools=registry,
             )
+        if settings.chat_enabled and platform_components is not None:
             agent_turn_handler = build_agent_turn_work_handler(
                 components=platform_components,
                 tools=registry,
@@ -795,6 +813,32 @@ async def _serve() -> None:
                 ),
                 stop_poll_interval_s=settings.chat_turn_stop_poll_interval_s,
             )
+        # ARV2 O4: the onboarding synthesis turn's production seam. Composed under the same
+        # ordering rule as the conversation turn above — before ``register_execution_control_tools``
+        # widens the shared registry, because the launcher resolves the ONBOARDING_SYNTHESIS
+        # profile against the model-facing toolbelt the C6 authority audit covers.
+        synthesis_launcher: OnboardingSynthesisLauncher | None = None
+        if settings.onboarding_v2_enabled and platform_components is not None:
+            synthesis_launcher = build_onboarding_synthesis_launcher(
+                settings=settings,
+                secrets=secrets,
+                storage=storage,
+                components=platform_components,
+                tools=registry,
+                tool_invoker=tool_invoker,
+                executor=executor,
+                compatibility=compatibility,
+                plans=DbAgentPlanJournal(conn_factory=transaction),
+                recipes=recipe_reader,
+                starter=starter,
+                parameters=execution_parameters,
+            )
+        # O3's OnboardingRunWorkHandler(..., synthesis=synthesis_launcher) takes this at the merge
+        # — that handler does not exist on this branch, so the launcher is composed and parked.
+        log.info(
+            "onboarding_synthesis.launcher_composed",
+            enabled=synthesis_launcher is not None,
+        )
         register_execution_control_tools(
             ExecutionControlServices(
                 starter=starter,

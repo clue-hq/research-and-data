@@ -805,6 +805,10 @@ class OnboardingSynthesisLauncher:
         An output whose front matter is unreadable, whose ``kind`` is not one this surface may
         produce, or which carries no ``icp_key`` is skipped and logged. It is never a failure: the
         turn's other documents are real, and an unidentifiable file is honestly not a document.
+
+        A re-synthesis at the same path is a new version that **names** the document it replaces
+        (``supersedes_document_id``) and then retires it, so the chain is walkable in both
+        directions rather than only inferrable from the version ordering.
         """
 
         envelope = AgentFinalizeEnvelope.model_validate_json(
@@ -841,31 +845,52 @@ class OnboardingSynthesisLauncher:
                 f"onboarding-synthesis-doc:{turn_id}:{path}",
             )
             async with self._conn_factory() as conn:
-                version = int(
+                # One read answers both halves of the version chain: the next version number (over
+                # every row at this path, whatever its status) and the document this one replaces
+                # — the highest-version *servable* row, which the UPDATE below then supersedes.
+                # They must agree, or a reader following ``supersedes_document_id`` backwards
+                # would walk off a row that was never actually retired.
+                lineage = (
                     (
                         await conn.execute(
                             text(
-                                "SELECT COALESCE(MAX(version), 0) + 1 "
-                                "FROM brand_knowledge_document "
-                                "WHERE workspace_id = :workspace_id AND brand_id = :brand_id "
-                                "  AND path = :path"
+                                "SELECT"
+                                "  (SELECT COALESCE(MAX(version), 0) + 1"
+                                "     FROM brand_knowledge_document"
+                                "    WHERE workspace_id = :workspace_id"
+                                "      AND brand_id = :brand_id AND path = :path"
+                                "  ) AS next_version,"
+                                "  (SELECT document_id"
+                                "     FROM brand_knowledge_document"
+                                "    WHERE workspace_id = :workspace_id"
+                                "      AND brand_id = :brand_id AND path = :path"
+                                "      AND status = ANY(:statuses)"
+                                "    ORDER BY version DESC LIMIT 1"
+                                "  ) AS supersedes_document_id"
                             ),
                             {
                                 "workspace_id": workspace_id,
                                 "brand_id": brand_id,
                                 "path": path,
+                                "statuses": list(_SERVABLE_STATUSES),
                             },
                         )
-                    ).scalar_one()
+                    )
+                    .mappings()
+                    .one()
                 )
+                version = int(lineage["next_version"])
+                supersedes = lineage["supersedes_document_id"]
                 await conn.execute(
                     text(
                         "INSERT INTO brand_knowledge_document ("
                         "  document_id, workspace_id, brand_id, folder, path, kind, version, "
-                        "  status, artifact_key, artifact_sha256, produced_by_turn_id"
+                        "  status, artifact_key, artifact_sha256, produced_by_turn_id, "
+                        "  supersedes_document_id"
                         ") VALUES ("
                         "  :document_id, :workspace_id, :brand_id, 'audience', :path, :kind, "
-                        "  :version, :status, :artifact_key, :artifact_sha256, :turn_id"
+                        "  :version, :status, :artifact_key, :artifact_sha256, :turn_id, "
+                        "  :supersedes"
                         ") ON CONFLICT (document_id) DO NOTHING"
                     ),
                     {
@@ -879,6 +904,9 @@ class OnboardingSynthesisLauncher:
                         "artifact_key": ref.artifact_key,
                         "artifact_sha256": ref.sha256,
                         "turn_id": turn_id,
+                        # A replayed launch re-reads a chain it already wrote, so the row it would
+                        # name is its own; the ON CONFLICT above makes that a no-op either way.
+                        "supersedes": None if supersedes == document_id else supersedes,
                     },
                 )
                 await conn.execute(
