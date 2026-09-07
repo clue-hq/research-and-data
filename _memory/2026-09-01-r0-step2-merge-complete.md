@@ -163,3 +163,9 @@ S10 → Option 2: `arv2_display_allowed` on E2–E5 (use-class + sensitive fail-
 no longer hides outreach_safe=true claims; C7 `display_allowed` untouched). Everything else in §8
 R2–R13, §12 D1–D8/D10–D13, source-map S1–S9/S11–S12 ruled as recommended. Still open: D9 (Series A
 equivalence clause), seam-freeze box 2b (auto-register qualifier fields), Shashank's confirmations.
+
+## ADDENDUM 2026-09-07 (evening) — shared base is `integration/design-improvement`
+`origin/install-agent-browser-global` fast-forwarded into this branch (docs/.context only, 36 commits;
+both at e81cd9d42). Founder ruled: the shared base for all three tracks (O, D, R) is
+`integration/design-improvement`; getting-started + work-split updated. Historical mentions of the
+old name in R0 plan / older memory notes are left as history.

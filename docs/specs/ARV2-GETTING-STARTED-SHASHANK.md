@@ -4,12 +4,13 @@
 this top to bottom once; then §6 is the loop you repeat for every task. Commands are the repo's own
 (`Makefile`, `DEV_STACK.md`, `scripts/dev_stack.sh`); if one disagrees with those files, the files win.
 
-**Precondition (Aryan, step A1 of the work split):** Aryan merges the current platform line
-(R0, all the ARV2 plan documents, the empty `platform/api/clue_api/arv2/` skeleton, the
-`.env.example` posture) **into `install-agent-browser-global`** and pushes it; the Apollo and AI
-Ark keys are rotated; the AI Ark paid tier is bought. **`origin/install-agent-browser-global` is
-your shared base from then on** — Aryan keeps it in sync with the platform line and merges your
-task branches into it. Aryan tells you when this is done. Nothing below works before it.
+**Precondition (Aryan, step A1 of the work split):** the shared base is
+**`origin/integration/design-improvement`** — it already carries R0, every ARV2 plan document and the
+`.env.example` posture, and it absorbed the old `integration/design-improvement` line on 2026-09-07
+(the two are identical at that point; the old name is retired as a base). Still to do before you
+start: the empty `platform/api/clue_api/arv2/` skeleton is pushed; the Apollo and AI Ark keys are
+rotated; the AI Ark paid tier is bought. Aryan keeps the base in sync and merges your task branches
+into it. Aryan tells you when this is done. Nothing below works before it.
 
 **Your coding agent's context comes from the branch itself:** once you have pulled, the agent reads
 `docs/specs/ARV2-AGENT-BRIEFING.md` first (the repo's `CLAUDE.md` points every Claude Code session at
@@ -20,19 +21,19 @@ project to the agent; you paste the charter.
 
 ## 1. The repo and your branch (one-time)
 
-Work in your Conductor workspace of the monorepo (the branch is `install-agent-browser-global`).
+Work in your Conductor workspace of the monorepo (the branch is `integration/design-improvement`).
 In that workspace's terminal:
 
 ```bash
 git status                       # must be clean; commit or stash anything pending first
 git fetch origin
-git checkout install-agent-browser-global
-git pull --ff-only origin install-agent-browser-global
+git checkout integration/design-improvement
+git pull --ff-only origin integration/design-improvement
 ```
 
 This gives you the shared base exactly as Aryan pushed it: the R0 foundations, the plan documents,
 the agent briefing, the `arv2/` skeleton, and the `.env.example` with every flag. If `pull` refuses
-because your local branch has commits Aryan's copy does not, run `git merge origin/install-agent-browser-global`
+because your local branch has commits Aryan's copy does not, run `git merge origin/integration/design-improvement`
 instead; conflicts, if any, will be in `_memory/` or `.context/` files — keep **both** sides (they
 are logs, not code) and commit. A conflict anywhere else: stop and send Aryan the file names.
 
@@ -44,12 +45,12 @@ ls platform/api/clue_api/arv2/
 ```
 
 **Branch rules from here on:**
-- `install-agent-browser-global` is the shared base. **You never commit directly to it and never push to it** — Aryan merges into it.
+- `integration/design-improvement` is the shared base. **You never commit directly to it and never push to it** — Aryan merges into it.
 - Every task runs on its own branch cut from the base: `task/<step>-<slug>` (e.g. `task/S5-ai-ark-client`).
 - You push **task branches** (`git push -u origin task/<step>-<slug>`) and send Aryan the branch
   name; Aryan merges. (The "never push" rule in `CLAUDE.md` binds the coding agents, not you —
   agents commit; you push the task branch when its exit gate passes.)
-- Every morning: `git fetch origin && git merge origin/install-agent-browser-global` on your
+- Every morning: `git fetch origin && git merge origin/integration/design-improvement` on your
   working branch, so you build on what Aryan merged yesterday.
 
 ## 2. The Python environment and the database
@@ -114,7 +115,7 @@ into `apps/frontend`, never the dummy talking to production.
 
 | # | Command | Expect |
 |---|---|---|
-| 1 | `git log --oneline -1 origin/install-agent-browser-global` | a commit that mentions the ARV2 plan documents |
+| 1 | `git log --oneline -1 origin/integration/design-improvement` | a commit that mentions the ARV2 plan documents |
 | 2 | `grep -c "CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED=false" .env.example` | `1` |
 | 3 | `make db-smoke` | green, single alembic head |
 | 4 | `make check` | only the documented pre-existing findings |
@@ -143,7 +144,7 @@ into the production module shapes; nothing is copied as-is.
 
 1. Pick the next step from `ARV2-WORK-SPLIT.md` §3. Write the charter using the template in its
    §6.0 (the first five are already written in §6.1–§6.5 — paste them).
-2. Cut the branch: `git fetch origin && git checkout -b task/<step>-<slug> origin/install-agent-browser-global`.
+2. Cut the branch: `git fetch origin && git checkout -b task/<step>-<slug> origin/integration/design-improvement`.
 3. Start a Claude Code session in the workspace and paste the charter. The agent reads
    `docs/specs/ARV2-AGENT-BRIEFING.md` first (CLAUDE.md sends it there); the charter tells it which
    files it may touch and where to stop. Use Opus for implementation charters.

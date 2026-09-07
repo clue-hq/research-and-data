@@ -52,8 +52,8 @@ never change an existing one) · the shared base branch itself (he never merges 
 
 ## 2. The starter kit — what Aryan hands Shashank before he begins (all of it, once)
 
-1. **The shared base, pushed as `origin/install-agent-browser-global`** — the current platform line
-   merged into Shashank's branch, with R0 and every plan document on it (`ARV2-MASTER-PLAN.md`,
+1. **The shared base, `origin/integration/design-improvement`** — the current platform line
+   (it absorbed the old `install-agent-browser-global` line on 2026-09-07), with R0 and every plan document on it (`ARV2-MASTER-PLAN.md`,
    `ARV2-WORK-SPLIT.md`, `ARV2-AGENT-BRIEFING.md`, `ARV2-GETTING-STARTED-SHASHANK.md`,
    `ARV2-ROADMAP.md`). Aryan keeps it in sync with the platform line. Until this is pushed, nothing
    else can start.
