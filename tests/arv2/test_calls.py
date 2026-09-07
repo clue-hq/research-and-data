@@ -125,7 +125,7 @@ def test_success_writes_the_estimate_row_before_the_wire_and_saves_raw_before_pa
     assert outcome.provider_request_id == "req-1"
     assert outcome.raw_ref == result.raw_ref == "memory:0"
     assert outcome.latency_ms is not None and outcome.latency_ms > 0
-    assert "cost_source" not in outcome.extras
+    assert outcome.extras["cost_source"] == "metered", "the reader answered, so the row says so"
     assert result.over_ceiling is False and outcome.over_ceiling is False
     assert result.ledger_row_id == outcome.row_id
     assert result.json() == {"ok": True}
@@ -153,9 +153,12 @@ def test_a_readings_extras_land_on_the_result_row_and_not_on_the_estimate_row() 
     estimate, outcome = ledger.rows
     assert estimate.extras == {"account": "zafran"}
     assert "cost_breakdown" not in estimate.extras
-    assert outcome.extras == {"account": "zafran", "cost_breakdown": breakdown}
+    assert outcome.extras == {
+        "account": "zafran",
+        "cost_breakdown": breakdown,
+        "cost_source": "metered",
+    }
     assert outcome.cost_usd == Decimal("0.007")
-    assert "cost_source" not in outcome.extras
 
 
 def test_an_unmetered_reading_still_files_its_extras_alongside_the_estimate_marker() -> None:
@@ -175,6 +178,85 @@ def test_an_unmetered_reading_still_files_its_extras_alongside_the_estimate_mark
     assert outcome.extras["cost_source"] == "estimate"
     assert outcome.extras["cost_breakdown"] == {"total": None}
     assert outcome.cost_usd == Decimal("0.01"), "the estimate stands in for the unread cost"
+
+
+def test_a_metered_call_hands_back_the_settled_cost_as_one_call_cost() -> None:
+    """The uniform provision: what a client passes to its caller, and what the row holds, agree.
+
+    ``CallResult.cost`` is the *reading* (``None`` where the provider said nothing);
+    ``CallResult.call_cost`` is what the ledger ended up holding, self-describing enough that a
+    caller summing a run by provider never has to re-read the ledger to learn whose number it is.
+    """
+    caller, _transport, _raw, ledger, _clock = _caller([HttpResponse(200, {}, b"{}")])
+
+    def reader(_response: HttpResponse) -> CostReading:
+        return CostReading(cost_usd=Decimal("0.02"), provider_request_id="req-1")
+
+    result = caller.call(_spec(cost_reader=reader))
+
+    outcome = ledger.rows[1]
+    cost = result.call_cost
+    assert cost.cost_source == "metered"
+    assert (cost.cost_usd, cost.credits, cost.media_seconds) == (Decimal("0.02"), Decimal(0), 0)
+    assert (cost.cost_usd, cost.credits, cost.media_seconds) == (
+        outcome.cost_usd,
+        outcome.credits,
+        outcome.media_seconds,
+    ), "the CallCost is the result row's own money view, not a second opinion"
+    assert cost.ledger_row_id == outcome.row_id == result.ledger_row_id
+    assert cost.raw_ref == outcome.raw_ref == result.raw_ref == "memory:0"
+    assert (cost.provider, cost.operation) == ("prov", "v1/thing")
+
+
+def test_a_free_call_is_labelled_free_and_not_left_to_be_inferred() -> None:
+    """A public source reserves nothing and meters nothing — and the row says exactly that.
+
+    Before ``free`` existed, an unpaid ATS fetch and a paid call whose provider went silent were
+    both unlabelled, so "what did this account really cost" could not be answered without knowing
+    off-hand which providers meter. The two are now different values.
+    """
+    caller, _transport, _raw, ledger, _clock = _caller([HttpResponse(200, {}, b"[]")])
+
+    result = caller.call(_spec(estimate=SpendEstimate()))
+
+    outcome = ledger.rows[1]
+    assert outcome.extras["cost_source"] == "free"
+    assert result.call_cost.cost_source == "free"
+    assert (outcome.cost_usd, outcome.credits, outcome.media_seconds) == (Decimal(0), Decimal(0), 0)
+    assert caller.totals().usd == Decimal(0)
+
+
+def test_a_reserved_call_with_no_reader_is_estimated_not_free() -> None:
+    """``free`` is decided on the spec, not the amounts: a reservation admits an expected bill.
+
+    Money was reserved, so somebody expected to be charged; nothing read it back. That is the
+    honest ``estimate`` state, and calling it ``free`` would quietly write off real spend.
+    """
+    caller, _transport, _raw, ledger, _clock = _caller([HttpResponse(200, {}, b"{}")])
+
+    result = caller.call(_spec())  # estimate 0.01 USD, no cost reader
+
+    assert ledger.rows[1].extras["cost_source"] == "estimate"
+    assert result.call_cost.cost_source == "estimate"
+    assert result.call_cost.cost_usd == Decimal("0.01"), "the estimate stands in for the unread"
+
+
+def test_a_metered_call_that_cost_nothing_is_still_metered() -> None:
+    """A provider that answered "zero" told us something; a free call was never going to bill.
+
+    Deciding ``free`` on the numbers instead of the spec would collapse the two, and the second
+    fact — "this provider meters, and this particular call was on the house" — is the one a cost
+    dashboard needs to see when a paid source suddenly starts reporting zeroes.
+    """
+    caller, _transport, _raw, ledger, _clock = _caller([HttpResponse(200, {}, b"{}")])
+
+    result = caller.call(
+        _spec(estimate=SpendEstimate(), cost_reader=lambda _r: CostReading(cost_usd=Decimal(0)))
+    )
+
+    assert ledger.rows[1].extras["cost_source"] == "metered"
+    assert result.call_cost.cost_source == "metered"
+    assert result.call_cost.cost_usd == Decimal(0)
 
 
 def test_retry_after_header_is_honoured_verbatim() -> None:

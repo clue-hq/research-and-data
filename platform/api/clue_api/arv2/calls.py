@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from email.utils import parsedate_to_datetime
+from typing import Literal
 
 from clue_api.arv2.errors import (
     ProviderHalted,
@@ -104,6 +105,47 @@ class CostReading:
     extras: Mapping[str, object] = field(default_factory=dict)
 
 
+#: Where the numbers on a settled ledger row came from. Written into every result row's
+#: ``extras["cost_source"]`` and carried on every :class:`CallCost`, so "what did this cost, and
+#: how well do we know" is one query rather than a join against the provider's price sheet.
+#:
+#: * ``metered`` — the provider's own metering answered: the cost reader supplied at least one
+#:   number, and the row carries what the provider said it charged.
+#: * ``free`` — nothing was ever going to be charged: the spec declared no cost reader *and*
+#:   reserved nothing. The lane's public sources (ATS boards, RSS feeds, YouTube watch pages,
+#:   enclosure ``GET``/``HEAD``, the Files API upload legs) are all this, and labelling them
+#:   ``estimate`` would quietly imply an unread bill that does not exist.
+#: * ``estimate`` — a reader existed and reported nothing, so the pre-spend estimate stands in for
+#:   the cost. This is the only value that means "we do not actually know".
+CostSource = Literal["metered", "estimate", "free"]
+
+
+@dataclass(frozen=True)
+class CallCost:
+    """The cost of one request, in the one shape every ARV2 client return value carries.
+
+    A client's parsed return value (a company record, a transcript, a board's postings) exists
+    because a request was made, and this is that request's money row reduced to what a caller
+    needs: the three amounts as they were **settled** onto the ledger (so a ``None`` reading that
+    fell back to the estimate reads as the number the ledger actually holds), how well they are
+    known, and the two references — ``ledger_row_id`` and ``raw_ref`` — that lead back to the
+    result row and the saved body behind them.
+
+    ``provider`` and ``operation`` are carried so a bare :class:`CallCost` is self-describing:
+    summing a run's costs by provider must not require re-reading the ledger to learn who each
+    number belongs to.
+    """
+
+    cost_usd: Decimal | None
+    credits: Decimal | None
+    media_seconds: int | None
+    cost_source: CostSource
+    ledger_row_id: str
+    raw_ref: str | None
+    provider: str
+    operation: str
+
+
 #: Returns a reason code when the response proves the provider will not sell (402/403, a body
 #: naming "credit", an unknown-spend state), else ``None``. A reason latches the provider.
 HaltRule = Callable[[HttpResponse], str | None]
@@ -144,7 +186,13 @@ class CallSpec:
 
 @dataclass(frozen=True)
 class CallResult:
-    """The outcome of a completed call, with the references that make it auditable."""
+    """The outcome of a completed call, with the references that make it auditable.
+
+    ``cost`` is the *reading* — what the provider's own metering said, with ``None`` meaning "it
+    did not say". ``call_cost`` is what the ledger ended up holding for this request, after the
+    estimate has stood in for anything unread, labelled with :data:`CostSource`. Clients hand
+    ``call_cost`` on to their callers; ``cost`` stays here for anyone who needs the raw reading.
+    """
 
     response: HttpResponse
     latency_ms: int
@@ -154,6 +202,7 @@ class CallResult:
     ledger_row_id: str
     cost: CostReading
     over_ceiling: bool
+    call_cost: CallCost
 
     def text(self) -> str:
         """The response body decoded as UTF-8 (undecodable bytes replaced, never raising)."""
@@ -297,7 +346,7 @@ class ProviderCaller:
         halt_reason = spec.halt_rule(response) if spec.halt_rule is not None else None
         if halt_reason is not None:
             self._halted[spec.provider] = halt_reason
-            row_id, _ = self._settle(
+            settled, _ = self._settle(
                 spec,
                 call_id=call_id,
                 outcome="halted",
@@ -312,10 +361,10 @@ class ProviderCaller:
                 spec.provider,
                 halt_reason,
                 http_status=response.status,
-                ledger_row_id=row_id,
+                ledger_row_id=settled.ledger_row_id,
             )
 
-        row_id, actual_over_ceiling = self._settle(
+        settled, actual_over_ceiling = self._settle(
             spec,
             call_id=call_id,
             outcome=self._outcome(response.status, spec.retry_statuses),
@@ -332,9 +381,10 @@ class ProviderCaller:
             attempts=attempts,
             raw_ref=raw_refs[-1] if raw_refs else None,
             raw_refs=tuple(raw_refs),
-            ledger_row_id=row_id,
+            ledger_row_id=settled.ledger_row_id,
             cost=cost,
             over_ceiling=actual_over_ceiling,
+            call_cost=settled,
         )
 
     # -- internals ---------------------------------------------------------------------------
@@ -520,7 +570,7 @@ class ProviderCaller:
         cost: CostReading,
         error_code: str | None,
         raw_ref: str | None,
-    ) -> tuple[str, bool]:
+    ) -> tuple[CallCost, bool]:
         """Update the running totals from the reading, then write the result row.
 
         When the reader reported nothing at all, the estimate stands in for the cost and the row
@@ -529,17 +579,21 @@ class ProviderCaller:
         ``over_ceiling`` is re-evaluated here against what the call **actually** cost, added to
         the totals as they stood before it. The estimate row keeps the estimate-based flag (it was
         written before the wire and cannot know better); the result row, which is what a cost
-        dashboard reads, says whether real spend crossed a ceiling. Returns the row id and that
-        flag.
+        dashboard reads, says whether real spend crossed a ceiling. Returns the settled
+        :class:`CallCost` — the row's own money view, which the client hands to its caller — and
+        that flag.
 
         A reading's own ``extras`` land on this row too, between the spec's (which a caller set
         before the wire) and the ``cost_source`` marker (which the wrapper owns). A reader
         therefore reports what it read by *returning* it, and never by mutating the frozen spec it
-        was called under.
+        was called under. ``cost_source`` is written on **every** result row, free calls included:
+        a row with no marker at all would leave "was this metered?" answerable only by guessing
+        from the numbers.
         """
         told_us_nothing = (
             cost.cost_usd is None and cost.credits is None and cost.media_seconds is None
         )
+        source = self._cost_source(spec, told_us_nothing=told_us_nothing)
         usd = spec.estimate.usd if told_us_nothing else (cost.cost_usd or Decimal(0))
         credits = spec.estimate.credits if told_us_nothing else (cost.credits or Decimal(0))
         media_seconds = (
@@ -568,12 +622,40 @@ class ProviderCaller:
             provider_request_id=cost.provider_request_id,
             error_code=error_code,
             raw_ref=raw_ref,
-            extras={
-                **cost.extras,
-                **({"cost_source": "estimate"} if told_us_nothing else {}),
-            },
+            extras={**cost.extras, "cost_source": source},
         )
-        return row_id, over_ceiling
+        return (
+            CallCost(
+                cost_usd=usd,
+                credits=credits,
+                media_seconds=media_seconds,
+                cost_source=source,
+                ledger_row_id=row_id,
+                raw_ref=raw_ref,
+                provider=spec.provider,
+                operation=spec.operation,
+            ),
+            over_ceiling,
+        )
+
+    @staticmethod
+    def _cost_source(spec: CallSpec, *, told_us_nothing: bool) -> CostSource:
+        """Label how well this row's numbers are known — see :data:`CostSource`.
+
+        The ``free`` test is on the *spec*, not on the amounts: a metered call that happened to
+        cost zero is still metered, and a free call whose numbers are zero because nobody was
+        ever going to charge is a different fact. A spec with no reader and no reservation is the
+        only thing that can be free, because a reservation is the lane's admission that it
+        expects a bill.
+        """
+        if not told_us_nothing:
+            return "metered"
+        estimate = spec.estimate
+        if spec.cost_reader is None and not (
+            estimate.usd or estimate.credits or estimate.media_seconds
+        ):
+            return "free"
+        return "estimate"
 
     def _record(
         self,
