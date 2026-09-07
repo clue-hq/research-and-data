@@ -73,7 +73,11 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # explicit HUMAN act; the design API's route invokes the tool as actor="human" and the ABM
     # batch stamps it ON through the same door. A model surface that held it could take the
     # noindex off an account page, which is the one thing the ruling exists to prevent.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 119
+    # ARV2 onboarding O4 adds `exa_search_evidence` (119 -> 120), granted to the synthesis agent
+    # alone: it is the one SPEND tool of the onboarding synthesis turn (plan §4.5 — at most one
+    # call per persona role, behind `CLUE_ONBOARDING_PERSONA_EVIDENCE_ENABLED`), and no other role
+    # has a reason to buy a deep-reasoning web search from inside a conversation.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 120
     assert C6_AGENT_TOOL_AUTHORITY["open_design_leg"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["finish_design_leg"] == (AgentRole.DESIGN,)
     design_grants = {
@@ -117,6 +121,10 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # Lane E E3, same reasoning one slice on: an agent that could position on demand could spend N
     # completions on an account the research engine never finished.
     assert C6_AGENT_TOOL_AUTHORITY["synthesize_value_narrative"] == ()
+    # ARV2 onboarding O4 §4.5: the onboarding synthesis agent is the only spender of the governed
+    # evidence call — one deep-reasoning search per persona role, and only when the flag is on.
+    assert C6_AGENT_TOOL_AUTHORITY["exa_search_evidence"] == (AgentRole.ONBOARDING_SYNTHESIS,)
+    assert c6_roles_for_tool("exa_search_evidence@1") == (AgentRole.ONBOARDING_SYNTHESIS,)
     # The combined inventory retains both exact-subject human gates, FI-2's selected-Account
     # launch, and S4/S5's company/product readers. Machine-only confirmation remains withheld.
     # (The total is asserted once above — 114 after the part-iii merge.)

@@ -46,10 +46,15 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable
+from uuid import UUID
 
 from clue_api.agent_cleanup import AgentWorkspaceCleanupJob
+from clue_api.agent_execution_wiring import DbAgentPlanJournal
 from clue_api.agent_model_wiring import build_agent_model_provider
-from clue_api.agent_platform_wiring import build_agent_platform_components
+from clue_api.agent_platform_wiring import (
+    AgentPlatformComponents,
+    build_agent_platform_components,
+)
 from clue_api.agent_turn_fleet_wiring import (
     AgentTurnWorkHandler,
     build_agent_turn_work_handler,
@@ -61,6 +66,8 @@ from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.arv2.onboarding_driver import (
     OnboardingRunWorkHandler,
+    SynthesisLauncher,
+    SynthesisOutcome,
     build_onboarding_exa_client_factory,
 )
 from clue_api.arv2_wiring import register_arv2_wiring
@@ -109,6 +116,10 @@ from clue_api.memory_wiring import memory_assembly_factory, memory_write_factory
 from clue_api.narrative_wiring import build_client_knowledge_retriever, register_narrative_wiring
 from clue_api.official_site_crawl_wiring import build_official_site_crawl_fleet
 from clue_api.onboarding_client_binding import Stage0ClientEntityBinder
+from clue_api.onboarding_synthesis_wiring import (
+    OnboardingSynthesisLauncher,
+    build_onboarding_synthesis_launcher,
+)
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
 from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.production_metrics import production_metrics_lifespan
@@ -531,15 +542,45 @@ def _build_stage0_scrape_binder(
     return binder
 
 
+class _SynthesisSeam:
+    """Join O4's launcher to O3's ``SynthesisLauncher`` seam at the composition root.
+
+    The two lanes were built apart: the driver reads four fields of a step outcome, the launcher
+    returns those four plus the document ids it registered. Nothing else differs, so the join is a
+    field-for-field copy here rather than a shared type either lane would have had to import from
+    the other before it existed.
+    """
+
+    def __init__(self, launcher: OnboardingSynthesisLauncher) -> None:
+        self._launcher = launcher
+
+    async def launch(
+        self, *, workspace_id: str, brand_id: str, run_id: UUID, step_id: UUID
+    ) -> SynthesisOutcome:
+        result = await self._launcher.launch(
+            workspace_id=workspace_id, brand_id=brand_id, run_id=run_id, step_id=step_id
+        )
+        return SynthesisOutcome(
+            status=result.status,
+            failure_code=result.failure_code,
+            failure_message=result.failure_message,
+            cost_usd=result.cost_usd,
+        )
+
+
 def _build_onboarding_handler(
-    settings: Settings, secrets: Secrets, *, storage: StorageBackend
+    settings: Settings,
+    secrets: Secrets,
+    *,
+    storage: StorageBackend,
+    synthesis: SynthesisLauncher | None = None,
 ) -> OnboardingRunWorkHandler | None:
     """The ARV2 onboarding lane (Track O, O3) on this worker, behind ``onboarding_v2_enabled``.
 
     The client-entity seam is injected from *outside* ``clue_api.arv2`` (the lane may not import
-    ``clue_research.stage0``), and ``synthesis`` is deliberately ``None`` here: O4's
-    ``build_onboarding_synthesis_launcher`` fills that seam when the two lanes merge, and until
-    then the synthesis step settles ``empty`` with its reason rather than pretending it ran.
+    ``clue_research.stage0``). ``synthesis`` is O4's launcher behind :class:`_SynthesisSeam`, or
+    ``None`` when the agent platform is not composed — then the synthesis step settles ``empty``
+    with its reason rather than pretending it ran.
 
     A deployment that turns the flag on without ``CLUE_EXA_API_KEY`` gets a loud warning and **no
     handler**: the enqueued runs then wait in the queue for a correctly-credentialed worker,
@@ -567,7 +608,7 @@ def _build_onboarding_handler(
         artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
         exa=exa,
         client_binder=Stage0ClientEntityBinder(),
-        synthesis=None,
+        synthesis=synthesis,
     )
 
 
@@ -696,6 +737,11 @@ async def _serve() -> None:
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
+            # ARV2 O4: ``build_toolbelt(secrets=...)`` is fail-closed — the default ``None`` means
+            # *no credentials*, and ``exa_search_evidence@1`` would then refuse
+            # ``exa_not_configured`` before any spend. This production root passes the real
+            # secrets so the synthesis turn's one evidence call can actually reach Exa.
+            secrets=secrets,
             gateway=gateway,
             # FI-4 slice 2 / slice 3: same live scrape composition as projections_main, behind the
             # same flag, and now with the same REAL extractor — reusing the gateway built above, so
@@ -791,8 +837,12 @@ async def _serve() -> None:
         # run-control tools registered below are the human/API run-control plane sharing this
         # registry object, not model-surface tools, and composing after them fails the audit
         # at boot.
+        # ARV2 O4: the onboarding synthesis turn needs the SAME agent platform components as the
+        # conversation turn (profiles, models, workspaces, artifacts, turn journal), so the one
+        # composition is shared by both switches rather than duplicated per surface.
         agent_turn_handler: AgentTurnWorkHandler | None = None
-        if settings.chat_enabled:
+        platform_components: AgentPlatformComponents | None = None
+        if settings.chat_enabled or settings.onboarding_v2_enabled:
             platform_components = build_agent_platform_components(
                 settings=settings,
                 secrets=secrets,
@@ -800,6 +850,7 @@ async def _serve() -> None:
                 storage=storage,
                 tools=registry,
             )
+        if settings.chat_enabled and platform_components is not None:
             agent_turn_handler = build_agent_turn_work_handler(
                 components=platform_components,
                 tools=registry,
@@ -841,6 +892,31 @@ async def _serve() -> None:
                 ),
                 stop_poll_interval_s=settings.chat_turn_stop_poll_interval_s,
             )
+        # ARV2 O4: the onboarding synthesis turn's production seam. Composed under the same
+        # ordering rule as the conversation turn above — before ``register_execution_control_tools``
+        # widens the shared registry, because the launcher resolves the ONBOARDING_SYNTHESIS
+        # profile against the model-facing toolbelt the C6 authority audit covers.
+        synthesis_launcher: OnboardingSynthesisLauncher | None = None
+        if settings.onboarding_v2_enabled and platform_components is not None:
+            synthesis_launcher = build_onboarding_synthesis_launcher(
+                settings=settings,
+                secrets=secrets,
+                storage=storage,
+                components=platform_components,
+                tools=registry,
+                tool_invoker=tool_invoker,
+                executor=executor,
+                compatibility=compatibility,
+                plans=DbAgentPlanJournal(conn_factory=transaction),
+                recipes=recipe_reader,
+                starter=starter,
+                parameters=execution_parameters,
+            )
+        # O3's OnboardingRunWorkHandler takes this below, through ``_SynthesisSeam``.
+        log.info(
+            "onboarding_synthesis.launcher_composed",
+            enabled=synthesis_launcher is not None,
+        )
         register_execution_control_tools(
             ExecutionControlServices(
                 starter=starter,
@@ -889,7 +965,14 @@ async def _serve() -> None:
             if settings.self_serve_provisioning_enabled
             else None
         )
-        onboarding_handler = _build_onboarding_handler(settings, secrets, storage=storage)
+        onboarding_handler = _build_onboarding_handler(
+            settings,
+            secrets,
+            storage=storage,
+            synthesis=(
+                _SynthesisSeam(synthesis_launcher) if synthesis_launcher is not None else None
+            ),
+        )
         worker = build_multi_work_worker(
             settings,
             driver=driver,

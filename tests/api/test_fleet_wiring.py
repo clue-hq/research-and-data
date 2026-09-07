@@ -323,6 +323,36 @@ def test_the_flag_without_an_exa_key_composes_no_handler_rather_than_refusing_to
     )
 
 
+def test_the_synthesis_seam_hands_o4_outcomes_to_the_o3_handler(tmp_path: Path) -> None:
+    """The O3 ⇄ O4 join: the launcher's result becomes the driver's ``SynthesisOutcome``
+    field for field, and the composed handler carries the seam rather than ``None``."""
+    from decimal import Decimal
+
+    from clue_api.arv2.onboarding_driver import SynthesisOutcome
+    from clue_api.fleet_main import _SynthesisSeam
+    from clue_api.onboarding_synthesis_wiring import OnboardingSynthesisResult
+
+    class _Launcher:
+        async def launch(self, **kwargs: object) -> OnboardingSynthesisResult:
+            return OnboardingSynthesisResult(
+                "completed", None, None, Decimal("0.03"), (uuid4(), uuid4())
+            )
+
+    seam = _SynthesisSeam(_Launcher())  # type: ignore[arg-type]
+    outcome = run_async(
+        seam.launch(workspace_id="ws", brand_id="brd", run_id=uuid4(), step_id=uuid4())
+    )
+    assert outcome == SynthesisOutcome(
+        status="completed", failure_code=None, failure_message=None, cost_usd=Decimal("0.03")
+    )
+
+    secrets = Secrets(_env_file=None, exa_api_key=SecretStr("exa-test"))  # type: ignore[call-arg]
+    composed = _build_onboarding_handler(
+        _settings(onboarding_v2_enabled=True), secrets, storage=FsStorage(tmp_path), synthesis=seam
+    )
+    assert composed is not None and composed._synthesis is seam
+
+
 def test_the_design_handler_is_off_unless_the_runtime_switch_is_set() -> None:
     """The production gate: no switch, no handler — and therefore no import of the design app."""
     from clue_api.design_fleet import build_design_job_handler

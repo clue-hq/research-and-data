@@ -331,3 +331,37 @@ it under, not defects in it.
   declared `length`, then by a `HEAD` `Content-Length`, then by the transferred size — but a host
   that lies about all three is still read into memory once. A streaming/size-capped transport
   (`send_to(request, sink, max_bytes)`) is R2 work.
+
+## O4 — the synthesis turn (`clue_api/onboarding_synthesis_wiring.py`)
+
+The step that turns the brand's onboarding research into audience documents. It is **not** in this
+package: composing one governed deepagent turn means touching the agent/execution substrate, which
+the lane may not import, so the module lives beside the other `clue_api` wiring roots as
+`platform/api/clue_api/onboarding_synthesis_wiring.py`. The only piece that lives here is
+`knowledge_frontmatter.py` — the inverse of `onboarding_documents.render_markdown`, which reads a
+finished output's front matter and answers *what document is this*.
+
+The shape is the account-research unit runner with the account scope swapped for the **brand**
+scope. `OnboardingSynthesisLauncher.launch` materializes the brand's current servable knowledge
+documents read-only under `inputs/brand/knowledge/`, runs one C5-governed turn inside the promoted
+`onboarding-synthesis-unit@1` recipe under a per-brand system `project` row (born `archived` — a
+scope anchor, never a motion a marketer opens), and registers each `outputs/` file whose front
+matter identifies it as a versioned `brand_knowledge_document` (`icp-definition` → `proposed`,
+`audience-persona` → `ready`). A re-synthesis at the same path writes the next version, names the
+row it replaces in `supersedes_document_id`, and retires that row. Every failure is a step outcome
+(`OnboardingSynthesisResult`), never a raise: the onboarding driver records outcomes.
+
+`build_onboarding_synthesis_launcher(...)` is the production seam. `fleet_main` composes it behind
+`CLUE_ONBOARDING_V2_ENABLED`; O3's `OnboardingRunWorkHandler` takes it as `synthesis=` at the merge.
+
+Two things worth knowing before touching it:
+
+- **The flat skill file is a duplicate on purpose.** `platform/agents/skills/audience-persona-v1/SKILL.md`
+  exists only so the execution layer's flat skill discovery can resolve the `skill` pin the recipe
+  requires. **The catalog copy — `platform/agents/catalog/skills/audience-persona/v1/SKILL.md` — is
+  authoritative**: it is the sha-pinned resource the profile carries and the agent actually reads.
+  Edit the catalog file; the flat one is a pin stub and says so in its own body.
+- **`build_toolbelt(secrets=...)` is fail-closed.** The default `secrets=None` means *no
+  credentials*, so `exa_search_evidence@1` registers but refuses `exa_not_configured` before any
+  spend — deliberate, so no test toolbelt composes a live billable Exa client off a stray `.env`
+  key. A production composition root must pass a real `Secrets` explicitly; `fleet_main` does.

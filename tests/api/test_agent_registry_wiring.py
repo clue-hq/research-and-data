@@ -44,7 +44,15 @@ def registry() -> AgentProfileRegistry:
     # module-scoped fixture *before* the autouse function-scoped ``_hermetic_feature_flags``, so
     # this one enters the shared neutralisation itself. (Kept module-scoped — rebuilding the
     # catalog per test costs ~5s across this file.)
-    with hermetic_flag_env():
+    # The same reasoning covers the per-role model channel. ``_env_model_policy`` reads
+    # ``<ROLE>_AGENT_MODEL`` straight from ``os.environ`` (not through ``Settings``), so
+    # ``hermetic_flag_env`` cannot reach it, and an operator shell that sourced the repo ``.env``
+    # — which pins every role to grok-4.6 — would make this file assert the deployment setting
+    # instead of the reviewed catalog pin. Resolution is eager, so stripping the overrides around
+    # the build is enough.
+    with hermetic_flag_env(), pytest.MonkeyPatch.context() as mp:
+        for role in AgentRole:
+            mp.delenv(f"{role.value.upper()}_AGENT_MODEL", raising=False)
         return build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
 
 
@@ -97,11 +105,27 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
         ),
         AgentRole.REVIEWER: "1cd0fc4e5c8276983c5e0b8d9a83904be82a95ed57f27c9c1dfd9f5a3887df46",
+        # ARV2 Track O, O4: onboarding-synthesis@v1 — prompt v1, the icp-synthesis and
+        # audience-persona v1 skills, and the single `exa_search_evidence@1` grant. Digest
+        # measured off this tree.
+        AgentRole.ONBOARDING_SYNTHESIS: (
+            "3acf3a890b0132a7d2b3e768a7c376a83b419c2dbf3db6ecedb43c38038015d2"
+        ),
+    }
+    # The model pin is per role, not blanket: the 2026-08-27 demo-night correction moved the
+    # conversation profile to grok-4.6 (head-of-abm@v43), and ruling O-D1 puts the onboarding
+    # synthesis agent on the same model. The specialists stay on gpt-5.6-terra.
+    expected_models = {
+        AgentRole.HEAD_OF_ABM: "x-ai/grok-4.6",
+        AgentRole.RESEARCH: "openai/gpt-5.6-terra",
+        AgentRole.CONTENT_DRAFTER: "openai/gpt-5.6-terra",
+        AgentRole.REVIEWER: "openai/gpt-5.6-terra",
+        AgentRole.ONBOARDING_SYNTHESIS: "x-ai/grok-4.6",
     }
     toolbelt = build_toolbelt(storage=None, gateway=None)
     for role, digest in expected_manifests.items():
         resolved = registry.resolve(role)
-        assert resolved.profile.model.model_id == "openai/gpt-5.6-terra"
+        assert resolved.profile.model.model_id == expected_models[role]
         if role is AgentRole.HEAD_OF_ABM:
             assert (
                 f"{resolved.profile_ref.name}@{resolved.profile_ref.version}"
@@ -169,8 +193,11 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # Slice B wave 2 installs `draft_account_research_directive@4` alongside its replayable
     # predecessors, so the inventory gains exactly one address, and the Slice B browser-gate
     # repair installs @5 the same way. The ARV2-R0 merge unions both lines' additions; 136 is
-    # measured off the merged tree, not derived from either side's arithmetic.
-    assert len(by_address) == 136
+    # measured off the merged tree, not derived from either side's arithmetic. ARV2 Track O, O4
+    # installs `exa_search_evidence@1` — the onboarding synthesis agent's one governed evidence
+    # call, granted to `onboarding_synthesis` alone, so it is role-unavailable from this view
+    # (136 + 1 = 137).
+    assert len(by_address) == 137
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -254,7 +281,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # Slice B wave 2 and the browser-gate repair install `draft_account_research_directive@4`
     # and @5 alongside their replayable predecessors. The ARV2-R0 merge unions both lines'
     # additions; 136 is measured off the merged tree, not derived from either side's arithmetic.
-    assert len(by_address) == 136
+    # ARV2 Track O, O4's `exa_search_evidence@1` joins on the same terms: installed, disclosed,
+    # and granted only to `onboarding_synthesis`, so it is unavailable here (136 + 1 = 137).
+    assert len(by_address) == 137
     for address in (
         "create_thread@1",
         "rename_thread@1",

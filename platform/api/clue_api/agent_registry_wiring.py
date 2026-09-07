@@ -78,6 +78,11 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     AgentRole.REVIEWER: "v5",
     # P3.3 (PD-part3): the composite design deepagent's platform-facing profile.
     AgentRole.DESIGN: "v1",
+    # ARV2 Track O, O4: the onboarding synthesis agent (ARV2-ONBOARDING-PLAN.md §5). One fleet-run
+    # turn per onboarding writes the brand's proposed ICP documents and one audience-persona
+    # document per ICP. Its whole spendable surface is ``exa_search_evidence@1``; it delegates to
+    # nobody. Model per ruling O-D1: ``x-ai/grok-4.6`` at the model's default reasoning effort.
+    AgentRole.ONBOARDING_SYNTHESIS: "v1",
 }
 
 
@@ -191,6 +196,10 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "enrich_account_gaps": (),
     "enrich_selected_accounts": (),
     "evaluate_stage0_readiness": (AgentRole.HEAD_OF_ABM,),
+    # ARV2 onboarding O4 (plan §4.5): the synthesis agent's one SPEND tool — a single fixed
+    # deep-reasoning search for first-person evidence, at most once per persona role. No other
+    # role may buy it: this is the onboarding synthesis turn's own governed provider call.
+    "exa_search_evidence": (AgentRole.ONBOARDING_SYNTHESIS,),
     "get_research_view": (
         AgentRole.HEAD_OF_ABM,
         AgentRole.RESEARCH,
@@ -281,6 +290,12 @@ PROJECT_CONVERSATION_SURFACE = "project_conversation"
 #: in its C5 slot.  Resolve a named surface so the manifest, middleware, and installed tools all
 #: describe that narrower authority before the model wakes.
 ACCOUNT_RESEARCH_UNIT_SURFACE = "account_research_unit"
+
+#: ARV2 onboarding O4: the fleet-owned synthesis turn executes the one-gate
+#: ``onboarding-synthesis-unit@1`` recipe. The synthesis agent's whole spendable surface there is
+#: ``exa_search_evidence@1``; resolving a named surface makes the manifest, the middleware, and the
+#: installed tools describe that one authority before the model wakes.
+ONBOARDING_SYNTHESIS_UNIT_SURFACE = "onboarding_synthesis_unit"
 
 #: PC-C8 §8: surface restrictions are enforced by tools that are *not installed*, never by prose in
 #: a shared skill or a context card. Each entry narrows one role's effective tool set on one named

@@ -220,6 +220,9 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "record_interview_answer": ("precondition", ("onboarding_input_not_found",)),
     "confirm_project_product": ("precondition", ("project_product_not_found",)),
     "evaluate_stage0_readiness": ("precondition", ("stage0_scope_not_found",)),
+    # ARV2 O4: the default composition is handed no provider credentials (`build_toolbelt`'s
+    # `secrets` defaults to None, fail-closed), so this SPEND tool's Exa path is never reached here.
+    "exa_search_evidence": ("precondition", ("exa_not_configured",)),
     "override_stage0_readiness": ("precondition", ("readiness_not_found",)),
     "start_confirmed_project_run": (
         "precondition",
@@ -561,6 +564,7 @@ def _bodies() -> dict[str, dict[str, object]]:
         # The current @2 readiness contract accepts only the gate. Scope and metrics are trusted
         # backend inputs, so stale v1 fields must not be smuggled into this audit fixture.
         "evaluate_stage0_readiness": {"gate": "icp_synthesis"},
+        "exa_search_evidence": {"query": "how practice managers describe referral fax pain"},
         "override_stage0_readiness": {
             "readiness_decision_id": _UUID(),
             "gate": "icp_synthesis",

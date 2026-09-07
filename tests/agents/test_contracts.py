@@ -409,19 +409,27 @@ def test_frozen_contract_json_schema_digests() -> None:
     # Contract revision P3.1 (PD-part3 §3 delta 1, ratified 2026-08-14): AgentRole gains
     # 'design' — the composite design deepagent's platform-facing role. Every digest that
     # moved embeds the role enum; the DB CHECKs widened in the same commit (549de68ae3b9).
+    # Contract revision ARV2-O4 (ONBOARDING-PLAN §5, this lane): AgentRole gains
+    # 'onboarding_synthesis' — the brand-scoped synthesis agent's role. Exactly the same class of
+    # delta as P3.1 above, and exactly the same five digests move (the ones whose schema embeds the
+    # role enum: AgentProfile, AgentConstitution, AgentTurnRequest, AgentPlan, DelegationRequest);
+    # the other six are byte-identical to the values frozen before this lane. Proven by recomputing
+    # the digests with the new member removed — every one then matches the pre-lane value. The DB
+    # CHECKs widened in the same lane (migrations 000b9d8bb17b + dfb9fa040b13). The digests were
+    # not updated when the role landed, so this is that commit's missed ritual, performed here.
     assert actual == {
-        "AgentProfile": "bdcad179c2b9b5d5f9dbf41434e0de74801c0ce85e028aec1d515ebf77ff7653",
+        "AgentProfile": "d778651b32c2ec312749e806850734a776608dedcb98155b5942d616ee15b016",
         "SkillBundle": "ddbffd59d074ffd70880fd0398b7bc0a9aab2163e55aa8527c930f5866b24521",
         # S3 composes the frozen snake_case Client-KB/Stage-0 artifact names. Project-context
         # identifiers therefore accept both that vocabulary and the older kebab-case directive
         # names without widening folder-backed ``ResourceName`` contracts. The part-iii merge
         # unions that S3 shape with P3.1's 'design' role, so these three digests moved again in
         # the merge commit (the in-commit contract-delta ritual).
-        "AgentConstitution": ("147c1806971d9c0b187c6e51ba1999cee0dae5a8e42d138e1b31eea12e31a323"),
-        "AgentTurnRequest": ("f136b8fbb6fa070aa76fe021e829855d4e8df6f38b61b2c4119f95fe4b2889d2"),
-        "AgentPlan": "4323376df8c263abd7d6ff607e370f1d4786646dfcc0ff39632ce74761ca8f61",
+        "AgentConstitution": ("ed7141b49e02e6e91d6a9955997768715aeaa4c611dda1da2217b664d62b0786"),
+        "AgentTurnRequest": ("018f9a55b1bec3eb11d42c21cbbcab25addb723f658d668aedffcdfbdba4aa9f"),
+        "AgentPlan": "951c423442cbace49c48f24c7b95d17893095c0df1efc6f0079e01cfc2f596c1",
         "ValidatedPlan": ("4708b42a3a98619f52056ed93dad842852955bd82551a974b788969274de2026"),
-        "DelegationRequest": ("7ef04260a02bd382b7fcd321e4c6b15674cba452e577703568d991c140276b2f"),
+        "DelegationRequest": ("a30bfbd11a2179a5b21fdad78add4aa83a594c8b74a18ed0634396c383382ccb"),
         "DelegationResult": ("956ec6033fa560ba7704031a0df4b5aa3aa98ebbb0702bc137018ab3adafb36c"),
         "SpecialistTaskEnvelope": (
             "57396348bc7f3d8f7616c38bb8ea3203cd939879cf4a56af4f6b0a46be45b113"
