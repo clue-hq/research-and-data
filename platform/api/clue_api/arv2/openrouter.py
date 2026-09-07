@@ -20,7 +20,7 @@ from typing import Any
 from pydantic import SecretStr
 
 from clue_api.arv2.calls import CostReading
-from clue_api.arv2.transport import HttpRequest, json_request
+from clue_api.arv2.transport import HttpRequest, HttpResponse, json_request
 
 #: Sent on every ARV2 OpenRouter call so the provider's own dashboards attribute the spend.
 OPENROUTER_REFERER = "https://cluehq.ai/arv2"
@@ -163,3 +163,24 @@ def openrouter_message_text(body: object) -> str:
         return ""
     content = message.get("content")
     return content if isinstance(content, str) else ""
+
+
+def openrouter_halt_rule(response: HttpResponse) -> str | None:
+    """Money truth for OpenRouter (master plan §2 item 3): does this response refuse to sell?
+
+    A 402 is the explicit refusal (key out of credit); a 403 is a key that may not spend; any other
+    4xx/5xx whose body names "credit" or "insufficient" is the same refusal in prose. Only non-2xx
+    bodies are inspected — a successful completion about a bank names "credit" constantly, and
+    latching the lane's model provider on the content of a good answer would be a self-inflicted
+    outage. Returning a reason latches the provider in the wrapper.
+    """
+    if response.status == 402:
+        return "payment_required"
+    if response.status == 403:
+        return "forbidden"
+    if 200 <= response.status < 300:
+        return None
+    body = response.body.decode("utf-8", "replace").lower()
+    if "credit" in body or "insufficient" in body:
+        return "credit_exhausted"
+    return None

@@ -50,6 +50,7 @@ from clue_api.arv2.openrouter import (
     openrouter_chat_request,
     openrouter_cost_reader,
     openrouter_embeddings_request,
+    openrouter_halt_rule,
     openrouter_message_text,
 )
 from clue_api.arv2.sinks import (
@@ -132,6 +133,7 @@ __all__ = [
     "openrouter_chat_request",
     "openrouter_cost_reader",
     "openrouter_embeddings_request",
+    "openrouter_halt_rule",
     "openrouter_message_text",
     "redact_headers",
     "redact_url",
