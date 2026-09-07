@@ -1,6 +1,6 @@
 # ARV2 roadmap — the index
 
-**The single authoritative plan is `ARV2-MASTER-PLAN.md` (its data-source child is `ARV2-DATA-SOURCE-MAP.md`: endpoint + SQL + column behind every screen element); the founder work split is `ARV2-WORK-SPLIT.md`; Shashank's setup runbook is `ARV2-GETTING-STARTED-SHASHANK.md`; coding agents start at `ARV2-AGENT-BRIEFING.md`. Read those first; the documents below are the audit trail.**
+**The single authoritative plan is `ARV2-MASTER-PLAN.md` (its data-source child is `ARV2-DATA-SOURCE-MAP.md`: endpoint + SQL + column behind every screen element; its product-catalog child is `ARV2-PRODUCT-CATALOG-CONTRACT.md`: Exa request shape, catalog artifact, product-set gate, the multi-product ruling); the founder work split is `ARV2-WORK-SPLIT.md`; Shashank's setup runbook is `ARV2-GETTING-STARTED-SHASHANK.md`; coding agents start at `ARV2-AGENT-BRIEFING.md`. Read those first; the documents below are the audit trail.**
 
 **Updated 2026-09-05.** Presentation truth: `clue-frontend` `integration/live-backend-v1` @ `84f8ee7`. One page that says where every plan document lives, what each one decides,
 and where we are. Roles: **Aryan = tech founder** (platform deepagent, onboarding, brand context,

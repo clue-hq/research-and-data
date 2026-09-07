@@ -85,6 +85,19 @@ use the same-origin authenticated BFF and validate the corresponding wire
 schema. HTTP mode never falls back to fixtures after a refusal, parse error, or
 network failure. Presentation components do not call the API directly.
 
+### Product-set selection amendment (2026-09-07) — pointer
+
+Founder ruling P1 (Aryan, 2026-09-07): **a project targets a set of products, not one.** For new
+projects the `product_selection` kind below is replaced by `product_set_selection`, whose approved
+answer carries `decision_payload.selected_option_refs[]` (≥ 1, each a candidate in the immutable
+snapshot) and whose browser transport member is `selected_product_ids[]`. The snapshot gains
+`offering_kind`, `family`, `lifecycle`, `official_url` per product and a `current_selection`
+member; the card renders checkboxes grouped by offering kind and "Use these products". The set is
+re-selectable at any time as a new `selection_version`; runs keep the version they pinned. The
+single-product contract below stays for replay of historical gates only. Wire shapes, rendering
+rules, and the durable `project_product` table: `docs/specs/ARV2-PRODUCT-CATALOG-CONTRACT.md`
+§6–§7. This amendment is a pointer; the Zod/schema changes land with that contract's charter.
+
 ### Combined human-gate amendment (2026-08-15)
 
 This amendment freezes the merge contract shared by directive confirmation,
