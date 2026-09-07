@@ -7,6 +7,7 @@ import {
 } from "@/auth/authenticated-backend";
 import { BrandContextScreen } from "@/features/brand-context/components/brand-context-screen";
 import { getBrandContextWorkspace } from "@/features/brand-context/data/brand-context.repository";
+import { readOnboardingStatus } from "@/features/brand-context/data/brand-knowledge.repository";
 import {
   BrandAssetViewSchema,
   BrandColorModeSchema,
@@ -67,8 +68,23 @@ function backendFetches(): {
 
 export default async function BrandContextPage({ searchParams }: BrandContextPageProps) {
   const { clueFetch, designFetch } = backendFetches();
-  const [view, query] = await Promise.all([
+  // The unconfigured (fixture) path serves the dummy's brand and has no run to poll, so it
+  // issues no status request at all — the same `CLUE_API_BASE_URL` switch
+  // `getBrandContextRepository` reads to choose the fixture adapter.
+  const platformConfigured = Boolean(process.env.CLUE_API_BASE_URL?.trim());
+  const readStatus = async () => {
+    if (!platformConfigured) return null;
+    try {
+      return await readOnboardingStatus(await clueFetch());
+    } catch {
+      // Proving the session is the workspace read's job to report; an unpollable status just
+      // means no progressive fill, never a failed page.
+      return null;
+    }
+  };
+  const [view, onboarding, query] = await Promise.all([
     getBrandContextWorkspace(designFetch, clueFetch),
+    readStatus(),
     searchParams,
   ]);
 
@@ -86,6 +102,7 @@ export default async function BrandContextPage({ searchParams }: BrandContextPag
         section: section.success ? section.data : "colors",
       }}
       kit={view.kit}
+      onboarding={onboarding}
       workspace={view.workspace}
     />
   );
