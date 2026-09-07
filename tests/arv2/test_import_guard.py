@@ -143,7 +143,13 @@ def test_every_client_return_type_carries_the_cost_of_the_request_behind_it() ->
     from clue_api.arv2 import gemini_media_client, media_feeds_client
     from clue_api.arv2.ai_ark_client import AiArkCompany, AiArkEmailExport, AiArkPeople
     from clue_api.arv2.ats_client import BoardPostings
-    from clue_api.arv2.exa_client import ExaContentsResult, ExaDeepResult, ExaSearchResult
+    from clue_api.arv2.exa_client import (
+        ExaAgentRun,
+        ExaContentsResult,
+        ExaDeepResult,
+        ExaSearchResult,
+    )
+    from clue_api.arv2.onboarding_documents import KnowledgeDocument
     from clue_api.arv2.structuring_client import StructuredOutput
 
     return_types = (
@@ -154,6 +160,7 @@ def test_every_client_return_type_carries_the_cost_of_the_request_behind_it() ->
         ExaSearchResult,
         ExaContentsResult,
         ExaDeepResult,
+        ExaAgentRun,
         media_feeds_client.Podcast,
         media_feeds_client.AudioFile,
         media_feeds_client.YouTubeMeta,
@@ -162,6 +169,7 @@ def test_every_client_return_type_carries_the_cost_of_the_request_behind_it() ->
         gemini_media_client.MinedQuotes,
         gemini_media_client.EmbeddedTranscript,
         StructuredOutput,
+        KnowledgeDocument,
     )
 
     missing = [

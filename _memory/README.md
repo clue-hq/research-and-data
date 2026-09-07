@@ -28,6 +28,7 @@ The central architecture bet is that verification must be modeled at the claim/d
 
 ## Topic notes
 - `2026-09-07-arv2-onboarding-o1-o2-sdd-close-out.md` — O1 (substrate) + O2 (Exa Agent surface, templates, mappers) executed via SDD in two worktrees; branches to merge, the 7 rulings, not-this-lane triage list.
+- `2026-09-07-arv2-onboarding-o2-exa-agent-surface.md` — O2 landed on `onboarding/o2-exa-agent-surface`: `ExaClient.agent_run` (create/poll/settle, failures returned not raised), the four §4 request templates, the `KnowledgeDocument` mappers; live Agent run $0.025 / 14 polls / ~65 s; final review wave fixed strict-mypy narrowing in the mappers, covered the `no_run_id` Agent create, and made the failure-note suffix explicit (mypy clean, 298 offline tests).
 - `2026-09-07-no-old-lane-gate-may-block-new-lane.md` — **STANDING RULE, re-check at every stage:**
   no Client-KB / readiness / Stage-0-pin mechanism may block a new-lane (ARV2 / Track O) turn; only
   human-authority gates + the lenient claim shape gate exist; disposition table + 7-item checklist.
