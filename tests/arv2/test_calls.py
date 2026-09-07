@@ -254,7 +254,7 @@ def test_credentials_are_redacted_in_the_raw_record() -> None:
     """(e) Constraint 5: no header value and no ``?key=`` reaches a durable record."""
     request = HttpRequest(
         method="POST",
-        url="https://provider.test/v1/models/m:generate?key=SUPERSECRET&alt=json",
+        url="https://provider.test/v1/models/m:generate?key=SUPERSECRET&alt=json&upload_id=UPLOADSECRET",
         headers={
             "Authorization": "Bearer sk-live-000",
             "X-TOKEN": "ark-000",
@@ -268,7 +268,9 @@ def test_credentials_are_redacted_in_the_raw_record() -> None:
     caller.call(_spec(request=request))
 
     record, _body = raw.records[0]
-    assert record.request.url == "https://provider.test/v1/models/m:generate?key=***&alt=json"
+    assert record.request.url == (
+        "https://provider.test/v1/models/m:generate?key=***&alt=json&upload_id=***"
+    )
     assert record.request.headers == {
         "Authorization": "***",
         "X-TOKEN": "***",
@@ -277,7 +279,7 @@ def test_credentials_are_redacted_in_the_raw_record() -> None:
         "Accept": "application/json",
     }
     serialized = repr(record)
-    for secret in ("SUPERSECRET", "sk-live-000", "ark-000", "exa-000", "goog-000"):
+    for secret in ("SUPERSECRET", "UPLOADSECRET", "sk-live-000", "ark-000", "exa-000", "goog-000"):
         assert secret not in serialized
 
 

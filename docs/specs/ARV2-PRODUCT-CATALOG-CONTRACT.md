@@ -47,7 +47,7 @@ snapshot, and chosen by a human. That rule is unchanged from S5.0.
 Exa's `/search` reference (28 Aug 2026) limits `outputSchema` to nesting depth 2 and 10 total
 properties, documents only `type`, `properties`, `required`, `items`, and `description`, and
 returns per-field citations automatically in `output.grounding`. Citation fields must not appear
-in the schema. The finalized schema has nine properties and two levels:
+in the schema. The finalized schema has eight properties (two top-level, six on each product item; the R1 Exa client copies this JSON verbatim and Exa accepted it, `enum` included, on 2026-09-07) and two levels:
 
 ```json
 {

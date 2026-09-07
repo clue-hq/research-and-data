@@ -34,3 +34,21 @@ git-ignored): raw records in `.artifacts/arv2/raw/<provider>/`, the ledger in
 
 The `provider_call_ledger` table and the `artifact`-backed raw sink land with D1/A7; R1 ships the
 sinks' protocols and the file/memory implementations.
+
+## Notes recorded at R1 integration (2026-09-07)
+
+- **The one native call.** `gemini_media_client.transcribe_long` is the only ARV2 call that bypasses
+  OpenRouter (founder ruling): OpenRouter serves neither `gemini-3.5-transcribe` nor a file upload.
+  It reads `Secrets.gemini_api_key`, sends it as `x-goog-api-key` (never `?key=`), and its cost is
+  computed from `usageMetadata` with the proof-of-concept price sheet. Short items and embeddings go
+  through OpenRouter like every other model call.
+- **`ffmpeg` is a test-only dependency**: the Gemini live suite cuts a 180 s clip for the short path
+  and skips when `ffmpeg` is absent. Production never cuts audio.
+- **Two `AudioFile` types exist** — `media_feeds_client.AudioFile` (a downloaded enclosure: path,
+  bytes, sha256, duration, content type) and `gemini_media_client.AudioFile` (a transcription input:
+  path, duration, mime type, container format). R2 converts one to the other at the seam; the
+  package `__init__` therefore exports client entry points only, never the value types.
+- **Every client keeps its own typed failures** (`BoardNotFound`, `UnsupportedMediaHost`,
+  `MediaCeilingExceeded`, …) subclassing `Arv2Error`; consolidation into `errors.py` is deferred.
+- **Halt rules are provider-specific on purpose**: Exa's ignores 2xx bodies (a successful dossier
+  about a fintech names "credit" constantly); AI Ark's and the media client's check any 4xx/5xx body.

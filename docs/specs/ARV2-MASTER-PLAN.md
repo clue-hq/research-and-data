@@ -431,7 +431,7 @@ boot-time audit refuses to start if an old tool is re-granted; the old tools are
 | D14 (=P1) | **A project targets a set of products, not one** — `project_product` versioned set; `product_set_selection` gate with `selected_option_refs[]`; `project.product_id` frozen legacy (`ARV2-PRODUCT-CATALOG-CONTRACT.md` §6) | Aryan overruled the single-product recommendation | ✓ (2026-09-07, "a very important ruling") | ☐ |
 | D15 (=P2) | The set changes any time as a new version; runs keep the version they pinned; nothing is re-researched automatically | Yes | ✓ (2026-09-07) | ☐ |
 | D16 (=P3/P4) | Exactly one ICP per project, targeting the whole product set (no per-ICP subset) | Aryan's ruling (the recommendation had been "subset allowed") | ✓ (2026-09-07) | ☐ |
-| D17 | The Exa `outputSchema` for the product catalog (9 properties, depth 2, `aliases` dropped) and the `ProductCatalogResearch@1` artifact mapping (`ARV2-PRODUCT-CATALOG-CONTRACT.md` §3–§4) | As written | ✓ (2026-09-07) | ☐ |
+| D17 | The Exa `outputSchema` for the product catalog (8 properties, depth 2, `aliases` dropped) and the `ProductCatalogResearch@1` artifact mapping (`ARV2-PRODUCT-CATALOG-CONTRACT.md` §3–§4) | As written | ✓ (2026-09-07) | ☐ |
 
 ## 13. The first ten steps, in order
 

@@ -29,8 +29,9 @@ SECRET_HEADERS: frozenset[str] = frozenset(
     {"authorization", "x-token", "x-api-key", "x-goog-api-key"}
 )
 
-#: Query parameters whose value is a credential. Gemini's native API takes its key as ``?key=``.
-SECRET_QUERY_PARAMS: frozenset[str] = frozenset({"key"})
+#: Query parameters whose value is a credential. Gemini's native API takes its key as ``?key=``,
+#: and its Files API hands back a pre-authorised resumable-upload URL keyed by ``upload_id``.
+SECRET_QUERY_PARAMS: frozenset[str] = frozenset({"key", "upload_id"})
 
 _MASK = "***"
 

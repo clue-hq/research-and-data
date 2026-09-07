@@ -16,6 +16,8 @@ Two rules govern every module in this package, and both are machine-checked by
 
 from __future__ import annotations
 
+from clue_api.arv2.ai_ark_client import AiArkClient
+from clue_api.arv2.ats_client import AtsBoard, BoardNotFound, fetch_postings, find_board
 from clue_api.arv2.calls import (
     DEFAULT_RETRY_STATUSES,
     CallResult,
@@ -33,6 +35,16 @@ from clue_api.arv2.errors import (
     ProviderHalted,
     ProviderTransportError,
     RawParseError,
+)
+from clue_api.arv2.exa_client import ExaClient
+from clue_api.arv2.gemini_media_client import GeminiMediaClient, MediaBudget, MediaCeilingExceeded
+from clue_api.arv2.media_feeds_client import (
+    UnsupportedMediaHost,
+    download_enclosure,
+    fetch_feed,
+    find_episode,
+    youtube_metadata,
+    youtube_words,
 )
 from clue_api.arv2.openrouter import (
     openrouter_chat_request,
@@ -68,6 +80,21 @@ from clue_api.arv2.transport import (
 )
 
 __all__ = [
+    "AiArkClient",
+    "AtsBoard",
+    "BoardNotFound",
+    "ExaClient",
+    "GeminiMediaClient",
+    "MediaBudget",
+    "MediaCeilingExceeded",
+    "UnsupportedMediaHost",
+    "download_enclosure",
+    "fetch_feed",
+    "fetch_postings",
+    "find_board",
+    "find_episode",
+    "youtube_metadata",
+    "youtube_words",
     "BROWSER_USER_AGENT",
     "DEFAULT_RETRY_STATUSES",
     "Arv2Error",
