@@ -207,6 +207,22 @@ def test_a_step_cannot_belong_to_a_workspace_its_run_does_not() -> None:
     run_async(scenario())
 
 
+@pytest.mark.usefixtures("require_db")
+def test_the_python_gate_kind_allowlist_mirrors_the_db_check() -> None:
+    """insert_gate validates against GATE_KINDS; the trigger/CHECK validate against the DB.
+
+    They must be the same set.
+    """
+    from clue_api.agent_gate import GATE_KINDS
+
+    async def scenario() -> set[str]:
+        async with db_lifespan() as engine, engine.connect() as conn:
+            gate = await _constraints(conn, "agent_gate")
+        return set(re.findall(r"'([a-z_]+)'", gate["agent_gate_kind"]))
+
+    assert run_async(scenario()) == set(GATE_KINDS)
+
+
 def _normalized_sql(sql: str) -> str:
     return re.sub(r"\s+", " ", sql).strip()
 
