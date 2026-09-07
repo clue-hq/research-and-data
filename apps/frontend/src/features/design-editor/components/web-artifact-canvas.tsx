@@ -1,17 +1,9 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { PendingAnnotation } from "../adapter/annotations";
-import { initialVeilState, nextVeilState } from "../adapter/generating-veil";
+import type { VeilRenderKind } from "../adapter/generating-veil";
 import { canvasSandbox } from "../adapter/view-mode-html";
 import {
   addressKey,
@@ -28,14 +20,8 @@ import type {
 } from "../engine/webDocuments";
 import { useWebBridgeSelection } from "../hooks/use-web-bridge-selection";
 import { useWebRender } from "../hooks/use-web-render";
-import { GeneratingGlow, WebsiteGeneratingVeil } from "./generating";
 import { WebAnnotationPopover } from "./web-annotation-popover";
 import styles from "./web-artifact-canvas.module.css";
-// The cofounder's approved motion (handoff ad4f30bb) is a plain stylesheet, not
-// a CSS module — its class names are the contract between the sheet and the
-// three components. Imported ONCE here, where the website output pane is
-// composed; the App Router allows a global sheet from a client component.
-import "./generating/generating.css";
 import { WebRichTextToolbar } from "./web-rich-text-toolbar";
 
 /**
@@ -136,9 +122,9 @@ export function WebArtifactCanvas({
   controlsRef,
   documentId,
   editing = false,
-  generating = false,
   onCloneTextCommit,
   onNavigate,
+  onRenderKindChange,
   onRichTextCommit,
   onRichTextSessionChange,
   onSelect,
@@ -158,11 +144,6 @@ export function WebArtifactCanvas({
   /** W4 addendum: the mode switch. False (the default) mounts the bridge-free
    * view render — an actual website, links opening in new tabs. */
   editing?: boolean;
-  /** An agent turn is in flight on THIS thread's open design leg — raise the
-   * generating veil over the pane. Passed by the chats route only; the
-   * standalone artifact route has no turn stream to read, so it passes nothing
-   * and the default keeps that route exactly as it is. */
-  generating?: boolean;
   /** Slice 3 (R-A6): the in-frame clone text editor committed — the owner
    * persists ONE `set_fragment_text_override` op. The address always carries a
    * structural path (the validator drops one that does not). */
@@ -178,6 +159,12 @@ export function WebArtifactCanvas({
   /** W4.8a: a text node's in-iframe session committed — the owner persists ONE
    * `set_rich_text` op through the manual-edits controller. */
   onRichTextCommit?: (nodeId: string, content: RichTextDocument) => void;
+  /** The render state, mirrored up on every change. The output stage owns the
+   * "agent is generating" veil (it has to: the veil must show from leg-open,
+   * before any document exists to mount this canvas at all), and its hold rule
+   * needs to know when the render that a turn produced has actually landed.
+   * Nothing here reads it back — this canvas is only the reporter. */
+  onRenderKindChange?: (kind: VeilRenderKind) => void;
   /** W4.8a: the session state mirrored up on every change. */
   onRichTextSessionChange?: (state: WebRichTextSessionState) => void;
   /** W2.2: canvas selection events from the injected bridge, nonce-validated
@@ -217,9 +204,9 @@ export function WebArtifactCanvas({
       controlsRef={controlsRef}
       documentId={documentId}
       editing={editing}
-      generating={generating}
       onCloneTextCommit={onCloneTextCommit}
       onNavigate={onNavigate}
+      onRenderKindChange={onRenderKindChange}
       onRichTextCommit={onRichTextCommit}
       onRichTextSessionChange={onRichTextSessionChange}
       onSelect={onSelect}
@@ -238,9 +225,9 @@ function DocumentRender({
   controlsRef,
   documentId,
   editing,
-  generating,
   onCloneTextCommit,
   onNavigate,
+  onRenderKindChange,
   onRichTextCommit,
   onRichTextSessionChange,
   onSelect,
@@ -255,12 +242,12 @@ function DocumentRender({
   controlsRef?: RefObject<WebArtifactCanvasControls | null>;
   documentId: string;
   editing: boolean;
-  generating: boolean;
   onCloneTextCommit?: (
     address: WebElementAddress,
     override: WebFragmentTextOverride,
   ) => void;
   onNavigate?: (pageId: string) => void;
+  onRenderKindChange?: (kind: VeilRenderKind) => void;
   onRichTextCommit?: (nodeId: string, content: RichTextDocument) => void;
   onRichTextSessionChange?: (state: WebRichTextSessionState) => void;
   onSelect?: (selection: WebSelection | null) => void;
@@ -435,26 +422,23 @@ function DocumentRender({
     });
   }, [editingNodeId, richTextError, richTextSelection]);
 
-  // The veil's hold rule (adapter/generating-veil.ts): the busy signal ARMS the
-  // blur, the render DISARMS it, so the blur never lifts onto the page the turn
-  // just replaced. Driven with React's own adjust-state-on-prop-change — a
-  // render-time comparison, the pattern `scene-artifact-canvas.tsx` and
-  // `use-scene-manual-edits.ts` already use — never a setState in an effect
-  // (this repo's react-hooks lint bars it, and an effect would paint one frame
-  // of the stale answer first). The reducer is idempotent, which is what lets
-  // this converge in one extra pass.
-  const [veil, setVeil] = useState(initialVeilState);
-  const nextVeil = nextVeilState(veil, {
-    generating,
-    reloadToken,
-    renderKind: state.kind,
+  // The render state, mirrored up to the stage's generating veil. Same
+  // discipline as the session mirror directly above and as the callback-ref
+  // updates in use-web-bridge-selection.ts: a passive effect calling the
+  // PARENT's setter, never a setState of this component's own state (which this
+  // repo's react-hooks lint bars, and which would paint one stale frame first).
+  // The latest callback lives in a ref so a caller passing an inline closure
+  // cannot make this re-fire on every render.
+  const onRenderKindChangeRef = useRef(onRenderKindChange);
+  useEffect(() => {
+    onRenderKindChangeRef.current = onRenderKindChange;
   });
-  if (nextVeil !== veil) setVeil(nextVeil);
-  const veilActive = nextVeil.active;
+  useEffect(() => {
+    onRenderKindChangeRef.current?.(state.kind);
+  }, [state.kind]);
 
-  let content: ReactNode;
   if (state.kind === "ready") {
-    content = (
+    return (
       <>
         <iframe
           ref={iframeRef}
@@ -527,50 +511,31 @@ function DocumentRender({
           : null}
       </>
     );
-  } else if (state.kind === "error") {
-    content = (
+  }
+
+  if (state.kind === "error") {
+    return (
       <div className={styles.stateFrame} role="alert">
         <p className={styles.stateTitle}>Preview failed</p>
         <p className={styles.stateHint}>{state.message}</p>
       </div>
     );
-  } else if (state.kind === "loading") {
-    content = (
+  }
+
+  if (state.kind === "loading") {
+    return (
       <div className={styles.stateFrame} role="status">
         <p className={styles.stateHint}>Loading preview…</p>
       </div>
     );
-  } else {
-    content = (
-      <div className={styles.stateFrame}>
-        <p className={styles.stateTitle}>Your website will render here</p>
-        <p className={styles.stateHint}>
-          Describe what you want in the chat and the agent will build it.
-        </p>
-      </div>
-    );
   }
 
-  // ONE host for every render state, so the veil covers the previous page, the
-  // loading frame, the error frame, and the empty state alike — whichever of
-  // them a turn happens to start over. `.clue-gen-host` supplies the positioning
-  // context and the stacking root the delivered sheet needs (both overlays are
-  // `position: absolute; inset: 0`); `.canvasHost` makes it fill the canvas
-  // exactly, which is what the iframe's own `height: 100%` used to measure
-  // against directly.
-  //
-  // INTERACTION: an INACTIVE veil is `pointer-events: none` in the sheet
-  // (`.clue-gen-veil` sets it; only `[data-active="true"]` turns it back on), so
-  // it cannot intercept a click, a hover, or a double-click in Edit mode —
-  // annotations, the comment box, and the in-frame text editors all reach the
-  // iframe untouched when no turn is running. While a turn IS running the veil
-  // deliberately swallows input over the pane. The glow is decorative and
-  // `pointer-events: none` in both states.
   return (
-    <div className={`clue-gen-host ${styles.canvasHost}`}>
-      {content}
-      <WebsiteGeneratingVeil active={veilActive} />
-      <GeneratingGlow active={veilActive} />
+    <div className={styles.stateFrame}>
+      <p className={styles.stateTitle}>Your website will render here</p>
+      <p className={styles.stateHint}>
+        Describe what you want in the chat and the agent will build it.
+      </p>
     </div>
   );
 }

@@ -29,6 +29,15 @@ import type {
   Scene,
 } from "@/features/design-editor/engine/scene/contracts";
 import type { SceneExportStatus } from "@/features/design-editor/adapter/scene-export";
+import {
+  initialVeilState,
+  nextVeilState,
+  type VeilRenderKind,
+} from "@/features/design-editor/adapter/generating-veil";
+import {
+  GeneratingGlow,
+  WebsiteGeneratingVeil,
+} from "@/features/design-editor/components/generating";
 import type {
   WebElementAddress,
   WebSelection,
@@ -50,6 +59,11 @@ import type {
 import { ArtifactHeader } from "./artifact-header";
 import { ArtifactTabs } from "./artifact-tabs";
 import styles from "./chat-shell.module.css";
+// The cofounder's approved motion (handoff ad4f30bb) is a plain stylesheet, not
+// a CSS module — its class names are the contract between the sheet and the
+// components. Imported ONCE here, where the output pane is composed; the App
+// Router allows a global sheet from a client component.
+import "@/features/design-editor/components/generating/generating.css";
 
 // W0.5 (founder amendment, 2026-08-17): the gallery rides along as
 // presentation-only chrome — the tab and the gallery surface render with the
@@ -146,10 +160,12 @@ export function ArtifactStage({
    * to the export menu's status line. Absent leaves the menu announcing
    * its controller's own optimistic line, exactly as it does today. */
   exportStatus?: SceneExportStatus | null;
-  /** An agent turn is in flight on this thread's open design leg. The WEB canvas
-   * raises its generating veil over the pane; nothing else in the stage reads
-   * it. Passed by the chats route only — the standalone artifact route has no
-   * turn stream, the same posture as `sceneGestureDisabled` below. */
+  /** An agent turn is in flight on this thread's open design leg — the arming
+   * signal for the WEBSITE pane's generating veil (the stage owns the hold rule
+   * that decides when it lifts). The ad branch reads nothing: the ad lock is not
+   * integrated (founder ruling, 2026-09-07). Passed by the chats route only —
+   * the standalone artifact route has no turn stream, the same posture as
+   * `sceneGestureDisabled` below. */
   generating?: boolean;
   onActivateArtifact: (artifactId: string) => void;
   /** AD4.D step 3: the export menu asking the ad session to render the settings
@@ -270,11 +286,49 @@ export function ArtifactStage({
     useState<ArtifactPreviewDevice>("Desktop");
   const webCanvasClass = [
     styles.webCanvas,
+    // `.clue-gen-host` (generating.css) supplies the positioning context and
+    // the stacking root the veil and the glow need — both are
+    // `position: absolute; inset: 0` inside it. It goes on the wrapper that
+    // renders WHETHER OR NOT a document is open, which is the whole point of
+    // hosting here (see the mount below).
+    "clue-gen-host",
     previewDevice === "Tablet" ? styles.webCanvasTablet : "",
     previewDevice === "Mobile" ? styles.webCanvasMobile : "",
   ]
     .filter(Boolean)
     .join(" ");
+
+  // The website pane's "agent is generating" motion (cofounder handoff
+  // ad4f30bb), hosted HERE rather than inside `WebArtifactCanvas` — founder
+  // ruling, 2026-09-07 (the handover's done-when #1). On the very first landing
+  // page there is no web document yet, so the canvas is not mounted at all; a
+  // veil living inside it could not appear until the artifact was born, which
+  // is precisely when the user stops needing it. This wrapper is always here.
+  //
+  // The canvas reports its render state up (`onRenderKindChange`) and the hold
+  // rule lives on this side. With no document open there is no canvas to report
+  // anything, and an absent page IS the empty state — so `empty` is both the
+  // seed and the derived answer, which also means a closed artifact can never
+  // strand the veil on a stale `loading` from the document before it.
+  const [renderKind, setRenderKind] = useState<VeilRenderKind>("empty");
+  const effectiveKind: VeilRenderKind = activeDocumentId ? renderKind : "empty";
+  // React's own adjust-state-on-prop-change (a render-time comparison, the
+  // pattern `scene-artifact-canvas.tsx` and `use-scene-manual-edits.ts` already
+  // use), never a setState in an effect: this repo's react-hooks lint bars that,
+  // and an effect would paint one frame of the stale answer first. The reducer
+  // returns its own previous object when nothing moved, which is what makes
+  // this converge.
+  const [veil, setVeil] = useState(initialVeilState);
+  const nextVeil = nextVeilState(veil, {
+    generating: generating ?? false,
+    reloadToken: canvasReloadToken ?? 0,
+    renderKind: effectiveKind,
+    documentId: activeDocumentId ?? null,
+  });
+  if (nextVeil !== veil) setVeil(nextVeil);
+  // The motion is the WEBSITE half only: the ad lock is not integrated
+  // (founder ruling, 2026-09-07), so the ad branch below mounts nothing.
+  const veilActive = artifactKind === "web" && nextVeil.active;
   // AD2.10: a mounted ad canvas owns the whole stage as its viewport; the
   // designed empty state keeps the centred card.
   const adStageClass = activeDocumentId
@@ -332,7 +386,7 @@ export function ArtifactStage({
                     controlsRef={canvasControlsRef}
                     documentId={activeDocumentId}
                     editing={editing}
-                    generating={generating}
+                    onRenderKindChange={setRenderKind}
                     /* F5 task 20: a site-internal link clicked inside the
                      * canvas switches the page through the very same session
                      * setter the header's switcher uses — one active page, one
@@ -350,6 +404,22 @@ export function ArtifactStage({
                     selectedNodeId={selectedCanvasNodeId}
                   />
                 ) : null}
+                {/* Veil under glow (z-6 < z-7, per the delivered sheet), both
+                 * after the canvas so they sit over whatever it is showing —
+                 * the previous page, the loading frame, the error frame, or the
+                 * designed empty state on a first request.
+                 *
+                 * INTERACTION: an INACTIVE veil is `pointer-events: none` in
+                 * the sheet (`.clue-gen-veil` sets it; only
+                 * `[data-active="true"]` restores `pointer-events: auto`), so
+                 * between turns it cannot intercept a click, a hover, or a
+                 * double-click — Edit-mode annotations, the comment box, and the
+                 * in-frame text editors all reach the iframe untouched. While a
+                 * turn IS running the veil deliberately swallows input over the
+                 * pane. The glow is decorative and `pointer-events: none` in
+                 * both states. */}
+                <WebsiteGeneratingVeil active={veilActive} />
+                <GeneratingGlow active={veilActive} />
               </div>
             ) : activeDocumentId ? (
               /* AD2.10 (founder ruling, 2026-08-20): the mounted scene canvas

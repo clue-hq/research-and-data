@@ -39,17 +39,3 @@
   font-size: 13px;
   color: var(--chat-shell-subtle);
 }
-
-/*
- * The generating-motion host (cofounder handoff ad4f30bb). `.clue-gen-host` in
- * generating.css supplies `position: relative` and the stacking root; the size
- * is ours, because the veil and the glow are `inset: 0` and must cover the
- * canvas area exactly. Filling the pane is also what keeps `.frame`'s
- * `height: 100%` measuring what it measured before this wrapper existed — the
- * stage's `.webCanvas` is a flex item with a definite height, and this host
- * passes it straight through.
- */
-.canvasHost {
-  width: 100%;
-  height: 100%;
-}
