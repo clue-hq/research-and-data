@@ -315,3 +315,28 @@ Rev 1's `round_shape_rejected` row is gone with the per-round cap.
 
 Ruled 2026-09-08 and closed: the stop policy (§1), full mode only (§1), the tool names (§0 stands
 unless renamed at R2 planning), and all four items above. Nothing in this document awaits a ruling.
+
+## 7. Implementation notes from the R2 plan (2026-09-08) — how the approved substance lands in code
+
+Recorded here so the catalog files and the code never drift silently from this document. Full text in
+`docs/superpowers/plans/2026-09-08-arv2-r2-account-agent.md` §"Decisions recorded by this plan".
+
+1. **`structure_material` writes directly.** §3.4 item 3 asked the agent to review field meaning
+   before writing. Echoing every extracted claim back through the model would re-type verbatim spans
+   (the fabrication risk R1 exists to remove) and double the tokens; so the tool writes what the
+   structuring pass produced — the PoC's proven lane — and the agent corrects by writing a new claim
+   carrying `corrects_claim_id`. The dossier skill says so.
+2. **The stop-policy numbers live in env settings** (`CLUE_ARV2_ACCOUNT_MAX_MODEL_ROUNDS=100`,
+   `…_MAX_TOOL_CALLS_PER_ROUND=50`, `…_MAX_RUNTIME_S=1800`), not in `profile.md`: the profile is bytes
+   that are hashed, never parsed, and "a change is an env change, never a profile version" applies to
+   limits as it does to models. `profile.md` states the policy in words and names the keys.
+3. **No filesystem workspace.** The `context/*.md` names in §1 survive as headings of system-prompt
+   sections; `read_account_state` serves the same text on demand.
+4. **Person subjects are refused in R2** (`structure_material(subject_kind="person")` →
+   `invalid_arguments`) until R3 composes contact entities; committee members are account-level
+   `account.committee_candidate` claims.
+5. **Fit verdicts are claims** (`account.icp_fit_verdict`, born `outreach_safe=false`), and a `fail`
+   that cites no contrary evidence is downgraded to `unclear` in code, so leniency does not depend on
+   the model.
+6. One extra manual row exists for the per-round ceiling: `too_many_parallel_calls` (the excess calls
+   of a round are refused and re-issued next round). `round_shape_rejected` stays retired.

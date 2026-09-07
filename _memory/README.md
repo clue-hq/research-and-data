@@ -513,3 +513,4 @@ The central architecture bet is that verification must be modeled at the claim/d
 - **2026-08-01 — Stage-0 acceptance run PASSED** (`2026-08-01-stage0-acceptance-run.md`): structured-output repair plan + F6/F7/F8 landed; live Terra interview → grounded confirmed ICP; entailment-strictness product finding; Sumble canary is next.
 
 - **2026-08-10 — Part II D8 CLOSED; Part II COMPLETE (D0–D8)** (`2026-08-10-part2-d8-close.md`): outbox consolidation (one DAL owner + `clue_core.run_event` contract-delta), dead liveness net deleted, retention (token sweep ON / design pruner OFF with in-code floors), Part-II gate machine-checked end to end, DSAR **assessed not wired** (`docs/specs/PD-D8-dsar-assessment.md`); founder items: pruner enablement + the standing D2.2/D4 flags.
+- `2026-09-08-arv2-r2-account-agent.md` — R2 plan + facts written; own rows/kind/loop decisions; ready to execute (Task 7 = founder-triggered live acceptance)
