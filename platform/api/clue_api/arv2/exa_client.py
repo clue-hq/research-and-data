@@ -27,7 +27,8 @@ Nothing here opens a socket: every call is a :class:`~clue_api.arv2.calls.CallSp
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+import time
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
@@ -43,7 +44,7 @@ from clue_api.arv2.calls import (
     ProviderCaller,
     SpendEstimate,
 )
-from clue_api.arv2.transport import HttpResponse, json_request
+from clue_api.arv2.transport import HttpRequest, HttpResponse, json_request
 
 #: Exa's API root. A parameter on the client rather than a constant in a body builder, so a
 #: proxy or a regional endpoint is a call-site decision.
@@ -622,6 +623,52 @@ def _read_output(body: Mapping[str, Any]) -> tuple[str, object | None, object | 
     return json.dumps(output, indent=2), None, grounding
 
 
+def _agent_status(run: Mapping[str, Any]) -> str:
+    status = run.get("status")
+    return status if isinstance(status, str) else "unparseable"
+
+
+def _agent_result(
+    run: Mapping[str, Any],
+    run_id: str | None,
+    legs: Sequence[CallResult],
+    polls: int,
+    *,
+    status: str,
+    error_code: str | None = None,
+    error_message: str | None = None,
+) -> ExaAgentRun:
+    output = run.get("output")
+    output = output if isinstance(output, dict) else {}
+    error = run.get("error")
+    error = error if isinstance(error, dict) else {}
+    completed = status == "completed"
+    grounding = output.get("grounding") if completed else None
+    text = output.get("text") if completed else None
+    stop_reason = run.get("stopReason")
+    usage = run.get("usage")
+    last = legs[-1]
+    return ExaAgentRun(
+        run_id=run_id,
+        status=status,
+        stop_reason=stop_reason if isinstance(stop_reason, str) else None,
+        output_text=text if isinstance(text, str) else None,
+        structured=output.get("structured") if completed else None,
+        grounding=list(grounding) if isinstance(grounding, list) else [],
+        usage=dict(usage) if isinstance(usage, dict) else {},
+        cost_usd=last.cost.cost_usd,
+        error_code=error_code
+        or (error.get("code") if isinstance(error.get("code"), str) else None),
+        error_message=error_message
+        or (error.get("message") if isinstance(error.get("message"), str) else None),
+        polls=polls,
+        raw_refs=tuple(ref for leg in legs for ref in leg.raw_refs),
+        ledger_row_ids=tuple(leg.ledger_row_id for leg in legs),
+        costs=tuple(leg.call_cost for leg in legs),
+        cost=last.call_cost,
+    )
+
+
 def _read_report(parsed: object | None) -> str | None:
     """The ``report`` string out of a parsed output, or ``None`` when the schema had no report.
 
@@ -684,10 +731,16 @@ class ExaClient:
         api_key: SecretStr,
         *,
         base_url: str = EXA_BASE_URL,
+        sleep: Callable[[float], None] = time.sleep,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._caller = caller
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
+        # Injected for the poll loop only (the wrapper has its own for retry backoff): a test
+        # drives the sequence without waiting, production waits for real.
+        self._sleep = sleep
+        self._monotonic = monotonic
 
     def search(
         self,
@@ -818,7 +871,117 @@ class ExaClient:
         kept = retry if _is_richer(retry, first) else first
         return replace(kept, retried=True)
 
+    def agent_run(
+        self,
+        *,
+        query: str,
+        output_schema: Mapping[str, object],
+        effort: str,
+        system_prompt: str | None = None,
+        label: str = "exa-agent",
+        poll_interval_s: float = 4.0,
+        timeout_s: float = 900.0,
+    ) -> ExaAgentRun:
+        """One Exa Agent run: create, then poll until terminal or ``timeout_s`` of wall time.
+
+        Blocking by design (R2 composition constraint): the driver calls this through
+        ``asyncio.to_thread``. Each leg is one wrapped call with its own raw record and ledger
+        row; the create leg reserves the effort's fixed price, the polls reserve nothing, and the
+        completed body's ``costDollars`` settles the last row as metered.
+        """
+        body = agent_run_body(
+            query=query, output_schema=output_schema, effort=effort, system_prompt=system_prompt
+        )
+        started = self._monotonic()
+        legs: list[CallResult] = []
+        create = self._agent_call(
+            operation="agent-create",
+            label=label,
+            method="POST",
+            path="/agent/runs",
+            body=body,
+            estimate=SpendEstimate(usd=AGENT_EFFORT_ESTIMATE_USD[effort]),
+        )
+        legs.append(create)
+        run = _body_json(create.response)
+        run_id = run.get("id") if isinstance(run.get("id"), str) else None
+        polls = 0
+        while _agent_status(run) not in AGENT_TERMINAL_STATUSES:
+            if run_id is None:
+                return _agent_result(
+                    run,
+                    run_id,
+                    legs,
+                    polls,
+                    status="unparseable",
+                    error_code="no_run_id",
+                    error_message="create returned no run id",
+                )
+            if self._monotonic() - started > timeout_s:
+                return _agent_result(
+                    run,
+                    run_id,
+                    legs,
+                    polls,
+                    status="timed_out",
+                    error_code="timeout",
+                    error_message=f"run not terminal after {timeout_s:.0f}s",
+                )
+            self._sleep(poll_interval_s)
+            poll = self._agent_call(
+                operation="agent-poll",
+                label=f"{label}-poll",
+                method="GET",
+                path=f"/agent/runs/{run_id}",
+                body=None,
+                estimate=SpendEstimate(),
+            )
+            legs.append(poll)
+            polls += 1
+            run = _body_json(poll.response)
+        return _agent_result(run, run_id, legs, polls, status=_agent_status(run))
+
     # -- internals -----------------------------------------------------------------------------
+
+    def _agent_call(
+        self,
+        *,
+        operation: str,
+        label: str,
+        method: str,
+        path: str,
+        body: Mapping[str, Any] | None,
+        estimate: SpendEstimate,
+    ) -> CallResult:
+        """One Agent leg. Bearer auth is what the Agent guide documents (search uses x-api-key)."""
+        headers = {"Authorization": f"Bearer {self._api_key.get_secret_value()}"}
+        if body is None:
+            request = HttpRequest(
+                method=method,
+                url=f"{self._base_url}{path}",
+                headers=headers,
+                body=None,
+                timeout_s=AGENT_LEG_TIMEOUT_S,
+            )
+        else:
+            request = json_request(
+                method,
+                f"{self._base_url}{path}",
+                headers=headers,
+                json_body=dict(body),
+                timeout_s=AGENT_LEG_TIMEOUT_S,
+            )
+        return self._caller.call(
+            CallSpec(
+                provider=PROVIDER,
+                operation=operation,
+                label=label,
+                request=request,
+                estimate=estimate,
+                cost_reader=exa_agent_cost_reader,
+                halt_rule=exa_halt_rule,
+            )
+        )
 
     def _deep_call(self, body: Mapping[str, Any], *, label: str, timeout_s: float) -> ExaDeepResult:
         result = self._call(
