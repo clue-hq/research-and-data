@@ -66,7 +66,34 @@ needed for custom-component compiles.
 
 Get the two env files from a teammate **privately** (never through the repo): the root
 `.env` and `apps/frontend/.env.local`. Both are at full key parity with their `.env.example`.
-Then change only the machine-specific lines in the root `.env`:
+
+> **Do not copy the shared `.env` blindly.** Every path and address in it describes the
+> machine it came from: the sender's checkout directory, the sender's Postgres and Redis,
+> the sender's ports. Copied as-is, the stack either fails to start (helper binary not
+> found, database refused) or — worse — starts and silently writes blobs to a path that
+> does not exist on your disk. Go through the table below line by line and set each value
+> for **your** machine before the first `up`.
+
+Keys whose values are machine-specific (audit them all; the rest of the file travels as-is):
+
+| Key | What it must say on YOUR machine |
+|---|---|
+| `CLUE_DATABASE_URL` | your Postgres, your database name (the sender's names their worktree's DB, e.g. `clue_colombo` on port 55040 in Docker) |
+| `CLUE_DEV_DB_URL` | the same database, `postgresql+psycopg://` form, for `scripts/dev_stack.sh` |
+| `CLUE_REDIS_URL` | your Redis (`redis://localhost:6379/<n>`) |
+| `CLUE_STORAGE_FS_ROOT` | the **absolute** path to this checkout's `.artifacts` |
+| `LUMEN_CORE_HELPER` | the absolute path to `subsystems/clue-design/target/release/lumen-api-helper` **in this checkout** (built in §3) |
+| `CLUE_AGENT_WORKSPACE_ROOT` | a scratch dir you own, e.g. `/private/tmp/clue-agent-workspaces` |
+| `CLUE_DEV_FRONTEND_PORT`, `CLUE_DEV_DESIGN_PORT`, `CLUE_DEV_PLATFORM_PORT`, `CLUE_DEV_PLATFORM_PORT_2`, `CLUE_DEV_LOG_SUFFIX` | your port map (the defaults 3020/8010/8020/8030 are fine on a machine running one stack) |
+| `CLUE_DESIGN_API_BASE_URL`, `LUMEN_API_ORIGIN` | `http://127.0.0.1:<your design port>` |
+| `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES`, `LUMEN_API_CORS_ORIGINS` | must include `http://localhost:<your frontend port>` |
+
+And in `apps/frontend/.env.local`: `CLUE_APP_ORIGIN` (`http://localhost:<your frontend port>`),
+`CLUE_API_BASE_URL` (`http://127.0.0.1:<your platform port>`), `LUMEN_API_BASE_URL`
+(`http://127.0.0.1:<your design port>`), and `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES` (same list
+as the root file). The Clerk keys and every API key travel unchanged.
+
+Then the remaining flags to check in the root `.env`:
 
 | Key | Set to |
 |---|---|
