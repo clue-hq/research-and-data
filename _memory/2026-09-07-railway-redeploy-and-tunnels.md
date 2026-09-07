@@ -86,3 +86,22 @@ stop drains in-flight, supervision crash isolated, N≥1), 1 in `tests/api/test_
   makes pydantic-settings json-decode "" and the app cannot start — caught by the load check before
   any restart. Both Settings classes verified loading from the sourced `.env`. Noted for the founder:
   `LUMEN_AD_DNA_MODEL` code default is grok-4.5 while every other model pin is grok-4.6.
+
+## 2026-09-08 ~01:05 IST — origin/design/website merged into design/scene-ad (`5a20f2f9c`)
+105 commits / 189 files. Conflicts (all unions): generating module (website veil + scene-ad lock
+share one sheet/index; z-index 41/42/43 kept), artifact-stage/-header props, image-inspector (ours),
+both .env.example files (SELF_SERVE stays 1; dup keys removed), CLAUDE.md + _memory/README.md.
+Alembic had two heads → merge revision `fa0b41b0ffdc`; throwaway DB `clue_plan1_test` migrated to it
+and the incoming platform DB tests pass there. Frontend: 2801 tests pass, lint 0 errors; `tsc --noEmit`
+shows two PRE-EXISTING test-file typing errors (wasmHandshake/libraryFonts tests, untouched since Aug)
+that `next build` does not trip on. Merge removed jsdom (unused on this branch). lumen-core untouched;
+lumen-web changed → release helper rebuilt in an isolated target dir (`/tmp/colombo-target-merge`) so
+the live binary was not swapped under the running design API. New .env keys added for colombo
+(CLUE_DEV_*, LUMEN_AGENT_WEB_SOLO=1, LUMEN_AGENT_OPENROUTER_CHAT_COMPLETIONS=1).
+NOT yet done (needs the founder's go — interrupts live testing): `alembic upgrade head` on
+clue_colombo (3 new revisions + merge), copy the new helper over `target/release/lumen-api-helper`,
+restart design API / platform API / worker; Railway needs a fast-forward push of v4 to pick up the
+frontend. Mistake logged: a "focused" platform test run sourced `.env` and one DB-backed test
+(`test_agent_turn_submission_note.py`) tried to migrate the SHARED clue_colombo — it failed harmlessly
+on the two-heads error before touching anything (verified `alembic current` unchanged). Rule: always
+override CLUE_DATABASE_URL to the throwaway DB before ANY pytest, not just `_db` files.
