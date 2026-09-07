@@ -1,6 +1,6 @@
 # ARV2 S7 — the account agent's content, substance for founder review (2026-09-07, rev 2 2026-09-08)
 
-**Status: DRAFT FOR REVIEW — nothing here is a catalog file yet.** Per the skill-authoring rule,
+**Status: SUBSTANCE APPROVED 2026-09-08 (all §6 items ruled) — nothing here is a catalog file yet; the S7 file charter writes the five files verbatim from this document.** Per the skill-authoring rule,
 the substance of every agent-facing file is put in front of the founder and discussed before any
 `platform/agents/catalog/entity-research/arv2-account/v1/` file is written. Once approved, an Opus
 implementer writes the five files verbatim from this document, the reviewer (Fable) checks them
@@ -305,11 +305,13 @@ Rev 1's `round_shape_rejected` row is gone with the per-round cap.
    fail`, with `fail` only on positive contrary evidence) that the finalization summary carries per
    gate with the claim ids behind each (`fit_verdicts`). The human decides fit; the agent excludes
    nothing. Pre-launch qualification is R4 discovery's job, not R2's.
-2. Whether every section-11 negatives claim is born `outreach_safe = false`, or only the sensitive
-   subset. Recommendation: all of section 11 (z7's rule: anything you would not say out loud in a
-   first email).
-3. The twelve-section merge in §3.2 versus the master plan's "ten-section" wording.
-4. The intent-sweep `mode` on the structuring client (an R1 client extension R2 would own).
+2. ~~Negatives and `outreach_safe`.~~ **RULED 2026-09-08: every section-11 claim is born
+   `outreach_safe = false`** (z7's rule — anything you would not say out loud in a first email). A
+   human may flip a single claim to safe later when it is a genuine opener.
+3. ~~Ten or twelve sections.~~ **RULED 2026-09-08: twelve.** Master plan §9 R2 row corrected from
+   "the ten-section dossier" to "the twelve-section dossier" the same day.
+4. ~~The intent-sweep mode.~~ **RULED 2026-09-08: R2 extends the R1 structuring client with a
+   `mode` (`broad | intent_sweep`)** — one client, two prompts, one subject per call in both.
 
 Ruled 2026-09-08 and closed: the stop policy (§1), full mode only (§1), the tool names (§0 stands
-unless renamed at R2 planning), the gates (item 1 above).
+unless renamed at R2 planning), and all four items above. Nothing in this document awaits a ruling.

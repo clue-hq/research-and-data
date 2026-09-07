@@ -74,3 +74,9 @@ lacks credit/plan for people + export. User action; re-run `tests/arv2/test_ai_a
 - Stand-in ICP softened accordingly (stage test wording; §7 floor paragraph). The dev DB holds the
   earlier rendered version — reloading mints a new confirmed version; do it before the R2 live run.
 - §6 open items now 2–4 only.
+
+## 2026-09-08 — S7 substance fully approved
+- Founder agreed to all remaining recommendations: section-11 negatives born `outreach_safe=false`;
+  twelve-section charter (master plan §9 R2 row corrected); R2 extends the R1 structuring client
+  with `mode=broad|intent_sweep`. No S7 ruling is open. Next: the R2 plan document
+  (writing-plans) + the S7 file charter; AI Ark people credit is the only external prerequisite left.
