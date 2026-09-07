@@ -107,8 +107,14 @@ def test_a_lookalike_host_cannot_borrow_a_real_hosts_pattern() -> None:
     assert detect_boards(html, PAGE) == []
 
 
-def test_career_candidates_put_the_known_paths_first_and_cap_at_six() -> None:
-    """The conventional paths are tried first; the homepage's own links spend what is left."""
+def test_career_candidates_put_the_evidenced_links_first_and_cap_at_six() -> None:
+    """A link this company published outranks a path guessed about companies in general.
+
+    With five fixed paths under a six-page cap, ordering the guesses first meant at most one
+    evidenced link was ever tried — and the evidenced link is the one that finds a board published
+    somewhere unconventional (probook.ai serves its careers page from ``/company``). Assets and
+    off-site links are still dropped, and the cap is still six.
+    """
     html = """
     <a href="/company#open-roles">Careers</a>
     <a href="/v5/careers-office.jpg">image</a>
@@ -119,13 +125,26 @@ def test_career_candidates_put_the_known_paths_first_and_cap_at_six() -> None:
     candidates = career_page_candidates(html, "https://acme.com/")
 
     assert candidates == [
+        "https://acme.com/company",
+        "https://acme.com/work-with-us",
         "https://acme.com/careers",
         "https://acme.com/careers/",
         "https://acme.com/jobs",
         "https://acme.com/company/careers",
-        "https://acme.com/about/careers",
-        "https://acme.com/company",
     ]
+
+
+def test_an_evidenced_link_at_a_conventional_path_is_not_listed_twice() -> None:
+    """The two lists overlap far more often than they compete, and the overlap dedupes.
+
+    The common case — a homepage that links ``/careers`` — must not spend two of its six slots on
+    the same URL just because both the evidence and the guess name it.
+    """
+    candidates = career_page_candidates('<a href="/careers">Careers</a>', "https://acme.com/")
+
+    assert candidates[0] == "https://acme.com/careers"
+    assert candidates.count("https://acme.com/careers") == 1
+    assert len(candidates) == 5
 
 
 def test_a_careers_link_is_found_by_its_text_when_its_path_says_nothing() -> None:

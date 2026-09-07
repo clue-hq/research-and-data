@@ -34,7 +34,14 @@ from typing import Any, Literal
 
 from pydantic import SecretStr
 
-from clue_api.arv2.calls import CallResult, CallSpec, CostReading, ProviderCaller, SpendEstimate
+from clue_api.arv2.calls import (
+    DEFAULT_MAX_ATTEMPTS,
+    CallResult,
+    CallSpec,
+    CostReading,
+    ProviderCaller,
+    SpendEstimate,
+)
 from clue_api.arv2.transport import HttpResponse, json_request
 
 #: Exa's API root. A parameter on the client rather than a constant in a body builder, so a
@@ -56,6 +63,12 @@ DEEP_REASONING_ESTIMATE_USD = Decimal("0.05")
 THIN_MAX_RESULTS = 9
 THIN_MAX_COST_USD = Decimal("0.016")
 THIN_MIN_REPORT_CHARS = 3000
+
+#: A deep-reasoning call runs an agentic research pass: it is charged per call, is given up to
+#: 1200 s, and law 4 may pay for a second one on top. Four attempts is therefore a worst case of
+#: ~80 minutes and four charges for one dossier — and on top of that the law-4 retry can double
+#: it. Two attempts still rides out a single transient failure without that tail.
+DEEP_REASONING_MAX_ATTEMPTS = 2
 
 #: Exa's livecrawl modes. Absent from the body means "serve the indexed copy", which is both the
 #: cheap answer and the reproducible one.
@@ -714,6 +727,7 @@ class ExaClient:
             body=body,
             estimate=SpendEstimate(usd=DEEP_REASONING_ESTIMATE_USD),
             timeout_s=timeout_s,
+            max_attempts=DEEP_REASONING_MAX_ATTEMPTS,
         )
         parsed_body = _body_json(result.response)
         output_text, output_object, grounding = _read_output(parsed_body)
@@ -740,6 +754,7 @@ class ExaClient:
         body: Mapping[str, Any],
         estimate: SpendEstimate,
         timeout_s: float,
+        max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     ) -> CallResult:
         """Assemble the spec and hand it to the wrapper. This is the only egress in the module."""
         request = json_request(
@@ -756,6 +771,7 @@ class ExaClient:
                 label=label,
                 request=request,
                 estimate=estimate,
+                max_attempts=max_attempts,
                 cost_reader=exa_cost_reader,
                 halt_rule=exa_halt_rule,
             )

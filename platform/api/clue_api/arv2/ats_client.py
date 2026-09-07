@@ -248,18 +248,23 @@ def detect_boards(html: str, page_url: str) -> list[AtsBoard]:
 
 
 def career_page_candidates(homepage_html: str, homepage_url: str) -> list[str]:
-    """Career-page URLs worth trying for this company, best-known-first, capped at six.
+    """Career-page URLs worth trying for this company, best-evidenced first, capped at six.
 
-    The fixed paths come first because they are the ones that work for most companies; the
-    homepage's own links come after, and they are what rescues a site whose careers section is
-    not at a conventional path (probook.ai publishes its board under ``/company``, reachable only
-    via an anchor whose *text* — not path — says "Careers").
+    **The homepage's own links come first, then the fixed paths.** A link this company published,
+    whose path or anchor text says "careers", is *evidence about this company*; a fixed path is a
+    guess about companies in general. With five fixed paths under a six-page cap, ordering the
+    guesses first meant at most one evidenced link was ever tried — and the evidenced link is
+    exactly what rescues a site whose careers section is not at a conventional path (probook.ai
+    publishes its board under ``/company``, reachable only via an anchor whose *text*, not path,
+    says "Careers"). The fixed paths still follow, and still carry most companies, because a site
+    that links its careers page from the homepage usually links it at a conventional path anyway,
+    so the two lists overlap and dedupe rather than compete.
 
     Assets and off-site links are dropped: the budget is small and exists to be spent on pages
     that could plausibly carry a board link.
     """
     origin = _origin(homepage_url)
-    candidates: list[str] = [urljoin(origin, path) for path in CAREER_PATHS]
+    evidenced: list[str] = []
     for href, text in _anchor_links(homepage_html):
         absolute = _absolutise(href, homepage_url)
         if absolute is None or _origin(absolute) != origin:
@@ -269,8 +274,9 @@ def career_page_candidates(homepage_html: str, homepage_url: str) -> list[str]:
             continue
         if path.endswith(_ASSET_SUFFIXES):
             continue
-        candidates.append(absolute)
-    return _dedupe(candidates)[:MAX_CANDIDATE_PAGES]
+        evidenced.append(absolute)
+    fixed = [urljoin(origin, path) for path in CAREER_PATHS]
+    return _dedupe([*evidenced, *fixed])[:MAX_CANDIDATE_PAGES]
 
 
 def find_board(company_url: str, caller: ProviderCaller) -> AtsBoard | None:
