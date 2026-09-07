@@ -391,6 +391,18 @@ class Settings(BaseSettings):
         "AI-native ABM: account and committee research, personalised content, "
         "brand-aligned artifacts, scaled per account"
     )
+    # D3 decision 10: an accounts screen whose display block is missing generates it during the
+    # request (the first open waits). Off makes every read a pure projection — a page with no
+    # stored block serves its honest empty state instead of calling a model.
+    # Env: ``CLUE_ARV2_DISPLAY_GENERATE_ON_READ``.
+    arv2_display_generate_on_read: bool = True
+    # The fit-band cuts over the 0–1 ``account.scoring.fit`` score (D3 ruling S3: thresholds are
+    # config, not code — a client tunes what "High" means without a deploy). ``>= high`` is High,
+    # ``>= medium`` is Medium, below is Low; an unscored account has no band at all.
+    # Env: ``CLUE_ARV2_FIT_HIGH_THRESHOLD``.
+    arv2_fit_high_threshold: float = 0.70
+    # Env: ``CLUE_ARV2_FIT_MEDIUM_THRESHOLD``.
+    arv2_fit_medium_threshold: float = 0.40
 
     # Part II D5 Round B production cutover for design agent turns (scene + website). This switch
     # owns only whether the detached fleet worker registers the ``design_job`` handler; the design
