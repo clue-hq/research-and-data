@@ -1,11 +1,11 @@
-# Running the full stack on a second Mac — onboarding, sign-in, brand-kit fetch
+# Running the full stack on a second Mac — onboarding, sign-in, chat + design agent, editor, brand kit, ad library
 
 Written 2026-09-07 for the cofounder's machine, verified against `scripts/dev_stack.sh`,
 `.env.example`, `apps/frontend/.env.example`, and the code paths behind self-serve
 onboarding. `DEV_STACK.md` remains the authority for the port map, the dev login, and the
 five processes; this runbook is the *first-time machine setup* on top of it, sized for the
 flows a second person will exercise: **a new account, a new sign-in, onboarding, and the
-brand-kit fetch.**
+brand-kit fetch, chatting with the design deepagent, every editor feature, and the ad library** — with at least four concurrent fleet workers (revised 2026-09-08).
 
 ## 1. Install once (Homebrew)
 
@@ -73,13 +73,18 @@ Then change only the machine-specific lines in the root `.env`:
 | `CLUE_DEV_DB_URL` | `postgresql+psycopg://<your-macos-username>@localhost/clue_istanbul_dev` |
 | `CLUE_STORAGE_FS_ROOT` | the **absolute** path to this checkout's `.artifacts` |
 | `LUMEN_CORE_HELPER` | the absolute path to `subsystems/clue-design/target/release/lumen-api-helper` in this checkout |
-| `CLUE_SELF_SERVE_PROVISIONING_ENABLED` | `true` — **the flag that gates onboarding** (see §5); defaults to off |
+| `CLUE_SELF_SERVE_PROVISIONING_ENABLED` | `1` — **the flag that gates onboarding** (see §5); defaults to off. It must be IN the file: exported by hand it vanishes on the next restart (2026-09-08 incident: every new account got "Provisioning failed with status 404") |
+| `CLUE_DESIGN_API_BASE_URL` | `http://127.0.0.1:<your design port>` — the setup screen enqueues the brand-kit fetch through it; empty means no kit is ever born |
+| `CLUE_DEV_FLEET_WORKERS` | `4` — worker **processes** `dev_stack.sh up` starts (founder ruling 2026-09-08: at least four) |
+| `CLUE_FLEET_MAX_CONCURRENCY` | `4` — tasks each process supervises at once, so a second chat's turn never queues behind a first chat's design turn |
+| `LUMEN_BRAND_AD_ASSETS` | `1` — mounts the ad-library routes (see §5b) |
+| `LUMEN_AGENT_OPENROUTER_CHAT_COMPLETIONS` / `LUMEN_AGENT_WEB_SOLO` | `1` / `1` — the design agent's transport and the solo web loop; both ride in the copied file |
 
 Keys the template leaves blank and you must have real values for: `CLUE_OPENROUTER_API_KEY`
 and `OPENROUTER_API_KEY`, `LUMEN_AGENT_API_KEY` (the design agent reads its *own* key),
 `CLUE_AUTH_CLERK_ISSUER` + `CLUE_AUTH_CLERK_JWKS_URL`, `CLUE_EXA_API_KEY`,
 `CLUE_FIRECRAWL_API_KEY`, `CLUE_SUMBLE_API_KEY`, `BRANDFETCH_API_KEY` + `BRANDFETCH_CLIENT_ID`,
-`PDL_API_KEY`, `IMAGE_MODEL_API_KEY`. The model pins (grok-4.6 for the agents,
+`PDL_API_KEY`, `IMAGE_MODEL_API_KEY`, and for the ad library `ADYNTEL_API_KEY` + `ADYNTEL_EMAIL` (Adyntel bills per harvest; a 402 "Insufficient tokens" in the ingestion job means the account needs credits). The model pins (grok-4.6 for the agents,
 `CLUE_STAGE0_EXTRACTION_MODEL` for recon) ride along in the copied file — do not change them.
 
 `apps/frontend/.env.local` must keep `CLUE_APP_ORIGIN=http://localhost:3020`,
@@ -99,8 +104,9 @@ all name it.
    creates one workspace and one brand per valid session, with you as owner. With the flag
    off, the new identity has no workspace, the setup screen's recon refuses before any
    spend, and no brand kit is ever ingested.
-3. **Setting-up screen** (`POST /stage0/setup`). Fires Stage-0 recon: the fast lane runs
-   *inside the platform web process*, the background lane on the fleet worker. Extraction
+3. **Setting-up screen** (`POST /stage0/setup`). Fires Stage-0 recon, which the platform
+   enqueues for the fleet workers (both lanes run there; the web process only captures the
+   website and offers the work). Extraction
    calls OpenRouter; pages are fetched by scrapling's plain HTTP fetcher (no browser); the
    tier-3 competitor / buyer-profile facts come from Exa. The official-site crawl is off by
    default (`CLUE_STAGE0_OFFICIAL_SITE_CRAWL_MODE=off`).
@@ -110,15 +116,47 @@ all name it.
    a brand brief through vision models on OpenRouter. It lands as a **draft** behind the
    Brand-context approval gate; nothing approves it automatically.
 
-Every new workspace spends real credits on OpenRouter, Brandfetch and Exa. Ad-asset
-generation is off by default (`LUMEN_BRAND_AD_ASSETS=0`).
+Every new workspace spends real credits on OpenRouter, Brandfetch and Exa.
+
+5. **Brand context → Approve.** The ingested kit is a **draft**. Chat-generated ads and
+   pages are born on the latest *approved* kit, so approve it on the Brand context page
+   before generating in that workspace.
+
+### 5b. The ad library is a separate, manual step
+
+Onboarding never starts the ad library (harvested ads, the ad-DNA card, the pre-generated
+grounds). It spends Adyntel credits, so it is started once per workspace, by hand, against
+the design API (`LUMEN_BRAND_AD_ASSETS=1` mounts the routes):
+
+```bash
+# kit id + version from GET /brand-kits (X-Workspace-Id = the workspace); company_domain = the advertiser's own site
+curl -s -X POST http://127.0.0.1:<design port>/brand-ad-assets/onboard \
+  -H 'Content-Type: application/json' -H 'X-Workspace-Id: ws_…' \
+  -d '{"brand_kit_id":"brand_kit_ing_…","brand_kit_version":1,"company_domain":"insighthealth.ai"}'
+# progress / result
+curl -s http://127.0.0.1:<design port>/brand-ad-assets/brand_kit_ing_… -H 'X-Workspace-Id: ws_…'
+```
+
+Exactly one of `company_domain` or `page_id` (a LinkedIn page id) is required. The job runs
+on the fleet workers; the lane answers `card: null, creatives: []` until it finishes.
+
+### 5c. Chat, design agent, editor
+
+- A project chat's message opens a design leg; the design deepagent (grok-4.6 over OpenRouter,
+  `LUMEN_AGENT_MODEL=openai:x-ai/grok-4.6`) generates the ad or page on a fleet worker, streams
+  into the output pane, and the artifact opens in the editor. Nothing generates without a worker.
+- Editor features (selection, inspector, Fit to text, replace image, clipboard, web annotations)
+  need the wasm ↔ helper handshake (`node subsystems/clue-design/scripts/verify_handshake.mjs`
+  → `HANDSHAKE OK`) and the vendored Tailwind runtime (§3). After pulling engine changes:
+  rebuild the helper, then `down` and `up`.
 
 ## 6. Run and verify
 
 ```bash
-./scripts/dev_stack.sh up          # five processes; prints the URL and the dev login
-./scripts/dev_stack.sh status      # all five UP
+./scripts/dev_stack.sh up          # frontend, design API, two platform APIs, CLUE_DEV_FLEET_WORKERS workers
+./scripts/dev_stack.sh status      # every port UP and "fleet-workers: UP (4/4 processes × ... slots)"
 grep -m1 fs_root /tmp/browser_fleet_worker.log   # must print THIS checkout's .artifacts
+grep -m1 '"event": "worker.start"' /tmp/browser_fleet_worker.log   # must show "max_concurrency": 4
 ```
 
 Open http://localhost:3020. For a plain smoke test, sign in with the dev account in
@@ -137,7 +175,10 @@ worktree's stack).
 | Grey thumbnails, canvas never renders, chat fine | `LUMEN_API_BASE_URL` missing from `.env.local`, or Chromium not installed for the venv |
 | Design runs die in ~1s | `LUMEN_AGENT_API_KEY` / `LUMEN_AGENT_BASE_URL` unset (the OpenRouter key alone is not enough) |
 | "Clone blobs missing", agent composes instead of cloning | `CLUE_STORAGE_FS_ROOT` relative or wrong |
-| Setting-up screen stalls, then continues | expected: the recon fast lane blocks the web process during each extraction |
+| Setting-up screen sits on "Preparing…" for 4–6 minutes | expected: recon and the brand-kit fetch run on the workers; the page releases you when the fast lane completes |
+| Second chat's message does nothing until the first chat finishes | `CLUE_FLEET_MAX_CONCURRENCY` is 1 or `CLUE_DEV_FLEET_WORKERS` is 1 |
+| Brand context shows the kit but the ad library is empty | expected until §5b has been run for that workspace |
+| New account: "Provisioning failed with status 404" | `CLUE_SELF_SERVE_PROVISIONING_ENABLED` not set in the `.env` the platform API was started from |
 | Brand kit never appears | the design API was down when setup fired; it self-heals on the next replay of the setup screen |
 | Stale engine after pulling Rust changes | rebuild the helper, then `down` and `up` — the API loads the binary at start |
 | Thread pages 500 with `UndefinedColumn` | migrations were run against the wrong database; rerun the `alembic upgrade head` line from §2 |

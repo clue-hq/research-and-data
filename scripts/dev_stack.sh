@@ -21,7 +21,9 @@
 #                                  the frontend proxies to (CLUE_API_BASE_URL).
 #   8030  platform API (2nd)     — historical twin of 8020; kept because some
 #                                  session flows were exercised against it.
-#   ----  fleet worker           — drives design runs; no port.
+#   ----  fleet workers          — drive design runs and agent turns; no port.
+#                                  CLUE_DEV_FLEET_WORKERS processes (default 1), each
+#                                  supervising CLUE_FLEET_MAX_CONCURRENCY tasks at once.
 #
 # RUNNING TWO WORKTREES AT ONCE (added 2026-09-03):
 #   Every port, the database URL and the log-file names come from env keys with
@@ -33,6 +35,8 @@
 #     CLUE_DEV_PLATFORM_PORT    default 8020
 #     CLUE_DEV_PLATFORM_PORT_2  default 8030
 #     CLUE_DEV_LOG_SUFFIX       default empty  → /tmp/browser_<name><suffix>.log
+#     CLUE_DEV_FLEET_WORKERS    default 1      → how many fleet worker processes `up` starts
+#                                                 (2026-09-08; a founder-facing stack runs 4)
 #   Precedence: a value exported in your shell wins over the same key in
 #   $ROOT/.env, which wins over the default. Each worktree normally sets its own
 #   values in its own .env (also its own CLUE_STORAGE_FS_ROOT).
@@ -59,6 +63,7 @@ CLI_DESIGN_PORT="${CLUE_DEV_DESIGN_PORT:-}"
 CLI_PLATFORM_PORT="${CLUE_DEV_PLATFORM_PORT:-}"
 CLI_PLATFORM_PORT_2="${CLUE_DEV_PLATFORM_PORT_2:-}"
 CLI_LOG_SUFFIX="${CLUE_DEV_LOG_SUFFIX:-}"
+CLI_FLEET_WORKERS="${CLUE_DEV_FLEET_WORKERS:-}"
 
 load_env() { set -a; source "$ROOT/.env"; set +a; }
 
@@ -70,6 +75,8 @@ resolve_config() {
   PLATFORM_PORT="${CLI_PLATFORM_PORT:-${CLUE_DEV_PLATFORM_PORT:-8020}}"
   PLATFORM_PORT_2="${CLI_PLATFORM_PORT_2:-${CLUE_DEV_PLATFORM_PORT_2:-8030}}"
   LOG_SUFFIX="${CLI_LOG_SUFFIX:-${CLUE_DEV_LOG_SUFFIX:-}}"
+  FLEET_WORKERS="${CLI_FLEET_WORKERS:-${CLUE_DEV_FLEET_WORKERS:-1}}"
+  case "$FLEET_WORKERS" in ''|*[!0-9]*|0) echo "CLUE_DEV_FLEET_WORKERS must be a positive integer (got '$FLEET_WORKERS')" >&2; exit 2;; esac
 
   PIDFILE="/tmp/clue_dev_stack${LOG_SUFFIX}.pids"
   DESIGN_ORIGIN="http://127.0.0.1:${DESIGN_PORT}"
@@ -131,14 +138,20 @@ up() {
     record_pid platform-api-2 "$!"
   )
 
-  (
-    cd "$ROOT"
-    env "${PLATFORM_ENV[@]}" \
-      LUMEN_API_ORIGIN="$DESIGN_ORIGIN" \
-      "$ROOT/.venv/bin/python" -m clue_api.fleet_main \
-      > "$(log_path fleet_worker)" 2>&1 &
-    record_pid fleet-worker "$!"
-  )
+  # N worker PROCESSES (CLUE_DEV_FLEET_WORKERS), each supervising CLUE_FLEET_MAX_CONCURRENCY
+  # tasks at once (the in-process slots from 2026-09-07). Worker 1 keeps the historical log
+  # name and pid label so an older pidfile/status keeps reading; the rest are numbered.
+  for i in $(seq 1 "$FLEET_WORKERS"); do
+    (
+      cd "$ROOT"
+      if [ "$i" -eq 1 ]; then log_name=fleet_worker; pid_name=fleet-worker; else log_name="fleet_worker_${i}"; pid_name="fleet-worker-${i}"; fi
+      env "${PLATFORM_ENV[@]}" \
+        LUMEN_API_ORIGIN="$DESIGN_ORIGIN" \
+        "$ROOT/.venv/bin/python" -m clue_api.fleet_main \
+        > "$(log_path "$log_name")" 2>&1 &
+      record_pid "$pid_name" "$!"
+    )
+  done
 
   # Class fix 2026-08-31: hard-killed/overlapping dev-server starts corrupt the
   # .next route graph (single routes 404 while siblings work — twice live on
@@ -161,6 +174,7 @@ up() {
   for name in frontend design_api platform_api_8020 platform_api fleet_worker; do
     echo "  $(log_path "$name")"
   done
+  for i in $(seq 2 "$FLEET_WORKERS"); do echo "  $(log_path "fleet_worker_${i}")"; done
   echo "  pids: $PIDFILE"
 }
 
@@ -192,12 +206,19 @@ status_resolved() {
   done
   # Pidfile-scoped, not `pgrep -f clue_api.fleet_main`: that matches every
   # worktree's worker and would report this stack UP because another one is.
-  fleet_pid="$(pid_of fleet-worker)"
-  if [ -n "$fleet_pid" ] && kill -0 "$fleet_pid" 2>/dev/null \
-     && ps -p "$fleet_pid" -o command= 2>/dev/null | grep -q "clue_api.fleet_main"; then
-    echo "  fleet-worker: UP"
+  up_count=0
+  for i in $(seq 1 "$FLEET_WORKERS"); do
+    if [ "$i" -eq 1 ]; then pid_name=fleet-worker; else pid_name="fleet-worker-${i}"; fi
+    fleet_pid="$(pid_of "$pid_name")"
+    if [ -n "$fleet_pid" ] && kill -0 "$fleet_pid" 2>/dev/null \
+       && ps -p "$fleet_pid" -o command= 2>/dev/null | grep -q "clue_api.fleet_main"; then
+      up_count=$((up_count + 1))
+    fi
+  done
+  if [ "$up_count" -eq "$FLEET_WORKERS" ]; then
+    echo "  fleet-workers: UP (${up_count}/${FLEET_WORKERS} processes × CLUE_FLEET_MAX_CONCURRENCY=${CLUE_FLEET_MAX_CONCURRENCY:-4} slots)"
   else
-    echo "  fleet-worker: DOWN"
+    echo "  fleet-workers: DOWN (${up_count}/${FLEET_WORKERS} processes up)"
   fi
 }
 

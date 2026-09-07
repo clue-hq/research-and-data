@@ -28,7 +28,7 @@ Then open **http://localhost:3020** and sign in:
 | 8010 | design API (`lumen_api.main:app`) | `CLUE_DESIGN_API_BASE_URL` points here; serves the editor, asset store, design tools. |
 | 8020 | platform API (`clue_api.projections_main:app`) | `CLUE_API_BASE_URL` in `apps/frontend/.env.local` points here — auth/session + the whole `/api/v1` surface. **Without it: "Your workspace is temporarily unavailable."** |
 | 8030 | platform API (second instance, same app) | Historical twin; some flows were exercised against it. Cheap to run, keep it. |
-| — | fleet worker (`clue_api.fleet_main`) | Drives design runs. **No worker = messages accepted but nothing ever generates.** |
+| — | fleet workers (`clue_api.fleet_main`) | Drive design runs and agent turns. **No worker = messages accepted but nothing ever generates.** `up` starts `CLUE_DEV_FLEET_WORKERS` processes (a stack people test on runs **4**), and each process supervises `CLUE_FLEET_MAX_CONCURRENCY` tasks at once (**4**, since 2026-09-07) — so a second chat never queues behind a first chat's design turn. |
 
 ### Running a second stack from another worktree
 
@@ -43,6 +43,7 @@ worktree sets its own in **its own `.env`** (they are also in `.env.example`, at
 | `CLUE_DEV_PLATFORM_PORT` | `8020` | Platform API. |
 | `CLUE_DEV_PLATFORM_PORT_2` | `8030` | Platform API, second instance. |
 | `CLUE_DEV_LOG_SUFFIX` | *(empty)* | `/tmp/browser_<name><suffix>.log` and `/tmp/clue_dev_stack<suffix>.pids`. |
+| `CLUE_DEV_FLEET_WORKERS` | `1` | How many fleet worker processes `up` starts (worker 2+ log to `/tmp/browser_fleet_worker_<n><suffix>.log`). Set **4** for any stack a person tests on. |
 
 Precedence: a value exported in your shell beats the key in `.env`, which beats the default.
 Setting none of them reproduces the original stack byte for byte.
@@ -71,6 +72,10 @@ pre-2026-09-03 script has no pidfile, so it reports `fleet-worker: DOWN` until i
 | `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES` includes `http://localhost:3020` | Else sign-in loops forever on "session expired" (the backend rejects every token minted by the tab). |
 | `CLUE_SCRAPE_BACKEND=scrapling` + `CLUE_STAGE0_PAGE_FETCHER=scrapling` | Standing rule; Firecrawl showing in logs means the env is wrong. |
 | `LUMEN_API_BASE_URL=http://127.0.0.1:8010` — in **`apps/frontend/.env.local`**, not `.env` | The frontend's design proxy (`/api/clue/design/*`) needs it. Missing → every design render 500s: **grey gallery thumbnails, editor canvas never renders** — while chat and generation work fine, which makes it look like the design finished "invisibly". Found live 2026-08-29 (was an ad-hoc shell export that evaporated at a stack rebuild). |
+| `CLUE_FLEET_MAX_CONCURRENCY=4` + `CLUE_DEV_FLEET_WORKERS=4` | Concurrency: one process drives four chats at once, and four processes survive one dying mid-run. With the old defaults (1 and 1) the second chat's message sits queued until the first chat's design turn finishes. |
+| `CLUE_SELF_SERVE_PROVISIONING_ENABLED=1` | Onboarding: mounts `POST /auth/v1/provision` and the setup route. Off → a NEW account ends in "Provisioning failed with status 404" (2026-09-08). Never export it by hand only — it must be in `.env`. |
+| `CLUE_DESIGN_API_BASE_URL` = the design API origin | The setup screen's brand-kit fetch is enqueued through it. Empty → a new workspace never gets a brand kit and nothing says why. |
+| `LUMEN_BRAND_AD_ASSETS=1` + `ADYNTEL_API_KEY`/`ADYNTEL_EMAIL` + `PDL_API_KEY` + `IMAGE_MODEL_API_KEY` | The ad library (harvested ads, ad-DNA card, pre-generated grounds). The flag mounts the routes; the keys pay for the lane. It is NOT part of onboarding — see the cofounder runbook §5b for the one call that starts it per workspace. |
 | Model pins: grok-4.6 everywhere | Env alone is NOT enough — catalog profile (head-of-abm v40), registry promotion, composer pins, and the gateway chat-completions flag all matter. GPT-5.6-terra in the picker → `missing_finalize` step failures. |
 
 ## Public pages host (published sites on their own hostname) — OFF by default
