@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from clue_api.arv2.calls import CallSpec, ProviderCaller
 from clue_api.arv2.media_feeds_client import (
+    EnclosureTooLarge,
     UnsupportedMediaHost,
     download_enclosure,
     fetch_feed,
@@ -139,6 +141,31 @@ def test_the_enclosure_downloads_to_a_content_addressed_file_with_a_binary_raw_r
     sidecar = Path(record["response"]["body_path"])
     assert sidecar.exists() and sidecar.suffix == ".bin"
     print(f"raw record: {raw_records[-1]} sidecar={sidecar}")
+
+
+def test_an_undeclared_enclosure_is_refused_on_a_real_head_before_a_byte_is_downloaded(
+    make_caller: Callable[..., ProviderCaller], tmp_path: Path
+) -> None:
+    """When the feed declares no ``length``, a HEAD reads ``Content-Length`` and refuses there.
+
+    The declared-length precheck only helps when the feed publishes one; most do not. This drops
+    the feed's own ``length`` to reproduce that case against the real host, then sets a one-byte
+    budget: the refusal must arrive from the HEAD (``declared=True``, no transfer), not from a
+    40 MB download nobody wanted.
+    """
+    caller = make_caller()
+    podcast = fetch_feed(BOARDROOM_RSS, caller)
+    episode = find_episode(podcast, title_contains="Sanaz")
+    assert episode is not None
+    undeclared = replace(episode, enclosure_bytes=None)
+
+    with pytest.raises(EnclosureTooLarge) as excinfo:
+        download_enclosure(undeclared, tmp_path / "never.mp3", caller, max_bytes=1)
+
+    assert excinfo.value.declared is True, "the refusal came from the HEAD, not from a download"
+    assert excinfo.value.size_bytes > 10 * 1024 * 1024
+    assert not (tmp_path / "never.mp3").exists()
+    print(f"HEAD refused {excinfo.value.size_bytes} bytes against a 1-byte budget")
 
 
 def test_a_real_watch_page_yields_its_title_and_length(

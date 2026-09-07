@@ -51,10 +51,12 @@ from clue_api.arv2.calls import (
     SpendEstimate,
 )
 from clue_api.arv2.errors import Arv2Error
+from clue_api.arv2.media_feeds_client import AudioFile as EnclosureAudioFile
 from clue_api.arv2.openrouter import (
     openrouter_chat_request,
     openrouter_cost_reader,
     openrouter_embeddings_request,
+    openrouter_halt_rule,
     openrouter_message_text,
 )
 from clue_api.arv2.sinks import LedgerRow, LedgerSink
@@ -122,6 +124,10 @@ SHORT_MAX_OUTPUT_TOKENS = 32000
 QUOTE_MAX_OUTPUT_TOKENS = 4000
 #: A 41 MB upload is re-sent on a retry, so it gets two attempts rather than law 2's four.
 UPLOAD_MAX_ATTEMPTS = 2
+#: The transcription call pays for the whole audio again on every attempt and is given 3000 s to
+#: finish, so law 2's default of four attempts is a worst case of ~3.3 hours and four charges for
+#: one item. Two attempts still survives a single transient failure without that tail.
+GENERATE_MAX_ATTEMPTS = 2
 
 _SECTION_RE = re.compile(r"^##\s+([A-Za-z_]+)\s*$")
 _TS_LINE_RE = re.compile(r"^\[(\d{1,2}:\d{2}(?::\d{2})?)\]\s*(.*)$")
@@ -200,6 +206,67 @@ class AudioFile:
     #: OpenRouter's ``input_audio.format`` — the container name, not the MIME type.
     audio_format: str = "mp3"
     display_name: str = "arv2-media"
+
+
+#: Content type as a feed or host serves it → the canonical ``(mime_type, audio_format)`` pair.
+#: Two names are needed because they are different vocabularies: the native Gemini endpoint wants
+#: a MIME type, and OpenRouter's ``input_audio.format`` wants the *container* name.
+_CONTENT_TYPE_TO_AUDIO: Mapping[str, tuple[str, str]] = {
+    "audio/mpeg": ("audio/mpeg", "mp3"),
+    "audio/mp3": ("audio/mpeg", "mp3"),
+    "audio/mp4": ("audio/mp4", "m4a"),
+    "audio/x-m4a": ("audio/mp4", "m4a"),
+    "audio/m4a": ("audio/mp4", "m4a"),
+    "audio/wav": ("audio/wav", "wav"),
+    "audio/x-wav": ("audio/wav", "wav"),
+    "audio/ogg": ("audio/ogg", "ogg"),
+    "audio/flac": ("audio/flac", "flac"),
+    "audio/x-flac": ("audio/flac", "flac"),
+}
+
+
+def transcription_input_from_enclosure(
+    audio: EnclosureAudioFile, *, display_name: str
+) -> AudioFile:
+    """Convert a downloaded enclosure into a transcription input — the lane's one cross-client seam.
+
+    :class:`clue_api.arv2.media_feeds_client.AudioFile` describes *what was downloaded*, so its
+    duration and content type are both optional: a feed that publishes no ``itunes:duration`` and
+    a host that sends no ``Content-Type`` are ordinary. This module's :class:`AudioFile` describes
+    *what will be paid for*, so both are required. The conversion is where those two facts meet,
+    and it ships here rather than being left to a caller because both directions of sloppiness
+    cost money or truth:
+
+    * An unknown duration must **raise**, never default to ``0``. A zero reservation passes
+      :meth:`MediaBudget.reserve` unconditionally and estimates the call at ``$0``, so the lane's
+      one *enforced* money control would silently stop enforcing for exactly the items whose
+      length nobody could read.
+    * An unknown content type must **raise**, never default to ``mp3``. Sending an m4a to
+      OpenRouter labelled ``mp3`` is a decode failure at best and a wrong transcript at worst.
+
+    Refusing is cheap: the caller probes the file's real duration and retries, or skips the item
+    and says so. Guessing is not.
+    """
+    if audio.duration_s is None:
+        raise ValueError(
+            f"{audio.path} has no known duration; transcription reserves and prices media "
+            "seconds, so the duration must be resolved (probe the file) before it is sent"
+        )
+    declared = (audio.content_type or "").split(";")[0].strip().lower()
+    mapped = _CONTENT_TYPE_TO_AUDIO.get(declared)
+    if mapped is None:
+        raise ValueError(
+            f"{audio.path} declares content type {audio.content_type!r}, which is not a "
+            f"transcribable audio container (known: {', '.join(sorted(_CONTENT_TYPE_TO_AUDIO))})"
+        )
+    mime_type, audio_format = mapped
+    return AudioFile(
+        path=audio.path,
+        duration_s=audio.duration_s,
+        mime_type=mime_type,
+        audio_format=audio_format,
+        display_name=display_name,
+    )
 
 
 @dataclass(frozen=True)
@@ -347,6 +414,20 @@ class MediaBudget:
                 ceiling_s=self._ceiling_s, used_s=self._used_s, requested_s=requested
             )
         self._used_s += requested
+
+    def release(self, seconds: int) -> None:
+        """Give back a reservation whose call never reached the wire.
+
+        The reservation has to be taken *before* the request — that is what makes the ceiling
+        enforced rather than advisory — but a call that failed before the audio was ever sent was
+        not paid for, and budget it did not spend must not stay committed. Three failed uploads of
+        a 43-minute episode would otherwise consume a third of the default ceiling and the run
+        would refuse later work for spend that never happened.
+
+        Never drops below zero: a double release is a caller defect, not a licence to invent
+        budget.
+        """
+        self._used_s = max(0, self._used_s - int(seconds))
 
 
 # ----------------------------------------------------------------------------------- prompts --
@@ -508,12 +589,19 @@ def with_media_seconds(reader: CostReader, media_seconds: int) -> CostReader:
     return read
 
 
-def media_halt_rule(response: HttpResponse) -> str | None:
+def gemini_native_halt_rule(response: HttpResponse) -> str | None:
     """Global Constraint 2: a 402/403 or a body naming credit is money truth, so it blocks.
 
     Returning a reason latches the provider in the wrapper — every later call to it raises without
     touching the wire, which is the point: a lane that keeps calling a provider that will not sell
     burns the run's time discovering the same refusal N more times.
+
+    This rule belongs to the **native Gemini** endpoints only (``files.start``, ``files.upload``,
+    ``files.get``, ``generateContent``), which latch under the provider key ``gemini``. The
+    client's OpenRouter calls — short transcription, quote mining, embeddings — latch under
+    ``openrouter``, the same key the structuring client uses, so they share
+    :func:`~clue_api.arv2.openrouter.openrouter_halt_rule`: one latch key must have exactly one
+    definition of when its provider is dead, or the lane disagrees with itself about it.
     """
     if response.status == 402:
         return "payment_required"
@@ -905,8 +993,12 @@ class GeminiMediaClient:
                 estimate=SpendEstimate(
                     usd=estimate_media_usd(audio.duration_s), media_seconds=audio.duration_s
                 ),
-                halt_rule=media_halt_rule,
+                halt_rule=openrouter_halt_rule,
                 cost_reader=with_media_seconds(openrouter_cost_reader, audio.duration_s),
+                # The whole clip is base64'd into this JSON body: it decodes as UTF-8 and would
+                # otherwise be inlined into every attempt's raw record (~13 MB for a 10-minute
+                # item, up to four attempts). The record keeps its sha256 and byte count instead.
+                binary_request=True,
             )
         )
         self._require_ok(result, "short transcription")
@@ -921,6 +1013,10 @@ class GeminiMediaClient:
         serves neither this model nor a file upload. The key travels in ``x-goog-api-key``, never
         as ``?key=``, so it is masked by the raw sink's header redaction rather than sitting in a
         URL on disk.
+
+        The media-seconds reservation is taken before the upload (that is what makes the ceiling
+        enforced) and **released again if the upload or the transcription fails** — audio that was
+        never transcribed was never paid for, and budget it did not spend must not stay committed.
         """
         self._reserve(
             audio.duration_s,
@@ -928,6 +1024,14 @@ class GeminiMediaClient:
             operation=f"models/{self._transcribe_model}:generateContent",
             label="media.transcribe_long",
         )
+        try:
+            return self._transcribe_long_reserved(audio, context=context)
+        except Exception:
+            self._media_budget.release(audio.duration_s)
+            raise
+
+    def _transcribe_long_reserved(self, audio: AudioFile, *, context: SpeakerContext) -> Transcript:
+        """The upload-and-generate body of :meth:`transcribe_long`, under a live reservation."""
         file_uri = self._upload(audio)
         request = json_request(
             "POST",
@@ -963,7 +1067,8 @@ class GeminiMediaClient:
                 estimate=SpendEstimate(
                     usd=estimate_media_usd(audio.duration_s), media_seconds=audio.duration_s
                 ),
-                halt_rule=media_halt_rule,
+                max_attempts=GENERATE_MAX_ATTEMPTS,
+                halt_rule=gemini_native_halt_rule,
                 cost_reader=gemini_cost_reader(audio.duration_s),
             )
         )
@@ -1014,7 +1119,7 @@ class GeminiMediaClient:
                 label="media.mine_quotes",
                 request=request,
                 estimate=SpendEstimate(usd=Decimal("0.01")),
-                halt_rule=media_halt_rule,
+                halt_rule=openrouter_halt_rule,
                 cost_reader=openrouter_cost_reader,
             )
         )
@@ -1127,7 +1232,7 @@ class GeminiMediaClient:
                     json_body={"file": {"display_name": audio.display_name}},
                     timeout_s=UPLOAD_START_TIMEOUT_S,
                 ),
-                halt_rule=media_halt_rule,
+                halt_rule=gemini_native_halt_rule,
             )
         )
         self._require_ok(start, "files upload start")
@@ -1154,8 +1259,10 @@ class GeminiMediaClient:
                     timeout_s=UPLOAD_TIMEOUT_S,
                 ),
                 max_attempts=UPLOAD_MAX_ATTEMPTS,
-                halt_rule=media_halt_rule,
+                halt_rule=gemini_native_halt_rule,
                 raw_scrubber=drop_download_uri,
+                # The request body *is* the media file; only its content address belongs on disk.
+                binary_request=True,
             )
         )
         self._require_ok(uploaded, "files upload")
@@ -1181,7 +1288,7 @@ class GeminiMediaClient:
                         headers=self._gemini_headers(),
                         timeout_s=FILE_POLL_TIMEOUT_S,
                     ),
-                    halt_rule=media_halt_rule,
+                    halt_rule=gemini_native_halt_rule,
                     raw_scrubber=drop_download_uri,
                 )
             )
@@ -1216,7 +1323,7 @@ class GeminiMediaClient:
                 timeout_s=EMBEDDINGS_TIMEOUT_S,
             ),
             estimate=SpendEstimate(usd=estimate_embedding_usd(texts)),
-            halt_rule=media_halt_rule,
+            halt_rule=openrouter_halt_rule,
             cost_reader=openrouter_cost_reader,
         )
 

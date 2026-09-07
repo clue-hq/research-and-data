@@ -63,6 +63,15 @@ MAX_LABEL_CHARS = 60
 FEED_TIMEOUT_S = 60.0
 WATCH_TIMEOUT_S = 45.0
 ENCLOSURE_TIMEOUT_S = 300.0
+#: A HEAD to read an enclosure's ``Content-Length`` is a metadata round-trip, not a download.
+ENCLOSURE_HEAD_TIMEOUT_S = 30.0
+
+#: The largest feed document this client will parse. Feeds are third-party XML we do not control,
+#: and ``ET.fromstring`` builds the whole tree in memory; a show with thousands of episodes (or a
+#: host serving something that is not a feed at all) should be refused with the raw record named,
+#: not turned into an unbounded allocation on a fleet worker. Five megabytes is ~an order of
+#: magnitude above the largest real podcast feed observed.
+MAX_FEED_BYTES = 5_000_000
 
 #: The three URL forms a video id appears in, ported verbatim from the proof-of-concept probe.
 _VIDEO_ID_RE = re.compile(r"(?:v=|youtu\.be/|/live/)([A-Za-z0-9_-]{11})")
@@ -274,7 +283,16 @@ def _parse_item(item: ET.Element) -> Episode:
 
 
 def _parse_feed(xml: str, raw_ref: str | None) -> Podcast:
-    """The parser proper. ``raw_ref`` is threaded in so a failure names the record on disk."""
+    """The parser proper. ``raw_ref`` is threaded in so a failure names the record on disk.
+
+    The size cap is applied **before** ``ET.fromstring``, because the element tree is where the
+    memory actually goes: the document itself is already in hand, but parsing it multiplies it. A
+    feed is third-party XML on a fleet worker, so an oversized one is a typed refusal naming the
+    saved record — never an unbounded allocation.
+    """
+    size = len(xml.encode("utf-8"))
+    if size > MAX_FEED_BYTES:
+        raise RawParseError(raw_ref, f"feed is {size} bytes, over the {MAX_FEED_BYTES} cap")
     try:
         root = ET.fromstring(xml)
     except ET.ParseError as exc:
@@ -369,6 +387,39 @@ def find_episode(
     return None
 
 
+def _head_content_length(url: str, caller: ProviderCaller) -> int | None:
+    """The enclosure's ``Content-Length`` per a HEAD, or ``None`` when the host does not say.
+
+    Goes through the wrapper like every other request in the lane — free (law 9), so the estimate
+    is zero, but the attempt still gets a raw record and a ledger row. A non-2xx, a missing header
+    or an unreadable one all yield ``None``: this is a cheap *opportunity* to refuse early, never
+    a gate the download depends on, so an uninformative HEAD must not fail the item.
+    """
+    result = caller.call(
+        CallSpec(
+            provider="live_http",
+            operation="enclosure-head",
+            label=_label_for(url),
+            request=HttpRequest(
+                method="HEAD",
+                url=url,
+                headers={"User-Agent": BROWSER_USER_AGENT, "Accept": "audio/*,*/*;q=0.8"},
+                timeout_s=ENCLOSURE_HEAD_TIMEOUT_S,
+            ),
+            binary=True,
+        )
+    )
+    if not 200 <= result.response.status < 300:
+        return None
+    stated = result.response.headers.get("content-length")
+    if stated is None:
+        return None
+    try:
+        return int(stated.strip())
+    except ValueError:
+        return None
+
+
 def download_enclosure(
     episode: Episode,
     dest: Path,
@@ -378,17 +429,31 @@ def download_enclosure(
 ) -> AudioFile:
     """Download an episode's audio to ``dest``, refusing anything over ``max_bytes``.
 
-    The feed's declared ``length`` is checked **first**, so an over-budget episode costs no
-    bandwidth at all; the transferred size is checked again afterwards, because a feed may
-    declare a length it does not honour. ``dest`` is the file to write, and its parent is
-    created. The call is ``binary=True``, so the raw record carries the body's sha and byte count
-    with a ``.bin`` sidecar instead of inlining megabytes of audio into JSON.
+    Three checks, cheapest first. The feed's declared ``length`` is checked **first**, so an
+    over-budget episode costs no bandwidth at all. When the feed declares no length, a **HEAD** is
+    issued and its ``Content-Length`` checked, so the common case of an undeclared enclosure still
+    costs one metadata round-trip rather than the whole file. The transferred size is checked
+    again afterwards, because neither a feed nor a host is obliged to tell the truth.
+
+    That last check is a *refusal*, not a bound on memory: the ``Transport`` seam returns a fully
+    materialised body, so a host that both lies about ``Content-Length`` and serves a huge file
+    is still read into memory once. A streaming transport is the real fix and is recorded as R2
+    work in the package README; the HEAD closes the case we can actually see coming.
+
+    ``dest`` is the file to write, and its parent is created. The call is ``binary=True``, so the
+    raw record carries the body's sha and byte count with a ``.bin`` sidecar instead of inlining
+    megabytes of audio into JSON.
     """
     url = episode.enclosure_url
     if not url:
         raise ValueError(f"episode {episode.title!r} has no enclosure to download")
-    if episode.enclosure_bytes is not None and episode.enclosure_bytes > max_bytes:
-        raise EnclosureTooLarge(url, episode.enclosure_bytes, max_bytes, declared=True)
+    if episode.enclosure_bytes is not None:
+        if episode.enclosure_bytes > max_bytes:
+            raise EnclosureTooLarge(url, episode.enclosure_bytes, max_bytes, declared=True)
+    else:
+        declared = _head_content_length(url, caller)
+        if declared is not None and declared > max_bytes:
+            raise EnclosureTooLarge(url, declared, max_bytes, declared=True)
 
     spec = CallSpec(
         provider="live_http",

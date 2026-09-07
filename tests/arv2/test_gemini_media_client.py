@@ -25,6 +25,7 @@ from clue_api.arv2.gemini_media_client import (
     METADATA_EVIDENCE,
     AudioFile,
     GeminiMediaClient,
+    GeminiMediaError,
     MediaBudget,
     MediaCeilingExceeded,
     SpeakerContext,
@@ -32,10 +33,12 @@ from clue_api.arv2.gemini_media_client import (
     TranscriptLine,
     detect_loops,
     parse_transcript_lines,
+    transcription_input_from_enclosure,
     verify_speaker,
 )
+from clue_api.arv2.media_feeds_client import AudioFile as EnclosureAudioFile
 from clue_api.arv2.sinks import MemoryLedger, MemoryRawSink
-from clue_api.arv2.transport import ScriptedTransport
+from clue_api.arv2.transport import HttpResponse, ScriptedTransport
 
 SANAZ = SpeakerContext(
     person_name="Sanaz Yashar",
@@ -63,6 +66,7 @@ def _client(
         raw_sink=MemoryRawSink(),
         ledger=ledger,
         now=lambda: datetime.now(UTC),
+        sleep=lambda _seconds: None,
     )
     return GeminiMediaClient(
         caller,
@@ -293,3 +297,125 @@ def test_transcribe_short_refuses_a_long_item_rather_than_silently_routing_it() 
         client.transcribe_short(AudioFile(path=NEVER_READ, duration_s=2569), context=SANAZ)
 
     assert transport.requests == []
+
+
+# ------------------------------------------------- the reservation released on a failed upload --
+
+
+def test_a_failed_upload_gives_the_media_reservation_back(tmp_path: Path) -> None:
+    """A reservation is taken before the upload; audio that was never sent was never paid for.
+
+    Without the release, three failed uploads of the 42:49 episode would consume a third of the
+    default 9000 s ceiling and the run would then refuse later work for spend that never happened
+    — invisibly, because the symptom is a *later* refusal.
+    """
+    clip = tmp_path / "sanaz.mp3"
+    clip.write_bytes(b"not really audio")
+    budget = MediaBudget(9000)
+    transport = ScriptedTransport([HttpResponse(400, {}, b'{"error":"bad upload request"}')])
+    client = GeminiMediaClient(
+        ProviderCaller(
+            transport=transport,
+            raw_sink=MemoryRawSink(),
+            ledger=MemoryLedger(),
+            now=lambda: datetime.now(UTC),
+            sleep=lambda _seconds: None,
+        ),
+        openrouter_api_key=SecretStr("unused"),
+        openrouter_base_url="https://openrouter.ai/api/v1",
+        gemini_api_key=SecretStr("unused"),
+        short_model="google/gemini-3.5-flash-lite",
+        transcribe_model="gemini-3.5-transcribe",
+        embedding_model="google/gemini-embedding-2",
+        media_budget=budget,
+        short_max_seconds=600,
+        ledger=MemoryLedger(),
+        sleep=lambda _seconds: None,
+    )
+
+    with pytest.raises(GeminiMediaError):
+        client.transcribe_long(AudioFile(path=clip, duration_s=2569), context=SANAZ)
+
+    assert budget.used_s == 0, "the reservation must be released when the upload never landed"
+
+
+def test_a_release_can_never_invent_budget() -> None:
+    """A double release is a caller defect; it must not become extra ceiling."""
+    budget = MediaBudget(300)
+    budget.reserve(100)
+
+    budget.release(100)
+    budget.release(100)
+
+    assert budget.used_s == 0
+
+
+# --------------------------------------------- the enclosure -> transcription-input conversion --
+
+
+def test_an_enclosure_with_no_known_duration_is_refused_rather_than_reserved_as_zero() -> None:
+    """A zero reservation would pass the ceiling unconditionally and estimate the call at $0.
+
+    That is the money-truth failure: the lane's one *enforced* control would stop enforcing for
+    exactly the items whose length nobody could read.
+    """
+    enclosure = EnclosureAudioFile(
+        path=Path("/tmp/ep.mp3"),
+        bytes=1024,
+        sha256="0" * 64,
+        duration_s=None,
+        content_type="audio/mpeg",
+    )
+
+    with pytest.raises(ValueError, match="no known duration"):
+        transcription_input_from_enclosure(enclosure, display_name="ep")
+
+
+@pytest.mark.parametrize("content_type", [None, "application/octet-stream", "video/mp4", ""])
+def test_an_unrecognised_content_type_is_refused_rather_than_defaulted_to_mp3(
+    content_type: str | None,
+) -> None:
+    """Sending an m4a to OpenRouter labelled ``mp3`` is a decode failure or a wrong transcript."""
+    enclosure = EnclosureAudioFile(
+        path=Path("/tmp/ep.bin"),
+        bytes=1024,
+        sha256="0" * 64,
+        duration_s=120,
+        content_type=content_type,
+    )
+
+    with pytest.raises(ValueError, match="not a transcribable audio container"):
+        transcription_input_from_enclosure(enclosure, display_name="ep")
+
+
+@pytest.mark.parametrize(
+    ("content_type", "mime_type", "audio_format"),
+    [
+        ("audio/mpeg", "audio/mpeg", "mp3"),
+        ("audio/mpeg; charset=binary", "audio/mpeg", "mp3"),
+        ("AUDIO/MP4", "audio/mp4", "m4a"),
+        ("audio/x-m4a", "audio/mp4", "m4a"),
+        ("audio/x-wav", "audio/wav", "wav"),
+        ("audio/ogg", "audio/ogg", "ogg"),
+        ("audio/flac", "audio/flac", "flac"),
+    ],
+)
+def test_a_known_container_converts_to_both_vocabularies(
+    content_type: str, mime_type: str, audio_format: str
+) -> None:
+    """Two names, two vocabularies: Gemini wants a MIME type, OpenRouter a container name."""
+    enclosure = EnclosureAudioFile(
+        path=Path("/tmp/sanaz.mp3"),
+        bytes=41_000_000,
+        sha256="a" * 64,
+        duration_s=2569,
+        content_type=content_type,
+    )
+
+    audio = transcription_input_from_enclosure(enclosure, display_name="sanaz-yashar")
+
+    assert audio.path == enclosure.path
+    assert audio.duration_s == 2569
+    assert audio.mime_type == mime_type
+    assert audio.audio_format == audio_format
+    assert audio.display_name == "sanaz-yashar"

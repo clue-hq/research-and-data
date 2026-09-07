@@ -45,10 +45,49 @@ sinks' protocols and the file/memory implementations.
 - **`ffmpeg` is a test-only dependency**: the Gemini live suite cuts a 180 s clip for the short path
   and skips when `ffmpeg` is absent. Production never cuts audio.
 - **Two `AudioFile` types exist** — `media_feeds_client.AudioFile` (a downloaded enclosure: path,
-  bytes, sha256, duration, content type) and `gemini_media_client.AudioFile` (a transcription input:
-  path, duration, mime type, container format). R2 converts one to the other at the seam; the
-  package `__init__` therefore exports client entry points only, never the value types.
+  bytes, sha256, duration, content type, the last two optional) and `gemini_media_client.AudioFile`
+  (a transcription input: path, duration, mime type, container format, all required). The
+  conversion between them ships here as `gemini_media_client.transcription_input_from_enclosure`,
+  which **raises** on an unknown duration or an unrecognised content type rather than defaulting:
+  a `0`-second reservation would silently disarm the lane's one enforced money control, and an m4a
+  labelled `mp3` is a wrong transcript.
+- **The package `__init__` exports the value types as well as the client entry points** — R2 needs
+  them to annotate anything, and a rule that forces submodule imports is a decorative boundary.
+  The one exception is `AudioFile`: the two collide by name, so each is imported from its own
+  module.
 - **Every client keeps its own typed failures** (`BoardNotFound`, `UnsupportedMediaHost`,
   `MediaCeilingExceeded`, …) subclassing `Arv2Error`; consolidation into `errors.py` is deferred.
-- **Halt rules are provider-specific on purpose**: Exa's ignores 2xx bodies (a successful dossier
-  about a fintech names "credit" constantly); AI Ark's and the media client's check any 4xx/5xx body.
+- **Halt rules are per provider, but one latch key has exactly one rule.** The wrapper latches on
+  the `CallSpec.provider` string, so every spec that latches `openrouter` — the structuring call
+  and the media client's short transcription, quote mining and embeddings — shares
+  `openrouter.openrouter_halt_rule`. The native Gemini endpoints latch `gemini` and use
+  `gemini_media_client.gemini_native_halt_rule`. Exa's ignores 2xx bodies (a successful dossier
+  about a fintech names "credit" constantly); AI Ark's checks any 4xx/5xx body.
+- **403 is a per-provider decision, not a lane-wide one.** OpenRouter's 403 is a *moderation
+  verdict on the input*, so it does **not** halt: one flagged bundle would otherwise latch
+  `openrouter` process-wide and take the whole run's model calls down. AI Ark's 403 (Cloudflare
+  denial) and Exa's (auth) do halt, because for them it really is a refusal to serve.
+
+## R2 composition constraints
+
+R1 is entirely synchronous and single-threaded by design; these are the conditions R2 must compose
+it under, not defects in it.
+
+- **Every entry into this lane from the fleet's `async def handle` goes through
+  `asyncio.to_thread`.** `ProviderCaller.call` blocks — on `Transport.send` (Exa deep reasoning
+  gets 1200 s, long transcription 3000 s), on the AI Ark client's pacing sleep (up to 10.5 s per
+  call), and on the retry backoff (up to 12+24+36 s). Calling it directly from an async handler
+  repeats the recorded Stage-0 incident ("sync LLM/HTTP calls on the web process's event loop") at
+  much larger magnitudes.
+- **One `ProviderCaller` per worker task.** Its running totals (`_totals`) and its halt latch
+  (`_halted`) are plain mutable attributes with no lock, so a caller shared across threads races on
+  both the money trail and the latch. Sharing one is only safe if the sharing is serialised.
+- **`reset_halt` is an operator action and needs a stated owner.** A latch survives for the process
+  lifetime and there is no surface that clears it: whoever composes the lane decides who may call
+  `reset_halt` (and on what evidence — credit topped up, key replaced), or the first refusal ends
+  that provider for the process.
+- **The `Transport` seam materialises whole bodies.** `send()` returns `HttpResponse.body: bytes`,
+  so there is no streaming path: `download_enclosure` refuses an oversized enclosure by the feed's
+  declared `length`, then by a `HEAD` `Content-Length`, then by the transferred size — but a host
+  that lies about all three is still read into memory once. A streaming/size-capped transport
+  (`send_to(request, sink, max_bytes)`) is R2 work.

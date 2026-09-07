@@ -14,6 +14,7 @@ import pytest
 
 from clue_api.arv2.errors import RawParseError
 from clue_api.arv2.media_feeds_client import (
+    MAX_FEED_BYTES,
     MAX_LABEL_CHARS,
     UnsupportedMediaHost,
     _label_for,
@@ -297,3 +298,33 @@ def test_extract_player_response_reads_the_bracketed_assignment_form() -> None:
 def test_extract_player_response_is_none_on_a_consent_wall() -> None:
     assert extract_player_response("<html>Sign in to confirm you are not a bot</html>") is None
     assert extract_player_response('ytInitialPlayerResponse = {"unclosed": 1') is None
+
+
+def test_an_oversized_feed_is_refused_before_it_is_parsed() -> None:
+    """A feed is third-party XML on a fleet worker; ``ET.fromstring`` builds the whole tree.
+
+    The refusal is a typed :class:`RawParseError` naming the record on disk, so an operator can
+    look at what the host actually served — not an unbounded allocation and not a silent empty
+    result.
+    """
+    padding = "<item><title>x</title></item>" * 200_000
+    oversized = f"<rss><channel><title>Big</title>{padding}</channel></rss>"
+    assert len(oversized.encode("utf-8")) > MAX_FEED_BYTES
+
+    with pytest.raises(RawParseError) as excinfo:
+        parse_feed(oversized)
+
+    assert "over the" in str(excinfo.value)
+    assert str(MAX_FEED_BYTES) in str(excinfo.value)
+
+
+def test_a_feed_just_under_the_cap_still_parses() -> None:
+    """The cap is a refusal for the pathological case, not a limit real feeds run into."""
+    padding = "<item><title>ok</title></item>" * 100
+    document = f"<rss><channel><title>Small</title>{padding}</channel></rss>"
+    assert len(document.encode("utf-8")) < MAX_FEED_BYTES
+
+    podcast = parse_feed(document)
+
+    assert podcast.title == "Small"
+    assert len(podcast.episodes) == 100
