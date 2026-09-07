@@ -80,12 +80,13 @@ resolve_config() {
 
   PIDFILE="/tmp/clue_dev_stack${LOG_SUFFIX}.pids"
   DESIGN_ORIGIN="http://127.0.0.1:${DESIGN_PORT}"
+  AGENT_WORKSPACE_ROOT="${CLUE_AGENT_WORKSPACE_ROOT:-/private/tmp/clue-agent-workspaces}"
 
   PLATFORM_ENV=(
     CLUE_DATABASE_URL="$DB_URL"
     CLUE_DESIGN_RUNTIME_ENABLED=1
     CLUE_DESIGN_API_BASE_URL="$DESIGN_ORIGIN"
-    CLUE_AGENT_WORKSPACE_ROOT=/private/tmp/clue-agent-workspaces
+    CLUE_AGENT_WORKSPACE_ROOT="$AGENT_WORKSPACE_ROOT"
   )
 }
 
@@ -106,7 +107,7 @@ kill_tree() {
 up() {
   load_env
   resolve_config
-  mkdir -p /private/tmp/clue-agent-workspaces && chmod 700 /private/tmp/clue-agent-workspaces
+  mkdir -p "$AGENT_WORKSPACE_ROOT" && chmod 700 "$AGENT_WORKSPACE_ROOT"
   : > "$PIDFILE"
 
   (
