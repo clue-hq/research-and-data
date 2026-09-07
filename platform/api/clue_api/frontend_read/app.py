@@ -223,6 +223,7 @@ def build_frontend_read_router(
     from clue_api.frontend_read.account_activity import register_account_activity_routes
     from clue_api.frontend_read.account_detail import register_account_detail_routes
     from clue_api.frontend_read.accounts_list import register_accounts_list_routes
+    from clue_api.frontend_read.brand_knowledge import register_brand_knowledge_routes
     from clue_api.frontend_read.bulk_actions import register_bulk_action_routes
     from clue_api.frontend_read.contacts import register_contact_routes
 
@@ -250,6 +251,7 @@ def build_frontend_read_router(
         contact_email_lookup=contact_email_lookup,
         allow_local_mutations=allow_local_mutations,
     )
+    register_brand_knowledge_routes(router, conn_factory=conn_factory, storage=evidence_storage)
     return router
 
 
