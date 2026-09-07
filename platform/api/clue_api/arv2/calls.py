@@ -87,9 +87,11 @@ HaltRule = Callable[[HttpResponse], str | None]
 #: Reads the provider's own metering off the response. Exceptions are caught by the wrapper.
 CostReader = Callable[[HttpResponse], CostReading]
 
-#: Applied to the parsed JSON body before the raw record is written — Appendix A law 3's hook
-#: ("sensitive keys are dropped inside the provider client, before persistence"). Skipped when
-#: the body is not JSON, in which case the body is saved as-is.
+#: Appendix A law 3's hook: "sensitive keys are dropped inside the provider client, before
+#: persistence". Applied to the parsed JSON body the moment the response arrives, and its output
+#: **replaces** the response for the rest of the call — the raw record, the cost reader, the halt
+#: rule and the returned ``CallResult`` all see the scrubbed body, so a dropped key is on no path.
+#: Skipped when the body is binary or does not parse as JSON, in which case it is saved as-is.
 RawScrubber = Callable[[object], object]
 
 
@@ -224,6 +226,7 @@ class ProviderCaller:
                 )
                 raise ProviderTransportError(spec.provider, attempts, str(exc)) from exc
             latency_ms = self._elapsed_ms(started)
+            response = self._scrub(spec, response)
             raw_refs.append(self._save_raw(spec, call_id, index, latency_ms, response))
             if response.status in spec.retry_statuses and not is_last:
                 self._sleep(self._retry_delay(response, index))
@@ -345,6 +348,32 @@ class ProviderCaller:
             when = when.replace(tzinfo=now.tzinfo)
         return max(0.0, (when - now).total_seconds())
 
+    def _scrub(self, spec: CallSpec, response: HttpResponse) -> HttpResponse:
+        """Appendix A law 3: drop sensitive keys inside the client, before anything else sees them.
+
+        The scrubbed serialisation **replaces** the response for the rest of the call, so the raw
+        record on disk, the cost reader, the halt rule and the ``CallResult`` the caller reads all
+        carry the same bytes. A key the scrubber drops therefore exists on no path at all, which is
+        the whole point of the law — a body that is scrubbed only on the way to disk is still a
+        body the pipeline can read a birth date out of.
+
+        A non-JSON or undecodable body, or a spec with no scrubber, is returned untouched.
+        """
+        if spec.raw_scrubber is None or spec.binary:
+            return response
+        try:
+            decoded = response.body.decode("utf-8")
+        except UnicodeDecodeError:
+            return response
+        try:
+            parsed = json.loads(decoded)
+        except ValueError:
+            return response  # not JSON: law 3's hook does not apply
+        scrubbed = json.dumps(
+            spec.raw_scrubber(parsed), separators=(",", ":"), sort_keys=True
+        ).encode()
+        return HttpResponse(status=response.status, headers=response.headers, body=scrubbed)
+
     def _save_raw(
         self,
         spec: CallSpec,
@@ -353,25 +382,18 @@ class ProviderCaller:
         latency_ms: int,
         response: HttpResponse,
     ) -> str:
-        """Law 1: persist this attempt before anything reads it. Credentials never get here."""
+        """Law 1: persist this attempt before anything reads it. Credentials never get here.
+
+        The body is already scrubbed by the time it gets here (:meth:`_scrub` ran the moment the
+        response arrived), so the persisted copy and the copy the caller reads are the same bytes.
+        """
         body = response.body
         body_text: str | None = None
         if not spec.binary:
             try:
-                decoded: str | None = body.decode("utf-8")
+                body_text = body.decode("utf-8")
             except UnicodeDecodeError:
-                decoded = None
-            if decoded is not None and spec.raw_scrubber is not None:
-                try:
-                    parsed = json.loads(decoded)
-                except ValueError:
-                    pass  # not JSON: law 3's hook does not apply, so the body is saved as-is
-                else:
-                    decoded = json.dumps(
-                        spec.raw_scrubber(parsed), separators=(",", ":"), sort_keys=True
-                    )
-                    body = decoded.encode()
-            body_text = decoded
+                body_text = None
 
         request_body = spec.request.body
         request_text: str | None = None

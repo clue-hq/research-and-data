@@ -9,6 +9,7 @@ import pytest
 from pydantic import SecretStr
 
 from clue_config import Secrets, Settings
+from tests.arv2.conftest import require_secret
 
 REPO = Path(__file__).resolve().parents[2]
 ENV_EXAMPLE = REPO / ".env.example"
@@ -91,3 +92,29 @@ def test_env_example_documents_each_setting_with_its_default() -> None:
         assert documented is not None, field_name
         shipped = str(default).lower() if isinstance(default, bool) else str(default)
         assert documented.group(1).strip() == shipped, field_name
+
+
+def test_require_secret_returns_a_live_key() -> None:
+    """The helper is a pure function over a ``Secrets``; it needs no double to exercise."""
+    secrets = Secrets(_env_file=None, ai_ark_api_key=SecretStr("ark-value"))
+    assert require_secret(secrets, "ai_ark_api_key") == "ark-value"
+
+
+def test_require_secret_treats_an_unset_key_as_a_skip() -> None:
+    secrets = Secrets(_env_file=None, ai_ark_api_key=None)
+    with pytest.raises(pytest.skip.Exception) as excinfo:
+        require_secret(secrets, "ai_ark_api_key")
+    assert "CLUE_AI_ARK_API_KEY" in str(excinfo.value)
+
+
+def test_require_secret_treats_a_blank_key_as_a_skip() -> None:
+    """``CLUE_AI_ARK_API_KEY=`` — what ``.env.example`` ships — loads as ``SecretStr('')``.
+
+    Without this the helper would hand an empty key to a real provider and the test would fail on
+    the provider's 401 instead of skipping with the name of the variable nobody filled in.
+    """
+    for blank in ("", "   ", "\n"):
+        secrets = Secrets(_env_file=None, ai_ark_api_key=SecretStr(blank))
+        with pytest.raises(pytest.skip.Exception) as excinfo:
+            require_secret(secrets, "ai_ark_api_key")
+        assert "CLUE_AI_ARK_API_KEY" in str(excinfo.value)

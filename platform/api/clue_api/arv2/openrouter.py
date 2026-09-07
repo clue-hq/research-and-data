@@ -12,6 +12,7 @@ Base URL and key are parameters. The call site reads them from
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -123,8 +124,6 @@ def openrouter_cost_reader(response: Any) -> CostReading:
     not JSON yields an empty reading rather than raising, because the wrapper treats an unreadable
     cost as "the provider did not tell us", never as zero.
     """
-    import json
-
     try:
         body = json.loads(response.body)
     except (ValueError, AttributeError):

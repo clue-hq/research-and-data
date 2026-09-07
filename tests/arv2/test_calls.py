@@ -237,8 +237,8 @@ def test_credentials_are_redacted_in_the_raw_record() -> None:
         assert secret not in serialized
 
 
-def test_the_scrubber_output_is_what_is_persisted() -> None:
-    """(g) Law 3: a sensitive key is dropped before persistence, not after."""
+def test_the_scrubber_output_is_the_only_body_that_survives() -> None:
+    """(g) Law 3: a dropped key exists on no path — not on disk, not in what the caller reads."""
 
     def drop_birth_date(body: object) -> object:
         assert isinstance(body, dict)
@@ -254,9 +254,27 @@ def test_the_scrubber_output_is_what_is_persisted() -> None:
     assert "birth_date" not in record.response.body_text
     assert b"birth_date" not in stored
     assert record.response.body_sha256 == sha256_hex(stored)
-    assert result.json() == {"name": "Sanaz", "birth_date": "1979-01-01"}, (
-        "the caller still sees the real body; only the persisted copy is scrubbed"
+
+    assert result.json() == {"name": "Sanaz"}
+    assert b"birth_date" not in result.response.body
+    assert "birth_date" not in result.text()
+    assert result.response.body == stored, "the caller and the record read the same bytes"
+
+
+def test_a_scrubber_leaves_a_non_json_body_alone() -> None:
+    """Law 3's hook only applies to a JSON body; anything else is saved and returned as-is."""
+
+    def explode(_body: object) -> object:
+        raise AssertionError("the scrubber must not be called for a non-JSON body")
+
+    caller, _transport, raw, _ledger, _clock = _caller(
+        [HttpResponse(200, {"Content-Type": "text/html"}, b"<html>plain</html>")]
     )
+    result = caller.call(_spec(raw_scrubber=explode))
+
+    _record, stored = raw.records[0]
+    assert stored == b"<html>plain</html>"
+    assert result.response.body == b"<html>plain</html>"
 
 
 def test_a_ceiling_flags_the_rows_but_never_stops_the_call() -> None:
