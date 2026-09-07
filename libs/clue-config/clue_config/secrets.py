@@ -70,6 +70,9 @@ class Secrets(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",  # tolerate unrelated env vars (CI/shell noise)
+        # A blank line (``CLUE_AI_ARK_API_KEY=``) is "unset", never an empty credential: the
+        # env-parity rule keeps every documented key present in ``.env`` with secrets left blank.
+        env_ignore_empty=True,
         frozen=True,
     )
 
