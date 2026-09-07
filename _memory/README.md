@@ -27,6 +27,7 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-09-07-arv2-onboarding-o3-fleet-driver.md` — O3 landed on `onboarding/o3-fleet-driver`: the `onboarding_run` fleet kind + artifact-keyed lineage migration `af3cf1541ebe`, the store, the catalog synchronizer, the run driver, `POST /onboarding`, the client-entity binder outside the lane, and the fleet composition behind `CLUE_ONBOARDING_V2_ENABLED`; the lane's rulings, the 7-item standing-rule checklist (all pass), and the acceptance run still owed (Task 7).
 - `2026-09-07-arv2-onboarding-o1-o2-sdd-close-out.md` — O1 (substrate) + O2 (Exa Agent surface, templates, mappers) executed via SDD in two worktrees; branches to merge, the 7 rulings, not-this-lane triage list.
 - `2026-09-07-arv2-onboarding-o2-exa-agent-surface.md` — O2 landed on `onboarding/o2-exa-agent-surface`: `ExaClient.agent_run` (create/poll/settle, failures returned not raised), the four §4 request templates, the `KnowledgeDocument` mappers; live Agent run $0.025 / 14 polls / ~65 s; final review wave fixed strict-mypy narrowing in the mappers, covered the `no_run_id` Agent create, and made the failure-note suffix explicit (mypy clean, 298 offline tests).
 - `2026-09-07-arv2-onboarding-o1-substrate.md` — ARV2 onboarding O1 substrate landed: migration
