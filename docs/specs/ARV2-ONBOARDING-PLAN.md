@@ -491,6 +491,20 @@ Knowledge section is re-lifted, not patched (principle 7); anything the dummy ha
 | O6 | Head-of-ABM integration | §8: profile, index card source, materialization, Stage-0 skill v21, product-set gate tool, ICP gate on artifact refs, launch fields | New project on Insight Health: interview → ICP pick → product set → ICP confirmation → launch; old lane off; checklist 7/7 | Aryan (integration point) |
 | O7 | Acceptance | Unseeded onboarding on Clue (cluehq.ai) and one more seller; cost/latency table per step; defect list; evidence under `.context/` | Founders sign; old Stage-0 recon stays flag-off until Phase 6 | both |
 
+**Coordination with D1 (running in parallel on the display lane; recorded 2026-09-07 from the D1
+lane's own analysis).** O1 and D1 meet in exactly three places and one rule:
+
+1. **Alembic.** Both cut off the same head. Whichever lands second runs `alembic merge` and adds
+   the join revision; neither hand-renumbers (repo convention). `alembic heads` = one before merge.
+2. **`libs/clue-config/clue_config/settings.py` and `.env.example`.** Both add rows; trivial hand
+   merges; the parity test is the gate after the merge.
+3. **`libs/clue-core/clue_core/enums.py::Persona`.** **D1 owns it** (it adds `user`, ruling D8).
+   O1 never touches the enum, the DB enum, or the parity test for it. The onboarding lane consumes
+   the persona vocabulary as strings from the ICP artifact's `persona_map` and validates them
+   against `Persona` at read time only after D1 lands.
+
+Everything else in O1 is disjoint from D1.
+
 **Ordering.** O1 ∥ O2 the day O0 is initialed (separate worktrees). O3 needs O1 + O2. O4 needs O1
 and the evidence tool from O2; runs alongside O3. O5 starts on fixtures after O1, flips to live
 after O3. O6 needs O3 + O4. O7 last. **Timeline:** ~3 weeks with parallel worktrees; 4 if the

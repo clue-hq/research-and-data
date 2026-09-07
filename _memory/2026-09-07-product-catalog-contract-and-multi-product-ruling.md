@@ -95,3 +95,16 @@ selected" state; all are quarantine-bound (Phase 6).
   governed `exa_search_evidence@1` tool with a fixed template.
 - Waiting on Aryan: O-D1 (synthesis model), O-D2 (per-product effort), O-D3 (reviews fast vs
   background), O-D4 (doc form), O-D5 (ICP gate @2 over artifact refs), O-D6 (evidence default).
+
+## Addendum 3: origin merged (R1) + D1 coordination rule
+
+- `85ec9db96` merged origin/integration/design-improvement (track-R PR #45, R1 clients) — one
+  conflict in `_memory/README.md`, both sides kept. R1 corrected the catalog schema count to 8
+  (carried into the plan + this note, `c54c53873`). Plan O2 re-based on R1's `arv2` package
+  (`a778cf45e`): Exa search/deep-reasoning client + `ProviderCaller` exist; O2 adds the Exa Agent
+  surface + 4 templates + mappers; tests LIVE per R1 ruling; driver uses `asyncio.to_thread`, one
+  `ProviderCaller` per worker task.
+- **D1 runs in parallel.** O1 ↔ D1 touchpoints (from the D1 lane, relayed by Aryan): Alembic
+  (same head; second to land runs `alembic merge`), `settings.py` + `.env.example` (hand merge),
+  and **O1 must not touch `clue_core.enums.Persona`** (D1 adds `user`). Recorded in the plan §9.
+- Six decision boxes O-D1–O-D6 still open on Aryan's side (explained to him 2026-09-07 evening).
