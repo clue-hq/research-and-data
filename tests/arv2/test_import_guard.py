@@ -38,6 +38,10 @@ ALLOWED_INTERNAL_PREFIXES: tuple[str, ...] = (
     "clue_research.identity",
     "clue_research.membership",
     "clue_research.durable.project_run",
+    # D1: the pack-loader list (composition root data, not a lane)
+    "clue_api.composition",
+    # D1: the pack-loader list (composition root data, not a lane)
+    "clue_api.arv2_wiring",
 )
 
 #: Provider SDKs. Every ARV2 provider call goes over plain HTTP through the wrapper instead.
