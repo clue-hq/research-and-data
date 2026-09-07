@@ -25,6 +25,7 @@ goes through `ProviderCaller`** — no module opens a socket of its own.
 | `media_feeds_client.py` | Podcast RSS and YouTube discovery — resolving an episode or video to a fetchable media URL and its duration. |
 | `gemini_media_client.py` | Native Gemini media understanding and transcription — the one ARV2 call that bypasses OpenRouter. |
 | `structuring_client.py` | The OpenRouter structuring pass: prose → claims against the field catalog, one subject per call. |
+| `exa_client.py::ExaClient.agent_run` | Exa Agent (`/agent/runs`) — async deep research: create, poll every 4 s, settle on the completed body; fixed-effort prices reserved on the create leg; failures/timeouts returned, never raised. |
 
 ## Where the output goes
 
@@ -82,6 +83,22 @@ three or four rows.
 
 The D1/A7 `provider_call_ledger` table receives exactly these rows — `cost_source` included — when
 the database `LedgerSink` lands; nothing above the sink protocol changes then.
+
+## Onboarding templates and mappers (O2)
+
+`onboarding_requests.py` holds the fixed request templates of ARV2-ONBOARDING-PLAN.md §4 —
+company overview (contract-verbatim, live-validated), customer reviews, per-product research
+(Agent requests) and persona evidence (a `/search` deep-reasoning request within the depth-2 /
+ten-property limits). Behaviour is in the system prompt, shape in the schema; the driver never
+authors a schema.
+
+`onboarding_documents.py` turns a response into a `KnowledgeDocument` (YAML front matter = the
+machine contract; markdown body under fixed headings; `not_found` always rendered). The mappers
+are pure, so `KnowledgeDocument.cost` is the settling call's `CallCost` when built from a call and
+`None` otherwise — the guard's documented exception.
+
+The Agent surface is synchronous like the rest of R1: the onboarding driver (O3) calls
+`agent_run` through `asyncio.to_thread`, one `ProviderCaller` per worker task.
 
 ## Notes recorded at R1 integration (2026-09-07)
 
