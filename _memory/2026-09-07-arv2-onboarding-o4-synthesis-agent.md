@@ -189,3 +189,37 @@ hands it to the onboarding driver (pinned by `test_the_synthesis_seam_hands_o4_o
 (both founder-triggered, both spend). Known reds not this work: `design@v1` malformed
 `model_id`; `tests/db/test_db_migrations.py` needs an empty DB (sibling suites leave
 `entity_research_job` fleet tasks behind).
+
+## Addendum — live acceptance, Insight Health (2026-09-08, founder-triggered)
+Three unseeded runs through the real path (`POST /onboarding` via the router in-process with the
+test-user header → `DbOnboardingEnqueuer` → the semarang fleet worker → driver → synthesis turn),
+workspace `ws-insight-health-o3` on `clue_semarang`, evidence in `.context/arv2-onboarding-o3-acceptance/`.
+- **Run 1** `c960a7ea…` — O3 green in ~6 min ($2.55): overview/lineup/catalog_sync/reviews
+  completed, 19 products minted + researched. Synthesis FAILED at profile resolution:
+  `agent model timeout must be positive and no greater than gateway policy` (profile 120s vs the
+  hard 30s `GatewayConfig.timeout_s` ceiling).
+- **Run 2** `1eaa4293…` — O3 green ($2.25); lineup found 16 entries, 12 `alias_reused` + 4 `created`
+  (reuse ladder proven live), every document at v2 with v1 superseded. Synthesis ran 4 min then
+  `runtime_error`: every `exa_search_evidence@1` call refused `IncompatibleRecipe` —
+  `conflicting_requirement` because the pin provider re-requested the skill the recipe already pins
+  statically (bare `v1` next to a digest-pinned `v1`). The offline runner test never called the tool.
+- **Run 3** `280cd8f5…` — **fully `completed`, no gaps, $2.97**: 21 products; synthesis completed in
+  12 min wall, 18 model calls (1.34M in / 38k out tokens on grok-4.6), 15 evidence calls ($0.225),
+  3 ICP documents `proposed` (454–519 words, 4–5 hard gates, all five persona roles) + 3 persona
+  documents `ready` (2.7–2.8k words each, 8/18/13 evidence URLs), all `produced_by_turn_id` set.
+  Spot-read: file-path citations on client facts, verbatim quotes with URLs from the evidence
+  tool, no fictional names.
+Fixes landed during acceptance (all on `integration/design-improvement`): `fad664b04` +
+`8fb4c439e` (profile timeout; `CLUE_GATEWAY_TIMEOUT_S`, default 30, 60 here), `046b6ebc3`
+(`CLUE_AGENT_MODEL_TIMEOUT_S` — one deployment-wide per-call timeout for every agent model call,
+founder ruling; the model-catalog GET uses the gateway timeout), `3f8721af6` (pin provider no
+longer re-pins the static skill). **Owed:** the scripted `exa_search_evidence` call added to
+`tests/api/test_onboarding_synthesis_wiring_db.py` in `3f8721af6` is committed UNVERIFIED (founder
+paused suite runs to get the live run back); run it, and decide whether a refused
+`exa_not_configured` call needs a `FakeExa` in `for_tests`. Observations, not defects: the
+lineup's `integration`/`partner_program` entries become product rows by contract (§5 line 168) —
+the product-set gate is where a human prunes; near-duplicate names (AI Front Desk / AI FrontDesk
+Agent) each cost a $0.10 research run; ARV2 JSONL ledger rows re-report a run's cumulative price
+per poll, so a consumer must not sum polls (the step's `cost_usd` is authoritative);
+`agent_model_call.cost_millicredits` is 0 for grok via OpenRouter (cost attribution gap, not this
+lane). The semarang fleet worker was left running (`/private/tmp/semarang-fleet-worker.log`).
