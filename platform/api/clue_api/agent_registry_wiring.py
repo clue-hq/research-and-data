@@ -78,6 +78,11 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     AgentRole.REVIEWER: "v5",
     # P3.3 (PD-part3): the composite design deepagent's platform-facing profile.
     AgentRole.DESIGN: "v1",
+    # ARV2 Track O, O4: the onboarding synthesis agent (ARV2-ONBOARDING-PLAN.md §5). One fleet-run
+    # turn per onboarding writes the brand's proposed ICP documents and one audience-persona
+    # document per ICP. Its whole spendable surface is ``exa_search_evidence@1``; it delegates to
+    # nobody. Model per ruling O-D1: ``x-ai/grok-4.6`` at the model's default reasoning effort.
+    AgentRole.ONBOARDING_SYNTHESIS: "v1",
 }
 
 
