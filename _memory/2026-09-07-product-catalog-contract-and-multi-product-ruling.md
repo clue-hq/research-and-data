@@ -80,3 +80,18 @@ selected" state; all are quarantine-bound (Phase 6).
   rewording (pending Aryan's explicit yes to point 1 of the 18:0x message).
 - Security: the Exa request sample Aryan pasted (`.context/attachments/52gUp1/`) contains a LIVE
   Exa API key in `Exa(api_key=...)`. Not copied anywhere; flagged to Aryan to rotate.
+
+## Addendum 2: the Track O plan written
+
+- NEW `docs/specs/ARV2-ONBOARDING-PLAN.md` (v1.0, PROPOSED): outcome + settled rulings S1–S8,
+  architecture + artifact tree, the `onboarding_run`/`onboarding_step`/`brand_knowledge_document`
+  state contract (failure law: recoverable refusals, `completed_with_gaps`), the three remaining
+  research contracts as sections (reviews 4.3, per-product 4.4, evidence tool 4.5), the
+  `onboarding-synthesis@v1` agent (prompt + `icp-synthesis` + `audience-persona` skills, final
+  text), ICP/persona artifact formats, the Knowledge read contract (§7), Head-of-ABM integration
+  (§8), phases O0–O7 with exit gates/owners/timeline, flags (§10), decision boxes O-D1–O-D6.
+- Aryan's rulings captured before writing: persona evidence pass ON, thin evidence OK; brand-level
+  ICP model confirmed; the ICP/persona prompts are for OUR synthesis agent, Exa only via the
+  governed `exa_search_evidence@1` tool with a fixed template.
+- Waiting on Aryan: O-D1 (synthesis model), O-D2 (per-product effort), O-D3 (reviews fast vs
+  background), O-D4 (doc form), O-D5 (ICP gate @2 over artifact refs), O-D6 (evidence default).

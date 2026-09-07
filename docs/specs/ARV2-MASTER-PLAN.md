@@ -347,6 +347,9 @@ featured-contact hard-code is gone (`profileAction`); lint/build/tests green (11
 R1 starts the day D1's migration lands. When R2/R3 go live, the loader retires; D2–D5 do not change.
 
 ### Track O — the tech founder's lane
+**The Track O plan is `ARV2-ONBOARDING-PLAN.md` (proposed 2026-09-07; phases O0–O7, decision boxes
+O-D1–O-D6): onboarding as a research pipeline on the fleet, the `onboarding-synthesis@v1` agent, the
+brand-context Knowledge read surface, and the Head-of-ABM integration.**
 **Product catalog:** the Exa request shape, the `ProductCatalogResearch@1` artifact, the sync
 deltas, the `product_set_selection` gate, and the multi-product-per-project ruling are fixed in
 `ARV2-PRODUCT-CATALOG-CONTRACT.md` (2026-09-07). **Company overview:** the Exa Agent request
