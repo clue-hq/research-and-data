@@ -53,3 +53,18 @@ ledger); the plan's `-k` subset naming; the R1 client's docstring still says "ni
 ## Next
 O3 (fleet driver; needs D1's `provider_call_ledger` for production sinks) ∥ O4 (synthesis agent;
 needs D1's `user` Persona role) ∥ O5 (Knowledge read surface, fixtures first) — per the plan §9.
+
+## Addendum — D1 merged in (2026-09-07, merge commit `071f0fc84`)
+`origin/integration/design-improvement` carried track-D (PR #46, ARV2 D1: display substrate migration
+`65fb2128c904`, lenient claim writer, answer-key loader, `Persona.USER`, five `CLUE_*` check flags).
+Merged into the local branch; three keep-both conflicts (`.env.example`, `clue_config/settings.py`,
+`clue_api/arv2/README.md` — both lanes appended blocks at the same spot). Alembic went to two heads
+(`0aa95f87eb49` O1, `65fb2128c904` D1) → join revision **`3742d1281a10`** (ruff-fixed template
+imports). Verified: one head; up→down→up on `clue_o1_substrate`; `tests/arv2 tests/clue_spine
+tests/db` + the product-set gate test green offline (`--ignore-glob='*_live.py'`); `clue_semarang`
+upgraded to `3742d1281a10`. Local `.env` gained the five D1 keys. Both O3/O4 plans now name
+`3742d1281a10` as the head to chain off; the D1 dependencies (`provider_call_ledger`, `user`
+persona) are no longer "watch" items — they are on the branch.
+**Not fixed, pre-existing:** the local `.env` is missing ~20 other `.env.example` keys (ARV2 R1/R2,
+C7, frontend-read, memory flags) — parity drift older than this session; fix deliberately, not by
+blank-stamping secrets.

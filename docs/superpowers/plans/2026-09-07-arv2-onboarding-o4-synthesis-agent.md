@@ -18,7 +18,7 @@
 - **Catalog rules:** one file per version directory, sha256 over whole bytes computed with `shasum -a 256`, versions immutable, `tests/agents/test_catalog.py` lists every address exhaustively, `tests/api/test_agent_registry_wiring.py` pins the aggregate manifest digest per active role.
 - **Do not touch `clue_core.enums.Persona`** (D1 adds `user`). The skills write persona role strings; nothing here validates them against the enum.
 - **Workspace contract:** seed files only under `context/` or `inputs/`; `outputs/` is snapshotted at finalization and its logical paths are discarded, so each output document is identified from its own YAML front matter (`kind`, `icp_key`).
-- **Alembic:** hash id, `down_revision` = the single current head (`0aa95f87eb49` today); O3 also cuts a migration off that head, so whichever lane merges second runs `alembic merge`. Reversible; smoke on the throwaway `clue_o1_substrate` only.
+- **Alembic:** hash id, `down_revision` = the single current head (`3742d1281a10`, the O1+D1 join revision, after the 2026-09-07 merge of D1); O3 also cuts a migration off that head, so whichever lane merges second runs `alembic merge`. Reversible; smoke on the throwaway `clue_o1_substrate` only.
 - **Money:** the evidence tool spends about 1.5 cents per call; unit tests use a fake client; the one live turn (Task 7) is founder-triggered. Never run `*_live.py` broadly or `make check` with keys.
 - **Import guard:** modules under `clue_api/arv2/` may not import other `clue_api` modules; everything in this plan that touches agents/execution/turn wiring lives OUTSIDE `arv2/` (in `clue_api/onboarding_*.py`) and imports `clue_api.arv2` submodules where needed.
 - **Commits:** local only, never push; no AI attribution; one commit per task.
