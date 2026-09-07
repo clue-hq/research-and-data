@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 from pathlib import Path
 
 import pytest
@@ -204,3 +205,30 @@ def test_a_step_cannot_belong_to_a_workspace_its_run_does_not() -> None:
                 await trans.rollback()
 
     run_async(scenario())
+
+
+def _normalized_sql(sql: str) -> str:
+    return re.sub(r"\s+", " ", sql).strip()
+
+
+def test_the_validator_without_the_product_set_branch_is_the_previous_migrations_text() -> None:
+    """downgrade() must reinstall exactly what 064ad0f43519 installed — proven by text, not hope."""
+    onboarding = _onboarding_migration()
+    previous = _migration_module("064ad0f43519")
+    assert _normalized_sql(onboarding._answer_validator(product_set=False)) == _normalized_sql(
+        previous._answer_validator(discovery_configuration_revision=True)
+    )
+
+
+def test_the_validator_with_the_branch_adds_only_the_product_set_rules() -> None:
+    onboarding = _onboarding_migration()
+    with_branch = onboarding._answer_validator(product_set=True)
+    for fragment in (
+        "presented.kind = 'product_set_selection'",
+        "selected_option_refs",
+        "jsonb_array_elements_text",
+        "candidate ->> 'product_id' = chosen.value",
+        "product-set approval cannot repeat a product",
+    ):
+        assert fragment in with_branch
+    assert "presented.kind = 'product_selection'" in with_branch  # the old kind is kept verbatim

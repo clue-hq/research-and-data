@@ -34,9 +34,11 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     _create_onboarding_tables()
     _create_project_product()
+    _install_product_set_gate_kind()
 
 
 def downgrade() -> None:
+    _remove_product_set_gate_kind()
     _drop_project_product()
     _drop_onboarding_tables()
 
@@ -246,3 +248,205 @@ def _drop_project_product() -> None:
     op.execute("DROP TRIGGER project_product_append_only ON project_product")
     op.execute("DROP INDEX project_product_current")
     op.execute("DROP TABLE project_product")
+
+
+# --- §6.3 the product_set_selection human gate ------------------------------------------------
+
+_GATE_KINDS_BEFORE = (
+    "'directive_confirmation', 'icp_confirmation', 'product_selection', "
+    "'plan_approval', 'budget_approval'"
+)
+_GATE_KINDS_AFTER = (
+    "'directive_confirmation', 'icp_confirmation', 'product_selection', "
+    "'product_set_selection', 'plan_approval', 'budget_approval'"
+)
+
+
+def _install_product_set_gate_kind() -> None:
+    op.execute("ALTER TABLE agent_gate DROP CONSTRAINT agent_gate_kind")
+    op.execute(
+        "ALTER TABLE agent_gate ADD CONSTRAINT agent_gate_kind "
+        f"CHECK (kind IN ({_GATE_KINDS_AFTER}))"
+    )
+    op.execute(_answer_validator(product_set=True))
+
+
+def _remove_product_set_gate_kind() -> None:
+    op.execute(_answer_validator(product_set=False))
+    op.execute("ALTER TABLE agent_gate DROP CONSTRAINT agent_gate_kind")
+    op.execute(
+        "ALTER TABLE agent_gate ADD CONSTRAINT agent_gate_kind "
+        f"CHECK (kind IN ({_GATE_KINDS_BEFORE}))"
+    )
+
+
+def _answer_validator(*, product_set: bool) -> str:
+    """The whole ``agent_gate_answer_validate()`` body, exactly as 064ad0f43519 installs it, with
+    the product-set branch inserted before the generic refusal when ``product_set`` is true.
+    ``tests/db/test_arv2_onboarding_substrate_migration.py`` proves the ``False`` form is
+    text-identical to the previous migration's, so ``downgrade()`` reinstalls the real thing."""
+    product_set_branch = (
+        """
+            ELSIF presented.kind = 'product_set_selection' THEN
+                IF NEW.selected_option_ref IS NOT NULL THEN
+                    RAISE EXCEPTION
+                        'a product-set answer carries its choices in decision_payload, '
+                        'not selected_option_ref';
+                END IF;
+                IF NEW.decision = 'approved' THEN
+                    IF (SELECT count(*) FROM jsonb_object_keys(NEW.decision_payload)) <> 1
+                       OR jsonb_typeof(NEW.decision_payload -> 'selected_option_refs')
+                          IS DISTINCT FROM 'array'
+                       OR jsonb_array_length(
+                            NEW.decision_payload -> 'selected_option_refs') < 1 THEN
+                        RAISE EXCEPTION
+                            'product-set approval requires selected_option_refs with at least '
+                            'one entry and nothing else';
+                    END IF;
+                    IF jsonb_typeof(presented.subject_snapshot -> 'products')
+                       IS DISTINCT FROM 'array' THEN
+                        RAISE EXCEPTION 'product-set gate has no valid candidate array';
+                    END IF;
+                    IF (SELECT count(*) FROM jsonb_array_elements_text(
+                            NEW.decision_payload -> 'selected_option_refs'))
+                       <> (SELECT count(DISTINCT value) FROM jsonb_array_elements_text(
+                            NEW.decision_payload -> 'selected_option_refs')) THEN
+                        RAISE EXCEPTION 'product-set approval cannot repeat a product';
+                    END IF;
+                    IF EXISTS (
+                        SELECT 1 FROM jsonb_array_elements_text(
+                            NEW.decision_payload -> 'selected_option_refs') chosen
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM jsonb_array_elements(
+                                presented.subject_snapshot -> 'products') candidate
+                            WHERE jsonb_typeof(candidate) = 'object'
+                              AND candidate ->> 'product_id' = chosen.value
+                        )
+                    ) THEN
+                        RAISE EXCEPTION
+                            'a selected product is not a candidate in the presented gate';
+                    END IF;
+                ELSIF NEW.decision_payload <> '{}'::jsonb THEN
+                    RAISE EXCEPTION 'product-set rejection/revision carries no decision payload';
+                END IF;
+    """
+        if product_set
+        else ""
+    )
+    discovery_branch = """
+            ELSIF presented.kind = 'directive_confirmation'
+                  AND presented.subject_snapshot ->> 'subject_kind'
+                      = 'discovery_configuration' THEN
+                IF NEW.selected_option_ref IS NOT NULL THEN
+                    RAISE EXCEPTION 'a discovery configuration cannot carry a selected option';
+                END IF;
+                IF NEW.decision = 'revised' THEN
+                    IF (SELECT count(*) FROM jsonb_object_keys(NEW.decision_payload)) <> 1
+                       OR jsonb_typeof(NEW.decision_payload -> 'revision_request') <> 'string'
+                       OR length(btrim(NEW.decision_payload ->> 'revision_request'))
+                          NOT BETWEEN 1 AND 4000
+                       OR NEW.decision_payload ->> 'revision_request'
+                          <> btrim(NEW.decision_payload ->> 'revision_request') THEN
+                        RAISE EXCEPTION
+                            'a discovery revision requires one trimmed revision_request '
+                            'of 1-4000 characters';
+                    END IF;
+                ELSIF NEW.decision_payload <> '{}'::jsonb THEN
+                    RAISE EXCEPTION
+                        'discovery approve/reject answers carry no decision payload';
+                END IF;
+    """
+    return f"""
+        CREATE OR REPLACE FUNCTION agent_gate_answer_validate() RETURNS trigger AS $$
+        DECLARE
+            presented agent_gate%ROWTYPE;
+            answering_turn agent_turn_submission%ROWTYPE;
+        BEGIN
+            SELECT * INTO presented FROM agent_gate
+            WHERE gate_id = NEW.gate_id AND workspace_id = NEW.workspace_id;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'agent gate does not exist in this workspace';
+            END IF;
+            IF presented.snapshot_erased_at IS NOT NULL THEN
+                RAISE EXCEPTION 'an erased gate snapshot cannot be answered';
+            END IF;
+            IF NOT (NEW.decision = ANY(presented.permitted_decisions)) THEN
+                RAISE EXCEPTION 'decision is not permitted by this gate';
+            END IF;
+            IF NEW.expected_subject_sha256 <> presented.expected_subject_sha256 THEN
+                RAISE EXCEPTION 'answer digest does not match the presented gate';
+            END IF;
+            IF NEW.answered_by_user_id <> presented.addressee_user_id THEN
+                RAISE EXCEPTION 'only the gate addressee may answer';
+            END IF;
+            IF NEW.selected_option_ref IS NOT NULL
+               AND NEW.decision_payload <> '{{}}'::jsonb THEN
+                RAISE EXCEPTION 'an answer cannot carry both a revision payload and a selection';
+            END IF;
+
+            IF presented.kind = 'icp_confirmation' THEN
+                IF NEW.selected_option_ref IS NOT NULL THEN
+                    RAISE EXCEPTION 'an ICP answer cannot carry a selected option';
+                END IF;
+                IF NEW.decision = 'revised' THEN
+                    IF (SELECT count(*) FROM jsonb_object_keys(NEW.decision_payload)) <> 1
+                       OR jsonb_typeof(NEW.decision_payload -> 'revision_request') <> 'string'
+                       OR length(btrim(NEW.decision_payload ->> 'revision_request'))
+                          NOT BETWEEN 1 AND 4000
+                       OR NEW.decision_payload ->> 'revision_request'
+                          <> btrim(NEW.decision_payload ->> 'revision_request') THEN
+                        RAISE EXCEPTION
+                            'an ICP revision requires one trimmed revision_request '
+                            'of 1-4000 characters';
+                    END IF;
+                ELSIF NEW.decision_payload <> '{{}}'::jsonb THEN
+                    RAISE EXCEPTION 'ICP approve/reject answers carry no decision payload';
+                END IF;
+            ELSIF presented.kind = 'product_selection' THEN
+                IF NEW.decision_payload <> '{{}}'::jsonb THEN
+                    RAISE EXCEPTION 'product-selection answers carry no decision payload';
+                END IF;
+                IF NEW.decision = 'approved' THEN
+                    IF NEW.selected_option_ref IS NULL
+                       OR length(btrim(NEW.selected_option_ref)) = 0 THEN
+                        RAISE EXCEPTION 'product approval requires one selected option';
+                    END IF;
+                    IF jsonb_typeof(presented.subject_snapshot -> 'products')
+                       IS DISTINCT FROM 'array' THEN
+                        RAISE EXCEPTION 'product-selection gate has no valid candidate array';
+                    END IF;
+                    IF NOT EXISTS (
+                        SELECT 1 FROM jsonb_array_elements(
+                            presented.subject_snapshot -> 'products'
+                        ) candidate
+                        WHERE jsonb_typeof(candidate) = 'object'
+                          AND candidate ->> 'product_id' = NEW.selected_option_ref
+                    ) THEN
+                        RAISE EXCEPTION
+                            'selected option is not a candidate in the presented gate';
+                    END IF;
+                ELSIF NEW.selected_option_ref IS NOT NULL THEN
+                    RAISE EXCEPTION 'product rejection/revision cannot carry a selected option';
+                END IF;
+{product_set_branch}{discovery_branch}
+            ELSIF NEW.decision_payload <> '{{}}'::jsonb
+                  OR NEW.selected_option_ref IS NOT NULL THEN
+                RAISE EXCEPTION 'this gate kind does not accept auxiliary answer input';
+            END IF;
+
+            SELECT * INTO answering_turn FROM agent_turn_submission
+            WHERE turn_id = NEW.turn_id AND workspace_id = NEW.workspace_id;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'answering turn does not exist in this workspace';
+            END IF;
+            IF answering_turn.project_id <> presented.project_id
+               OR answering_turn.thread_id <> presented.thread_id THEN
+                RAISE EXCEPTION 'answering turn does not belong to this gate thread';
+            END IF;
+            IF answering_turn.submitted_by_user_id <> NEW.answered_by_user_id THEN
+                RAISE EXCEPTION 'answering turn was not submitted by the gate addressee';
+            END IF;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql
+    """
