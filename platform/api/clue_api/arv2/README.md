@@ -183,6 +183,128 @@ re-loaded.
   accounts screens read a finished account through. R2's real finalization writes the same rows
   with the same relationships; the loader is the worked example, not a special case.
 
+## D2 — the display module (`clue_api/arv2/display/`)
+
+Master plan §7 and `docs/specs/ARV2-DATA-SOURCE-MAP.md` §4. D1 gave the lane a place to put
+claims; D2 turns those claims into the three pages a marketer reads — **account overview**,
+**insights** and a **contact page** — one Luna call per section, every sentence carrying the claim
+ids it used. It adds **no migration**: `display_block` and `display_section_recipe` are D1 tables.
+
+### The module map
+
+| Module | Owner | What it owns |
+|---|---|---|
+| `recipes.py` | **S4 content (Shashank)** | `SectionRecipe`, the 17 `SYSTEM_RECIPES` (which field keys feed which section of which page), `RECIPE_VERSION`, `RESTRICTED_SECTION_KEYS`, `recipes_for`, the `load_display_recipes` upsert seeder and the `read_recipes` reader (system row overridden by a same-`(page, section_key)` workspace row). |
+| `prompts.py` | **S4 content (Shashank)** | `PROMPT_VERSION`, `SYSTEM_PROMPT`, the 17 `SECTION_INSTRUCTIONS`, `build_messages`, `RESPONSE_FORMAT`. The three fixed lines live here: no aliases in prose, dates in words, the personal-hobby hook at most once per page. |
+| `render.py` | A4 machinery | `render_value_text` (a claim value as display text, reading `.text` on a media-wrapped value), `DisplayClaim`, `alias_table` (the `c1…cN` payload + the alias→uuid map), `dedupe_near_duplicates`. |
+| `gather.py` | A4 machinery | `resolve_subject`, `client_context`, `committee_members`, and `gather_section_inputs` — the filter that reads the subject's live claims **once** and hands each section exactly the rows its recipe allows. |
+| `runner.py` | A4 machinery | `LunaSectionRunner` (one section = one `ProviderCaller` call, retried once on an unusable reply), the tolerant reply models, and the pure `materialise` that turns a reply into the wire shape and counts everything it removed. |
+| `floor.py` | A4 machinery | The one hard rule: `check_floor` / `forbidden_aliases_for` / `apply_floor`, plus the flag-gated `verbatim_annotations`. |
+| `blocks.py` | A4 machinery | `block_body`, `live_blocks`, `insert_block`, `supersede_blocks`, the recipe-scoped `stale_sections`, `compose_display_block`, `insight_summary`. |
+| `evidence.py` | A4 machinery | `EvidenceRef`, `resolve_evidence`, `evidence_for_ids`, `source_domain`, `favicon_url` — the source drawer, pure and network-free. |
+| `page.py` | A4 machinery | `ensure_page` (decide, write concurrently, persist sequentially), `default_runner_factory`, `record_page_written`, `PageResult`. |
+
+`scripts/generate_arv2_display.py` is the operator command; `tests/arv2/display/` is the suite.
+
+### The decisions (the plan's twelve, condensed)
+
+1. **Display reads live claims, not the merge.** `current_values` collapses `(entity, field)` to one
+   winner; a page shows *everything the research found*. Eligibility mirrors the merge posture
+   without the cardinality collapse (verification on ⇒ unverified tier-4 excluded).
+2. **Short aliases in the prompt.** Claims reach the model as `c1…cN` in a stable order; the runner
+   maps them back. A uuid never reaches the model, so "ids typed in prose" cannot surface one.
+3. **Section keys are contract v1** (kebab-case, fixed) — insights `buying-signals`,
+   `money-and-momentum`, `tools-they-already-use`, `how-they-sell`, `contact-insights`,
+   `context-only`; overview `what-they-do`, `why-they-fit`, `why-now`, `buying-committee`,
+   `how-to-approach`, `watch-outs`; contact `why-this-person`, `problem-right-now`, `openers`,
+   `angles`, `do-not-mention`.
+4. **Restricted-section input** = every `outreach_safe=false` live claim of the subject (a contact
+   page: the contact **and** its account) ∪ the recipe's keys regardless of flag. Non-restricted
+   input = the recipe's keys, `outreach_safe=true` only. A `use_class = sensitive` claim enters no
+   section at all, fail-closed.
+5. **Account pages expand to the committee** — the latest coverage row's `committee_member_ids`,
+   else every contact under the account with ≥1 live claim. Each claim payload carries `subject`.
+6. **Near-duplicate dedupe is per flag group**, and folds *within* one subject only: two people who
+   share a certification both keep their row. A safe/unsafe twin pair is kept as two rows.
+7. **Client context is a setting for now** — `CLUE_ARV2_DISPLAY_CLIENT_PITCH` is
+   `client.what_we_sell`; `client.name` is the workspace's brand. Track O's company-overview
+   artifact replaces the setting when O3 lands.
+8. **The evidence resolver is pure** — domain/favicon/title/quote/`researchExcerpt`/dates all from
+   the claim's own columns and value. `verificationKind = "record"` iff `extraction_method = api`
+   **and** `source_url IS NULL`. No network call.
+9. **The block body stores the section plus its checks** — `{intro, items, checks, cited_flags,
+   cost_usd, call}`. `cited_flags` is the point: it remembers each cited claim's `outreach_safe`
+   *at write time*, which is the only way a later read can see that appropriateness was revoked.
+10. **Off-recipe and unknown citations are annotations**, not failures: the id is dropped from
+    `claimIds` and counted; an uncited sentence is kept and counted. Only unsafe-outside-restricted
+    triggers the regenerate rule.
+11. **The regenerate call is the same prompt plus one line** naming the forbidden aliases, sent with
+    the *same* section input so the alias table is byte-identical.
+12. **Activity** — one `account_activity_event` per *page* write (`kind='summary'`, actor `clue`),
+    against the account; a contact page names the person in `ref_json`.
+
+### Rulings taken during D2 execution
+
+- **Near-duplicate containment is token-set containment**, not substring: a terse claim whose every
+  token appears in a fuller same-field claim folds into the fuller one, so no fact is lost.
+- **Dedupe never folds across two people** — only within one subject.
+- **A committee member with a coverage row but no claims is served, not an error.** Research
+  finalization is authoritative; the store simply holds no rows for that person yet.
+- **`evidence_for_ids` reads live claims only.** A DSAR tombstone is a supersession by a redaction
+  row, so serving superseded evidence would re-surface erased personal text. A stale-served block
+  whose citation was superseded shows no chip until regeneration — the safe direction.
+- **A section whose reply was unusable twice is `failed`, never persisted.** Storing its empty draft
+  would turn a transient provider failure into a permanently blank section; leaving it unwritten
+  means the next `ensure_page` simply retries it as a missing section.
+- **The floor is defence-in-depth.** `gather_section_inputs` already withholds unsafe rows from
+  non-restricted sections, so the regenerate path cannot fire through `ensure_page` on real inputs;
+  it is proven by a direct unit test over a hand-built unsafe input.
+- **Page spend is summed from each runner's `caller.totals()`**, never from `draft.cost` — a
+  retried or regenerated section made more than one call, and the money was spent either way.
+- **Recipes seed through `RESEARCH_PACK_LOADERS`** (`arv2_wiring.py`), the same composition-root
+  seam the field packs use: recipes are registry-like config data.
+
+### Running it
+
+```
+uv run python scripts/generate_arv2_display.py \
+    --database-url postgresql+asyncpg://clue:clue@localhost:55060/clue \
+    --account zafran.io --page all                     # overview + insights
+
+uv run python scripts/generate_arv2_display.py \
+    --database-url ... --account zafran.io --contact "Nick Fisher"    # the contact page
+```
+
+`--database-url` is required so the command can never fall through to `CLUE_DATABASE_URL`. It
+**spends money** — every section it decides is missing is one OpenRouter call — and writes nothing
+when every section is already stored. `--force` rewrites a whole page, `--regenerate-stale`
+rewrites only the sections a newer claim has moved underneath, `--dry-run` rolls the transaction
+back (the calls still happen and are still paid for). Only JSON goes to stdout.
+
+### What D3 wires
+
+- `ensure_page(conn, …)` behind E2 (overview), E3 (insights) and E5 (contact profile).
+- `evidence_for_ids(conn, workspace_id=…, claim_ids=…)` behind the shared `ResearchEvidence` read
+  (source map §3.9) — the same rows the pages cite.
+- `insight_summary(display_block, committee_size)` for the insights header's two-line count.
+- **Regeneration runs in the background.** `ensure_page` is synchronous and a first open waits
+  ~15 s; master plan §7's policy is to *serve the persisted block and regenerate the stale sections
+  behind it*. `stale_sections` and the `regenerate_stale` flag are the seam; the background driver
+  is D3's, not D2's.
+
+### Posture caveats
+
+- **Verification is off** in the shipped posture (`CLUE_VERIFICATION_ENABLED=false`), which is what
+  the answer key was loaded and displayed under. With it on, two of the five Zafran
+  `contact.role_on_committee` rows are unverified tier-4 synthesis and the committee reads three,
+  not five — do not assume a five-member committee without checking the flag.
+- **The display reads live claims, not the merge**, so a page can show two rows of the same field
+  that the merge would have collapsed to one. That is deliberate (decision 1) and is the reason the
+  source-map's older `current_values(...)` wording is superseded.
+- **Safety is exactly as good as `outreach_safe`.** The floor and the gather filter both key on that
+  column; a fact that is mis-flagged safe is displayed safely-by-contract and wrongly-in-fact. The
+  fix for a wrong page is a better claim, never a better prompt.
+
 ## Notes recorded at R1 integration (2026-09-07)
 
 - **The one native call.** `gemini_media_client.transcribe_long` is the only ARV2 call that bypasses

@@ -30,6 +30,13 @@ ARV2_SETTING_DEFAULTS: dict[str, object] = {
     "unevidenced_row_purge_enabled": False,
     "interview_entailment_check": "off",
     "sensitivity_floor_enabled": True,
+    "arv2_display_model": "openai/gpt-5.6-luna",
+    "arv2_display_timeout_s": 240.0,
+    "arv2_display_max_parallel": 8,
+    "arv2_display_client_pitch": (
+        "AI-native ABM: account and committee research, personalised content, "
+        "brand-aligned artifacts, scaled per account"
+    ),
 }
 
 ARV2_SECRET_FIELDS = ("ai_ark_api_key", "gemini_api_key")

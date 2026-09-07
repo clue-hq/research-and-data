@@ -326,6 +326,28 @@ frontend-owned and travel with the re-lift.
   (`verificationKind: "record"`: an email check, a database row) shows a lock icon and the label
   "Record"; the provider name appears only in the hover card. No dates appear on the chip or in the hover card (ruling R1); `verifiedAt` and `publishedAt` stay on the wire for the frontend's own computations.
 
+**Note recorded at D2 (2026-09-08), when the display layer above was built as
+`platform/api/clue_api/arv2/display/`.** The **section keys are contract v1** and are fixed:
+insights `buying-signals` · `money-and-momentum` · `tools-they-already-use` · `how-they-sell` ·
+`contact-insights` · `context-only`; overview `what-they-do` · `why-they-fit` · `why-now` ·
+`buying-committee` · `how-to-approach` · `watch-outs`; contact `why-this-person` ·
+`problem-right-now` · `openers` · `angles` · `do-not-mention`. The three restricted keys are
+`context-only`, `watch-outs` and `do-not-mention`. **The display reads *live claims*, not the
+merge:** `current_values` collapses `(entity, field)` to a single winner, and a page must show
+everything the research found — several rows of the same field included — so the gather step reads
+`claims_for_entities` and mirrors the merge's *eligibility* posture (with verification on,
+unverified tier-4 rows are excluded) without its cardinality collapse. **Claims reach the model as
+short aliases** `c1…cN` in a stable order, never as uuids, which is what makes "never type a claim
+id into prose" a property of the payload rather than a hope about the model; the runner maps the
+aliases back and drops (and counts) any it does not recognise. **The sensitivity floor is
+defence-in-depth, not the primary control:** the gather filter already withholds every
+`outreach_safe=false` row from a non-restricted section, so on real inputs the floor's
+regenerate-once-then-drop path never fires — it exists for the case where the input filter is
+wrong. **The two S4 content files are `display/recipes.py` (the 17 section recipes) and
+`display/prompts.py` (the system prompt and the 17 section instructions);** everything else in the
+package is A4 machinery. D2 adds no migration — `display_block` and `display_section_recipe` are
+D1 tables.
+
 ## 8. Rulings on the dummy frontend (D0)
 
 **Resolved by Shashank's 5 Sep commits (`clue-frontend` @ `84f8ee7`):** the overview renders every

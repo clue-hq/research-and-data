@@ -27,6 +27,11 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-09-07-arv2-d2-display-module.md` — ARV2 D2 on `track-d2`: `clue_api/arv2/display/` (recipes,
+  prompts, gather, runner, floor, blocks, evidence, page) + `scripts/generate_arv2_display.py`; the
+  twelve decisions and the twelve execution rulings; the live exit gate and the three real Zafran
+  pages ($0.038 for 17 sections, the unsafe-outside-restricted count `0`); the copy read-through
+  notes; the close-out gate at baseline; D3/D4 follow-ups.
 - `2026-09-07-arv2-onboarding-o1-o2-sdd-close-out.md` — O1 (substrate) + O2 (Exa Agent surface, templates, mappers) executed via SDD in two worktrees; branches to merge, the 7 rulings, not-this-lane triage list.
 - `2026-09-07-arv2-onboarding-o2-exa-agent-surface.md` — O2 landed on `onboarding/o2-exa-agent-surface`: `ExaClient.agent_run` (create/poll/settle, failures returned not raised), the four §4 request templates, the `KnowledgeDocument` mappers; live Agent run $0.025 / 14 polls / ~65 s; final review wave fixed strict-mypy narrowing in the mappers, covered the `no_run_id` Agent create, and made the failure-note suffix explicit (mypy clean, 298 offline tests).
 - `2026-09-07-arv2-onboarding-o1-substrate.md` — ARV2 onboarding O1 substrate landed: migration

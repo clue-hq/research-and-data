@@ -325,7 +325,11 @@ speaker identity verified before a media quote.
    AND collected_at > block.generated_at)` or a superseded cited claim (`claim.superseded_by IS NOT
    NULL` for any id in `cited_claim_ids`) or `recipe.instruction_version <> block.prompt_version`.
    Stale → serve the existing block now, enqueue regeneration of that section only.
-3. **Miss (no block).** Gather `current_values(subject, recipe.allowed_field_keys)`; drop
+3. **Miss (no block).** Gather the subject's **live claims** on `recipe.allowed_field_keys` —
+   every live row, not one winner per field: `claims_for_entities(...)` under the workspace scope,
+   with the merge's *eligibility* posture applied (with `CLUE_VERIFICATION_ENABLED` on, unverified
+   tier-4 rows are excluded) but **not** its `(entity, field)` collapse, because a page shows
+   everything the research found. Drop
    `outreach_safe = false` claims unless `recipe.restricted`; if nothing remains → serve `empty:
    true` and write no block. Otherwise run one display-model call for the section (master plan §7),
    validate the `ResearchSection` shape, compute `priority` per item, run the sensitivity floor
@@ -337,6 +341,17 @@ speaker identity verified before a media quote.
 
 The display model never receives a URL, a claim's `source_url`, or a claim id it may type into
 prose; the frontend joins `claimIds → researchEvidence` at render time.
+
+**Note (2026-09-08, D2).** Step 3 above previously read "Gather `current_values(subject,
+recipe.allowed_field_keys)`". That wording is superseded: `current_values` is the *merge*, and the
+merge answers "what is the current value of this field", which is the wrong question for a page.
+The implemented rule is the one now written above, and it lives in
+`platform/api/clue_api/arv2/display/gather.py` (`gather_section_inputs`) — one read for the whole
+page, three counted exclusions (special-category never, unsafe outside the restricted sections,
+unverified tier-4 under a verifying posture), then near-duplicate folding within each subject. The
+rest of §4 is implemented as written: lookup in `blocks.live_blocks`, the recipe-scoped staleness
+check in `blocks.stale_sections`, the per-section call and floor in `runner.py` / `floor.py`, and
+the parallel page in `page.ensure_page`.
 
 ---
 
