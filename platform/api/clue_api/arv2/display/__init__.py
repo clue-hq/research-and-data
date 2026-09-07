@@ -2,6 +2,18 @@
 
 from __future__ import annotations
 
+from clue_api.arv2.display.gather import (
+    PERSONA_KEY,
+    TITLE_KEY,
+    ClientContext,
+    SectionInput,
+    SubjectNotFound,
+    SubjectRef,
+    client_context,
+    committee_members,
+    gather_section_inputs,
+    resolve_subject,
+)
 from clue_api.arv2.display.prompts import (
     FIXED_LINES,
     PROMPT_VERSION,
@@ -35,6 +47,7 @@ __all__ = [
     "FIXED_LINES",
     "MAX_VALUE_CHARS",
     "PAGES",
+    "PERSONA_KEY",
     "PROMPT_VERSION",
     "RECIPE_VERSION",
     "RESPONSE_FORMAT",
@@ -42,16 +55,25 @@ __all__ = [
     "SECTION_INSTRUCTIONS",
     "SYSTEM_PROMPT",
     "SYSTEM_RECIPES",
+    "TITLE_KEY",
+    "ClientContext",
     "DisplayClaim",
+    "SectionInput",
     "SectionRecipe",
+    "SubjectNotFound",
+    "SubjectRef",
     "alias_table",
     "build_messages",
+    "client_context",
+    "committee_members",
     "dedupe_near_duplicates",
     "display_claim",
+    "gather_section_inputs",
     "load_display_recipes",
     "prefix_of",
     "read_recipes",
     "recipes_for",
+    "resolve_subject",
     "render_value_text",
     "section_descriptor",
 ]
