@@ -142,6 +142,32 @@ class AgentTurnPreviewRequest(BaseModel):
     previous_turn_outcome: Optional[str] = None
 
 
+class WebTurnTargetNote(BaseModel):
+    """One annotation a human made in the editor (R-A2): the node they pointed at, the
+    optional element INSIDE it, and their own words about it.
+
+    ``path`` is the closed structural grammar of spec §3.1 — ``:nth-child(n)`` steps joined
+    by `` > `` and nothing else — enforced here so a value that reached the brief could
+    never widen into a selector. It is measured from the clone's rendered wrapper, which is
+    what makes it resolvable against the artifact's stored HTML.
+
+    The same pattern is written twice more and cannot be shared across the seam: the
+    platform's acceptance gate (``clue_api.design_turn_targets._WEB_TARGET_PATH``) and this
+    subsystem's resolver (``lumen_api.fragments.paths.PATH_RE``). Change one, change all
+    three.
+
+    ``note`` may be absent: the platform sends one entry per selected node whether or not
+    the human wrote about it, and a note-less entry simply leaves that node with its
+    ordinary TURN TARGET line.
+    """
+
+    target: str
+    path: Optional[str] = Field(
+        default=None, max_length=256, pattern=r"^(:nth-child\(\d+\)( > )?)+$"
+    )
+    note: Optional[str] = Field(default=None, max_length=2000)
+
+
 class WebTurnRequest(BaseModel):
     """A website-mode agent turn against one exact stored WebDoc revision.
 
@@ -157,6 +183,11 @@ class WebTurnRequest(BaseModel):
     # (the orchestrator reacts to a "TURN TARGET" line appended to the brief).
     # Absent/None → an ordinary whole-page turn.
     target_node_ids: Optional[List[str]] = None
+    # R-A2: what the human WROTE about those targets, one entry per submitted
+    # reference in submission order (the order is part of what they said — they
+    # number their own annotations "1.", "2.", …). Absent/None → a selection-only
+    # scoped turn, whose brief is byte-identical to the pre-annotation one.
+    target_notes: Optional[List[WebTurnTargetNote]] = None
     # P5 (D6): the target account this turn personalizes for. Unknown id → 404
     # before the run starts. Absent → the document row's own account_id (a
     # derived doc) is used when present, else an un-personalized turn.
@@ -262,6 +293,25 @@ class WebPublishRequest(BaseModel):
     public-slug charset by the endpoint."""
 
     slug: Optional[str] = None
+    #: F5 task 13 (ruling R-F1): ask for the robots ``noindex`` meta on this publish's pages.
+    #: Defaults OFF, so an ordinary publish is byte-identical to what it produced before this
+    #: field existed. It can only ADD noindex: the publish tool ORs the document's DURABLE
+    #: ABM noindex, so ``false`` from a share menu can never take an ABM account page back
+    #: into the index.
+    noindex: bool = False
+
+
+class SetWorkspaceHandleRequest(BaseModel):
+    """Choose the workspace handle — the DNS label published sites hang off (ruling R-F5-5).
+
+    REQUIRED and un-defaulted: the handle is the host segment of every public URL this workspace
+    will ever serve, so a body that merely forgets the field must be a 422, never a silent
+    re-derivation from the workspace name. Shape and reserved-word validation live in the DAL
+    (one contract, mirrored by the ``design_workspace_handle_shape`` CHECK) rather than here, so
+    the endpoint and the agent path refuse identically.
+    """
+
+    handle: str
 
 
 class SetAgentInstructionsRequest(BaseModel):

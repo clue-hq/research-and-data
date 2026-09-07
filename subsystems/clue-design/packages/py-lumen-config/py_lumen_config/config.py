@@ -324,6 +324,14 @@ class Settings(BaseSettings):
     # OpenRouter values are latency|throughput|price, but this is not enum-validated
     # here — an unknown value is forwarded and OpenRouter rejects it loudly.
     lumen_agent_provider_sort: str | None = "latency"
+    # Route NON-OpenAI agent models (x-ai/grok-4.6 is the default) over OpenRouter's
+    # chat-completions endpoint instead of its /responses bridge — the platform lane's own
+    # ruling (`openrouter_chat_completions_fallback`), now mirrored here. Live 2026-09-04: a
+    # 136-second grok generation on /responses died mid-stream with a server-side
+    # `Auth context expired` and took a six-minute solo run with it. OpenAI-family ids are
+    # unaffected either way (the gateway applies the switch to non-`openai/` ids only).
+    # Env: LUMEN_AGENT_OPENROUTER_CHAT_COMPLETIONS. 0 restores the /responses path.
+    lumen_agent_openrouter_chat_completions: bool = True
     # P3.2: OPTIONAL fallback model id (bare OpenRouter id) tried when the primary
     # errors — rides GatewayConfig.fallback_model with truthful answering-model
     # attribution. Must be vision-capable (the loop is mandatory-multimodal).
@@ -380,6 +388,16 @@ class Settings(BaseSettings):
     # web fast loop. Meaningless (and ignored) when that flag is off — the reviewer is always
     # dispatched there.
     lumen_agent_web_reviewer: bool = False
+    # SOLO MODE (founder ruling 2026-09-04): ONE web deepagent — director, designer and
+    # reviewer in a single model loop. Both subagents (`lumen-web-author`,
+    # `lumen-web-reviewer`) are QUARANTINED (not registered; tool-absence enforcement, the
+    # D-F7 pattern), the orchestrator carries the full authoring toolset, and the merged
+    # solo prompt replaces direction-by-delegation with plan -> build -> render -> self-review.
+    # Motive: the 2026-09-01 OpenAI-CFO diagnostic run measured ~20+ minutes of pure trio
+    # coordination overhead (per-delegation skill re-reads, brief writing, discovery loss)
+    # in a 57-minute page build. Overrides the two web flags above when on: there are no
+    # subagents to quarantine selectively.
+    lumen_agent_web_solo: bool = False
     # §5.6 budgets. RULING D1 (founder, 2026-08-26) SPLIT THESE IN TWO: budgets
     # are GUIDANCE, not gates.
     #

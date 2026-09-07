@@ -37,6 +37,7 @@ from clue_toolbelt import (
     ToolOutput,
 )
 
+from ..public_address import PublicSiteAddress, public_site_address
 from .base import DesignTool
 
 __all__ = [
@@ -76,6 +77,10 @@ class WebPublishRef(ToolOutput):
     package_digest: str | None
     html_digest: str | None
     previous_available: bool
+    #: F5 — the site this publish serves. ``routes`` is in document order (``/`` first for
+    #: every ordinary site), so a caller can name every address it just published.
+    page_count: int = 0
+    routes: list[str] = []
 
 
 class WebPublishStatusRef(ToolOutput):
@@ -97,6 +102,7 @@ def publish_web_document(
     document: dict[str, Any],
     slug: str,
     public_base: str,
+    site_address: PublicSiteAddress | None = None,
     noindex: bool = False,
 ) -> WebPublishRef:
     """Build, persist and point one publish at ``slug``. The ONE publish write path.
@@ -107,6 +113,13 @@ def publish_web_document(
     is what makes "applied on every republish, whichever route publishes it" a property of the
     system rather than a promise each caller has to keep. The direction is one-way on purpose: a
     publish can only ever ADD the robots meta, and nothing that publishes can take it off.
+
+    ``site_address`` is the site's real public address (founder ruling R-F5-1: config, never a
+    constant). It rides ALONGSIDE ``public_base`` rather than replacing it, because
+    ``public_base`` is part of the tool's idempotency body and the address is derived from it —
+    see ``PublishWebDocumentTool.run``, which builds the address from the inputs it was already
+    given so the body, and therefore every recorded operation id, is unchanged. ``None`` means
+    "let the package resolve the interim address itself", which is the same answer.
     """
 
     from .. import web_export
@@ -120,6 +133,7 @@ def publish_web_document(
         blobs=blobs,
         slug=slug,
         public_base=public_base,
+        site_address=site_address,
         workspace_id=repository.workspace_id,
         node_bin=node_bin,
         noindex=noindex,
@@ -143,6 +157,18 @@ def publish_web_document(
             "package_digest": package.package_digest,
             "runtime_version": package.runtime_version,
             "created_at": utc_now(),
+            # F5: the whole site, immutable beside the package that produced it. The DAL
+            # materializes these into the served per-route pages when the pointer swaps, so a
+            # rollback restores the routes as well as the bytes.
+            "pages": [
+                {
+                    "route": page.route,
+                    "page_id": page.page_id,
+                    "html": page.html,
+                    "html_digest": page.html_digest,
+                }
+                for page in package.pages
+            ],
         }
     )
     publish = repository.upsert_web_publish(
@@ -164,6 +190,8 @@ def publish_web_document(
         package_digest=publish.get("package_digest"),
         html_digest=publish.get("html_digest"),
         previous_available=publish["previous_html"] is not None,
+        page_count=len(package.pages),
+        routes=[page.route for page in package.pages],
     )
 
 
@@ -266,6 +294,23 @@ class PublishWebDocumentTool(DesignTool):
     def run(self, inputs: ToolInput, ctx: ToolContext) -> ToolOutput:
         assert isinstance(inputs, PublishWebDocumentInput)
         repository = self.host.repository(ctx.workspace_id)
+        # R-F5-1: where the site is served from is configuration, resolved HERE — from inputs
+        # the operation body already carries — so the body (and every recorded operation id)
+        # is untouched while the address itself can move with the deployment. With no host
+        # suffix configured this is exactly the interim `/w/{workspace}/p/{slug}` scheme.
+        site_address = public_site_address(
+            request_base_url=inputs.public_base,
+            workspace_id=repository.workspace_id,
+            slug=inputs.slug,
+            # T14 / R-F5-5: the workspace's own DNS label. ENSURED, not read — the same call
+            # `publish_site_address` makes for the API's reported url, so the BYTES a publish
+            # mints (canonical, og:url, the manifest back-reference, and the rebased internal
+            # links) name the same address the API reports. Left `None` here, a site served on
+            # `{handle}.<suffix>` would carry interim `/w/{workspace}/p/{slug}` links, which do
+            # not exist on that host. `ensure` never overwrites, and with no host suffix
+            # configured the handle changes nothing about the answer at all.
+            handle=repository.ensure_workspace_handle()["handle"],
+        )
         return publish_web_document(
             repository=repository,
             blobs=self.host.blobs(ctx.workspace_id),
@@ -274,6 +319,7 @@ class PublishWebDocumentTool(DesignTool):
             document=repository.require_document(inputs.document_id),
             slug=inputs.slug,
             public_base=inputs.public_base,
+            site_address=site_address,
             noindex=inputs.noindex,
         )
 

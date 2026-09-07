@@ -54,6 +54,14 @@ class AgentRuntimeConfig:
     # the reviewer's blocker on the requested target was "out of scope" by
     # construction. None/empty → no declared targets, behavior unchanged.
     turn_target_node_ids: list[str] | None = None
+    # R-A2: what the human WROTE about those targets, passed BY VALUE beside the ids
+    # (same rule again — the runtime never reads the API database). One mapping per
+    # submitted reference in submission order: {"target": node id, "path": the optional
+    # `:nth-child` chain naming an element inside a cloned band, "note": their words}.
+    # The order is part of the message — a marketer numbers their own annotations. The
+    # prompt block that renders these is the runtime's; the API renders the same facts
+    # into the brief's ANNOTATION lines. None/empty → a selection-only scoped turn.
+    turn_target_notes: list[dict] | None = None
     # RC (reference-conditioned design): the user-attached reference images for
     # THIS turn, resolved by the API from its asset library and passed BY VALUE
     # (same rule as brand_kit_assets: the runtime never reads the API database).
@@ -109,6 +117,8 @@ class AgentRuntimeConfig:
     # (disables load-balancing) so the append-only ReAct prefix stays cache-warm.
     # None → no `provider` field on the request (byte-identical to pre-L1).
     agent_provider_sort: str | None = "latency"
+    # Non-OpenAI agent models over chat-completions (see py_lumen_config for the ruling).
+    agent_chat_completions: bool = True
     # P3.2: fallback model id for the governed gateway (None → no fallback).
     agent_fallback_model: str | None = None
     # L3 (straggler watchdog): per-request timeout in SECONDS threaded into
@@ -217,6 +227,10 @@ class AgentRuntimeConfig:
     # scenes. Default OFF, and the default is a decision (see py_lumen_config for why).
     web_fast_loop: bool = False
     web_reviewer: bool = False
+    # SOLO MODE (founder ruling 2026-09-04): one web deepagent — director, designer, and
+    # reviewer in a single loop. Quarantines BOTH web subagents (the D-F7 pattern, widened)
+    # and swaps in the merged solo prompt; the two flags above are moot while this is on.
+    web_solo: bool = False
     # R4 budgets, re-shaped by ruling D1 (2026-08-26). Only consulted under
     # `fast_loop`. Two pairs, two jobs:
     #   * `fast_loop_target_*` — GUIDANCE. Communicated to the orchestrator in
@@ -269,6 +283,7 @@ class AgentRuntimeConfig:
             agent_reasoning=settings.lumen_agent_reasoning,
             agent_max_tokens=settings.lumen_agent_max_tokens,
             agent_provider_sort=settings.lumen_agent_provider_sort,
+            agent_chat_completions=settings.lumen_agent_openrouter_chat_completions,
             agent_fallback_model=settings.lumen_agent_fallback_model,
             agent_llm_timeout_s=settings.lumen_agent_llm_timeout_s,
             agent_model_orchestrator=settings.lumen_agent_model_orchestrator,
@@ -280,6 +295,7 @@ class AgentRuntimeConfig:
             scene_reviewer=settings.lumen_agent_scene_reviewer,
             web_fast_loop=settings.lumen_agent_web_fast_loop,
             web_reviewer=settings.lumen_agent_web_reviewer,
+            web_solo=settings.lumen_agent_web_solo,
             fast_loop_target_llm_calls=settings.lumen_agent_fast_loop_target_llm_calls,
             fast_loop_target_wall_clock_s=settings.lumen_agent_fast_loop_target_wall_clock_s,
             fast_loop_max_llm_calls=settings.lumen_agent_fast_loop_max_llm_calls,

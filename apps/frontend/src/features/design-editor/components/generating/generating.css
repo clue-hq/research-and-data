@@ -1,17 +1,18 @@
 /* =============================================================================
    Clue — "agent is generating" motion (approved 2026-09-04)
    -----------------------------------------------------------------------------
-   Ported 2026-09-04 from `handoff/output-pane-generating-motion`, trimmed to the
-   two pieces the scene-ad editor needs. Import it once where the output pane is
+   One stylesheet drives the three React components in this folder AND the
+   browser previews in ../preview/. Import it once where the output pane is
    composed. Every colour reads a design-system token with a literal fallback.
 
-   Two pieces, both absolutely positioned inside a `position: relative` host:
+   Three pieces, all absolutely positioned inside a `position: relative` host:
      .clue-gen-glow   thin light frame at the pane's edges, two soft bands drift round it
+     .clue-gen-veil   blur + Clue mark assembly + label (website: nothing to show yet)
      .clue-gen-lock   transparent input shield + "Agent is designing" chip (ad: live canvas)
    Each is driven by data-active="true|false" and fades in/out on its own.
-   Stacking: glow 42 < lock 43 (chip over the glow) — raised from the handoff's
-   7/8 so both clear the scene canvas's own banners (40) and caret textarea (41).
-   The website veil (`.clue-gen-veil*`) is deliberately NOT ported.
+   Stacking: veil 41 < glow 42 < lock 43 (glow over the blur; chip over the glow) — raised
+   from the handoff's 6/7/8 so all three clear the scene canvas's own banners (40) and caret
+   textarea (41).
    ============================================================================= */
 
 :root {
@@ -73,7 +74,53 @@
 @keyframes clue-gen-sweep { from { --clue-gen-angle: 0deg; } to { --clue-gen-angle: 360deg; } }
 
 /* ---------------------------------------------------------------------------
-   2. Ad lock — the canvas stays fully visible and updates live, but input is
+   2. Website veil — the page can't stream, so the pane blurs until it exists.
+      The Clue mark's three pieces drift in, lock, breathe, ease apart, repeat.
+      Behind it a slow light-on-paper drift. Shields input while active.
+   --------------------------------------------------------------------------- */
+.clue-gen-veil {
+  position: absolute; inset: 0; z-index: 41; /* website veil: above the canvas's banners (40) */
+  display: grid; place-items: center; overflow: hidden;
+  background: rgba(255, 255, 255, .58);
+  -webkit-backdrop-filter: blur(18px) saturate(.7); backdrop-filter: blur(18px) saturate(.7);
+  opacity: 0; pointer-events: none; transition: opacity .6s var(--clue-gen-ease);
+}
+.clue-gen-veil[data-active="true"] { opacity: 1; pointer-events: auto; cursor: progress; }
+.clue-gen-veil::before {
+  content: ""; position: absolute; inset: -40%;
+  background:
+    radial-gradient(40% 40% at 30% 35%, rgba(188, 196, 179, .55), transparent 70%),
+    radial-gradient(35% 35% at 70% 65%, rgba(248, 245, 220, .9), transparent 70%),
+    radial-gradient(30% 30% at 60% 25%, rgba(234, 243, 245, .7), transparent 70%);
+  filter: blur(30px);
+}
+.clue-gen-veil[data-active="true"]::before { animation: clue-gen-drift 14s ease-in-out infinite alternate; }
+@keyframes clue-gen-drift { from { transform: translate(-4%, -3%) rotate(0deg); } to { transform: translate(4%, 3%) rotate(8deg); } }
+
+.clue-gen-veil__stage { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.clue-gen-mark { width: 96px; height: auto; color: var(--clue-gen-olive); overflow: visible; }
+.clue-gen-mark path { fill: currentColor; transform-box: fill-box; transform-origin: center; }
+.clue-gen-veil[data-active="true"] .clue-gen-mark path { animation: 6s cubic-bezier(.6, 0, .2, 1) infinite; }
+.clue-gen-veil[data-active="true"] .clue-gen-mark path:nth-child(1) { animation-name: clue-gen-p1; }
+.clue-gen-veil[data-active="true"] .clue-gen-mark path:nth-child(2) { animation-name: clue-gen-p2; animation-delay: .12s; }
+.clue-gen-veil[data-active="true"] .clue-gen-mark path:nth-child(3) { animation-name: clue-gen-p3; animation-delay: .24s; }
+/* timeline of 6s: 0–22% assemble · 22–58% breathe · 58–78% ease apart · 78–100% fade & return */
+@keyframes clue-gen-p1 { 0% { transform: translate(-90px,-40px) rotate(-14deg); opacity: 0; } 22% { transform: none; opacity: 1; } 40% { transform: translate(-2px,-2px); } 58% { transform: none; } 78% { transform: translate(-26px,-10px) rotate(-6deg); opacity: 1; } 92% { transform: translate(-26px,-10px) rotate(-6deg); opacity: 0; } 100% { transform: translate(-90px,-40px) rotate(-14deg); opacity: 0; } }
+@keyframes clue-gen-p2 { 0% { transform: translate(70px,-70px) rotate(12deg); opacity: 0; } 22% { transform: none; opacity: 1; } 40% { transform: translate(2px,-3px); } 58% { transform: none; } 78% { transform: translate(18px,-18px) rotate(5deg); opacity: 1; } 92% { transform: translate(18px,-18px) rotate(5deg); opacity: 0; } 100% { transform: translate(70px,-70px) rotate(12deg); opacity: 0; } }
+@keyframes clue-gen-p3 { 0% { transform: translate(60px,80px) rotate(-10deg); opacity: 0; } 22% { transform: none; opacity: 1; } 40% { transform: translate(2px,3px); } 58% { transform: none; } 78% { transform: translate(16px,22px) rotate(4deg); opacity: 1; } 92% { transform: translate(16px,22px) rotate(4deg); opacity: 0; } 100% { transform: translate(60px,80px) rotate(-10deg); opacity: 0; } }
+
+.clue-gen-title {
+  margin-top: 26px; font: 500 14px/1.4 var(--clue-gen-font);
+  color: var(--clue-gen-olive-deep);
+  background: linear-gradient(90deg, var(--clue-gen-olive-deep) 0 40%, var(--clue-gen-sage) 50%, var(--clue-gen-olive-deep) 60% 100%);
+  background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  animation: clue-gen-shimmer 2.4s linear infinite;
+}
+.clue-gen-hint { margin-top: 6px; font: 400 12px/1.4 var(--clue-gen-font); color: var(--clue-gen-muted); }
+@keyframes clue-gen-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+
+/* ---------------------------------------------------------------------------
+   3. Ad lock — the canvas stays fully visible and updates live, but input is
       shielded and a small chip (8px radius, the frontend's --radius) says the
       agent is working. The Clue mark is the spinner: its three pieces light
       up in turn.
@@ -110,15 +157,13 @@
   animation: clue-gen-shimmer 2.4s linear infinite;
 }
 
-/* Shared keyframe: the chip copy shimmers along its clipped gradient. */
-@keyframes clue-gen-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
-
 /* ---------------------------------------------------------------------------
    Reduced motion: keep the states, drop the movement.
    --------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   .clue-gen-glow[data-active="true"] > i,
-  .clue-gen-lock__text, .clue-gen-lock[data-active="true"] .clue-gen-spinner path { animation: none; }
+  .clue-gen-veil[data-active="true"]::before, .clue-gen-veil[data-active="true"] .clue-gen-mark path,
+  .clue-gen-title, .clue-gen-lock__text, .clue-gen-lock[data-active="true"] .clue-gen-spinner path { animation: none; }
   .clue-gen-spinner path { opacity: .7; }
-  .clue-gen-lock__text { background: none; -webkit-text-fill-color: currentColor; }
+  .clue-gen-title, .clue-gen-lock__text { background: none; -webkit-text-fill-color: currentColor; }
 }

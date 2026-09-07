@@ -38,6 +38,7 @@ export function ProjectComposer({
   onSubmit,
   prompt,
   sendDisabled = false,
+  submittableWithoutPrompt = false,
   selectedEntities = [],
   selectedEntityIds = [],
   selectedModel,
@@ -62,6 +63,11 @@ export function ProjectComposer({
   onSubmit: (value: string, entityIds: string[]) => boolean | Promise<boolean>;
   prompt: string;
   sendDisabled?: boolean;
+  /** Web annotations (slice 2, R-A2): the caller is carrying context that IS
+   * the message — numbered annotation chips above the composer — so an empty
+   * box is a legitimate send, and the turn's text is the caller's to decide.
+   * Defaults false: every other composer keeps its "type something" rule. */
+  submittableWithoutPrompt?: boolean;
   selectedEntities?: ProjectEntity[];
   selectedEntityIds?: string[];
   selectedModel?: ProjectModelOption;
@@ -88,7 +94,12 @@ export function ProjectComposer({
       const currentPrompt =
         promptOverride ?? editorRef.current?.getPrompt() ?? prompt;
       const currentEntityIds = editorRef.current?.getEntityIds() ?? [];
-      if (!currentPrompt.trim() && !currentEntityIds.length && !attachments.length) {
+      if (
+        !currentPrompt.trim() &&
+        !currentEntityIds.length &&
+        !attachments.length &&
+        !submittableWithoutPrompt
+      ) {
         return;
       }
 
@@ -101,7 +112,15 @@ export function ProjectComposer({
         setSubmitting(false);
       }
     },
-    [attachments.length, disabled, onSubmit, prompt, sendDisabled, submitting],
+    [
+      attachments.length,
+      disabled,
+      onSubmit,
+      prompt,
+      sendDisabled,
+      submittableWithoutPrompt,
+      submitting,
+    ],
   );
 
   return (
@@ -211,7 +230,10 @@ export function ProjectComposer({
               disabled ||
               sendDisabled ||
               submitting ||
-              (!prompt.trim() && !selectedEntities.length && !attachments.length)
+              (!prompt.trim() &&
+                !selectedEntities.length &&
+                !attachments.length &&
+                !submittableWithoutPrompt)
             }
             type="submit"
           >

@@ -172,12 +172,19 @@ export function EditorSurface({
               // belongs to selection changes alone. (Known, accepted drift:
               // an engine-snapped value — padding 7→6 — displays as typed
               // until the node is reselected.)
-              key={session.webSelection.selection?.node.id ?? "canvas"}
+              // The canvas key carries the theme's page surface, so the one time the
+                // theme lands after mount the canvas inspector re-seeds from it
+                // (the web lane hydrates at mount, not live).
+                key={session.webSelection.selection?.node.id ?? `canvas:${session.canvasHydrated?.backgroundColor ?? ""}`}
               customComponentForm={session.customComponentForm}
               error={session.inspectorError}
               note={session.writes.note}
               addressing={session.addressing}
-              hydrated={session.webSelection.selection?.hydrated}
+              // R-A6 (slice 3): the human's own text edits inside the selected
+              // cloned band, each with its Clear (the session decides whether
+              // the selection owns a list at all).
+              cloneTextEdits={session.cloneTextEdits}
+              hydrated={session.webSelection.selection?.hydrated ?? session.canvasHydrated}
               layers={session.layerRows}
               // W5.1 (§5): the mapper's fallback flag — embeds (item 32) and
               // the interactive components (item 33) land on the container
@@ -186,6 +193,9 @@ export function EditorSurface({
               onReplaceImage={session.onReplaceImage}
               onSelectLayer={session.onSelectLayer}
               onSelectionChange={controller.selectInspectorElement}
+              // F5 task 19 (FLAGGED): the page/route controls, present only while
+              // no node is selected (the session decides).
+              pageSection={session.pageSection}
               richTextRange={session.richTextRange}
               selection={inspectorSelection}
               themeColors={session.themeColors}
@@ -235,8 +245,14 @@ export function EditorSurface({
         </div>
       ) : null}
       <ArtifactStage
+        annotations={session.canvasAnnotations}
         activeArtifactId={controller.activeArtifactId}
         activeDocumentId={activeDocumentId}
+        // F5 task 18: the header's page switcher and the canvas read ONE
+        // value — the web editing session's active page.
+        activePageId={session.activePageId}
+        onPageChange={session.setActivePageId}
+        pages={session.pages}
         artifacts={artifacts ?? []}
         canvasControlsRef={session.canvasControls}
         canvasReloadToken={
@@ -280,6 +296,7 @@ export function EditorSurface({
         onCanvasSelect={session.webSelection.onSelect}
         onCloseArtifact={controller.closeArtifact}
         onOpenGallery={controller.openGallery}
+        onCloneTextCommit={session.onCloneTextCommit}
         onRichTextCommit={session.onRichTextCommit}
         onRichTextSessionChange={session.onRichTextSessionChange}
         richTextBusy={session.writes.busy}

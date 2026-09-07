@@ -47,11 +47,10 @@ export function useScenePalette() {
  * What the pickers are OFFERED, or `undefined` when this document has no brand
  * swatches to offer — which is also the signal that no token write may fire.
  *
- * The two are one question deliberately: with no options, `ColorControl` falls
- * back to `INSPECTOR_THEME_COLORS` (the dummy's fixture palette), and a pick
- * from THAT list names no token this document has. Passing `onTokenChange`
- * alongside it would write `{kind:"token", token:"Primary"}` — a binding
- * nothing can resolve. So callers gate the token handler on this exact value,
+ * The two are one question deliberately: with no options, `ColorControl`
+ * shows an empty Theme tab, so no pick can name a token this document lacks;
+ * the handler is still gated on this value so a stale label can never write
+ * `{kind:"token", token:"Primary"}` — a binding nothing can resolve. So callers gate the token handler on this exact value,
  * and `scene-apply.ts` refuses the label a second time at the write.
  */
 export function useScenePaletteOptions() {

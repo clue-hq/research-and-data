@@ -14,7 +14,9 @@ Public API:
 
 from __future__ import annotations
 
+import functools
 import json
+import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
@@ -35,9 +37,9 @@ from .prompts_web import (
     build_web_author_prompt,
     build_web_orchestrator_prompt,
     build_web_reviewer_prompt,
+    build_web_solo_prompt,
 )
 from .tools.web_substrate import (
-    HOME_PAGE_ID,
     LumenWebTools,
     has_existing_content,
     make_web_view_tool,
@@ -174,6 +176,33 @@ class WebDelegationCap(AgentMiddleware):
         return handler(request)
 
 
+def serialize_tool_calls(tool_list: list, lock: "threading.RLock") -> list:
+    """Wrap every plain-callable tool so its execution holds ``lock``.
+
+    langgraph executes one response's tool calls in parallel threads; the substrate's
+    document is a read-modify-write shared state, so two batched writers race (live
+    2026-09-04: two `asset` registrations erased an `assemble_cloned_sections` result
+    that landed 27ms earlier). Holding one re-entrant lock per call turns a batched
+    response into an in-order sequence. `functools.wraps` keeps the name, docstring,
+    annotations and `__wrapped__`, which is what the tool-schema conversion reads, so the
+    model sees byte-identical tools. Ready-made ``BaseTool`` objects (the `view` tool) are
+    passed through untouched — they are reads of an atomically-assigned dict.
+    """
+
+    def wrap(tool):
+        if not callable(tool) or hasattr(tool, "invoke"):
+            return tool
+
+        @functools.wraps(tool)
+        def serialized(*args, **kwargs):
+            with lock:
+                return tool(*args, **kwargs)
+
+        return serialized
+
+    return [wrap(tool) for tool in tool_list]
+
+
 def _scaffold_web_workspace(tools: LumenWebTools, prompt: str) -> str:
     """Create the run workspace and seed its read-write files. Returns the
     virtual workspace path the file tools operate under."""
@@ -249,12 +278,16 @@ def create_web_deepagent(
     orchestrator_model = _instrument(
         runtime_config, tools, runtime_config.orchestrator_model, "orchestrator", **cancel_kwargs
     )
-    author_model = _instrument(
-        runtime_config, tools, runtime_config.author_model, "author", **cancel_kwargs
-    )
-    reviewer_model = _instrument(
-        runtime_config, tools, runtime_config.reviewer_model, "reviewer", **cancel_kwargs
-    )
+    # SOLO MODE (founder ruling 2026-09-04) builds neither subagent model: there is nobody
+    # to hand them to, and an instrumented model that can never be called is a lie in the
+    # attribution stream.
+    if not runtime_config.web_solo:
+        author_model = _instrument(
+            runtime_config, tools, runtime_config.author_model, "author", **cancel_kwargs
+        )
+        reviewer_model = _instrument(
+            runtime_config, tools, runtime_config.reviewer_model, "reviewer", **cancel_kwargs
+        )
 
     # Two view variants over the same substrate state: identical except the
     # stale/no-preview refusal text. The subagent variant never instructs a
@@ -271,7 +304,13 @@ def create_web_deepagent(
 
     theme_token_names = web_theme_token_names(runtime_config.brand_kit)
 
-    subagents = [
+    # SOLO MODE: the ternary short-circuits, so neither subagent dict (nor the models they
+    # would close over) is ever constructed — the same tool-absence enforcement as D-F7,
+    # widened to both roles. The trio path below is byte-identical to before the ruling.
+    subagents = (
+        []
+        if runtime_config.web_solo
+        else [
         {
             "name": "lumen-web-author",
             "description": (
@@ -305,6 +344,7 @@ def create_web_deepagent(
                 # proof bands are reused where a released clone serves the job, and composing one
                 # from scratch is what happens when none does.
                 tools.search_cloned_sections,
+                tools.inspect_cloned_section,
                 tools.insert_cloned_section,
                 # F3.1: the two halves of the recreate walk. `recreate_cloned_page` is the
                 # whole-page assembly (all of them, source order, nothing added);
@@ -347,6 +387,11 @@ def create_web_deepagent(
                 tools.write_custom_component_source,
                 tools.compile_custom_component,
                 tools.place_custom_component,
+                # F5 task 8: a READ, and only the read. The author writes the page the
+                # director switched to, so it needs to know which page that is (and what
+                # routes its sibling pages answer on, to link between them) — but creating,
+                # dropping and switching pages is the director's plan, not the author's.
+                tools.list_pages,
             ],
             "skills": workspace_skills,
         },
@@ -369,7 +414,8 @@ def create_web_deepagent(
             # validation failure instead of killing the run.
             "response_format": ToolStrategy(VisualCritique),
         },
-    ]
+        ]
+    )
 
     # --- the web lane's fast loop / ruling D-F7: reviewer QUARANTINED, not deleted -------------
     # The scene lane's R3 quarantine, mirrored for web turns (F3.3). Under the web fast loop the
@@ -380,7 +426,7 @@ def create_web_deepagent(
     # Everything about the reviewer stays BUILT above: its prompt (rubric included), its own
     # model instance, its ToolStrategy(VisualCritique), its whole dict. It is one config flag
     # from being live again, and `LUMEN_AGENT_WEB_REVIEWER=1` is that flag.
-    if not runtime_config.web_reviewer_enabled:
+    if not runtime_config.web_solo and not runtime_config.web_reviewer_enabled:
         subagents = [sa for sa in subagents if sa["name"] != _REVIEWER_SUBAGENT]
         logger.info(
             "web_reviewer_quarantined",
@@ -413,25 +459,103 @@ def create_web_deepagent(
         # weighs rather than markup an author edits. The reviewer subagent, when it exists, reads
         # the gate's captures through the director's brief exactly as it reads the previews.
         tools.review_cloned_page,
+        # F5 task 8: the site's page shape is the DIRECTOR's plan. It creates every page the
+        # plan names before the first delegation and switches to each one in turn, because
+        # the author always writes the ACTIVE page and one author brief covers exactly one
+        # page. None of these four write page content.
+        tools.list_pages,
+        tools.add_page,
+        tools.remove_page,
+        tools.switch_page,
         tools.finalize_web_run,
     ]
 
+    if runtime_config.web_solo:
+        # SOLO MODE (founder ruling 2026-09-04): the one agent is director, designer, and
+        # judge, so it carries the author's whole write surface on top of the director's
+        # read/render/judge surface above. The author-owns-the-document law is not
+        # weakened — there is exactly one document-writing role either way; it simply has
+        # the director's eyes now.
+        orchestrator_tools += [
+            tools.web_ops,
+            tools.author_web_page,
+            tools.author_web_subtree,
+            tools.patch_web_page,
+            tools.insert_cloned_section,
+            # 2026-09-04: the raw lane's missing read — a clone's real HTML+CSS, so a variant
+            # or raw composition remixes bytes instead of imagining them.
+            tools.inspect_cloned_section,
+            tools.recreate_cloned_page,
+            tools.assemble_cloned_sections,
+            tools.repair_cloned_section,
+            tools.compose_web_section,
+            tools.release_repair,
+            tools.mint_campaign_shells,
+            tools.assemble_abm_page,
+            tools.asset,
+            tools.write_custom_component_source,
+            tools.compile_custom_component,
+            tools.place_custom_component,
+        ]
+        logger.info(
+            "web_subagents_quarantined",
+            run_id=tools.run_id,
+            quarantined=[_AUTHOR_SUBAGENT, _REVIEWER_SUBAGENT],
+            reason="web_solo_2026_09_04",
+        )
+
     doc_title = initial_web_doc.get("title") or "Untitled site"
-    agent = create_deep_agent(
-        model=orchestrator_model,
-        backend=backend,
-        permissions=_filesystem_permissions(),
-        tools=orchestrator_tools,
-        system_prompt=build_web_orchestrator_prompt(
+    page_routes = [
+        page["route"]
+        for page in initial_web_doc.get("pages") or []
+        if isinstance(page, dict) and page.get("route")
+    ]
+    if runtime_config.web_solo:
+        system_prompt = build_web_solo_prompt(
             doc_title=doc_title,
-            has_existing_content=has_existing_content(initial_web_doc, HOME_PAGE_ID),
+            has_existing_content=has_existing_content(initial_web_doc),
+            brand_card=tools.brand_card_text,
+            theme_token_names=theme_token_names,
+            account_card=tools.account_card_text,
+            brandfetch_client_id=runtime_config.brandfetch_client_id,
+            page_routes=page_routes,
+            # The RUN-SCOPED workspace (founder correction 2026-09-04): plan.md lives
+            # beside this run's brief.md, never at the shared backend root — a bare
+            # relative "workspace/" resolved there and leaked one brief's plan into the
+            # next run (the Ramp run inherited the billing campaign's 380-line plan).
+            workspace_dir=workspace_str,
+            # The marketer's numbered annotations (R-A1..R-A3, 2026-09-04): when they ride
+            # the turn, the prompt carries the law for honouring them; when they do not,
+            # the block is absent.
+            annotations=runtime_config.turn_target_notes,
+        )
+    else:
+        system_prompt = build_web_orchestrator_prompt(
+            doc_title=doc_title,
+            # F5 task 8: ANY page having content makes this a continuation, not a fresh
+            # site — a second page authored last turn is standing work the director must
+            # not treat as an empty document.
+            has_existing_content=has_existing_content(initial_web_doc),
             brand_card=tools.brand_card_text,
             review_cap=WEB_REVIEW_DELEGATION_CAP,
             author_cap=WEB_AUTHOR_DELEGATION_CAP,
             account_card=tools.account_card_text,
             # D-F7: the same rubric either way; only who applies it moves.
             web_reviewer=runtime_config.web_reviewer_enabled,
-        ),
+            page_routes=page_routes,
+        )
+    agent = create_deep_agent(
+        model=orchestrator_model,
+        backend=backend,
+        permissions=_filesystem_permissions(),
+        # One response's tool calls run in parallel threads by default; the substrate's
+        # document is shared read-modify-write state, so they are serialized (see
+        # `serialize_tool_calls`).
+        tools=serialize_tool_calls(orchestrator_tools, tools.tool_lock),
+        system_prompt=system_prompt,
+        # SOLO carries the skills tree itself (it is the reader now); the trio path keeps
+        # skills on the subagents exactly as before (None = the library default).
+        skills=(workspace_skills if runtime_config.web_solo else None),
         subagents=subagents,
         # G4/G6: the delegation budgets ride as ordinary tool-call middleware on the
         # ORCHESTRATOR, which is where `task` executes. Fresh per turn, so the counters

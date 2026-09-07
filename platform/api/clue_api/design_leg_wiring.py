@@ -70,7 +70,11 @@ from clue_api.agent_turn_wiring import (
 )
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.chat.turn_stream import TurnStreamEmitter
-from clue_api.design_turn_targets import DesignTurnTargetError, resolve_scene_targets
+from clue_api.design_turn_targets import (
+    DesignTurnTargetError,
+    resolve_scene_targets,
+    resolve_web_targets,
+)
 from clue_api.turn_action import derive_turn_action_ref
 from clue_core import ExecutionId, operation_id_from_key
 from clue_db import ConnFactory, transaction
@@ -1328,11 +1332,6 @@ class DesignLegTurnRunner:
         reference_asset_ids = tuple(
             ref.object_id for ref in focus_refs if ref.object_type == "design_asset"
         )
-        resolved_targets = (
-            resolve_scene_targets(document.get("scene") or {}, target_node_ids)
-            if target_node_ids
-            else None
-        )
         # B1: the leg document's kind decides which design runtime executes the turn. A web
         # document takes the ``web_turn`` path with a ``WebTurnRequest``-shaped request; a
         # scene document (or no pinned document at all — nothing to read a kind from) keeps
@@ -1340,6 +1339,16 @@ class DesignLegTurnRunner:
         kind: Literal["agent_turn", "web_turn"] = (
             "web_turn" if document.get("doc_kind") == "web" else "agent_turn"
         )
+        # Targets are resolved with the runtime that will consume them, never before the
+        # branch: a web document's ``scene`` column holds a WEB document (pages carry their
+        # own ``nodes``), so running the scene page-resolver over it would refuse every web
+        # annotation as unreachable.
+        resolved_targets = (
+            resolve_scene_targets(document.get("scene") or {}, target_node_ids)
+            if target_node_ids and kind == "agent_turn"
+            else None
+        )
+        web_targets = resolve_web_targets(focus_refs) if kind == "web_turn" else None
         request: dict[str, JsonValue]
         if kind == "web_turn":
             request = {
@@ -1349,10 +1358,24 @@ class DesignLegTurnRunner:
                 # stored document stays the authority on staleness: a turn that lost the race
                 # comes back conflicted rather than clobbering a newer human edit.
                 "base_version": int(document.get("current_version") or 0),
-                # v1 (plan F4): no scoped targets, no model override, no account — the design
-                # request model defaults each of them, and a fabricated value here would be a
-                # platform guess. ``previous_turn_outcome`` has no WebTurnRequest field at all;
-                # the clarification echo is a scene-path contract.
+                # Only when the human actually pointed at something. A targetless web turn
+                # keeps the plan-F4 v1 request byte-for-byte (prompt + base_version): the
+                # design request model defaults both keys, and sending them unconditionally
+                # would break that freeze. No model override and no account here either —
+                # a fabricated value would be a platform guess.
+                **(
+                    {
+                        "target_node_ids": list(web_targets.target_node_ids),
+                        "target_notes": [
+                            {"target": note.target, "path": note.path, "note": note.note}
+                            for note in web_targets.target_notes
+                        ],
+                    }
+                    if web_targets is not None
+                    else {}
+                ),
+                # ``previous_turn_outcome`` has no WebTurnRequest field at all; the
+                # clarification echo is a scene-path contract.
             }
         else:
             request = {

@@ -23,6 +23,7 @@ import { useArtifactSharingController } from "../hooks/use-artifact-sharing-cont
 import { useArtifactTabController } from "../hooks/use-artifact-tab-controller";
 import {
   useArtifactToolbarController,
+  type ArtifactPageOption,
   type ArtifactPreviewDevice,
 } from "../hooks/use-artifact-toolbar-controller";
 import { useImageExportController } from "../hooks/use-image-export-controller";
@@ -48,16 +49,20 @@ const ZOOM_LEVELS = Array.from({ length: 29 }, (_, index) => `${10 + index * 5}%
 export function ArtifactHeader({
   editDisabled = false,
   editDisabledReason = null,
+  activePageId,
   device,
+  documentId,
   editing,
   exportPreview,
   exportStatus,
   kind,
   onDeviceChange,
   onEdit,
+  onPageChange,
   onRename,
   onRequestExportPreview,
   onZoomChange,
+  pages,
   redoDisabled,
   title,
   undoDisabled,
@@ -77,10 +82,18 @@ export function ArtifactHeader({
    * chrome is invented for it — the button already has a hover/AT surface, and
    * the same sentence is in the inspector's note line beside it. */
   editDisabledReason?: string | null;
+  /** F5 task 18: the page the canvas is rendering. Present → the web editing
+   * session owns the value; absent leaves the toolbar controller's own local
+   * value. */
+  activePageId?: string | null;
   /** The preview device to display. Present → the artifact stage owns the
    * value (it also drives the web canvas viewport width); absent leaves the
    * toolbar controller's own local value. */
   device?: ArtifactPreviewDevice | null;
+  /** F5 task 13: the design document behind the artifact — what the Share
+   * menu publishes. Absent while the stage has no document, which leaves
+   * publishing unavailable rather than faked. */
+  documentId?: string | null;
   editing: boolean;
   /** AD4.D step 3: the ad session's render for the export menu's designed
    * preview region, with the element that hosts it. Absent on every other
@@ -95,6 +108,10 @@ export function ArtifactHeader({
    * renders the zoom menu instead and never touches either. */
   onDeviceChange?: (device: ArtifactPreviewDevice) => void;
   onEdit: () => void;
+  /** F5 task 18: a page the user picked from the switcher, reported to the web
+   * editing session — which owns the value and hands it back through
+   * `activePageId`. */
+  onPageChange?: (pageId: string) => void;
   onRename: (title: string) => void;
   /** AD4.D step 3: the export menu's request for a preview at the settings it
    * is currently showing. Absent on every other path. */
@@ -106,6 +123,9 @@ export function ArtifactHeader({
    * session — which owns the value and hands it back through `zoom`. The WEB
    * branch below renders the device menu instead and never touches either. */
   onZoomChange?: (zoom: string) => void;
+  /** F5 task 18: the active web document's pages. Empty/absent → the switcher
+   * is not rendered at all (an ad, or a document with no pages yet). */
+  pages?: readonly ArtifactPageOption[];
   /** W3.4: empty-stack disable for the action menu's Redo. */
   redoDisabled?: boolean;
   title: string;
@@ -139,19 +159,25 @@ export function ArtifactHeader({
   const {
     controller: sharingController,
     menuRef: sharingMenuRef,
-  } = useArtifactSharingController({ kind, title });
+  } = useArtifactSharingController({ documentId, kind, title });
   const {
     controller: imageExportController,
     menuRef: imageExportMenuRef,
   } = useImageExportController({ title });
   const {
+    activePage,
+    activePageId: shownPageId,
     chooseDevice,
+    choosePage,
     chooseZoom,
     closeMenus: closeToolbarMenus,
     device: activeDevice,
     deviceMenuOpen,
     deviceMenuRef,
+    pageMenuOpen,
+    pageMenuRef,
     toggleDeviceMenu,
+    togglePageMenu,
     toggleZoomMenu,
     zoom: activeZoom,
     zoomMenuOpen,
@@ -159,8 +185,17 @@ export function ArtifactHeader({
     // AD2.8: zoom is LIFTED — the ad session owns it, because the same value
     // has to drive the canvas viewport. The device choice is lifted the same
     // way: the artifact stage owns it, because it also sets the web canvas's
-    // viewport width.
-  } = useArtifactToolbarController({ device, onDeviceChange, onZoomChange, zoom });
+    // viewport width. F5 task 18 lifts the page the same way again — the web
+    // editing session owns it, because it also drives the render fetch.
+  } = useArtifactToolbarController({
+    activePageId,
+    device,
+    onDeviceChange,
+    onPageChange,
+    onZoomChange,
+    pages,
+    zoom,
+  });
   const handleRenameKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") commitRename();
     if (event.key === "Escape") cancelRename();
@@ -227,6 +262,60 @@ export function ArtifactHeader({
         </div>
       </div>
       <div className={styles.artifactHeaderActions}>
+        {/* FLAGGED F5 T18: no designed slot in the dummy frontend for a page
+         * switcher — minimal neutral control pending founder/design ruling.
+         * Styled as the device/zoom menus already are, so it reads as one of
+         * them rather than as invented chrome.
+         *
+         * F5 T19 (founder ruling after T18): TWO pages, not one. A single-page
+         * site has nothing to switch to, so its header stays exactly as it
+         * shipped — the switcher appears the moment a site becomes plural. */}
+        {kind === "web" && pages && pages.length >= 2 ? (
+          <div className={styles.toolbarMenuAnchor} ref={pageMenuRef}>
+            <button
+              aria-expanded={pageMenuOpen}
+              aria-haspopup="menu"
+              aria-label={`Page: ${activePage?.name ?? ""}`}
+              className={styles.zoomButton}
+              onClick={() => {
+                closeArtifactActionMenu();
+                sharingController.closeMenu();
+                imageExportController.closeMenu();
+                togglePageMenu();
+              }}
+              type="button"
+            >
+              <span>{activePage?.name ?? ""}</span>
+              <ChevronDownIcon
+                absoluteStrokeWidth
+                aria-hidden="true"
+                className={pageMenuOpen ? styles.zoomChevronOpen : undefined}
+                size={14}
+                strokeWidth={1.25}
+              />
+            </button>
+            {pageMenuOpen ? (
+              <div aria-label="Page" className={`${styles.toolbarMenu} ${styles.toolbarMenuScrollable}`} role="menu">
+                {pages.map((option) => (
+                  <button
+                    aria-checked={shownPageId === option.id}
+                    className={`${styles.toolbarMenuItem} ${shownPageId === option.id ? styles.toolbarMenuItemActive : ""}`}
+                    key={option.id}
+                    onClick={() => choosePage(option.id)}
+                    role="menuitemradio"
+                    type="button"
+                  >
+                    <span>
+                      {option.name}
+                      <span className={styles.toolbarMenuItemHint}>{option.route}</span>
+                    </span>
+                    {shownPageId === option.id ? <CheckIcon aria-hidden="true" size={12} strokeWidth={1.5} /> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         {kind === "ad" ? (
           <div className={styles.toolbarMenuAnchor} ref={zoomMenuRef}>
             <button

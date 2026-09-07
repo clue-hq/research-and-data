@@ -408,7 +408,7 @@ function AdTextInspector({
         <InspectorField label="Alignment"><TextAlignment disabled={inert} horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} onVerticalChange={(value) => setValue("verticalAlignment", value)} vertical={state.verticalAlignment} /></InspectorField>
       </Section>
       <Section id="stroke" label="Stroke" open={state.openSections.stroke} toggle={() => toggleSection("stroke")}>
-        <InspectorField label="Color"><ColorControl color={strokeRow.color} disabled={inert} fixtureFallback={false} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} /></InspectorField>
+        <InspectorField label="Color"><ColorControl color={strokeRow.color} disabled={inert} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} /></InspectorField>
         <InspectorField label="Width"><InspectorInput ariaLabel="Stroke width" disabled={inert} onCommitValue={(value) => setValue("strokeWidth", value)} value={state.strokeWidth} /></InspectorField>
       </Section>
       <Section id="layout" label="Layout" open={state.openSections.layout} toggle={() => toggleSection("layout")}>
@@ -609,7 +609,7 @@ function AdCanvasInspector({
           <BackgroundFillControl
             disabled={inspectorDisabled}
             fill={state.backgroundFill}
-            fixtureFallback={false}
+           
             onFillChange={changeBackgroundFill}
             onSolidColorChange={backgroundRow.onColorChange}
             onTokenChange={backgroundRow.onTokenChange}

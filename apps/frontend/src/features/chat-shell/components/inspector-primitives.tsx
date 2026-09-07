@@ -1072,9 +1072,8 @@ function hsvToHex({ h, s, v }: HsvColor) {
 }
 
 export function ColorControl({
-  color = "#00F59B",
+  color = "#FFFFFF",
   disabled = false,
-  fixtureFallback = true,
   none = false,
   noneAriaLabel = "Color is none",
   onColorChange,
@@ -1097,12 +1096,6 @@ export function ColorControl({
    * guarded ANYWAY, because a popover that was already open when the flag
    * flipped survives the flip (see `commitColor`). */
   disabled?: boolean;
-  /** RULING A23: `false` says `options` is the whole truth — with no palette
-   * the Theme tab renders NOTHING rather than the dummy's six fixture colours,
-   * which on a live write path are a fabrication the user can commit. The ad
-   * lane passes it; the web lane keeps the default, so nothing it shows
-   * changes (`model/inspector-theme-colors.ts` states why it is a parameter). */
-  fixtureFallback?: boolean;
   none?: boolean;
   noneAriaLabel?: string;
   onColorChange?: (color: string) => void;
@@ -1112,12 +1105,12 @@ export function ColorControl({
   onTokenChange?: (label: string) => void;
   opacity?: string;
   /** W4.0: the document's real theme tokens for the Theme tab. Omitted (or
-   * empty) keeps the dummy's fixture palette — this control's design is
-   * unchanged either way, only the data is real. */
+   * empty) means an EMPTY Theme tab — there is no fixture palette to fall
+   * back to (founder ruling 2026-09-04). */
   options?: readonly ThemeColorOption[];
   showOpacity?: boolean;
 }) {
-  const themeColors = resolveInspectorThemeColors(options, fixtureFallback);
+  const themeColors = resolveInspectorThemeColors(options);
   const [draftColor, setDraftColor] = useState(color.toUpperCase());
   const [pickerMode, setPickerMode] = useState<"custom" | "theme">("theme");
   const [customColor, setCustomColor] = useState<HsvColor>(() => hexToHsv(color));
@@ -1423,7 +1416,6 @@ function backgroundFillCss(fill: InspectorBackgroundFill, solidColor: string) {
 export function BackgroundFillControl({
   disabled = false,
   fill,
-  fixtureFallback = true,
   onFillChange,
   onSolidColorChange,
   onTokenChange,
@@ -1437,9 +1429,6 @@ export function BackgroundFillControl({
    * the document, and the document is not what went dark. */
   disabled?: boolean;
   fill: InspectorBackgroundFill;
-  /** RULING A23, forwarded to both nested pickers with `options` — this
-   * section's swatches must not offer a fixture palette either. */
-  fixtureFallback?: boolean;
   onFillChange: (fill: InspectorBackgroundFill) => void;
   onSolidColorChange: (color: string) => void;
   /** AD4.0 step 3 (§1.6): a brand pick on the SOLID swatch, reported as the
@@ -1545,7 +1534,6 @@ export function BackgroundFillControl({
         <ColorControl
           color={solidColor}
           disabled={disabled}
-          fixtureFallback={fixtureFallback}
           onColorChange={onSolidColorChange}
           onTokenChange={onTokenChange}
           options={options}
@@ -1585,7 +1573,6 @@ export function BackgroundFillControl({
                 <ColorControl
                   color={stop.color}
                   disabled={disabled}
-                  fixtureFallback={fixtureFallback}
                   onColorChange={(color) => updateStop(index, { color })}
                   options={options}
                   showOpacity={false}
@@ -1854,7 +1841,9 @@ export function InspectorLayerRow({
       <span className={styles.layerRowContent}>
         <span className={styles.layerRowLabel}>
           <InspectorIcon name={icon} size={16} />
-          <span>{label}</span>
+          <span className={styles.layerRowLabelText} title={label}>
+            {label}
+          </span>
         </span>
         {trailing ? <InspectorIcon name="layer-ellipsis" size={16} /> : null}
       </span>

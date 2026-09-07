@@ -1403,6 +1403,13 @@
   background: var(--clue-ds-color-bg-neutral-hover);
 }
 
+/* FLAGGED F5 T18: the page switcher's muted route suffix, on the same
+ * `.toolbarMenuItem` row as its page name. */
+.toolbarMenuItemHint {
+  margin-left: 6px;
+  color: var(--chat-shell-subtle);
+}
+
 .artifactHeading,
 .artifactHeaderActions,
 .deviceButton,
@@ -2310,10 +2317,6 @@
   border-radius: 1px;
 }
 
-.inspectorInputControl input::selection {
-  background: rgb(0 245 155 / 24%);
-}
-
 .inspectorControl > span:not(.inspectorIcon),
 .colorValue > span:not(.colorSwatch) {
   overflow: hidden;
@@ -3141,8 +3144,23 @@
 .layerRowLabel {
   display: inline-flex;
   align-items: center;
+  /* Human display names (e.g. "Hero — Repaired x3 — ABM hero") are far longer
+   * than the short node ids this row was built for. The label must be allowed
+   * to SHRINK inside the fixed-height (32px) row, otherwise its text wraps to a
+   * second line that spills over the next row. */
+  flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
   gap: 8px;
+}
+
+/* Single-line, ellipsized label text; the full name lives on the element's
+ * `title`, so a hover reveals what the ellipsis hides. */
+.layerRowLabelText {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 @keyframes inspector-enter {
@@ -3236,6 +3254,111 @@
 
 .inspectorStatusError {
   color: var(--clue-ds-color-primitives-critical-700);
+}
+
+/* FLAGGED F5 T19: no designed slot in the dummy frontend for the page/route
+ * section. Minimal neutral treatment only, borrowed from this surface's own
+ * idioms — the message line is `.inspectorStatusError`'s exact treatment
+ * (12/16 in critical-700, no box, no icon), and the two buttons are the
+ * inspector's existing menu-item shape. Do not grow this into designed chrome
+ * without a founder/design ruling. */
+.inspectorPageMessage {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--clue-ds-color-primitives-critical-700);
+}
+
+/* Founder correction 2026-09-04: the Page section's two groups — "This page"
+ * (writes to the live page) and "New page" (what Add creates) — each under a
+ * small caption, so the two Name/Route pairs cannot be mistaken for one. */
+.inspectorPageGroup {
+  margin: 0;
+  padding-top: 6px;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--chat-shell-subtle);
+}
+
+.inspectorPageActions {
+  display: flex;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.inspectorPageButton {
+  flex: 1;
+  min-height: 30px;
+  padding: 6px 8px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--chat-shell-subtle);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.inspectorPageButton:hover:not(:disabled),
+.inspectorPageButton:focus-visible {
+  background: var(--clue-ds-color-bg-neutral-hover);
+  color: var(--chat-shell-content);
+}
+
+.inspectorPageButton:focus-visible {
+  outline: 2px solid rgb(27 102 255 / 45%);
+  outline-offset: -2px;
+}
+
+.inspectorPageButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Slice 3 (R-A6): the "Cloned text edits" rows. No designed slot either — the
+ * same minimal, borrowed treatment the Page section documents above: the row is
+ * the inspector's ordinary field control line, and the Clear button IS
+ * `.inspectorPageButton`, not a second button shape. The founder reviews the
+ * visual separately; do not grow this into designed chrome first. */
+.inspectorCloneEdits {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The row's LABEL is the structural path, verbatim — the client holds no HTML,
+ * so there is no honest human name for the element and a mono face is the one
+ * thing that says "this is an address, not a sentence". */
+.inspectorCloneEdits .inspectorFieldLabel {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.inspectorCloneEditRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.inspectorCloneEditText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--chat-shell-content);
+}
+
+.inspectorCloneEditRow .inspectorPageButton {
+  flex: 0 0 auto;
 }
 
 /* W3.4: the action menu's Undo/Redo disable at empty engine stacks (native

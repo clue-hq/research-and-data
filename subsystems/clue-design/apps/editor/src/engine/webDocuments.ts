@@ -490,16 +490,25 @@ export interface WebRenderResult {
  *
  * Pass `bridge: { nonce }` (editor mode only) to have the server inject the
  * selection bridge into the document — it draws hover/selection outlines,
- * blocks navigation, and posts nonce-tagged selection events to the parent. */
+ * blocks navigation, and posts nonce-tagged selection events to the parent.
+ *
+ * F5 addendum (2026-09-02): the endpoint is page-aware. `pageId` names which
+ * page of a multi-page site to render; OMITTING it is the endpoint's own
+ * first-page default, so an absent/empty id sends no `page_id` param at all
+ * rather than an empty one (an unknown id is a typed 404 server-side). */
 export async function fetchWebRenderHtml(
   { apiBaseUrl, fetchImpl = lumenFetch }: WebDocumentOptions,
   documentId: string,
   runtimeSrc: string,
-  bridge?: { nonce?: string }
+  bridge?: { nonce?: string },
+  pageId?: string
 ): Promise<WebRenderResult> {
   const url = new URL(`/documents/${encodeURIComponent(documentId)}/web/render`, apiBaseUrl);
   url.searchParams.set("mode", "editor");
   url.searchParams.set("runtime_src", runtimeSrc);
+  if (pageId) {
+    url.searchParams.set("page_id", pageId);
+  }
   if (bridge?.nonce) {
     url.searchParams.set("bridge", "1");
     url.searchParams.set("nonce", bridge.nonce);
@@ -720,7 +729,14 @@ export type WebOperation =
   | { kind: "remove_node"; page_id: string; id: string }
   | { kind: "replace_asset"; page_id: string; id: string; asset_id: string }
   | { kind: "upsert_asset"; record: AssetRecord }
-  | { kind: "set_slot_key"; page_id: string; id: string; slot_key: string | null };
+  | { kind: "set_slot_key"; page_id: string; id: string; slot_key: string | null }
+  | { kind: "set_page_meta"; page_id: string; name?: string; route?: string }
+  | {
+      kind: "add_page";
+      page: WebPageSummary & { root: string; nodes: Record<string, WebNode> };
+      index?: number;
+    }
+  | { kind: "remove_page"; page_id: string };
 
 /** Op builders — the one place a manual-edit payload is shaped, so panels bind
  * fields and call these rather than spelling out op objects inline. */
@@ -780,6 +796,140 @@ export function upsertAssetOp(record: AssetRecord): WebOperation {
  * Section/Container on binding presence (see {@link slotKeyParts}). */
 export function setSlotKeyOp(pageId: string, id: string, slotKey: string | null): WebOperation {
   return { kind: "set_slot_key", page_id: pageId, id, slot_key: slotKey };
+}
+
+/** Rename a page and/or repoint its route. Only the keys actually supplied are
+ * emitted — the engine's `Option<String>` fields are
+ * `skip_serializing_if = "Option::is_none"`, and a `name: undefined` property
+ * would still serialize as a present `"name": null`-shaped absence in some
+ * encoders, so the object is built conditionally. */
+export function setPageMetaOp(
+  pageId: string,
+  meta: { name?: string; route?: string }
+): WebOperation {
+  const op: { kind: "set_page_meta"; page_id: string; name?: string; route?: string } = {
+    kind: "set_page_meta",
+    page_id: pageId
+  };
+  if (meta.name !== undefined) {
+    op.name = meta.name;
+  }
+  if (meta.route !== undefined) {
+    op.route = meta.route;
+  }
+  return op;
+}
+
+/** Add a new, empty page: its root is a single `root_<id>` Container holding no
+ * children (every other node kind is inserted later by insert_node). `index`
+ * is omitted when absent, which the engine reads as "append". */
+export function addPageOp(
+  page: { id: string; name: string; route: string },
+  index?: number
+): WebOperation {
+  const root = `root_${page.id}`;
+  const op: {
+    kind: "add_page";
+    page: WebPageSummary & { root: string; nodes: Record<string, WebNode> };
+    index?: number;
+  } = {
+    kind: "add_page",
+    page: {
+      id: page.id,
+      name: page.name,
+      route: page.route,
+      root,
+      nodes: { [root]: { id: root, kind: "container", classes: "", children: [] } }
+    }
+  };
+  if (index !== undefined) {
+    op.index = index;
+  }
+  return op;
+}
+
+/** Remove a page. The engine refuses this for a document's last page. */
+export function removePageOp(pageId: string): WebOperation {
+  return { kind: "remove_page", page_id: pageId };
+}
+
+/** Exact mirror of the engine's `route_is_valid` (lumen-web `validate.rs`):
+ * `/` or `/seg(/seg)*` where a segment is `[a-z0-9]+(-[a-z0-9]+)*`; no trailing
+ * slash; total length <= 128; `manifest.json` is never a segment, and
+ * `p-assets` / `asset-store` are never the FIRST one (both are served beside a
+ * published site and would shadow it). Kept in lockstep with the Rust so the
+ * editor refuses a route before the round trip does. */
+export function routeIsValid(route: string): boolean {
+  if (route === "/") {
+    return true;
+  }
+  if (route.length > 128 || !route.startsWith("/") || route.endsWith("/")) {
+    return false;
+  }
+  const segments = route.slice(1).split("/");
+  const first = segments[0];
+  if (first === "p-assets" || first === "asset-store") {
+    return false;
+  }
+  return segments.every(routeSegmentIsValid);
+}
+
+function routeSegmentIsValid(segment: string): boolean {
+  if (segment.length === 0 || segment === "manifest.json") {
+    return false;
+  }
+  return segment
+    .split("-")
+    .every((run) => run.length > 0 && /^[a-z0-9]+$/.test(run));
+}
+
+/** Which page the shell is looking at, given what the user last asked for.
+ *
+ * The requested id wins only while the loaded document still HAS that page —
+ * an agent turn, an undo, or a remove can retire it underneath the switcher —
+ * otherwise the first page does. A document with no pages at all resolves to
+ * the empty string, which is what makes the render fetch send no `page_id` and
+ * fall back to the endpoint's own first-page default. */
+export function resolveActivePageId(
+  pages: readonly WebPageSummary[] | undefined,
+  requested: string | null | undefined
+): string {
+  const list = pages ?? [];
+  if (requested && list.some((page) => page.id === requested)) {
+    return requested;
+  }
+  return list[0]?.id ?? "";
+}
+
+/** Locate a node (and the page it lives on) by id across the loaded WebDoc.
+ *
+ * CROSS-PAGE ID RULE (F5): node ids are NOT unique across pages — two pages of
+ * one site can both carry `hero`. So the ACTIVE page is searched first, and the
+ * first-match walk over the remaining pages is only the fallback for a node the
+ * active page does not have (a selection that arrived from elsewhere). Without
+ * the active-page probe, selecting `hero` on page two would hand the inspector,
+ * the move planner, and the rich-text commit page one's node — and every
+ * resulting op would carry the wrong `page_id`. */
+export function findWebNode(
+  webDoc: WebDoc | null,
+  nodeId: string | null,
+  activePageId: string
+): { node: WebNode; pageId: string } | null {
+  if (!webDoc || !nodeId || !Array.isArray(webDoc.pages)) {
+    return null;
+  }
+  const active = webDoc.pages.find((page) => page.id === activePageId);
+  const onActive = active?.nodes?.[nodeId];
+  if (active && onActive) {
+    return { node: onActive, pageId: active.id };
+  }
+  for (const page of webDoc.pages) {
+    const node = page.nodes?.[nodeId];
+    if (node) {
+      return { node, pageId: page.id };
+    }
+  }
+  return null;
 }
 
 /** The slot-key charset the engine enforces (`SlotKey` rules, D2): lowercase

@@ -224,7 +224,9 @@ export const DEFAULT_STATE: InspectorPresentationState = {
   alignX: "Space between",
   alignY: "Center",
   altText: "",
-  backgroundColor: "#00F59B",
+  // Founder ruling 2026-09-04: neutral seeds — a page with no theme renders
+  // white on black, and nothing here may be a sample site's brand colour.
+  backgroundColor: "#FFFFFF",
   backgroundFill: {
     angle: 0,
     stops: [
@@ -268,7 +270,7 @@ export const DEFAULT_STATE: InspectorPresentationState = {
   sizePreset: "Linkedin square (1:1) - 1200x1200",
   strokeColor: "none",
   strokeWidth: "1",
-  textColor: "#00F59B",
+  textColor: "#000000",
   textStyle: "Body",
   lineSpacing: "normal",
   tokenBackgroundColor: "White",
