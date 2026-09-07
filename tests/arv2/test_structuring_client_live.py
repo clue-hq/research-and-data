@@ -142,6 +142,27 @@ def _zafran_bundle() -> str:
     )
 
 
+def _nick_fisher_bundle() -> str:
+    """The person bundle's research material only, from the first ``=== MATERIAL`` line on.
+
+    The file's head is the proof-of-concept's own prompt — its SUBJECT block, its closed key list
+    with "[PROPOSED — new field]" labels, its charter categories and its "Return STRICT JSON"
+    envelope — not research material. A production bundle is assembled from sources by the R2/R3
+    agents and never contains a prompt, so feeding the head in would test an input production
+    cannot produce. The client's bundle fence and closing reminder stay exactly as they are: they
+    are the defence for a real bundle that quotes a hostile page.
+    """
+    text = (CONTEXT / "arv2-person-depth" / "structuring_bundle_nick_fisher.txt").read_text(
+        encoding="utf-8"
+    )
+    lines = text.splitlines(keepends=True)
+    start = next(
+        (index for index, line in enumerate(lines) if line.startswith("=== MATERIAL")), None
+    )
+    assert start is not None, "no '=== MATERIAL' section in the person bundle"
+    return "".join(lines[start:])
+
+
 def _report(title: str, output: StructuredOutput, bundle: str) -> tuple[Counter[str], float]:
     """Print the tallies a run is judged on, and return the two the assertions read."""
     verdicts = Counter(claim.evidence_verbatim for claim in output.claims)
@@ -241,10 +262,8 @@ def test_probook_structures_from_its_account_report(
 def test_nick_fisher_structures_as_one_person_per_call(
     client: StructuringClient, poc_catalog: FieldCatalog, arv2_raw_root: Path
 ) -> None:
-    """The person path over the PoC's own person bundle, priorities on the person rubric."""
-    bundle = (CONTEXT / "arv2-person-depth" / "structuring_bundle_nick_fisher.txt").read_text(
-        encoding="utf-8"
-    )
+    """The person path over the PoC's own person material, priorities on the person rubric."""
+    bundle = _nick_fisher_bundle()
 
     output = client.structure_person(
         PersonSubject(
