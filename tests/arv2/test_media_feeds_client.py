@@ -9,6 +9,7 @@ input is literally the test's own data). Everything that touches a provider is i
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -16,8 +17,10 @@ from clue_api.arv2.errors import RawParseError
 from clue_api.arv2.media_feeds_client import (
     MAX_FEED_BYTES,
     MAX_LABEL_CHARS,
+    Episode,
     UnsupportedMediaHost,
     _label_for,
+    download_enclosure,
     episode_number_from_title,
     extract_player_response,
     find_episode,
@@ -328,3 +331,45 @@ def test_a_feed_just_under_the_cap_still_parses() -> None:
 
     assert podcast.title == "Small"
     assert len(podcast.episodes) == 100
+
+
+def test_a_failed_or_retryable_head_never_costs_the_download_or_a_backoff(tmp_path: Path) -> None:
+    """The HEAD precheck is an opportunity, not a gate (re-review 2026-09-07).
+
+    A transport failure on the HEAD, or a retryable status, falls straight through to the GET —
+    no exception escapes, and no ``12·(n+1)`` s backoff is spent on a probe the item does not
+    depend on.
+    """
+    from datetime import UTC, datetime
+
+    from clue_api.arv2.calls import ProviderCaller
+    from clue_api.arv2.sinks import MemoryLedger, MemoryRawSink
+    from clue_api.arv2.transport import HttpResponse, ScriptedTransport, TransportFailure
+
+    audio = b"\xff\xfb\x90\x00" * 8
+    episode = Episode(
+        number=None,
+        title="ep",
+        enclosure_url="https://cdn.example/ep.mp3",
+        enclosure_bytes=None,
+        duration_s=30,
+        published_at=None,
+        link=None,
+        description=None,
+    )
+    for head_outcome in (TransportFailure("reset"), HttpResponse(503, {}, b"")):
+        sleeps: list[float] = []
+        transport = ScriptedTransport(
+            [head_outcome, HttpResponse(200, {"content-type": "audio/mpeg"}, audio)]
+        )
+        caller = ProviderCaller(
+            transport=transport,
+            raw_sink=MemoryRawSink(),
+            ledger=MemoryLedger(),
+            sleep=sleeps.append,
+            now=lambda: datetime.now(UTC),
+        )
+        result = download_enclosure(episode, tmp_path / "ep.mp3", caller, max_bytes=1_000_000)
+        assert result.bytes == len(audio)
+        assert sleeps == [], "a probe must never spend the backoff"
+        assert [request.method for request in transport.requests] == ["HEAD", "GET"]

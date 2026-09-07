@@ -35,7 +35,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from clue_api.arv2.calls import CallSpec, ProviderCaller
-from clue_api.arv2.errors import Arv2Error, RawParseError
+from clue_api.arv2.errors import Arv2Error, ProviderTransportError, RawParseError
 from clue_api.arv2.sinks import sha256_hex
 from clue_api.arv2.transport import BROWSER_USER_AGENT, HttpRequest
 
@@ -395,20 +395,27 @@ def _head_content_length(url: str, caller: ProviderCaller) -> int | None:
     or an unreadable one all yield ``None``: this is a cheap *opportunity* to refuse early, never
     a gate the download depends on, so an uninformative HEAD must not fail the item.
     """
-    result = caller.call(
-        CallSpec(
-            provider="live_http",
-            operation="enclosure-head",
-            label=_label_for(url),
-            request=HttpRequest(
-                method="HEAD",
-                url=url,
-                headers={"User-Agent": BROWSER_USER_AGENT, "Accept": "audio/*,*/*;q=0.8"},
-                timeout_s=ENCLOSURE_HEAD_TIMEOUT_S,
-            ),
-            binary=True,
+    # One attempt, no retry statuses: this probe is an opportunity, not a dependency, so a flaky
+    # host must cost neither the 12·(n+1) s backoff nor the download itself (re-review, 2026-09-07).
+    try:
+        result = caller.call(
+            CallSpec(
+                provider="live_http",
+                operation="enclosure-head",
+                label=_label_for(url),
+                request=HttpRequest(
+                    method="HEAD",
+                    url=url,
+                    headers={"User-Agent": BROWSER_USER_AGENT, "Accept": "audio/*,*/*;q=0.8"},
+                    timeout_s=ENCLOSURE_HEAD_TIMEOUT_S,
+                ),
+                binary=True,
+                max_attempts=1,
+                retry_statuses=frozenset(),
+            )
         )
-    )
+    except ProviderTransportError:
+        return None
     if not 200 <= result.response.status < 300:
         return None
     stated = result.response.headers.get("content-length")
