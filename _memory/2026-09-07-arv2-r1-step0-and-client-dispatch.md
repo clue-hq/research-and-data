@@ -84,3 +84,8 @@ only via link text; the Boardroom feed has 101 episodes (the PoC's "65" was a tr
   value (cost_usd, credits, media_seconds, cost_source metered|free|estimate, ledger_row_id, raw_ref,
   provider, operation); `cost_source` written on every result ledger row; README "Cost per request".
   Deferred to R2: an explicit `free: bool` on CallSpec so a forgotten cost reader cannot read as free.
+- PR #45 (track-R → integration/design-improvement) MERGED 2026-09-07. Workspace san-salvador now on
+  `track-R2` (59af05177) off the merged base. Founder sequencing: R2 starts only after Track O's first
+  task ("O1", the onboarding/ICP lane) is done; R2 prerequisites are listed in this session's
+  final answer (D1 migration + lenient write path, S3 seed rows, S7 agent content, AI Ark credit,
+  seam 1 signed, an ICP artifact to read, account entities seeded, D3 read surface).
