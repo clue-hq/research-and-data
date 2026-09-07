@@ -227,6 +227,10 @@ class AgentRole(StrEnum):
     # one summarized outcome; a doorway, not a container). Deliberately absent from
     # C6_ACTIVE_PROFILE_VERSIONS until P3.3 registers the catalog profile.
     DESIGN = "design"
+    # ARV2 Track O (O4): the brand-level onboarding synthesis agent — writes ICP and persona
+    # documents from the onboarding research documents. One turn per onboarding run; never a
+    # conversation surface. Registered active in C6_ACTIVE_PROFILE_VERSIONS by O4.
+    ONBOARDING_SYNTHESIS = "onboarding_synthesis"
 
 
 class ResourceKind(StrEnum):

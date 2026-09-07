@@ -292,5 +292,8 @@ def test_role_checks_admit_design(migrated_db: bool) -> None:
                     )
                 ).scalar_one()
                 assert "'design'" in definition, f"{constraint} does not admit 'design'"
+                assert "'onboarding_synthesis'" in definition, (
+                    f"{constraint} does not admit 'onboarding_synthesis'"
+                )
 
     run_async(scenario())
