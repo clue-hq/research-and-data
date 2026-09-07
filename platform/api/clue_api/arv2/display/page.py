@@ -175,9 +175,14 @@ class PageResult:
     """One page, plus the honest account of how it came to look like this.
 
     ``display_block`` is the whole page — stored sections included — while ``generated``,
-    ``regenerated``, ``skipped_empty`` and ``stale_served`` describe only what this call did. A
-    caller can therefore render the page and, separately, tell the operator that two sections were
-    served as they were, one was rewritten, and one had nothing to say.
+    ``regenerated``, ``skipped_empty``, ``stale_served`` and ``failed`` describe only what this
+    call did. A caller can therefore render the page and, separately, tell the operator that two
+    sections were served as they were, one was rewritten, one had nothing to say, and one could
+    not be written at all.
+
+    ``failed`` is the section keys whose model reply was unusable twice over. Their drafts are
+    **not** stored, so the next call retries them as ordinary missing sections; their ``checks``
+    are still here, because an operator asking "why is that section blank" deserves the answer.
     """
 
     page: str
@@ -187,6 +192,7 @@ class PageResult:
     regenerated: tuple[str, ...]
     skipped_empty: tuple[str, ...]
     stale_served: tuple[str, ...]
+    failed: tuple[str, ...]
     cost_usd: Decimal
     checks: dict[str, dict[str, Any]]
     evidence: list[dict[str, Any]]
@@ -391,7 +397,17 @@ async def ensure_page(
         )
     )
 
-    for entry in written:
+    # A section the model failed to write twice is *not* stored. Persisting its empty draft would
+    # turn a transient provider failure into a section that reads blank on every later visit until
+    # something made it stale; leaving it unwritten means the next call simply tries again.
+    usable = [entry for entry in written if not entry.draft.checks.get("reply_invalid")]
+    failed = tuple(
+        entry.section.recipe.section_key
+        for entry in written
+        if entry.draft.checks.get("reply_invalid")
+    )
+
+    for entry in usable:
         await insert_block(
             conn,
             workspace_id=workspace_id,
@@ -404,7 +420,7 @@ async def ensure_page(
             now=now,
         )
 
-    generated = tuple(entry.section.recipe.section_key for entry in written)
+    generated = tuple(entry.section.recipe.section_key for entry in usable)
     regenerated = tuple(key for key in generated if key in stored)
     if generated:
         await record_page_written(
@@ -443,6 +459,7 @@ async def ensure_page(
         regenerated=regenerated,
         skipped_empty=skipped_empty,
         stale_served=stale_served,
+        failed=failed,
         cost_usd=sum(
             (entry.runner.totals().usd for entry in written),
             start=Decimal(0),

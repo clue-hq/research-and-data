@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -117,9 +117,11 @@ class RoutingTransport:
         *,
         allowed: bool = True,
         scripted: Mapping[str, list[dict[str, Any]]] | None = None,
+        broken: Collection[str] = (),
     ) -> None:
         self._allowed = allowed
         self._scripted = {key: list(value) for key, value in (scripted or {}).items()}
+        self._broken = frozenset(broken)
         self._lock = threading.Lock()
         self.sections: list[str] = []
         self.requests: list[HttpRequest] = []
@@ -133,9 +135,15 @@ class RoutingTransport:
             self.requests.append(request)
             queue = self._scripted.get(section_key)
             reply = queue.pop(0) if queue else _reply(section_key)
+        # A "broken" section answers in prose: a real, paid-for call whose reply is unusable.
+        content = (
+            "I am sorry, I cannot write that section."
+            if section_key in self._broken
+            else json.dumps(reply)
+        )
         body = {
             "id": f"gen-{section_key}",
-            "choices": [{"message": {"content": json.dumps(reply)}}],
+            "choices": [{"message": {"content": content}}],
             "usage": {"cost": CALL_COST},
         }
         return HttpResponse(status=200, headers={}, body=json.dumps(body).encode())
@@ -426,6 +434,55 @@ def test_the_default_runner_factory_refuses_to_build_without_a_key(
     present = Secrets(_env_file=None, openrouter_api_key=SecretStr("k"))
     runner = default_runner_factory(SETTINGS, present)()
     assert isinstance(runner, LunaSectionRunner)
+
+
+def test_a_section_the_model_could_not_write_is_reported_failed_and_never_stored() -> None:
+    """A transient provider failure must not become a permanently blank section.
+
+    The runner already retries an unusable reply once and then answers honestly with
+    ``reply_invalid``. Storing that empty draft would serve the section as ``empty`` on every
+    later visit until something made it stale — so it is not stored at all, and the next call
+    treats it as the missing section it still is.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            seeded = await seed_display_fixture(conn, workspace_id=WORKSPACE)
+            broken = RoutingTransport(broken={"openers"})
+            result = await _contact_page(conn, seeded, broken)
+
+            assert result.failed == ("openers",)
+            assert "openers" not in result.generated
+            assert result.generated == tuple(key for key in CONTACT_SECTIONS if key != "openers")
+            # Two calls for the section it could not write: the runner's own single retry.
+            assert broken.sections.count("openers") == 2
+            # The failure is still legible to an operator.
+            assert result.checks["openers"]["reply_invalid"] is True
+            assert result.checks["openers"]["reply_retried"] is True
+
+            assert await _block_counts(conn, seeded.workspace_id) == (4, 0)
+            section = next(
+                item for item in result.display_block["sections"] if item["key"] == "openers"
+            )
+            assert section["empty"] is True and section["items"] == []
+
+            # Four sections were stored, so the page was written and the feed says so once.
+            events = await _events(conn, seeded.workspace_id)
+            assert [event["action"] for event in events] == ["contact generated"]
+
+            # The next call retries it as an ordinary missing section.
+            transport = RoutingTransport()
+            retry = await _contact_page(conn, seeded, transport)
+            assert retry.generated == ("openers",)
+            assert retry.failed == ()
+            assert transport.sections == ["openers"]
+            assert await _block_counts(conn, seeded.workspace_id) == (5, 0)
+            written = next(
+                item for item in retry.display_block["sections"] if item["key"] == "openers"
+            )
+            assert written["empty"] is False
+
+    run_async(_run())
 
 
 # -- the floor's regenerate path ----------------------------------------------------------------

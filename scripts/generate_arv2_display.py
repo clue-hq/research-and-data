@@ -160,6 +160,7 @@ def _report(result: PageResult) -> dict[str, Any]:
         "regenerated": list(result.regenerated),
         "skipped_empty": list(result.skipped_empty),
         "stale_served": list(result.stale_served),
+        "failed": list(result.failed),
         "cost_usd": str(result.cost_usd),
         "checks": result.checks,
         "evidence_count": len(result.evidence),
