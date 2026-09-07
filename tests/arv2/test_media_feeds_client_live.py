@@ -19,7 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from clue_api.arv2.calls import CallCost, CallSpec, ProviderCaller
+from clue_api.arv2.calls import CallCost, CallSpec, ProviderCaller, SpendEstimate
+from clue_api.arv2.exa_client import CONTENTS_ESTIMATE_USD_PER_URL, exa_cost_reader
 from clue_api.arv2.media_feeds_client import (
     EnclosureTooLarge,
     UnsupportedMediaHost,
@@ -75,7 +76,18 @@ def _exa_page_text(
             timeout_s=180.0,
         )
         result = caller.call(
-            CallSpec(provider="exa", operation="contents", label="media-words", request=request)
+            CallSpec(
+                provider="exa",
+                operation="contents",
+                label="media-words",
+                request=request,
+                # Exa charges for /contents, so the spec has to say so: a paid call declared with
+                # no reader and no reservation is labelled `free` by the wrapper, which would
+                # write this spend off. The real reader and estimate are the ones Task 3's client
+                # uses, so this fixture meters exactly the way production does.
+                estimate=SpendEstimate(usd=CONTENTS_ESTIMATE_USD_PER_URL * len(urls)),
+                cost_reader=exa_cost_reader,
+            )
         )
         costs.append(result.call_cost)
         body = result.json()
