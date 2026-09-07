@@ -43,7 +43,7 @@ exclude = ["subsystems/clue-design"]
 line-length = 100
 target-version = "py312"
 src = ["subsystems", "platform", "tests", "libs"]
-extend-exclude = ["subsystems/clue-design"]
+extend-exclude = ["subsystems/clue-design", ".context"]
 
 [tool.ruff.lint]
 # T20 (flake8-print): `print` is banned outside the sanctioned CLI/demo surfaces — structured

@@ -83,6 +83,89 @@ three or four rows.
 The D1/A7 `provider_call_ledger` table receives exactly these rows — `cost_source` included — when
 the database `LedgerSink` lands; nothing above the sink protocol changes then.
 
+## D1 — the display substrate, the lenient writer, the answer-key loader
+
+D1 is the step that gives the lane a place to put things. It lands as one Alembic revision plus
+four modules here.
+
+**The migration** (`65fb2128c904`) adds, in one reversible revision: three `claim` columns —
+`signal_priority smallint NOT NULL DEFAULT 3` (1 active buying intent, 2 qualifying fact, 3
+context), `outreach_safe boolean NOT NULL DEFAULT true` (appropriateness, not accuracy) and
+`write_markers jsonb NULL` (the write-time annotations); the two `account_entity` owner columns
+(`owner_user_id`, `created_by_user_id`); `workspace_field_definition.presentation`
+(`text|badge|score`); and the four new tables `display_block`, `display_section_recipe`,
+`provider_call_ledger` and `account_activity_event`. It also carries the persona vocabulary
+data-fix: `Persona` is not a Postgres enum but an `enum` list inside three registered value
+schemas, so adding `user` means rewriting those `field_definition.value_schema` rows or a
+re-loaded pack raises `FieldRedefinitionError`. Two shapes worth knowing: the three new `claim`
+columns are deliberately **outside** the append-only immutable-column guard (they are governance
+annotations whose change is a display-invalidation event, not provenance), and
+`display_section_recipe`'s system row is keyed by an **empty-string** `workspace_id`, not NULL — a
+NULL cannot sit in a primary key.
+
+**The five flags** (all in `.env.example`, all `Settings` fields):
+`CLUE_CLAIM_WRITE_LENIENT=true` · `CLUE_EVIDENCE_VERBATIM_CHECK=off` ·
+`CLUE_UNEVIDENCED_ROW_PURGE_ENABLED=false` · `CLUE_INTERVIEW_ENTAILMENT_CHECK=off` ·
+`CLUE_SENSITIVITY_FLOOR_ENABLED=true`. When a check is on it records a marker on the claim; it
+never refuses a write.
+
+**`catalog_seed.py`** holds `ARV2_PACK` — 38 registered field rows (35 answer-key keys plus the
+three keys the section recipes need), each a `SeedField` with its value schema, field class and
+reuse scope. They are data, not code: no pipeline is forked to add a field. `ARV2_FIELD_KEYS` is
+the key set, `load_arv2_pack(conn)` is the loader. **`clue_api/arv2_wiring.py`** —
+deliberately outside this package, because the lane may not import `clue_api` modules outside
+itself — appends that loader to `clue_api.composition.RESEARCH_PACK_LOADERS`; the fleet and
+projections entrypoints call `register_arv2_wiring()` unconditionally, since packs load under
+either flag.
+
+**`claim_writer.py`** is the lenient write gate (master plan §2 principle 2). `ClaimDraft` is what
+a writer knows; `LenientClaimWriter.write` fills in everything it did not say and returns a
+`WriteReceipt`. It **stamps**: `source_tier` from `extraction_method` via `TIER_FOR_METHOD` (tier 4
+⟺ `llm_synthesis`, never chosen by the caller), `reuse_scope=tenant_private` with the workspace id,
+and — for a `contact.facet.*` claim — `identity_binding=WEAK` + `use_class=professional-public`
+when the draft is silent. It **marks** rather than refuses: a value that fails its registered
+schema is stored with `schema_valid=false`; an unregistered key is registered as a proposed field
+and marked `proposed_field`; an `api`/`scrape`/`llm_synthesis` claim with no `source_url` is stored
+and marked `source_missing`; a defaulted governance value is marked
+`identity_binding_defaulted` / `use_class_defaulted`. Every marker lands in `claim.write_markers`.
+Constructed with `lenient=False` the same writer restores the store's strict refusals — the
+leniency is a flag, not a fork. The URL rule itself moved from construction to promotion in D1:
+`clue_core.Claim` now admits a URL-less research claim and `can_be_promoted` refuses it, so such a
+row exists honestly and is never served as verified truth.
+
+**The answer key.** `answer_key.py` is pure mapping — it turns the two proof-of-concept JSON files
+(the Zafran one-account run, 174 rows; the ten-person depth run, 119 rows) into `ClaimDraft`s and a
+manifest, with no database in sight: the persona map (`executive_sponsor` → `economic_buyer`,
+`adjacent_buyer` → `user`), the priority table, the source-bundle map, the media wrap and the
+pipe-joined-key split all live there, and `ANSWER_KEY_NAMESPACE` is the uuid5 namespace every
+deterministic id in the load hangs off. `answer_key_loader.py` writes them: workspace → brand →
+product → project, the pack loaders, four account entities and twelve contacts, the project run
+(no Stage-0 pins), two `run_lineage` rows, three transcript artifacts, every draft through
+`LenientClaimWriter`, then the terminal research rows and the activity feed.
+`scripts/load_arv2_answer_key.py` is the thin argparse wrapper:
+
+```
+uv run python scripts/load_arv2_answer_key.py \
+    --database-url postgresql+asyncpg://clue:clue@localhost:55060/clue
+```
+
+(`--dry-run` runs the whole load in one transaction, prints the report and rolls back;
+`--context-root` defaults to `.context`, `--storage-root` to `.artifacts/answer-key`.) **The load
+is one-shot per database**: it is keyed on a deterministic run id, and a second run raises
+`AlreadyLoaded` rather than duplicating rows. A database that already carries it must be reset, not
+re-loaded.
+
+**Two constraints this places on R2:**
+
+- **R2's `write_claims` goes through `LenientClaimWriter`.** The structuring pass does not build
+  `Claim` objects of its own and does not call `insert_claim` directly; the gate is the lane's only
+  write path, so the stamping and the markers are uniform whatever produced the fact.
+- **The loader's terminal rows are the shape R2's finalization must produce.** The
+  `entity_research_run` / `entity_research_job` / `entity_research_account_coverage` triple (plus
+  the `entity_research_account_fleet` row the committee read resolves the run through) is what the
+  accounts screens read a finished account through. R2's real finalization writes the same rows
+  with the same relationships; the loader is the worked example, not a special case.
+
 ## Notes recorded at R1 integration (2026-09-07)
 
 - **The one native call.** `gemini_media_client.transcribe_long` is the only ARV2 call that bypasses
