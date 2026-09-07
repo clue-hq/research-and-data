@@ -53,6 +53,11 @@ from clue_api.ingestion_tools import (
 from clue_api.ingestion_tools import (
     header_workspace_resolver as ingestion_header_workspace_resolver,
 )
+from clue_api.onboarding_routes import (
+    DbOnboardingEnqueuer,
+    create_onboarding_router,
+    onboarding_workspace_resolver,
+)
 from clue_api.production_metrics import production_metrics_lifespan
 from clue_api.research_view_api import (
     build_research_view_router,
@@ -883,6 +888,7 @@ def create_projections_app(
         app.dependency_overrides[frontend_read_workspace_resolver] = workspace_resolver
         app.dependency_overrides[chat_workspace_resolver] = workspace_resolver
         app.dependency_overrides[setup_workspace_resolver] = workspace_resolver
+        app.dependency_overrides[onboarding_workspace_resolver] = workspace_resolver
     if actor_resolver is not None:
         app.dependency_overrides[header_actor_resolver] = actor_resolver
         app.dependency_overrides[ingestion_header_actor_resolver] = actor_resolver
@@ -923,6 +929,21 @@ def create_projections_app(
                 # Brand-kit slice 2: None unless CLUE_DESIGN_API_BASE_URL names the design API,
                 # in which case first-time onboarding also enqueues one draft brand-kit
                 # ingestion of the captured website.
+                brand_kit_ingestion=build_brand_kit_ingestion_trigger(
+                    settings=resolved, conn_factory=conn_factory
+                ),
+            )
+        )
+    # ARV2 Track O (O3): the onboarding run surface — POST records the run and hands it to the
+    # fleet, GET polls the run and its steps. Default-off; nothing but the row insert and the
+    # enqueue happens on this loop.
+    if resolved.onboarding_v2_enabled:
+        app.include_router(
+            create_onboarding_router(
+                conn_factory=conn_factory,
+                enqueuer=DbOnboardingEnqueuer(),
+                # Same posture as the Stage-0 mount: None unless CLUE_DESIGN_API_BASE_URL names
+                # the design API, in which case onboarding also seeds one draft brand kit.
                 brand_kit_ingestion=build_brand_kit_ingestion_trigger(
                     settings=resolved, conn_factory=conn_factory
                 ),
