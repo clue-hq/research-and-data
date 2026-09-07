@@ -180,7 +180,7 @@ def verbatim_annotations(draft: SectionDraft, section: SectionInput) -> dict[str
     Law 6 makes this an annotation, so it answers a question rather than passing a verdict: of the
     spans this section put inside quotation marks, how many are really in the claims behind them,
     and of the figures it stated, how many appear in those claims at all. Pure and cheap; the page
-    layer calls it only when ``settings.arv2_display_verbatim_check`` is on.
+    layer calls it only when ``settings.evidence_verbatim_check`` is on.
 
     The corpus is per *unit*: an item is checked against the claims that item cites, an intro
     sentence against the claims that sentence cites. A quote can therefore never be excused by a

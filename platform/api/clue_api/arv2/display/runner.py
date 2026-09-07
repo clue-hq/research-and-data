@@ -45,6 +45,7 @@ from clue_api.arv2.openrouter import (
     openrouter_halt_rule,
     openrouter_message_text,
 )
+from clue_api.arv2.sinks import SpendTotals
 from clue_api.arv2.structuring_client import parse_reply_text
 
 #: A section is a page's worth of prose, not a document, but the model must never be truncated
@@ -410,6 +411,14 @@ class LunaSectionRunner:
         self._base_url = base_url
         self._model = model
         self._timeout_s = timeout_s
+
+    def totals(self) -> SpendTotals:
+        """What this runner's caller has metered so far — the page's spend, summed per runner.
+
+        A draft's ``cost`` is one call's reading; a section that was retried or regenerated made
+        more than one. The caller's running total is the only number that counts them all.
+        """
+        return self._caller.totals()
 
     def write_section(
         self,
