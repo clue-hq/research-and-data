@@ -130,7 +130,12 @@ brand_knowledge_document (
 - **Idempotency.** `(run_id, kind, subject_ref)` is unique; a retried step reuses its provider run
   id when Exa returns one, otherwise re-issues and records both.
 - **Web loop.** `POST /onboarding` enqueues and returns 202; the driver is a fleet job (the
-  `stage0_setup._drive_recon` on-loop path is not reused).
+  `stage0_setup._drive_recon` on-loop path is not reused). R1's `ProviderCaller.call` is
+  synchronous and blocking (Exa deep reasoning up to 1200 s), so every step calls it through
+  `asyncio.to_thread`, with **one `ProviderCaller` per worker task** (its totals and halt latch are
+  unlocked mutable state) — the R2 composition constraints in `platform/api/clue_api/arv2/README.md`
+  bind this driver too. `reset_halt` ownership for the onboarding lane: the operator, via the
+  same surface R2 chooses; recorded here so the two lanes do not diverge.
 
 ---
 
@@ -479,7 +484,7 @@ Knowledge section is re-lifted, not patched (principle 7); anything the dummy ha
 |---|---|---|---|---|
 | O0 | Contracts freeze | This document initialed; §4.3–4.5 validated live once each (as 4.2 was); catalog contract §6.4 + master plan §5.2 reworded for S5; the §7 read contract copied into `apps/frontend/docs/api-contracts/brand-context.md` | Both founders initial §12 | Aryan (docs), Shashank (contract doc copy) |
 | O1 | Substrate | Migration: §3 tables, `project_product`, `product_set_selection` kind + per-element answer trigger; flags (§10) in `.env.example`; `ONBOARDING_SYNTHESIS_AGENT_MODEL` in the agent-model block | One alembic head; `make db-smoke` green; parity test green; checklist items 3, 7 | agent-built, Aryan merges |
-| O2 | Exa clients (leaf) | `platform/api/clue_api/arv2/exa_agent_client.py` (create/poll/stream, raw-save, ledger), `exa_search_client.py`, the five request templates, recorded fixtures from the Insight Health runs | Fixture replay yields the catalog + overview artifacts byte-for-byte | agent-built from a charter, Shashank's fixtures, Aryan reviews |
+| O2 | Exa Agent surface (leaf) — **re-based on R1 (merged 2026-09-07, PR #45)** | R1 already ships `platform/api/clue_api/arv2/exa_client.py` (search, contents, `deep_reasoning_body` with a caller-supplied `outputSchema`, `product_catalog_output_schema()` = the catalog contract §3 verbatim) behind the `ProviderCaller` wrapper (estimate row → raw record → retry/halt → result row; `sinks.py` file/memory sinks; `provider_call_ledger` spec in master plan §4). O2 therefore adds only: the Exa **Agent** surface (`/agent/runs` create + poll + stream, `output.text`/`structured`/`grounding`, `costDollars`) through the same `ProviderCaller`; the four remaining request templates (overview §4.2, reviews §4.3, per-product §4.4, evidence §4.5) as builder functions next to `product_catalog_output_schema`; the artifact mappers (§4 of each contract). Tests follow R1's founder ruling: **live against Exa, skipping with the env-var name when the key is unset; no replay fixtures.** | Live test on Insight Health reproduces the overview run's shape (`schema_satisfied`, 8 grounding rows, facts non-null) and the catalog run's 12 entries; ledger rows carry `costDollars.total` | agent-built from a charter; Aryan reviews |
 | O3 | Research steps on the fleet | `arv2/onboarding_driver.py` (fleet job), `POST /onboarding` 202, step graph, catalog sync re-pointed at the artifact, background fan-out + cap, document rows with statuses | One unseeded Insight Health run: every document present or honestly failed; ledger complete; nothing on the web loop | agent-built, Aryan composes |
 | O4 | Synthesis agent | Profile/prompt/two skills (§5), `exa_search_evidence@1`, materialization of inputs, outputs→documents registration | 2–3 ICPs + personas for Insight Health; no fictional names; every specific fact cited; per-role evidence when found; matches Shashank's answer keys; checklist item 1 | content Shashank, wiring agent-built, Aryan promotes |
 | O5 | Brand-context read surface | §7 endpoints; frontend Knowledge section re-lifted from the dummy on the real endpoints; status chips; progressive fill | With `CLUE_API_BASE_URL` set the page renders the real tree and fills as steps land; frontend gates green | agent-built from Shashank's charter; Aryan merges |
