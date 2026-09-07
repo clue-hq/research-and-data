@@ -28,7 +28,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.answer_key import (
-    _NAMESPACE,  # the research-run ids belong in the same uuid5 namespace as the run ids
+    ANSWER_KEY_NAMESPACE,  # research-run ids share the run ids' uuid5 namespace
     PEOPLE_RUN_ID,
     ZAFRAN_MANIFEST,
     AnswerKeyManifest,
@@ -462,10 +462,10 @@ async def _research_rows(
     real run reaches that state by UPDATE, and the immutability triggers guard exactly those
     updates, so replaying a finished run through the drivers is neither possible nor the point.
     """
-    research_run_id = uuid.uuid5(_NAMESPACE, "arv2-answer-key:research-run")
-    selection_id = uuid.uuid5(_NAMESPACE, "arv2-answer-key:selection")
-    job_id = uuid.uuid5(_NAMESPACE, "arv2-answer-key:job:zafran")
-    coverage_id = uuid.uuid5(_NAMESPACE, "arv2-answer-key:coverage:zafran")
+    research_run_id = uuid.uuid5(ANSWER_KEY_NAMESPACE, "arv2-answer-key:research-run")
+    selection_id = uuid.uuid5(ANSWER_KEY_NAMESPACE, "arv2-answer-key:selection")
+    job_id = uuid.uuid5(ANSWER_KEY_NAMESPACE, "arv2-answer-key:job:zafran")
+    coverage_id = uuid.uuid5(ANSWER_KEY_NAMESPACE, "arv2-answer-key:coverage:zafran")
     scope = {
         "workspace_id": manifest.workspace_id,
         "project_id": manifest.project_id,
@@ -535,7 +535,7 @@ async def _research_rows(
             "policy": json.dumps(policy),
             "policy_sha": _sha256_json(policy),
             "created_by": _ORIGIN,
-            "operation_id": uuid.uuid5(_NAMESPACE, "arv2-answer-key:operation"),
+            "operation_id": uuid.uuid5(ANSWER_KEY_NAMESPACE, "arv2-answer-key:operation"),
             "action_ref": f"{_ORIGIN}:zafran",
         },
     )

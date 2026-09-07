@@ -75,7 +75,7 @@ _COMMENTS: tuple[tuple[str, str], ...] = (
     (
         "display_section_recipe",
         "One page section's allow-list of field keys plus its served heading and layout flags. "
-        "NULL workspace_id = the system row; a workspace row overrides it.",
+        "An empty-string workspace_id = the system row; a workspace row overrides it.",
     ),
     (
         "provider_call_ledger",

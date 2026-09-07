@@ -30,10 +30,12 @@ from clue_core import (
     UseClass,
 )
 
-_NAMESPACE = uuid.UUID("6f1c2a3e-7b4d-4e8f-9a0b-1c2d3e4f5a6b")
-ZAFRAN_RUN_ID = RunId(uuid.uuid5(_NAMESPACE, "arv2-answer-key:zafran:2026-09-02"))
-ZAFRAN_PROJECT_RUN_ID = ProjectRunId(uuid.uuid5(_NAMESPACE, "arv2-answer-key:project-run:v1"))
-PEOPLE_RUN_ID = RunId(uuid.uuid5(_NAMESPACE, "arv2-answer-key:person-depth:2026-09-03"))
+ANSWER_KEY_NAMESPACE = uuid.UUID("6f1c2a3e-7b4d-4e8f-9a0b-1c2d3e4f5a6b")
+ZAFRAN_RUN_ID = RunId(uuid.uuid5(ANSWER_KEY_NAMESPACE, "arv2-answer-key:zafran:2026-09-02"))
+ZAFRAN_PROJECT_RUN_ID = ProjectRunId(
+    uuid.uuid5(ANSWER_KEY_NAMESPACE, "arv2-answer-key:project-run:v1")
+)
+PEOPLE_RUN_ID = RunId(uuid.uuid5(ANSWER_KEY_NAMESPACE, "arv2-answer-key:person-depth:2026-09-03"))
 
 #: The Zafran run cited some synthesised rows against a lettered source bundle rather than a URL.
 #: ``SOURCE A`` was the provider database read, which has no public URL — that row keeps ``None``.

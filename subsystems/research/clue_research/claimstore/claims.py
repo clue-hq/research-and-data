@@ -241,7 +241,8 @@ async def insert_claim(
     if claim.verification_status is VerificationStatus.VERIFIED and not can_be_promoted(claim):
         raise ValueError(
             "cannot insert a 'verified' claim that is not promotable "
-            "(direct tier-4 without evidence_span, or weak-binding contact claim) — "
+            "(direct tier-4 without evidence_span, or weak-binding contact claim, "
+            "or a web/synthesis claim with no source_url) — "
             "substrate §1/§6"
         )
     result = await conn.execute(_INSERT_SQL, _insert_params(claim))

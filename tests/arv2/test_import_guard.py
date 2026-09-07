@@ -40,7 +40,7 @@ ALLOWED_INTERNAL_PREFIXES: tuple[str, ...] = (
     "clue_research.durable.project_run",
     # D1: the pack-loader list (composition root data, not a lane)
     "clue_api.composition",
-    # D1: the pack-loader list (composition root data, not a lane)
+    # D1: the wiring hook that appends the ARV2 pack (outside the lane by design)
     "clue_api.arv2_wiring",
 )
 
