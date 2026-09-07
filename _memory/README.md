@@ -27,6 +27,7 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-09-07-arv2-r1-step0-and-client-dispatch.md` — ARV2 R1 on track-R: founder rulings (live tests only, native Gemini transcribe exception, keys), Step 0 wrapper/sinks/import guard landed (ee6fe1c94..076f0114a), provider_call_ledger spec, six client worktrees dispatched in parallel.
 - `2026-08-19-live-research-queued-ui-and-fleet-failure.md` — timestamped browser, database, and
   worker evidence for the Insight Health ten-Account approval: why the frontend remains honestly
   queued, the unsealed-discovery-manifest Sumble refusal, the separate cancellation/closed-DB-

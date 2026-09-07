@@ -97,6 +97,13 @@ class Secrets(BaseSettings):
     parallel_api_key: SecretStr | None = None
     firecrawl_api_key: SecretStr | None = None
     crm_api_key: SecretStr | None = None
+    # Env: CLUE_AI_ARK_API_KEY. Read by the ARV2 AI Ark client (people/company enrichment); sent
+    # as the ``X-TOKEN`` header, which the ARV2 raw sink redacts before any record is written.
+    ai_ark_api_key: SecretStr | None = None
+    # Env: CLUE_GEMINI_API_KEY. Read by the ARV2 media client's **native** transcribe call only —
+    # the one ARV2 model call that bypasses OpenRouter (OpenRouter serves neither the transcribe
+    # model nor a file upload). Every other ARV2 model call uses ``openrouter_api_key`` below.
+    gemini_api_key: SecretStr | None = None
 
     # --- durable artifact storage (Phase B2 / REQ-07) ---
     # Credentials for the S3-compatible StorageBackend (AWS S3 / R2 / MinIO). Non-secret knobs

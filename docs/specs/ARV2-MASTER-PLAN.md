@@ -1,6 +1,6 @@
 # ARV2 MASTER PLAN — the complete roadmap for account research, contact research, and their display
 
-**This is the single authoritative plan. Version 1.5, 2026-09-07 (v1.5: Aryan's rulings recorded — §8 R1–R13, §12 D1–D8 and D10–D13, data-source rulings S1–S12 with S10 = read-time relaxation; v1.4: data-source map child doc, `display_section_recipe` name, D13; v1.1: lenient write gate, checks as flag-controlled annotations, human-stated facts need no URL, all fields optional; v1.2: the interview never requires word-for-word recording; v1.3: contract v1 re-based on the 5 Sep frontend `live-backend-v1` @ `84f8ee7` — clause-level citation segments, research excerpts, actor-based activity, account artifacts, owner/creator, nullable fit score — and the D0 rulings reduced to what remains). Both founders ratify by initialing
+**This is the single authoritative plan. Version 1.6, 2026-09-07 (v1.6: the product-catalog child doc `ARV2-PRODUCT-CATALOG-CONTRACT.md` — Exa request shape, `ProductCatalogResearch@1` artifact, and rulings P1–P4: a project targets a **set** of products, versioned, one ICP per project over the whole set; v1.5: Aryan's rulings recorded — §8 R1–R13, §12 D1–D8 and D10–D13, data-source rulings S1–S12 with S10 = read-time relaxation; v1.4: data-source map child doc, `display_section_recipe` name, D13; v1.1: lenient write gate, checks as flag-controlled annotations, human-stated facts need no URL, all fields optional; v1.2: the interview never requires word-for-word recording; v1.3: contract v1 re-based on the 5 Sep frontend `live-backend-v1` @ `84f8ee7` — clause-level citation segments, research excerpts, actor-based activity, account artifacts, owner/creator, nullable fit score — and the D0 rulings reduced to what remains). Both founders ratify by initialing
 §12.** It consolidates every decision taken so far into one present-tense document. The earlier
 documents in `docs/specs/ARV2-*.md` remain as the audit trail; where they differ from this one, this
 one wins. There is no history in this document, only what we are building and how.
@@ -99,6 +99,22 @@ per person ≈ $0.07–0.13; display copy ≈ $0.05 per account with five contac
 - Section recipes as config rows in a table named **`display_section_recipe`** (not `recipe` — that
   name is already taken by Stage-0 execution recipes): `(page, section_key, h1, position,
   allowed_field_keys[], restricted, default_open, instruction_version, workspace_id NULL = system row)`.
+- **`provider_call_ledger`** (D1 addition, 2026-09-07): one row per provider call **phase**
+  (`estimate` before the wire, `result` after): `(ledger_id uuid PK, call_id uuid NOT NULL,
+  workspace_id text NULL, project_id text NULL, project_run_id text NULL,
+  entity_research_job_id uuid NULL, provider text NOT NULL, operation text NOT NULL, label text
+  NOT NULL, phase text NOT NULL CHECK (phase IN ('estimate','result')), http_status int NULL,
+  latency_ms int NULL, attempts int NOT NULL DEFAULT 0, estimate_usd numeric(12,6) NOT NULL
+  DEFAULT 0, estimate_credits numeric(12,3) NOT NULL DEFAULT 0, estimate_media_seconds int NOT
+  NULL DEFAULT 0, cost_usd numeric(12,6) NULL, credits numeric(12,3) NULL, media_seconds int NULL,
+  over_ceiling boolean NOT NULL DEFAULT false, outcome text NOT NULL CHECK (outcome IN
+  ('estimate','ok','client_error','retry_exhausted','halted','transport_error')), error_code text
+  NULL, provider_request_id text NULL, request_artifact_key text NULL, response_artifact_key text
+  NULL, recorded_at timestamptz NOT NULL DEFAULT now())`, indexes on `(workspace_id,
+  recorded_at)` and `(call_id)`. Raw request and response bodies are `artifact` rows written
+  through `record_artifact` with `source_key = 'arv2:<provider>:<operation>'`; the ledger row
+  references their keys. R1 ships the wrapper and the file/memory sinks; the table and the
+  artifact-backed sink land with D1/A7.
 - No visit table: "new since your last visit" is computed by the frontend from
   `ResearchEvidence.verifiedAt` against a locally stored last-visit stamp (decision D5 resolved).
 - Other per-claim extras from the research runs (`claim_kind`, `media_url`, `media_timestamp`,
@@ -142,6 +158,9 @@ launch_account_research(workspace_id, project_id, account_ids[], icp_artifact_re
 - Accounts must already exist as `account_entity` rows (discovery/import owns entity creation).
 - The ICP ref is pinned on the run; job identity is sha-pinned to the agent profile; a profile change
   relaunches, never resumes.
+- The run also pins `product_selection_version` — the project's current product **set** at launch
+  (ruling P1/P2, `ARV2-PRODUCT-CATALOG-CONTRACT.md` §6.4). A later set version never touches a
+  running or finished run; nothing is re-researched automatically.
 - Reverse edge: project context reads only accounts-per-project (run lineage), research job state
   (`not_started / in_progress / needs_review / completed / suspended`), run/job finalization, and
   the claims. Never research internals.
@@ -155,7 +174,10 @@ confirmation mints a new version). Front matter: `kind: icp-definition`, `icp_ke
 test — e.g. stage, geography, hiring, intent), `exclusions[]`, **`persona_map`** (the single persona
 vocabulary the research lane, the skills, and the frontend all speak: economic_buyer, champion,
 user, technical_evaluator, blocker), `qualifier_fields[] {field_key, description}` (compiled into
-the field catalog — the description *is* the research instruction). Body: the human-readable
+the field catalog — the description *is* the research instruction), `product_selection_version` (the
+project product set the ICP was written against — provenance only; a project has exactly **one**
+ICP and it targets the **whole** set, never a subset: rulings P3/P4 in
+`ARV2-PRODUCT-CATALOG-CONTRACT.md`). Body: the human-readable
 definition in priority order, plus: TAM/list-math estimate and the widen | tier | shrink choice;
 disqualifiers and red flags; closed-won/closed-lost patterns in the client's own words; the client's
 own phrasing of who they sell to; the qualification-floor verdict. Stored in the durable artifact
@@ -341,6 +363,9 @@ featured-contact hard-code is gone (`profileAction`); lint/build/tests green (11
 R1 starts the day D1's migration lands. When R2/R3 go live, the loader retires; D2–D5 do not change.
 
 ### Track O — the tech founder's lane
+**Product catalog:** the Exa request shape, the `ProductCatalogResearch@1` artifact, the claim/sync
+deltas, the `product_set_selection` gate, and the multi-product-per-project ruling are fixed in
+`ARV2-PRODUCT-CATALOG-CONTRACT.md` (2026-09-07).
 Onboarding as a research pipeline (parallel research agents writing `.md` artifacts into the
 deepagent workspace), 2–5 ICP proposal artifacts, the prompt-driven interview, the final ICP
 artifact under project + brand context, durable project context (replacing scoped memory for v1),
@@ -403,6 +428,10 @@ boot-time audit refuses to start if an old tool is re-granted; the old tools are
 | D11 | The 11 pre-existing test failures on the base: pay off now or with the lane work | With the lane work, one owner | ✓ (2026-09-07) | ☐ |
 | D12 | The operating model (§10), esp. "agents never merge" | Yes | ✓ (2026-09-07) | ☐ |
 | D13 | The data-source rulings S1–S12 in `ARV2-DATA-SOURCE-MAP.md` §5 — owner columns, nullable logo/title, fit thresholds, legacy slots default `[]`, artifacts `[]` in v1, the five-value `researchStatus` enum, and **S10 = read-time relaxation**: the new accounts endpoints (E2–E5) use an ARV2 display predicate that keeps the use-class rules and the sensitive fail-close but does not refuse a `WEAK`-bound contact claim that is `outreach_safe = true`; the old C7 `display_allowed` is left unchanged | As written | ✓ (2026-09-07) | ☐ |
+| D14 (=P1) | **A project targets a set of products, not one** — `project_product` versioned set; `product_set_selection` gate with `selected_option_refs[]`; `project.product_id` frozen legacy (`ARV2-PRODUCT-CATALOG-CONTRACT.md` §6) | Aryan overruled the single-product recommendation | ✓ (2026-09-07, "a very important ruling") | ☐ |
+| D15 (=P2) | The set changes any time as a new version; runs keep the version they pinned; nothing is re-researched automatically | Yes | ✓ (2026-09-07) | ☐ |
+| D16 (=P3/P4) | Exactly one ICP per project, targeting the whole product set (no per-ICP subset) | Aryan's ruling (the recommendation had been "subset allowed") | ✓ (2026-09-07) | ☐ |
+| D17 | The Exa `outputSchema` for the product catalog (8 properties, depth 2, `aliases` dropped) and the `ProductCatalogResearch@1` artifact mapping (`ARV2-PRODUCT-CATALOG-CONTRACT.md` §3–§4) | As written | ✓ (2026-09-07) | ☐ |
 
 ## 13. The first ten steps, in order
 

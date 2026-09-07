@@ -293,6 +293,40 @@ class Settings(BaseSettings):
     # not authorize a provider. Exa/Sumble/channel switches above remain independent hard gates.
     # Env: ``CLUE_ENTITY_RESEARCH_RUNTIME_ENABLED``.
     entity_research_runtime_enabled: bool = False
+
+    # --- ARV2 research lane (R1) ------------------------------------------------------------
+    # Selects the ARV2 fleet handler and launcher at composition (A7). **False until the R2 exit
+    # gate passes, then the default flips to True** (founder instruction 2026-09-07) — the lane
+    # ships dark so a half-built provider set can never claim an account research job.
+    # Env: ``CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED``.
+    arv2_account_research_enabled: bool = False
+    # Minimum seconds between AI Ark calls (the proof-of-concept pacing, kept until the paid
+    # tier's real rate limit is confirmed). Env: ``CLUE_ARV2_AI_ARK_MIN_GAP_S``.
+    arv2_ai_ark_min_gap_s: float = 10.5
+    # OpenRouter model id for the structuring pass (prose -> claims against the field catalog).
+    # Env: ``CLUE_ARV2_STRUCTURING_MODEL``.
+    arv2_structuring_model: str = "openai/gpt-5-mini"
+    # OpenRouter model id for the cheap first pass over short media (Appendix A law 11's
+    # two-model recipe). Env: ``CLUE_ARV2_MEDIA_SHORT_MODEL``.
+    arv2_media_short_model: str = "google/gemini-3.5-flash-lite"
+    # **Native Gemini** model id — the one ARV2 call that bypasses OpenRouter, because OpenRouter
+    # serves neither this transcription model nor a file upload. It reads
+    # ``Secrets.gemini_api_key`` directly. Env: ``CLUE_ARV2_MEDIA_TRANSCRIBE_MODEL``.
+    arv2_media_transcribe_model: str = "gemini-3.5-transcribe"
+    # OpenRouter embeddings model id (text embeddings only — Appendix A law 11).
+    # Env: ``CLUE_ARV2_EMBEDDING_MODEL``.
+    arv2_embedding_model: str = "google/gemini-embedding-2"
+    # Hard ceiling on media seconds sent to a model in one research run. Enforced (money truth,
+    # master plan §2 item 3). Env: ``CLUE_ARV2_MEDIA_SECONDS_CEILING``.
+    arv2_media_seconds_ceiling: int = 9000
+    # Above this duration a media item is not eligible for the cheap short-model pass.
+    # Env: ``CLUE_ARV2_MEDIA_SHORT_MAX_SECONDS``.
+    arv2_media_short_max_seconds: int = 600
+    # Where the file raw sink and the JSONL ledger write in development and tests. Production
+    # routes raw bodies to the ``artifact`` table and the ledger to ``provider_call_ledger``
+    # at A7. Env: ``CLUE_ARV2_RAW_ROOT``.
+    arv2_raw_root: str = ".artifacts/arv2"
+
     # Part II D5 Round B production cutover for design agent turns (scene + website). This switch
     # owns only whether the detached fleet worker registers the ``design_job`` handler; the design
     # API always offers the work, and its own embedded worker (LUMEN_EMBEDDED_FLEET_WORKER) is
