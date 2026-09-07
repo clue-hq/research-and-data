@@ -108,6 +108,7 @@ export type BrandContextSection = z.infer<typeof BrandContextSectionSchema>;
 export type BrandContextWorkspace = z.infer<typeof BrandContextWorkspaceSchema>;
 export type BrandDocumentMode = z.infer<typeof BrandDocumentModeSchema>;
 export type BrandKnowledgeDocument = z.infer<typeof BrandKnowledgeDocumentSchema>;
+export type BrandKnowledgeFolder = z.infer<typeof BrandKnowledgeFolderSchema>;
 export type BrandTextStyle = z.infer<typeof BrandTextStyleSchema>;
 export type BrandTypeface = z.infer<typeof BrandTypefaceSchema>;
 

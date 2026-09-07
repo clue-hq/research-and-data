@@ -448,7 +448,7 @@ const DATE_LABEL = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
-function dateLabel(iso: string): string {
+export function dateLabel(iso: string): string {
   const at = Date.parse(iso);
   return Number.isNaN(at) ? UNKNOWN : DATE_LABEL.format(at);
 }
