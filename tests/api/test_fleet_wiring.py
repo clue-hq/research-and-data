@@ -12,12 +12,15 @@ import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from pydantic import SecretStr
 
 from clue_api.fleet_main import (
     NoBootHandlersRegistered,
+    _build_onboarding_handler,
     _require_registered,
     _start_orphan_sweep,
 )
@@ -31,7 +34,7 @@ from clue_api.fleet_wiring import (
     register_boot_handlers,
     tier_priority_from_rubric,
 )
-from clue_config import Settings
+from clue_config import Secrets, Settings
 from clue_core import (
     PhaseContext,
     PhaseHandler,
@@ -51,6 +54,7 @@ from clue_fleet import (
 )
 from clue_research.durable import PhaseHandlerRegistry, ProjectRun, ProjectRunStatus
 from clue_research.icp.rubric import TierBand, TierCutoffs
+from clue_storage import FsStorage
 from tests.api.test_storage_wiring import FakeStorage
 from tests.db.conftest import run_async
 from tests.durable.conftest import FakeProjectRunStore
@@ -259,6 +263,64 @@ def test_multi_worker_accepts_kind_guarded_optional_handlers() -> None:
             graph_handler=graph,
             design_handler=graph,
         )
+
+
+def test_onboarding_handler_is_composed_when_given_and_kind_guarded() -> None:
+    # Track O (O3): the onboarding-run drain joins on the same terms as its neighbours — optional
+    # (a deployment without ``onboarding_v2_enabled`` composes no driver and nothing enqueues the
+    # kind) and kind-guarded at construction rather than at claim time.
+    graph = _CompositionHandler(FleetTaskKind.EXECUTE_GRAPH)
+    handler = _CompositionHandler(FleetTaskKind.ONBOARDING_RUN)
+    worker = build_multi_work_worker(
+        _settings(),
+        driver=build_fleet_run_driver(),
+        graph_handler=graph,
+        onboarding_handler=handler,
+        worker_id="shared-worker",
+    )
+    assert worker._handlers[FleetTaskKind.ONBOARDING_RUN] is handler
+
+    with pytest.raises(ValueError, match="must own onboarding_run"):
+        build_multi_work_worker(
+            _settings(),
+            driver=build_fleet_run_driver(),
+            graph_handler=graph,
+            onboarding_handler=_CompositionHandler(FleetTaskKind.DESIGN_JOB),
+        )
+
+
+def test_the_onboarding_handler_is_off_unless_the_lane_flag_is_set(tmp_path: Path) -> None:
+    """The production gate for Track O: no flag, no handler — and nothing enqueues the kind."""
+    secrets = Secrets(_env_file=None, exa_api_key=SecretStr("exa-test"))  # type: ignore[call-arg]
+    storage = FsStorage(tmp_path)
+
+    assert _build_onboarding_handler(_settings(), secrets, storage=storage) is None
+
+    composed = _build_onboarding_handler(
+        _settings(onboarding_v2_enabled=True), secrets, storage=storage
+    )
+    assert composed is not None
+    assert composed.kind is FleetTaskKind.ONBOARDING_RUN
+
+
+def test_the_flag_without_an_exa_key_composes_no_handler_rather_than_refusing_to_boot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ruling (O3): a keyless worker with the flag on warns and drains no onboarding work.
+
+    Failing the boot would take every other kind of work on the process down with it, and a
+    keyless handler would fail each run at its first provider call; leaving the kind undrained
+    keeps the enqueued runs waiting for a correctly-credentialed worker instead.
+    """
+    monkeypatch.delenv("CLUE_EXA_API_KEY", raising=False)
+    keyless = Secrets(_env_file=None)  # type: ignore[call-arg]
+    assert keyless.exa_api_key is None
+    assert (
+        _build_onboarding_handler(
+            _settings(onboarding_v2_enabled=True), keyless, storage=FsStorage(tmp_path)
+        )
+        is None
+    )
 
 
 def test_the_design_handler_is_off_unless_the_runtime_switch_is_set() -> None:

@@ -331,6 +331,7 @@ def build_multi_work_worker(
     stage0_recon_handler: WorkHandler | None = None,
     official_site_crawl_handler: WorkHandler | None = None,
     design_handler: WorkHandler | None = None,
+    onboarding_handler: WorkHandler | None = None,
     queue: WorkQueue | None = None,
     leases: WorkLeaseStore | None = None,
     worker_id: str | None = None,
@@ -351,6 +352,9 @@ def build_multi_work_worker(
     ``design_runtime_enabled`` is set.  ONE fleet worker drains every kind — design work does not
     get a private drain (the round-robin in :class:`~clue_fleet.LeasedWorkWorker` already keeps
     one kind from starving another).
+
+    ``onboarding_handler`` (Track O, O3) is the same shape again: optional because a deployment
+    without ``onboarding_v2_enabled`` composes no onboarding driver and nothing enqueues the kind.
     """
     if (
         entity_research_handler is not None
@@ -371,6 +375,11 @@ def build_multi_work_worker(
         raise ValueError("official_site_crawl_handler must own official_site_crawl tasks")
     if design_handler is not None and design_handler.kind is not FleetTaskKind.DESIGN_JOB:
         raise ValueError("design_handler must own design_job tasks")
+    if (
+        onboarding_handler is not None
+        and onboarding_handler.kind is not FleetTaskKind.ONBOARDING_RUN
+    ):
+        raise ValueError("onboarding_handler must own onboarding_run tasks")
     handlers = [
         _OwnedRunGuardHandler(ProjectRunWorkHandler(driver)),
         graph_handler,
@@ -385,6 +394,8 @@ def build_multi_work_worker(
         handlers.append(official_site_crawl_handler)
     if design_handler is not None:
         handlers.append(design_handler)
+    if onboarding_handler is not None:
+        handlers.append(onboarding_handler)
     return LeasedWorkWorker(
         handlers=tuple(handlers),
         queue=queue if queue is not None else DbWorkQueue(),

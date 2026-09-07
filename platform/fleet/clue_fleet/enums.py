@@ -39,6 +39,9 @@ class FleetTaskKind(StrEnum):
       and brand-kit ingestion all use this same mechanical kind, exactly as the two research
       subject types share ``ENTITY_RESEARCH_JOB``; which shape it is lives in the immutable
       by-value envelope the worker executes from, not in the queue taxonomy.
+    * ``ONBOARDING_RUN`` — one ARV2 onboarding run (Track O, O3): the fast recon lane, the catalog
+      synchronization, and the background per-product research all drive from this single job, so
+      the whole run has exactly one lease and one place to resume from.
 
     New members are appended, never inserted: the DB enum is grown with ``ALTER TYPE … ADD VALUE``
     (which appends), and the parity test compares the two **in order**. Member order here mirrors
@@ -54,6 +57,9 @@ class FleetTaskKind(StrEnum):
     STAGE0_RECON = "stage0_recon"
     OFFICIAL_SITE_CRAWL = "official_site_crawl"
     DESIGN_JOB = "design_job"
+    # ARV2 onboarding (Track O, O3): one job per onboarding run — fast recon, catalog sync,
+    # background per-product research. Appended, never inserted (see the class docstring).
+    ONBOARDING_RUN = "onboarding_run"
 
 
 class FleetTaskStatus(StrEnum):
