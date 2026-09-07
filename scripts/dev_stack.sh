@@ -161,7 +161,7 @@ up() {
   rm -rf "$ROOT/apps/frontend/.next"
   (
     cd "$ROOT/apps/frontend"
-    npm run dev -- --port "$FRONTEND_PORT" \
+    npm run dev -- --hostname 127.0.0.1 --port "$FRONTEND_PORT" \
       > "$(log_path frontend)" 2>&1 &
     record_pid frontend "$!"
   )
