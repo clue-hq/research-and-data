@@ -12,9 +12,10 @@ Three rules this module exists to keep:
   published-date bounds, ``category``, ``livecrawl`` and ``highlights`` are absent from the body
   unless the caller passed them. A module-level default domain list would silently narrow every
   search in the lane to whatever a previous caller happened to need.
-* **The provider's own metering is the cost.** :class:`ExaCostReader` reads ``costDollars.total``
-  and ``requestId`` off the body, so the ledger row carries what Exa charged rather than the
-  estimate that reserved it (Appendix A law 1).
+* **The provider's own metering is the cost.** :func:`exa_cost_reader` reads ``costDollars.total``
+  and ``requestId`` off the body and returns the per-component breakdown in the reading's
+  ``extras``, so the ledger row carries what Exa charged rather than the estimate that reserved
+  it (Appendix A law 1).
 * **A deep-reasoning call can fail silently** — it answers 200 with a handful of results, a
   near-zero cost and a stub of a report. Appendix A law 4's guard recognises that signature and
   buys exactly one retry; see :func:`is_thin_deep_response`.
@@ -26,7 +27,7 @@ Nothing here opens a socket: every call is a :class:`~clue_api.arv2.calls.CallSp
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, MutableMapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
@@ -43,7 +44,7 @@ EXA_BASE_URL = "https://api.exa.ai"
 PROVIDER = "exa"
 
 #: Pre-spend estimates (Appendix A law 2). These reserve the spend *before* the wire; the real
-#: number replaces them on the result row as soon as :class:`ExaCostReader` has read it.
+#: number replaces them on the result row as soon as :func:`exa_cost_reader` has read it.
 SEARCH_ESTIMATE_USD = Decimal("0.01")
 CONTENTS_ESTIMATE_USD_PER_URL = Decimal("0.002")
 DEEP_REASONING_ESTIMATE_USD = Decimal("0.05")
@@ -383,35 +384,29 @@ def _body_json(response: HttpResponse) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-class ExaCostReader:
-    """Reads ``costDollars.total`` and ``requestId``, and files the breakdown on the ledger row.
+def exa_cost_reader(response: HttpResponse) -> CostReading:
+    """Read Exa's own metering off a response — the total, the request id, and the breakdown.
 
-    Appendix A law 1: the ledger carries the provider's own metering. Exa reports a *breakdown*
-    (``costDollars.breakDown``/``costDollars.perRequestPrices``…) alongside the total, and that
-    breakdown is what answers "which part of this call was expensive" months later — so it is
-    kept rather than discarded at the moment the total is extracted.
+    Appendix A law 1: the ledger carries the provider's own metering, not the estimate that
+    reserved the spend. Exa reports a per-component *breakdown* (``costDollars.search.neural``,
+    ``costDollars.contents.text``…) alongside ``costDollars.total``, and that breakdown is what
+    answers "which part of this call was expensive" months later, so it is returned in the
+    reading's ``extras`` rather than discarded the moment the total is extracted. The wrapper
+    merges it into the result row and leaves the estimate row alone.
 
-    The breakdown reaches the row through the ``extras`` mapping this reader is constructed with,
-    which is the very dict handed to :class:`~clue_api.arv2.calls.CallSpec`. The wrapper runs the
-    cost reader *before* it writes the result row and merges ``spec.extras`` into that row, so a
-    key written here lands on the result row and — correctly — not on the estimate row that was
-    already written before the wire.
+    Stateless on purpose: a reader reports what it read by returning it. A body that is not JSON,
+    or carries no ``costDollars`` at all, yields an empty reading — "Exa did not tell us" is a
+    real answer and the wrapper records it as such, never as zero.
     """
-
-    def __init__(self, extras: MutableMapping[str, object] | None = None) -> None:
-        self._extras = extras
-
-    def __call__(self, response: HttpResponse) -> CostReading:
-        body = _body_json(response)
-        costs = body.get("costDollars")
-        costs = costs if isinstance(costs, dict) else {}
-        if self._extras is not None and costs:
-            self._extras["cost_breakdown"] = costs
-        request_id = body.get("requestId")
-        return CostReading(
-            cost_usd=_decimal(costs.get("total")),
-            provider_request_id=request_id if isinstance(request_id, str) else None,
-        )
+    body = _body_json(response)
+    costs = body.get("costDollars")
+    costs = costs if isinstance(costs, dict) else {}
+    request_id = body.get("requestId")
+    return CostReading(
+        cost_usd=_decimal(costs.get("total")),
+        provider_request_id=request_id if isinstance(request_id, str) else None,
+        extras={"cost_breakdown": costs} if costs else {},
+    )
 
 
 def exa_halt_rule(response: HttpResponse) -> str | None:
@@ -746,12 +741,7 @@ class ExaClient:
         estimate: SpendEstimate,
         timeout_s: float,
     ) -> CallResult:
-        """Assemble the spec and hand it to the wrapper. This is the only egress in the module.
-
-        ``extras`` is built mutable on purpose: :class:`ExaCostReader` writes the cost breakdown
-        into it while the call is in flight, and the wrapper merges it into the result row.
-        """
-        extras: dict[str, object] = {}
+        """Assemble the spec and hand it to the wrapper. This is the only egress in the module."""
         request = json_request(
             "POST",
             f"{self._base_url}{path}",
@@ -766,9 +756,8 @@ class ExaClient:
                 label=label,
                 request=request,
                 estimate=estimate,
-                cost_reader=ExaCostReader(extras),
+                cost_reader=exa_cost_reader,
                 halt_rule=exa_halt_rule,
-                extras=extras,
             )
         )
 

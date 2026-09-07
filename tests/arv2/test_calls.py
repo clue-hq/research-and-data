@@ -123,6 +123,50 @@ def test_success_writes_the_estimate_row_before_the_wire_and_saves_raw_before_pa
     assert caller.totals().credits == Decimal("3")
 
 
+def test_a_readings_extras_land_on_the_result_row_and_not_on_the_estimate_row() -> None:
+    """A cost reader reports side facts by *returning* them, never by mutating the frozen spec.
+
+    The estimate row is written before the wire, so it cannot carry anything the reader learned;
+    the result row is written after, so it must. Both halves are asserted, and the spec's own
+    ``extras`` (set by the caller before the call) must survive the merge rather than be replaced.
+    """
+    caller, _transport, _raw, ledger, _clock = _caller(
+        [HttpResponse(200, {}, b'{"costDollars":{"total":0.007}}')]
+    )
+    breakdown = {"search": {"neural": 0.007}, "total": 0.007}
+
+    def reader(_response: HttpResponse) -> CostReading:
+        return CostReading(cost_usd=Decimal("0.007"), extras={"cost_breakdown": breakdown})
+
+    caller.call(_spec(cost_reader=reader, extras={"account": "zafran"}))
+
+    estimate, outcome = ledger.rows
+    assert estimate.extras == {"account": "zafran"}
+    assert "cost_breakdown" not in estimate.extras
+    assert outcome.extras == {"account": "zafran", "cost_breakdown": breakdown}
+    assert outcome.cost_usd == Decimal("0.007")
+    assert "cost_source" not in outcome.extras
+
+
+def test_an_unmetered_reading_still_files_its_extras_alongside_the_estimate_marker() -> None:
+    """A reader that read a breakdown but no total told us nothing about the amount.
+
+    The row falls back to the estimate and says so — and still keeps what the reader did read, so
+    the two facts do not have to be reconstructed from the raw body later.
+    """
+    caller, _transport, _raw, ledger, _clock = _caller([HttpResponse(200, {}, b"{}")])
+
+    def reader(_response: HttpResponse) -> CostReading:
+        return CostReading(extras={"cost_breakdown": {"total": None}})
+
+    caller.call(_spec(cost_reader=reader))
+
+    outcome = ledger.rows[1]
+    assert outcome.extras["cost_source"] == "estimate"
+    assert outcome.extras["cost_breakdown"] == {"total": None}
+    assert outcome.cost_usd == Decimal("0.01"), "the estimate stands in for the unread cost"
+
+
 def test_retry_after_header_is_honoured_verbatim() -> None:
     """(b) ``Retry-After: 7`` beats the 12·(n+1) default — the provider's own pacing wins."""
     caller, _transport, _raw, _ledger, clock = _caller(
