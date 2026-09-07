@@ -69,6 +69,11 @@ def test_the_three_onboarding_tables_carry_their_state_contract() -> None:
         assert "failure_code IS NOT NULL" in step["onboarding_step_failure_pair"]
         assert "brand_knowledge_document" in step["onboarding_step_output_document_fk"]
 
+        # Tenancy is structural: a child pins (parent, workspace) as one unit.
+        assert "onboarding_run_workspace_anchor" in run
+        assert "(run_id, workspace_id)" in step["onboarding_step_run_fk"]
+        assert "(produced_by_step_id, workspace_id)" in doc["brand_knowledge_document_step_fk"]
+
         for status in (
             "running",
             "ready",
@@ -129,6 +134,71 @@ def test_a_document_cannot_be_served_without_bytes() -> None:
                                 "VALUES (gen_random_uuid(), 'ws-o1-doc', 'brd-o1-doc', 'company', "
                                 " 'product/overview.md', 'company-overview', 1, 'running')"
                             )
+                        )
+            finally:
+                await trans.rollback()
+
+    run_async(scenario())
+
+
+@pytest.mark.usefixtures("require_db")
+def test_a_step_cannot_belong_to_a_workspace_its_run_does_not() -> None:
+    """The composite FK is the whole point: a step's workspace IS its run's workspace."""
+    from sqlalchemy.exc import IntegrityError
+
+    async def scenario() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn:
+            trans = await conn.begin()
+            try:
+                await conn.execute(
+                    text(
+                        "INSERT INTO workspace (workspace_id, name) "
+                        "VALUES ('ws-o1-step', 'O1') ON CONFLICT DO NOTHING"
+                    )
+                )
+                await conn.execute(
+                    text(
+                        "INSERT INTO brand (brand_id, workspace_id, name) "
+                        "VALUES ('brd-o1-step', 'ws-o1-step', 'O1') ON CONFLICT DO NOTHING"
+                    )
+                )
+                await conn.execute(
+                    text(
+                        "INSERT INTO platform_user (user_id) VALUES ('usr-o1-step') "
+                        "ON CONFLICT DO NOTHING"
+                    )
+                )
+                run_id = (
+                    await conn.execute(
+                        text(
+                            "INSERT INTO onboarding_run (run_id, workspace_id, brand_id, "
+                            " company_domain, requested_by_user_id) "
+                            "VALUES (gen_random_uuid(), 'ws-o1-step', 'brd-o1-step', "
+                            " 'example.com', 'usr-o1-step') RETURNING run_id"
+                        )
+                    )
+                ).scalar_one()
+
+                # Same run, its own workspace: accepted.
+                await conn.execute(
+                    text(
+                        "INSERT INTO onboarding_step "
+                        "(step_id, run_id, workspace_id, kind, phase) "
+                        "VALUES (gen_random_uuid(), :run_id, 'ws-o1-step', 'overview', 'fast')"
+                    ),
+                    {"run_id": run_id},
+                )
+                # Same run, a foreign workspace: refused by onboarding_step_run_fk.
+                with pytest.raises(IntegrityError):
+                    async with conn.begin_nested():
+                        await conn.execute(
+                            text(
+                                "INSERT INTO onboarding_step "
+                                "(step_id, run_id, workspace_id, kind, phase) "
+                                "VALUES (gen_random_uuid(), :run_id, 'ws-o1-other', "
+                                " 'lineup', 'fast')"
+                            ),
+                            {"run_id": run_id},
                         )
             finally:
                 await trans.rollback()

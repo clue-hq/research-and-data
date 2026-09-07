@@ -59,6 +59,9 @@ def _create_onboarding_tables() -> None:
             finished_at          timestamptz,
 
             CONSTRAINT onboarding_run_pkey PRIMARY KEY (run_id),
+            -- Composite-FK anchor: lets a step pin (run, workspace) as one unit, so a step can
+            -- never carry a workspace its own run does not belong to.
+            CONSTRAINT onboarding_run_workspace_anchor UNIQUE (run_id, workspace_id),
             CONSTRAINT onboarding_run_status CHECK (status IN
                 ('queued', 'running', 'completed', 'completed_with_gaps', 'failed')),
             CONSTRAINT onboarding_run_finished_when_terminal CHECK
@@ -97,8 +100,11 @@ def _create_onboarding_tables() -> None:
             failure_message    text,
 
             CONSTRAINT onboarding_step_pkey PRIMARY KEY (step_id),
-            CONSTRAINT onboarding_step_run_fk FOREIGN KEY (run_id)
-                REFERENCES onboarding_run (run_id),
+            -- Tenancy is structural, not writer-trusted: a step pins (run, workspace) as one unit.
+            CONSTRAINT onboarding_step_run_fk FOREIGN KEY (run_id, workspace_id)
+                REFERENCES onboarding_run (run_id, workspace_id),
+            -- Composite-FK anchor: lets a document pin (step, workspace) as one unit.
+            CONSTRAINT onboarding_step_workspace_anchor UNIQUE (step_id, workspace_id),
             CONSTRAINT onboarding_step_kind CHECK (kind IN
                 ('overview', 'lineup', 'catalog_sync', 'reviews', 'synthesis', 'product_research')),
             CONSTRAINT onboarding_step_phase CHECK (phase IN ('fast', 'background')),
@@ -140,8 +146,11 @@ def _create_onboarding_tables() -> None:
             CONSTRAINT brand_knowledge_document_pkey PRIMARY KEY (document_id),
             CONSTRAINT brand_knowledge_document_brand_fk FOREIGN KEY (brand_id, workspace_id)
                 REFERENCES brand (brand_id, workspace_id),
-            CONSTRAINT brand_knowledge_document_step_fk FOREIGN KEY (produced_by_step_id)
-                REFERENCES onboarding_step (step_id),
+            -- A NULL produced_by_step_id leaves this FK unenforced: the "produced by a turn
+            -- instead" case. When a step IS named, it must live in the document's workspace.
+            CONSTRAINT brand_knowledge_document_step_fk
+                FOREIGN KEY (produced_by_step_id, workspace_id)
+                REFERENCES onboarding_step (step_id, workspace_id),
             CONSTRAINT brand_knowledge_document_turn_fk FOREIGN KEY (produced_by_turn_id)
                 REFERENCES agent_turn (id),
             CONSTRAINT brand_knowledge_document_supersedes_fk FOREIGN KEY (supersedes_document_id)
