@@ -177,3 +177,15 @@ profile or a stale expectation in the test, and nobody on Track O can decide whi
   platform/api/clue_api/onboarding_synthesis_wiring.py platform/api/clue_api/fleet_main.py` clean.
 
 No secrets or keys are recorded here.
+
+## Addendum — merged (2026-09-08)
+Both lanes are on `integration/design-improvement`: O3 at merge `1250fe8af`, O4 at merge `e47ec67df`.
+The two owed merge-time edits landed in `e47ec67df`: Alembic join **`9f81e5692fea`** over
+`af3cf1541ebe` (O3) + `dfb9fa040b13` (O4) — one head, up→down→up verified on `clue_o3_driver`;
+and the O3 ⇄ O4 handoff in `fleet_main` — `_SynthesisSeam` adapts `OnboardingSynthesisResult` to
+the driver's `SynthesisOutcome` field for field and `_build_onboarding_handler(..., synthesis=)`
+hands it to the onboarding driver (pinned by `test_the_synthesis_seam_hands_o4_outcomes_to_the_o3_handler`).
+`clue_semarang` is at `9f81e5692fea`. Still not run: O3's acceptance run and O4's live turn
+(both founder-triggered, both spend). Known reds not this work: `design@v1` malformed
+`model_id`; `tests/db/test_db_migrations.py` needs an empty DB (sibling suites leave
+`entity_research_job` fleet tasks behind).
