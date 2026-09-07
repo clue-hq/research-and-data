@@ -12,7 +12,7 @@ from .conftest import run_async
 
 
 @pytest.mark.usefixtures("require_db")
-def test_the_fleet_kind_enum_has_onboarding_run_last_and_matches_the_db() -> None:
+def test_the_fleet_kind_enum_has_onboarding_run_and_matches_the_db() -> None:
     async def scenario() -> list[str]:
         async with db_lifespan() as engine, engine.connect() as conn:
             rows = await conn.execute(
@@ -24,7 +24,9 @@ def test_the_fleet_kind_enum_has_onboarding_run_last_and_matches_the_db() -> Non
             return [str(r.enumlabel) for r in rows]
 
     labels = run_async(scenario())
-    assert labels[-1] == "onboarding_run"
+    # Not last any more — R2 appended ``arv2_account_research`` after it. What this test still
+    # owns is that O3's label is present and the enum matches the DB in order.
+    assert "onboarding_run" in labels
     assert labels == [k.value for k in FleetTaskKind]
 
 

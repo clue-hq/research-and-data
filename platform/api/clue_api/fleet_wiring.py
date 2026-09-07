@@ -332,6 +332,7 @@ def build_multi_work_worker(
     official_site_crawl_handler: WorkHandler | None = None,
     design_handler: WorkHandler | None = None,
     onboarding_handler: WorkHandler | None = None,
+    arv2_account_research_handler: WorkHandler | None = None,
     queue: WorkQueue | None = None,
     leases: WorkLeaseStore | None = None,
     worker_id: str | None = None,
@@ -355,6 +356,9 @@ def build_multi_work_worker(
 
     ``onboarding_handler`` (Track O, O3) is the same shape again: optional because a deployment
     without ``onboarding_v2_enabled`` composes no onboarding driver and nothing enqueues the kind.
+
+    ``arv2_account_research_handler`` (Track R, R2) is the same shape again: optional because a
+    deployment without ``arv2_account_research_enabled`` composes no account driver.
     """
     if (
         entity_research_handler is not None
@@ -380,6 +384,11 @@ def build_multi_work_worker(
         and onboarding_handler.kind is not FleetTaskKind.ONBOARDING_RUN
     ):
         raise ValueError("onboarding_handler must own onboarding_run tasks")
+    if (
+        arv2_account_research_handler is not None
+        and arv2_account_research_handler.kind is not FleetTaskKind.ARV2_ACCOUNT_RESEARCH
+    ):
+        raise ValueError("arv2_account_research_handler must own arv2_account_research tasks")
     handlers = [
         _OwnedRunGuardHandler(ProjectRunWorkHandler(driver)),
         graph_handler,
@@ -396,6 +405,8 @@ def build_multi_work_worker(
         handlers.append(design_handler)
     if onboarding_handler is not None:
         handlers.append(onboarding_handler)
+    if arv2_account_research_handler is not None:
+        handlers.append(arv2_account_research_handler)
     return LeasedWorkWorker(
         handlers=tuple(handlers),
         queue=queue if queue is not None else DbWorkQueue(),

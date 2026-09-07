@@ -332,6 +332,24 @@ class Settings(BaseSettings):
     # at A7. Env: ``CLUE_ARV2_RAW_ROOT``.
     arv2_raw_root: str = ".artifacts/arv2"
 
+    # --- ARV2 R2 account agent (master plan §9 R2; founder stop-policy ruling 2026-09-08) ------
+    # Model rounds per account job. A ceiling ends the loop and the driver finalizes with what
+    # was written; it is a safety net, never a budget. Env: ``CLUE_ARV2_ACCOUNT_MAX_MODEL_ROUNDS``.
+    arv2_account_max_model_rounds: int = Field(default=100, ge=1)
+    # Tool calls the model may issue in ONE round; the excess receive a recoverable refusal.
+    # Env: ``CLUE_ARV2_ACCOUNT_MAX_TOOL_CALLS_PER_ROUND``.
+    arv2_account_max_tool_calls_per_round: int = Field(default=50, ge=1)
+    # Wall clock per account job, seconds. Env: ``CLUE_ARV2_ACCOUNT_MAX_RUNTIME_S``.
+    arv2_account_max_runtime_s: int = Field(default=1800, ge=60)
+    # Account jobs one worker drives concurrently. Env: ``CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS``.
+    arv2_account_max_parallel_jobs: int = Field(default=4, ge=1)
+    # Concurrent calls per provider within one job (AI Ark is always 1 — its pacing is per
+    # client). Env: ``CLUE_ARV2_ACCOUNT_PROVIDER_CONCURRENCY``.
+    arv2_account_provider_concurrency: int = Field(default=4, ge=1)
+    # Largest podcast enclosure the media tool downloads, MiB.
+    # Env: ``CLUE_ARV2_ACCOUNT_MEDIA_MAX_ENCLOSURE_MB``.
+    arv2_account_media_max_enclosure_mb: int = Field(default=200, ge=1)
+
     # --- ARV2 onboarding lane (Track O; ARV2-ONBOARDING-PLAN.md §10) --------------------------
     # Routes ``POST /onboarding`` to the new fleet driver (O3). Ships dark until O7 acceptance;
     # ``self_serve_provisioning_enabled`` (the old recon) stays false regardless.

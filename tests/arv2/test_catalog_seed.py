@@ -47,6 +47,12 @@ def test_pack_covers_every_answer_key_field_not_registered_elsewhere() -> None:
     assert not missing, sorted(missing)
 
 
+def test_r2_account_keys_are_registered_in_the_pack() -> None:
+    """R2 writes the committee candidates and the fit verdict as ordinary registered fields."""
+    assert {"account.committee_candidate", "account.icp_fit_verdict"} <= ARV2_FIELD_KEYS
+    assert len(ARV2_FIELD_KEYS) == 40
+
+
 def test_pack_does_not_redefine_an_existing_key() -> None:
     assert not (ARV2_FIELD_KEYS & _REGISTERED_ELSEWHERE)
 
