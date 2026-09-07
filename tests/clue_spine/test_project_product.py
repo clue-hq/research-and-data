@@ -197,3 +197,44 @@ def test_rows_are_append_only() -> None:
                         await conn.execute(text(statement), {"p": project_id})
 
     run_async(scenario())
+
+
+def test_the_composite_fks_rely_on_the_spines_existing_anchors() -> None:
+    """No `*_identity_triple` index is minted: PostgreSQL matches an FK's referenced columns as a
+    set, so `product_context_anchor` / `project_run_context_anchor` already back both composite FKs
+    (fix round 1 — the redundant unique indexes were dropped)."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _seed(conn)
+            constraints = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT conname FROM pg_constraint WHERE conname IN "
+                            "('project_product_product_fk', 'project_product_project_fk')"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert sorted(constraints) == [
+                "project_product_product_fk",
+                "project_product_project_fk",
+            ]
+            leftovers = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT indexname FROM pg_indexes WHERE indexname IN "
+                            "('product_identity_triple', 'project_identity_triple')"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert list(leftovers) == []
+
+    run_async(scenario())

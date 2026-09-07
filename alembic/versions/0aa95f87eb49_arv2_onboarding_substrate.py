@@ -202,16 +202,8 @@ def _drop_onboarding_tables() -> None:
 
 
 def _create_project_product() -> None:
-    # The composite FKs below need matching unique targets; product_id / project_id are already
-    # primary keys, so these indexes add no new invariant — they only make the triple referenceable.
-    op.execute(
-        "CREATE UNIQUE INDEX product_identity_triple "
-        "ON product (product_id, brand_id, workspace_id)"
-    )
-    op.execute(
-        "CREATE UNIQUE INDEX project_identity_triple "
-        "ON project (project_id, brand_id, workspace_id)"
-    )
+    # The composite FKs bind to the spine's existing anchors — product_context_anchor (product)
+    # and project_run_context_anchor (project) — so no new unique index is needed here.
     op.execute(
         """
         CREATE TABLE project_product (
@@ -254,5 +246,3 @@ def _drop_project_product() -> None:
     op.execute("DROP TRIGGER project_product_append_only ON project_product")
     op.execute("DROP INDEX project_product_current")
     op.execute("DROP TABLE project_product")
-    op.execute("DROP INDEX project_identity_triple")
-    op.execute("DROP INDEX product_identity_triple")
