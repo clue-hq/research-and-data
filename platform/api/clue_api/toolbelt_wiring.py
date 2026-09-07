@@ -102,6 +102,7 @@ from clue_api.fleet_wiring import enqueue_run_drive
 from clue_api.independent_contact_research import IndependentContactResearchRunner
 from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
 from clue_api.locks import lazy_account_lock_factory
+from clue_api.onboarding_evidence_tools import build_onboarding_evidence_tools
 from clue_api.phase_wiring import build_discovery_handler, build_scoring_handler
 from clue_api.product_knowledge_tools import build_product_knowledge_tools
 from clue_api.project_execution_router import ProjectExecutionRouter
@@ -161,6 +162,7 @@ from clue_api.value_narrative_tools import (
 from clue_api.verification import build_verification_phase_handler
 from clue_config import (
     DEFAULT_STAGE0_POLICY,
+    Secrets,
     Settings,
     load_settings,
     stage0_policy_from_settings,
@@ -2606,6 +2608,7 @@ def build_toolbelt(
     *,
     storage: StorageBackend | None,
     settings: Settings | None = None,
+    secrets: Secrets | None = None,
     gateway: LLMGateway | None = None,
     channels: ChannelRegistry | None = None,
     committee_sources: Sequence[CommitteeSource] = (),
@@ -2650,6 +2653,13 @@ def build_toolbelt(
     * ``gateway`` — the shared :class:`~clue_core.LLMGateway` the LLM-touching tools (synthesize /
       discover / deep / committee / verification) use. ``None`` is allowed (the pure / prerequisite-
       free tools do not need it); a spend tool invoked without one raises :class:`GatewayRequired`.
+    * ``secrets`` — the provider credentials the ARV2 onboarding evidence tool composes its Exa
+      client from (ARV2 O4). Unlike ``settings`` this does **not** default to reading the
+      environment: ``None`` means *no credentials*, so the tool registers but refuses
+      ``exa_not_configured`` before any spend. That default is fail-closed by design — resolving it
+      to :class:`~clue_config.Secrets` here would make every test toolbelt compose a live, billable
+      Exa client on any machine with a key in its ``.env``. Production composition roots pass a
+      real :class:`~clue_config.Secrets` explicitly.
     * ``channels`` — the bound discovery :class:`ChannelRegistry` (empty default: discovery finds
       nothing and advances, never fabricates).
     * ``committee_sources`` — the committee :class:`CommitteeSource` set (empty → empty committee).
@@ -2969,6 +2979,13 @@ def build_toolbelt(
         prose_synthesis,
         gateway=gateway,
         conn_factory=conn_factory,
+    ):
+        registry.register(tool, make_default=True)
+    # ARV2 O4. Registers in EVERY composition (the C6 authority audit needs one registry shape);
+    # an off flag or a missing Exa key is refused in `preconditions`, never by absence.
+    for tool in build_onboarding_evidence_tools(
+        settings=resolved_settings,
+        secrets=secrets,
     ):
         registry.register(tool, make_default=True)
     # Lane E E3. Same everywhere-registered posture as the prose surface above, with one extra

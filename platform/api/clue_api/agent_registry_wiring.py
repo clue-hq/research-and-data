@@ -191,6 +191,10 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "enrich_account_gaps": (),
     "enrich_selected_accounts": (),
     "evaluate_stage0_readiness": (AgentRole.HEAD_OF_ABM,),
+    # ARV2 onboarding O4 (plan §4.5): the synthesis agent's one SPEND tool — a single fixed
+    # deep-reasoning search for first-person evidence, at most once per persona role. No other
+    # role may buy it: this is the onboarding synthesis turn's own governed provider call.
+    "exa_search_evidence": (AgentRole.ONBOARDING_SYNTHESIS,),
     "get_research_view": (
         AgentRole.HEAD_OF_ABM,
         AgentRole.RESEARCH,
