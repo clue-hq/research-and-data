@@ -347,9 +347,14 @@ featured-contact hard-code is gone (`profileAction`); lint/build/tests green (11
 R1 starts the day D1's migration lands. When R2/R3 go live, the loader retires; D2–D5 do not change.
 
 ### Track O — the tech founder's lane
-**Product catalog:** the Exa request shape, the `ProductCatalogResearch@1` artifact, the claim/sync
+**Product catalog:** the Exa request shape, the `ProductCatalogResearch@1` artifact, the sync
 deltas, the `product_set_selection` gate, and the multi-product-per-project ruling are fixed in
-`ARV2-PRODUCT-CATALOG-CONTRACT.md` (2026-09-07).
+`ARV2-PRODUCT-CATALOG-CONTRACT.md` (2026-09-07). **Company overview:** the Exa Agent request
+(effort `high`), the validated `outputSchema`, the `CompanyOverviewResearch@1` artifact and its
+fixed-heading rendering are fixed in `ARV2-COMPANY-OVERVIEW-CONTRACT.md` (2026-09-07, live-validated
+on Insight Health: 67 s, $0.50). Fast recon = company overview ∥ product lineup → ICP synthesis →
+persona documents; background = one Agent run per discovered product. Seller-company knowledge is
+**artifacts, never Client-KB claims** (standing rule: catalog contract §10).
 Onboarding as a research pipeline (parallel research agents writing `.md` artifacts into the
 deepagent workspace), 2–5 ICP proposal artifacts, the prompt-driven interview, the final ICP
 artifact under project + brand context, durable project context (replacing scoped memory for v1),

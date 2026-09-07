@@ -56,3 +56,27 @@ selected" state; all are quarantine-bound (Phase 6).
 - Implementation charter per contract §9 (migration, gate kind, Exa client, frontend set-valued
   gate) — not started.
 - D9 (Series A equivalence clause) still open.
+
+## Addendum (same day, later): company-overview contract + onboarding lane shape
+
+- NEW `docs/specs/ARV2-COMPANY-OVERVIEW-CONTRACT.md` — Exa **Agent** run (`/agent/runs`, effort
+  `high` = fixed $0.50), query = the founder's nine-section due-diligence prompt, schema = facts /
+  seven markdown sections / competitors / named_customers / not_found. Live-validated on Insight
+  Health: 67 s, $0.50, 60 searches, `schema_satisfied`, 8 grounding rows (per SECTION, not per
+  fact; competitors/customers/not_found carry no grounding → v1.1 open item `evidence_url`).
+  Artifact `CompanyOverviewResearch@1`: front matter = facts/competitors/customers/not_found/
+  sources; body = fixed H2 headings in fixed order; `not_found` is RENDERED.
+- Onboarding lane shape (Aryan, 2026-09-07): no scrapers as primary source. Fast recon = company
+  overview (Agent, high) ∥ product lineup (search deep-reasoning) → ICP synthesis (2–3 ICPs at
+  BRAND level, each naming its products) → one persona document per ICP (a section per
+  persona_map role). Background = one Agent run per discovered product, parallel. All rendered
+  read-only as markdown in the brand-context Knowledge folders (Company / Product / Audience /
+  Proof). The Head-of-ABM reads the files itself (`read_file`) — NOTHING verbatim in opening
+  context except the L2 index card (Aryan overruled the verbatim set). Customer reviews = separate
+  Agent run (medium), contract not yet written.
+- ICP reconciliation with P3/P4: ICPs live at brand level (2–3 per company, each with
+  `product_ids[]`); a project picks exactly ONE; the project product set defaults from the ICP's
+  products and is edited at the product-set gate. Contract §6.4 + master plan §5.2 still need this
+  rewording (pending Aryan's explicit yes to point 1 of the 18:0x message).
+- Security: the Exa request sample Aryan pasted (`.context/attachments/52gUp1/`) contains a LIVE
+  Exa API key in `Exa(api_key=...)`. Not copied anywhere; flagged to Aryan to rotate.
