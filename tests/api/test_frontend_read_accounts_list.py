@@ -47,15 +47,20 @@ from httpx import ASGITransport
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.catalog_seed import load_arv2_pack
+from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
 from clue_api.client_context_binding import bind_workspace_client
 from clue_api.frontend_read import FRONTEND_READ_PREFIX, AccountResearchStatusValue
 from clue_api.frontend_read.accounts_list import decode_cursor, encode_cursor
+from clue_api.frontend_read.contract_v1 import AccountsResponseV1, AccountV1
+from clue_api.frontend_read.v1_shared import iso_utc
 from clue_api.projections_app import create_projections_app
 from clue_config import load_settings
 from clue_core import (
     AccountStatus,
     Confidence,
     EntityId,
+    EntityType,
     ExtractionMethod,
     ResearchMode,
     ResearchScope,
@@ -75,10 +80,12 @@ from clue_fleet import (
     launch_entity_research_run,
 )
 from clue_research.claimstore import get_field, insert_claim, record_run_lineage
+from clue_research.claimstore.packs import load_core_pack
 from clue_research.identity import insert_account_entity, stamp_reuse
 from clue_research.membership import ensure_project_account
 from clue_spine import Project
 from tests._workspace import seed_project, seed_workspace
+from tests.api.contract_v1.oracle import zod_validate
 from tests.db.conftest import run_async
 from tests.fleet.entity_research_r2_helpers import lifecycle_fixture
 from tests.profiling.conftest import conn_session_factory, rollback_conn
@@ -122,7 +129,7 @@ def _rows(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {row["name"]: row for row in payload["data"]}
 
 
-async def _count_statements(conn: AsyncConnection) -> tuple[int, dict[str, Any]]:
+async def _count_statements(conn: AsyncConnection, **params: Any) -> tuple[int, dict[str, Any]]:
     """``(statements issued, payload)`` for one default list request.
 
     The endpoint composes a fixed number of batched reads per page, so this count is a *constant*
@@ -137,7 +144,7 @@ async def _count_statements(conn: AsyncConnection) -> tuple[int, dict[str, Any]]
 
     event.listen(conn.sync_connection, "before_cursor_execute", count)
     try:
-        response = await _get(conn)
+        response = await _get(conn, **params)
     finally:
         event.remove(conn.sync_connection, "before_cursor_execute", count)
     assert response.status_code == 200
@@ -1215,3 +1222,441 @@ def test_the_lineage_join_dispatches_on_project_id_never_on_kind() -> None:
 
     assert "l.project_id IS NOT NULL" in accounts_list._SCORE_CLAIMS_TEMPLATE
     assert "kind" not in accounts_list._SCORE_CLAIMS_TEMPLATE
+
+
+# --- ARV2 D3 E1: the contract-v1 row under ``?contract=v1`` --------------------------------------
+#
+# The D3 ruling: contract v1 is selected per request. Everything above this line is the FI-2
+# contract and must keep passing byte-for-byte — the two halves of this file are the proof that one
+# route serves both until the D4 re-lift retires the FI-2 branch.
+
+
+async def _seed_user(
+    conn: AsyncConnection,
+    user_id: str,
+    *,
+    display_name: str | None = None,
+    first_name: str | None = None,
+    last_name: str | None = None,
+) -> str:
+    await conn.execute(
+        text(
+            "INSERT INTO platform_user (user_id, display_name, first_name, last_name) "
+            "VALUES (:u, :d, :f, :l) ON CONFLICT (user_id) DO NOTHING"
+        ),
+        {"u": user_id, "d": display_name, "f": first_name, "l": last_name},
+    )
+    return user_id
+
+
+async def _seed_client_field(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    field_key: str,
+    description: str,
+    presentation: str = "text",
+) -> None:
+    """One tenant-local ``client.*`` registry row, planted the way the promotion service leaves it
+    (the same recipe as ``tests/api/test_frontend_read_v1_shared.py``)."""
+    brand = f"b_{workspace_id}"
+    await conn.execute(
+        text(
+            "INSERT INTO brand (brand_id, workspace_id, name) VALUES (:b, :w, 'Clue') "
+            "ON CONFLICT DO NOTHING"
+        ),
+        {"b": brand, "w": workspace_id},
+    )
+    proposal_id = uuid.uuid4()
+    await conn.execute(
+        text(
+            """
+            INSERT INTO field_definition_revision (
+                id, workspace_id, brand_id, field_key, payload_hash, payload_json,
+                proposed_by_actor, required_authority
+            ) VALUES (:id, :w, :b, :k, :hash, CAST('{}' AS jsonb), 'human', 'human')
+            """
+        ),
+        {
+            "id": proposal_id,
+            "w": workspace_id,
+            "b": brand,
+            "k": field_key,
+            "hash": f"{abs(hash(field_key)):064x}"[:64],
+        },
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO workspace_field_definition (
+                workspace_id, field_key, value_type, tier_plan, pass_kind, reuse_scope,
+                field_class, description, pack, client_kb_role, active, definition_version,
+                promoted_from_proposal_id, promotion_policy_version, promoted_by, presentation
+            ) VALUES (
+                :w, :k, 'str', CAST('[]' AS jsonb), CAST('deep' AS field_pass),
+                CAST('tenant_private' AS reuse_scope), CAST('pack' AS field_class), :d,
+                'client', 'extended', TRUE, 1, :p, 'test', 'tester', :pres
+            )
+            """
+        ),
+        {
+            "w": workspace_id,
+            "k": field_key,
+            "d": description,
+            "p": proposal_id,
+            "pres": presentation,
+        },
+    )
+
+
+async def _client_claim(
+    conn: AsyncConnection, *, account_id: EntityId, field_key: str, value: Any
+) -> None:
+    """A tenant-private ``client.*`` claim, written through the D1 lenient writer."""
+    await LenientClaimWriter(lenient=True).write(
+        conn,
+        ClaimDraft(
+            entity_id=account_id,
+            entity_type=EntityType.ACCOUNT,
+            field_key=field_key,
+            value_json=value,
+            extraction_method=ExtractionMethod.SCRAPE,
+            run_id=new_run_id(),
+            research_mode=ResearchMode.ACCOUNT_PROFILING,
+            workspace_id=_WS,
+            source_url="https://zafran.io/newsroom",
+        ),
+    )
+
+
+async def _build_v1(conn: AsyncConnection) -> tuple[_Fixture, EntityId]:
+    """The FI-2 fixture plus one fully-populated account — the shape the v1 row is designed for.
+
+    Zafran carries every source the v1 row composes: the eight neutral facts, an owner and a
+    creator, memberships in both projects, a fit score under the *primary* project (and a lower one
+    under the other, so attribution is provable), a finished research job, and a client-pack custom
+    field. The FI-2 accounts stay exactly as they were, so both halves of the file share one seed.
+    """
+    fixture = await _build(conn)
+    await load_core_pack(conn)
+    await load_arv2_pack(conn)
+    await _seed_user(conn, "u_owner", display_name="Ada Lovelace")
+    await _seed_user(conn, "u_creator", first_name="Grace", last_name="Hopper")
+
+    base = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
+    zafran = await _account(
+        conn, name="Zafran", domain="zafran.io", created_at=base + timedelta(hours=3)
+    )
+    await conn.execute(
+        text(
+            "UPDATE account_entity SET owner_user_id = 'u_owner', "
+            "created_by_user_id = 'u_creator' WHERE id = :id"
+        ),
+        {"id": zafran},
+    )
+    await ensure_project_account(
+        conn,
+        workspace_id=_WS,
+        project_id=fixture.project_a.project_id,
+        account_entity_id=zafran,
+        added_via="discovered",
+        added_at=base,
+    )
+    await ensure_project_account(
+        conn,
+        workspace_id=_WS,
+        project_id=fixture.project_b.project_id,
+        account_entity_id=zafran,
+        added_via="imported",
+        added_at=base + timedelta(minutes=5),
+    )
+
+    for field_key, value in (
+        ("core.employee_count", 167),
+        # The registry shapes, not convenient strings: ``employee_range`` is an object whose only
+        # required key is ``label``, ``hq_location`` an object whose required key is ``raw``.
+        ("core.employee_range", {"label": "101-250", "min": 101, "max": 250}),
+        ("core.revenue_band", "50m_100m"),
+        ("core.hq_location", {"raw": "Tel Aviv, Israel", "city": "Tel Aviv", "country": "Israel"}),
+        ("core.industry", "Cybersecurity"),
+        ("core.industries_all", ["Cybersecurity", "Security software"]),
+        ("core.company_linkedin_url", "https://www.linkedin.com/company/zafran"),
+    ):
+        await _neutral_claim(conn, account_id=zafran, field_key=field_key, value=value)
+
+    await _seed_client_field(
+        conn,
+        workspace_id=_WS,
+        field_key="client.compliance_regime",
+        description="Compliance regime",
+        presentation="badge",
+    )
+    await _client_claim(
+        conn, account_id=zafran, field_key="client.compliance_regime", value="SOC 2"
+    )
+
+    await _score(
+        conn,
+        account_id=zafran,
+        project_id=fixture.project_a.project_id,
+        fit=0.82,
+        intent=0.5,
+        icp_key="alpha",
+        icp_version=1,
+    )
+    # A *lower* score under the non-primary project: the row must report the primary project's fit,
+    # never whichever score happens to sort first.
+    await _score(
+        conn,
+        account_id=zafran,
+        project_id=fixture.project_b.project_id,
+        fit=0.20,
+        intent=None,
+        icp_key="beta",
+        icp_version=3,
+    )
+    job_id = await _launch_one(
+        conn,
+        workspace_id=_WS,
+        project_id=fixture.project_a.project_id,
+        account_id=zafran,
+    )
+    await _finalize_job(conn, job_id, outcome="completed")
+    return fixture, zafran
+
+
+def test_the_v1_contract_serves_the_display_row_for_a_fully_populated_account() -> None:
+    """Every v1 field on the row, composed from the sources decisions 3–7/15/16 name — and the
+    whole body validated twice: by the strict pydantic model and by the frontend's own Zod."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture, zafran = await _build_v1(conn)
+            response = await _get(conn, contract="v1")
+            assert response.status_code == 200
+            body = response.json()
+
+            # The strict wire model: extra keys forbidden, required-nullable fields present.
+            AccountsResponseV1.model_validate(body)
+            assert body["meta"] == {"total": 4, "nextCursor": None}
+
+            row = _rows(body)["Zafran"]
+            assert row["id"] == str(zafran)
+            assert row["logoPath"] is None
+            assert row["websiteUrl"] == "https://zafran.io"
+            assert row["researchStatus"] == "completed"
+            assert row["researchStatusLabel"] == "Researched"
+            assert row["researchIsRefreshing"] is False
+            assert row["overallFit"] == "High"
+            assert row["fitScore"] == 82
+            assert row["revenueBand"] == "50m_100m"
+            # The provider's own range wins over the band we would compute from the headcount.
+            assert row["employeeBand"] == "101-250"
+            assert row["locationCount"] == 1
+            assert row["locationsLabel"] == "Tel Aviv, Israel"
+            assert row["industryLabels"] == ["Cybersecurity", "Security software"]
+            assert row["socials"] == [
+                {
+                    "id": "linkedin",
+                    "label": "LinkedIn",
+                    "url": "https://www.linkedin.com/company/zafran",
+                }
+            ]
+            assert row["owner"] == {"id": "u_owner", "name": "Ada Lovelace"}
+            assert row["createdBy"] == {"id": "u_creator", "name": "Grace Hopper"}
+            assert row["primaryProjectId"] == fixture.project_a.project_id
+            assert row["projects"] == [
+                {"id": fixture.project_a.project_id, "name": "Project A"},
+                {"id": fixture.project_b.project_id, "name": "Project B"},
+            ]
+            assert row["customFields"] == [
+                {
+                    "id": "client.compliance_regime",
+                    "label": "Compliance regime",
+                    "value": "SOC 2",
+                    "presentation": "badge",
+                    "primary": True,
+                }
+            ]
+            # Timestamps are UTC and ``Z``-suffixed: Zod's ``z.string().datetime()`` accepts an
+            # offset only with ``{offset: true}``, which the vendored schemas do not set.
+            assert row["createdAt"] == "2026-08-01T15:00:00Z"
+            assert row["lastModifiedAt"] >= row["createdAt"]
+            assert row["lastModifiedAt"].endswith("Z")
+
+            # The employee band falls back to the headcount when no range claim exists.
+            assert _rows(body)["Acme"]["employeeBand"] == "1001-5000"
+
+            for served in body["data"]:
+                zod_validate(served, "AccountSchema")
+
+    run_async(scenario())
+
+
+def test_an_unscored_membership_less_account_serves_nulls_and_unknown_bands() -> None:
+    """Decision 16: a required band says "Unknown"; a nullable score says ``null``. Neither is
+    guessed, and the row still renders."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _build_v1(conn)
+            body = (await _get(conn, contract="v1")).json()
+
+            seedling = _rows(body)["Seedling"]
+            assert seedling["overallFit"] is None
+            assert seedling["fitScore"] is None
+            assert seedling["revenueBand"] == "Unknown"
+            assert seedling["employeeBand"] == "Unknown"
+            assert seedling["locationCount"] == 0
+            assert "locationsLabel" not in seedling
+            assert seedling["websiteUrl"] is None
+            assert seedling["logoPath"] is None
+            assert seedling["researchStatus"] == "not_started"
+            assert seedling["researchStatusLabel"] == "Not started"
+            assert seedling["researchIsRefreshing"] is False
+            assert seedling["owner"] is None
+            assert seedling["createdBy"] is None
+            assert seedling["primaryProjectId"] is None
+            assert seedling["projects"] == []
+            assert seedling["customFields"] == []
+            zod_validate(seedling, "AccountSchema")
+
+    run_async(scenario())
+
+
+def test_a_job_launched_after_a_completed_one_marks_the_row_refreshing() -> None:
+    """``researchIsRefreshing`` is the honest "researched, and being re-researched right now" —
+    a non-terminal job newer than a terminal ``completed`` one on the primary project."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture, zafran = await _build_v1(conn)
+            # The seeded completed job and the new one would share a transaction ``now()``; age the
+            # finished one so "newer" is a fact about the rows, not about uuid ordering.
+            await conn.execute(
+                text(
+                    "UPDATE entity_research_job SET created_at = created_at - interval '1 hour' "
+                    "WHERE subject_entity_id = :id"
+                ),
+                {"id": zafran},
+            )
+            await _launch_one(
+                conn,
+                workspace_id=_WS,
+                project_id=fixture.project_a.project_id,
+                account_id=zafran,
+            )
+
+            row = _rows((await _get(conn, contract="v1")).json())["Zafran"]
+            assert row["researchIsRefreshing"] is True
+            # The latest job is the in-flight one, so the status is what that job says.
+            assert row["researchStatus"] == "in_progress"
+            assert row["researchStatusLabel"] == "In progress"
+
+    run_async(scenario())
+
+
+def test_the_same_request_without_the_parameter_still_serves_the_fi2_row() -> None:
+    """The ruling: no FI-2 field is renamed, wrapped or removed while both contracts are served."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _build_v1(conn)
+            row = _rows((await _get(conn)).json())["Zafran"]
+
+            assert "scores" in row
+            assert "researchStatus" in row and isinstance(row["researchStatus"], list)
+            assert "updatedAt" in row
+            assert "overallFit" not in row
+            assert "customFields" not in row
+
+    run_async(scenario())
+
+
+def test_an_unrecognised_contract_is_an_enveloped_422() -> None:
+    """A typo must not quietly serve the other contract."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _build(conn)
+            response = await _get(conn, contract="v2")
+
+            assert response.status_code == 422
+            error = response.json()["error"]
+            assert error["code"] == "VALIDATION_ERROR"
+            assert "contract" in error["message"]
+            assert error["requestId"]
+
+    run_async(scenario())
+
+
+def test_the_v1_branch_is_a_constant_number_of_statements_per_page() -> None:
+    """The v1 row composes more sources than the FI-2 one; it must still cost a fixed number of
+    batched reads, not one per membership, owner or custom field."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture, zafran = await _build_v1(conn)
+            baseline, _ = await _count_statements(conn, contract="v1")
+
+            base = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
+            for ordinal in range(3):
+                extra = await seed_project(conn, _WS, name=f"Extra project {ordinal}")
+                await ensure_project_account(
+                    conn,
+                    workspace_id=_WS,
+                    project_id=extra.project_id,
+                    account_entity_id=zafran,
+                    added_via="manual",
+                    added_at=base + timedelta(hours=4, minutes=ordinal),
+                )
+            for ordinal in range(3):
+                await _seed_client_field(
+                    conn,
+                    workspace_id=_WS,
+                    field_key=f"client.extra_{ordinal}",
+                    description=f"Extra {ordinal}",
+                )
+                await _client_claim(
+                    conn,
+                    account_id=fixture.acme,
+                    field_key=f"client.extra_{ordinal}",
+                    value=f"value {ordinal}",
+                )
+            widened, payload = await _count_statements(conn, contract="v1")
+
+            rows = _rows(payload)
+            assert len(rows["Zafran"]["projects"]) == 5, "the memberships really did grow"
+            assert len(rows["Acme"]["customFields"]) == 3, "the custom fields really did grow"
+            assert baseline > 0, "the listener really fired"
+            assert widened == baseline
+
+    run_async(scenario())
+
+
+def test_the_z_suffixed_timestamp_is_the_only_form_the_frontends_zod_accepts() -> None:
+    """Why ``iso_utc`` exists, proven against the real parser rather than asserted in a comment.
+
+    Every v1 timestamp is a Zod ``z.string().datetime()``, which takes an offset only when the
+    schema opts in with ``{offset: true}`` — and none of the vendored schemas do. A ``timestamptz``
+    column's natural ``isoformat()`` (``+00:00``) would therefore be rejected by the frontend's own
+    parser, which is a failure no pydantic-side assertion can see.
+    """
+    row = AccountV1(
+        id="acct-1",
+        name="Zafran",
+        logo_path=None,
+        website_url="https://zafran.io",
+        research_status="not_started",
+        overall_fit=None,
+        fit_score=None,
+        revenue_band="Unknown",
+        employee_band="Unknown",
+        location_count=0,
+        created_at=iso_utc(datetime(2026, 9, 8, 12, 0, tzinfo=UTC)),
+    ).model_dump(mode="json")
+
+    assert row["createdAt"] == "2026-09-08T12:00:00Z"
+    zod_validate(row, "AccountSchema")
+    with pytest.raises(AssertionError):
+        zod_validate({**row, "createdAt": "2026-09-08T12:00:00+00:00"}, "AccountSchema")

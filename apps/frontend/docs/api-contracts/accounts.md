@@ -76,6 +76,16 @@ The contacts envelope's `meta.total` is a v1 addition — the dummy's
 inferred. The payload schemas themselves are unchanged, which is why the parity test covers the
 five payloads and not the envelopes.
 
+**How a request selects contract v1.** These shapes are served when the request carries
+`?contract=v1`; without the parameter every route serves the FI-2 payloads documented further down
+this file, unchanged. The two contracts therefore live side by side on one route — no FI-2 field is
+renamed, wrapped or removed while the frontend adapters still read them — until the D4 re-lift
+re-points those adapters, after which the FI-2 branch and the `contract` parameter are both
+removed. A `contract` value other than `v1` is a `422 VALIDATION_ERROR` in the standard envelope
+rather than a silent fall back to FI-2. Timestamps are UTC and `Z`-suffixed (`2026-09-08T12:00:00Z`)
+because `z.string().datetime()` accepts an offset only with `{ offset: true }`, which these schemas
+do not set.
+
 ### D0 amendments (rulings)
 
 The vendored Zod differs from `84f8ee7` in exactly these places, each marked in the file with a

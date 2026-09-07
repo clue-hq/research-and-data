@@ -20,6 +20,7 @@ from clue_api.frontend_read.accounts_list import (
     AccountResearchStatusValue,
     InvalidCursorError,
     list_accounts,
+    list_accounts_v1,
 )
 from clue_api.frontend_read.app import (
     CORS_ALLOW_METHODS,
@@ -62,6 +63,7 @@ __all__ = [
     "install_frontend_read_surface",
     "latest_project_run_context",
     "list_accounts",
+    "list_accounts_v1",
     "read_account_detail",
     "read_prose",
 ]

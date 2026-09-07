@@ -40,10 +40,10 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from http import HTTPStatus
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.exception_handlers import (
     http_exception_handler as default_http_exception_handler,
 )
@@ -138,6 +138,36 @@ def frontend_read_workspace_resolver(
 WorkspaceDep = Annotated[str, Depends(frontend_read_workspace_resolver)]
 
 
+#: Which wire contract a request asks for. ``"fi2"`` is today's payload set (the shapes this
+#: package has served since FI-2); ``"v1"`` is the ARV2 D3 contract in
+#: ``clue_api.frontend_read.contract_v1``.
+ContractMode = Literal["fi2", "v1"]
+
+
+def contract_mode(contract: Annotated[str | None, Query()] = None) -> ContractMode:
+    """The wire contract a request asks for: FI-2 when ``?contract=`` is absent, v1 on ``v1``.
+
+    Per-request selection is the D3 ruling: the two contracts are served side by side from one
+    route so that no FI-2 field is renamed, wrapped or removed while the frontend adapters are
+    re-pointed (D4), after which the FI-2 branch and this parameter both go away. An unrecognised
+    value is refused rather than silently treated as FI-2 — a typo'd ``?contract=v2`` that quietly
+    served the old shapes is exactly the failure this parameter exists to make impossible.
+    """
+
+    if contract is None:
+        return "fi2"
+    if contract == "v1":
+        return "v1"
+    raise HTTPException(
+        status_code=422,
+        detail={"code": "VALIDATION_ERROR", "message": "contract must be 'v1' when given"},
+    )
+
+
+#: How an endpoint receives the selected contract.
+ContractDep = Annotated[ContractMode, Depends(contract_mode)]
+
+
 def request_id(request: Request) -> str:
     """The request's id — the middleware's value, or one generated on first read.
 
@@ -229,7 +259,7 @@ def build_frontend_read_router(
     allow_local_mutations = (
         settings.projections_auth_mode == "local_header" and not settings.auth_enabled
     )
-    register_accounts_list_routes(router, conn_factory=conn_factory)
+    register_accounts_list_routes(router, conn_factory=conn_factory, settings=settings)
     # Static ``/accounts/bulk-*`` paths must be registered before the Account/Contact UUID routes,
     # otherwise Starlette would match a capability segment as ``{account_id}`` and return a 422.
     register_bulk_action_routes(

@@ -76,11 +76,15 @@ __all__ = [
     "custom_fields_for",
     "education_label",
     "email_facts",
+    "employee_band",
+    "employee_range_label",
     "fit_band",
     "fit_score_100",
     "funding_label",
     "headcount_label",
     "industry_labels",
+    "iso_utc",
+    "location_label",
     "last_modified_for",
     "linkedin_label",
     "owners_for",
@@ -277,6 +281,55 @@ def _text(value: object) -> str | None:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
+
+
+def employee_range_label(range_json: object) -> str | None:
+    """The provider's own employee-range label — ``core.employee_range`` is an object whose only
+    required key is ``label`` (``{"label": "101-250", "min": 101, "max": 250}``), and rendering the
+    whole object would put ``"label: 101-250; max: 250; min: 101"`` on a table cell. A plain string
+    is accepted too: the D1 lenient writer does not enforce the registry's value schema."""
+    if isinstance(range_json, dict):
+        return _text(range_json.get("label"))
+    return _text(range_json)
+
+
+def employee_band(count: int | None, range_json: object) -> str:
+    """The band the account row shows: the provider's own range, else the band this headcount falls
+    in, else ``"Unknown"``.
+
+    The provider's range wins because it is a *stated* fact about the company, while
+    :func:`band_for_headcount` is our own bucketing of a number — when both exist they normally
+    agree, and when they disagree the source's own words are the honest answer.
+    """
+    return employee_range_label(range_json) or band_for_headcount(count) or EMPTY_BAND
+
+
+def location_label(hq_location_json: object) -> str | None:
+    """The one line a screen shows for ``core.hq_location``.
+
+    The registry declares an object whose required key is ``raw`` — the source's own words — with
+    normalized ``city``/``region``/``country`` beside it. ``raw`` is preferred (it is what the
+    source actually said); the normalized parts are joined only when it is missing, and a plain
+    string value (which the lenient writer may store) is served as-is. Rendering the whole object
+    would put ``"city: Tel Aviv; country: Israel; raw: Tel Aviv, Israel"`` on the row.
+    """
+    if isinstance(hq_location_json, dict):
+        raw = _text(hq_location_json.get("raw"))
+        if raw is not None:
+            return raw
+        parts = [
+            part
+            for part in (
+                _text(hq_location_json.get("city")),
+                _text(hq_location_json.get("region")),
+                _text(hq_location_json.get("country")),
+            )
+            if part
+        ]
+        return ", ".join(parts) if parts else None
+    return (
+        _text(render_value_text("core.hq_location", hq_location_json)) if hq_location_json else None
+    )
 
 
 def headcount_label(count: int | None, range_: str | None) -> str:
@@ -725,6 +778,20 @@ async def contact_last_modified(
 def _aware(value: datetime) -> datetime:
     """A database timestamp as an aware UTC datetime (the columns are ``timestamptz``)."""
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def iso_utc(value: datetime) -> str:
+    """THE contract-v1 timestamp form: UTC, ``Z``-suffixed — ``2026-09-08T12:00:00Z``.
+
+    Zod's ``z.string().datetime()`` — which every v1 timestamp field is declared with — accepts an
+    offset only when the schema opts in with ``{offset: true}``, and the vendored schemas do not.
+    So ``datetime.isoformat()``'s ``+00:00`` tail, which is what every ``timestamptz`` column
+    yields, would be *rejected* by the frontend's own parser. Every v1 serialisation of a datetime
+    goes through here, so the whole contract can only speak one dialect. A naive value is read as
+    UTC (the columns are ``timestamptz``; a naive one has already lost its zone, and guessing a
+    local zone would move the instant).
+    """
+    return _aware(value).astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 # --- activity -------------------------------------------------------------------------------------

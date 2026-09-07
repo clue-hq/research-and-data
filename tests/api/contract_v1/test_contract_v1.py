@@ -22,10 +22,7 @@ resolves.
 from __future__ import annotations
 
 import json
-import os
 import re
-import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +30,7 @@ import pytest
 from pydantic import BaseModel
 
 from clue_api.frontend_read.contract_v1 import V1_PAYLOADS
+from tests.api.contract_v1.oracle import require_node, run_validate, zod_validate
 
 _HERE = Path(__file__).resolve().parent
 _REPO_ROOT = _HERE.parents[2]
@@ -40,43 +38,15 @@ _ZOD_FIELDS = _HERE / "zod-fields.json"
 _VALIDATE_TS = _HERE / "validate.ts"
 _ACCOUNTS_MD = _REPO_ROOT / "apps" / "frontend" / "docs" / "api-contracts" / "accounts.md"
 
-DEFAULT_DUMMY_ROOT = "/Users/aryankeshri/conductor/workspaces/clue-frontend/live-backend-v1"
-
 #: The ``### E<n> — <title> (<ZodSchemaName>)`` subheadings the doc section must carry.
 DOC_HEADING_RE = re.compile(r"^###\s+E\d+\s+—\s+.*\((?P<schema>\w+Schema)\)\s*$")
 DOC_SECTION_HEADING = "## Contract v1 — the accounts screens (ARV2 D3, 2026-09-08)"
 
 
 # --- the Node half's toolchain ----------------------------------------------------------------
-
-
-def _dummy_root() -> Path:
-    return Path(os.environ.get("CLUE_DUMMY_FRONTEND_ROOT", DEFAULT_DUMMY_ROOT))
-
-
-def _require_node() -> Path:
-    """The dummy root, or ``skip`` naming exactly what is missing."""
-    if shutil.which("node") is None:
-        pytest.skip("the Zod oracle needs `node` on PATH; not installed here")
-    root = _dummy_root()
-    if not (root / "node_modules" / "zod").is_dir():
-        pytest.skip(
-            f"the Zod oracle needs the dummy frontend's zod at {root}/node_modules/zod; "
-            "set CLUE_DUMMY_FRONTEND_ROOT (see tests/api/contract_v1/README.md)"
-        )
-    return root
-
-
-def _run_validate(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    env = dict(os.environ, NODE_PATH=str(root / "node_modules"))
-    return subprocess.run(
-        ["npx", "--prefix", str(root), "tsx", str(_VALIDATE_TS), *args],
-        capture_output=True,
-        text=True,
-        cwd=_REPO_ROOT,
-        env=env,
-        check=False,
-    )
+#
+# The probe and the runner live in ``oracle.py`` so this suite and the endpoint suites'
+# ``?contract=v1`` halves validate through exactly the same call.
 
 
 # --- helpers ----------------------------------------------------------------------------------
@@ -123,8 +93,8 @@ def test_v1_payloads_names_the_five_zod_schemas() -> None:
 
 def test_committed_zod_fields_matches_the_live_schemas() -> None:
     """`zod-fields.json` is generated; regenerate it here so the two cannot drift silently."""
-    root = _require_node()
-    result = _run_validate(root, "--shapes")
+    root = require_node()
+    result = run_validate(root, "--shapes")
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == _zod_fields(), (
         "tests/api/contract_v1/zod-fields.json is stale — regenerate it (see README.md)"
@@ -588,25 +558,18 @@ def test_an_unknown_optional_is_omitted_never_serialized_as_null(
 
 
 @pytest.mark.parametrize(("schema_name", "variant"), _GOLDEN_CASES)
-def test_golden_payload_parses_with_the_real_zod(
-    schema_name: str, variant: str, tmp_path: Path
-) -> None:
-    root = _require_node()
+def test_golden_payload_parses_with_the_real_zod(schema_name: str, variant: str) -> None:
     model = V1_PAYLOADS[schema_name]
-    dumped = _dump(model.model_validate(GOLDEN[schema_name][variant]))
-    payload_file = tmp_path / f"{schema_name}-{variant}.json"
-    payload_file.write_text(json.dumps(dumped))
-    result = _run_validate(root, str(payload_file), schema_name)
-    assert result.returncode == 0, result.stderr
+    zod_validate(_dump(model.model_validate(GOLDEN[schema_name][variant])), schema_name)
 
 
 def test_the_zod_oracle_actually_rejects_a_bad_payload(tmp_path: Path) -> None:
     """A guard on the guard: `validate.ts` must fail a payload the contract forbids."""
-    root = _require_node()
+    root = require_node()
     bad = dict(GOLDEN["AccountSchema"]["max"], fitScore=101)
     payload_file = tmp_path / "bad.json"
     payload_file.write_text(json.dumps(bad))
-    result = _run_validate(root, str(payload_file), "AccountSchema")
+    result = run_validate(root, str(payload_file), "AccountSchema")
     assert result.returncode == 1, result.stdout
 
 
