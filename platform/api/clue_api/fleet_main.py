@@ -57,7 +57,12 @@ from clue_api.agent_turn_fleet_wiring import (
     sweep_thread_dispatch,
     sweep_turn_stream_retention,
 )
+from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
+from clue_api.arv2.onboarding_driver import (
+    OnboardingRunWorkHandler,
+    build_onboarding_exa_client_factory,
+)
 from clue_api.arv2_wiring import register_arv2_wiring
 from clue_api.chat.turn_stream import TurnStreamPolicy
 from clue_api.compliance_wiring import register_compliance_wiring
@@ -103,6 +108,7 @@ from clue_api.fleet_wiring import build_multi_work_worker, enqueue_run_drive, re
 from clue_api.memory_wiring import memory_assembly_factory, memory_write_factory_builder
 from clue_api.narrative_wiring import build_client_knowledge_retriever, register_narrative_wiring
 from clue_api.official_site_crawl_wiring import build_official_site_crawl_fleet
+from clue_api.onboarding_client_binding import Stage0ClientEntityBinder
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
 from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.production_metrics import production_metrics_lifespan
@@ -525,6 +531,46 @@ def _build_stage0_scrape_binder(
     return binder
 
 
+def _build_onboarding_handler(
+    settings: Settings, secrets: Secrets, *, storage: StorageBackend
+) -> OnboardingRunWorkHandler | None:
+    """The ARV2 onboarding lane (Track O, O3) on this worker, behind ``onboarding_v2_enabled``.
+
+    The client-entity seam is injected from *outside* ``clue_api.arv2`` (the lane may not import
+    ``clue_research.stage0``), and ``synthesis`` is deliberately ``None`` here: O4's
+    ``build_onboarding_synthesis_launcher`` fills that seam when the two lanes merge, and until
+    then the synthesis step settles ``empty`` with its reason rather than pretending it ran.
+
+    A deployment that turns the flag on without ``CLUE_EXA_API_KEY`` gets a loud warning and **no
+    handler**: the enqueued runs then wait in the queue for a correctly-credentialed worker,
+    which is the honest outcome. Failing the boot instead would take every other kind of work on
+    this process down with it, and composing a keyless handler would fail each run at its first
+    provider call.
+    """
+    if not settings.onboarding_v2_enabled:
+        return None
+    try:
+        exa = build_onboarding_exa_client_factory(settings, secrets)
+    except ValueError:
+        log.warning(
+            "onboarding.handler_not_composed",
+            reason="CLUE_EXA_API_KEY is not configured",
+            detail=(
+                "CLUE_ONBOARDING_V2_ENABLED is on but this worker has no Exa credential; "
+                "onboarding runs stay queued until a worker with CLUE_EXA_API_KEY drains them"
+            ),
+        )
+        return None
+    return OnboardingRunWorkHandler(
+        settings=settings,
+        conn_factory=transaction,
+        artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
+        exa=exa,
+        client_binder=Stage0ClientEntityBinder(),
+        synthesis=None,
+    )
+
+
 async def _serve() -> None:
     """Open the process-wide DB + Redis lifecycles, register the boot handlers, and drive the worker
     (with the orphan sweep alongside) until a graceful stop."""
@@ -843,6 +889,7 @@ async def _serve() -> None:
             if settings.self_serve_provisioning_enabled
             else None
         )
+        onboarding_handler = _build_onboarding_handler(settings, secrets, storage=storage)
         worker = build_multi_work_worker(
             settings,
             driver=driver,
@@ -853,6 +900,7 @@ async def _serve() -> None:
             agent_turn_handler=agent_turn_handler,
             stage0_recon_handler=stage0_recon_handler,
             official_site_crawl_handler=official_site_crawl.handler,
+            onboarding_handler=onboarding_handler,
             # Part II D5 Round B: design agent turns drain on THIS worker when the switch is on.
             design_handler=build_design_job_handler(enabled=settings.design_runtime_enabled),
             queue=work_queue,

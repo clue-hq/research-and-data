@@ -129,6 +129,66 @@ would attach that pass's citations to whatever entry landed at the same index. *
 entries therefore reach the catalog with no per-entry sources** — honest, where a wrong citation
 would not be.
 
+### The step graph
+
+One `onboarding_run` task is one run, in this order:
+
+```
+  mark_run_running          overview ────────────────┐        synthesis ──────────────┐
+  + bind the client  ─→     lineup ─→ catalog_sync ──┼─→                              ├─→ finish_run
+                            reviews ─────────────────┘        product_research ×N ────┘
+                                    (fast lane, concurrent)      (background, capped)
+```
+
+The fast lane runs its steps concurrently; the lineup's two passes are merged and handed straight
+to `catalog_sync` inside the same step branch, which mints or reuses the product rows over the
+artifact-keyed `onboarding_product_lineage`. The synthesis turn reads what the fast lane published
+and does not wait for the per-product reports, so it runs *alongside* the background fan-out, which
+is capped at `onboarding_max_parallel_runs`. `finish_run` settles the run `completed` or
+`completed_with_gaps` from the steps' own statuses and sums their cost — a run with a failed or
+empty step still finishes, it just says so.
+
+`CLUE_ONBOARDING_REVIEWS_PHASE` moves the reviews step between the fast lane and the background
+lane without changing anything else; every other flag in the lane (`_OVERVIEW_EFFORT`,
+`_REVIEWS_EFFORT`, `_PRODUCT_EFFORT`, `_PERSONA_EVIDENCE_ENABLED`) is read at the step that spends.
+
+### The two injected seams
+
+Neither seam may live inside this package, and both are optional so the lane composes without
+them:
+
+- **`ClientEntityBinder`** — production implementation `clue_api.onboarding_client_binding
+  .Stage0ClientEntityBinder`, **outside** `arv2/` because it imports `clue_research.stage0`, which
+  the import guard (`tests/arv2/test_import_guard.py`) forbids in the lane. It reuses Stage-0's
+  *client-entity resolution only*: an existing `workspace_client_binding` wins outright, otherwise
+  `prepare_client_kb_run` resolves/mints the entity and binds it, and the run's
+  `client_entity_id` is stamped write-once. **It reads and writes no Client-KB version, no
+  readiness decision and no Stage-0 run pin** — the standing rule that no old-lane gate may block
+  this lane (`_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md`). Composed without a
+  binder the run still produces every document: they are brand-scoped and need no client entity.
+- **`SynthesisLauncher`** — O4's `build_onboarding_synthesis_launcher`, supplied at the merge. The
+  fleet composes `synthesis=None` until then, and the synthesis step settles `empty` with
+  "synthesis agent not composed (O4)" rather than pretending it ran.
+
+### Composition on the fleet
+
+`clue_api.fleet_main._build_onboarding_handler` builds the handler behind
+`CLUE_ONBOARDING_V2_ENABLED` and passes it to `build_multi_work_worker(onboarding_handler=…)`; the
+route (`clue_api.onboarding_routes`, mounted in `projections_app` behind the same flag) is what
+enqueues the task. Ruling: **the flag on with no `CLUE_EXA_API_KEY` composes NO handler** — a loud
+`onboarding.handler_not_composed` warning naming the variable, and the enqueued runs wait in the
+queue for a correctly-credentialed worker. Refusing the boot would take every other kind of work
+on the process down with it; a keyless handler would fail each run at its first provider call.
+
+### Where the evidence lands, and what replaces it
+
+A step's raw records and ledger are files today —
+`arv2_raw_root/onboarding/<run_id>/<step_label>/raw/` and `…/ledger.jsonl`. When D1's
+`provider_call_ledger` table gets its database `LedgerSink` (and the `artifact`-backed raw sink),
+`build_onboarding_provider_caller` swaps the two sinks at composition and nothing above the sink
+protocol changes. The documents themselves are already durable: each is persisted through the
+artifact store and published as a `brand_knowledge_document` row.
+
 ## D1 — the display substrate, the lenient writer, the answer-key loader
 
 D1 is the step that gives the lane a place to put things. It lands as one Alembic revision plus
