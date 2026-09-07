@@ -49,7 +49,7 @@ REACTIONS: dict[str, str] = {
         "finalize honestly."
     ),
     "too_many_parallel_calls": (
-        "Re-issue the refused calls in the next round; the first fifty of this round ran."
+        "Re-issue the refused calls in the next round; the calls within the per-round ceiling ran."
     ),
     "finalization_already_proposed": "The decision is made; stop.",
     "tool_error": (

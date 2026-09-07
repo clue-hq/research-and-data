@@ -40,7 +40,7 @@ The base code before the colon is the row key and decides the reaction.
 | `structuring_unparseable` | The structuring reply failed the bundle-fence parse. | Resend the same material once; if it fails again record the subject as unstructured. |
 | `already_established` | You asked for a fact the already-established block already holds. The wire form is `already_established:<field>` and names it. | Drop that field from the call; it is already recorded. |
 | `identical_call_repeated` | Same tool, same arguments, after a refusal. No provider was touched. | Change the arguments the way the earlier refusal named, make the call it named, or finalize honestly. |
-| `too_many_parallel_calls` | You issued more tool calls in one round than the per-round ceiling allows; the excess were refused, not the round. | Re-issue the refused calls in the next round; the first fifty of this round ran. |
+| `too_many_parallel_calls` | You issued more tool calls in one round than the per-round ceiling allows; the excess were refused, not the round. | Re-issue the refused calls in the next round; the calls within the per-round ceiling ran. |
 | `finalization_already_proposed` | `finalize_research` has already been accepted for this job. | The decision is made; stop. |
 | `tool_error` | The tool raised something unexpected and wrote nothing. The wire form is `tool_error:<exception>` and names the exception class. | The tool failed for a reason outside your control; record the gap and continue. |
 | `invalid_arguments` | An argument failed the tool's schema, or asked for something R2 does not admit. | Correct the named argument and call again. |
