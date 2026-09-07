@@ -666,6 +666,7 @@ dependencies = [
     { name = "clue-storage" },
     { name = "clue-toolbelt" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "uvicorn" },
 ]
 
@@ -683,6 +684,7 @@ requires-dist = [
     { name = "clue-storage", editable = "libs/clue-storage" },
     { name = "clue-toolbelt", editable = "platform/toolbelt" },
     { name = "fastapi", specifier = ">=0.138.0" },
+    { name = "httpx", specifier = ">=0.28" },
     { name = "uvicorn", specifier = ">=0.35.0" },
 ]
 
