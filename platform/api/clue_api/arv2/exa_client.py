@@ -71,6 +71,24 @@ THIN_MIN_REPORT_CHARS = 3000
 #: it. Two attempts still rides out a single transient failure without that tail.
 DEEP_REASONING_MAX_ATTEMPTS = 2
 
+#: Exa Agent (``/agent/runs``) — the async deep-research surface. Fixed efforts have a fixed
+#: per-request price (Exa Agent guide, read 2026-09-07); ``auto``/``max`` are metered to a default
+#: cap, which is the honest pre-spend reservation for them.
+EXA_AGENT_EFFORTS: tuple[str, ...] = ("minimal", "low", "medium", "high", "xhigh", "auto", "max")
+AGENT_EFFORT_ESTIMATE_USD: Mapping[str, Decimal] = {
+    "minimal": Decimal("0.012"),
+    "low": Decimal("0.025"),
+    "medium": Decimal("0.10"),
+    "high": Decimal("0.50"),
+    "xhigh": Decimal("1.00"),
+    "auto": Decimal("5"),
+    "max": Decimal("20"),
+}
+AGENT_TERMINAL_STATUSES: frozenset[str] = frozenset({"completed", "failed", "cancelled"})
+#: One create or one poll is a short HTTP exchange; the run itself takes minutes and is waited
+#: for by polling, so neither leg needs the deep-reasoning budget.
+AGENT_LEG_TIMEOUT_S = 60.0
+
 #: Exa's livecrawl modes. Absent from the body means "serve the indexed copy", which is both the
 #: cheap answer and the reproducible one.
 LivecrawlMode = Literal["always", "fallback", "never"]
@@ -177,6 +195,52 @@ class ExaDeepResult:
     @property
     def n_results(self) -> int:
         return len(self.results)
+
+
+@dataclass(frozen=True)
+class ExaAgentRun:
+    """A finished (or given-up-on) Exa Agent run.
+
+    ``status`` is Exa's terminal status — ``completed``, ``failed``, ``cancelled`` — or the
+    client's own ``timed_out`` when the run outlived ``timeout_s``. Only ``completed`` carries
+    ``structured``/``output_text``/``grounding``. ``costs`` is every leg's :class:`CallCost` in
+    order (create, then each poll); ``cost`` is the settling leg's, which is the metered one on a
+    completed run. Nothing here raises for a provider-side failure: the driver's failure law
+    (ARV2-ONBOARDING-PLAN.md §3) records it on the step.
+    """
+
+    run_id: str | None
+    status: str
+    stop_reason: str | None
+    output_text: str | None
+    structured: object | None
+    grounding: list[Any]
+    usage: Mapping[str, Any]
+    cost_usd: Decimal | None
+    error_code: str | None
+    error_message: str | None
+    polls: int
+    raw_refs: tuple[str, ...]
+    ledger_row_ids: tuple[str, ...]
+    costs: tuple[CallCost, ...]
+    cost: CallCost
+
+
+def agent_run_body(
+    *,
+    query: str,
+    output_schema: Mapping[str, object],
+    effort: str,
+    system_prompt: str | None = None,
+) -> dict[str, Any]:
+    """Build the ``POST /agent/runs`` body. ``outputSchema`` is passed exactly as given: the
+    Agent surface accepts full JSON Schema, and the shape is the caller's contract."""
+    if effort not in EXA_AGENT_EFFORTS:
+        raise ValueError(f"unknown Exa Agent effort {effort!r}; one of {EXA_AGENT_EFFORTS}")
+    body: dict[str, Any] = {"query": query, "effort": effort, "outputSchema": dict(output_schema)}
+    if system_prompt is not None:
+        body["systemPrompt"] = system_prompt
+    return body
 
 
 # -- output schemas ----------------------------------------------------------------------------
@@ -433,6 +497,27 @@ def exa_cost_reader(response: HttpResponse) -> CostReading:
         cost_usd=_decimal(costs.get("total")),
         provider_request_id=request_id if isinstance(request_id, str) else None,
         extras={"cost_breakdown": costs} if costs else {},
+    )
+
+
+def exa_agent_cost_reader(response: HttpResponse) -> CostReading:
+    """Read an Agent run body: ``costDollars.total`` and ``usage`` appear only on the completed
+    run, so a queued/running poll yields a reading with the run id and no cost — "Exa has not
+    told us yet", recorded as such, never as zero."""
+    body = _body_json(response)
+    costs = body.get("costDollars")
+    costs = costs if isinstance(costs, dict) else {}
+    usage = body.get("usage")
+    run_id = body.get("id")
+    extras: dict[str, object] = {}
+    if costs:
+        extras["cost_breakdown"] = costs
+    if isinstance(usage, dict):
+        extras["usage"] = usage
+    return CostReading(
+        cost_usd=_decimal(costs.get("total")),
+        provider_request_id=run_id if isinstance(run_id, str) else None,
+        extras=extras,
     )
 
 
