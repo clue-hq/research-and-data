@@ -769,13 +769,21 @@ def _failed_step(error: Exception) -> _StepOutcome:
 
 
 def _merge_lineups(own: ExaDeepResult, open_web: ExaDeepResult) -> ExaDeepResult:
-    """Union the two passes by normalized name; the own-domain pass wins on conflict.
+    """Append the open-web pass's new names to the own-domain pass; own-domain wins on conflict.
 
-    Only the own-domain pass's ``grounding`` survives. Grounding field paths are indexed
-    (``products[i]``) against the pass that produced them, and the merged list has its own
-    ordering — carrying the open-web paths through would attach that pass's citations to whatever
-    entry happened to land at the same index. So open-web-only entries reach the catalog with no
-    per-entry sources, which is honest; a wrong citation would not be.
+    Only the own-domain pass's ``grounding`` survives, and the merge is shaped around that fact.
+    Grounding field paths are indexed (``products[i]``) against the pass that produced them, and
+    the catalog mapper attaches citations to merged entries BY INDEX — so **every own-domain entry
+    keeps its original position, and none is ever collapsed**, not even a pair that normalizes to
+    the same name. Dropping one own entry would shift every later own entry left by one and hand
+    it the previous entry's citations, which is precisely the misattribution the single-pass
+    grounding rule exists to prevent. (A same-named own pair is not a problem downstream: the
+    catalog synchronizer resolves the second against the first as ``alias_reused``.)
+
+    Open-web entries are filtered, not positioned: one is appended only when its normalized name
+    is absent from the own pass and from the open-web entries already appended. They land after
+    every own index, so they can never displace an own entry's citations — and they carry no
+    per-entry sources of their own, which is honest, where a wrong citation would not be.
     """
 
     def entries(result: ExaDeepResult) -> list[dict[str, Any]]:
@@ -783,10 +791,17 @@ def _merge_lineups(own: ExaDeepResult, open_web: ExaDeepResult) -> ExaDeepResult
         raw = parsed.get("products") or []
         return [p for p in raw if isinstance(p, dict) and isinstance(p.get("name"), str)]
 
-    seen: dict[str, dict[str, Any]] = {}
-    for entry in entries(own) + entries(open_web):
-        key = " ".join(str(entry["name"]).casefold().split())
-        seen.setdefault(key, entry)
+    def key_of(entry: Mapping[str, Any]) -> str:
+        return " ".join(str(entry["name"]).casefold().split())
+
+    products = list(entries(own))
+    seen = {key_of(entry) for entry in products}
+    for entry in entries(open_web):
+        key = key_of(entry)
+        if key in seen:
+            continue
+        seen.add(key)
+        products.append(entry)
     notes = [
         result.output_object.get("coverage_note")
         for result in (own, open_web)
@@ -794,6 +809,6 @@ def _merge_lineups(own: ExaDeepResult, open_web: ExaDeepResult) -> ExaDeepResult
     ]
     merged: dict[str, Any] = {
         "coverage_note": " | ".join(str(note) for note in notes) or None,
-        "products": list(seen.values()),
+        "products": products,
     }
     return replace(own, output_object=merged)

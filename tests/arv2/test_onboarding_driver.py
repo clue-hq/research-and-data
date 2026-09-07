@@ -12,7 +12,7 @@ import asyncio
 import hashlib
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -24,6 +24,7 @@ from clue_api.arv2.exa_client import ExaAgentRun, ExaDeepResult
 from clue_api.arv2.onboarding_driver import (
     OnboardingRunWorkHandler,
     SynthesisOutcome,
+    _merge_lineups,
     onboarding_work_id,
 )
 from clue_api.arv2.onboarding_lineage import ProductLink
@@ -444,3 +445,51 @@ def test_a_lost_lease_before_work_requeues_without_touching_rows() -> None:
 
     assert result.requeue is True
     assert store.events == []
+
+
+def test_the_lineup_merge_never_moves_an_own_domain_entry_so_grounding_stays_attributable() -> None:
+    """The catalog mapper attaches citations by index, so own positions are load-bearing.
+
+    Two own-domain entries that normalize to the same name must BOTH survive, in place: collapsing
+    the second would shift ``Beacon`` from index 2 to index 1 and hand it ``products[1]``'s
+    citations. Only new open-web names are appended, after every own index.
+    """
+    own_grounding = [
+        {"field": "products[0].name", "citations": [{"url": "https://own/a", "title": "A"}]},
+        {"field": "products[2].name", "citations": [{"url": "https://own/b", "title": "B"}]},
+    ]
+    own = replace(
+        _deep(
+            [
+                {"name": "MagicFlow", "short_description": "One.", "offering_kind": "platform"},
+                {
+                    "name": "  magicflow ",
+                    "short_description": "Same name.",
+                    "offering_kind": "product",
+                },
+                {"name": "Beacon", "short_description": "Two.", "offering_kind": "product"},
+            ]
+        ),
+        grounding=own_grounding,
+    )
+    open_web = replace(
+        _deep(
+            [
+                {"name": "beacon", "short_description": "Dup of own.", "offering_kind": "product"},
+                {"name": "Cortex", "short_description": "New.", "offering_kind": "product"},
+            ]
+        ),
+        grounding=[{"field": "products[0].name", "citations": [{"url": "https://web/x"}]}],
+    )
+
+    merged = _merge_lineups(own, open_web)
+
+    products = merged.output_object["products"]  # type: ignore[index]
+    assert [entry["name"] for entry in products] == [
+        "MagicFlow",
+        "  magicflow ",
+        "Beacon",
+        "Cortex",
+    ]
+    assert [entry["short_description"] for entry in products[:3]] == ["One.", "Same name.", "Two."]
+    assert merged.grounding == own_grounding, "only the own-domain pass's grounding is carried"

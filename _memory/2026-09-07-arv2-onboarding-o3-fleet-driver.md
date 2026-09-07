@@ -1,7 +1,7 @@
 # ARV2 onboarding O3 — the run driver on the fleet (branch `onboarding/o3-fleet-driver`)
 
 Executed via SDD in the worktree `semarang-o3` against the throwaway DB `clue_o3_driver`.
-Base: `integration/design-improvement` @ `071f0fc84` (the O1 + D1 join `3742d1281a10`).
+Base: `integration/design-improvement` @ `602a2dac5` (`071f0fc84` plus the O3/O4 plan-docs commit; the O1 + D1 join is `3742d1281a10`).
 Plan/tasks: `.superpowers/sdd/2026-09-07-arv2-onboarding-o3-fleet-driver/`.
 
 ## What landed (6 commits, Tasks 1–6)

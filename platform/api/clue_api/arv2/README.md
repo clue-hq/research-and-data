@@ -121,13 +121,16 @@ Three rules it exists to keep:
   about one run and the parallelism that matters is off the loop entirely, so they are serialized
   behind one lock — which also lets a caller inject a single-connection factory.
 
-The lineup step runs the *same* question twice (own domain, then the open web) and unions the two
-answers by normalized name, the own-domain pass winning. Only the own-domain pass's `grounding`
-survives the merge: grounding field paths are indexed (`products[i]`) against the pass that
-produced them, and the merged list has its own ordering, so carrying the open-web paths through
-would attach that pass's citations to whatever entry landed at the same index. **Open-web-only
-entries therefore reach the catalog with no per-entry sources** — honest, where a wrong citation
-would not be.
+The lineup step runs the *same* question twice (own domain, then the open web) and appends the
+open web's new names to the own-domain answer. Only the own-domain pass's `grounding` survives the
+merge, and the merge is shaped around that: grounding field paths are indexed (`products[i]`) and
+the catalog mapper attaches citations by index, so **every own-domain entry keeps its original
+position and none is ever collapsed** — not even a pair that normalizes to the same name, because
+dropping one would shift every later own entry left and hand it the wrong citations. (The catalog
+synchronizer resolves a same-named pair honestly, as `alias_reused`.) An open-web entry is
+appended only when its normalized name is new, always after every own index, so **open-web-only
+entries reach the catalog with no per-entry sources** — honest, where a wrong citation would not
+be.
 
 ### The step graph
 
