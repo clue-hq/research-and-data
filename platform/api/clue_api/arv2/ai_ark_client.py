@@ -28,14 +28,21 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Any, Final, Literal
 
 from pydantic import SecretStr
 
-from clue_api.arv2.calls import CallResult, CallSpec, CostReading, ProviderCaller, SpendEstimate
+from clue_api.arv2.calls import (
+    CallCost,
+    CallResult,
+    CallSpec,
+    CostReading,
+    ProviderCaller,
+    SpendEstimate,
+)
 from clue_api.arv2.transport import BROWSER_USER_AGENT, HttpResponse, json_request
 
 #: The provider name every AI Ark ledger row and raw record carries, and the key the wrapper
@@ -82,6 +89,10 @@ class AiArkCompany:
     Every named field is an explicit mapping of an AI Ark path (``summary.name``, ``link.domain``,
     …) rather than a guess at a key called ``name``: the record nests everything one level down,
     and reading the wrong key would silently produce an empty profile rather than an error.
+
+    ``cost`` is what the request that returned this record cost — credit-metered, so
+    ``cost.cost_source`` is ``metered``. It is ``None`` only on a record built by
+    :func:`company_from_record` directly, which is a pure mapper with no call behind it.
     """
 
     name: str | None
@@ -93,6 +104,7 @@ class AiArkCompany:
     technologies: tuple[str, ...]
     location: Mapping[str, Any] | None
     raw: Mapping[str, Any]
+    cost: CallCost | None = None
 
 
 @dataclass(frozen=True)
@@ -112,12 +124,40 @@ class AiArkPerson:
 
 
 @dataclass(frozen=True)
+class AiArkPeople:
+    """The people one name-scoped search returned, and what that search cost.
+
+    A people search bills 0.5 credit **per record returned**, so the cost belongs to the page,
+    not to any one person in it: attaching it to each :class:`AiArkPerson` would make a caller
+    that sums its people over-count the run by the page size. This is the page.
+
+    It iterates and measures like the list it replaces, so ``for person in people`` and
+    ``len(people)`` keep meaning what they meant before the cost was carried.
+    """
+
+    people: tuple[AiArkPerson, ...]
+    cost: CallCost
+
+    def __iter__(self) -> Iterator[AiArkPerson]:
+        return iter(self.people)
+
+    def __len__(self) -> int:
+        return len(self.people)
+
+    def __getitem__(self, index: int) -> AiArkPerson:
+        return self.people[index]
+
+
+@dataclass(frozen=True)
 class AiArkEmailExport:
     """One ``/v1/people/export/single`` result: the email block plus the identity around it.
 
     ``raw_email_block`` is kept whole because the verification metadata is the product here — an
     address flattened away from its ``status``/``domainType`` pair is a claim nobody can grade
     (contract notes §7 item 6).
+
+    ``cost`` is the export request's money view; it is ``None`` only on a record built by
+    :func:`email_export_from_record` directly, which is a pure mapper with no call behind it.
     """
 
     address: str | None
@@ -138,6 +178,7 @@ class AiArkEmailExport:
     current_company: str | None
     certifications: tuple[Mapping[str, Any], ...]
     raw_email_block: Mapping[str, Any]
+    cost: CallCost | None = None
 
 
 # -- pure rules --------------------------------------------------------------------------------
@@ -448,7 +489,9 @@ class AiArkClient:
         )
         records = _content(_json_body(result.response))
         first = records[0] if records else None
-        return company_from_record(first) if isinstance(first, Mapping) else None
+        if not isinstance(first, Mapping):
+            return None
+        return replace(company_from_record(first), cost=result.call_cost)
 
     def people_by_name(
         self,
@@ -456,7 +499,7 @@ class AiArkClient:
         domain: str,
         *,
         size: int = MAX_PEOPLE_PAGE_SIZE,
-    ) -> list[AiArkPerson]:
+    ) -> AiArkPeople:
         """People matching any of ``name_variants`` **at** ``domain`` — never a roster.
 
         There is no domain-only people method in this client by construction. A name-scoped,
@@ -494,11 +537,14 @@ class AiArkClient:
             estimate=SpendEstimate(credits=PERSON_CREDITS_PER_RESULT * size),
             cost_reader=people_cost_reader,
         )
-        return [
-            person_from_record(record)
-            for record in _content(_json_body(result.response))
-            if isinstance(record, Mapping)
-        ]
+        return AiArkPeople(
+            people=tuple(
+                person_from_record(record)
+                for record in _content(_json_body(result.response))
+                if isinstance(record, Mapping)
+            ),
+            cost=result.call_cost,
+        )
 
     def export_email(self, linkedin_url: str) -> AiArkEmailExport:
         """Export one person by LinkedIn URL, with the verified email block.
@@ -515,7 +561,10 @@ class AiArkClient:
             estimate=SpendEstimate(credits=EXPORT_PROFILE_CREDITS + EXPORT_EMAIL_CREDITS),
             cost_reader=export_cost_reader,
         )
-        return email_export_from_record(_json_body(result.response) or {})
+        return replace(
+            email_export_from_record(_json_body(result.response) or {}),
+            cost=result.call_cost,
+        )
 
     # -- internals -----------------------------------------------------------------------------
 

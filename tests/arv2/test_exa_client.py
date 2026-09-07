@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from clue_api.arv2.calls import CallCost
 from clue_api.arv2.exa_client import (
     THIN_MAX_COST_USD,
     THIN_MAX_RESULTS,
@@ -70,6 +71,16 @@ def _deep(output_text: str, n_results: int) -> ExaDeepResult:
         request_id="req",
         raw_ref=None,
         ledger_row_id="row",
+        cost=CallCost(
+            cost_usd=Decimal("0.05"),
+            credits=Decimal(0),
+            media_seconds=0,
+            cost_source="metered",
+            ledger_row_id="row",
+            raw_ref=None,
+            provider="exa",
+            operation="deep-reasoning",
+        ),
         retried=False,
     )
 

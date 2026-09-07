@@ -21,7 +21,7 @@ from pathlib import Path
 
 from pydantic import SecretStr
 
-from clue_api.arv2.calls import ProviderCaller
+from clue_api.arv2.calls import CallCost, ProviderCaller
 from clue_api.arv2.exa_client import (
     ExaClient,
     product_catalog_output_schema,
@@ -228,13 +228,21 @@ def _ledger_rows(path: Path, row_id: str) -> dict[str, object]:
     return matches[0]  # type: ignore[no-any-return]
 
 
-def _assert_metered(result_cost: Decimal | None, ledger_row_id: str, root: Path) -> None:
-    """A paid call reports a real cost and the ledger row carries that same number."""
-    assert result_cost is not None and result_cost > 0, "Exa reported no cost for a paid call"
-    row = _ledger_rows(root / "ledger.jsonl", ledger_row_id)
+def _assert_metered(cost: CallCost, root: Path) -> None:
+    """A paid call reports a real cost, and the result value's ``cost`` *is* the ledger row.
+
+    Every Exa return value carries this, so the helper takes the :class:`CallCost` rather than a
+    loose pair of fields: if the two ever disagreed, the number a caller reports and the number
+    the money trail holds would have drifted apart, which is the failure this shape prevents.
+    """
+    assert cost.cost_source == "metered", "Exa meters every call it serves"
+    assert cost.cost_usd is not None and cost.cost_usd > 0, "Exa reported no cost for a paid call"
+    row = _ledger_rows(root / "ledger.jsonl", cost.ledger_row_id)
     assert row["phase"] == "result"
-    assert Decimal(str(row["cost_usd"])) == result_cost
-    assert row["provider"] == "exa"
+    assert Decimal(str(row["cost_usd"])) == cost.cost_usd
+    assert row["provider"] == cost.provider == "exa"
+    assert row["extras"]["cost_source"] == "metered"
+    assert row["raw_ref"] == cost.raw_ref
     assert "cost_breakdown" in row["extras"], "the costDollars breakdown is kept on the row"
 
 
@@ -275,9 +283,15 @@ def test_a_domain_restricted_search_returns_only_those_domains(
     for hit in result.results:
         assert hit.url is not None
         assert any(domain in hit.url for domain in JOB_BOARD_DOMAINS), hit.url
-    _assert_metered(result.cost_usd, result.ledger_row_id, arv2_raw_root)
+    _assert_metered(result.cost, arv2_raw_root)
     assert result.request_id is not None
     assert result.raw_ref is not None and Path(result.raw_ref).exists()
+    # The pre-existing fields are kept for compatibility and must not drift from `cost`.
+    assert (result.cost_usd, result.raw_ref, result.ledger_row_id) == (
+        result.cost.cost_usd,
+        result.cost.raw_ref,
+        result.cost.ledger_row_id,
+    )
 
 
 def test_a_date_bounded_search_returns_results_carrying_their_published_date(
@@ -297,7 +311,7 @@ def test_a_date_bounded_search_returns_results_carrying_their_published_date(
     dated = [hit for hit in result.results if hit.published_date]
     assert dated, "every result came back without a publishedDate"
     assert all(hit.published_date >= "2025-01-01" for hit in dated)  # type: ignore[operator]
-    _assert_metered(result.cost_usd, result.ledger_row_id, arv2_raw_root)
+    _assert_metered(result.cost, arv2_raw_root)
 
 
 # -- contents ----------------------------------------------------------------------------------
@@ -317,7 +331,7 @@ def test_contents_returns_indexed_text_for_a_site_and_a_video(
         assert hit.text, f"no text returned for {hit.url}"
     assert result.statuses, "per-URL statuses were not surfaced"
     assert {status.status for status in result.statuses} == {"success"}
-    _assert_metered(result.cost_usd, result.ledger_row_id, arv2_raw_root)
+    _assert_metered(result.cost, arv2_raw_root)
 
 
 # -- deep reasoning ----------------------------------------------------------------------------
@@ -347,7 +361,7 @@ def test_the_zafran_dossier_comes_back_cited_and_admits_what_it_could_not_find(
     assert len(result.report_text) >= 3000, f"thin dossier ({len(result.report_text)}) at {path}"
     assert "NOT FOUND" in result.report_text
     assert result.results, "the dossier cited no sources at all"
-    _assert_metered(result.cost_usd, result.ledger_row_id, arv2_raw_root)
+    _assert_metered(result.cost, arv2_raw_root)
 
 
 def test_the_probook_dossier_comes_back_cited_and_disambiguated(
@@ -368,7 +382,7 @@ def test_the_probook_dossier_comes_back_cited_and_disambiguated(
     path = _write_artifact(arv2_raw_root, "deep_probook.md", result.report_text)
     assert len(result.report_text) >= 3000, f"thin dossier ({len(result.report_text)}) at {path}"
     assert "NOT FOUND" in result.report_text
-    _assert_metered(result.cost_usd, result.ledger_row_id, arv2_raw_root)
+    _assert_metered(result.cost, arv2_raw_root)
 
 
 def test_the_product_catalog_schema_is_accepted_and_returns_typed_offerings(
@@ -404,4 +418,4 @@ def test_the_product_catalog_schema_is_accepted_and_returns_typed_offerings(
         assert product.get("name")
         assert product.get("offering_kind")
     assert result.grounding is not None, "§3 expects per-field citations in output.grounding"
-    _assert_metered(result.cost_usd, result.ledger_row_id, arv2_raw_root)
+    _assert_metered(result.cost, arv2_raw_root)

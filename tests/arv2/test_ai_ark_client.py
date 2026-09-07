@@ -10,6 +10,7 @@ request, so a test that passes has proved the refusal happened before the wire, 
 from __future__ import annotations
 
 import inspect
+from dataclasses import fields
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -19,7 +20,11 @@ from pydantic import SecretStr
 
 from clue_api.arv2.ai_ark_client import (
     MAX_PEOPLE_PAGE_SIZE,
+    PERSON_CREDITS_PER_RESULT,
     AiArkClient,
+    AiArkCompany,
+    AiArkEmailExport,
+    AiArkPeople,
     ai_ark_halt_rule,
     company_from_record,
     email_export_from_record,
@@ -28,7 +33,7 @@ from clue_api.arv2.ai_ark_client import (
     person_from_record,
     scrub_birth_dates,
 )
-from clue_api.arv2.calls import ProviderCaller
+from clue_api.arv2.calls import CallCost, CallResult, CostReading, ProviderCaller
 from clue_api.arv2.sinks import MemoryLedger, MemoryRawSink
 from clue_api.arv2.transport import HttpResponse, ScriptedTransport
 
@@ -376,3 +381,99 @@ def test_a_domain_from_a_different_company_is_not_attached_to_the_person() -> No
 
     assert person.current_company == "Zafran Security"
     assert person.current_company_domain is None
+
+
+# -- the cost every AI Ark return value carries -------------------------------------------------
+#
+# AI Ark's live suite cannot run today (the account answers 402, so every request halts the
+# provider before a body exists). These cover the new result shapes without a wire: the money
+# view is assembled from a hand-made ``CallResult``, exactly as the wrapper would hand one over.
+
+
+def _call_result(credits: Decimal) -> CallResult:
+    """A completed call as the wrapper returns it, metered in credits like every AI Ark call."""
+    cost = CallCost(
+        cost_usd=Decimal(0),
+        credits=credits,
+        media_seconds=0,
+        cost_source="metered",
+        ledger_row_id="row-1",
+        raw_ref="memory:0",
+        provider="ai_ark",
+        operation="v1/people",
+    )
+    return CallResult(
+        response=HttpResponse(200, {}, b"{}"),
+        latency_ms=1,
+        attempts=1,
+        raw_ref="memory:0",
+        raw_refs=("memory:0",),
+        ledger_row_id="row-1",
+        cost=CostReading(credits=credits),
+        over_ceiling=False,
+        call_cost=cost,
+    )
+
+
+def test_a_people_page_carries_the_pages_cost_and_no_person_carries_a_share_of_it() -> None:
+    """0.5 credit **per record returned** is a fact about the page, not about anyone in it.
+
+    A cost attached to each person would make a caller that sums its people over-count the run by
+    the page size, which is the one arithmetic error this shape exists to make unrepresentable.
+    """
+    result = _call_result(PERSON_CREDITS_PER_RESULT * 2)
+    records = [
+        {"profile": {"full_name": "Nick Fisher"}},
+        {"profile": {"full_name": "Sanaz Yashar"}},
+    ]
+
+    people = AiArkPeople(
+        people=tuple(person_from_record(record) for record in records), cost=result.call_cost
+    )
+
+    assert people.cost is result.call_cost
+    assert people.cost.credits == PERSON_CREDITS_PER_RESULT * 2
+    assert people.cost.cost_source == "metered", "AI Ark bills by result count on every call"
+    assert not any(hasattr(person, "cost") for person in people), (
+        "a per-person cost would be double-counted once per record on the page"
+    )
+
+
+def test_a_people_page_iterates_and_measures_like_the_list_it_replaced() -> None:
+    """Carrying the cost must not cost the caller their ``for`` loop."""
+    people = AiArkPeople(
+        people=(
+            person_from_record({"profile": {"full_name": "Nick Fisher"}}),
+            person_from_record({"profile": {"full_name": "Sanaz Yashar"}}),
+        ),
+        cost=_call_result(Decimal("1.0")).call_cost,
+    )
+
+    assert len(people) == 2
+    assert [person.full_name for person in people] == ["Nick Fisher", "Sanaz Yashar"]
+    assert people[0].full_name == "Nick Fisher"
+
+
+def test_the_pure_record_mappers_leave_the_cost_unset_rather_than_inventing_one() -> None:
+    """A mapper is handed a record, not a request. There is no ledger row to point at.
+
+    ``None`` is the honest answer; a zero-cost :class:`CallCost` would name a row id that does
+    not exist and claim a call nobody made.
+    """
+    company = company_from_record({"summary": {"name": "Zafran Security"}})
+    export = email_export_from_record({"email": {"output": [VERIFIED_SMTP_BLOCK]}})
+    person = person_from_record({"profile": {"full_name": "Nick Fisher"}})
+
+    assert company.cost is None
+    assert export.cost is None
+    assert not hasattr(person, "cost"), "a person is one record on a page; the page holds the cost"
+
+
+def test_every_ai_ark_result_type_has_somewhere_to_put_a_cost() -> None:
+    """The uniform provision, asserted structurally: no return type is exempt.
+
+    This is the guard against the change rotting — a new AI Ark result type added without a
+    ``cost`` field fails here rather than at whatever tries to bill for it.
+    """
+    for result_type in (AiArkCompany, AiArkEmailExport, AiArkPeople):
+        assert "cost" in {f.name for f in fields(result_type)}, result_type.__name__

@@ -36,6 +36,7 @@ from pydantic import SecretStr
 
 from clue_api.arv2.calls import (
     DEFAULT_MAX_ATTEMPTS,
+    CallCost,
     CallResult,
     CallSpec,
     CostReading,
@@ -105,7 +106,13 @@ class ExaContentStatus:
 
 @dataclass(frozen=True)
 class ExaSearchResult:
-    """A completed ``/search`` call: its rows plus the references that make it auditable."""
+    """A completed ``/search`` call: its rows plus the references that make it auditable.
+
+    ``cost`` is the whole money view of the request in the lane's uniform shape; ``cost_usd``,
+    ``request_id``, ``raw_ref`` and ``ledger_row_id`` remain as their own fields because callers
+    read them directly. Exa meters every one of these calls, so ``cost.cost_source`` is
+    ``metered`` whenever Exa reported a total and ``estimate`` when it did not.
+    """
 
     results: tuple[ExaHit, ...]
     status: int
@@ -113,6 +120,7 @@ class ExaSearchResult:
     request_id: str | None
     raw_ref: str | None
     ledger_row_id: str
+    cost: CallCost
 
     @property
     def n_results(self) -> int:
@@ -121,7 +129,11 @@ class ExaSearchResult:
 
 @dataclass(frozen=True)
 class ExaContentsResult:
-    """A completed ``/contents`` call. ``statuses`` says what happened to each requested URL."""
+    """A completed ``/contents`` call. ``statuses`` says what happened to each requested URL.
+
+    ``cost`` is the request's money view in the lane's uniform shape (see
+    :class:`ExaSearchResult`).
+    """
 
     results: tuple[ExaHit, ...]
     statuses: tuple[ExaContentStatus, ...]
@@ -130,6 +142,7 @@ class ExaContentsResult:
     request_id: str | None
     raw_ref: str | None
     ledger_row_id: str
+    cost: CallCost
 
     @property
     def n_results(self) -> int:
@@ -158,6 +171,7 @@ class ExaDeepResult:
     request_id: str | None
     raw_ref: str | None
     ledger_row_id: str
+    cost: CallCost
     retried: bool
 
     @property
@@ -634,6 +648,7 @@ class ExaClient:
             request_id=result.cost.provider_request_id,
             raw_ref=result.raw_ref,
             ledger_row_id=result.ledger_row_id,
+            cost=result.call_cost,
         )
 
     def contents(
@@ -670,6 +685,7 @@ class ExaClient:
             request_id=result.cost.provider_request_id,
             raw_ref=result.raw_ref,
             ledger_row_id=result.ledger_row_id,
+            cost=result.call_cost,
         )
 
     def deep_reasoning(
@@ -742,6 +758,7 @@ class ExaClient:
             request_id=result.cost.provider_request_id,
             raw_ref=result.raw_ref,
             ledger_row_id=result.ledger_row_id,
+            cost=result.call_cost,
             retried=False,
         )
 

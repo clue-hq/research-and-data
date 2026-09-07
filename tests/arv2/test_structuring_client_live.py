@@ -197,7 +197,18 @@ def _assert_metered(output: StructuredOutput, arv2_raw_root: Path) -> None:
     assert mine[1]["outcome"] == "ok"
     assert Decimal(str(mine[1]["cost_usd"])) == output.cost_usd
     assert mine[1]["provider_request_id"] == output.request_id
-    assert "cost_source" not in mine[1]["extras"], "an estimate stand-in means no metering was read"
+    assert mine[1]["extras"]["cost_source"] == "metered", (
+        "anything but `metered` means the estimate stood in and no metering was read"
+    )
+
+    # The uniform provision: the structured output carries the whole money view of the call that
+    # produced it, and it is the same row — not a softer copy of it.
+    assert output.cost is not None
+    assert output.cost.cost_source == "metered"
+    assert output.cost.cost_usd == output.cost_usd
+    assert output.cost.ledger_row_id == mine[1]["row_id"]
+    assert output.cost.raw_ref == output.raw_ref
+    assert (output.cost.provider, output.cost.operation) == ("openrouter", "chat/completions")
 
 
 def _assert_closed_catalog(output: StructuredOutput, catalog: FieldCatalog) -> None:

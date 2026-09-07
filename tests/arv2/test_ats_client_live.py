@@ -37,7 +37,12 @@ def _ledger_rows(path: Path, call_id: str) -> list[dict[str, object]]:
 
 
 def _assert_free_and_audited(raw_ref: str | None, ledger_path: Path) -> dict[str, object]:
-    """Both ledger rows exist, the fetch cost nothing, and the raw body is on disk (law 1)."""
+    """Both ledger rows exist, the fetch cost nothing, and the raw body is on disk (law 1).
+
+    ``cost_source == "free"`` is asserted rather than the mere absence of a cost: an unlabelled
+    zero is indistinguishable from a paid call whose provider went silent, and telling those two
+    apart is the whole reason the label exists.
+    """
     assert raw_ref is not None
     record = json.loads(Path(raw_ref).read_text(encoding="utf-8"))
     rows = _ledger_rows(ledger_path, str(record["call_id"]))
@@ -46,6 +51,7 @@ def _assert_free_and_audited(raw_ref: str | None, ledger_path: Path) -> dict[str
     assert Decimal(str(rows[1]["estimate_usd"])) == Decimal(0)
     assert rows[1]["over_ceiling"] is False
     assert rows[1]["raw_ref"] == raw_ref
+    assert rows[1]["extras"]["cost_source"] == "free"
     return record
 
 
@@ -78,6 +84,14 @@ def test_zafrans_board_serves_dated_listed_postings_for_nothing(
         assert posting.days_open is not None and posting.days_open >= 0
         assert posting.url and posting.url.startswith("https://jobs.ashbyhq.com/zafran-security/")
     assert any(p.description_plain for p in result.postings)
+
+    # The uniform provision: the postings carry the cost of the request that produced them, and
+    # that cost is the same row the ledger holds — not a second, softer opinion about it.
+    assert result.cost.cost_source == "free"
+    assert result.cost.cost_usd == Decimal(0)
+    assert result.cost.provider == "ashby"
+    assert result.cost.ledger_row_id == result.ledger_row_id
+    assert result.cost.raw_ref == result.raw_ref
 
     _assert_free_and_audited(result.raw_ref, arv2_raw_root / "ledger.jsonl")
 

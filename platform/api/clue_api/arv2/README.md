@@ -35,6 +35,54 @@ git-ignored): raw records in `.artifacts/arv2/raw/<provider>/`, the ledger in
 The `provider_call_ledger` table and the `artifact`-backed raw sink land with D1/A7; R1 ships the
 sinks' protocols and the file/memory implementations.
 
+## Cost per request
+
+**Every value a client method returns carries `cost: CallCost` for the request that produced it.**
+Cost tracking is not a per-client courtesy; it is a uniform provision, so no caller ever has to
+ask "did this one report its cost?".
+
+`CallCost` (`calls.py`) is the settled money view of one request: `cost_usd`, `credits` and
+`media_seconds` **as the ledger holds them** (the estimate has already stood in for anything the
+provider did not report), plus `cost_source`, `provider`, `operation`, `raw_ref` and
+`ledger_row_id`. `cost.ledger_row_id` is that request's `result`-phase ledger row — the join back
+to the full trail. `ProviderCaller.totals()` is the running sum across every call one caller made.
+
+`cost_source` labels how well the numbers are known, and it is written on **every** result row's
+`extras["cost_source"]` as well as onto the `CallCost`:
+
+| value | meaning | where it appears |
+|---|---|---|
+| `metered` | the provider's own metering answered — the cost reader supplied at least one number | every paid call: AI Ark, Exa, OpenRouter, native Gemini `generateContent` |
+| `free` | nothing was ever going to be charged — the spec declared no cost reader **and** reserved nothing | the public sources: ATS boards, careers pages, RSS feeds, YouTube watch pages, enclosure `GET`/`HEAD`, the Files API upload/poll legs |
+| `estimate` | a cost reader existed but reported nothing, so the pre-spend estimate stands in | the fallback only — this is the one value that means *we do not actually know* |
+
+The `free`/`estimate` split is the point of the change: before it, a free ATS fetch and a paid call
+whose provider went silent were both unlabelled, so "what did this account really cost" could not
+be answered without knowing which providers meter. The test is on the **spec**, not on the amounts
+— a metered call that happened to cost zero is still `metered`.
+
+A `cost` field typed `CallCost | None` means the value can also be built **without a call**, and
+`None` says so honestly rather than fabricating a ledger reference:
+
+- pure mappers and parsers — `company_from_record`, `email_export_from_record`, `parse_feed`,
+  `parse_structured_transcript`, `read_structured_reply`;
+- `YouTubeWords.cost`, because the page text comes from a caller-supplied `PageTextFetcher`: only
+  the caller knows what its own provider charged, so `youtube_words` takes `cost` as a kwarg and
+  passes it through;
+- `EmbeddedTranscript.cost`, in the one case where a transcript has no lines to chunk and **no
+  call is made at all**.
+
+Calls that return a *set* carry the cost on the set, never on each member — one request bought the
+whole page, so charging it per item would multiply the run's real spend. That is why
+`people_by_name` returns `AiArkPeople`, `mine_quotes` returns `MinedQuotes` and `embed_chunks`
+returns `EmbeddedTranscript`; all three iterate and `len()` like the lists they replaced.
+`Transcript.upload_costs` keeps the long path's free Files API legs as their own rows rather than
+summing them into `Transcript.cost`, because three or four requests were made and the ledger has
+three or four rows.
+
+The D1/A7 `provider_call_ledger` table receives exactly these rows — `cost_source` included — when
+the database `LedgerSink` lands; nothing above the sink protocol changes then.
+
 ## Notes recorded at R1 integration (2026-09-07)
 
 - **The one native call.** `gemini_media_client.transcribe_long` is the only ARV2 call that bypasses

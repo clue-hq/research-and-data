@@ -171,6 +171,10 @@ def test_nick_fisher_is_found_by_name_at_zafran(
         and person.linkedin_url.rstrip("/").endswith("/in/nicholastfisher")
     ]
     assert matches, f"no /in/nicholastfisher among {[p.linkedin_url for p in people]}"
+    # 0.5 credit per record returned is a fact about the page, so the page carries it.
+    assert people.cost.cost_source == "metered"
+    assert people.cost.credits == PERSON_CREDITS_PER_RESULT * len(people)
+    assert people.cost.ledger_row_id == result.ledger_row_id
     person = matches[0]
     assert person.current_company is not None and "Zafran" in person.current_company
     assert person.full_name is not None
@@ -285,9 +289,13 @@ def test_every_call_was_paced_and_ledgered_at_its_result_count_price(
         assert row["raw_ref"] == observed.result.raw_ref, observed.label
         assert Decimal(str(row["credits"])) == observed.expected_credits, observed.label
         assert observed.result.cost.credits == observed.expected_credits, observed.label
-        assert "cost_source" not in row["extras"], (
-            f"{observed.label}: the ledger fell back to the estimate, so the cost reader failed"
+        assert row["extras"]["cost_source"] == "metered", (
+            f"{observed.label}: anything but `metered` means the ledger fell back to the "
+            "estimate, so the cost reader failed"
         )
+        assert observed.result.call_cost.cost_source == "metered", observed.label
+        assert observed.result.call_cost.credits == observed.expected_credits, observed.label
+        assert observed.result.call_cost.ledger_row_id == row["row_id"], observed.label
         assert Decimal(str(row["cost_usd"])) == Decimal(0), "AI Ark bills credits, not dollars"
 
     min_gap_s = Settings().arv2_ai_ark_min_gap_s

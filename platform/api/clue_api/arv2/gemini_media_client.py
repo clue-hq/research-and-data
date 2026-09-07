@@ -34,7 +34,7 @@ import json
 import re
 import time
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -43,6 +43,7 @@ from pathlib import Path
 from pydantic import SecretStr
 
 from clue_api.arv2.calls import (
+    CallCost,
     CallResult,
     CallSpec,
     CostReader,
@@ -333,6 +334,18 @@ class Transcript:
     ``text`` is the transcript **body only** — never the surrounding ``META``/``QUOTES`` sections.
     That is deliberate: a quote is verbatim-checked against this string, and if the model's own
     quote block were part of it, every quote would match itself and the check would be theatre.
+
+    ``cost`` is the money view of the *one* call that produced the words: the OpenRouter
+    completion on the short path, the native ``generateContent`` on the long one (which is where
+    the media seconds are billed, so ``cost.media_seconds`` is the clip's length). It is ``None``
+    only on a :class:`Transcript` built by :func:`parse_structured_transcript` directly, which
+    parses text somebody else paid for.
+
+    ``upload_costs`` are the long path's Files API legs — ``files.start``, ``files.upload`` and
+    every ``files.get`` poll. They are free, and they are kept **separate** rather than summed
+    into ``cost`` because they are separate ledger rows: three or four requests were made, and a
+    caller reconciling this transcript against the ledger has to be able to find all of them. It
+    is empty on the short path, which uploads nothing.
     """
 
     model: str
@@ -341,6 +354,32 @@ class Transcript:
     meta: Mapping[str, str] = field(default_factory=dict)
     quotes: tuple[QuoteCandidate, ...] = ()
     has_timestamps: bool = False
+    cost: CallCost | None = None
+    upload_costs: tuple[CallCost, ...] = ()
+
+
+@dataclass(frozen=True)
+class MinedQuotes:
+    """The quotes one mining call returned, and what that call cost.
+
+    One completion produces the whole set, so the cost belongs to the set: charging it to each
+    quote would multiply the run's real spend by however many quotes the model happened to emit.
+
+    It iterates and measures like the list it replaces, so ``for quote in quotes`` and
+    ``len(quotes)`` keep meaning what they meant before the cost was carried.
+    """
+
+    quotes: tuple[QuoteCandidate, ...]
+    cost: CallCost
+
+    def __iter__(self) -> Iterator[QuoteCandidate]:
+        return iter(self.quotes)
+
+    def __len__(self) -> int:
+        return len(self.quotes)
+
+    def __getitem__(self, index: int) -> QuoteCandidate:
+        return self.quotes[index]
 
 
 @dataclass(frozen=True)
@@ -376,6 +415,36 @@ class EmbeddedChunk:
     text: str
     start_ts_s: int | None
     vector: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class EmbeddedTranscript:
+    """Every chunk of one transcript embedded in a single call, with that call's cost.
+
+    ``dimensions`` is the width the provider actually **served**, read off the returned vectors —
+    not the width that was asked for. The embeddings call retries without ``dimensions`` when the
+    model rejects the Matryoshka truncation, so the two can differ, and reporting the request
+    instead of the answer would mislabel every vector in the index.
+
+    ``cost`` is ``None`` in exactly one case: a transcript with no lines to chunk, where no call
+    is made at all. There is no ledger row to point at, and inventing a zero-cost one would put a
+    request in the money trail that never happened.
+
+    It iterates and measures like the list it replaces.
+    """
+
+    chunks: tuple[EmbeddedChunk, ...]
+    cost: CallCost | None
+    dimensions: int
+
+    def __iter__(self) -> Iterator[EmbeddedChunk]:
+        return iter(self.chunks)
+
+    def __len__(self) -> int:
+        return len(self.chunks)
+
+    def __getitem__(self, index: int) -> EmbeddedChunk:
+        return self.chunks[index]
 
 
 # ------------------------------------------------------------------------------- the ceiling --
@@ -1002,8 +1071,11 @@ class GeminiMediaClient:
             )
         )
         self._require_ok(result, "short transcription")
-        return parse_structured_transcript(
-            openrouter_message_text(result.json()), model=self._short_model, context=context
+        return replace(
+            parse_structured_transcript(
+                openrouter_message_text(result.json()), model=self._short_model, context=context
+            ),
+            cost=result.call_cost,
         )
 
     def transcribe_long(self, audio: AudioFile, *, context: SpeakerContext) -> Transcript:
@@ -1032,7 +1104,7 @@ class GeminiMediaClient:
 
     def _transcribe_long_reserved(self, audio: AudioFile, *, context: SpeakerContext) -> Transcript:
         """The upload-and-generate body of :meth:`transcribe_long`, under a live reservation."""
-        file_uri = self._upload(audio)
+        file_uri, upload_costs = self._upload(audio)
         request = json_request(
             "POST",
             f"{GEMINI_BASE}/models/{self._transcribe_model}:generateContent",
@@ -1081,6 +1153,8 @@ class GeminiMediaClient:
             meta={},
             quotes=(),
             has_timestamps=False,
+            cost=result.call_cost,
+            upload_costs=upload_costs,
         )
 
     # -- quotes and embeddings -----------------------------------------------------------------
@@ -1092,7 +1166,7 @@ class GeminiMediaClient:
         context: SpeakerContext,
         n: int = 6,
         speaker_verified: bool | None = None,
-    ) -> list[QuoteCandidate]:
+    ) -> MinedQuotes:
         """Ask for ``n`` verbatim quotes, then check every one of them against the transcript.
 
         Nothing is dropped: a fabricated quote comes back with ``verdict='NOT_FOUND'`` and
@@ -1146,26 +1220,36 @@ class GeminiMediaClient:
                     usable=verdict == "EXACT" and verified,
                 )
             )
-        return quotes
+        return MinedQuotes(quotes=tuple(quotes), cost=result.call_cost)
 
     def embed_chunks(
         self, transcript: Transcript, *, window_lines: int = 14, dimensions: int = 768
-    ) -> list[EmbeddedChunk]:
+    ) -> EmbeddedTranscript:
         """Embed the transcript in timestamped chunks — text only, never the raw audio.
 
         Appendix A law 11: audio embedding is priced per second and buys nothing retrieval cannot
         get from the transcript we already paid to produce.
+
+        A transcript with nothing to chunk makes **no call**, and the result says so: no chunks,
+        no cost, zero dimensions. That is the one honest empty here — a fabricated zero-cost
+        ledger reference would claim a request that was never sent.
         """
         chunks = chunk_lines(transcript.lines, window_lines)
         if not chunks:
-            return []
+            return EmbeddedTranscript(chunks=(), cost=None, dimensions=0)
         texts = [text for text, _ in chunks]
         result = self._embeddings_call(texts, dimensions)
         vectors = self._embedding_vectors(result, expected=len(texts))
-        return [
-            EmbeddedChunk(text=text, start_ts_s=start_ts_s, vector=vector)
-            for (text, start_ts_s), vector in zip(chunks, vectors, strict=True)
-        ]
+        return EmbeddedTranscript(
+            chunks=tuple(
+                EmbeddedChunk(text=text, start_ts_s=start_ts_s, vector=vector)
+                for (text, start_ts_s), vector in zip(chunks, vectors, strict=True)
+            ),
+            cost=result.call_cost,
+            # The width the provider served, not the one requested: `_embeddings_call` retries
+            # without `dimensions` when the model rejects it, so these can differ.
+            dimensions=len(vectors[0]),
+        )
 
     # -- internals -----------------------------------------------------------------------------
 
@@ -1211,8 +1295,14 @@ class GeminiMediaClient:
                 f"{what} failed", raw_ref=result.raw_ref, http_status=result.response.status
             )
 
-    def _upload(self, audio: AudioFile) -> str:
-        """Resumable-upload the file to the Files API and wait for it to become ``ACTIVE``."""
+    def _upload(self, audio: AudioFile) -> tuple[str, tuple[CallCost, ...]]:
+        """Resumable-upload the file to the Files API and wait for it to become ``ACTIVE``.
+
+        Returns the file URI **and every leg's cost**. The three or four requests here are free,
+        but they are still requests, and a caller reconciling a transcript against the ledger has
+        to be able to find all of their rows — so they are handed back rather than dropped on the
+        floor for being worth nothing.
+        """
         size = audio.path.stat().st_size
         start = self._caller.call(
             CallSpec(
@@ -1272,10 +1362,16 @@ class GeminiMediaClient:
         if not isinstance(name, str) or not name:
             raise MediaUploadFailed("files upload returned no file name", raw_ref=uploaded.raw_ref)
 
-        return self._await_active(name, raw_ref=uploaded.raw_ref)
+        uri, poll_costs = self._await_active(name, raw_ref=uploaded.raw_ref)
+        return uri, (start.call_cost, uploaded.call_cost, *poll_costs)
 
-    def _await_active(self, name: str, *, raw_ref: str | None) -> str:
-        """Poll ``GET /v1beta/files/{name}`` until the file is usable, or fail loudly."""
+    def _await_active(self, name: str, *, raw_ref: str | None) -> tuple[str, tuple[CallCost, ...]]:
+        """Poll ``GET /v1beta/files/{name}`` until the file is usable, or fail loudly.
+
+        Returns the file URI and one free :class:`CallCost` per poll actually made — the polls
+        are requests, so they are rows, so they are reported.
+        """
+        polls: list[CallCost] = []
         for _ in range(MAX_FILE_POLLS):
             poll = self._caller.call(
                 CallSpec(
@@ -1292,6 +1388,7 @@ class GeminiMediaClient:
                     raw_scrubber=drop_download_uri,
                 )
             )
+            polls.append(poll.call_cost)
             self._require_ok(poll, "files get")
             body = poll.json()
             state = body.get("state") if isinstance(body, dict) else None
@@ -1299,7 +1396,7 @@ class GeminiMediaClient:
             if state == "ACTIVE":
                 if not isinstance(uri, str) or not uri:
                     raise MediaUploadFailed("ACTIVE file has no uri", raw_ref=poll.raw_ref)
-                return uri
+                return uri, tuple(polls)
             if state == "FAILED":
                 raise MediaUploadFailed(f"file {name} entered state FAILED", raw_ref=poll.raw_ref)
             self._sleep(FILE_POLL_INTERVAL_S)

@@ -14,11 +14,12 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
-from clue_api.arv2.calls import CallSpec, ProviderCaller
+from clue_api.arv2.calls import CallCost, CallSpec, ProviderCaller
 from clue_api.arv2.media_feeds_client import (
     EnclosureTooLarge,
     UnsupportedMediaHost,
@@ -53,12 +54,16 @@ MAX_ENCLOSURE_BYTES = 200 * 1024 * 1024
 
 
 def _exa_page_text(
-    caller: ProviderCaller, api_key: str
+    caller: ProviderCaller, api_key: str, costs: list[CallCost]
 ) -> Callable[[Sequence[str]], Mapping[str, str]]:
     """The ten-line ``PageTextFetcher`` this test supplies — the only Exa knowledge in Task 5.
 
     It goes through the wrapper like every other call, so its raw record and cost row land in the
     same ledger as the free ones. Task 3's Exa client will satisfy the same protocol.
+
+    It appends each call's :class:`CallCost` to ``costs``, because ``youtube_words`` cannot know
+    what a fetcher it was merely handed charged — only the fetcher's owner can, which is why the
+    cost is a pass-through there rather than something the function invents.
     """
 
     def fetch(urls: Sequence[str]) -> Mapping[str, str]:
@@ -72,6 +77,7 @@ def _exa_page_text(
         result = caller.call(
             CallSpec(provider="exa", operation="contents", label="media-words", request=request)
         )
+        costs.append(result.call_cost)
         body = result.json()
         assert isinstance(body, dict)
         print(f"exa /contents cost: {(body.get('costDollars') or {}).get('total')}")
@@ -103,6 +109,11 @@ def test_the_boardroom_feed_yields_sanaz_yashars_episode_at_the_recorded_duratio
     assert episode.duration_s == SANAZ_DURATION_S
     assert episode.enclosure_url is not None
     assert episode.enclosure_url.startswith(SANAZ_ENCLOSURE_PREFIX)
+    # Free (law 9) — and the podcast says so rather than leaving it to be inferred from a zero.
+    assert podcast.cost is not None
+    assert podcast.cost.cost_source == "free"
+    assert podcast.cost.cost_usd == Decimal(0)
+    assert (podcast.cost.provider, podcast.cost.operation) == ("rss", "feed")
     print(
         f"feed: {podcast.title!r} episodes={len(podcast.episodes)}\n"
         f"episode: {episode.title!r} number={episode.number} duration_s={episode.duration_s} "
@@ -130,6 +141,10 @@ def test_the_enclosure_downloads_to_a_content_addressed_file_with_a_binary_raw_r
     assert len(audio.sha256) == 64
     assert audio.duration_s == SANAZ_DURATION_S
     assert audio.content_type is not None and "audio" in audio.content_type
+    assert audio.cost is not None
+    assert audio.cost.cost_source == "free"
+    assert (audio.cost.provider, audio.cost.operation) == ("live_http", "enclosure")
+    assert audio.cost.raw_ref is not None, "a free call is still a call, and still has evidence"
     print(f"enclosure: bytes={audio.bytes} sha256={audio.sha256} content_type={audio.content_type}")
 
     raw_records = sorted(Path(".artifacts/arv2/raw/live_http").glob("*.json"))
@@ -180,6 +195,8 @@ def test_a_real_watch_page_yields_its_title_and_length(
     assert meta.title
     assert meta.length_s is not None
     assert 250 <= meta.length_s <= 260, f"answer key says 04:14, page says {meta.length_s}"
+    assert meta.cost.cost_source == "free"
+    assert (meta.cost.provider, meta.cost.operation) == ("youtube", "watch")
     print(f"youtube: id={meta.video_id} title={meta.title!r} length_s={meta.length_s}")
 
 
@@ -189,14 +206,25 @@ def test_indexed_page_text_comes_back_for_a_real_watch_page(
     """The caption fallback over a real contents provider, through the wrapper like everything."""
     api_key = require_secret(live_secrets, "exa_api_key")
     caller = make_caller()
+    costs: list[CallCost] = []
 
+    fetcher = _exa_page_text(caller, api_key, costs)
+    text_by_url = fetcher([COCKTAIL_CHEMISTRY_WATCH])
     words = youtube_words(
-        COCKTAIL_CHEMISTRY_WATCH, _exa_page_text(caller, api_key), title="Cocktail Chemistry"
+        COCKTAIL_CHEMISTRY_WATCH,
+        lambda _urls: text_by_url,
+        title="Cocktail Chemistry",
+        cost=costs[-1],
     )
 
     assert words.url == COCKTAIL_CHEMISTRY_WATCH
     assert words.title == "Cocktail Chemistry"
     assert words.text.strip(), "the contents provider returned no indexed text at all"
+    # This is the one paid call in the file, and it is the *caller's* call: the fetcher owns it,
+    # so the cost is passed in rather than fabricated by a function that never saw the request.
+    assert words.cost is costs[-1]
+    assert words.cost.cost_source == "metered", "Exa meters /contents"
+    assert words.cost.provider == "exa"
     print(f"indexed text: {len(words.text)} chars; head={words.text[:120]!r}")
 
 

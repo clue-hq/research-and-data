@@ -121,3 +121,52 @@ def test_the_guard_reports_a_provider_sdk_import() -> None:
         "google.generativeai",
         "exa_py",
     ]
+
+
+# -- the uniform cost provision -----------------------------------------------------------------
+
+
+def test_every_client_return_type_carries_the_cost_of_the_request_behind_it() -> None:
+    """Cost tracking is a lane-wide provision, not a per-client courtesy.
+
+    Every value an ARV2 client method hands back exists because a request was made, and every one
+    of them carries that request's :class:`~clue_api.arv2.calls.CallCost` — so no caller ever has
+    to ask "does this one report its cost?", and no future client can quietly opt out.
+
+    A ``| None`` on the field is allowed and means one specific thing: the value can also be built
+    **without a call** (a pure mapper or parser, a caller-supplied fetcher, or an operation that
+    short-circuits before sending). Those cases are named in the package README; ``None`` is the
+    honest answer there, because there is no ledger row to point at.
+    """
+    from dataclasses import fields
+
+    from clue_api.arv2 import gemini_media_client, media_feeds_client
+    from clue_api.arv2.ai_ark_client import AiArkCompany, AiArkEmailExport, AiArkPeople
+    from clue_api.arv2.ats_client import BoardPostings
+    from clue_api.arv2.exa_client import ExaContentsResult, ExaDeepResult, ExaSearchResult
+    from clue_api.arv2.structuring_client import StructuredOutput
+
+    return_types = (
+        AiArkCompany,
+        AiArkEmailExport,
+        AiArkPeople,
+        BoardPostings,
+        ExaSearchResult,
+        ExaContentsResult,
+        ExaDeepResult,
+        media_feeds_client.Podcast,
+        media_feeds_client.AudioFile,
+        media_feeds_client.YouTubeMeta,
+        media_feeds_client.YouTubeWords,
+        gemini_media_client.Transcript,
+        gemini_media_client.MinedQuotes,
+        gemini_media_client.EmbeddedTranscript,
+        StructuredOutput,
+    )
+
+    missing = [
+        result_type.__name__
+        for result_type in return_types
+        if "cost" not in {f.name for f in fields(result_type)}
+    ]
+    assert missing == [], f"client return types with no cost field: {missing}"

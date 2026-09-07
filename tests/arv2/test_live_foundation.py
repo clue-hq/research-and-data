@@ -120,5 +120,12 @@ def test_an_openrouter_completion_records_its_real_cost_and_request_id(
     assert [row["phase"] for row in rows] == ["estimate", "result"]
     assert Decimal(str(rows[1]["cost_usd"])) == result.cost.cost_usd
     assert rows[1]["provider_request_id"] == result.cost.provider_request_id
-    assert "cost_source" not in rows[1]["extras"]
+    assert rows[1]["extras"]["cost_source"] == "metered", "OpenRouter's own metering answered"
     assert caller.totals().usd == result.cost.cost_usd
+
+    cost = result.call_cost
+    assert cost.cost_source == "metered"
+    assert cost.cost_usd == result.cost.cost_usd
+    assert cost.ledger_row_id == rows[1]["row_id"] == result.ledger_row_id
+    assert cost.raw_ref == result.raw_ref
+    assert (cost.provider, cost.operation) == ("openrouter", "chat/completions")

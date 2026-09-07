@@ -221,6 +221,15 @@ def test_a_short_clip_transcribes_with_timestamps_and_does_not_loop(
     report = detect_loops(transcript)
     assert report.tripped is False, f"the short path looped: {report}"
 
+    assert transcript.cost is not None
+    assert transcript.cost.cost_source == "metered"
+    assert transcript.cost.media_seconds == SHORT_SECONDS
+    assert (transcript.cost.provider, transcript.cost.operation) == (
+        "openrouter",
+        "chat/completions",
+    )
+    assert transcript.upload_costs == (), "the short path uploads nothing, so there are no legs"
+
 
 def test_the_whole_episode_transcribes_on_the_native_endpoint_without_looping(
     long_run: LongRun,
@@ -251,13 +260,31 @@ def test_the_long_transcription_ledger_row_carries_its_seconds_and_its_computed_
     assert Decimal(str(row["cost_usd"])) > 0
     assert row["outcome"] == "ok"
     assert row["provider"] == "gemini"
-    assert "cost_source" not in row["extras"], "the cost came from usageMetadata, not the estimate"
+    assert row["extras"]["cost_source"] == "metered", (
+        "the cost came from usageMetadata, not from the estimate standing in for it"
+    )
+
+    cost = long_run.transcript.cost
+    assert cost is not None, "a transcript carries the cost of the call that produced it"
+    assert cost.cost_source == "metered"
+    assert cost.media_seconds == SANAZ_DURATION_S
+    assert cost.ledger_row_id == row["row_id"]
 
 
 def test_the_upload_leg_is_free_and_never_persists_the_api_key(long_run: LongRun) -> None:
     """The Files API upload costs nothing, and ``x-goog-api-key`` is masked before disk."""
     row = _result_row(long_run.rows, "media.upload")
     assert Decimal(str(row["cost_usd"])) == 0
+    assert row["extras"]["cost_source"] == "free"
+
+    # The upload legs are separate free rows, kept separate on the transcript: start, the upload
+    # itself, and one row per poll. Summing them into `cost` would hide how many calls were made.
+    uploads = long_run.transcript.upload_costs
+    assert len(uploads) >= 3, [c.operation for c in uploads]
+    assert [c.operation for c in uploads[:2]] == ["files.start", "files.upload"]
+    assert all(c.cost_source == "free" for c in uploads), [c.operation for c in uploads]
+    assert all(c.provider == "gemini" for c in uploads)
+    assert {row["row_id"] for row in long_run.rows} >= {c.ledger_row_id for c in uploads}
 
     raw_ref = row["raw_ref"]
     assert isinstance(raw_ref, str)
@@ -292,6 +319,12 @@ def test_the_named_guest_is_verified_and_mined_quotes_are_verbatim(
     assert len(exact) >= 3, [(quote.verdict, quote.text[:80]) for quote in quotes]
     assert all(quote.usable for quote in exact), "EXACT plus a verified speaker means usable"
     assert all(quote.verdict is not None for quote in quotes), "nothing is dropped, only flagged"
+    # One completion bought the whole set, so the cost is on the set — charging it per quote
+    # would multiply the run's real spend by however many quotes the model happened to emit.
+    assert quotes.cost.cost_source == "metered"
+    assert quotes.cost.cost_usd is not None and quotes.cost.cost_usd > 0
+    assert (quotes.cost.provider, quotes.cost.operation) == ("openrouter", "chat/completions")
+    assert not any(hasattr(quote, "cost") for quote in quotes)
 
 
 def test_the_transcript_embeds_at_the_served_dimension_and_the_ledger_shows_the_cost(
@@ -300,16 +333,20 @@ def test_the_transcript_embeds_at_the_served_dimension_and_the_ledger_shows_the_
     """Text embeddings only (law 11), one batched call, every vector the same served width."""
     before = _ledger_line_count(arv2_raw_root)
 
-    chunks = live_client.embed_chunks(long_run.transcript)
+    embedded = live_client.embed_chunks(long_run.transcript)
 
-    assert chunks, "a 37 000-character transcript must chunk into something"
-    served = len(chunks[0].vector)
+    assert embedded, "a 37 000-character transcript must chunk into something"
+    served = len(embedded[0].vector)
     assert served > 0
-    assert all(len(chunk.vector) == served for chunk in chunks), "a ragged batch is a defect"
-    assert all(chunk.text for chunk in chunks)
+    assert all(len(chunk.vector) == served for chunk in embedded), "a ragged batch is a defect"
+    assert all(chunk.text for chunk in embedded)
+    assert embedded.dimensions == served, "the reported width is the one the provider served"
 
     row = _result_row(_rows_after(arv2_raw_root, before), "media.embed_chunks")
     assert Decimal(str(row["cost_usd"])) > 0
+    assert embedded.cost is not None
+    assert embedded.cost.cost_source == "metered"
+    assert embedded.cost.ledger_row_id == row["row_id"]
 
 
 def test_a_hundred_second_ceiling_refuses_the_real_episode_without_sending_it(

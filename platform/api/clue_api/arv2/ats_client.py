@@ -27,7 +27,7 @@ from datetime import UTC, date, datetime
 from typing import Literal
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
-from clue_api.arv2.calls import CallSpec, ProviderCaller
+from clue_api.arv2.calls import CallCost, CallSpec, ProviderCaller
 from clue_api.arv2.errors import Arv2Error, ProviderTransportError
 from clue_api.arv2.transport import BROWSER_USER_AGENT, HttpRequest
 
@@ -200,13 +200,20 @@ class JobPosting:
 
 @dataclass(frozen=True)
 class BoardPostings:
-    """A board fetch's result: the normalised postings plus the references that audit them."""
+    """A board fetch's result: the normalised postings plus the references that audit them.
+
+    ``cost`` is the whole money view of the fetch that produced these postings — free, on every
+    board this client knows, and labelled ``cost_source='free'`` rather than left to be inferred.
+    ``raw_ref`` and ``ledger_row_id`` are kept as their own fields because callers already read
+    them; they are the same two references ``cost`` carries.
+    """
 
     board: AtsBoard
     url: str
     postings: tuple[JobPosting, ...]
     raw_ref: str | None
     ledger_row_id: str
+    cost: CallCost
 
 
 def board_url(board: AtsBoard) -> str:
@@ -341,6 +348,7 @@ def fetch_postings(board: AtsBoard, caller: ProviderCaller) -> BoardPostings:
         postings=normalise_postings(board, result.json()),
         raw_ref=result.raw_ref,
         ledger_row_id=result.ledger_row_id,
+        cost=result.call_cost,
     )
 
 

@@ -34,7 +34,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from clue_api.arv2.calls import CallSpec, ProviderCaller
+from clue_api.arv2.calls import CallCost, CallSpec, ProviderCaller
 from clue_api.arv2.errors import Arv2Error, ProviderTransportError, RawParseError
 from clue_api.arv2.sinks import sha256_hex
 from clue_api.arv2.transport import BROWSER_USER_AGENT, HttpRequest
@@ -155,31 +155,49 @@ class Podcast:
     Feed order is preserved rather than sorted: a feed's own ordering is usually newest-first but
     is not guaranteed to be, and re-sorting on a ``pubDate`` that :func:`parse_feed` may have read
     as ``None`` would silently move undated episodes to one end.
+
+    ``cost`` is the fetch's money view. Feeds are free (law 9), so it is a real row reading
+    ``cost_source='free'`` — not an absent one: "this call cost nothing" and "nobody recorded
+    this call" are different facts and the ledger has to be able to tell them apart. It is
+    ``None`` only on a :class:`Podcast` built by :func:`parse_feed`, which parses a document
+    somebody else fetched.
     """
 
     title: str
     feed_url: str
     episodes: tuple[Episode, ...]
+    cost: CallCost | None = None
 
 
 @dataclass(frozen=True)
 class AudioFile:
-    """A downloaded enclosure on local disk, content-addressed."""
+    """A downloaded enclosure on local disk, content-addressed.
+
+    ``cost`` is the download's money view — free (law 9), so ``cost_source='free'``. The optional
+    ``HEAD`` probe that may precede the download is its own free row and is not folded in here:
+    two requests are two rows, and a caller counting calls must see both. It is ``None`` only on
+    an :class:`AudioFile` a caller assembled without going through :func:`download_enclosure`.
+    """
 
     path: Path
     bytes: int
     sha256: str
     duration_s: int | None
     content_type: str | None
+    cost: CallCost | None = None
 
 
 @dataclass(frozen=True)
 class YouTubeMeta:
-    """What the watch page's own player response says about a video."""
+    """What the watch page's own player response says about a video.
+
+    ``cost`` is the watch-page fetch's money view — free (law 9), so ``cost_source='free'``.
+    """
 
     video_id: str | None
     title: str | None
     length_s: int | None
+    cost: CallCost
 
 
 @dataclass(frozen=True)
@@ -188,11 +206,17 @@ class YouTubeWords:
 
     ``title`` is optional because a :data:`PageTextFetcher` yields URL-keyed text and nothing
     else; a caller that also ran :func:`youtube_metadata` passes the real title in.
+
+    ``cost`` is ``None`` unless the caller supplied it. This is the one value in the lane whose
+    request this module does not make: the page text comes from a caller-supplied
+    :data:`PageTextFetcher`, so only the caller knows what its own provider charged. A fabricated
+    zero here would be a claim about a call we never saw.
     """
 
     url: str
     title: str | None
     text: str
+    cost: CallCost | None = None
 
 
 # -- podcast feeds -----------------------------------------------------------------------------
@@ -357,7 +381,7 @@ def fetch_feed(url: str, caller: ProviderCaller) -> Podcast:
     result = caller.call(spec)
     if not 200 <= result.response.status < 300:
         raise MediaFetchError(url, result.response.status, result.raw_ref)
-    return replace(_parse_feed(result.text(), result.raw_ref), feed_url=url)
+    return replace(_parse_feed(result.text(), result.raw_ref), feed_url=url, cost=result.call_cost)
 
 
 def find_episode(
@@ -490,6 +514,7 @@ def download_enclosure(
         sha256=sha256_hex(body),
         duration_s=episode.duration_s,
         content_type=result.response.headers.get("content-type"),
+        cost=result.call_cost,
     )
 
 
@@ -620,6 +645,7 @@ def youtube_metadata(watch_url: str, caller: ProviderCaller) -> YouTubeMeta:
         video_id=video_id(watch_url),
         title=raw_title if isinstance(raw_title, str) else None,
         length_s=length_s,
+        cost=result.call_cost,
     )
 
 
@@ -628,6 +654,7 @@ def youtube_words(
     page_text: PageTextFetcher,
     *,
     title: str | None = None,
+    cost: CallCost | None = None,
 ) -> YouTubeWords:
     """Indexed page text for a watch page, via a caller-supplied contents fetcher.
 
@@ -637,11 +664,13 @@ def youtube_words(
     transcript, and that is a fact about the video, not a failure of the fetch.
 
     ``title`` is optional because a :data:`PageTextFetcher` returns URL-keyed text only; a caller
-    that already ran :func:`youtube_metadata` passes the real title through.
+    that already ran :func:`youtube_metadata` passes the real title through. ``cost`` is the same
+    kind of pass-through: the fetcher makes the request, so only its owner can say what it cost,
+    and this function will not invent a number for a call it did not make.
     """
     if not is_youtube(watch_url):
         raise ValueError(f"youtube_words expects a YouTube watch URL, got {watch_url!r}")
     fetched = page_text([watch_url])
     normalized = {key.rstrip("/"): value for key, value in fetched.items()}
     text = normalized.get(watch_url.rstrip("/")) or ""
-    return YouTubeWords(url=watch_url, title=title, text=text)
+    return YouTubeWords(url=watch_url, title=title, text=text, cost=cost)

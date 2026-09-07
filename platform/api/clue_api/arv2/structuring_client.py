@@ -32,7 +32,7 @@ from typing import Any
 
 from pydantic import SecretStr
 
-from clue_api.arv2.calls import CallSpec, ProviderCaller, SpendEstimate
+from clue_api.arv2.calls import CallCost, CallSpec, ProviderCaller, SpendEstimate
 from clue_api.arv2.errors import RawParseError
 from clue_api.arv2.openrouter import (
     openrouter_chat_request,
@@ -229,7 +229,14 @@ class NegativeOrRisk:
 
 @dataclass(frozen=True)
 class StructuredOutput:
-    """One structuring call's whole result, with the references that make it auditable."""
+    """One structuring call's whole result, with the references that make it auditable.
+
+    ``cost`` is the request's money view in the lane's uniform shape — an OpenRouter completion,
+    so ``cost_source`` is ``metered`` whenever OpenRouter reported a total. ``cost_usd``,
+    ``request_id`` and ``raw_ref`` stay as their own fields because callers already read them.
+    ``cost`` is ``None`` only on an output built by :func:`read_structured_reply` directly, which
+    is a pure partition of a reply somebody else fetched.
+    """
 
     claims: tuple[StructuredClaim, ...]
     proposed: tuple[ProposedField, ...]
@@ -238,6 +245,7 @@ class StructuredOutput:
     cost_usd: Decimal | None = None
     request_id: str | None = None
     raw_ref: str | None = None
+    cost: CallCost | None = None
 
 
 # -- the prompts ------------------------------------------------------------------------------
@@ -546,6 +554,7 @@ def read_structured_reply(
     cost_usd: Decimal | None = None,
     request_id: str | None = None,
     raw_ref: str | None = None,
+    cost: CallCost | None = None,
 ) -> StructuredOutput:
     """Partition a parsed reply against the catalog and annotate every kept claim.
 
@@ -624,6 +633,7 @@ def read_structured_reply(
         cost_usd=cost_usd,
         request_id=request_id,
         raw_ref=raw_ref,
+        cost=cost,
     )
 
 
@@ -718,4 +728,5 @@ class StructuringClient:
             cost_usd=result.cost.cost_usd,
             request_id=result.cost.provider_request_id,
             raw_ref=result.raw_ref,
+            cost=result.call_cost,
         )
