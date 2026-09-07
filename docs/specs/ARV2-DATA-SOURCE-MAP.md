@@ -1,6 +1,6 @@
 # ARV2 DATA SOURCE MAP — where every number and sentence on the accounts screens comes from
 
-**Status: v1.0, 2026-09-07. Child of `ARV2-MASTER-PLAN.md` §6 (contract v1) and §9 (D1–D4).**
+**Status: v1.1, 2026-09-07 — rulings S1–S12 decided by Aryan (S10 = read-time relaxation); Shashank's confirmation pending. Child of `ARV2-MASTER-PLAN.md` §6 (contract v1) and §9 (D1–D4).**
 This document answers one question for every element the accounts screens render: **which API
 endpoint serves it, which SQL produces it, and which table and column (or which claim
 `field_key`) the value is read from.** Where the dummy frontend derives a value today, this
@@ -285,18 +285,31 @@ reader (`claimstore/claims.py`), which applies the workspace scope and the reten
 | `title` | `claim.value_json.source_title` when the lane stored one (media items store the episode/video title); else `null` |
 | `quote` | `claim.evidence_span`; `null` when absent |
 | `researchExcerpt` | when `quote` is `null`: the claim's value rendered as one sentence by the backend's `render_value_text(field_key, value_json)`; absent when `quote` exists |
-| `publishedAt` | `date(claim.value_json.source_last_updated)` when present, else `date(claim.observed_at)` when the source is a dated document, else `null` |
-| `verifiedAt` | `date(COALESCE(claim.observed_at, claim.collected_at))` (the existing `reference_time`) |
+| `publishedAt` | `date(claim.value_json.source_last_updated)` when present, else `date(claim.observed_at)` when the source is a dated document, else `null`. Served, **not rendered** (ruling R1: no dates on chips or hover cards) |
+| `verifiedAt` | `date(COALESCE(claim.observed_at, claim.collected_at))` (the existing `reference_time`). Served for the frontend's new-since-last-visit computation only; not rendered (R1) |
 | `verificationKind` | `"record"` when `claim.source_url IS NULL AND claim.extraction_method = 'api'` (AI Ark rows, email checks); else `"verified"` |
 | `mediaTimestamp` | `claim.value_json.media_timestamp` (e.g. `"12:41"`); `null` otherwise |
 | `provider` | `claim.source_key` mapped through one backend label map (`ai_ark→"AI Ark"`, `exa_contents→"Exa"`, `ashby_posting_api→"Ashby"`, `gemini→"Gemini transcript"`, …); unknown keys served raw |
 | `outreachSafe` | `claim.outreach_safe` |
 
-**Display gate.** The existing contacts routes filter every contact claim through
+**Display gate (ruled, S10).** The existing contacts routes filter every contact claim through
 `display_allowed` (`research_view_governance.py:128-156`), which by default requires
 `identity_binding = STRONG`. The lenient write gate stamps facet claims `WEAK` when the writer did
-not say (master plan §4). **Under the current policy default, no ARV2 contact fact would ever be
-displayed.** See ruling S10.
+not say, so under that predicate no ARV2 contact fact would display. **Ruling:** the new accounts
+reads (E2–E5, and the contact-insights section of E3) use their own predicate,
+`arv2_display_allowed(claim, policy)`, defined in the new read module next to the routes:
+
+- account claims always pass (unchanged);
+- a contact claim with `use_class = sensitive` is refused unless `policy.display_sensitive` (unchanged, fail-closed);
+- a contact claim with `outreach_safe = true` passes regardless of `identity_binding`;
+- a contact claim with `outreach_safe = false` passes only into a restricted section (`context-only`, `watch-outs`, `do-not-mention`) — it never reaches an outreach section regardless of binding;
+- the professional / personal use-class policy switches still apply as in `display_allowed`.
+
+`display_allowed` itself and every C7 surface that calls it are left untouched. The lane still
+stamps `identity_binding` with what it knows (the PoC rows carry it), but display never depends on
+that stamp. Identity risk is handled upstream: name-scoped lookups only, same-name exclusions in
+every deep-research system prompt, `contact.facet.excluded_lookalike` records rejected candidates,
+speaker identity verified before a media quote.
 
 ---
 
@@ -325,7 +338,7 @@ prose; the frontend joins `claimIds → researchEvidence` at render time.
 
 ---
 
-## 5. Rulings this map needs (founders; one line each)
+## 5. Rulings (Aryan ruled 2026-09-07: S1–S9, S11, S12 as recommended; S10 = read-time relaxation. Shashank's confirmation pending)
 
 | # | Question | Recommendation |
 |---|---|---|
@@ -338,7 +351,7 @@ prose; the frontend joins `claimIds → researchEvidence` at render time.
 | S7 | Contact `title` when no claim exists | make `title` nullable (`string \| null`); the row shows "—" |
 | S8 | `influence` when the committee claim lacks it | persona-derived default table above, served by the backend |
 | S9 | Artifacts tab source | `[]` in v1; account-scoped artifact binding is its own later slice |
-| S10 | **Display gate vs lenient binding.** Keep `display_allowed` as the contact display predicate? With `display_requires_strong_contact_binding = true` (the default) and lenient `WEAK` stamping, every ARV2 contact fact is hidden | Recommendation: the ARV2 lane stamps `identity_binding = STRONG` for name-scoped AI Ark lookups and for facts the person self-published under their own name (the PoC's `identity_binding` field already records this per row), `WEAK` only for same-name-risk sources; **and** the D3 read surface applies the use-class part of the policy but not the binding requirement for `outreach_safe` claims. The founders decide which of the two (or both) |
+| S10 | **Display gate vs lenient binding.** Keep `display_allowed` as the contact display predicate? With `display_requires_strong_contact_binding = true` (the default) and lenient `WEAK` stamping, every ARV2 contact fact is hidden | **Ruled: read-time relaxation.** E2–E5 use `arv2_display_allowed` (§3.9): use-class rules and the sensitive fail-close stay; a `WEAK` binding no longer hides an `outreach_safe = true` claim; `display_allowed` and the C7 surfaces are untouched. The lane keeps stamping the binding it knows, but nothing on screen depends on it |
 | S11 | `researchStatus` enum on the wire | adopt the backend's five values in the dummy's Zod; drop `fully_enriched` / `failed` |
 | S12 | The `recipe` name collision | display recipes live in `display_section_recipe`; the master plan's "recipe rows" wording is updated to that name |
 

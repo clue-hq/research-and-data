@@ -1,6 +1,6 @@
 # ARV2 MASTER PLAN — the complete roadmap for account research, contact research, and their display
 
-**This is the single authoritative plan. Version 1.4, 2026-09-07 (v1.4: data-source map child doc, `display_section_recipe` name, D13; v1.1: lenient write gate, checks as flag-controlled annotations, human-stated facts need no URL, all fields optional; v1.2: the interview never requires word-for-word recording; v1.3: contract v1 re-based on the 5 Sep frontend `live-backend-v1` @ `84f8ee7` — clause-level citation segments, research excerpts, actor-based activity, account artifacts, owner/creator, nullable fit score — and the D0 rulings reduced to what remains). Both founders ratify by initialing
+**This is the single authoritative plan. Version 1.5, 2026-09-07 (v1.5: Aryan's rulings recorded — §8 R1–R13, §12 D1–D8 and D10–D13, data-source rulings S1–S12 with S10 = read-time relaxation; v1.4: data-source map child doc, `display_section_recipe` name, D13; v1.1: lenient write gate, checks as flag-controlled annotations, human-stated facts need no URL, all fields optional; v1.2: the interview never requires word-for-word recording; v1.3: contract v1 re-based on the 5 Sep frontend `live-backend-v1` @ `84f8ee7` — clause-level citation segments, research excerpts, actor-based activity, account artifacts, owner/creator, nullable fit score — and the D0 rulings reduced to what remains). Both founders ratify by initialing
 §12.** It consolidates every decision taken so far into one present-tense document. The earlier
 documents in `docs/specs/ARV2-*.md` remain as the audit trail; where they differ from this one, this
 one wins. There is no history in this document, only what we are building and how.
@@ -289,8 +289,7 @@ frontend-owned and travel with the re-lift.
   `sourceDomain`; the frontend fetches the favicon for that domain through its own `/api/source-favicon`
   proxy (so `faviconUrl` may be `null`). A chip shows favicon + compact domain only. A private record
   (`verificationKind: "record"`: an email check, a database row) shows a lock icon and the label
-  "Record"; the provider name appears only in the hover card. Dates appear in the hover card per
-  ruling R1, never on the chip.
+  "Record"; the provider name appears only in the hover card. No dates appear on the chip or in the hover card (ruling R1); `verifiedAt` and `publishedAt` stay on the wire for the frontend's own computations.
 
 ## 8. Rulings on the dummy frontend (D0)
 
@@ -301,11 +300,11 @@ digest is dead code; contact chips show title/persona/email state on hover; `ins
 computed; unknown fit score is `null`; the hard-coded "Last updated yesterday" is gone; the
 featured-contact hard-code is gone (`profileAction`); lint/build/tests green (118 tests).
 
-**Remaining rulings (one line each; founders decide):**
+**Rulings — ruled by Aryan on 2026-09-07; Shashank's confirmation pending.** Every row is decided as its Recommendation column reads, except R1, whose ruling replaced the recommendation:
 
 | # | Item (file:line in `live-backend-v1`) | Recommendation |
 |---|---|---|
-| R1 | Dates on source chips and hover cards are not rendered (`research-content.tsx:40-44, 90-93`); the spec asks for "posted … · verified …" | v1: show `verifiedAt` (and `publishedAt` when present) in the hover card only; chips stay compact |
+| R1 | Dates on source chips and hover cards are not rendered (`research-content.tsx:40-44, 90-93`); the spec asks for "posted … · verified …" | **Ruled: no dates anywhere** — not on the chip, not in the hover card. `verifiedAt` stays on the wire (it feeds the frontend's new-since-last-visit computation, D5); `publishedAt` stays on the wire, unrendered |
 | R2 | Restricted sections live in the hidden "Internal notes" panel; the spec said "always open on the contact screen" | Accept Internal notes (it is the newer design decision); record it in the contract doc |
 | R3 | Priority presentation dropped (no P1 accent, no P1-first sort) | Accept for v1; `priority` stays on the wire for ordering within a section (backend sorts P1 first) |
 | R4 | Hover-card quote clamped to 4 lines (`account-research.module.css:371-380`) | Show the full quote; it is the evidence |
@@ -316,7 +315,7 @@ featured-contact hard-code is gone (`profileAction`); lint/build/tests green (11
 | R9 | Section `h1` counts and "Overall fit: High" are stripped/parsed client-side (`research-content.tsx:551-554, 787-805`) | Contract: `h1` is served bare; counts = `items.length`; overall fit = `overallFit` — remove the parsers |
 | R10 | The four non-Nick contact pages synthesize an "Account context" section (`data/zafran/contacts.ts:147-152`) | Fixture-only; production pages come from `contactDisplay`; note it in the contract doc |
 | R11 | The fixture markdown parser uses `readFileSync(process.cwd() …)` (`spec-content.ts:15-20`) | Fixture-only; must never reach a client bundle; the re-lift keeps fixtures server-side |
-| R12 | `defaultOpen`, `empty`, `outreachSafe`, `emailClaimId`, `publishedAt`, `verificationKind` are on the wire but unread by components | Keep all six in contract v1: R1 makes the frontend render `publishedAt`, R5 makes it use `emailClaimId`; the other four are served now and rendered later if a design needs them |
+| R12 | `defaultOpen`, `empty`, `outreachSafe`, `emailClaimId`, `publishedAt`, `verificationKind` are on the wire but unread by components | Keep all six in contract v1: R5 makes the frontend use `emailClaimId`; the other five are served now and rendered later only if a design needs them (R1 rules `publishedAt` unrendered) |
 | R13 | The contract doc (`docs/api-contracts/accounts.md`) has none of the new fields | Record contract v1 (§6) — D0 task |
 
 ## 9. The roadmap — three tracks that meet at the claim store
@@ -387,23 +386,23 @@ By construction: the new lane is new files with its own driver and imports none 
 a static test asserts nothing under the new lane imports a quarantined module; the toolbelt's
 boot-time audit refuses to start if an old tool is re-granted; the old tools are replay-only stubs.
 
-## 12. Open decisions (initial each line)
+## 12. Decisions (initial each line) — Aryan ruled 2026-09-07 on every line except D9; Shashank's column is open
 
 | # | Decision | Recommendation | Aryan | Shashank |
 |---|---|---|---|---|
-| D1 | Ratify the two-track split; Track D starts before Track R is live | Yes | ☐ | ☐ |
-| D2 | The remaining §8 rulings R1–R13 | As written | ☐ | ☐ |
-| D3 | Contract v1 = the dummy's models at `live-backend-v1` @ `84f8ee7` + §6 semantics, incl. "no field_key on the wire" and "h1 served bare" | Yes | ☐ | ☐ |
-| D4 | The §4 migration bundled (priority + outreach_safe + display_block + recipes) | Yes | ☐ | ☐ |
-| D5 | `newSinceLastVisit`: frontend-computed from `verifiedAt` + local last-visit; backend serves `false`, no visit row | Resolved by the 5 Sep frontend | ☐ | ☐ |
-| D6 | Seam 1: structured block in `directive_text` (effort rung + committee cap) | Yes | ☐ | ☐ |
-| D7 | Seam 1: launch requires existing `account_entity` rows | Yes | ☐ | ☐ |
-| D8 | Seam 2: add `user` to the `Persona` enum now | Yes | ☐ | ☐ |
-| D9 | Seam 2: the "Series A and above" gate gets an equivalence clause for self-funded operators | Founders' call | ☐ | ☐ |
-| D10 | Keep the four compliance floors (pre-spend authority, born identity-binding, use gate, DSAR) | Keep all four | ☐ | ☐ |
-| D11 | The 11 pre-existing test failures on the base: pay off now or with the lane work | With the lane work, one owner | ☐ | ☐ |
-| D12 | The operating model (§10), esp. "agents never merge" | Yes | ☐ | ☐ |
-| D13 | The data-source rulings S1–S12 in `ARV2-DATA-SOURCE-MAP.md` §5 — owner columns, nullable logo/title, fit thresholds, legacy slots default `[]`, artifacts `[]` in v1, the display-gate vs lenient-binding question (S10), the five-value `researchStatus` enum | As written; S10 needs an explicit choice | ☐ | ☐ |
+| D1 | Ratify the two-track split; Track D starts before Track R is live | Yes | ✓ (2026-09-07) | ☐ |
+| D2 | The remaining §8 rulings R1–R13 | As written | ✓ (2026-09-07) | ☐ |
+| D3 | Contract v1 = the dummy's models at `live-backend-v1` @ `84f8ee7` + §6 semantics, incl. "no field_key on the wire" and "h1 served bare" | Yes | ✓ (2026-09-07) | ☐ |
+| D4 | The §4 migration bundled (priority + outreach_safe + display_block + recipes) | Yes | ✓ (2026-09-07) | ☐ |
+| D5 | `newSinceLastVisit`: frontend-computed from `verifiedAt` + local last-visit; backend serves `false`, no visit row | Resolved by the 5 Sep frontend | ✓ (2026-09-07) | ☐ |
+| D6 | Seam 1: structured block in `directive_text` (effort rung + committee cap) | Yes | ✓ (2026-09-07) | ☐ |
+| D7 | Seam 1: launch requires existing `account_entity` rows | Yes | ✓ (2026-09-07) | ☐ |
+| D8 | Seam 2: add `user` to the `Persona` enum now | Yes | ✓ (2026-09-07) | ☐ |
+| D9 | Seam 2: the "Series A and above" gate gets an equivalence clause for self-funded operators | Founders' call — **still open** (no recommendation was made, so it is not covered by the 2026-09-07 rulings) | ☐ | ☐ |
+| D10 | Keep the four compliance floors (pre-spend authority, born identity-binding, use gate, DSAR) | Keep all four | ✓ (2026-09-07) | ☐ |
+| D11 | The 11 pre-existing test failures on the base: pay off now or with the lane work | With the lane work, one owner | ✓ (2026-09-07) | ☐ |
+| D12 | The operating model (§10), esp. "agents never merge" | Yes | ✓ (2026-09-07) | ☐ |
+| D13 | The data-source rulings S1–S12 in `ARV2-DATA-SOURCE-MAP.md` §5 — owner columns, nullable logo/title, fit thresholds, legacy slots default `[]`, artifacts `[]` in v1, the five-value `researchStatus` enum, and **S10 = read-time relaxation**: the new accounts endpoints (E2–E5) use an ARV2 display predicate that keeps the use-class rules and the sensitive fail-close but does not refuse a `WEAK`-bound contact claim that is `outreach_safe = true`; the old C7 `display_allowed` is left unchanged | As written | ✓ (2026-09-07) | ☐ |
 
 ## 13. The first ten steps, in order
 

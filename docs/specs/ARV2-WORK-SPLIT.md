@@ -79,7 +79,7 @@ never change an existing one) · the shared base branch itself (he never merges 
 
 | # | Step | Inputs he needs | Exit gate (he checks it himself) | Hand-back to Aryan |
 |---|---|---|---|---|
-| S1 | **D0-a — apply the remaining rulings to the dummy frontend** (master plan §8: R1 dates in the hover card, R4 full quote, R5 email via `emailClaimId`, R6 "Unassigned" owner, R7 null score on create, R8 contact date + served tenure, R9 remove the h1/overall-fit parsers, delete the dead digest) | `live-backend-v1` @ `84f8ee7`, the rulings list | `npm run design-system:build && npm run lint && npm run build && npm test` green (≥118 tests, fidelity tests untouched); Zafran pages render per the 5 Sep presentation | The dummy commit sha + screenshots of the three Zafran pages |
+| S1 | **D0-a — apply the remaining rulings to the dummy frontend** (master plan §8: R1 no dates on chips or in hover cards, R4 full quote, R5 email via `emailClaimId`, R6 "Unassigned" owner, R7 null score on create, R8 contact date + served tenure, R9 remove the h1/overall-fit parsers, delete the dead digest) | `live-backend-v1` @ `84f8ee7`, the rulings list | `npm run design-system:build && npm run lint && npm run build && npm test` green (≥118 tests, fidelity tests untouched); Zafran pages render per the 5 Sep presentation | The dummy commit sha + screenshots of the three Zafran pages |
 | S2 | **D0-b — write contract v1** into `apps/frontend/docs/api-contracts/accounts.md` (master plan §6, every field, every backend-owned semantic, the "no field_key on the wire" ruling) | master plan §6, the dummy's `model/*.ts` | The doc lists all five payloads field-for-field and matches the Zod models exactly (an agent diff) | Task branch for Aryan to sign; this is the frozen wire contract |
 | S3 | **Catalog seed rows** — the new registered fields (master plan §4) as data with a one-sentence researcher-facing description each, every sub-field optional | master plan §4; the PoC field lists | A test loads the rows into a throwaway registry and validates every value schema | Task branch (leaf) |
 | S4 | **Section recipes + Luna section prompts** — the recipe seed (page → section → allowed field keys, h1, order, restricted, default_open) and one instruction file per section, with the three fixed prompt lines | `frontend-page-content/README.md` §2–3, the control-test decisions | A test asserts every field key in every recipe is a registered key; prompts contain the three lines | Task branch; content files inside the module Aryan created in D2 |
@@ -119,14 +119,14 @@ arrive first; A7–A9 are the larger builds. Nothing in the S list needs him exc
 
 ```
 A1 push + kit ─────────────► S1 D0-a  S2 D0-b  S3 seed rows  S5 R1 clients  S6 compliance  S7 content
-                                │        │         │             │             │             │
-A2 migration ◄───────────── (S3 rows) ◄──┘         │             │             │             │
+                                │        │          │             │             │             │
+A2 migration ◄───────────── (S3 rows) ◄──┘          │             │             │             │
 A3 loader ──────────────────────────────────────────┘             │             │             │
 A4 display module ──── needs S4 recipes/prompts ◄─────────────────┼─────────────┼─────────────┤
 A5 read surface ──── needs S2 contract v1 signed                  │             │             │
 S8 re-lift ──── needs A4 + A5 merged                              │             │             │
-S9 D5 acceptance ── needs S8                                       │             │             │
-A7 R2 composition ── needs S5 clients + S7 content + A2 ◄──────────┘─────────────┘─────────────┘
+S9 D5 acceptance ── needs S8                                      │             │             │
+A7 R2 composition ── needs S5 clients + S7 content + A2 ◄─────────┘─────────────┘─────────────┘
 S10 R2/R3 acceptance ── needs A7/A8
 ```
 Parallel by design: S1/S2/S3/S5/S6/S7 all start the day A1 lands and need nothing from Aryan but
@@ -156,8 +156,7 @@ Goal: make `clue-frontend` (`integration/live-backend-v1`) match master plan §8
 without changing the 5 Sep presentation decisions. Inputs: `docs/specs/ARV2-MASTER-PLAN.md` §6–§8;
 `src/features/accounts/**`; `docs/zafran-content-implementation.md` (the presentation decisions —
 do not undo them). Files: `src/features/accounts/**` and `src/app/accounts/**` only. Work, in
-order: (R1) render `verifiedAt` (and `publishedAt` when present) in the source hover card, chips
-stay compact; (R4) remove the 4-line clamp on the hover-card quote; (R5) resolve the contact
+order: (R1) no dates on chips or in the hover card — remove any date rendering; `verifiedAt` and `publishedAt` stay on the wire untouched; (R4) remove the 4-line clamp on the hover-card quote; (R5) resolve the contact
 email chip via `emailClaimId`, delete the substring match; (R6) `resolveAccountOwner` returns
 "Unassigned" when `owner` and `createdBy` are both null — never the current viewer; (R7)
 `createLocalAccount` sets `fitScore: null` and `overallFit: null`, making `overallFit` nullable in

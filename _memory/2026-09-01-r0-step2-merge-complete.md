@@ -156,3 +156,10 @@ lenient WEAK stamping would hide every ARV2 contact fact (ruling S10); (2) a `re
 exists (Stage-0), so display recipes are `display_section_recipe`; (3) no owner/logo/artifact-account
 columns exist — S1/S2/S9; (4) `/workspace` endpoint does not exist yet (E3, new module);
 (5) existing detail route returns a bare object, dummy expects `{data}`.
+
+## ADDENDUM 2026-09-07 (later) — Aryan's rulings recorded
+R1 → no dates anywhere (chips or hover); verifiedAt/publishedAt stay on the wire unrendered.
+S10 → Option 2: `arv2_display_allowed` on E2–E5 (use-class + sensitive fail-close kept; WEAK binding
+no longer hides outreach_safe=true claims; C7 `display_allowed` untouched). Everything else in §8
+R2–R13, §12 D1–D8/D10–D13, source-map S1–S9/S11–S12 ruled as recommended. Still open: D9 (Series A
+equivalence clause), seam-freeze box 2b (auto-register qualifier fields), Shashank's confirmations.
