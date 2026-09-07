@@ -327,6 +327,25 @@ class Settings(BaseSettings):
     # at A7. Env: ``CLUE_ARV2_RAW_ROOT``.
     arv2_raw_root: str = ".artifacts/arv2"
 
+    # --- ARV2 lenient write gate and annotation checks (D1; master plan §2 items 2 and 6, §4) ---
+    # The claim write gate stores instead of refusing: an unregistered key becomes a proposed field,
+    # a schema miss is stored with ``schema_valid=false``, a missing source URL is stored with
+    # ``source_missing``. False restores strict refusals. Env: ``CLUE_CLAIM_WRITE_LENIENT``.
+    claim_write_lenient: bool = True
+    # When "on", quoted spans are checked against cited claims and the verdict is recorded as a
+    # marker; never a blocker. Env: ``CLUE_EVIDENCE_VERBATIM_CHECK``.
+    evidence_verbatim_check: Literal["on", "off"] = "off"
+    # When true, rows with no quote and no URL are purged by the compliance pass; when false they
+    # are only marked ``unevidenced``. Env: ``CLUE_UNEVIDENCED_ROW_PURGE_ENABLED``.
+    unevidenced_row_purge_enabled: bool = False
+    # When "on", the interview records whether a typed value is entailed by the user's statement
+    # as a marker; the value is never required to be a substring. Env:
+    # ``CLUE_INTERVIEW_ENTAILMENT_CHECK``.
+    interview_entailment_check: Literal["on", "off"] = "off"
+    # The one default-on check: redact references to minors from a value and mark special-category
+    # facts outreach_safe=false. It never drops a claim. Env: ``CLUE_SENSITIVITY_FLOOR_ENABLED``.
+    sensitivity_floor_enabled: bool = True
+
     # Part II D5 Round B production cutover for design agent turns (scene + website). This switch
     # owns only whether the detached fleet worker registers the ``design_job`` handler; the design
     # API always offers the work, and its own embedded worker (LUMEN_EMBEDDED_FLEET_WORKER) is
