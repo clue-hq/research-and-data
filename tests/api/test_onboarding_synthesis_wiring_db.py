@@ -83,7 +83,17 @@ class _Models:
 
 
 def _scripted() -> list[AIMessage]:
-    """The model reads two inputs, writes an ICP and a persona, and finalizes."""
+    """The model reads two inputs, searches for evidence, writes an ICP and a persona, finalizes.
+
+    The ``exa_search_evidence`` call is load-bearing, not decoration: it is the only governed tool
+    this role may spend, and it is the call that materializes a dynamic child under the recipe's
+    interaction gate — the path where a pin provider that re-requested the gate's *statically*
+    pinned ``audience-persona`` skill made every evidence call fail ``IncompatibleRecipe``
+    (``conflicting_requirement``) and ended the turn ``runtime_error``. The turn without it was
+    green throughout that outage. The toolbelt here carries no Exa credential, so the call is
+    refused ``exa_not_configured`` before any spend; a refused governed call is the model's
+    problem, never the turn's, so the turn must still finish and register both documents.
+    """
 
     def call(name: str, args: dict[str, Any], index: int) -> dict[str, Any]:
         return {"name": name, "args": args, "id": f"c{index}", "type": "tool_call"}
@@ -113,8 +123,11 @@ def _scripted() -> list[AIMessage]:
             content="",
             tool_calls=[
                 call(
-                    "write_file",
-                    {"file_path": "outputs/audience/icp-gi-groups.md", "content": ICP},
+                    "exa_search_evidence",
+                    {
+                        "query": "how practice administrators describe referral fax backlog pain",
+                        "num_results": 4,
+                    },
                     3,
                 )
             ],
@@ -124,8 +137,18 @@ def _scripted() -> list[AIMessage]:
             tool_calls=[
                 call(
                     "write_file",
-                    {"file_path": "outputs/audience/persona-gi-groups.md", "content": PERSONA},
+                    {"file_path": "outputs/audience/icp-gi-groups.md", "content": ICP},
                     4,
+                )
+            ],
+        ),
+        AIMessage(
+            content="",
+            tool_calls=[
+                call(
+                    "write_file",
+                    {"file_path": "outputs/audience/persona-gi-groups.md", "content": PERSONA},
+                    5,
                 )
             ],
         ),
@@ -138,7 +161,7 @@ def _scripted() -> list[AIMessage]:
                         "status": "completed",
                         "user_message": "Wrote icp-gi-groups and persona-gi-groups.",
                     },
-                    5,
+                    6,
                 )
             ],
         ),

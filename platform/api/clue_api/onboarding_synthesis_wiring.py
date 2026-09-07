@@ -75,7 +75,6 @@ from clue_core import (
 )
 from clue_db import ConnFactory, transaction
 from clue_execution import (
-    CompatibilityContext,
     CompatibilityLoader,
     DbExecutionStarter,
     DbRecipeReader,
@@ -126,7 +125,6 @@ _GATE_NODE_KEY = "onboarding_synthesis_interactions"
 _PREPARER_WORKER_ID = "agent-onboarding-synthesis-preparer"
 _EVIDENCE_TOOL_NAME = "exa_search_evidence"
 _EVIDENCE_TOOL_VERSION = "1"
-_PERSONA_SKILL_KEY = "audience-persona"
 
 #: A document is servable input when its bytes exist and it has not been superseded.
 _SERVABLE_STATUSES = ("ready", "proposed", "confirmed")
@@ -214,33 +212,20 @@ class OnboardingSynthesisResult:
 
 
 class OnboardingSynthesisStepPinProvider(StepPinProvider):
-    """Freeze the mutable skill catalog this surface's one spendable tool depends on.
+    """Guard the one tool address this surface's dynamic children may carry.
 
     ``exa_search_evidence@1`` declares ``pin_requirements=("skill",)``: it may be spent only inside
     a slot that pinned the ``audience-persona`` skill telling the model what evidence is *for*.
-    The recipe pins that skill statically for the gate; this provider re-observes it per dynamic
-    child so the exact digest the child ran against is durable.
+    **The recipe slot pins that skill statically** (``compatibility.nodes`` of the promoted
+    ``onboarding-synthesis-unit@1``), which is what satisfies the executor's requirement check —
+    ``missing = descriptor.pin_requirements - static_kinds - supplied_kinds`` — and what the
+    execution's compatibility report resolves to the observed digest. So this provider must **not**
+    re-observe and re-request that same skill: the executor resolves ``(*static_requests,
+    *pin_requests)`` together, and a bare ``skill audience-persona v1`` next to a digest-pinned
+    ``skill audience-persona <sha>`` is a ``conflicting_requirement`` that fails every evidence
+    call with ``IncompatibleRecipe``. Nothing durable is lost by dropping it, and the provider's
+    remaining job is the address guard.
     """
-
-    def __init__(self, *, compatibility: CompatibilityLoader) -> None:
-        self._compatibility = compatibility
-
-    async def _current(self, *, kind: str, key: str, ctx: ToolContext) -> PinRequest:
-        observation = await self._compatibility.observe_current(
-            kind=kind,
-            key=key,
-            context=CompatibilityContext(workspace_id=ctx.workspace_id),
-        )
-        if observation is None:
-            raise ExecutionConflict(
-                f"cannot pin missing onboarding-synthesis resource {kind}:{key}"
-            )
-        return PinRequest(
-            kind=kind,
-            key=key,
-            version=observation.version,
-            digest=observation.digest,
-        )
 
     async def pins_for(
         self,
@@ -248,14 +233,12 @@ class OnboardingSynthesisStepPinProvider(StepPinProvider):
         *,
         ctx: ToolContext,
     ) -> tuple[PinRequest, ...]:
+        del ctx  # the pins are the recipe's; this provider only guards the address
         if step.tool_name != _EVIDENCE_TOOL_NAME or step.tool_version != _EVIDENCE_TOOL_VERSION:
             raise ExecutionConflict(
                 "the onboarding-synthesis recipe admits only exa_search_evidence@1"
             )
-        return (
-            await self._current(kind="skill", key=_PERSONA_SKILL_KEY, ctx=ctx),
-            *step.pin_requests,
-        )
+        return step.pin_requests
 
 
 class _NoMemoryContext:
@@ -705,7 +688,7 @@ class OnboardingSynthesisLauncher:
             artifacts=self._components.artifacts,
             journal=self._plans,
             checkpointer_factory=self._checkpointer_factory,
-            pin_provider=OnboardingSynthesisStepPinProvider(compatibility=self._compatibility),
+            pin_provider=OnboardingSynthesisStepPinProvider(),
             conn_factory=self._conn_factory,
         )
         execution.bind_finalization_authority(
