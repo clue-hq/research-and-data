@@ -29,3 +29,18 @@ platform API, design API and fleet worker via ngrok so the co-founder can test.
 - Always run the Railway Dockerfile locally before pushing a deploy — no Railway CLI/token on this
   machine, so a failed remote build would be invisible except as "wasm hash never flips".
 - Tunnels die with reboots/sessions; check `pgrep -fl ngrok` and `localhost:4040/api/tunnels` first.
+
+## Incident right after the deploy (12:51–12:55 IST): 500 on sign-in — Docker VM disk full
+The local Railway Dockerfile build (image + ~6 GB build cache) filled the Docker Desktop VM disk
+(~36 GB virtual disk). Postgres (`clue-pg-istanbul`) hit `No space left on device` writing
+`pg_logical/replorigin_checkpoint.tmp`, PANICked and crash-looped in recovery; the platform API
+returned 500 on `/auth/v1/session` (`CannotConnectNowError: the database system is in recovery mode`),
+the design reaper logged the same, and colombo's fleet worker process DIED on it. Fix: removed the
+check image + `docker builder prune -af` (8.2 GB reclaimed) → Postgres completed its checkpoint and
+came back on its own within seconds; sign-in/projects/gallery healthy again; fleet worker restarted
+from the repo root with `.env` sourced (`nohup .venv/bin/python -m clue_api.fleet_main`).
+**Rules:** (1) never leave a local Railway image/build cache behind on this box — the VM disk is
+small and Postgres lives on it; `docker system df` before and after; (2) after any DB outage, check
+`pgrep -f clue_api.fleet_main` — the worker does not survive a lost connection. Still reclaimable and
+NOT touched (founder's call): a dangling 1.5 GB image + two `clue-frontend-railway:*` images from
+2026-08-27, ~9 GB of unused Docker volumes. VM free after cleanup: 5.6 GB of 36.4 GB.
