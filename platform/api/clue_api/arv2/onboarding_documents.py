@@ -149,10 +149,12 @@ def _sources_section(sources: Mapping[str, Mapping[str, Any]]) -> str:
 
 
 def _failure_note(run: ExaAgentRun) -> str:
-    return (
-        f"- Research run did not complete: `{run.error_code or run.status}` — "
-        f"{run.error_message or ''}"
-    ).rstrip(" —")
+    # The suffix is appended, never stripped back off: ``rstrip(" —")`` strips a character
+    # *set*, so a provider message that legitimately ends in an em dash would lose it.
+    note = f"- Research run did not complete: `{run.error_code or run.status}`"
+    if run.error_message:
+        note += f" — {run.error_message}"
+    return note
 
 
 # -- 4.2 company overview ----------------------------------------------------------------------
@@ -179,8 +181,10 @@ def company_overview_document(
     run: ExaAgentRun, *, company_domain: str, as_of: date
 ) -> KnowledgeDocument:
     data = _structured(run)
-    facts = data.get("facts") if isinstance(data.get("facts"), dict) else {}
-    sections = data.get("sections") if isinstance(data.get("sections"), dict) else {}
+    raw_facts = data.get("facts")
+    facts: Mapping[str, Any] = raw_facts if isinstance(raw_facts, dict) else {}
+    raw_sections = data.get("sections")
+    sections: Mapping[str, Any] = raw_sections if isinstance(raw_sections, dict) else {}
     competitors = [c for c in (data.get("competitors") or []) if isinstance(c, dict)]
     customers = [c for c in (data.get("named_customers") or []) if isinstance(c, dict)]
     not_found = [n for n in (data.get("not_found") or []) if isinstance(n, str)]

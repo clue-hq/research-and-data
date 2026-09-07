@@ -183,6 +183,25 @@ def test_a_run_that_outlives_the_timeout_is_returned_as_timed_out() -> None:
     assert run.error_code == "timeout"
 
 
+def test_a_create_with_no_run_id_gives_up_immediately_rather_than_polling_nothing() -> None:
+    """A non-terminal create with no ``id`` leaves nothing to poll — say so, do not raise.
+
+    Without the guard the client would build ``GET /agent/runs/None`` and burn the whole timeout
+    on a run that never existed. ``unparseable`` is the client's own status (not Exa's), so the
+    driver's failure law records a shaped step instead of an exception.
+    """
+    transport = ScriptedTransport(
+        [HttpResponse(status=200, body=b'{"object": "agent_run", "status": "queued"}')]
+    )
+    client = ExaClient(_caller(transport, []), SecretStr("key"), sleep=lambda _: None)
+    run = client.agent_run(query="q", output_schema=SCHEMA, effort="low")
+    assert run.status == "unparseable"
+    assert run.error_code == "no_run_id"
+    assert run.run_id is None
+    assert run.polls == 0
+    assert len(transport.requests) == 1
+
+
 def test_a_create_that_already_returns_a_terminal_run_never_polls() -> None:
     transport = ScriptedTransport(
         [
