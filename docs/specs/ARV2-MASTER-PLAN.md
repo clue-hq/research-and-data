@@ -115,6 +115,17 @@ per person ≈ $0.07–0.13; display copy ≈ $0.05 per account with five contac
   through `record_artifact` with `source_key = 'arv2:<provider>:<operation>'`; the ledger row
   references their keys. R1 ships the wrapper and the file/memory sinks; the table and the
   artifact-backed sink land with D1/A7.
+- **`claim.write_markers jsonb NULL`** (D1 addition, 2026-09-07): the markers' home. The write-time
+  annotations named in this section (`schema_valid`, `source_missing`, `evidence_verbatim`,
+  `unevidenced`, `entailment`, plus the writer's own `proposed_field`,
+  `identity_binding_defaulted`, `use_class_defaulted`, `pipe_joined_key`) are one jsonb object
+  written at insert. NULL means nothing to note. They are write-time annotations, not provenance,
+  so they sit outside the append-only immutable-column guard.
+- **A claim may exist without a source URL** (D1 addition, 2026-09-07). A claim whose
+  `extraction_method` is `api`, `scrape` or `llm_synthesis` and whose `source_url` is NULL is
+  constructible and storable, marked `source_missing`. Promotion, not construction, requires the
+  URL: `can_be_promoted` returns `False` for such a row, so it is stored honestly and never served
+  as verified truth.
 - No visit table: "new since your last visit" is computed by the frontend from
   `ResearchEvidence.verifiedAt` against a locally stored last-visit stamp (decision D5 resolved).
 - Other per-claim extras from the research runs (`claim_kind`, `media_url`, `media_timestamp`,
@@ -144,7 +155,9 @@ per person ≈ $0.07–0.13; display copy ≈ $0.05 per account with five contac
   `outreach_safe=false`), `account.abm_program_maturity`, `core.legal_name`, `core.founded_year`;
   contact — `contact.facet.hooks`, `.openers`, `.voice_quote` (`media_url` + `timestamp`),
   `.certifications`, `.education_highschool`, `.self_summary`, `.excluded_lookalike`; source type
-  `university_athletics`. `Persona` gains `user`. `use_class` uses the platform enum only.
+  `university_athletics`. `Persona` gains `user`. The Zafran answer key maps its two out-of-vocabulary
+  values onto it: `executive_sponsor` → `economic_buyer` and `adjacent_buyer` → `user`.
+  `use_class` uses the platform enum only.
 
 ## 5. The two seams between the founders' workstreams
 
