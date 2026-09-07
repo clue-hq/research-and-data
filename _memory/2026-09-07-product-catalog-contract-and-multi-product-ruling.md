@@ -115,3 +115,18 @@ O-D1 grok-4.6 + **effort blank (model default)**; O-D2 per-product `medium`; O-D
 `synthesize_icps` off the new profile; O-D6 evidence tool default ON. Next: O1 + O2 implementation
 plan (writing-plans), then charters for two parallel worktrees; O1 must respect the D1 rule
 (Persona enum untouched; alembic merge if second).
+
+## Addendum 5: O1 + O2 implementation plans written (writing-plans)
+- `docs/superpowers/plans/2026-09-07-arv2-onboarding-o1-substrate.md` — 5 tasks: settings+env,
+  the one migration (onboarding_run/step/document), project_product + spine fns, the
+  product_set_selection kind + full answer-validator text (downgrade text proven == 064ad0f43519),
+  close-out (one head, throwaway db-smoke, checklist, D1 merge rule).
+- `docs/superpowers/plans/2026-09-07-arv2-onboarding-o2-exa-agent-surface.md` — 5 tasks: Agent
+  pure parts, `ExaClient.agent_run` (create/poll/settle, ScriptedTransport for sequencing, live
+  low-effort run), `onboarding_requests.py` templates, `onboarding_documents.py` mappers (+pyyaml,
+  fixture = the Insight Health sample), guards/README/close-out.
+- Facts verified for the plans: platform_user has (user_id, display_name, status) — no email;
+  ScriptedTransport.requests; HttpRequest keeps header case; _body_json never raises;
+  execution_reject_append_only_mutation raises unconditionally (UPDATE OR DELETE ok);
+  alembic head = 44039cb83844 (single).
+- Execution rule (memory): implementers = Opus subagents only; Fable reviews every task first-hand.
