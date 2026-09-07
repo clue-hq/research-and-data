@@ -18,7 +18,10 @@ branch `task/R1-<name>` cut from `track-R` after Task 1 lands; the controller me
 
 1. **Appendix A laws 1–2 are implemented once, in the Step 0 wrapper, and every client calls
    through it.** Law 1: save the raw response (every attempt) before parsing; annotate status,
-   latency and the redacted request; then write the ledger row. Law 2: record the pre-spend
+   latency and the redacted request; then write the ledger row. **Law 3 runs first (amended
+   2026-09-07 after review):** when a spec carries a `raw_scrubber`, the scrubbed body replaces
+   the response the moment it arrives, so the raw record, the cost reader, the halt rule and the
+   returned `CallResult` all carry the same bytes and a dropped key exists on no path. Law 2: record the pre-spend
    estimate before the wire; retries honour `Retry-After`, else `12·(n+1)` s for 429/5xx and
    `2·(n+1)` s for transport errors, `n` = zero-based attempt index, default 4 attempts.
 2. **Money truth blocks; money caps only record** (master plan §2 item 3). A ceiling sets
@@ -440,7 +443,10 @@ Files: `platform/api/clue_api/arv2/media_feeds_client.py`, `tests/arv2/test_medi
   Episode | None` — exact number match first; `title_contains` is a case-insensitive substring
   test; no fuzzy matching.
 - `download_enclosure(episode, dest: Path, caller, *, max_bytes: int) -> AudioFile(path, bytes,
-  sha256, duration_s, content_type)` — streamed through the wrapper as a `binary=True` call
+  sha256, duration_s, content_type)` — fetched through the wrapper as a `binary=True` call (the
+  `Transport` seam materialises bodies; a streaming path is future work — amended 2026-09-07; a
+  `Content-Length` HEAD precheck refuses an oversized enclosure before the GET when the feed
+  declares no length)
   (provider `live_http`, cost 0), refuses with `EnclosureTooLarge` above `max_bytes`.
 - YouTube: `is_youtube(url)`; `reject_native_video(url)` raises `UnsupportedMediaHost` for
   `linkedin.com`, `x.com`, `twitter.com` video URLs (law: never fetch LinkedIn- or X-native video);

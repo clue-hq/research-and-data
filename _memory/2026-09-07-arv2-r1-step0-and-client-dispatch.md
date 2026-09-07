@@ -54,3 +54,24 @@ Live facts learned: OpenRouter accepts `input_audio` base64 for gemini-3.5-flash
 transcribe reproduces the PoC cost ($0.0192834 for 42:49); Exa accepted the §3 schema with `enum`;
 AI Ark `/v1/credit` is 401 even with a valid key; probook.ai's careers page is `/company`, reached
 only via link text; the Boardroom feed has 101 episodes (the PoC's "65" was a truncated save).
+
+## Close-out addendum
+- Task 7 structuring merged (b792b5a15 + fixes 823d15a9e, 4ebcf05c5); consolidation 2
+  (05b032628): exports, shared `openrouter_halt_rule` wired, person live gate counts
+  evidence-bound rows (ruling).
+- Final whole-branch review (Opus): 0 Critical / 7 Important / 11 Minor, "merge with fixes".
+  One fix wave (4acbf578c, af394fe62, 43ed24881) applied every ruled item: header VALUES redacted
+  (the Files API `x-goog-upload-url` and `x-goog-upload-control-url` carried a live `upload_id`
+  token into raw records), request bodies capped at 64 000 chars inline (base64 audio no longer
+  written per attempt), scrubber failures leave a body-less record + typed `RawScrubFailed`,
+  OpenRouter 403 is moderation not money (no latch), `gemini_native_halt_rule` split from
+  `openrouter_halt_rule`, HEAD Content-Length precheck on enclosures, `transcription_input_from_enclosure`
+  ships the AudioFile conversion (raises on unknown duration), README "R2 composition constraints"
+  (asyncio.to_thread at every fleet entry; one ProviderCaller per worker task; reset_halt is an
+  operator action), `over_ceiling` re-evaluated against actual cost, negatives default
+  outreach_safe=False, fence markers neutralised inside bundles, evidenced career links ranked first,
+  media reservation released on failure, feed body cap 5 MB, deep-reasoning/transcribe max_attempts=2.
+- Finding for the founders: bundle-borne prompt injection is real (reproduced live); D-track bundle
+  assembly must never include prompt text.
+- Live-suite mechanics: a `nohup` run from the tool shell was killed before its summary line;
+  `setsid` does not exist on macOS. Run the live suite as bounded chunks (<10 min each).
