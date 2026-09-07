@@ -162,11 +162,13 @@ def default_gateway_config() -> GatewayConfig:
         return GatewayConfig(
             synthesis_model=settings.synthesis_model,
             judge_model=settings.judge_model,
+            timeout_s=settings.gateway_timeout_s,
             agent_reasoning=reasoning,
             openrouter_chat_completions_fallback=True,
         )
     return GatewayConfig(
         synthesis_model=settings.synthesis_model,
+        timeout_s=settings.gateway_timeout_s,
         agent_reasoning=reasoning,
         openrouter_chat_completions_fallback=True,
     )

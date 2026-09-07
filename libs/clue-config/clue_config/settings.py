@@ -122,6 +122,11 @@ class Settings(BaseSettings):
     # deployment decision, so it gets the same env seam ``synthesis_model`` already has rather than
     # a rewritten constant.
     judge_model: str | None = None
+    # The gateway's per-call timeout ceiling (``GatewayConfig.timeout_s``). It bounds every gateway
+    # request AND is the ceiling the agent model builder enforces on a profile's ``model.timeout_s``
+    # (a profile above it is refused at build time — how the first onboarding-synthesis turn
+    # failed, 2026-09-08). Founder ruling 2026-09-08: 60s. Env: ``CLUE_GATEWAY_TIMEOUT_S``.
+    gateway_timeout_s: float = Field(default=30.0, gt=0)
 
     # Temporary master switch for M9 runtime verification. False keeps the canonical VERIFICATION
     # phase in the durable state-machine sequence, but skips deterministic corroboration and

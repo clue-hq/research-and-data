@@ -109,7 +109,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # audience-persona v1 skills, and the single `exa_search_evidence@1` grant. Digest
         # measured off this tree.
         AgentRole.ONBOARDING_SYNTHESIS: (
-            "98c5c9557ea9eb9740176c90907c3cda142c43643769da2cddf1ed6b25e80a98"
+            "d6054fb39fd8e3edb5c70e53f5c2fb93736348d50e017ed566fd1b7ab9dec39a"
         ),
     }
     # The model pin is per role, not blanket: the 2026-08-27 demo-night correction moved the
