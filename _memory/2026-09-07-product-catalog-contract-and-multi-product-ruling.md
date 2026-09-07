@@ -130,3 +130,26 @@ plan (writing-plans), then charters for two parallel worktrees; O1 must respect 
   execution_reject_append_only_mutation raises unconditionally (UPDATE OR DELETE ok);
   alembic head = 44039cb83844 (single).
 - Execution rule (memory): implementers = Opus subagents only; Fable reviews every task first-hand.
+
+## Addendum 6: O3 + O4 implementation plans written (2026-09-07 late)
+- `docs/superpowers/plans/2026-09-07-arv2-onboarding-o3-fleet-driver.md` (7 tasks) and
+  `docs/superpowers/plans/2026-09-07-arv2-onboarding-o4-synthesis-agent.md` (7 tasks). Facts used:
+  `.superpowers/sdd/o3o4-facts/{o3-driver-facts,o4-agent-facts}.md` (Opus Explore agents; verbatim signatures).
+- Rulings baked into O3: onboarding gets its OWN artifact-keyed lineage table (`onboarding_product_lineage`;
+  the old `product_catalog_lineage` is claim-FK'd and stays replay-only); the client-entity binder and the
+  synthesis launcher are injected seams because the ARV2 import guard forbids `clue_api.arv2` from importing
+  `clue_research.stage0` / other `clue_api` modules; one `ProviderCaller` PER STEP under
+  `arv2_raw_root/onboarding/<run>/<step>/`; the two lineup passes merge by normalized name, own-domain
+  grounding only; `POST /onboarding` refuses a second queued/running run per workspace (409).
+- Rulings baked into O4: a governed turn needs a project + execution row, so the synthesis turn runs under a
+  per-brand SYSTEM project row (`prj_onb_…`, name "Onboarding · <brand>", status `archived`) — O5/O6 must keep
+  it out of the sidebar; inputs materialize as extra `WorkspaceSeedFile`s under `inputs/brand/knowledge/…`
+  (ProjectLayerSource can only emit flat context/project/<name>.json); the turn executes inside a new one-gate
+  system recipe `onboarding-synthesis-unit@1` (slot `onboarding_synthesis_interactions`, tool allowlist
+  `exa_search_evidence@1`, static pin = skill `audience-persona@v1` satisfying the tool's `pin_requirements=("skill",)`);
+  outputs are identified by their YAML front matter (`snapshot_outputs` discards logical paths); the C5 policy
+  budget is a $5 record-only constant.
+- Cross-lane: O3 and O4 each cut a migration off `0aa95f87eb49` → `alembic merge` when the second lands; O4's
+  `OnboardingSynthesisResult` mirrors O3's `SynthesisOutcome` structurally (reconcile at merge); D1's
+  `provider_call_ledger` replaces the JSONL sinks and its `user` Persona role lands separately.
+- Both plans' final acceptance runs (money) are founder-triggered tasks, never run by an implementer.
