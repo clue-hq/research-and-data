@@ -56,3 +56,16 @@ container/volume newer than the cutoff (clue-postgres/dar-es-salaam, missoula, c
 tunis, colombo, chicago, semarang, the redis ones). Live DBs untouched: istanbul (colombo's), managua,
 san-salvador. Unused base images (complex-gh-*, ingress-nginx, old redis/postgres tags, ~5 GB) also
 left — `docker image prune -a` would take them if wanted.
+
+## Fleet worker concurrency slots (founder request 2026-09-07 evening)
+Root cause of "the second chat's task queues behind the first": `LeasedWorkWorker.run()` claimed one
+task and awaited `_run_task` to completion (verified in the day's logs — a turn enqueued 13:17:25 only
+started 13:20:13, when the previous chat's turn was stopped). Fix committed on this branch: the loop
+claims while slots remain and supervises each task as its own asyncio task (`max_concurrency`;
+`CLUE_FLEET_MAX_CONCURRENCY=4` in `.env`/`.env.example` with the whole CLUE_FLEET_* block now
+documented; library default stays 1, so the design API's embedded worker is unchanged). Same-thread
+turns still never overlap (dispatcher's per-thread advisory lock). Tests: 6 new in
+`tests/fleet/test_work_worker.py` (overlap up to N, N=1 sequential, slots shared across kinds,
+stop drains in-flight, supervision crash isolated, N≥1), 1 in `tests/api/test_fleet_wiring.py`;
+`tests/fleet` 82 green, ruff + mypy clean. Colombo worker restarted 19:51 IST on the new code
+(`worker.start max_concurrency=4`). Not proven live yet — needs two chats sending at once.
