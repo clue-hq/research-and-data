@@ -327,6 +327,30 @@ class Settings(BaseSettings):
     # at A7. Env: ``CLUE_ARV2_RAW_ROOT``.
     arv2_raw_root: str = ".artifacts/arv2"
 
+    # --- ARV2 onboarding lane (Track O; ARV2-ONBOARDING-PLAN.md §10) --------------------------
+    # Routes ``POST /onboarding`` to the new fleet driver (O3). Ships dark until O7 acceptance;
+    # ``self_serve_provisioning_enabled`` (the old recon) stays false regardless.
+    # Env: ``CLUE_ONBOARDING_V2_ENABLED``.
+    onboarding_v2_enabled: bool = False
+    # Exa Agent effort for the company-overview run (ARV2-COMPANY-OVERVIEW-CONTRACT.md §1).
+    # Env: ``CLUE_ONBOARDING_OVERVIEW_EFFORT``.
+    onboarding_overview_effort: str = "high"
+    # Exa Agent effort for the customer-reviews run (plan §4.3).
+    # Env: ``CLUE_ONBOARDING_REVIEWS_EFFORT``.
+    onboarding_reviews_effort: str = "medium"
+    # Exa Agent effort for each per-product research run (plan §4.4; ruling O-D2 — raise to
+    # ``high`` per deployment if the product files read thin).
+    # Env: ``CLUE_ONBOARDING_PRODUCT_EFFORT``.
+    onboarding_product_effort: str = "medium"
+    # When the reviews run happens (ruling O-D3: ``fast``). Env: ``CLUE_ONBOARDING_REVIEWS_PHASE``.
+    onboarding_reviews_phase: Literal["fast", "background"] = "fast"
+    # Cap on concurrent background per-product Exa Agent runs.
+    # Env: ``CLUE_ONBOARDING_MAX_PARALLEL_RUNS``.
+    onboarding_max_parallel_runs: int = Field(default=6, ge=1)
+    # The governed ``exa_search_evidence@1`` tool the synthesis agent may call once per persona
+    # role (ruling O-D6: on). Env: ``CLUE_ONBOARDING_PERSONA_EVIDENCE_ENABLED``.
+    onboarding_persona_evidence_enabled: bool = True
+
     # Part II D5 Round B production cutover for design agent turns (scene + website). This switch
     # owns only whether the detached fleet worker registers the ``design_job`` handler; the design
     # API always offers the work, and its own embedded worker (LUMEN_EMBEDDED_FLEET_WORKER) is
