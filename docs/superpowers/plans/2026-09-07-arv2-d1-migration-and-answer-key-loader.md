@@ -1725,7 +1725,7 @@ def test_zafran_rows_map_completely() -> None:
     assert all(d.identity_binding in (IdentityBinding.STRONG, IdentityBinding.WEAK) for d in contact_rows)
     assert all(d.use_class is not None for d in contact_rows)
     assert all(d.use_class is None for d in mapped.drafts if d.entity_type is EntityType.ACCOUNT)
-    assert sum(1 for d in mapped.drafts if not d.outreach_safe) == 12
+    assert sum(1 for d in mapped.drafts if not d.outreach_safe) == 11  # 12 unsafe rows minus zaf-132 (NOT FOUND)
 
 
 def test_people_rows_map_completely() -> None:
@@ -1952,7 +1952,7 @@ def test_load_writes_every_row_and_the_screen_prerequisites(tmp_path: Path) -> N
             unsafe = (await conn.execute(text(
                 "SELECT count(*) FROM claim WHERE workspace_id = :ws AND outreach_safe = false"
             ), {"ws": ws})).scalar_one()
-            assert unsafe == 12 + 1
+            assert unsafe == 11 + 1  # Zafran's 12 unsafe rows minus the NOT FOUND one, plus one person row
             media = (await conn.execute(text(
                 "SELECT count(*) FROM claim WHERE workspace_id = :ws AND artifact_key IS NOT NULL"
             ), {"ws": ws})).scalar_one()
@@ -1987,7 +1987,7 @@ def test_committee_read_sees_the_five_members(tmp_path: Path) -> None:
 
 Read `platform/api/clue_api/frontend_read/committee.py:140` and `clue_research.membership.memberships_for_accounts` for the exact return shapes and fix the two `# adjust` lines before running; the assertion (five named members) is the requirement.
 
-The unsafe count is `12 + 1` because the people file carries one `outreach_safe: false` row; the media count is the 21 `deterministic_media` rows. If the loader's real numbers differ, print the offending rows and reconcile against the files.
+The unsafe count is `11 + 1` because zaf-132 is both unsafe and NOT FOUND (skipped) and the people file carries one `outreach_safe: false` row; the media count is the 21 `deterministic_media` rows. If the loader's real numbers differ, print the offending rows and reconcile against the files.
 
 - [ ] **Step 2: Run to verify failure**
 
