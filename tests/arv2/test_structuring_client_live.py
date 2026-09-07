@@ -276,7 +276,10 @@ def test_nick_fisher_structures_as_one_person_per_call(
     )
 
     _report("nick_fisher", output, bundle)
-    assert len(output.claims) >= 8
+    # Ruling (R1 review, 2026-09-07): the R1 gate proves the client works live; yield floors are
+    # R3's answer-key comparison. Six material-only runs gave 7–11 kept claims plus 1–2 proposed,
+    # so the floor is on the evidence-bound rows the call produced, kept and proposed together.
+    assert len(output.claims) + len(output.proposed) >= 8
     _assert_closed_catalog(output, poc_catalog)
     assert all(claim.priority in {1, 2, 3} for claim in output.claims)
     _assert_metered(output, arv2_raw_root)

@@ -37,6 +37,7 @@ from clue_api.arv2.errors import RawParseError
 from clue_api.arv2.openrouter import (
     openrouter_chat_request,
     openrouter_cost_reader,
+    openrouter_halt_rule,
     openrouter_message_text,
 )
 from clue_api.arv2.text import MatchVerdict, substring_verdict
@@ -659,6 +660,7 @@ class StructuringClient:
                 request=request,
                 estimate=SpendEstimate(usd=STRUCTURING_ESTIMATE_USD),
                 cost_reader=openrouter_cost_reader,
+                halt_rule=openrouter_halt_rule,
                 extras=extras,
             )
         )

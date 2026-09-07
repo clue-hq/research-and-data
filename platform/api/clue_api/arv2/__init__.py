@@ -68,6 +68,13 @@ from clue_api.arv2.sinks import (
     redact_headers,
     redact_url,
 )
+from clue_api.arv2.structuring_client import (
+    AccountSubject,
+    FieldCatalog,
+    FieldSpec,
+    PersonSubject,
+    StructuringClient,
+)
 from clue_api.arv2.text import normalize_for_match, substring_verdict
 from clue_api.arv2.transport import (
     BROWSER_USER_AGENT,
@@ -81,13 +88,17 @@ from clue_api.arv2.transport import (
 )
 
 __all__ = [
+    "AccountSubject",
     "AiArkClient",
     "AtsBoard",
     "BoardNotFound",
     "ExaClient",
+    "FieldCatalog",
+    "FieldSpec",
     "GeminiMediaClient",
     "MediaBudget",
     "MediaCeilingExceeded",
+    "PersonSubject",
     "UnsupportedMediaHost",
     "download_enclosure",
     "fetch_feed",
@@ -126,6 +137,7 @@ __all__ = [
     "ScriptedTransport",
     "SpendEstimate",
     "SpendTotals",
+    "StructuringClient",
     "Transport",
     "TransportFailure",
     "json_request",
