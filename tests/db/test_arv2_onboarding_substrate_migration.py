@@ -1,0 +1,136 @@
+"""Installed-schema guards for the Track O substrate (ARV2-ONBOARDING-PLAN.md §3, §6)."""
+
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+import pytest
+from sqlalchemy import text
+
+from clue_db import db_lifespan
+
+from .conftest import run_async
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_VERSIONS = _REPO_ROOT / "alembic" / "versions"
+
+
+def _migration_module(prefix: str):
+    """Load one migration module by its file-name prefix (they are not importable by name)."""
+    (path,) = _VERSIONS.glob(f"{prefix}_*.py")
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def _onboarding_migration():
+    (path,) = _VERSIONS.glob("*_arv2_onboarding_substrate.py")
+    return _migration_module(path.stem.split("_")[0])
+
+
+async def _constraints(conn, table: str) -> dict[str, str]:
+    rows = await conn.execute(
+        text(
+            "SELECT conname, pg_get_constraintdef(oid) AS definition FROM pg_constraint "
+            "WHERE conrelid = CAST(:table AS regclass)"
+        ),
+        {"table": table},
+    )
+    return {str(row.conname): str(row.definition) for row in rows}
+
+
+@pytest.mark.usefixtures("require_db")
+def test_the_three_onboarding_tables_carry_their_state_contract() -> None:
+    async def scenario() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn:
+            run = await _constraints(conn, "onboarding_run")
+            step = await _constraints(conn, "onboarding_step")
+            doc = await _constraints(conn, "brand_knowledge_document")
+
+        for status in ("queued", "running", "completed", "completed_with_gaps", "failed"):
+            assert status in run["onboarding_run_status"]
+        assert "finished_at IS NULL" in run["onboarding_run_finished_when_terminal"]
+        assert "brand" in run["onboarding_run_brand_fk"]
+
+        for kind in (
+            "overview",
+            "lineup",
+            "catalog_sync",
+            "reviews",
+            "synthesis",
+            "product_research",
+        ):
+            assert kind in step["onboarding_step_kind"]
+        assert "'fast'" in step["onboarding_step_phase"]
+        assert "'background'" in step["onboarding_step_phase"]
+        assert "failure_code IS NOT NULL" in step["onboarding_step_failure_pair"]
+        assert "brand_knowledge_document" in step["onboarding_step_output_document_fk"]
+
+        for status in (
+            "running",
+            "ready",
+            "empty",
+            "failed",
+            "proposed",
+            "confirmed",
+            "superseded",
+        ):
+            assert status in doc["brand_knowledge_document_status"]
+        for folder in ("company", "product", "audience", "proof", "design"):
+            assert folder in doc["brand_knowledge_document_folder"]
+        assert "[0-9a-f]{64}" in doc["brand_knowledge_document_body_when_served"]
+        assert "path, version" in doc["brand_knowledge_document_path_version"]
+
+    run_async(scenario())
+
+
+@pytest.mark.usefixtures("require_db")
+def test_a_document_cannot_be_served_without_bytes() -> None:
+    """status=ready with no artifact is the exact lie the CHECK exists to refuse."""
+    from sqlalchemy.exc import IntegrityError
+
+    async def scenario() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn:
+            trans = await conn.begin()
+            try:
+                await conn.execute(
+                    text(
+                        "INSERT INTO workspace (workspace_id, name) VALUES ('ws-o1-doc', 'O1') "
+                        "ON CONFLICT DO NOTHING"
+                    )
+                )
+                await conn.execute(
+                    text(
+                        "INSERT INTO brand (brand_id, workspace_id, name) "
+                        "VALUES ('brd-o1-doc', 'ws-o1-doc', 'O1') ON CONFLICT DO NOTHING"
+                    )
+                )
+                with pytest.raises(IntegrityError):
+                    async with conn.begin_nested():
+                        await conn.execute(
+                            text(
+                                "INSERT INTO brand_knowledge_document "
+                                "(document_id, workspace_id, brand_id, folder, path, kind, "
+                                " version, status) "
+                                "VALUES (gen_random_uuid(), 'ws-o1-doc', 'brd-o1-doc', 'company', "
+                                " 'company/overview.md', 'company-overview', 1, 'ready')"
+                            )
+                        )
+                with pytest.raises(IntegrityError):
+                    async with conn.begin_nested():
+                        await conn.execute(
+                            text(
+                                "INSERT INTO brand_knowledge_document "
+                                "(document_id, workspace_id, brand_id, folder, path, kind, "
+                                " version, status) "
+                                "VALUES (gen_random_uuid(), 'ws-o1-doc', 'brd-o1-doc', 'company', "
+                                " 'product/overview.md', 'company-overview', 1, 'running')"
+                            )
+                        )
+            finally:
+                await trans.rollback()
+
+    run_async(scenario())
