@@ -58,6 +58,7 @@ from clue_api.agent_turn_fleet_wiring import (
     sweep_turn_stream_retention,
 )
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
+from clue_api.arv2_wiring import register_arv2_wiring
 from clue_api.chat.turn_stream import TurnStreamPolicy
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import build_pre_spend_gate, load_research_packs
@@ -543,6 +544,7 @@ async def _serve() -> None:
     ):
         register_compliance_wiring()
         register_narrative_wiring()
+        register_arv2_wiring()
         async with transaction() as conn:
             await load_research_packs(conn)
         project_execution_router = DeferredProjectExecutionRouter()

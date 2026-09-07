@@ -1,0 +1,212 @@
+"""The lenient claim write gate (master plan §2 principle 2, §4).
+
+Rule: storing information is never blocked. The gate stamps what the writer did not say (tier from
+the method, tenant-private scope, facet governance defaults), stores a schema miss with
+``schema_valid=false``, registers an unknown key as a proposed field, and stores a research claim
+with no source URL under a ``source_missing`` marker. With ``lenient=False`` every one of those is
+the strict refusal the claim store already implements.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from datetime import datetime
+
+from pydantic import JsonValue
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from clue_core import (
+    Claim,
+    ClaimId,
+    EntityId,
+    EntityType,
+    ExtractionMethod,
+    FieldClass,
+    FieldDef,
+    IdentityBinding,
+    PassKind,
+    ResearchMode,
+    ResearchScope,
+    ReuseScope,
+    RunId,
+    UseClass,
+    classify_field_key,
+    field_namespace,
+)
+from clue_research.claimstore.claims import insert_claim
+from clue_research.claimstore.registry import (
+    UnknownFieldError,
+    ValueSchemaError,
+    check_claim_writable,
+    register_field,
+)
+
+#: Appendix A / master plan §4: the tier is stamped from the tool of origin, never chosen.
+TIER_FOR_METHOD: dict[ExtractionMethod, int] = {
+    ExtractionMethod.API: 1,
+    ExtractionMethod.CRM_IMPORT: 1,
+    ExtractionMethod.HUMAN: 1,
+    ExtractionMethod.SCRAPE: 2,
+    ExtractionMethod.LLM_SYNTHESIS: 4,
+}
+
+_URL_REQUIRED = frozenset(
+    {ExtractionMethod.API, ExtractionMethod.SCRAPE, ExtractionMethod.LLM_SYNTHESIS}
+)
+_PROPOSED_DESCRIPTION = "Proposed field (unregistered key written in lenient mode)"
+
+
+@dataclass(frozen=True)
+class ClaimDraft:
+    """What a writer knows about one fact; the gate fills in everything it did not say."""
+
+    entity_id: EntityId
+    entity_type: EntityType
+    field_key: str
+    value_json: JsonValue
+    extraction_method: ExtractionMethod
+    run_id: RunId
+    research_mode: ResearchMode
+    workspace_id: str
+    source_url: str | None = None
+    source_key: str | None = None
+    evidence_span: str | None = None
+    observed_at: datetime | None = None
+    confidence: float = 0.5
+    identity_binding: IdentityBinding | None = None
+    use_class: UseClass | None = None
+    signal_priority: int = 3
+    outreach_safe: bool = True
+    artifact_key: str | None = None
+    product_id: str | None = None
+    field_description: str | None = None
+    markers: Mapping[str, JsonValue] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class WriteReceipt:
+    """What the gate did: the claim it stored, what it had to stamp, whether it registered a key."""
+
+    claim_id: ClaimId
+    field_key: str
+    markers: dict[str, JsonValue]
+    registered_field: bool
+
+
+class LenientClaimWriter:
+    """The one write path into the claim store for the ARV2 lane.
+
+    ``lenient=True`` is the research posture: everything observed is stored, and what the store
+    would have refused becomes a durable ``write_markers`` annotation instead. ``lenient=False``
+    restores the substrate's own refusals so a caller that wants the strict contract still gets it.
+    """
+
+    def __init__(self, *, lenient: bool) -> None:
+        self._lenient = lenient
+
+    async def write(self, conn: AsyncConnection, draft: ClaimDraft) -> WriteReceipt:
+        markers: dict[str, JsonValue] = dict(draft.markers)
+        registered = False
+
+        binding, use_class = draft.identity_binding, draft.use_class
+        if (
+            draft.entity_type is EntityType.CONTACT
+            and classify_field_key(draft.field_key) is FieldClass.CONTACT_FACET
+        ):
+            if binding is None:
+                binding, markers["identity_binding_defaulted"] = IdentityBinding.WEAK, True
+            if use_class is None:
+                use_class, markers["use_class_defaulted"] = UseClass.PROFESSIONAL_PUBLIC, True
+
+        if draft.extraction_method in _URL_REQUIRED and not draft.source_url:
+            if not self._lenient:
+                raise ValueError(
+                    f"extraction_method {draft.extraction_method} requires a source_url "
+                    "(strict mode)"
+                )
+            markers["source_missing"] = True
+
+        async def gate() -> None:
+            # Decision 9: every ARV2 claim is tenant-private, scoped to the workspace that
+            # bought it — so that is the scope the registry gate is asked about too.
+            await check_claim_writable(
+                conn,
+                field_key=draft.field_key,
+                value_json=draft.value_json,
+                reuse_scope=ReuseScope.TENANT_PRIVATE,
+                workspace_id=draft.workspace_id,
+                product_id=draft.product_id,
+            )
+
+        try:
+            await gate()
+        except UnknownFieldError:
+            if not self._lenient:
+                raise
+            await _register_proposed_field(conn, draft)
+            registered, markers["proposed_field"] = True, True
+            await gate()
+        except ValueSchemaError:
+            if not self._lenient:
+                raise
+            markers["schema_valid"] = False
+
+        claim = Claim(
+            entity_id=draft.entity_id,
+            entity_type=draft.entity_type,
+            field_key=draft.field_key,
+            value_json=draft.value_json,
+            source_url=draft.source_url,
+            source_key=draft.source_key,
+            artifact_key=draft.artifact_key,
+            source_tier=TIER_FOR_METHOD[draft.extraction_method],
+            extraction_method=draft.extraction_method,
+            evidence_span=draft.evidence_span,
+            confidence=draft.confidence,
+            observed_at=draft.observed_at,
+            run_id=draft.run_id,
+            research_mode=draft.research_mode,
+            identity_binding=binding,
+            use_class=use_class,
+            reuse_scope=ReuseScope.TENANT_PRIVATE,
+            workspace_id=draft.workspace_id,
+            product_id=draft.product_id,
+            signal_priority=draft.signal_priority,
+            outreach_safe=draft.outreach_safe,
+            write_markers=markers or None,
+        )
+        claim_id = await insert_claim(conn, claim, validate_field=False)
+        return WriteReceipt(
+            claim_id=claim_id,
+            field_key=draft.field_key,
+            markers=markers,
+            registered_field=registered,
+        )
+
+
+async def _register_proposed_field(conn: AsyncConnection, draft: ClaimDraft) -> None:
+    """Master plan §4: an unregistered key is stored and auto-registered as a proposed field."""
+    is_pack = classify_field_key(draft.field_key) is FieldClass.PACK
+    field_def = FieldDef(
+        field_key=draft.field_key,
+        value_type="json",
+        validation=None,
+        tier_plan=(),
+        freshness_ttl=None,
+        pass_kind=PassKind.DEEP,
+        gate=None,
+        # A ``<pack>.*`` field has no safe species or reuse default, and the claim-write boundary is
+        # fail-closed on both — so a proposed pack field declares them. Decision 9 makes the reuse
+        # answer obvious: every ARV2 claim is tenant-private anyway. A canonical key keeps its
+        # class defaults.
+        research_scope=ResearchScope.PROJECT_NEUTRAL if is_pack else None,
+        reuse_scope=ReuseScope.TENANT_PRIVATE if is_pack else None,
+    )
+    await register_field(
+        conn,
+        field_def,
+        value_schema=None,
+        description=draft.field_description or _PROPOSED_DESCRIPTION,
+        pack=field_namespace(draft.field_key) if is_pack else None,
+    )

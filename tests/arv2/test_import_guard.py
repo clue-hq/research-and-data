@@ -34,6 +34,14 @@ ALLOWED_INTERNAL_PREFIXES: tuple[str, ...] = (
     "clue_auth",
     "clue_projections",
     "clue_research.claimstore",
+    # D1: the entity, membership and project-run writers the master plan keeps (not quarantined).
+    "clue_research.identity",
+    "clue_research.membership",
+    "clue_research.durable.project_run",
+    # D1: the pack-loader list (composition root data, not a lane)
+    "clue_api.composition",
+    # D1: the wiring hook that appends the ARV2 pack (outside the lane by design)
+    "clue_api.arv2_wiring",
 )
 
 #: Provider SDKs. Every ARV2 provider call goes over plain HTTP through the wrapper instead.

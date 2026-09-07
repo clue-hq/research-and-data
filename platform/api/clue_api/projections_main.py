@@ -6,6 +6,7 @@ import uvicorn
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from clue_api.arv2_wiring import register_arv2_wiring
 from clue_api.auth_wiring import build_principal_service
 from clue_api.chat import StartupDevPrincipalResolver
 from clue_api.compliance_wiring import register_compliance_wiring
@@ -75,6 +76,11 @@ def build_application(
     if research_views is not None:
         register_compliance_wiring()
         register_narrative_wiring()
+    # Unconditional, unlike its C7-gated neighbours above: this process runs `load_research_packs`
+    # whenever *either* self-serve provisioning or a C7 view is live (see the call below), and the
+    # ARV2 fields must be registered in both cases — appending a loader is a pure list append with
+    # no cost when the packs are never loaded.
+    register_arv2_wiring()
     # FI-4 slice 2 (charter composition-backlog item 2): the live Stage-0 official-surface
     # scrape composition — without it every production `start_recon` refuses before spend.
     # Gated on the SAME flag as the /stage0/setup routes (review BE-M4): an unconfigured

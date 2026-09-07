@@ -37,6 +37,12 @@ The central architecture bet is that verification must be modeled at the claim/d
   human-authority gates + the lenient claim shape gate exist; disposition table + 7-item checklist.
 - `2026-09-07-product-catalog-contract-and-multi-product-ruling.md` — Exa catalog schema final,
   `ProductCatalogResearch@1`, rulings P1–P4 (a project targets a SET of products; one ICP per project).
+- `2026-09-07-arv2-d1-migration-writer-and-answer-key.md` — ARV2 D1 on track-D: migration
+  `65fb2128c904` (priority / outreach-safety / write-markers, owner columns, display_block,
+  display_section_recipe, provider_call_ledger, account_activity_event, `Persona` gains
+  `user`), the five leniency flags, the 38-row ARV2 field pack, the `LenientClaimWriter`, and
+  the Zafran + ten-person answer key loaded as 294 real claims; four rulings, the plan's
+  twelve decisions, the `.env`-sensitive suite caveat, and the D2/D3 follow-ups.
 - `2026-09-07-arv2-r1-step0-and-client-dispatch.md` — ARV2 R1 on track-R: founder rulings (live tests only, native Gemini transcribe exception, keys), Step 0 wrapper/sinks/import guard landed (ee6fe1c94..076f0114a), provider_call_ledger spec, six client worktrees dispatched in parallel.
 - `2026-08-19-live-research-queued-ui-and-fleet-failure.md` — timestamped browser, database, and
   worker evidence for the Insight Health ten-Account approval: why the frontend remains honestly

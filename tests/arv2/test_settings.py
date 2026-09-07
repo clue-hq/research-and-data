@@ -25,6 +25,11 @@ ARV2_SETTING_DEFAULTS: dict[str, object] = {
     "arv2_media_seconds_ceiling": 9000,
     "arv2_media_short_max_seconds": 600,
     "arv2_raw_root": ".artifacts/arv2",
+    "claim_write_lenient": True,
+    "evidence_verbatim_check": "off",
+    "unevidenced_row_purge_enabled": False,
+    "interview_entailment_check": "off",
+    "sensitivity_floor_enabled": True,
 }
 
 ARV2_SECRET_FIELDS = ("ai_ark_api_key", "gemini_api_key")
@@ -92,6 +97,15 @@ def test_env_example_documents_each_setting_with_its_default() -> None:
         assert documented is not None, field_name
         shipped = str(default).lower() if isinstance(default, bool) else str(default)
         assert documented.group(1).strip() == shipped, field_name
+
+
+def test_the_on_off_checks_load_from_their_env_strings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CLAUDE.md: a Literal that rejects its own documented env form is a bug."""
+    monkeypatch.setenv("CLUE_EVIDENCE_VERBATIM_CHECK", "on")
+    monkeypatch.setenv("CLUE_INTERVIEW_ENTAILMENT_CHECK", "on")
+    settings = Settings(_env_file=None)
+    assert settings.evidence_verbatim_check == "on"
+    assert settings.interview_entailment_check == "on"
 
 
 def test_require_secret_returns_a_live_key() -> None:
