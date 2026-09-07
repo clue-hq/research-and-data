@@ -27,6 +27,9 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-09-07-arv2-onboarding-o1-substrate.md` — ARV2 onboarding O1 substrate landed: migration
+  `0aa95f87eb49` (onboarding runs/steps, brand knowledge docs, project_product, product_set_selection
+  gate), one head, smoke green; plus the throwaway-DB residue + `tests/db` isolation defect.
 - `2026-09-07-no-old-lane-gate-may-block-new-lane.md` — **STANDING RULE, re-check at every stage:**
   no Client-KB / readiness / Stage-0-pin mechanism may block a new-lane (ARV2 / Track O) turn; only
   human-authority gates + the lenient claim shape gate exist; disposition table + 7-item checklist.
