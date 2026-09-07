@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -441,3 +442,208 @@ def test_capability_permits_mirrors_the_sql_predicate_including_the_closed_cases
     assert not capability.permits({"ingestion_kind": None})
     assert not capability.permits({"ingestion_kind": 7})
     assert payload_is_claimable((), {"ingestion_kind": "anything"})
+
+
+# --- concurrency slots (2026-09-07: one worker, several chats) -------------------------------
+
+
+class _OverlapHandler(_Handler):
+    """Holds each task for a beat and records how many were in flight at once."""
+
+    def __init__(self, kind: FleetTaskKind, *, hold_s: float = 0.02) -> None:
+        super().__init__(kind)
+        self.in_flight = 0
+        self.peak = 0
+        self.finished = 0
+        self._hold_s = hold_s
+
+    async def handle(self, context: WorkContext) -> WorkResult:
+        self.contexts.append(context)
+        self.in_flight += 1
+        self.peak = max(self.peak, self.in_flight)
+        try:
+            await asyncio.sleep(self._hold_s)
+        finally:
+            self.in_flight -= 1
+            self.finished += 1
+        return WorkResult(outcome="done", references={"work_id": str(context.work_id)})
+
+
+async def _run_until(
+    worker: LeasedWorkWorker, done: Callable[[], bool], *, timeout_s: float = 2.0
+) -> None:
+    """Drive ``worker.run()`` until ``done()`` holds, then stop it and wait for the drain."""
+    running = asyncio.create_task(worker.run())
+    deadline = asyncio.get_running_loop().time() + timeout_s
+    while not done():
+        assert asyncio.get_running_loop().time() < deadline, (
+            "worker never reached the expected state"
+        )
+        await asyncio.sleep(0.005)
+    worker.stop()
+    await asyncio.wait_for(running, timeout=timeout_s)
+
+
+def test_run_overlaps_tasks_up_to_max_concurrency() -> None:
+    async def scenario() -> None:
+        tasks = [_task(FleetTaskKind.AGENT_TURN) for _ in range(3)]
+        queue = _Queue(tasks)
+        leases = _Leases()
+        handler = _OverlapHandler(FleetTaskKind.AGENT_TURN)
+        worker = LeasedWorkWorker(
+            handlers=(handler,),
+            queue=queue,
+            leases=leases,
+            worker_id="worker",
+            poll_interval=0.005,
+            heartbeat_interval=10,
+            lease_ttl=timedelta(seconds=30),
+            max_concurrency=2,
+        )
+
+        await _run_until(worker, lambda: handler.finished == 3)
+
+        # Two slots: the first two claims overlap; the third waits for a slot, never for BOTH.
+        assert handler.peak == 2
+        assert [status for _, status, _ in queue.finished] == [FleetTaskStatus.DONE] * 3
+        assert len(leases.released) == 3
+        assert {context.lease_generation for context in handler.contexts} == {LeaseGeneration(1)}
+
+    asyncio.run(scenario())
+
+
+def test_max_concurrency_one_keeps_the_sequential_drain() -> None:
+    async def scenario() -> None:
+        tasks = [_task(FleetTaskKind.AGENT_TURN) for _ in range(3)]
+        queue = _Queue(tasks)
+        handler = _OverlapHandler(FleetTaskKind.AGENT_TURN)
+        worker = LeasedWorkWorker(
+            handlers=(handler,),
+            queue=queue,
+            leases=_Leases(),
+            worker_id="worker",
+            poll_interval=0.005,
+            heartbeat_interval=10,
+            lease_ttl=timedelta(seconds=30),
+        )
+
+        await _run_until(worker, lambda: handler.finished == 3)
+
+        assert worker.max_concurrency == 1
+        assert handler.peak == 1
+        assert len(queue.finished) == 3
+
+    asyncio.run(scenario())
+
+
+def test_slots_are_shared_across_kinds_not_per_kind() -> None:
+    async def scenario() -> None:
+        turn = _OverlapHandler(FleetTaskKind.AGENT_TURN)
+        design = _OverlapHandler(FleetTaskKind.DESIGN_JOB)
+        queue = _Queue(
+            [
+                _task(FleetTaskKind.AGENT_TURN),
+                _task(FleetTaskKind.AGENT_TURN),
+                _task(FleetTaskKind.DESIGN_JOB),
+                _task(FleetTaskKind.DESIGN_JOB),
+            ]
+        )
+        worker = LeasedWorkWorker(
+            handlers=(turn, design),
+            queue=queue,
+            leases=_Leases(),
+            worker_id="worker",
+            poll_interval=0.005,
+            heartbeat_interval=10,
+            lease_ttl=timedelta(seconds=30),
+            max_concurrency=2,
+        )
+
+        await _run_until(worker, lambda: turn.finished + design.finished == 4)
+
+        # The round-robin hands the two slots to one task of EACH kind first, so neither kind
+        # ever fills the process on its own while the other has work waiting.
+        assert turn.peak == 1
+        assert design.peak == 1
+        assert len(queue.finished) == 4
+
+    asyncio.run(scenario())
+
+
+def test_stop_refuses_new_claims_but_drains_in_flight_work() -> None:
+    async def scenario() -> None:
+        tasks = [_task(FleetTaskKind.AGENT_TURN) for _ in range(2)]
+        queue = _Queue(tasks)
+        leases = _Leases()
+        handler = _OverlapHandler(FleetTaskKind.AGENT_TURN, hold_s=0.05)
+        worker = LeasedWorkWorker(
+            handlers=(handler,),
+            queue=queue,
+            leases=leases,
+            worker_id="worker",
+            poll_interval=0.005,
+            heartbeat_interval=10,
+            lease_ttl=timedelta(seconds=30),
+            max_concurrency=1,
+        )
+
+        running = asyncio.create_task(worker.run())
+        while handler.in_flight == 0:
+            await asyncio.sleep(0.001)
+        worker.stop()
+        await asyncio.wait_for(running, timeout=2.0)
+
+        # The task that was running finished normally; the second was never claimed.
+        assert handler.finished == 1
+        assert len(queue.finished) == 1
+        assert len(leases.released) == 1
+        assert len(queue.rows) == 1
+
+    asyncio.run(scenario())
+
+
+def test_a_supervision_crash_on_one_task_does_not_stop_the_loop() -> None:
+    class _ExplodingLeases(_Leases):
+        def __init__(self, poison: WorkId) -> None:
+            super().__init__()
+            self._poison = poison
+
+        async def acquire(self, *, work_id: WorkId, worker_id: str, ttl: timedelta) -> WorkLeaseRow:
+            if work_id == self._poison:
+                raise RuntimeError("lease store down for this work id")
+            return await super().acquire(work_id=work_id, worker_id=worker_id, ttl=ttl)
+
+    async def scenario() -> None:
+        poisoned = _task(FleetTaskKind.AGENT_TURN)
+        healthy = _task(FleetTaskKind.AGENT_TURN)
+        queue = _Queue([poisoned, healthy])
+        handler = _OverlapHandler(FleetTaskKind.AGENT_TURN)
+        worker = LeasedWorkWorker(
+            handlers=(handler,),
+            queue=queue,
+            leases=_ExplodingLeases(poisoned.work_id),
+            worker_id="worker",
+            poll_interval=0.005,
+            heartbeat_interval=10,
+            lease_ttl=timedelta(seconds=30),
+            max_concurrency=2,
+        )
+
+        await _run_until(worker, lambda: handler.finished == 1)
+
+        # The healthy task ran to completion even though the poisoned claim blew up in its
+        # supervised task; the poisoned one was neither finished nor requeued by the worker.
+        assert [task_id for task_id, _, _ in queue.finished] == [healthy.task_id]
+        assert handler.contexts[0].work_id == healthy.work_id
+
+    asyncio.run(scenario())
+
+
+def test_max_concurrency_must_be_positive() -> None:
+    with pytest.raises(ValueError, match="max_concurrency"):
+        LeasedWorkWorker(
+            handlers=(_Handler(FleetTaskKind.AGENT_TURN),),
+            queue=_Queue([]),
+            leases=_Leases(),
+            max_concurrency=0,
+        )

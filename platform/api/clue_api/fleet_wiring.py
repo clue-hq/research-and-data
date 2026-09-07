@@ -394,6 +394,7 @@ def build_multi_work_worker(
         lease_ttl=timedelta(seconds=settings.fleet_lease_ttl_s),
         heartbeat_interval=settings.fleet_heartbeat_interval_s,
         task_stale_after=timedelta(seconds=settings.fleet_task_stale_after_s),
+        max_concurrency=settings.fleet_max_concurrency,
     )
 
 

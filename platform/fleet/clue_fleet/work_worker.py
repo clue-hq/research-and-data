@@ -110,9 +110,12 @@ class LeasedWorkWorker:
         lease_ttl: timedelta = DEFAULT_LEASE_TTL,
         heartbeat_interval: float = 10.0,
         task_stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
+        max_concurrency: int = 1,
     ) -> None:
         if not handlers:
             raise ValueError("a leased worker requires at least one work handler")
+        if max_concurrency < 1:
+            raise ValueError("max_concurrency must be at least 1")
         if heartbeat_interval * 2 >= lease_ttl.total_seconds():
             raise ValueError(
                 "heartbeat_interval * 2 must be < lease_ttl "
@@ -134,6 +137,14 @@ class LeasedWorkWorker:
         self._lease_ttl = lease_ttl
         self._heartbeat_interval = heartbeat_interval
         self._task_stale_after = task_stale_after
+        # How many claimed tasks this ONE process supervises at once. Each in-flight task keeps
+        # its own lease, heartbeat and finish path; the slots only decide how many claims the
+        # loop makes before it waits. 1 reproduces the original strictly sequential drain.
+        # Same-thread turns can never overlap regardless of this number — the dispatcher offers
+        # at most one live ``agent_turn`` per thread (its per-thread advisory lock) — so the
+        # slots buy cross-thread parallelism: a second chat's turn no longer queues behind a
+        # first chat's minutes-long design turn.
+        self._max_concurrency = max_concurrency
         self._stop = asyncio.Event()
 
     def stop(self) -> None:
@@ -143,12 +154,70 @@ class LeasedWorkWorker:
     def stopping(self) -> bool:
         return self._stop.is_set()
 
+    @property
+    def max_concurrency(self) -> int:
+        return self._max_concurrency
+
     async def run(self) -> None:
-        log.info("worker.start", worker_id=self.worker_id)
-        while not self._stop.is_set():
-            if not await self.drain_once():
-                await self._sleep(self._poll_interval)
+        log.info(
+            "worker.start",
+            worker_id=self.worker_id,
+            max_concurrency=self._max_concurrency,
+        )
+        in_flight: set[asyncio.Task[None]] = set()
+        try:
+            while not self._stop.is_set():
+                if len(in_flight) < self._max_concurrency:
+                    claimed = await self._claim_once()
+                    if claimed is not None:
+                        task, handler = claimed
+                        supervised = asyncio.create_task(self._run_task(task, handler))
+                        in_flight.add(supervised)
+                        supervised.add_done_callback(in_flight.discard)
+                        supervised.add_done_callback(self._log_supervision_crash)
+                        # Keep claiming while slots remain — a waiting task must not sit
+                        # behind an unrelated one that is already running.
+                        continue
+                # Nothing claimable right now, or every slot is busy: wait for the poll
+                # interval, a stop, or (when full) the first slot to free — whichever is first.
+                await self._idle(in_flight)
+        finally:
+            if in_flight:
+                # A stop drains: the handlers already see ``stop_requested`` and wind down on
+                # their own terms; the loop only refuses NEW claims and waits for them.
+                await asyncio.gather(*in_flight, return_exceptions=True)
         log.info("worker.stop", worker_id=self.worker_id)
+
+    async def _idle(self, in_flight: set[asyncio.Task[None]]) -> None:
+        if not in_flight:
+            await self._sleep(self._poll_interval)
+            return
+        stop_waiter = asyncio.ensure_future(self._stop.wait())
+        try:
+            await asyncio.wait(
+                {*in_flight, stop_waiter},
+                timeout=self._poll_interval,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        finally:
+            if not stop_waiter.done():
+                stop_waiter.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await stop_waiter
+
+    def _log_supervision_crash(self, supervised: asyncio.Task[None]) -> None:
+        """A supervised task that raised OUTSIDE ``_run_task``'s own error handling (a lease
+        acquire or queue finish that blew up) must not vanish silently just because it ran as
+        a task rather than inline: log it loudly. The loop itself keeps draining."""
+        if supervised.cancelled():
+            return
+        error = supervised.exception()
+        if error is not None:
+            log.error(
+                "worker.supervision_crashed",
+                worker_id=self.worker_id,
+                exc_info=error,
+            )
 
     def _capabilities(self, kind: FleetTaskKind) -> tuple[TaskCapability, ...]:
         """What this worker can run within ``kind`` — empty means "the whole kind" (R3-B).
@@ -166,6 +235,18 @@ class LeasedWorkWorker:
         return tuple(handler.task_capabilities)
 
     async def drain_once(self) -> bool:
+        """Claim one task (fair round-robin across kinds) and run it to completion inline.
+
+        The sequential unit ``run()`` was built from before it grew concurrency slots; kept as
+        the one-step surface tests and embedders drive directly."""
+        claimed = await self._claim_once()
+        if claimed is None:
+            return False
+        task, handler = claimed
+        await self._run_task(task, handler)
+        return True
+
+    async def _claim_once(self) -> tuple[WorkTaskRow, WorkHandler] | None:
         """Fair round-robin claim across registered top-level task kinds."""
         for offset in range(len(self._kind_order)):
             index = (self._next_kind + offset) % len(self._kind_order)
@@ -187,9 +268,8 @@ class LeasedWorkWorker:
             )
             if task is not None:
                 self._next_kind = (index + 1) % len(self._kind_order)
-                await self._run_task(task, self._handlers[kind])
-                return True
-        return False
+                return task, self._handlers[kind]
+        return None
 
     async def _run_task(self, task: WorkTaskRow, handler: WorkHandler) -> None:
         t_acquire = asyncio.get_running_loop().time()

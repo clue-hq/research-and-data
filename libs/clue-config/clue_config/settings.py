@@ -149,6 +149,12 @@ class Settings(BaseSettings):
     # worker and re-owned. Sized to outlive the lease TTL (takeover is lease-gated first). Env:
     # ``CLUE_FLEET_TASK_STALE_AFTER_S``.
     fleet_task_stale_after_s: float = 60.0
+    # How many claimed tasks ONE fleet worker process supervises at once (2026-09-07, founder:
+    # "the second chat's task should not be queued just because a task is already in action").
+    # Cross-thread only by construction — the agent-turn dispatcher offers at most one live turn
+    # per thread — so this is the number of different chats/jobs one process drives in parallel.
+    # 1 restores the original strictly sequential drain. Env: ``CLUE_FLEET_MAX_CONCURRENCY``.
+    fleet_max_concurrency: int = 4
     # The deep-phase concurrency window — account jobs in flight at once (REQ-10 ~16–32; the
     # accounts-per-pass half of the cost dial). Env: ``CLUE_FLEET_DEEP_WINDOW``.
     fleet_deep_window: int = 16

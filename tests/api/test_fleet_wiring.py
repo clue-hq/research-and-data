@@ -185,6 +185,27 @@ def test_multi_worker_accepts_one_optional_subject_neutral_entity_handler() -> N
         )
 
 
+def test_multi_worker_threads_the_concurrency_slots_from_settings() -> None:
+    """2026-09-07: one worker process drives several chats at once. The slot count is policy
+    (``CLUE_FLEET_MAX_CONCURRENCY``), defaulting to 4; the library class itself still defaults
+    to the sequential 1 so embedders that never asked for slots are unchanged."""
+    graph = _CompositionHandler(FleetTaskKind.EXECUTE_GRAPH)
+    assert (
+        build_multi_work_worker(
+            _settings(fleet_max_concurrency=3),
+            driver=build_fleet_run_driver(),
+            graph_handler=graph,
+        ).max_concurrency
+        == 3
+    )
+    assert (
+        build_multi_work_worker(
+            _settings(), driver=build_fleet_run_driver(), graph_handler=graph
+        ).max_concurrency
+        == 4
+    )
+
+
 def test_multi_worker_accepts_one_optional_agent_turn_handler() -> None:
     """FI Lane D D2: the conversation drain is optional and kind-guarded like its neighbours.
 
