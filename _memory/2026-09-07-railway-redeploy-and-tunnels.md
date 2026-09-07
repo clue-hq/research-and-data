@@ -69,3 +69,20 @@ turns still never overlap (dispatcher's per-thread advisory lock). Tests: 6 new 
 stop drains in-flight, supervision crash isolated, N≥1), 1 in `tests/api/test_fleet_wiring.py`;
 `tests/fleet` 82 green, ruff + mypy clean. Colombo worker restarted 19:51 IST on the new code
 (`worker.start max_concurrency=4`). Not proven live yet — needs two chats sending at once.
+
+## 2026-09-08 00:15–00:45 IST — provisioning 404, env-parity audit, flags recorded
+- New-account sign-in on app.cluehq.ai ended in "Provisioning failed with status 404": `POST
+  /auth/v1/provision` mounts only behind `CLUE_SELF_SERVE_PROVISIONING_ENABLED`, which had been
+  exported by hand on demo night and never written to `.env`, so the 2026-09-06 restart from `.env`
+  dropped it (13 × 404 in the platform log). Set to 1 in `.env` + `.env.example`; platform API and
+  fleet worker restarted (00:31). MISTAKE recorded: the restart script printed 2 live leases and did
+  not gate on them — a website turn (run_4a39f9dd, doc_487fd7ab) was in flight on the old worker. It
+  survived: SIGTERM only stops NEW claims, the inline design lane passes its own stop Event, and the
+  agent-turn handler aborts only on a user Stop; the old process drained it to completion.
+- Env-parity audit (founder request): 46 of 132 `clue_config.Settings` fields and 41–43 of 75
+  `py_lumen_config.Settings` fields had no line in the env files. Appended at CODE defaults to
+  `.env`, `.env.example`, and `subsystems/clue-design/.env.example` (None/secret/JSON-list fields as
+  commented lines). Lesson: an EMPTY value for a tuple field (`CLUE_RECIPE1_WORKSPACE_ALLOWLIST=`)
+  makes pydantic-settings json-decode "" and the app cannot start — caught by the load check before
+  any restart. Both Settings classes verified loading from the sourced `.env`. Noted for the founder:
+  `LUMEN_AD_DNA_MODEL` code default is grok-4.5 while every other model pin is grok-4.6.
