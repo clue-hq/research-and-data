@@ -33,9 +33,11 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     _create_onboarding_tables()
+    _create_project_product()
 
 
 def downgrade() -> None:
+    _drop_project_product()
     _drop_onboarding_tables()
 
 
@@ -194,3 +196,63 @@ def _drop_onboarding_tables() -> None:
     op.execute("DROP TABLE onboarding_step")
     op.execute("DROP INDEX onboarding_run_workspace_requested")
     op.execute("DROP TABLE onboarding_run")
+
+
+# --- §6.2 the versioned project product set (rulings P1/P2) ------------------------------------
+
+
+def _create_project_product() -> None:
+    # The composite FKs below need matching unique targets; product_id / project_id are already
+    # primary keys, so these indexes add no new invariant — they only make the triple referenceable.
+    op.execute(
+        "CREATE UNIQUE INDEX product_identity_triple "
+        "ON product (product_id, brand_id, workspace_id)"
+    )
+    op.execute(
+        "CREATE UNIQUE INDEX project_identity_triple "
+        "ON project (project_id, brand_id, workspace_id)"
+    )
+    op.execute(
+        """
+        CREATE TABLE project_product (
+            workspace_id          text NOT NULL,
+            project_id            text NOT NULL,
+            brand_id              text NOT NULL,
+            product_id            text NOT NULL,
+            selection_version     integer NOT NULL,
+            gate_id               uuid NOT NULL,
+            confirmed_by_user_id  text NOT NULL,
+            confirmed_at          timestamptz NOT NULL DEFAULT now(),
+
+            CONSTRAINT project_product_pkey PRIMARY KEY (project_id, selection_version, product_id),
+            CONSTRAINT project_product_version_positive CHECK (selection_version >= 1),
+            -- Same workspace AND same brand, structurally (the pin project.product_id had).
+            CONSTRAINT project_product_product_fk FOREIGN KEY (product_id, brand_id, workspace_id)
+                REFERENCES product (product_id, brand_id, workspace_id),
+            CONSTRAINT project_product_project_fk FOREIGN KEY (project_id, brand_id, workspace_id)
+                REFERENCES project (project_id, brand_id, workspace_id),
+            CONSTRAINT project_product_user_fk FOREIGN KEY (confirmed_by_user_id)
+                REFERENCES platform_user (user_id)
+        )
+        """
+    )
+    op.execute(
+        "CREATE INDEX project_product_current "
+        "ON project_product (project_id, selection_version DESC)"
+    )
+    # gate_id is the answered product_set_selection gate. It is deliberately NOT a foreign key:
+    # clue_spine sits below clue_api.agent_gate, and the answer row (agent_gate_answer, PK gate_id)
+    # is the durable proof the route checks before calling confirm_project_product_set.
+    op.execute(
+        "CREATE TRIGGER project_product_append_only "
+        "BEFORE UPDATE OR DELETE ON project_product FOR EACH ROW "
+        "EXECUTE FUNCTION execution_reject_append_only_mutation()"
+    )
+
+
+def _drop_project_product() -> None:
+    op.execute("DROP TRIGGER project_product_append_only ON project_product")
+    op.execute("DROP INDEX project_product_current")
+    op.execute("DROP TABLE project_product")
+    op.execute("DROP INDEX project_identity_triple")
+    op.execute("DROP INDEX product_identity_triple")
