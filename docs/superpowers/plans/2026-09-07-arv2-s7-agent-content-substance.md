@@ -6,6 +6,9 @@ the substance of every agent-facing file is put in front of the founder and disc
 implementer writes the five files verbatim from this document, the reviewer (Fable) checks them
 against it, and R2's composition sha-pins them (`ARV2-WORK-SPLIT.md` S7 / A6).
 
+**Rev 3 (2026-09-08, same day) — the ICP hard gates are lenient fit verdicts, never an early exit;**
+see prompt §2 item 5 and §6 item 1. The `gate_failed` manual row is gone.
+
 **Rev 2 (2026-09-08) — founder rulings on limits, and a completeness pass against every PoC
 charter.** Rev 1 had proposed effort rungs with round ceilings of 24 / 14 / 6, a total tool-call
 cap and a consecutive-zero-yield cap. The founder ruled all of that out: *the agent runs in full
@@ -116,10 +119,18 @@ Substance, in order. Every rule traces to a PoC SYSTEM block or a recorded lesso
    given to save spend, not to be defended. If a primary source contradicts one of them, report the
    contradiction with its quote rather than suppress it (the smoke run's model correctly overruled
    an operator-supplied CEO name from the company's own About page).
-5. **The ICP is your charter.** Read `context/icp.md` first. Its hard gates decide *whether* to go
-   deep (a failed gate is finalized honestly with the gate named, not researched around — see §6);
-   its qualifier-field descriptions are your research instructions; its persona map, and the
-   persona document's `titles[]`, are the only committee vocabulary you speak.
+5. **The ICP is your charter, read leniently.** Read `context/icp.md` first. Its qualifier-field
+   descriptions are your research instructions; its persona map, and the persona document's
+   `titles[]`, are the only committee vocabulary you speak. Its hard gates are the client's own
+   words for who they sell to. **[rev 3, founder ruling 2026-09-08] They never decide whether you
+   research, and they are never strict.** A human launched this account, so it gets the full
+   ladder regardless of any gate (seam 1: nothing on the research side vetoes a launch). For each
+   gate you record a graded fit verdict with its evidence — `pass` when the evidence meets the rule,
+   `likely` when it comes close (a Series A 40 months ago; a GTM role on LinkedIn but not the
+   board), `unclear` when you found nothing either way, `fail` **only** on positive contrary
+   evidence (an HQ evidenced outside the US; a stated "bootstrapped, no outside capital"). NOT FOUND
+   is `unclear`, never `fail`. The verdicts are information for the human, who decides fit; you
+   exclude nothing.
 6. **Free-first ordering** (Appendix A law 9): ATS board → RSS / YouTube → own site → AI Ark
    company + name-scoped people → Exa gap searches → one deep call. A known URL is fetched, never
    searched for (the deep pass once went to the wrong `growthspree` domain while the $0.004 page
@@ -282,16 +293,18 @@ every code the driver can emit.
 | `catalog_key_unknown:<key>` | A proposed field was recorded, not refused | Nothing to do; it is already a proposed field |
 | `already_established:<field>` | You asked for a fact the block already holds | Drop the field from the call |
 | `identical_call_repeated` | Same tool, same arguments, after a refusal | Change the arguments as named, make the named call, or finalize |
-| `gate_failed:<gate>` | The ICP hard gate failed on evidence | See §6 item 1 |
 | `finalization_already_proposed` | The decision is made | Emit the proposal unchanged and stop |
 
 Rev 1's `round_shape_rejected` row is gone with the per-round cap.
 
 ## 6. What still needs the founder's word before the files are written
 
-1. Whether `gate_failed` finalizes with only the gate evidence, or still runs the free rungs
-   (ATS, careers page, own site) so the account screen is never empty. Recommendation: run the
-   free rungs — they cost nothing and the screen should show *why* the gate failed.
+1. ~~Whether `gate_failed` finalizes early or still runs the free rungs.~~ **RULED 2026-09-08:
+   dissolved.** There is no early exit and no `gate_failed` refusal. Every launched account gets the
+   full ladder; the ICP hard gates produce graded, lenient fit verdicts (`pass | likely | unclear |
+   fail`, with `fail` only on positive contrary evidence) that the finalization summary carries per
+   gate with the claim ids behind each (`fit_verdicts`). The human decides fit; the agent excludes
+   nothing. Pre-launch qualification is R4 discovery's job, not R2's.
 2. Whether every section-11 negatives claim is born `outreach_safe = false`, or only the sensitive
    subset. Recommendation: all of section 11 (z7's rule: anything you would not say out loud in a
    first email).
@@ -299,4 +312,4 @@ Rev 1's `round_shape_rejected` row is gone with the per-round cap.
 4. The intent-sweep `mode` on the structuring client (an R1 client extension R2 would own).
 
 Ruled 2026-09-08 and closed: the stop policy (§1), full mode only (§1), the tool names (§0 stands
-unless renamed at R2 planning).
+unless renamed at R2 planning), the gates (item 1 above).

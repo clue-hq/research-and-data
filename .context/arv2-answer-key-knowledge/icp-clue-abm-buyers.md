@@ -9,7 +9,7 @@ hard_gates:
     test: "The HQ city and state on the company's own site, its LinkedIn page, or its funding announcement dateline is in the United States."
   - key: stage
     rule: "A named, priced round of Series A or later, announced within the last 36 months"
-    test: "A dated announcement (press release, lead investor's post, or the company's own newsroom) that names the round and at least one investor. Seed-only, bootstrapped, public, and PE-owned companies fail. Self-funded operators fail until master plan D9 rules on an equivalence clause."
+    test: "A dated announcement (press release, lead investor's post, or the company's own newsroom) that names the round and at least one investor. A seed-only, bootstrapped, public or PE-owned company is recorded as outside the stated stage — a verdict for the human, never a reason to stop researching. A self-funded operator is recorded as unclear pending master plan D9's equivalence clause."
   - key: hiring
     rule: "Actively hiring now, with at least one open go-to-market role"
     test: "At least one requisition listed today on the company's own careers page or ATS board with a GTM title: sales, marketing, growth, ABM, demand generation, SDR or BDR, partnerships, revenue operations."
@@ -182,5 +182,7 @@ From https://www.cluehq.ai, fetched live on 2026-08-31:
 **ABM-shaped: yes.** The buyer is a small, senior, finite committee (a founder or CRO, a marketing
 or growth lead, the person who runs outbound, a technical or operations evaluator, and finance)
 reachable on LinkedIn, and the value is per-account and countable. The floor holds as long as the
-stage and hiring gates are enforced as pass/fail; loosening either turns the list back into a
-funnel.
+stage and hiring gates shape the list at discovery time, before a human approves the cohort;
+loosening them there turns the list back into a funnel. Once an account is launched it is
+researched in full, and the gates are recorded as lenient fit verdicts for the human, never as a
+reason to stop.

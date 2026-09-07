@@ -64,3 +64,13 @@ lacks credit/plan for people + export. User action; re-run `tests/arv2/test_ai_a
   search, name-scoped-only people lookups, audio over video. Structuring gained the narrow intent
   sweep (needs a `mode` on the R1 client — R2 owns) and a field-meaning review before write.
 - Still open for the founder: §6 items 1–4 of the substance doc.
+
+## 2026-09-08 — S7 rev 3: ICP hard gates are lenient fit verdicts, never an early exit
+- Founder was alarmed by "gate" and asked for leniency. Ruled + applied: no `gate_failed` refusal,
+  no early finalize; every launched account gets the full ladder (seam 1: research never vetoes a
+  launch). Per gate the agent records `pass | likely | unclear | fail` with claim ids in the
+  finalization summary (`fit_verdicts`); `fail` only on positive contrary evidence, NOT FOUND =
+  `unclear`; the human decides fit. Pre-launch qualification belongs to R4 discovery.
+- Stand-in ICP softened accordingly (stage test wording; §7 floor paragraph). The dev DB holds the
+  earlier rendered version — reloading mints a new confirmed version; do it before the R2 live run.
+- §6 open items now 2–4 only.
