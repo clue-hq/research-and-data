@@ -108,3 +108,10 @@ selected" state; all are quarantine-bound (Phase 6).
   (same head; second to land runs `alembic merge`), `settings.py` + `.env.example` (hand merge),
   and **O1 must not touch `clue_core.enums.Persona`** (D1 adds `user`). Recorded in the plan §9.
 - Six decision boxes O-D1–O-D6 still open on Aryan's side (explained to him 2026-09-07 evening).
+
+## Addendum 4: onboarding plan RATIFIED (Aryan, 2026-09-07 evening) — v1.1
+O-D1 grok-4.6 + **effort blank (model default)**; O-D2 per-product `medium`; O-D3 reviews in
+**fast** recon; O-D4 contracts stay as plan sections; O-D5 ICP gate @2 over artifact refs,
+`synthesize_icps` off the new profile; O-D6 evidence tool default ON. Next: O1 + O2 implementation
+plan (writing-plans), then charters for two parallel worktrees; O1 must respect the D1 rule
+(Persona enum untouched; alembic merge if second).

@@ -1,14 +1,15 @@
 # ARV2 ONBOARDING PLAN — Track O: onboarding as a research pipeline, the synthesis agent, and the Head-of-ABM integration
 
-**Status:** PROPOSED for Aryan's rulings (decision boxes O-D1–O-D6 in §12). Version 1.0,
-2026-09-07. Once initialed, this is the authoritative plan for Track O; the master plan's Track O
-paragraph points here.
+**Status:** RATIFIED by Aryan 2026-09-07 — all six decision boxes O-D1–O-D6 ruled as recommended
+(O-D1 with the addition: reasoning effort stays at the model default). Version 1.1. This is the
+authoritative plan for Track O; the master plan's Track O paragraph points here. Shashank's column
+in §12 is open.
 
 **Parent:** `ARV2-MASTER-PLAN.md` (Track O). **Children already written:**
 `ARV2-PRODUCT-CATALOG-CONTRACT.md` (lineup + product-set gate + rulings P1–P4),
 `ARV2-COMPANY-OVERVIEW-CONTRACT.md` (overview, live-validated). The three remaining research
 contracts (reviews, per-product, evidence tool) and the synthesis-agent contract are sections of
-this document (§4–§6) rather than separate files, until a founder rules otherwise (O-D6).
+this document (§4–§6) rather than separate files (O-D4, ruled).
 
 **Standing rule** (`ARV2-PRODUCT-CATALOG-CONTRACT.md` §10;
 `_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md`): nothing on any path in this plan may
@@ -52,14 +53,14 @@ POST /onboarding (domain, brand)  ──►  onboarding_run row; driven on the F
    │    ├─ overview   Exa Agent, effort high      → company/overview.md          (§4.2)
    │    ├─ lineup     Exa search, deep-reasoning  → product/catalog.md            (§4.1)
    │    │                └─ ProductCatalogSynchronizer → product rows + lineage
-   │    ├─ reviews    Exa Agent, effort medium    → proof/customer-reviews.md     (§4.3)   [O-D3]
+   │    ├─ reviews    Exa Agent, effort medium    → proof/customer-reviews.md     (§4.3)   fast (O-D3)
    │    └─ synthesis  agent turn (reads the three files above)
    │            ├─ audience/icp-<key>.md   ×2–3      status: proposed            (§5, §6.1)
    │            └─ audience/persona-<key>.md  per ICP                            (§5, §6.2)
    │                  └─ evidence tool: exa_search_evidence@1, one call per role  (§4.5)
    │
    └─ BACKGROUND
-        └─ per-product  Exa Agent, effort O-D2, one run per catalog entry, concurrency-capped
+        └─ per-product  Exa Agent, effort medium (O-D2), one run per catalog entry, concurrency-capped
                                                 → product/<slug>.md                (§4.4)
 
 brand_knowledge_document rows: (workspace, brand, folder, path, kind, version, status, artifact ref, step ref)
@@ -215,7 +216,7 @@ Rendered under *Proof*.
 
 ### 4.4 Per-product research — `ProductResearch@1` (draft, background)
 
-Exa Agent, effort **O-D2**. One run per product row; the query names the product, the company, the
+Exa Agent, effort **`medium`** (O-D2; per-deployment switch to `high`). One run per product row; the query names the product, the company, the
 `official_url` from the catalog (a known URL is fetched, never searched for — Appendix A law), and
 the sibling product names so the model does not conflate them.
 
@@ -293,7 +294,7 @@ go-to-market).
 
 ```yaml
 role: onboarding_synthesis
-model_id: <O-D1>                 # overridable by ONBOARDING_SYNTHESIS_AGENT_MODEL (.env.example)
+model_id: x-ai/grok-4.6          # O-D1; overridable by ONBOARDING_SYNTHESIS_AGENT_MODEL; effort blank = model default
 prompt: onboarding-synthesis v1
 skills: [icp-synthesis v1, audience-persona v1]
 tools: [exa_search_evidence@1]   # + framework tools ls/read_file/write_file/edit_file/glob/grep
@@ -522,11 +523,11 @@ accounts screens; claim extraction from any artifact; deletion of the old recon 
 | `CLUE_ONBOARDING_V2_ENABLED` | `false` until O7 | routes `POST /onboarding` to the new driver; `CLUE_SELF_SERVE_PROVISIONING_ENABLED` stays `false` |
 | `CLUE_ONBOARDING_OVERVIEW_EFFORT` | `high` | Exa Agent effort for 4.2 |
 | `CLUE_ONBOARDING_REVIEWS_EFFORT` | `medium` | 4.3 |
-| `CLUE_ONBOARDING_PRODUCT_EFFORT` | O-D2 | 4.4 |
-| `CLUE_ONBOARDING_REVIEWS_PHASE` | O-D3 (`fast`/`background`) | when 4.3 runs |
+| `CLUE_ONBOARDING_PRODUCT_EFFORT` | `medium` (O-D2) | 4.4; raise to `high` per deployment if product files read thin |
+| `CLUE_ONBOARDING_REVIEWS_PHASE` | `fast` (O-D3) | when 4.3 runs (`fast`/`background`) |
 | `CLUE_ONBOARDING_MAX_PARALLEL_RUNS` | `6` | background fan-out cap |
 | `CLUE_ONBOARDING_PERSONA_EVIDENCE_ENABLED` | `true` | the evidence tool |
-| `ONBOARDING_SYNTHESIS_AGENT_MODEL` / `_EFFORT` | O-D1 / blank | agent-model block |
+| `ONBOARDING_SYNTHESIS_AGENT_MODEL` / `_EFFORT` | `x-ai/grok-4.6` / blank (O-D1: default reasoning) | agent-model block |
 
 `CLUE_EXA_API_KEY` already exists and is reused.
 
@@ -546,11 +547,11 @@ each close-out.
 
 | # | Decision | Recommendation | Aryan | Shashank |
 |---|---|---|---|---|
-| O-D1 | Synthesis agent model (`ONBOARDING_SYNTHESIS_AGENT_MODEL`) | `x-ai/grok-4.6`, same as every other deepagent on this branch; change it in env, never by a new profile version | ☐ | ☐ |
-| O-D2 | Per-product Exa Agent effort | `medium` ($0.10; ~$1.20 for a 12-product company); raise to `high` per deployment if the product files read thin | ☐ | ☐ |
-| O-D3 | Customer-reviews run in fast recon or background | **fast** — the synthesis agent's ICP gates and persona pains are better with review themes, and `medium` effort keeps it under two minutes | ☐ | ☐ |
-| O-D4 | O0 form: this single plan with §4–§7 as sections, or separate contract docs per call | this document; split a section out only when it changes independently | ☐ | ☐ |
-| O-D5 | One ICP-confirmation gate kind over artifact refs (`@2`) replaces the `icp_spec`-row kind for new projects; `synthesize_icps` retired on the new profile | Yes | ☐ | ☐ |
-| O-D6 | Evidence tool default on (`CLUE_ONBOARDING_PERSONA_EVIDENCE_ENABLED=true`) | Yes; per-deployment off switch exists | ☐ | ☐ |
+| O-D1 | Synthesis agent model (`ONBOARDING_SYNTHESIS_AGENT_MODEL`) | `x-ai/grok-4.6`, same as every other deepagent on this branch; change it in env, never by a new profile version | ✓ (2026-09-07) — **and `ONBOARDING_SYNTHESIS_AGENT_MODEL_EFFORT` stays blank: model-default reasoning only** | ☐ |
+| O-D2 | Per-product Exa Agent effort | `medium` ($0.10; ~$1.20 for a 12-product company); raise to `high` per deployment if the product files read thin | ✓ (2026-09-07) | ☐ |
+| O-D3 | Customer-reviews run in fast recon or background | **fast** — the synthesis agent's ICP gates and persona pains are better with review themes, and `medium` effort keeps it under two minutes | ✓ (2026-09-07) | ☐ |
+| O-D4 | O0 form: this single plan with §4–§7 as sections, or separate contract docs per call | this document; split a section out only when it changes independently | ✓ (2026-09-07) | ☐ |
+| O-D5 | One ICP-confirmation gate kind over artifact refs (`@2`) replaces the `icp_spec`-row kind for new projects; `synthesize_icps` retired on the new profile | Yes | ✓ (2026-09-07) | ☐ |
+| O-D6 | Evidence tool default on (`CLUE_ONBOARDING_PERSONA_EVIDENCE_ENABLED=true`) | Yes; per-deployment off switch exists | ✓ (2026-09-07) | ☐ |
 
 Open from elsewhere, unchanged: D9 (Series A equivalence), Shashank's initials on D14–D17.
