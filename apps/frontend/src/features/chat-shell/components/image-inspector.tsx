@@ -398,7 +398,7 @@ function AdTextInspector({
             value={state.content}
           />
         </InspectorField>
-        <InspectorField label="Color"><ColorControl color={colorRow.color} disabled={inert} fixtureFallback={false} onColorChange={colorRow.onColorChange} onTokenChange={colorRow.onTokenChange} options={paletteOptions} /></InspectorField>
+        <InspectorField label="Color"><ColorControl color={colorRow.color} disabled={inert} onColorChange={colorRow.onColorChange} onTokenChange={colorRow.onTokenChange} options={paletteOptions} /></InspectorField>
         <InspectorField label="Font"><InspectorSelect disabled={inert} label="Font family" onChange={(value) => setValue("fontFamily", value)} options={fontOptions} value={state.fontFamily} /></InspectorField>
         <div className={styles.fieldGrid}>
           {/* §2 delta (contract row 2): the size select becomes a free number. */}
