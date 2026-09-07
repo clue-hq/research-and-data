@@ -58,6 +58,24 @@ class ProviderTransportError(Arv2Error):
         self.last_error = last_error
 
 
+class RawScrubFailed(Arv2Error):
+    """Appendix A law 3's scrubber raised, so no body could be safely persisted or returned.
+
+    The scrubber runs *before* anything else sees the body, and its output replaces the response
+    for the rest of the call. When it fails there is therefore no body the wrapper is allowed to
+    keep — but the attempt still happened and was still paid for, so the wrapper writes a
+    **body-less** raw record (status, redacted headers, body sha256 and byte count) and a result
+    ledger row with ``error_code='raw_scrub_failed'`` before raising this. ``raw_ref`` cites that
+    record: the money trail and the attempt trail stay complete even though the bytes are gone.
+    """
+
+    def __init__(self, provider: str, raw_ref: str | None, reason: str) -> None:
+        super().__init__(f"{provider} raw scrubber failed: {reason} (raw_ref={raw_ref})")
+        self.provider = provider
+        self.raw_ref = raw_ref
+        self.reason = reason
+
+
 class RawParseError(Arv2Error):
     """A saved raw body could not be parsed as the caller expected.
 

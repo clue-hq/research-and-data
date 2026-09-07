@@ -25,8 +25,12 @@ from typing import Literal, Protocol
 
 #: Header names whose value is a credential. Matched case-insensitively and masked *before* a raw
 #: record is built, so no code path exists that could write a key to disk (Global Constraint 5).
+#:
+#: ``x-goog-upload-url`` is not an API key but is a *bearer capability*: the Files API returns it
+#: from ``files.start`` and its holder can push bytes into our Gemini storage, on our billing,
+#: without any other credential. A raw record is a durable artifact at D1/A7, so it is masked here.
 SECRET_HEADERS: frozenset[str] = frozenset(
-    {"authorization", "x-token", "x-api-key", "x-goog-api-key"}
+    {"authorization", "x-token", "x-api-key", "x-goog-api-key", "x-goog-upload-url"}
 )
 
 #: Query parameters whose value is a credential. Gemini's native API takes its key as ``?key=``,
@@ -49,9 +53,17 @@ CallOutcome = Literal[
 
 
 def redact_headers(headers: Mapping[str, str]) -> dict[str, str]:
-    """Mask every credential-bearing header value (case-insensitive on the name)."""
+    """Mask every credential-bearing header value (case-insensitive on the name).
+
+    A name in :data:`SECRET_HEADERS` masks the whole value. Every *other* value is still run
+    through :func:`redact_url`, because a header value can carry a credential in a URL of its own —
+    the Files API answers ``files.start`` with an ``upload_id``-bearing capability URL, and
+    redacting only the *request* URL of the next call leaves that first response header verbatim
+    on disk. For a value with no credential parameter in it the substitution is a no-op, so this
+    costs nothing and closes the class of leak rather than one instance of it.
+    """
     return {
-        name: (_MASK if name.lower() in SECRET_HEADERS else value)
+        name: (_MASK if name.lower() in SECRET_HEADERS else redact_url(value))
         for name, value in headers.items()
     }
 
@@ -73,13 +85,20 @@ def sha256_hex(body: bytes) -> str:
 
 @dataclass(frozen=True)
 class RawRequest:
-    """The request as it is safe to persist: URL and headers already redacted."""
+    """The request as it is safe to persist: URL and headers already redacted.
+
+    ``body_text`` is present only when the body is small enough to inline and is not declared
+    binary; otherwise ``body_sha256`` and ``body_bytes`` stand in for it, so a base64-encoded
+    audio clip is content-addressed rather than copied into the record (see
+    ``calls.MAX_INLINE_REQUEST_CHARS``).
+    """
 
     method: str
     url: str
     headers: Mapping[str, str] = field(default_factory=dict)
     body_text: str | None = None
     body_sha256: str | None = None
+    body_bytes: int = 0
 
 
 @dataclass(frozen=True)

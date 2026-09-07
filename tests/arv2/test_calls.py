@@ -14,13 +14,19 @@ from decimal import Decimal
 import pytest
 
 from clue_api.arv2.calls import (
+    MAX_INLINE_REQUEST_CHARS,
     CallSpec,
     Ceilings,
     CostReading,
     ProviderCaller,
     SpendEstimate,
 )
-from clue_api.arv2.errors import ProviderHalted, ProviderTransportError, RawParseError
+from clue_api.arv2.errors import (
+    ProviderHalted,
+    ProviderTransportError,
+    RawParseError,
+    RawScrubFailed,
+)
 from clue_api.arv2.sinks import MemoryLedger, MemoryRawSink, sha256_hex
 from clue_api.arv2.transport import (
     HttpRequest,
@@ -52,6 +58,10 @@ class FakeClock:
 
 def _request(url: str = "https://provider.test/v1/thing") -> HttpRequest:
     return HttpRequest(method="POST", url=url, headers={"Accept": "application/json"}, body=b"{}")
+
+
+def _request_with_body(body: bytes) -> HttpRequest:
+    return HttpRequest(method="POST", url="https://provider.test/v1/thing", body=body)
 
 
 def _spec(**overrides: object) -> CallSpec:
@@ -332,6 +342,154 @@ def test_a_ceiling_flags_the_rows_but_never_stops_the_call() -> None:
     assert result.response.status == 200
     assert result.over_ceiling is True
     assert [row.over_ceiling for row in ledger.rows] == [True, True]
+
+
+def test_a_call_the_estimate_cleared_is_still_flagged_when_the_real_cost_blows_the_ceiling() -> (
+    None
+):
+    """The result row's flag is about ACTUAL spend; the estimate row's is about the estimate.
+
+    A ceiling computed only from the pre-wire estimate under-reports exactly the case the cost
+    dashboard exists to catch: a call that looked affordable and was not.
+    """
+    caller, _transport, _raw, ledger, _clock = _caller(
+        [HttpResponse(200, {}, b"{}")], ceilings=Ceilings(usd=Decimal("0.05"))
+    )
+
+    def expensive(_response: HttpResponse) -> CostReading:
+        return CostReading(cost_usd=Decimal("0.90"))
+
+    result = caller.call(_spec(cost_reader=expensive))
+
+    estimate, outcome = ledger.rows
+    assert estimate.over_ceiling is False, "$0.01 estimated was under the $0.05 ceiling"
+    assert outcome.over_ceiling is True, "$0.90 actually spent was not"
+    assert result.over_ceiling is True, "CallResult reports the result row's flag"
+
+
+def test_the_actual_cost_flag_clears_when_the_real_cost_came_in_under_the_ceiling() -> None:
+    """The re-evaluation runs both ways: an over-estimate must not leave a false flag behind."""
+    caller, _transport, _raw, ledger, _clock = _caller(
+        [HttpResponse(200, {}, b"{}")], ceilings=Ceilings(usd=Decimal("0.005"))
+    )
+
+    def cheap(_response: HttpResponse) -> CostReading:
+        return CostReading(cost_usd=Decimal("0.001"))
+
+    result = caller.call(_spec(cost_reader=cheap))
+
+    estimate, outcome = ledger.rows
+    assert estimate.over_ceiling is True, "$0.01 estimated was over the $0.005 ceiling"
+    assert outcome.over_ceiling is False, "$0.001 actually spent was not"
+    assert result.over_ceiling is False
+
+
+def test_a_response_header_carrying_a_capability_url_is_redacted_in_the_saved_record() -> None:
+    """Constraint 5 is about credentials, not only about API keys.
+
+    The Files API answers ``files.start`` with ``x-goog-upload-url`` — a pre-authorised URL whose
+    holder can push bytes into our storage on our billing. Redacting only the *request* URL of the
+    next call leaves that capability verbatim in a record that becomes an ``artifact`` row at A7.
+    """
+    upload_url = "https://upload.googleapis.com/upload/v1beta/files?upload_id=CAP_TOKEN&upl=raw"
+    caller, _transport, raw, _ledger, _clock = _caller(
+        [HttpResponse(200, {"X-Goog-Upload-URL": upload_url, "x-request-id": "r-1"}, b"{}")]
+    )
+    result = caller.call(_spec())
+
+    record, _body = raw.records[0]
+    assert "CAP_TOKEN" not in repr(record)
+    assert "upload_id=" not in repr(record.response.headers)
+    assert record.response.headers["x-request-id"] == "r-1", "ordinary headers are untouched"
+    assert result.response.headers["x-goog-upload-url"] == upload_url, (
+        "the client still needs the real URL to upload to; only the durable record is redacted"
+    )
+
+
+def test_a_credential_bearing_url_in_any_other_header_value_is_redacted_too() -> None:
+    """The fix closes the class, not the one instance: every value goes through ``redact_url``."""
+    caller, _transport, raw, _ledger, _clock = _caller(
+        [HttpResponse(200, {"Location": "https://provider.test/next?key=LEAKED&page=2"}, b"{}")]
+    )
+    caller.call(_spec())
+
+    record, _body = raw.records[0]
+    assert record.response.headers["location"] == "https://provider.test/next?key=***&page=2"
+
+
+def test_a_binary_request_body_is_stored_by_hash_and_size_not_inlined() -> None:
+    """``binary_request`` governs the REQUEST body, which is the biggest one the lane sends.
+
+    ``transcribe_short`` base64-encodes a whole audio clip into a JSON body, so it decodes as
+    UTF-8 perfectly well and would otherwise be copied into every attempt's record.
+    """
+    audio_json = b'{"data":"' + b"A" * 200 + b'"}'
+    caller, _transport, raw, _ledger, _clock = _caller([HttpResponse(200, {}, b"{}")])
+    caller.call(_spec(request=_request_with_body(audio_json), binary_request=True))
+
+    record, _body = raw.records[0]
+    assert record.request.body_text is None
+    assert record.request.body_sha256 == sha256_hex(audio_json)
+    assert record.request.body_bytes == len(audio_json)
+
+
+def test_an_oversized_request_body_is_content_addressed_even_without_the_flag() -> None:
+    """The cap is the backstop: a call site that forgets the flag still cannot write megabytes."""
+    big = b'{"d":"' + b"B" * (MAX_INLINE_REQUEST_CHARS + 1) + b'"}'
+    small = b'{"d":"' + b"C" * 10 + b'"}'
+    caller, _transport, raw, _ledger, _clock = _caller(
+        [HttpResponse(200, {}, b"{}"), HttpResponse(200, {}, b"{}")]
+    )
+
+    caller.call(_spec(request=_request_with_body(big)))
+    caller.call(_spec(request=_request_with_body(small)))
+
+    oversized, _ = raw.records[0]
+    assert oversized.request.body_text is None
+    assert oversized.request.body_sha256 == sha256_hex(big)
+    assert oversized.request.body_bytes == len(big)
+
+    inlined, _ = raw.records[1]
+    assert inlined.request.body_text == small.decode(), "an ordinary body is still inlined"
+
+
+def test_a_scrubber_that_raises_still_leaves_the_attempt_and_the_cost_in_the_trail() -> None:
+    """Law 3 forbids keeping the body; law 1 still requires the attempt to exist.
+
+    The scrubber is a public extension point, and the module's own promise is that a body which
+    crashes a parser is still on disk and still replayable. A scrubber failure must therefore not
+    escape before anything was written — that would leave an orphan estimate row for a call that
+    was made and paid for.
+    """
+
+    def explode(_body: object) -> object:
+        raise RuntimeError("scrubber blew up on an unexpected shape")
+
+    caller, _transport, raw, ledger, _clock = _caller(
+        [HttpResponse(200, {}, b'{"name":"Sanaz","birth_date":"1979-01-01"}')]
+    )
+
+    with pytest.raises(RawScrubFailed) as excinfo:
+        caller.call(_spec(raw_scrubber=explode))
+
+    assert excinfo.value.raw_ref == "memory:0"
+    assert excinfo.value.provider == "prov"
+
+    record, stored = raw.records[0]
+    assert stored == b"", "the unscrubbed bytes are on no path"
+    assert record.response.body_text is None
+    assert "birth_date" not in repr(record)
+    assert record.response.body_sha256 == sha256_hex(
+        b'{"name":"Sanaz","birth_date":"1979-01-01"}'
+    ), "the attempt is still identified by what actually came back"
+    assert record.response.body_bytes == 42
+
+    estimate, outcome = ledger.rows
+    assert estimate.phase == "estimate"
+    assert (outcome.phase, outcome.error_code) == ("result", "raw_scrub_failed")
+    assert outcome.http_status == 200
+    assert outcome.cost_usd == Decimal("0.01"), "the call happened, so it is in the money trail"
+    assert caller.totals().usd == Decimal("0.01")
 
 
 def test_json_on_a_non_json_body_raises_with_the_raw_reference() -> None:

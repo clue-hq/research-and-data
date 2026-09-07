@@ -113,7 +113,7 @@ def _decimal(value: object) -> Decimal | None:
     return None
 
 
-def openrouter_cost_reader(response: Any) -> CostReading:
+def openrouter_cost_reader(response: HttpResponse) -> CostReading:
     """Read OpenRouter's own metering off a chat/embeddings response (Appendix A law 1).
 
     ``usage.cost_details.upstream_inference_cost`` is preferred over ``usage.cost`` because a BYOK
@@ -168,16 +168,22 @@ def openrouter_message_text(body: object) -> str:
 def openrouter_halt_rule(response: HttpResponse) -> str | None:
     """Money truth for OpenRouter (master plan §2 item 3): does this response refuse to sell?
 
-    A 402 is the explicit refusal (key out of credit); a 403 is a key that may not spend; any other
-    4xx/5xx whose body names "credit" or "insufficient" is the same refusal in prose. Only non-2xx
-    bodies are inspected — a successful completion about a bank names "credit" constantly, and
-    latching the lane's model provider on the content of a good answer would be a self-inflicted
-    outage. Returning a reason latches the provider in the wrapper.
+    A 402 is the explicit refusal (key out of credit); any other non-2xx whose body names "credit"
+    or "insufficient" is the same refusal in prose. Only non-2xx bodies are inspected — a
+    successful completion about a bank names "credit" constantly, and latching the lane's model
+    provider on the content of a good answer would be a self-inflicted outage. Returning a reason
+    latches the provider in the wrapper.
+
+    **403 is deliberately not a halt here.** In OpenRouter's error vocabulary a 403 is a
+    *moderation verdict on the input*, not a refusal to sell — a per-request content decision. ARV2
+    bundles are scraped open-web prose, so one flagged bundle would otherwise latch ``openrouter``
+    process-wide and take structuring, short transcription, quote mining and embeddings down with
+    it for the rest of the run: the same self-inflicted outage, arriving through a different door.
+    Providers whose 403 really *is* denial (AI Ark's Cloudflare block, Exa's auth) keep latching on
+    it in their own rules — the halt rule is per provider precisely so this can differ.
     """
     if response.status == 402:
         return "payment_required"
-    if response.status == 403:
-        return "forbidden"
     if 200 <= response.status < 300:
         return None
     body = response.body.decode("utf-8", "replace").lower()

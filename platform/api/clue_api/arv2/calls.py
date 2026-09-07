@@ -27,7 +27,12 @@ from datetime import datetime
 from decimal import Decimal
 from email.utils import parsedate_to_datetime
 
-from clue_api.arv2.errors import ProviderHalted, ProviderTransportError, RawParseError
+from clue_api.arv2.errors import (
+    ProviderHalted,
+    ProviderTransportError,
+    RawParseError,
+    RawScrubFailed,
+)
 from clue_api.arv2.sinks import (
     CallOutcome,
     LedgerPhase,
@@ -46,6 +51,18 @@ from clue_api.arv2.transport import HttpRequest, HttpResponse, Transport, Transp
 
 #: The statuses Appendix A law 2 retries with the ``12·(n+1)`` s (or ``Retry-After``) backoff.
 DEFAULT_RETRY_STATUSES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+
+#: Appendix A law 2's attempt count. A named constant rather than a literal on ``CallSpec``,
+#: because the expensive calls override it and their reasoning reads better against a name.
+DEFAULT_MAX_ATTEMPTS = 4
+
+#: Above this many decoded characters a request body is content-addressed in the raw record
+#: instead of inlined. A raw record exists to make an attempt *replayable and auditable*, and a
+#: sha256 plus a byte count does that for a body whose content is already on disk anyway — while
+#: inlining, say, a base64-encoded ten-minute MP3 writes ~13 MB per attempt, up to four attempts,
+#: for one call. Chosen well above any prompt or JSON payload the lane sends and well below any
+#: encoded-media body, so the threshold never has to be reasoned about per call site.
+MAX_INLINE_REQUEST_CHARS = 64_000
 
 
 @dataclass(frozen=True)
@@ -111,12 +128,17 @@ class CallSpec:
     label: str
     request: HttpRequest
     estimate: SpendEstimate = field(default_factory=SpendEstimate)
-    max_attempts: int = 4
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS
     retry_statuses: frozenset[int] = DEFAULT_RETRY_STATUSES
     halt_rule: HaltRule | None = None
     cost_reader: CostReader | None = None
     raw_scrubber: RawScrubber | None = None
     binary: bool = False
+    #: The *request* body is bytes that must never be inlined into a raw record — an uploaded
+    #: media file, or JSON carrying a base64-encoded one. ``binary`` governs the response only;
+    #: this governs the request, and the record then carries its sha256 and byte count instead.
+    #: A body over :data:`MAX_INLINE_REQUEST_CHARS` is treated the same way without the flag.
+    binary_request: bool = False
     extras: Mapping[str, object] = field(default_factory=dict)
 
 
@@ -187,7 +209,8 @@ class ProviderCaller:
         1. A latched provider raises immediately — no wire, no ledger row.
         2. The estimate row is written **before** the wire (law 2).
         3. Each attempt saves its raw record **before** anything parses it (law 1), then honours
-           ``Retry-After`` or the ``12·(n+1)`` s / ``2·(n+1)`` s backoffs.
+           ``Retry-After`` or the ``12·(n+1)`` s / ``2·(n+1)`` s backoffs. A scrubber that raises
+           still leaves a body-less record and a result row behind (law 3 vs law 1).
         4. The cost reader runs, then the halt rule; a halt latches the provider and raises.
         5. The result row is written and the running totals are updated.
         """
@@ -233,7 +256,24 @@ class ProviderCaller:
                 )
                 raise ProviderTransportError(spec.provider, attempts, str(exc)) from exc
             latency_ms = self._elapsed_ms(started)
-            response = self._scrub(spec, response)
+            try:
+                response = self._scrub(spec, response)
+            except Exception as exc:
+                raw_refs.append(
+                    self._save_raw(spec, call_id, index, latency_ms, response, persist_body=False)
+                )
+                self._settle(
+                    spec,
+                    call_id=call_id,
+                    outcome="client_error",
+                    attempts=attempts,
+                    latency_ms=latency_ms,
+                    status=response.status,
+                    cost=CostReading(),
+                    error_code="raw_scrub_failed",
+                    raw_ref=raw_refs[-1],
+                )
+                raise RawScrubFailed(spec.provider, raw_refs[-1], str(exc)) from exc
             raw_refs.append(self._save_raw(spec, call_id, index, latency_ms, response))
             if response.status in spec.retry_statuses and not is_last:
                 self._sleep(self._retry_delay(response, index))
@@ -257,11 +297,10 @@ class ProviderCaller:
         halt_reason = spec.halt_rule(response) if spec.halt_rule is not None else None
         if halt_reason is not None:
             self._halted[spec.provider] = halt_reason
-            row_id = self._settle(
+            row_id, _ = self._settle(
                 spec,
                 call_id=call_id,
                 outcome="halted",
-                over_ceiling=over_ceiling,
                 attempts=attempts,
                 latency_ms=latency_ms,
                 status=response.status,
@@ -276,11 +315,10 @@ class ProviderCaller:
                 ledger_row_id=row_id,
             )
 
-        row_id = self._settle(
+        row_id, actual_over_ceiling = self._settle(
             spec,
             call_id=call_id,
             outcome=self._outcome(response.status, spec.retry_statuses),
-            over_ceiling=over_ceiling,
             attempts=attempts,
             latency_ms=latency_ms,
             status=response.status,
@@ -296,7 +334,7 @@ class ProviderCaller:
             raw_refs=tuple(raw_refs),
             ledger_row_id=row_id,
             cost=cost,
-            over_ceiling=over_ceiling,
+            over_ceiling=actual_over_ceiling,
         )
 
     # -- internals ---------------------------------------------------------------------------
@@ -317,17 +355,23 @@ class ProviderCaller:
             return "retry_exhausted"
         return "client_error"
 
-    def _exceeds_ceilings(self, estimate: SpendEstimate) -> bool:
-        """Would this call push the running totals past a ceiling? Record-only (§2 item 3)."""
+    def _exceeds_ceilings(self, spend: SpendEstimate) -> bool:
+        """Would this spend push the running totals past a ceiling? Record-only (§2 item 3).
+
+        Called twice per call against the same totals-so-far: once with the pre-wire *estimate*
+        (the flag the estimate row carries) and once in :meth:`_settle` with what the call
+        **actually** cost (the flag the result row carries). A call whose estimate was under a
+        ceiling but whose real cost was over is exactly the case a cost dashboard needs to see.
+        """
         ceilings = self._ceilings
         totals = self._totals
-        if ceilings.usd is not None and totals.usd + estimate.usd > ceilings.usd:
+        if ceilings.usd is not None and totals.usd + spend.usd > ceilings.usd:
             return True
-        if ceilings.credits is not None and totals.credits + estimate.credits > ceilings.credits:
+        if ceilings.credits is not None and totals.credits + spend.credits > ceilings.credits:
             return True
         return (
             ceilings.media_seconds is not None
-            and totals.media_seconds + estimate.media_seconds > ceilings.media_seconds
+            and totals.media_seconds + spend.media_seconds > ceilings.media_seconds
         )
 
     def _retry_delay(self, response: HttpResponse, index: int) -> float:
@@ -365,6 +409,12 @@ class ProviderCaller:
         body the pipeline can read a birth date out of.
 
         A non-JSON or undecodable body, or a spec with no scrubber, is returned untouched.
+
+        Exceptions are **not** caught here. ``RawScrubber`` is a public extension point, and a
+        scrubber that raises has told us it cannot make this body safe — so :meth:`call` turns the
+        failure into a body-less raw record plus a ``raw_scrub_failed`` result row and raises
+        :class:`~clue_api.arv2.errors.RawScrubFailed`. Falling back to the unscrubbed body would
+        persist exactly what law 3 exists to drop.
         """
         if spec.raw_scrubber is None or spec.binary:
             return response
@@ -388,27 +438,29 @@ class ProviderCaller:
         attempt: int,
         latency_ms: int,
         response: HttpResponse,
+        *,
+        persist_body: bool = True,
     ) -> str:
         """Law 1: persist this attempt before anything reads it. Credentials never get here.
 
         The body is already scrubbed by the time it gets here (:meth:`_scrub` ran the moment the
         response arrived), so the persisted copy and the copy the caller reads are the same bytes.
+
+        ``persist_body=False`` writes the attempt *without* its bytes — status, redacted headers,
+        sha256 and byte count only. That is the scrubber-failure path: law 3 forbids keeping the
+        body, law 1 still requires the attempt to exist in the trail, and a content address plus a
+        size satisfies both.
         """
         body = response.body
         body_text: str | None = None
-        if not spec.binary:
+        if persist_body and not spec.binary:
             try:
                 body_text = body.decode("utf-8")
             except UnicodeDecodeError:
                 body_text = None
 
         request_body = spec.request.body
-        request_text: str | None = None
-        if request_body is not None:
-            try:
-                request_text = request_body.decode("utf-8")
-            except UnicodeDecodeError:
-                request_text = None
+        request_text = self._inline_request_text(spec, request_body)
 
         record = RawRecord(
             call_id=call_id,
@@ -424,6 +476,7 @@ class ProviderCaller:
                 headers=redact_headers(spec.request.headers),
                 body_text=request_text,
                 body_sha256=sha256_hex(request_body) if request_body is not None else None,
+                body_bytes=len(request_body) if request_body is not None else 0,
             ),
             response=RawResponse(
                 status=response.status,
@@ -433,7 +486,27 @@ class ProviderCaller:
                 body_bytes=len(body),
             ),
         )
-        return self._raw_sink.save(record, body)
+        return self._raw_sink.save(record, body if persist_body else b"")
+
+    @staticmethod
+    def _inline_request_text(spec: CallSpec, request_body: bytes | None) -> str | None:
+        """The request body as text, when inlining it is small enough to be worth the disk.
+
+        ``spec.binary`` governs the *response*; a request body needs its own answer, because the
+        biggest bodies the lane sends are requests — ``transcribe_short`` base64-encodes a whole
+        audio clip into a JSON body, which decodes as UTF-8 perfectly well and would otherwise be
+        copied into every attempt's record. Above :data:`MAX_INLINE_REQUEST_CHARS`, or when the
+        spec declares the request binary, the record keeps the sha256 and the byte count instead.
+        """
+        if request_body is None or spec.binary_request:
+            return None
+        if len(request_body) > MAX_INLINE_REQUEST_CHARS:
+            return None
+        try:
+            text = request_body.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+        return text if len(text) <= MAX_INLINE_REQUEST_CHARS else None
 
     def _settle(
         self,
@@ -441,18 +514,23 @@ class ProviderCaller:
         *,
         call_id: str,
         outcome: CallOutcome,
-        over_ceiling: bool,
         attempts: int,
         latency_ms: int,
         status: int,
         cost: CostReading,
         error_code: str | None,
         raw_ref: str | None,
-    ) -> str:
+    ) -> tuple[str, bool]:
         """Update the running totals from the reading, then write the result row.
 
         When the reader reported nothing at all, the estimate stands in for the cost and the row
         marks the substitution — an unmetered call must still appear in the money trail.
+
+        ``over_ceiling`` is re-evaluated here against what the call **actually** cost, added to
+        the totals as they stood before it. The estimate row keeps the estimate-based flag (it was
+        written before the wire and cannot know better); the result row, which is what a cost
+        dashboard reads, says whether real spend crossed a ceiling. Returns the row id and that
+        flag.
 
         A reading's own ``extras`` land on this row too, between the spec's (which a caller set
         before the wire) and the ``cost_source`` marker (which the wrapper owns). A reader
@@ -467,12 +545,15 @@ class ProviderCaller:
         media_seconds = (
             spec.estimate.media_seconds if told_us_nothing else (cost.media_seconds or 0)
         )
+        over_ceiling = self._exceeds_ceilings(
+            SpendEstimate(usd=usd, credits=credits, media_seconds=media_seconds)
+        )
         self._totals = SpendTotals(
             usd=self._totals.usd + usd,
             credits=self._totals.credits + credits,
             media_seconds=self._totals.media_seconds + media_seconds,
         )
-        return self._record(
+        row_id = self._record(
             spec,
             call_id=call_id,
             phase="result",
@@ -492,6 +573,7 @@ class ProviderCaller:
                 **({"cost_source": "estimate"} if told_us_nothing else {}),
             },
         )
+        return row_id, over_ceiling
 
     def _record(
         self,
