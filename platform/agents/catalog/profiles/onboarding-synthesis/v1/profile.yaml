@@ -26,7 +26,9 @@ tools:
     output_schema_sha256: f2ecfbb9706210a9153d8fcb16b8ed4f6201d246474ae3a4f1f5ca584b4cc45a
 model:
   model_id: x-ai/grok-4.6
-  timeout_s: 120.0
+  # 30.0 is the gateway policy ceiling (GatewayConfig.timeout_s); the model builder refuses a
+  # profile above it, which is how the first live turn failed (2026-09-08 acceptance).
+  timeout_s: 30.0
   max_retries: 2
   max_output_tokens: 16384
   temperature: 0.1
