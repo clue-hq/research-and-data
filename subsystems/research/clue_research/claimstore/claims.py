@@ -39,6 +39,7 @@ from clue_core import (
     RunId,
     VerificationStatus,
     can_be_promoted,
+    decode_jsonb,
     decode_jsonb_scalar,
     serialize_value_json,
 )
@@ -55,7 +56,7 @@ _INSERT_SQL = text(
         extraction_method, evidence_span, confidence, corroborations, observed_at,
         collected_at, cost_cents, run_id, research_mode, superseded_by, verification_status,
         identity_binding, use_class, discovery_provenance, claim_flavor, reuse_scope, workspace_id,
-        product_id
+        product_id, signal_priority, outreach_safe, write_markers
     ) VALUES (
         :id, :entity_id, CAST(:entity_type AS entity_type), :field_key,
         CAST(:value_json AS jsonb), :source_url, :source_key, :artifact_key,
@@ -67,7 +68,8 @@ _INSERT_SQL = text(
         CAST(:verification_status AS verification_status),
         CAST(:identity_binding AS identity_binding), CAST(:use_class AS use_class),
         CAST(:discovery_provenance AS jsonb), CAST(:claim_flavor AS claim_flavor),
-        CAST(:reuse_scope AS reuse_scope), :workspace_id, :product_id
+        CAST(:reuse_scope AS reuse_scope), :workspace_id, :product_id,
+        :signal_priority, :outreach_safe, CAST(:write_markers AS jsonb)
     )
     RETURNING id
     """
@@ -82,7 +84,7 @@ _SELECT_COLUMNS = (
     "extraction_method, evidence_span, confidence, corroborations, observed_at, collected_at, "
     "cost_cents, run_id, research_mode, superseded_by, verification_status, "
     "identity_binding, use_class, discovery_provenance, claim_flavor, reuse_scope, workspace_id, "
-    "product_id"
+    "product_id, signal_priority, outreach_safe, write_markers"
 )
 
 
@@ -146,6 +148,11 @@ def _insert_params(claim: Claim) -> dict[str, object]:
         "reuse_scope": claim.reuse_scope.value,
         "workspace_id": claim.workspace_id,
         "product_id": claim.product_id,
+        "signal_priority": claim.signal_priority,
+        "outreach_safe": claim.outreach_safe,
+        "write_markers": (
+            None if claim.write_markers is None else serialize_value_json(claim.write_markers)
+        ),
     }
 
 
@@ -191,6 +198,9 @@ def _row_to_claim(row: dict[str, object]) -> Claim:
             "reuse_scope": row.get("reuse_scope", "public_footprint"),
             "workspace_id": row.get("workspace_id"),
             "product_id": row.get("product_id"),
+            "signal_priority": row.get("signal_priority", 3),
+            "outreach_safe": row.get("outreach_safe", True),
+            "write_markers": decode_jsonb(row.get("write_markers")),
         }
     )
 

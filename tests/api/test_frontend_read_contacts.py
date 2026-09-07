@@ -595,8 +595,14 @@ def test_a_member_of_two_committees_appears_once_carrying_both_project_ids() -> 
     run_async(scenario())
 
 
-def test_persona_and_role_use_the_backend_four_value_vocabulary() -> None:
-    """No display mapping: the wire carries ``Persona``'s own values."""
+def test_persona_and_role_use_the_backend_vocabulary() -> None:
+    """No display mapping: the wire carries ``Persona``'s own values.
+
+    ARV2 D8 appended ``user`` to ``Persona``, so the backend vocabulary is no longer exactly the
+    four values this screen's zod enum pins. The parity that matters is unchanged and asserted
+    here: the four the frontend contract knows are all still backend values, and every value this
+    endpoint actually serves is a backend value.
+    """
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -604,7 +610,7 @@ def test_persona_and_role_use_the_backend_four_value_vocabulary() -> None:
             rows = _rows((await _list(conn, fixture.acme)).json())
 
             allowed = {persona.value for persona in Persona}
-            assert allowed == {"champion", "economic_buyer", "technical_evaluator", "blocker"}
+            assert {"champion", "economic_buyer", "technical_evaluator", "blocker"} <= allowed
             for row in rows.values():
                 assert row["persona"] in allowed
                 assert row["roleOnCommittee"]["value"] in allowed
