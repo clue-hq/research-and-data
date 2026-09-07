@@ -75,3 +75,7 @@ only via link text; the Boardroom feed has 101 episodes (the PoC's "65" was a tr
   assembly must never include prompt text.
 - Live-suite mechanics: a `nohup` run from the tool shell was killed before its summary line;
   `setsid` does not exist on macOS. Run the live suite as bounded chunks (<10 min each).
+- Live on the fixed head 43ed24881: Exa, Gemini, foundation, ATS, media feeds, structuring all
+  green; AI Ark returned HTTP 402 "sorry, you don't have enough credit" at 12:03 UTC and the client
+  latched (designed behaviour). The AI Ark account needs the paid plan / a top-up before the AI Ark
+  live file can pass again; ~24 credits were recorded today across all runs.
