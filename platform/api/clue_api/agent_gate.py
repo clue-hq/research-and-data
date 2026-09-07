@@ -44,12 +44,14 @@ __all__ = [
     "KIND_DIRECTIVE_CONFIRMATION",
     "KIND_ICP_CONFIRMATION",
     "KIND_PRODUCT_SELECTION",
+    "KIND_PRODUCT_SET_SELECTION",
     "AgentGateAnswerRow",
     "AgentGateRow",
     "AgentGateSubjectBinding",
     "GateAlreadyAnswered",
     "directive_confirmation_gate_id",
     "product_selection_gate_id",
+    "product_set_selection_gate_id",
     "gate_answer_for_turn",
     "get_gate",
     "insert_gate",
@@ -71,10 +73,15 @@ GATE_OBJECT_TYPE = "agent_gate"
 KIND_DIRECTIVE_CONFIRMATION = "directive_confirmation"
 KIND_ICP_CONFIRMATION = "icp_confirmation"
 KIND_PRODUCT_SELECTION = "product_selection"
+#: A project targets a SET of products (ARV2-PRODUCT-CATALOG-CONTRACT.md §6.3, ruling P1), so its
+#: gate names its choices in ``decision_payload["selected_option_refs"]`` rather than in the
+#: single-valued ``selected_option_ref``; the answer trigger enforces membership per element.
+KIND_PRODUCT_SET_SELECTION = "product_set_selection"
 GATE_KINDS = (
     KIND_DIRECTIVE_CONFIRMATION,
     KIND_ICP_CONFIRMATION,
     KIND_PRODUCT_SELECTION,
+    KIND_PRODUCT_SET_SELECTION,
     "plan_approval",
     "budget_approval",
 )
@@ -91,6 +98,9 @@ DEFAULT_GATE_CURRENCY = "USD"
 _GATE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:lane-d:d4:directive-confirmation-gate")
 _PRODUCT_SELECTION_GATE_NAMESPACE = uuid5(
     NAMESPACE_URL, "clue:production-context:s5:product-selection-gate"
+)
+_PRODUCT_SET_SELECTION_GATE_NAMESPACE = uuid5(
+    NAMESPACE_URL, "clue:arv2:onboarding:product-set-selection-gate"
 )
 
 _GATE_COLUMNS = (
@@ -236,6 +246,23 @@ def product_selection_gate_id(
         for part in (workspace_id, str(turn_id), subject_ref, expected_subject_sha256)
     )
     return uuid5(_PRODUCT_SELECTION_GATE_NAMESPACE, framed)
+
+
+def product_set_selection_gate_id(
+    *,
+    workspace_id: str,
+    turn_id: UUID,
+    subject_ref: str,
+    expected_subject_sha256: str,
+) -> UUID:
+    """Derive one immutable product-SET selection gate for one pinned catalog presentation
+    (ARV2-PRODUCT-CATALOG-CONTRACT.md §6.3; a project targets a set of products, ruling P1)."""
+
+    framed = "".join(
+        f"{len(part)}:{part}"
+        for part in (workspace_id, str(turn_id), subject_ref, expected_subject_sha256)
+    )
+    return uuid5(_PRODUCT_SET_SELECTION_GATE_NAMESPACE, framed)
 
 
 async def insert_gate(

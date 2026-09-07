@@ -136,6 +136,7 @@ def test_installed_gate_constraints_and_trigger_are_the_combined_contract() -> N
             "directive_confirmation",
             "icp_confirmation",
             "product_selection",
+            "product_set_selection",
             "plan_approval",
             "budget_approval",
         ):
@@ -154,6 +155,9 @@ def test_installed_gate_constraints_and_trigger_are_the_combined_contract() -> N
             "revision_request",
             "NOT BETWEEN 1 AND 4000",
             "presented.kind = 'product_selection'",
+            "presented.kind = 'product_set_selection'",
+            "selected_option_refs",
+            "candidate ->> 'product_id' = chosen.value",
             "subject_kind",
             "discovery_configuration",
             "jsonb_array_elements",

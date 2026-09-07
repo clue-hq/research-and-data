@@ -16,8 +16,9 @@ factories below (prefixed uuid4 hex, the ``clue_core.new_*_id`` factory pattern 
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, Literal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
@@ -335,6 +336,156 @@ async def confirm_project_product(
     )
     row = result.mappings().one_or_none()
     return Project(**dict(row)) if row is not None else None
+
+
+# --- project product set (ARV2-PRODUCT-CATALOG-CONTRACT.md §6.2) -----------
+_PROJECT_PRODUCT_COLUMNS = (
+    "workspace_id, project_id, brand_id, product_id, selection_version, gate_id, "
+    "confirmed_by_user_id, confirmed_at"
+)
+
+
+class ProjectProductSet(BaseModel):
+    """One confirmed version of a project's product set. Rows are append-only; the current set is
+    the highest ``selection_version``; a run pins the version it started under (ruling P2)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    workspace_id: str
+    project_id: str
+    brand_id: str
+    selection_version: int
+    product_ids: tuple[str, ...]
+    gate_id: UUID
+    confirmed_by_user_id: str
+    confirmed_at: UtcDatetime
+
+
+def _rows_to_sets(rows: list[dict[str, Any]]) -> list[ProjectProductSet]:
+    """Group version rows (already ordered by version, then insertion) into sets."""
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(int(row["selection_version"]), []).append(row)
+    sets: list[ProjectProductSet] = []
+    for version, members in sorted(grouped.items()):
+        head = members[0]
+        sets.append(
+            ProjectProductSet(
+                workspace_id=head["workspace_id"],
+                project_id=head["project_id"],
+                brand_id=head["brand_id"],
+                selection_version=version,
+                product_ids=tuple(m["product_id"] for m in members),
+                gate_id=head["gate_id"],
+                confirmed_by_user_id=head["confirmed_by_user_id"],
+                confirmed_at=head["confirmed_at"],
+            )
+        )
+    return sets
+
+
+async def list_project_product_sets(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str
+) -> list[ProjectProductSet]:
+    """Every confirmed version of the project's product set, oldest first; members keep the
+    order the human chose them in (``ctid`` reflects insertion order within one version)."""
+    result = await conn.execute(
+        text(
+            f"SELECT {_PROJECT_PRODUCT_COLUMNS} FROM project_product "
+            "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+            "ORDER BY selection_version, ctid"
+        ),
+        {"workspace_id": workspace_id, "project_id": project_id},
+    )
+    return _rows_to_sets([dict(row) for row in result.mappings().all()])
+
+
+async def current_project_product_set(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str
+) -> ProjectProductSet | None:
+    sets = await list_project_product_sets(conn, workspace_id=workspace_id, project_id=project_id)
+    return sets[-1] if sets else None
+
+
+async def confirm_project_product_set(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+    product_ids: Sequence[str],
+    gate_id: UUID,
+    confirmed_by_user_id: str,
+) -> ProjectProductSet | None:
+    """Human-authorized confirmation of the whole set as a new version (rulings P1/P2).
+
+    Returns ``None`` — without revealing which coordinate was foreign — when the project is absent
+    from the workspace or any product is not a product of the project's own brand and workspace.
+    Repeats in ``product_ids`` collapse, first occurrence wins. Raises ``ValueError`` on an empty
+    list: an empty set is not a selection.
+    """
+    ordered = list(dict.fromkeys(product_ids))
+    if not ordered:
+        raise ValueError("a project product set needs at least one product")
+    locked = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT brand_id FROM project "
+                    "WHERE project_id = :project_id AND workspace_id = :workspace_id FOR UPDATE"
+                ),
+                {"project_id": project_id, "workspace_id": workspace_id},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if locked is None:
+        return None
+    brand_id = str(locked["brand_id"])
+    known = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT product_id FROM product WHERE product_id = ANY(:ids) "
+                    "AND brand_id = :brand_id AND workspace_id = :workspace_id"
+                ),
+                {"ids": ordered, "brand_id": brand_id, "workspace_id": workspace_id},
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if set(known) != set(ordered):
+        return None
+    next_version = (
+        await conn.execute(
+            text(
+                "SELECT COALESCE(MAX(selection_version), 0) + 1 FROM project_product "
+                "WHERE project_id = :project_id"
+            ),
+            {"project_id": project_id},
+        )
+    ).scalar_one()
+    for product_id in ordered:
+        await conn.execute(
+            text(
+                "INSERT INTO project_product (workspace_id, project_id, brand_id, product_id, "
+                " selection_version, gate_id, confirmed_by_user_id) "
+                "VALUES (:workspace_id, :project_id, :brand_id, :product_id, :version, :gate_id, "
+                " :user_id)"
+            ),
+            {
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "brand_id": brand_id,
+                "product_id": product_id,
+                "version": int(next_version),
+                "gate_id": gate_id,
+                "user_id": confirmed_by_user_id,
+            },
+        )
+    sets = await list_project_product_sets(conn, workspace_id=workspace_id, project_id=project_id)
+    return sets[-1]
 
 
 async def list_projects(
