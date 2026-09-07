@@ -99,6 +99,22 @@ per person ≈ $0.07–0.13; display copy ≈ $0.05 per account with five contac
 - Section recipes as config rows in a table named **`display_section_recipe`** (not `recipe` — that
   name is already taken by Stage-0 execution recipes): `(page, section_key, h1, position,
   allowed_field_keys[], restricted, default_open, instruction_version, workspace_id NULL = system row)`.
+- **`provider_call_ledger`** (D1 addition, 2026-09-07): one row per provider call **phase**
+  (`estimate` before the wire, `result` after): `(ledger_id uuid PK, call_id uuid NOT NULL,
+  workspace_id text NULL, project_id text NULL, project_run_id text NULL,
+  entity_research_job_id uuid NULL, provider text NOT NULL, operation text NOT NULL, label text
+  NOT NULL, phase text NOT NULL CHECK (phase IN ('estimate','result')), http_status int NULL,
+  latency_ms int NULL, attempts int NOT NULL DEFAULT 0, estimate_usd numeric(12,6) NOT NULL
+  DEFAULT 0, estimate_credits numeric(12,3) NOT NULL DEFAULT 0, estimate_media_seconds int NOT
+  NULL DEFAULT 0, cost_usd numeric(12,6) NULL, credits numeric(12,3) NULL, media_seconds int NULL,
+  over_ceiling boolean NOT NULL DEFAULT false, outcome text NOT NULL CHECK (outcome IN
+  ('estimate','ok','client_error','retry_exhausted','halted','transport_error')), error_code text
+  NULL, provider_request_id text NULL, request_artifact_key text NULL, response_artifact_key text
+  NULL, recorded_at timestamptz NOT NULL DEFAULT now())`, indexes on `(workspace_id,
+  recorded_at)` and `(call_id)`. Raw request and response bodies are `artifact` rows written
+  through `record_artifact` with `source_key = 'arv2:<provider>:<operation>'`; the ledger row
+  references their keys. R1 ships the wrapper and the file/memory sinks; the table and the
+  artifact-backed sink land with D1/A7.
 - No visit table: "new since your last visit" is computed by the frontend from
   `ResearchEvidence.verifiedAt` against a locally stored last-visit stamp (decision D5 resolved).
 - Other per-claim extras from the research runs (`claim_kind`, `media_url`, `media_timestamp`,
@@ -423,7 +439,7 @@ boot-time audit refuses to start if an old tool is re-granted; the old tools are
 | D14 (=P1) | **A project targets a set of products, not one** — `project_product` versioned set; `product_set_selection` gate with `selected_option_refs[]`; `project.product_id` frozen legacy (`ARV2-PRODUCT-CATALOG-CONTRACT.md` §6) | Aryan overruled the single-product recommendation | ✓ (2026-09-07, "a very important ruling") | ☐ |
 | D15 (=P2) | The set changes any time as a new version; runs keep the version they pinned; nothing is re-researched automatically | Yes | ✓ (2026-09-07) | ☐ |
 | D16 (=P3/P4) | Exactly one ICP per project, targeting the whole product set (no per-ICP subset) | Aryan's ruling (the recommendation had been "subset allowed") | ✓ (2026-09-07) | ☐ |
-| D17 | The Exa `outputSchema` for the product catalog (9 properties, depth 2, `aliases` dropped) and the `ProductCatalogResearch@1` artifact mapping (`ARV2-PRODUCT-CATALOG-CONTRACT.md` §3–§4) | As written | ✓ (2026-09-07) | ☐ |
+| D17 | The Exa `outputSchema` for the product catalog (8 properties, depth 2, `aliases` dropped) and the `ProductCatalogResearch@1` artifact mapping (`ARV2-PRODUCT-CATALOG-CONTRACT.md` §3–§4) | As written | ✓ (2026-09-07) | ☐ |
 
 ## 13. The first ten steps, in order
 
