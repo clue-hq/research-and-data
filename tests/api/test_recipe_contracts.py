@@ -73,6 +73,28 @@ def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified()
         assert by_address[address].pin_requirements == ("product_kb",)
 
 
+def test_the_onboarding_synthesis_unit_recipe_pins_exactly_the_evidence_tool() -> None:
+    """ARV2 O4: one gate, one spendable tool, and the skill that says what evidence is for."""
+
+    from clue_api.recipe_contracts import ONBOARDING_SYNTHESIS_TOOL_ADDRESSES
+    from clue_api.recipe_wiring import load_system_recipe_definitions
+
+    assert ONBOARDING_SYNTHESIS_TOOL_ADDRESSES == ("exa_search_evidence@1",)
+    definitions = {
+        definition.recipe_key: definition
+        for definition in load_system_recipe_definitions()
+        if definition.recipe_key == "onboarding-synthesis-unit"
+    }
+    recipe = definitions["onboarding-synthesis-unit"]
+    gate = next(
+        node for node in recipe.graph.nodes if node.node_key == "onboarding_synthesis_interactions"
+    )
+    assert list(gate.dynamic_tool_allowlist) == ["exa_search_evidence@1"]
+    assert any(
+        item.kind == "skill" and item.key == "audience-persona" for item in gate.requirements
+    )
+
+
 def test_integration_preserves_pilot_recipe_v7_and_v8_bytes() -> None:
     root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
 
@@ -254,6 +276,10 @@ def test_operation_id_requirements_are_explicit() -> None:
         # inherits @4's operation-bound identity unchanged.
         "draft_account_research_directive@5",
         "evaluate_stage0_readiness@2",
+        # ARV2 O4: the synthesis unit's evidence call is operation-bound because its ARV2 ledger
+        # row is keyed on the operation; like `start_recon@1` it is AT_LEAST_ONCE rather than
+        # operation-idempotent, since a retried Exa search cannot converge on one provider call.
+        "exa_search_evidence@1",
         "import_accounts@1",
         "profile_contact@1",
         "record_interview_answer@1",
@@ -271,7 +297,10 @@ def test_operation_id_requirements_are_explicit() -> None:
     exactly_operation_idempotent = {
         item.address for item in audit if item.replay_policy is ReplayPolicy.OPERATION_IDEMPOTENT
     }
-    assert exactly_operation_idempotent == operation_bound - {"start_recon@1"}
+    assert exactly_operation_idempotent == operation_bound - {
+        "start_recon@1",
+        "exa_search_evidence@1",
+    }
 
 
 def test_narrow_recipe_step_requires_an_exact_tool_version() -> None:

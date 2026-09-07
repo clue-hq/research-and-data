@@ -286,6 +286,12 @@ PROJECT_CONVERSATION_SURFACE = "project_conversation"
 #: describe that narrower authority before the model wakes.
 ACCOUNT_RESEARCH_UNIT_SURFACE = "account_research_unit"
 
+#: ARV2 onboarding O4: the fleet-owned synthesis turn executes the one-gate
+#: ``onboarding-synthesis-unit@1`` recipe. The synthesis agent's whole spendable surface there is
+#: ``exa_search_evidence@1``; resolving a named surface makes the manifest, the middleware, and the
+#: installed tools describe that one authority before the model wakes.
+ONBOARDING_SYNTHESIS_UNIT_SURFACE = "onboarding_synthesis_unit"
+
 #: PC-C8 §8: surface restrictions are enforced by tools that are *not installed*, never by prose in
 #: a shared skill or a context card. Each entry narrows one role's effective tool set on one named
 #: surface; the registry refuses a policy that withholds a tool the role's profile does not pin, so

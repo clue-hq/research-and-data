@@ -83,6 +83,9 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     "recipe0-stage0-v19.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
+    # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly
+    # ``exa_search_evidence@1`` and pins the ``audience-persona`` skill that tool requires.
+    "onboarding-synthesis-unit-v1.json",
 )
 
 # Kept on disk solely so already-pinned executions can resolve their exact historical definition.

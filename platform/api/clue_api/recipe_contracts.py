@@ -89,6 +89,10 @@ RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (
 
 ACCOUNT_RESEARCH_TOOL_ADDRESSES: tuple[str, ...] = ("research_account_gaps@2",)
 
+# ARV2 onboarding O4 (plan §4.5): the synthesis unit's whole spendable surface is one governed
+# deep-reasoning search over O2's fixed persona-evidence template.
+ONBOARDING_SYNTHESIS_TOOL_ADDRESSES: tuple[str, ...] = ("exa_search_evidence@1",)
+
 
 def _split_address(address: str) -> tuple[str, str]:
     name, separator, version = address.rpartition("@")
@@ -117,6 +121,7 @@ def standing_recipe_addresses() -> tuple[str, ...]:
             set(RECIPE_0_TOOL_ADDRESSES)
             | set(RECIPE_1_TOOL_ADDRESSES)
             | set(ACCOUNT_RESEARCH_TOOL_ADDRESSES)
+            | set(ONBOARDING_SYNTHESIS_TOOL_ADDRESSES)
         )
     )
 
@@ -145,6 +150,7 @@ def build_replay_safety_audit(registry: ToolRegistry) -> tuple[ReplayAuditEntry,
                 ("recipe0@1", RECIPE_0_TOOL_ADDRESSES),
                 ("recipe1@1", RECIPE_1_TOOL_ADDRESSES),
                 ("account-research-unit@1", ACCOUNT_RESEARCH_TOOL_ADDRESSES),
+                ("onboarding-synthesis-unit@1", ONBOARDING_SYNTHESIS_TOOL_ADDRESSES),
             )
             if address in addresses
         )
@@ -171,6 +177,7 @@ __all__ = [
     "RECIPE_0_TOOL_ADDRESSES",
     "RECIPE_1_TOOL_ADDRESSES",
     "ACCOUNT_RESEARCH_TOOL_ADDRESSES",
+    "ONBOARDING_SYNTHESIS_TOOL_ADDRESSES",
     "ReplayAuditEntry",
     "build_replay_safety_audit",
     "standing_recipe_addresses",
