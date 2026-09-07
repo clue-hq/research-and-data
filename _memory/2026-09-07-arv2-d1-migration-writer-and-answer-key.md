@@ -157,3 +157,8 @@ key ("this test needs a database without it"). Expected; it was proved green on 
 - **`schema_valid=false` on 129 of 294 claims** is honest lenient-gate behaviour (free-text
   answer-key values against typed registered schemas), but it is a large fraction and the display
   layer will meet it.
+- **With verification on, the Zafran committee reads three, not five.** Two of the five
+  `contact.role_on_committee` rows are the run's own tier-4 synthesis and are unverified, so
+  `active_merge_policy`'s `require_verified_tier4` gate hides them. The shipped posture is
+  verification off (`.env.example`: `CLUE_VERIFICATION_ENABLED=false`), which is what the D1 test
+  pins explicitly. D2/D3 must not assume a five-member committee without that posture.

@@ -170,8 +170,19 @@ def test_load_writes_every_row_and_the_screen_prerequisites(tmp_path: Path) -> N
     run_async(_run())
 
 
-def test_committee_read_sees_the_five_members(tmp_path: Path) -> None:
-    """The existing governed committee read resolves the loaded rows (source map §3.3)."""
+def test_committee_read_sees_the_five_members(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The existing governed committee read resolves the loaded rows (source map §3.3).
+
+    The answer key's committee is five under the shipped R0 posture — verification off, per
+    ``.env.example`` — because two of the five ``contact.role_on_committee`` rows are the run's own
+    tier-4 synthesis, and ``active_merge_policy`` serves an unverified tier-4 claim as current truth
+    only in that posture. With verification on, those two members are hidden until their rows are
+    verified, and that is the platform's tier-4 eligibility rule, not a loader defect.
+    """
+    monkeypatch.setenv("CLUE_VERIFICATION_ENABLED", "false")
+
     from clue_api.frontend_read.committee import read_governed_committee
     from clue_core import EntityId
     from clue_research.membership import memberships_for_accounts
