@@ -505,3 +505,43 @@ The dummy's other knowledge folders (Company, Product, Audience, Proof, Memories
 nothing in the store fills them, and an empty folder tree is the honest report. A real
 markdown-document store behind the section, and persistence for the lifted edits, remain
 unbuilt.
+
+## Resolution (2026-09-08, ARV2 O5) — the Knowledge folders serve the onboarding documents
+
+This supersedes "Still future work" above for the Company, Product, Audience and Proof
+folders. They are served from the platform's `brand_knowledge_document` store — the artifacts the
+ARV2 onboarding run (`POST /onboarding`, O3) and the synthesis agent (O4) publish. Design keeps
+riding the brand-kit read. Memories stays absent.
+
+### Endpoints (platform API, `/frontend/v1`, `X-Workspace-Id` via the BFF / server seam)
+
+`ARV2-ONBOARDING-PLAN.md` §7 wrote these under `/api/v1/brand-context/...`; they live on the
+existing flag-gated read surface instead (same auth, tenant scoping, envelope and CORS as the
+accounts screens):
+
+| Read | Endpoint | Purpose |
+| --- | --- | --- |
+| Tree | `GET /frontend/v1/brand-context/knowledge[?brandId=]` | `{ brandId, folders: [{ key, label, documents: [{ id, path, title, kind, version, status, updatedAt, productId, icpKey }] }] }` |
+| Document | `GET /frontend/v1/brand-context/knowledge/documents/{id}` | `{ …tree fields, markdown, frontMatter, sources: [{ section, url, title, confidence }] }` — 404 `KNOWLEDGE_DOCUMENT_NOT_FOUND`; 503 `KNOWLEDGE_STORAGE_UNAVAILABLE` |
+| Onboarding status | `GET /frontend/v1/brand-context/onboarding/current` | `{ runId, status, steps: [{ kind, subjectRef, phase, status, startedAt, finishedAt, costUsd, failureCode }], costUsd }`; `status: "none"` when no run |
+
+- **Which brand:** `brandId` when given and owned by the workspace; else the brand of the
+  workspace's newest onboarding run; else the workspace's only brand; else an empty tree.
+- **Servable only (founder ruling 2026-09-08):** `ready`, `proposed`, `confirmed`, highest such
+  version per path. Running, empty, failed and superseded versions are not listed. The dummy has
+  no status chip, so none is rendered; `status` rides the wire for a future slot.
+- **Progressive fill:** the page polls the onboarding status while a run is `queued`/`running`
+  and re-reads the tree when a step lands. No progress UI.
+
+### What the page does with it
+
+- Folders map onto the lifted `BrandKnowledgeFolderSchema` in the dummy's order — Company,
+  Product, Audience, Proof, then Design (kit). `updatedLabel` is derived from `updatedAt` and
+  not rendered. `title` is the document name.
+- Bodies are read per document (parallel), like the asset registry reads.
+- **Edit is gone (founder ruling 2026-09-08):** the Preview/Edit control is removed from the
+  page for every document, Design.md included; the `mode` query parameter is ignored.
+- Configured and refused → the four folders are honest empties; the fixture never serves a
+  configured deployment.
+
+The proposed mutation endpoints remain proposals.

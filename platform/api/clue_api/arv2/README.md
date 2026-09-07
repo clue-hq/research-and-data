@@ -487,3 +487,12 @@ Two things worth knowing before touching it:
   credentials*, so `exa_search_evidence@1` registers but refuses `exa_not_configured` before any
   spend — deliberate, so no test toolbelt composes a live billable Exa client off a stray `.env`
   key. A production composition root must pass a real `Secrets` explicitly; `fleet_main` does.
+
+## O5 — the Knowledge read surface
+
+`clue_api/frontend_read/brand_knowledge.py` serves the onboarding documents to the brand-context
+page: the servable tree, one document (verified artifact read → front matter + markdown + flattened
+sources), and the onboarding status, on `/frontend/v1/brand-context/...`. Only `ready`/`proposed`/
+`confirmed` versions are listed (no status chip — founder ruling 2026-09-08); the `design` folder
+is the brand kit's. The store's `list_documents` stays status-blind for the page's own reasons; this
+read filters.

@@ -25,7 +25,10 @@ from clue_api.arv2.onboarding_store import read_current_run
 from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_db import ConnFactory
+from clue_obs import get_logger
 from clue_storage import StorageBackend, read_verified_artifact
+
+log = get_logger("clue_api.frontend_read.brand_knowledge")
 
 __all__ = [
     "SERVABLE_STATUSES",
@@ -291,6 +294,12 @@ async def read_knowledge_tree(
                         conn, storage, workspace_id=workspace_id, row=row
                     )
                 except Exception:  # noqa: BLE001 — a missing blob lists the document by name, never 500s the tree
+                    log.warning(
+                        "brand_knowledge.document_unreadable",
+                        workspace_id=workspace_id,
+                        document_id=str(row["document_id"]),
+                        path=str(row["path"]),
+                    )
                     front, body = {}, ""
             documents[str(row["folder"])].append(_document_wire(row, front=front, body=body))
     return KnowledgeTreeWire(
