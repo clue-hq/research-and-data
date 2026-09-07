@@ -370,6 +370,23 @@ class Settings(BaseSettings):
     # facts outreach_safe=false. It never drops a claim. Env: ``CLUE_SENSITIVITY_FLOOR_ENABLED``.
     sensitivity_floor_enabled: bool = True
 
+    # --- ARV2 display layer (D2; master plan §7) -----------------------------------------------
+    # OpenRouter model id for the section writer. The control test (2026-09-04) rejected every
+    # cheaper model on the two non-negotiables. Env: ``CLUE_ARV2_DISPLAY_MODEL``.
+    arv2_display_model: str = "openai/gpt-5.6-luna"
+    # Per-section HTTP timeout. A page's sections run in parallel, so this bounds the first open.
+    # Env: ``CLUE_ARV2_DISPLAY_TIMEOUT_S``.
+    arv2_display_timeout_s: float = 240.0
+    # How many sections of one page are in flight at once (one ProviderCaller each).
+    # Env: ``CLUE_ARV2_DISPLAY_MAX_PARALLEL``.
+    arv2_display_max_parallel: int = 8
+    # ``client.what_we_sell`` in the display prompt, until Track O's company-overview artifact
+    # supplies it (D2 decision 7). Env: ``CLUE_ARV2_DISPLAY_CLIENT_PITCH``.
+    arv2_display_client_pitch: str = (
+        "AI-native ABM: account and committee research, personalised content, "
+        "brand-aligned artifacts, scaled per account"
+    )
+
     # Part II D5 Round B production cutover for design agent turns (scene + website). This switch
     # owns only whether the detached fleet worker registers the ``design_job`` handler; the design
     # API always offers the work, and its own embedded worker (LUMEN_EMBEDDED_FLEET_WORKER) is
