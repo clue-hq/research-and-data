@@ -41,3 +41,16 @@ controller adds exports at merge. Reports land in the SDD workspace as `task-N-r
 - Merge order into track-R: any, as each passes Fable's personal review + live suite re-run.
 - Live-suite spend per full `tests/arv2` run once all six merge: roughly $0.50 + ~5 AI Ark credits.
 - Worktrees to remove after merge: `git worktree remove /Users/aryankeshri/conductor/worktrees-arv2/<name>`.
+
+## Progress addendum (same day, later)
+Merged into track-R after Fable's personal review + live re-run of each suite: Task 5 media feeds
+(4c3c626fe), Task 4 ATS (911ec53a9), Task 2 AI Ark (39d691b05), Task 6 Gemini media (24905e90e),
+Task 3 Exa (2a9a380e6 + fix 592d7f65d adding `CostReading.extras`). Consolidation commit
+(f26674301): package exports for the merged clients (entry points only — two different
+`AudioFile` types exist), `upload_id` added to the redacted query params, README integration
+notes, product-catalog schema property count corrected to eight (the JSON was right, the prose
+said nine). Task 7 structuring still in flight on `task/R1-structuring`.
+Live facts learned: OpenRouter accepts `input_audio` base64 for gemini-3.5-flash-lite; native
+transcribe reproduces the PoC cost ($0.0192834 for 42:49); Exa accepted the §3 schema with `enum`;
+AI Ark `/v1/credit` is 401 even with a valid key; probook.ai's careers page is `/company`, reached
+only via link text; the Boardroom feed has 101 episodes (the PoC's "65" was a truncated save).
