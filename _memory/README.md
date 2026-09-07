@@ -51,6 +51,7 @@ The central architecture bet is that verification must be modeled at the claim/d
   `user`), the five leniency flags, the 38-row ARV2 field pack, the `LenientClaimWriter`, and
   the Zafran + ten-person answer key loaded as 294 real claims; four rulings, the plan's
   twelve decisions, the `.env`-sensitive suite caveat, and the D2/D3 follow-ups.
+- `2026-09-07-arv2-r2-prereqs-seam1-probook-icp.md` — R2 prereqs wave 1: Seam 1 ratified (D9 open), Probook seeded, stand-in ICP + persona documents registered by the loader, product set v1, S7 content substance for review; AI Ark people endpoint still 402.
 - `2026-09-07-arv2-r1-step0-and-client-dispatch.md` — ARV2 R1 on track-R: founder rulings (live tests only, native Gemini transcribe exception, keys), Step 0 wrapper/sinks/import guard landed (ee6fe1c94..076f0114a), provider_call_ledger spec, six client worktrees dispatched in parallel.
 - `2026-08-19-live-research-queued-ui-and-fleet-failure.md` — timestamped browser, database, and
   worker evidence for the Insight Health ten-Account approval: why the frontend remains honestly
