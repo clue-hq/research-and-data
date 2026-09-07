@@ -49,3 +49,18 @@ lacks credit/plan for people + export. User action; re-run `tests/arv2/test_ai_a
 - Founder review of the S7 substance (§6 questions) → Opus writes the five catalog files.
 - O3 next (production sinks + fleet driver pattern), then the R2 plan.
 - `display:` slugs in the ICP follow master plan §7 names kebab-cased; D2 fixes the vocabulary.
+
+## 2026-09-08 — S7 substance rev 2 (founder rulings + PoC completeness pass)
+- Ruled: **full mode only**; stop policy = 100 model rounds, 50 tool calls per round, 30 min wall
+  clock; **no** total tool-call cap, **no** consecutive-zero-yield cap. A looping run is observed
+  and fixed, never pre-restricted (the old lane failed under stacked caps). The seam-1 `effort`
+  field stays in the contract (D6) but profile v1 runs full regardless and records the rung.
+- Completeness pass: rev 1 generalised only z5; rev 2 merges step6 (Probook) + b1b (five accounts,
+  SPECIAL PROBES) + b3 negatives + step9b/9c second-pass extractors + z2 free ladder + the three
+  reports' lessons. Added to the prompt: prefer primary sources; CONFIRMED/DENIED/UNRESOLVED rule;
+  evidence outranks the operator-supplied lock; one subject per structuring call. Dossier charter is
+  now **twelve** sections (identity & disambiguation and culture & resonance were missing). Ladder
+  gained: careers page without an ATS, per-account probes into the deep call, a cheap negatives
+  search, name-scoped-only people lookups, audio over video. Structuring gained the narrow intent
+  sweep (needs a `mode` on the R1 client — R2 owns) and a field-meaning review before write.
+- Still open for the founder: §6 items 1–4 of the substance doc.
