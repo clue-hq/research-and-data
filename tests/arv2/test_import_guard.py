@@ -1,0 +1,123 @@
+"""Global Constraint 7, machine-checked: ``clue_api.arv2`` imports nothing quarantined.
+
+The ARV2 lane is being built beside a large body of superseded research machinery (the M8D R1
+quarantine, the old orchestrators, the Sumble lineage). A single convenience import from one of
+those trees would silently re-couple the new lane to the code it exists to replace, and no other
+gate would notice — so this one walks the package's own syntax tree.
+"""
+
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[2]
+ARV2 = REPO / "platform" / "api" / "clue_api" / "arv2"
+ARV2_PACKAGE = "clue_api.arv2"
+
+#: The only internal prefixes an ARV2 module may import. Everything else under ``clue_research``,
+#: all of ``clue_memory``, and every ``clue_api`` module outside ``arv2`` are forbidden.
+ALLOWED_INTERNAL_PREFIXES: tuple[str, ...] = (
+    "clue_api.arv2",
+    "clue_core",
+    "clue_config",
+    "clue_obs",
+    "clue_storage",
+    "clue_db",
+    "clue_gateway",
+    "clue_locks",
+    "clue_spine",
+    "clue_toolbelt",
+    "clue_fleet",
+    "clue_agents",
+    "clue_execution",
+    "clue_auth",
+    "clue_projections",
+    "clue_research.claimstore",
+)
+
+#: Provider SDKs. Every ARV2 provider call goes over plain HTTP through the wrapper instead.
+FORBIDDEN_SDK_ROOTS: frozenset[str] = frozenset(
+    {"openai", "google", "exa_py", "firecrawl", "sumble"}
+)
+
+_INTERNAL_ROOT_PREFIX = "clue_"
+
+
+def _resolve(module: str | None, level: int, package: str) -> str:
+    """Resolve a possibly-relative import to its absolute dotted name."""
+    if level == 0:
+        return module or ""
+    parts = package.split(".")
+    base = parts[: len(parts) - (level - 1)] if level > 1 else parts
+    return ".".join([*base, module]) if module else ".".join(base)
+
+
+def _is_allowed(dotted: str) -> bool:
+    root = dotted.split(".", 1)[0]
+    if root in FORBIDDEN_SDK_ROOTS:
+        return False
+    if not root.startswith(_INTERNAL_ROOT_PREFIX):
+        return True
+    return any(
+        dotted == prefix or dotted.startswith(prefix + ".") for prefix in ALLOWED_INTERNAL_PREFIXES
+    )
+
+
+def offending_imports(source: str, *, package: str) -> list[str]:
+    """Every dotted import in ``source`` that Global Constraint 7 forbids."""
+    offenders: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            offenders.extend(alias.name for alias in node.names if not _is_allowed(alias.name))
+        elif isinstance(node, ast.ImportFrom):
+            dotted = _resolve(node.module, node.level, package)
+            if dotted and not _is_allowed(dotted):
+                offenders.append(dotted)
+    return offenders
+
+
+def _package_for(path: Path) -> str:
+    relative = path.relative_to(ARV2).parts
+    return ".".join([ARV2_PACKAGE, *relative[:-1]])
+
+
+def test_the_arv2_package_imports_nothing_quarantined() -> None:
+    modules = sorted(ARV2.rglob("*.py"))
+    assert modules, f"no ARV2 modules found under {ARV2} — the guard would pass vacuously"
+
+    offenders: list[str] = []
+    for path in modules:
+        for dotted in offending_imports(
+            path.read_text(encoding="utf-8"), package=_package_for(path)
+        ):
+            offenders.append(f"{path.relative_to(REPO)}: {dotted}")
+    assert not offenders, (
+        "Global Constraint 7 — clue_api.arv2 may import only "
+        f"{list(ALLOWED_INTERNAL_PREFIXES)} and no provider SDK; found: {offenders}"
+    )
+
+
+def test_the_guard_reports_a_quarantined_import_when_there_is_one() -> None:
+    """The checker's own red case: a green guard must be proof, not an empty walk."""
+    source = (
+        "from clue_api.sumble_claim_materialization import materialize\n"
+        "from clue_research.sources.waterfall import run\n"
+        "from clue_research.claimstore import insert_claim\n"
+        "import httpx\n"
+        "from clue_core.primitives import CostCents\n"
+        "from .transport import HttpRequest\n"
+    )
+    assert offending_imports(source, package=ARV2_PACKAGE) == [
+        "clue_api.sumble_claim_materialization",
+        "clue_research.sources.waterfall",
+    ]
+
+
+def test_the_guard_reports_a_provider_sdk_import() -> None:
+    source = "import openai\nfrom google.generativeai import configure\nimport exa_py\n"
+    assert offending_imports(source, package=ARV2_PACKAGE) == [
+        "openai",
+        "google.generativeai",
+        "exa_py",
+    ]
