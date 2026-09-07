@@ -710,6 +710,15 @@ export function ChatSurface({
         canvasReloadToken={session.reloadNonce + sceneSession.reloadNonce}
         exportPreview={sceneSession.exportPreview}
         exportStatus={sceneSession.exportStatus}
+        // The website pane's "agent is generating" motion (cofounder handoff
+        // ad4f30bb). Both halves are the controller's own already-public facts:
+        // a turn in flight on THIS thread, beside an OPEN design leg — the leg
+        // is what makes the turn about the artifact in the pane, so a plain
+        // research turn never blurs someone's page. A READ of the chat
+        // controller and nothing more: no chat-side behaviour moves because of
+        // it. The canvas decides when the blur LIFTS (its hold rule waits out
+        // the refresh the turn wrote), so this is only the arming signal.
+        generating={chat.threadBusy && chat.designLegOpen}
         onRequestExportPreview={sceneSession.requestExportPreview}
         onSceneChange={sceneSession.onSceneChange}
         onSceneFitZoom={sceneSession.onFitZoom}

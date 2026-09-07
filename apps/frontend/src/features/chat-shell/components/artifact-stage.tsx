@@ -70,6 +70,7 @@ export function ArtifactStage({
   editing,
   exportPreview,
   exportStatus,
+  generating,
   onActivateArtifact,
   onCanvasSelect,
   onCloneTextCommit,
@@ -145,6 +146,11 @@ export function ArtifactStage({
    * to the export menu's status line. Absent leaves the menu announcing
    * its controller's own optimistic line, exactly as it does today. */
   exportStatus?: SceneExportStatus | null;
+  /** An agent turn is in flight on this thread's open design leg. The WEB canvas
+   * raises its generating veil over the pane; nothing else in the stage reads
+   * it. Passed by the chats route only — the standalone artifact route has no
+   * turn stream, the same posture as `sceneGestureDisabled` below. */
+  generating?: boolean;
   onActivateArtifact: (artifactId: string) => void;
   /** AD4.D step 3: the export menu asking the ad session to render the settings
    * it is showing. Absent keeps the menu's preview effect inert. */
@@ -326,6 +332,7 @@ export function ArtifactStage({
                     controlsRef={canvasControlsRef}
                     documentId={activeDocumentId}
                     editing={editing}
+                    generating={generating}
                     /* F5 task 20: a site-internal link clicked inside the
                      * canvas switches the page through the very same session
                      * setter the header's switcher uses — one active page, one
