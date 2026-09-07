@@ -241,3 +241,19 @@ No item fails.
 - **Verification posture.** Everything above was generated with `CLUE_VERIFICATION_ENABLED=false`.
   With it on, two of the five Zafran `contact.role_on_committee` rows are unverified tier-4
   synthesis and the committee reads three, not five (D1 note). D3 must not assume five.
+
+## Controller close-out attestation (2026-09-08)
+
+The Task-7 Opus implementer was cut off by the Opus session rate limit immediately after writing its
+report; every deliverable (live test, the three persisted pages, the records) had already landed.
+The controller (Fable) then re-ran the whole close-out gate first-hand and got the same numbers:
+596 passed / 2 skipped / 2 failed (the two pre-attributed non-D2 reds), ruff 9 findings (baseline),
+10 pre-existing unformatted files, mypy's one pre-existing `ad_assets.py:149`, lint-imports 26/0,
+one Alembic head `3742d1281a10`. Whole-branch checks: 10 commits `f6143910d..6a682d596`, 32 files,
++7754/−2; nothing under `.artifacts/` tracked; no key material in the branch diff. Independent copy
+scan of the persisted pages (231 sentences): 0 aliases, 0 URLs/domains, 0 numeric dates in prose;
+SQL leak check 0.
+
+Founder items to review (content, not code): `display/recipes.py` (the 17 recipes) and
+`display/prompts.py` (system prompt + 17 instructions) are Shashank's S4 content and were written by
+the agent under the plan; the four copy-quality notes above are theirs to act on.
