@@ -79,3 +79,8 @@ only via link text; the Boardroom feed has 101 episodes (the PoC's "65" was a tr
   green; AI Ark returned HTTP 402 "sorry, you don't have enough credit" at 12:03 UTC and the client
   latched (designed behaviour). The AI Ark account needs the paid plan / a top-up before the AI Ark
   live file can pass again; ~24 credits were recorded today across all runs.
+- Founder instruction (post-close): cost tracking active on every response + a provision for the
+  cost of each request. Task 8 (f8fa712b4, 7b91d6ea3, 00d4b042a): `CallCost` on every client return
+  value (cost_usd, credits, media_seconds, cost_source metered|free|estimate, ledger_row_id, raw_ref,
+  provider, operation); `cost_source` written on every result ledger row; README "Cost per request".
+  Deferred to R2: an explicit `free: bool` on CallSpec so a forgotten cost reader cannot read as free.
