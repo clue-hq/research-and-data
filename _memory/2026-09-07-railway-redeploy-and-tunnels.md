@@ -94,7 +94,7 @@ both .env.example files (SELF_SERVE stays 1; dup keys removed), CLAUDE.md + _mem
 Alembic had two heads → merge revision `fa0b41b0ffdc`; throwaway DB `clue_plan1_test` migrated to it
 and the incoming platform DB tests pass there. Frontend: 2801 tests pass, lint 0 errors; `tsc --noEmit`
 shows two PRE-EXISTING test-file typing errors (wasmHandshake/libraryFonts tests, untouched since Aug)
-that `next build` does not trip on. Merge removed jsdom (unused on this branch). lumen-core untouched;
+that `next build` does not trip on. Merge removed jsdom + @types/jsdom from package.json, but the scene-ad clipboard test suites DO import it (a grep that `head`-truncated to nothing read as "unused" — the verify-nonexistence-exactly rule again); restored as devDependencies in a follow-up commit. lumen-core untouched;
 lumen-web changed → release helper rebuilt in an isolated target dir (`/tmp/colombo-target-merge`) so
 the live binary was not swapped under the running design API. New .env keys added for colombo
 (CLUE_DEV_*, LUMEN_AGENT_WEB_SOLO=1, LUMEN_AGENT_OPENROUTER_CHAT_COMPLETIONS=1).
