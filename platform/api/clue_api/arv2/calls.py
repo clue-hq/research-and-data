@@ -72,12 +72,19 @@ class CostReading:
 
     Every field is optional because "the provider did not tell us" is a real answer that must not
     be rounded to zero — the caller falls back to the estimate and the row says it did.
+
+    ``extras`` carries whatever else the provider's metering said that does not fit the four
+    numbers above — a per-component cost breakdown, most often. It is merged into the **result**
+    row's ``extras`` (never the estimate row, which is written before the wire), so "which part of
+    this call was expensive" stays a query. Values must be JSON-safe: the row is serialised by the
+    ledger sink, which knows only ``Decimal`` and ``datetime`` beyond the JSON primitives.
     """
 
     cost_usd: Decimal | None = None
     credits: Decimal | None = None
     provider_request_id: str | None = None
     media_seconds: int | None = None
+    extras: Mapping[str, object] = field(default_factory=dict)
 
 
 #: Returns a reason code when the response proves the provider will not sell (402/403, a body
@@ -446,6 +453,11 @@ class ProviderCaller:
 
         When the reader reported nothing at all, the estimate stands in for the cost and the row
         marks the substitution — an unmetered call must still appear in the money trail.
+
+        A reading's own ``extras`` land on this row too, between the spec's (which a caller set
+        before the wire) and the ``cost_source`` marker (which the wrapper owns). A reader
+        therefore reports what it read by *returning* it, and never by mutating the frozen spec it
+        was called under.
         """
         told_us_nothing = (
             cost.cost_usd is None and cost.credits is None and cost.media_seconds is None
@@ -475,7 +487,10 @@ class ProviderCaller:
             provider_request_id=cost.provider_request_id,
             error_code=error_code,
             raw_ref=raw_ref,
-            extras={"cost_source": "estimate"} if told_us_nothing else {},
+            extras={
+                **cost.extras,
+                **({"cost_source": "estimate"} if told_us_nothing else {}),
+            },
         )
 
     def _record(
