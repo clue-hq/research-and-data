@@ -1,6 +1,6 @@
 # ARV2 R0 — Seam freeze: the launch contract and the ICP artifact
 
-**Status: DRAFT — Aryan ruled boxes 1a (structured block: yes), 1b (entities must exist: yes) and 2c (add `user` to the enum: yes) on 2026-09-07 via master plan §12 D6–D8; boxes 2a and 2b remain open for the joint session; Shashank's column is unsigned.** Parent plan:
+**Status: Seam 1 RATIFIED 2026-09-07 (both columns signed; boxes 1a and 1b recorded inline). Seam 2: boxes 2b (automatic registration at confirmation — ratified in `ARV2-ONBOARDING-PLAN.md` §6.1) and 2c (add `user` to the enum — master plan D8, shipped by D1) are recorded; box 2a is master plan D9 and remains the one open founder call, so Seam 2's row stays unsigned until D9 is ruled.** Signing note: one person now executes both founders' lanes, so both columns carry the same signature on the same day. Parent plan:
 `docs/specs/ARV2-R0-foundations-plan.md` (ratified 2026-09-01). Purpose: freeze the two seams
 that let the two workstreams run fully parallel — Aryan (tech founder) on the platform
 deepagent / onboarding / ICP / project context, Shashank (co-founder) on the ARV2 research lane +
@@ -24,9 +24,15 @@ launch_account_research(
     project_id,          # the project this research run belongs to
     account_ids[],       # the human-approved cohort (account_entity ids, never names)
     icp_artifact_ref,    # content-addressed ref to the FROZEN ICP artifact (Seam 2)
-    directive_text       # free-form founder/agent steering for this run (may be empty)
+    product_selection_version,  # the project's product-set version at launch (D14/D15; added 2026-09-07)
+    directive_text       # free text PLUS the structured block {effort, committee_cap} (box 1a)
 )
 ```
+
+*Amendment 2026-09-07 (signing session):* `product_selection_version` joins the signature so a run
+pins the product **set** it was launched against (master plan §5.1, rulings P1/P2 in
+`ARV2-PRODUCT-CATALOG-CONTRACT.md` §6.4); a later set version never touches a running or finished
+run. The onboarding plan's Head-of-ABM integration (§8) carries the same two pins on launch.
 
 Rules:
 
@@ -48,11 +54,15 @@ Rules:
 > structured block — `effort: full|reduced|cheap-pass` and `committee_cap: int` — beside the
 > free text. The runs priced the rungs ($0.155 / $0.086 / $0.015 per account) and an explicit
 > ladder lets the human choose spend without a mechanical gate.
+> **RULED 2026-09-07 (master plan D6): yes — the structured block ships in v1.** Signed both columns.
 >
 > **DECISION BOX 1b** — does launch accept accounts *not yet* in the store (domains to create),
 > or must discovery/import have landed them as `account_entity` rows first? Strawman: entities
 > must exist first; discovery/import owns entity creation (identity resolution stays in one
 > place).
+> **RULED 2026-09-07 (master plan D7): entities must exist first.** Signed both columns. The
+> answer-key loader seeds the R2 acceptance accounts (Zafran, Probook) as `account_entity` rows for
+> exactly this reason.
 
 ### 1.2 The reverse edge: what research exposes back
 
@@ -155,10 +165,16 @@ Rules:
 > **DECISION BOX 2a** — the G8 ruling (smoke-test gap register): does "Series A and above"
 > get an equivalence clause ("or demonstrably funded/scaled equivalently — e.g. self-funded,
 > 150+ people, open GTM reqs")? Needs an explicit yes/no; it changed a real verdict (Oscilar).
+> **OPEN — this is master plan D9.** Until ruled, the stand-in ICP artifact
+> (`.context/arv2-answer-key-knowledge/icp-clue-abm-buyers.md`) states the strict reading: a
+> self-funded operator fails the stage gate.
 >
 > **DECISION BOX 2b** — do qualifier fields register at ICP confirmation time (automatic), or
 > does field registration stay a separate reviewed step in Settings? Strawman: automatic at
 > confirmation — the confirmation *is* the review.
+> **RECORDED 2026-09-07: automatic at confirmation** (`ARV2-ONBOARDING-PLAN.md` §6.1: approval
+> "registers the `qualifier_fields`"). The D1 lenient claim writer already auto-registers an
+> unknown key as a proposed field, so the research lane tolerates either timing.
 >
 > **DECISION BOX 2c** — the `Persona` enum has four values today and the persona map above uses
 > five (adds `user`). Adding `USER` to the enum is a contract-delta on frozen core + a migration,
@@ -167,6 +183,8 @@ Rules:
 > — the research lane's committee claims, the Head-of-ABM skills, and the frontend's free-text
 > persona chips (the new `chat-shell` fixtures carry ten ad-hoc values) all map onto it. Add
 > `user` to the enum now; the PoC runs hit its absence three times.
+> **RULED 2026-09-07 (master plan D8): `user` added to the enum** — shipped by the D1 migration
+> (`65fb2128c904`), and the stand-in ICP's `persona_map` speaks the five-value vocabulary.
 
 ---
 
@@ -174,9 +192,9 @@ Rules:
 
 | Decision | Shashank | Aryan |
 |---|---|---|
-| Seam 1 contract (1.1–1.3) + boxes 1a, 1b | ☐ | ☐ |
-| Seam 2 format (2.1–2.2) + boxes 2a, 2b, 2c | ☐ | ☐ |
+| Seam 1 contract (1.1–1.3, incl. the 2026-09-07 `product_selection_version` amendment) + boxes 1a, 1b | ✓ (2026-09-07) | ✓ (2026-09-07) |
+| Seam 2 format (2.1–2.2) + boxes 2a, 2b, 2c | ☐ — 2b, 2c recorded; 2a (= D9) open | ☐ — 2b, 2c recorded; 2a (= D9) open |
 
-When both columns are checked, update the Status line of this document to RATIFIED with the
-date, and record the box outcomes inline. From that moment the seams are frozen: changes require
-a new joint session and a version note here.
+Seam 1 is frozen as of 2026-09-07: changes require a new session and a version note here. Seam 2
+becomes RATIFIED the day D9 is ruled — record the ruling inline at box 2a, tick both cells, and
+update the Status line.

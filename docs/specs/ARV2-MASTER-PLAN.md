@@ -463,8 +463,8 @@ boot-time audit refuses to start if an old tool is re-granted; the old tools are
 | D3 | Contract v1 = the dummy's models at `live-backend-v1` @ `84f8ee7` + §6 semantics, incl. "no field_key on the wire" and "h1 served bare" | Yes | ✓ (2026-09-07) | ☐ |
 | D4 | The §4 migration bundled (priority + outreach_safe + display_block + recipes) | Yes | ✓ (2026-09-07) | ☐ |
 | D5 | `newSinceLastVisit`: frontend-computed from `verifiedAt` + local last-visit; backend serves `false`, no visit row | Resolved by the 5 Sep frontend | ✓ (2026-09-07) | ☐ |
-| D6 | Seam 1: structured block in `directive_text` (effort rung + committee cap) | Yes | ✓ (2026-09-07) | ☐ |
-| D7 | Seam 1: launch requires existing `account_entity` rows | Yes | ✓ (2026-09-07) | ☐ |
+| D6 | Seam 1: structured block in `directive_text` (effort rung + committee cap) | Yes | ✓ (2026-09-07) | ✓ (2026-09-07, Seam 1 signing) |
+| D7 | Seam 1: launch requires existing `account_entity` rows | Yes | ✓ (2026-09-07) | ✓ (2026-09-07, Seam 1 signing) |
 | D8 | Seam 2: add `user` to the `Persona` enum now | Yes | ✓ (2026-09-07) | ☐ |
 | D9 | Seam 2: the "Series A and above" gate gets an equivalence clause for self-funded operators | Founders' call — **still open** (no recommendation was made, so it is not covered by the 2026-09-07 rulings) | ☐ | ☐ |
 | D10 | Keep the four compliance floors (pre-spend authority, born identity-binding, use gate, DSAR) | Keep all four | ✓ (2026-09-07) | ☐ |
