@@ -665,7 +665,7 @@ class OpenRouterAgentModelProvider:
                 if client is not None:
                     response = client.get(url, headers=headers)
                 else:
-                    response = httpx.get(url, headers=headers, timeout=30.0)
+                    response = httpx.get(url, headers=headers, timeout=self._config.timeout_s)
                 response.raise_for_status()
                 payload = response.json()
             except Exception:  # noqa: BLE001 - unreachable catalog = honest "unknown"

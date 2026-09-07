@@ -53,6 +53,8 @@ def registry() -> AgentProfileRegistry:
     with hermetic_flag_env(), pytest.MonkeyPatch.context() as mp:
         for role in AgentRole:
             mp.delenv(f"{role.value.upper()}_AGENT_MODEL", raising=False)
+        # The deployment-wide per-call timeout override (2026-09-08) rides the same seam.
+        mp.delenv("CLUE_AGENT_MODEL_TIMEOUT_S", raising=False)
         return build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
 
 
