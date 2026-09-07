@@ -47,12 +47,42 @@ CATALOG_SOURCE = CONTEXT / "arv2-smoke-cluehq" / "field_catalog.py"
 EXACT_VERBATIM_FLOOR = 0.5
 
 
+#: Registered facet fields the proof-of-concept's ``field_catalog.py`` predates.
+#:
+#: ``p4_structure.py`` carried these three as ``PROPOSED_KEYS`` — real material with no registered
+#: home at the time — and master plan §4 has since registered all three ("New registered fields
+#: (data rows, no code): … contact — ``contact.facet.hooks``, ``.openers``, ``.voice_quote``
+#: (``media_url`` + ``timestamp``)"). Without them the live person call structures against a
+#: catalog the production lane does not have: the model reliably emits rows on exactly these keys,
+#: they are re-filed to ``proposed`` as unregistered, and the kept-claim count moves run to run for
+#: a reason that no longer exists in production. They declare no value schema, so ``schema_valid``
+#: is ``None`` for them — "not checked", never a silent pass.
+REGISTERED_SINCE_THE_POC: tuple[FieldSpec, ...] = (
+    FieldSpec(
+        key="contact.facet.hooks",
+        description="Grounded personal hooks usable in outreach.",
+    ),
+    FieldSpec(
+        key="contact.facet.openers",
+        description="Three grounded first-line openers for a cold message.",
+    ),
+    FieldSpec(
+        key="contact.facet.voice_quote",
+        description=(
+            "A verbatim quote from the person's own long-form media, with its media_url and "
+            "timestamp."
+        ),
+    ),
+)
+
+
 def _load_poc_catalog() -> FieldCatalog:
     """Load the PoC's field catalog by path and map it onto :class:`FieldCatalog`.
 
     ``ACCOUNT_FIELDS``/``CONTACT_FIELDS`` are ``key: (value_type, json_schema, description)``;
     ``FACET_FIELDS`` appends a default use-class as a fourth element, which this shape does not
-    carry — the first three are read from both.
+    carry — the first three are read from both. The facet section is then extended with
+    :data:`REGISTERED_SINCE_THE_POC`, so the catalog under test is the production one.
     """
     spec = importlib.util.spec_from_file_location("arv2_poc_field_catalog", CATALOG_SOURCE)
     assert spec is not None and spec.loader is not None, CATALOG_SOURCE
@@ -72,7 +102,7 @@ def _load_poc_catalog() -> FieldCatalog:
     return FieldCatalog(
         account=section(module.ACCOUNT_FIELDS),
         contact=section(module.CONTACT_FIELDS),
-        facet=section(module.FACET_FIELDS),
+        facet=(*section(module.FACET_FIELDS), *REGISTERED_SINCE_THE_POC),
     )
 
 
@@ -159,13 +189,18 @@ def _assert_closed_catalog(output: StructuredOutput, catalog: FieldCatalog) -> N
 
 
 def test_the_poc_catalog_loads_with_its_recorded_key_counts(poc_catalog: FieldCatalog) -> None:
-    """24 / 8 / 12 — if the catalog shrank, every live assertion below would soften silently."""
+    """24 / 8 / 15 — if the catalog shrank, every live assertion below would soften silently.
+
+    12 facet keys come from the PoC file; the 3 that master plan §4 registered afterwards are
+    added by :data:`REGISTERED_SINCE_THE_POC`, so this is the production facet set.
+    """
     assert (len(poc_catalog.account), len(poc_catalog.contact), len(poc_catalog.facet)) == (
         24,
         8,
-        12,
+        15,
     )
-    assert len(poc_catalog.keys()) == 44
+    assert len(poc_catalog.keys()) == 47
+    assert {spec.key for spec in REGISTERED_SINCE_THE_POC} <= poc_catalog.keys()
 
 
 def test_zafran_structures_into_registered_claims_with_verbatim_evidence(
