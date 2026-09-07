@@ -13,7 +13,7 @@ Session with Aryan on the onboarding product catalog. Docs only; no code, no mig
 - **P3/P4** — exactly one ICP per project, targeting the whole set. No per-ICP product subset
   (the recommendation had been "subset allowed, default all"; overruled). Two product lines with
   two ICPs = two projects.
-- **D17** — the Exa `outputSchema` for the catalog is final: 9 properties, depth 2, no citation
+- **D17** — the Exa `outputSchema` for the catalog is final: 8 properties (2 top-level + 6 per item; my earlier "9" was a miscount, corrected by the R1 lane), depth 2, no citation
   fields (Exa returns `output.grounding` per field), `aliases` deliberately dropped. Exa docs
   (28 Aug 2026) limit `outputSchema` to depth 2 / 10 properties; `enum` is not on the documented
   keyword list — if rejected, values move to `description`, enforced platform-side.

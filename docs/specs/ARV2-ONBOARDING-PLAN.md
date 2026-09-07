@@ -138,7 +138,7 @@ brand_knowledge_document (
 
 ### 4.1 Product lineup — `ARV2-PRODUCT-CATALOG-CONTRACT.md` (final)
 
-Exa `/search`, `type: deep-reasoning`, the 9-property schema, two passes (own-domain and open),
+Exa `/search`, `type: deep-reasoning`, the 8-property schema (two top-level, six per item; R1's Exa client sends it verbatim and Exa accepted it, `enum` included), two passes (own-domain and open),
 artifact `ProductCatalogResearch@1`, synchronizer input = the artifact, product rows + lineage.
 
 **Amendment carried by this plan (S5):** the ICP artifact gains `product_ids[]`; §6.4 of the
