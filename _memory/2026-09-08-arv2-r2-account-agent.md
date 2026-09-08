@@ -171,3 +171,9 @@ directory, is the close's exit gate. Nothing in tasks 1–6 has been exercised l
 - `read_media_feeds(alternate_urls=[…])` falls through on load failures; `feed_not_found` names every URL.
 - AI Ark HQ shape emits `region` (state) and `country_code` when the record has one.
 - Not measured live (founder ruling): folds into R3's acceptance run.
+- Final review of the follow-ups (Opus, "with fixes") + one fix wave (321ebbb1c): `REACTIONS["feed_not_found"]` now
+  matches the manual word for word and a test guards every row against drift; walled hosts are refused before
+  any media hop is chosen; earlier load failures ride on a later refusal's detail; `expected_shape` is honest
+  when the field is not in the job's catalog; candidates deduplicated. Left by ruling: type guards on
+  region/country_code (M4); `schema_hint` assumes required ⊆ properties (verified across all 66 schemas, M9).
+  Suite 600 passed / 76 DB-skipped; 19 pre-existing ruff findings outside the slice remain for a repo sweep.
