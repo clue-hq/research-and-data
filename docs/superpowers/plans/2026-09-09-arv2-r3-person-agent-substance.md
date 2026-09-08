@@ -112,35 +112,60 @@ deltas, each from a PoC rule the ten-person run needed:
 
 ### 3.1 The ladder, with what each rung is for
 
-Free-first, then the sweep, then one deep call, then the two narrow follow-ups. Costs from the ten-person
-PoC run (`PERSON-DEPTH-REPORT.md` §4–5).
+**What this section is.** The ladder is the order in which the person agent does its work: the free and
+already-known sources first, then the paid searches, then the one expensive deep call, then the two
+narrow follow-ups, then structuring and the receipt. It is the skill's spine; the charter in §3.2 is
+*what to find*, the ladder is *where to look, in what order, and when to stop*. Written as the agent
+reads it — it names only tools the agent has and things the agent can see. Nothing below points at a
+document outside the agent's own catalog and context.
 
-1. **Read what the account job left** — the committee claim, `confirmed_by`, the account's own claims
-   (the "already established" block, compacted per the R2 follow-ups). The person's LinkedIn page via Exa
-   contents (indexed text; LinkedIn-native video is never fetched).
-2. **`lookup_person`** — the AI Ark record and email export (§1.2). Deterministic claims land in code.
-3. **The trimmed sweep — six angles, unrestricted queries, name-quoted and context-rich.** From §5a, in
-   the order they earned their keep: (A12) *prior employer + long-form voice* — the best angle, run first;
-   (A1) `"name" podcast interview guest`; (A4) authored articles / bylines; (A6) university / alumni —
-   delivered alma mater 10/10, and Tyler Chonoles's whole life-outside-work profile came from a college
-   golf roster; (A10) volunteer / board / community, down-weighted; (A11) hometown / local press,
-   down-weighted. **Cut** (zero unique URLs in ten people): domain-restricted podcast directories, video
-   sites, Substack/Medium, X/Bluesky/Reddit; awards lists. `includeDomains` is a trap: it forces a
-   same-name stranger. Personal site / GitHub folds into A12.
-4. **One deep call** (`research_deep`, report mode) with the charter in §3.2 and the known sources and
-   media listed first ("ALREADY-KNOWN SOURCES — read these FIRST"). Charter at the **front** of the query:
-   the PoC saw a silent truncation when it sat behind a long preamble. The thin-response guard already
-   exists (results < 12 or cost < $0.018 → retry once).
-5. **Media, where it exists (on by default).** Every YouTube URL through Exa contents first (the ASR
-   transcript for ~$0.001–0.004, no key); Gemini for MP3 audio and timestamps; **verify who speaks**
-   before quoting (`speaker_unverified` already exists); LinkedIn-native and X-native video never fetched.
-   `read_media_feeds(alternate_urls=[…])` from the R2 follow-ups.
-6. **Structuring** — one broad `structure_material(subject_kind="person")` against the contact catalog,
-   then **one narrow `unique_insight` call** ("the ONE thing a generic enrichment tool would never
-   surface") — $0.0018 each in the PoC, hit rate 3/10 → 10/10; model conservatism, not missing data.
-   Never let one broad extraction decide whether something exists.
-7. **Finalize** — the person receipt: depth summary, the not-found list with channels checked, the
-   same-name log, three openers.
+1. **Start from what the account job already found.** Read the committee claim that named this
+   person and the URL that confirmed them, then the account's own claims (the "already established"
+   block in your context). Read the person's LinkedIn page as indexed text through `fetch_page`. Never
+   fetch LinkedIn-native video.
+2. **`lookup_person`.** One provider record for this exact person, plus the email export. Every field
+   the record answers is written as a claim in code, citing the record — you do not retype it.
+3. **The sweep — six searches, unrestricted, each with the person's quoted name and their context.**
+   Run them in this order, because it is the order in which they pay off:
+   1. prior employer plus long-form voice (podcast, interview, talk) — run this one first;
+   2. `"<name>" podcast interview guest`;
+   3. authored articles and bylines;
+   4. university and alumni pages — this is where the alma mater comes from, and sometimes a whole
+      life-outside-work profile (a college team roster, a student society page);
+   5. volunteering, boards, community — lower weight;
+   6. hometown and local press — lower weight.
+   Do **not** run domain-restricted searches (podcast directories, video sites, Substack or Medium,
+   X, Bluesky, Reddit) or awards-list searches: restricting the domain forces the search engine to
+   return *something* from that domain, and that something is a same-name stranger. Personal sites
+   and GitHub come out of search 1 when they exist.
+4. **One deep call** (`research_deep`, report mode) with the charter in §3.2. Put the charter at the
+   **front** of the query, then the sources and media you already know are about this person under the
+   heading "ALREADY-KNOWN SOURCES — read these FIRST", then the probes. A long preamble before the
+   charter can make the call answer only part of it. If the report comes back thin, the tool retries
+   once on its own; you do not.
+5. **Media, where it exists.** Media is on by default, bounded per person. For a YouTube appearance,
+   `read_media_feeds` reads the indexed transcript first and only transcribes audio when there is no
+   indexed text. Give every other place the same appearance may load from as `alternate_urls`. A quote
+   from a transcript is usable only when the speaker is verified as this person; a media item named
+   after the company is not the person's voice until the transcript proves who speaks. Never fetch
+   LinkedIn-native or X-native video.
+6. **Structuring, then the narrow follow-up.** One broad `structure_material(subject_kind="person")`
+   over everything retrieved, against the contact catalog. Then one `unique_insight` call asking a
+   single question: the one thing about this person a generic enrichment tool would never surface. Ask
+   it even when the broad pass returned nothing distinctive — a broad extraction routinely answers "thin
+   footprint" for a person whose material plainly holds a published book or a competition win. Never let
+   one broad extraction decide whether something exists.
+7. **Finalize.** The receipt: the depth summary, the not-found list with the channels you checked, the
+   same-name log, and the three openers.
+
+**Provenance, for the founder — not part of the skill text.** The order and the cuts in rung 3 come from
+the ten-person depth run recorded under `.context/arv2-person-depth/` (`PERSON-DEPTH-REPORT.md` §4–5):
+searches 1–6 above are its angles A12, A1, A4, A6, A10, A11; the cut angles (A2, A3, A5, A7, A9)
+found zero unique URLs across ten people and cost 27% of the run; the university angle delivered the
+alma mater 10/10. The "charter at the front" rule comes from one silently truncated deep call in that
+run. The narrow `unique_insight` call took the hit rate from 3/10 to 10/10 at $0.0018 each. The R2
+follow-ups slice (`2026-09-09-arv2-r2-followups.md`) supplies the compacted established block and the
+media `alternate_urls` the ladder relies on.
 
 ### 3.2 The person charter — ten sections (the two PoC charters merged)
 
