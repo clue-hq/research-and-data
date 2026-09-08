@@ -1,0 +1,68 @@
+- [1] **identity_and_founders** = Probook.ai is the AI operating system for home services; its company page names George Eliadis (Co-Founder & CEO), Lewis Zhang (Co-Founder & CTO), and Ben Cervantez (co-founder, title not stated on the page).
+  - url: https://www.probook.ai/company
+  - quote: “George Eliadis Co-Founder & CEO Lewis Zhang Co-Founder & CTO Ben Cervantez”
+  - claimed_by: company
+- [2] **product_and_buyer** = The product is positioned for home-service operators, especially plumbing, HVAC, and electrical businesses, with dispatch as the central workflow.
+  - url: https://www.probook.ai/company
+  - quote: “Probook is solving the hardest problems in home services”
+  - claimed_by: company
+- [2] **operating_model** = Probook says it is built around dispatch and automates/coordinates the customer experience from intake through dispatch.
+  - url: https://www.probook.ai/letter
+  - quote: “Probook is the AI Operating System for home services, built around dispatch.”
+  - claimed_by: company
+- [3] **named_customers_and_traction** = Company-reported traction is hundreds of locations nationwide; named customer/outcome materials include TR Miller (first customer), Summers Plumbing Heating & Cooling, Anthony Plumbing, Del-Air, Cardinal/Redwood Services, and TurnPoint-related operations.
+  - url: https://www.probook.ai/letter
+  - quote: “Probook now serves hundreds of locations nationwide, from independently owned shops to private equity-backed platforms.”
+  - claimed_by: company
+- [3] **customer_outcomes** = The company reports material dispatch/productivity and revenue-per-job improvements for named customers; these are company claims, not independently audited results.
+  - url: https://www.probook.ai/letter
+  - quote: “Summers Plumbing, Heating & Cooling, with 14 locations and 260 technicians across the Midwest, booked 2,873 jobs in their first month on Probook with zero human intervention. Kansas-based Anthony Plumbing, Heating, Cooling & Electric ran 10% more revenue per job on a 40% leaner team in eight months on Probook. Del-Air more than doubled productivity from 10 to 22 techs per dispatcher.”
+  - claimed_by: company
+- [1] **hq_and_disambiguation** = This dossier concerns probook.ai, the New York home-services software company—not HP ProBook laptops, bookkeeping/accounting products, or other same-name entities.
+  - url: https://www.probook.ai/company
+  - quote: “Backed by Sequoia and Andreessen Horowitz, Probook is solving the hardest problems in home services with the most talent-dense team in New York.”
+  - claimed_by: company
+- [4] **funding** = On June 23, 2026 Probook announced a $34M Series A led by a16z and a $6M Seed led by Sequoia; total announced funding is $40M. Proceeds were announced to scale the AI operating system/GTM against demand.
+  - url: https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html
+  - quote: “The investment comprises a $34 million Series A led by Andreessen Horowitz (a16z) and a $6 million Seed round led by Sequoia Capital. Sequoia also participated in the Series A.”
+  - claimed_by: company
+- [5] **sdr_gtm_motion** = The SDR motion targets top U.S. home-service operators using cold calls, email sequences, and LinkedIn outreach.
+  - url: https://jobs.ashbyhq.com/probook/81d50bde-0d98-48f0-a3c1-d8eee6d4a3c0
+  - quote: “We have a clearly defined target: the top home service operators in America. The list exists.”
+  - claimed_by: company
+- [5] **sdr_reporting_and_crm** = SDRs report to the Director of Growth; the JD requires a clean CRM, but does not name the CRM.
+  - url: https://jobs.ashbyhq.com/probook/81d50bde-0d98-48f0-a3c1-d8eee6d4a3c0
+  - quote: “You report to the Director of Growth and operate as the engine that keeps the pipeline full.”
+  - claimed_by: company
+- [5] **open_roles** = Ashby search results show active Probook requisitions including SDR, Enterprise AE, and Solutions Consultant; the requested snapshot of 13 roles is not independently reproduced here.
+  - url: https://jobs.ashbyhq.com/probook/a54815d3-1062-4d02-9d87-ebc6feb892e2
+  - quote: “Enterprise Account Executives at Probook close deals by understanding the customer and the product and making both connect.”
+  - claimed_by: company
+- [6] **growth_leadership_and_abm** = Kate Blumberg is Director of Growth and joined around June 2026. Her July 24 post advertised an ABM Manager for a small (hundreds) top-account list; no evidence in the retrieved Ashby results confirms that requisition's reporting manager or whether it remained open, was filled, or converted by September 8.
+  - url: https://www.linkedin.com/posts/kibrady12_im-growing-the-marketing-team-at-probook-activity-7486455179974955009-JA7I
+  - quote: “Kate Blumberg: Director of Growth at Probook”
+  - claimed_by: company
+- [6] **cro_identity_and_start** = The Probook Mark Hoffman is Chief Revenue Officer; the LinkedIn profile reports Feb 2026–present, after Tennr and VTS. The retrieved sources do not identify by name who reports to him.
+  - url: https://www.linkedin.com/posts/george-eliadis_after-19-months-of-running-literally-every-activity-7440761527470710784-GQm6
+  - quote: “After 19 months of running literally every demo myself, I couldn't be more excited to welcome Mark Hoffman as Probook's CRO.”
+  - claimed_by: company
+- [7] **founding_year_primary_evidence** = Primary company/investor narratives establish that the founders started building Probook after their trades experience, but the retrieved primary sources do not state a precise founding year. The 2024 year is therefore NOT FOUND in the retrieved primary-source text.
+  - url: https://www.probook.ai/letter
+  - quote: “We started building.”
+  - claimed_by: company
+- [10] **independent_reviews** = A third-party review says there is no G2 or Capterra profile and that public review evidence is sparse; Chrome Web Store ratings are only three ratings. This is not evidence of product quality either way.
+  - url: https://fieldcamp.ai/reviews/probook-ai/
+  - quote: “There is no G2 profile and no Capterra profile for ProBook AI.”
+  - claimed_by: third_party
+- [10] **servicetitan_relationship** = UNRESOLVED: a third-party report describes Probook as a ServiceTitan marketplace partner and complementary rather than a direct competitor; no primary Probook confirmation was retrieved.
+  - url: https://www.thehardwirenews.com/probook-raises-40-million-ai-dispatch-hvac-contractors/
+  - quote: “Probook is currently listed as a partner on ServiceTitan's marketplace rather than positioning itself as a direct competitor.”
+  - claimed_by: third_party
+- [10] **negatives_and_corporate_events** = Layoffs, lawsuits against Probook, churn, down-rounds, acquisition rumours, Glassdoor negatives, and a Probook-vs-ServiceTitan legal/competitive conflict are NOT FOUND in the retrieved sources. Acquisition status: UNRESOLVED, not confirmed or denied.
+  - url: https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html
+  - quote: “Probook, the AI Operating System for home service businesses, today announced $40 million in funding.”
+  - claimed_by: third_party
+- [9] **internal_gtm_tools** = Ashby is evidenced as the recruiting system. The retrieved evidence does not name CRM, MAP, sales-engagement, ABM/intent or revenue tools; 6sense, Demandbase, HubSpot, Salesforce, Outreach, Salesloft, Apollo, ZoomInfo, Clay, Gong, Marketo, Terminus, RollWorks, and Mutiny are NOT FOUND as confirmed internal tools.
+  - url: https://jobs.ashbyhq.com/probook/81d50bde-0d98-48f0-a3c1-d8eee6d4a3c0
+  - quote: “You know your numbers cold. You never miss a follow-up.”
+  - claimed_by: company

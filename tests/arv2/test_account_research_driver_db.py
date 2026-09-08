@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -143,6 +144,12 @@ def _finalizing_model() -> _ScriptedModel:
                     "type": "tool_call",
                 }
             ],
+            usage_metadata={"input_tokens": 1_000, "output_tokens": 200, "total_tokens": 1_200},
+            response_metadata={
+                "clue_cost_cents": "0.5",
+                "clue_cost_source": "metered",
+                "clue_answering_model": "x-ai/grok-4.6",
+            },
         )
 
     return _ScriptedModel(respond)
@@ -345,5 +352,158 @@ def test_one_job_runs_to_a_finalized_receipt_and_a_completed_run() -> None:
             assert activity[0]["actor_kind"] == "clue"
             assert activity[0]["project_id"] == project.project_id
             assert "Account research finalized" in activity[0]["text"]
+
+    run_async(scenario())
+
+
+def test_the_agent_model_rounds_are_ledger_rows_and_the_job_cost_is_their_sum() -> None:
+    """R2-close task 2: the loop's own model calls are spend, on the same ledger the tools use.
+
+    The live R2 run booked ``cost_usd = 0`` on every job because the twenty-nine Grok rounds it
+    spent were never written down anywhere.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            workspace_id = "ws-r2-model-spend"
+            project = await seed_project(conn, workspace_id, name="R2 model spend")
+            project_run_id = new_project_run_id()
+            await ensure_project_run(
+                conn,
+                project_run_id=project_run_id,
+                project_id=project.project_id,
+                workspace_id=workspace_id,
+                icp_key="clue-abm-buyers",
+                icp_version=1,
+            )
+            account_id = await insert_account_entity(
+                conn,
+                canonical_name="Probook",
+                primary_domain="probook.ai",
+                workspace_id=workspace_id,
+            )
+            storage = _MemoryStorage()
+            icp_key_, icp_sha = await _register_document(
+                conn,
+                storage,
+                workspace_id=workspace_id,
+                brand_id=project.brand_id,
+                path="audience/icp-clue-abm-buyers.md",
+                kind="icp-definition",
+                status="confirmed",
+                body=ICP_MARKDOWN,
+            )
+            await _register_document(
+                conn,
+                storage,
+                workspace_id=workspace_id,
+                brand_id=project.brand_id,
+                path="audience/persona-clue-abm-buyers.md",
+                kind="audience-persona",
+                status="ready",
+                body=PERSONA_MARKDOWN,
+            )
+
+            run_id, job_id = uuid4(), uuid4()
+            await store.create_run(
+                conn,
+                store.RunRow(
+                    run_id=run_id,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    brand_id=project.brand_id,
+                    project_run_id=UUID(str(project_run_id)),
+                    icp_artifact_key=icp_key_,
+                    icp_artifact_sha256=icp_sha,
+                    icp_key="clue-abm-buyers",
+                    icp_version=1,
+                    product_selection_version=1,
+                    effort="full",
+                    committee_cap=3,
+                    directive_text="prioritise hiring evidence",
+                    profile_ref=ARV2_ACCOUNT_PROFILE_REF,
+                    profile_sha256=arv2_account_profile_sha256(),
+                    requested_by_user_id="usr-r2",
+                    request_sha256=hashlib.sha256(b"request-model-spend").hexdigest(),
+                ),
+            )
+            await store.create_job(
+                conn,
+                job_id=job_id,
+                run_id=run_id,
+                workspace_id=workspace_id,
+                account_entity_id=UUID(str(account_id)),
+            )
+
+            handler = Arv2AccountResearchWorkHandler(
+                settings=Settings(_env_file=None),
+                conn_factory=conn_session_factory(conn),
+                artifacts=DurableAgentArtifactStore(
+                    storage=storage,  # type: ignore[arg-type]
+                    conn_factory=conn_session_factory(conn),
+                ),
+                storage=storage,
+                clients=_Clients(),
+                model_provider=_Models(_finalizing_model()),
+                model_id="x-ai/grok-4.6",
+                writer=LenientClaimWriter(lenient=True),
+                clock=lambda: datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
+            )
+            context = WorkContext(
+                task_id=uuid4(),
+                work_id=arv2_account_work_id(job_id),
+                worker_id="w1",
+                lease_generation=LeaseGeneration(1),
+                payload={
+                    "job_id": str(job_id),
+                    "run_id": str(run_id),
+                    "workspace_id": workspace_id,
+                },
+                stop_requested=asyncio.Event(),
+                lease_lost=asyncio.Event(),
+            )
+
+            assert (await handler.handle(context)).outcome == "completed"
+
+            ledger = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT provider, operation, label, phase, outcome, cost_usd, "
+                            " extras_json FROM provider_call_ledger "
+                            "WHERE entity_research_job_id = :job_id AND "
+                            " operation = 'agent_completion' ORDER BY recorded_at"
+                        ),
+                        {"job_id": job_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            assert len(ledger) == 1
+            assert ledger[0]["provider"] == "openrouter"
+            assert ledger[0]["label"] == "round-1"
+            assert ledger[0]["phase"] == "result"
+            assert ledger[0]["outcome"] == "ok"
+            assert ledger[0]["cost_usd"] == Decimal("0.005000")
+            assert ledger[0]["extras_json"]["cost_source"] == "metered"
+
+            total = (
+                await conn.execute(
+                    text(
+                        "SELECT COALESCE(SUM(cost_usd), 0) FROM provider_call_ledger "
+                        "WHERE entity_research_job_id = :job_id AND phase = 'result'"
+                    ),
+                    {"job_id": job_id},
+                )
+            ).scalar_one()
+
+            job = await store.read_job(conn, job_id=job_id)
+            assert job is not None
+            assert job.cost_usd == total == Decimal("0.005000")
+            assert job.finalization is not None
+            assert job.finalization["model_spend"]["calls"] == 1
+            assert job.finalization["model_spend"]["usd"] == "0.005"
+            assert job.finalization["model_spend"]["prompt_tokens"] == 1_000
 
     run_async(scenario())

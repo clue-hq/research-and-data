@@ -29,7 +29,9 @@ from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
 from clue_core import decode_jsonb
 
 __all__ = [
+    "UNRECORDED_REASON",
     "UNSPECIFIED_FAILURE",
+    "AnnotationRow",
     "JobRow",
     "JobSpend",
     "JobStatus",
@@ -160,6 +162,21 @@ class JobSpend:
     cost_usd: Decimal
     credits: Decimal
     media_seconds: int
+
+
+@dataclass(frozen=True)
+class AnnotationRow:
+    """One claim's link-audit result: the verdict, and the ``detail`` that says how it was reached.
+
+    The verdict alone is not actionable — two claims can both be ``fetch_failed`` because one page
+    returned no text and the other would not load at all, and those want different repairs. The
+    ``detail`` carries the ``reason`` (plus the ``url``, the claim's ``origin`` source and the
+    structuring block the quote came from) so a reader of the annotations never has to guess.
+    """
+
+    claim_id: UUID
+    verdict: str
+    detail: Mapping[str, Any]
 
 
 async def create_run(conn: AsyncConnection, row: RunRow) -> bool:
@@ -371,24 +388,41 @@ async def record_annotations(
     conn: AsyncConnection,
     *,
     job_id: UUID,
-    claim_ids_by_verdict: Mapping[str, Sequence[UUID]],
+    rows: Sequence[AnnotationRow] | None = None,
+    claim_ids_by_verdict: Mapping[str, Sequence[UUID]] | None = None,
 ) -> int:
-    """Write the link-audit verdict for each claim; returns how many annotations were written.
+    """Write the link-audit result for each claim; returns how many annotations were written.
 
     An annotation is a *check result*, never the claim's own value, which is why it is a row beside
     the claim rather than an edit to append-only history.
+
+    ``rows`` is the real form: a verdict plus the ``detail`` that says how it was reached, which is
+    what makes the audit actionable — ``fetch_failed`` alone cannot tell an empty page from a dead
+    link. ``claim_ids_by_verdict`` is the older verdict-only form, kept working as a thin wrapper
+    (it records a bare verdict with no detail) so a caller that has nothing to say about *why*
+    still writes the annotation rather than skipping it.
     """
+    if rows is None:
+        rows = [
+            AnnotationRow(claim_id=claim_id, verdict=verdict, detail={})
+            for verdict, claim_ids in (claim_ids_by_verdict or {}).items()
+            for claim_id in claim_ids
+        ]
     params = [
-        {"claim_id": claim_id, "job_id": job_id, "verdict": verdict}
-        for verdict, claim_ids in claim_ids_by_verdict.items()
-        for claim_id in claim_ids
+        {
+            "claim_id": row.claim_id,
+            "job_id": job_id,
+            "verdict": row.verdict,
+            "detail": json.dumps(dict(row.detail), sort_keys=True) if row.detail else None,
+        }
+        for row in rows
     ]
     if not params:
         return 0
     await conn.execute(
         text(
-            "INSERT INTO arv2_claim_annotation (claim_id, job_id, kind, verdict) "
-            "VALUES (:claim_id, :job_id, 'link_audit', :verdict)"
+            "INSERT INTO arv2_claim_annotation (claim_id, job_id, kind, verdict, detail_json) "
+            "VALUES (:claim_id, :job_id, 'link_audit', :verdict, CAST(:detail AS jsonb))"
         ),
         params,
     )
@@ -426,26 +460,38 @@ async def job_spend(conn: AsyncConnection, *, job_id: UUID) -> JobSpend:
     )
 
 
+#: What a pre-reason annotation (one written by the verdict-only wrapper) tallies under. It is a
+#: label for "this row does not say why", never a reason in its own right.
+UNRECORDED_REASON = "unrecorded"
+
+
 async def job_link_audit(conn: AsyncConnection, *, job_id: UUID) -> dict[str, int]:
-    """The link-audit tally for one job: verdict → how many claims got it.
+    """The link-audit tally for one job, keyed ``"<verdict>/<reason>"`` → how many claims got it.
 
     Read back rather than remembered, so a receipt reports what is actually recorded beside the
     claims — including a re-run audit's second pass — instead of what one tool call returned.
+
+    The reason is part of the key because the verdict alone hides the difference that matters: a
+    job whose audit is all ``fetch_failed/page_unreachable`` has a link problem, while one that is
+    all ``NOT_FOUND/not_on_page`` has a quoting problem, and a receipt that reported only
+    ``fetch_failed: 4`` would leave a reader to guess which.
     """
     rows = (
         (
             await conn.execute(
                 text(
-                    "SELECT verdict, COUNT(*) AS n FROM arv2_claim_annotation "
-                    "WHERE job_id = :job_id AND kind = 'link_audit' GROUP BY verdict"
+                    "SELECT verdict, COALESCE(detail_json->>'reason', :unrecorded) AS reason, "
+                    " COUNT(*) AS n FROM arv2_claim_annotation "
+                    "WHERE job_id = :job_id AND kind = 'link_audit' "
+                    "GROUP BY verdict, reason"
                 ),
-                {"job_id": job_id},
+                {"job_id": job_id, "unrecorded": UNRECORDED_REASON},
             )
         )
         .mappings()
         .all()
     )
-    return {str(row["verdict"]): int(row["n"]) for row in rows}
+    return {f"{row['verdict']}/{row['reason']}": int(row["n"]) for row in rows}
 
 
 async def read_account_catalog(conn: AsyncConnection) -> FieldCatalog:

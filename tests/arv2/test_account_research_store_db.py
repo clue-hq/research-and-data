@@ -297,3 +297,95 @@ def test_annotations_land_one_row_per_claim_and_verdict() -> None:
     assert rows == sorted(
         [(str(claims[0]), "link_audit", "EXACT"), (str(claims[1]), "link_audit", "NOT_FOUND")]
     )
+
+
+def test_an_annotation_records_why_and_the_tally_is_keyed_by_verdict_and_reason() -> None:
+    """The audit's *reason* is durable, and the tally a receipt reads is keyed by it.
+
+    Two claims can both be ``fetch_failed`` — one page empty, one page dead — and a tally that
+    collapsed them would hide the only difference a human could act on.
+    """
+
+    async def scenario():  # type: ignore[no-untyped-def]
+        async with rollback_conn() as conn:
+            run, (account, _) = await _seed(conn)
+            await store.create_run(conn, run)
+            job_id = uuid4()
+            await store.create_job(
+                conn,
+                job_id=job_id,
+                run_id=run.run_id,
+                workspace_id=run.workspace_id,
+                account_entity_id=account,
+            )
+            writer = LenientClaimWriter(lenient=True)
+            claims = []
+            for field_key, value in (
+                ("core.account_name", "Zafran Security"),
+                ("core.primary_domain", "zafran.io"),
+                ("core.industry", "cyber security"),
+            ):
+                receipt = await writer.write(
+                    conn,
+                    ClaimDraft(
+                        entity_id=account,
+                        entity_type=EntityType.ACCOUNT,
+                        field_key=field_key,
+                        value_json=value,
+                        extraction_method=ExtractionMethod.API,
+                        run_id=new_run_id(),
+                        research_mode=ResearchMode.ACCOUNT_PROFILING,
+                        workspace_id=run.workspace_id,
+                        source_url="https://zafran.io/",
+                    ),
+                )
+                claims.append(UUID(str(receipt.claim_id)))
+            written = await store.record_annotations(
+                conn,
+                job_id=job_id,
+                rows=[
+                    store.AnnotationRow(
+                        claim_id=claims[0],
+                        verdict="fetch_failed",
+                        detail={
+                            "reason": "page_empty",
+                            "url": "https://zafran.io/",
+                            "origin": "exa_contents",
+                            "structuring_mode": None,
+                        },
+                    ),
+                    store.AnnotationRow(
+                        claim_id=claims[1],
+                        verdict="fetch_failed",
+                        detail={"reason": "page_unreachable", "url": "https://zafran.io/gone"},
+                    ),
+                ],
+            )
+            # The older verdict-only form still writes its row; it simply says nothing about why.
+            await store.record_annotations(
+                conn, job_id=job_id, claim_ids_by_verdict={"EXACT": [claims[2]]}
+            )
+            detail = (
+                await conn.execute(
+                    text(
+                        "SELECT detail_json FROM arv2_claim_annotation "
+                        "WHERE job_id = :job AND claim_id = :claim"
+                    ),
+                    {"job": job_id, "claim": claims[0]},
+                )
+            ).scalar_one()
+            return written, detail, await store.job_link_audit(conn, job_id=job_id)
+
+    written, detail, tally = run_async(scenario())
+    assert written == 2
+    assert detail == {
+        "reason": "page_empty",
+        "url": "https://zafran.io/",
+        "origin": "exa_contents",
+        "structuring_mode": None,
+    }
+    assert tally == {
+        "fetch_failed/page_empty": 1,
+        "fetch_failed/page_unreachable": 1,
+        f"EXACT/{store.UNRECORDED_REASON}": 1,
+    }

@@ -27,6 +27,7 @@ the first tool write would wait on a lock the driver is still holding.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
@@ -63,7 +64,12 @@ from clue_api.arv2.claim_writer import LenientClaimWriter
 from clue_api.arv2.exa_client import ExaClient
 from clue_api.arv2.gemini_media_client import GeminiMediaClient, MediaBudget
 from clue_api.arv2.knowledge_frontmatter import document_identity, parse_front_matter
-from clue_api.arv2.provider_ledger import ArtifactSink
+from clue_api.arv2.provider_ledger import (
+    ArtifactSink,
+    BufferedRawSink,
+    LedgerStamp,
+    drain_provider_calls,
+)
 from clue_api.arv2.sinks import LedgerSink
 from clue_api.arv2.structuring_client import FieldCatalog, StructuringClient, catalog_menu_text
 from clue_config import GatewayConfig, Secrets, Settings
@@ -104,6 +110,34 @@ ARV2_ACCOUNT_MODEL_ENV = "ARV2_ACCOUNT_AGENT_MODEL"
 #: re-researching what is already recorded; past a page of it, it stops being read and starts
 #: being context budget.
 _ESTABLISHED_LINE_CAP = 60
+
+#: Characters of one claim's value the established block shows. The re-run's Zafran deep query
+#: was 34k characters because a single AI Ark record or requisition list rode in whole; a line
+#: exists to tell the agent *that* a field is known and roughly what it says, not to be the value.
+_ESTABLISHED_VALUE_CHARS = 240
+
+
+def format_established(claims: Sequence[Claim]) -> str:
+    """The "already established" block: one compact line per live claim, newest first.
+
+    Values are compact JSON (not Python ``repr``), cut at :data:`_ESTABLISHED_VALUE_CHARS` with
+    an ellipsis; the source is the URL, else the source key. The block is a *prefix*, and by
+    design the truncated remainder is not recoverable by any tool in this job:
+    ``read_account_state(section="already_established")`` returns this same cut block, and
+    ``section="claims"`` returns only *this run's* claims, while the block is prior runs'. The
+    line exists to tell the agent the field is known, not what it says in full.
+    """
+    lines: list[str] = []
+    for claim in claims[:_ESTABLISHED_LINE_CAP]:
+        value = json.dumps(
+            claim.value_json, ensure_ascii=False, default=str, separators=(", ", ": ")
+        )
+        if len(value) > _ESTABLISHED_VALUE_CHARS:
+            value = value[:_ESTABLISHED_VALUE_CHARS] + "…"
+        source = claim.source_url or claim.source_key or "no source"
+        lines.append(f"- {claim.field_key}: {value} ({source})")
+    return "\n".join(lines)
+
 
 #: What the model is asked to do. The *how* is the profile, the prompt and the three skills; this
 #: is only the job.
@@ -402,6 +436,9 @@ class Arv2AccountResearchWorkHandler:
                 max_tool_calls_per_round=self._settings.arv2_account_max_tool_calls_per_round,
                 max_runtime_s=float(self._settings.arv2_account_max_runtime_s),
                 task_instruction=TASK_INSTRUCTION,
+                # The row's own attempt counter, incremented by ``begin_job`` on every claim: it
+                # keeps a re-driven job's model-spend rows distinct from its first attempt's.
+                attempt=job.attempt,
             )
         return await self._settle(composition, runtime, outcome)
 
@@ -414,7 +451,7 @@ class Arv2AccountResearchWorkHandler:
         if account is None:
             raise RuntimeError(f"account row {job.account_entity_id} is missing")
 
-        icp = await self._pinned_icp(conn, run)
+        icp, icp_gate_keys = await self._pinned_icp(conn, run)
         persona = await self._persona(conn, run)
         catalog = await self._store.read_account_catalog(conn)
         established = await self._already_established(conn, job, run)
@@ -442,6 +479,7 @@ class Arv2AccountResearchWorkHandler:
             effort=run.effort,
             committee_cap=run.committee_cap,
             today=today,
+            icp_gate_keys=icp_gate_keys,
         )
         context = AccountContext(
             account_name=scope.account_name,
@@ -456,6 +494,7 @@ class Arv2AccountResearchWorkHandler:
             directive_text=run.directive_text,
             effort=run.effort,
             committee_cap=run.committee_cap,
+            icp_gate_keys=icp_gate_keys,
             stop_policy={
                 "max_model_rounds": self._settings.arv2_account_max_model_rounds,
                 "max_tool_calls_per_round": (self._settings.arv2_account_max_tool_calls_per_round),
@@ -471,8 +510,12 @@ class Arv2AccountResearchWorkHandler:
             system_prompt=build_system_prompt(bundle, context),
         )
 
-    async def _pinned_icp(self, conn: AsyncConnection, run: RunRow) -> str:
-        """The ICP body the launch pinned, refused when the bytes are not the pinned ones."""
+    async def _pinned_icp(self, conn: AsyncConnection, run: RunRow) -> tuple[str, tuple[str, ...]]:
+        """The ICP body the launch pinned and its hard-gate keys; refused when the bytes moved.
+
+        The keys travel separately from the markdown because they are not context for the model to
+        read — they are the engine's own list of the gates every fit verdict must key to.
+        """
         record, body = await read_verified_artifact(
             conn,
             self._storage,
@@ -484,7 +527,13 @@ class Arv2AccountResearchWorkHandler:
                 "ICP artifact digest differs from the launch pin — relaunch: "
                 f"stored {record.content_sha256}, run {run.icp_artifact_sha256}"
             )
-        return _document_body(body)
+        raw = body.decode("utf-8")
+        try:
+            front, markdown = parse_front_matter(raw)
+        except ValueError:
+            # A document with no front matter still researches; it simply keys no gates.
+            return raw, ()
+        return markdown, _hard_gate_keys(front)
 
     async def _persona(self, conn: AsyncConnection, run: RunRow) -> str:
         """The newest persona document written for this run's ICP, or an honest empty block."""
@@ -520,12 +569,7 @@ class Arv2AccountResearchWorkHandler:
             EntityId(job.account_entity_id),
             scope=WorkspaceScope.for_workspace(run.workspace_id),
         )
-        lines = [
-            f"- {claim.field_key}: {claim.value_json} "
-            f"({claim.source_url or claim.source_key or 'no source'})"
-            for claim in claims[:_ESTABLISHED_LINE_CAP]
-        ]
-        return "\n".join(lines)
+        return format_established(claims)
 
     # -- the receipt -------------------------------------------------------------------------
 
@@ -535,6 +579,23 @@ class Arv2AccountResearchWorkHandler:
         """Land the job's terminal row: the receipt, the ledger's spend, one activity event."""
         claims = await runtime.job_claims()
         async with self._connection() as conn:
+            # The loop's model rounds, onto the same ledger the tools' hops use, BEFORE the spend
+            # is read — ``job_spend`` sums every ``result`` row, so the job's ``cost_usd`` is the
+            # whole number only if the rounds are already there. No raw sink has anything to
+            # drain: a model request and its answer are deliberately not captured, because the
+            # prompt carries this job's entire context and the ledger is not where that belongs.
+            await drain_provider_calls(
+                conn,
+                raw=BufferedRawSink(),
+                ledger=runtime.model_ledger,
+                artifacts=self._artifacts,
+                stamp=LedgerStamp(
+                    workspace_id=runtime.scope.workspace_id,
+                    project_id=runtime.scope.project_id,
+                    project_run_id=str(runtime.scope.project_run_id),
+                    job_id=runtime.scope.job_id,
+                ),
+            )
             spend = await self._store.job_spend(conn, job_id=composition.job.job_id)
             link_audit = await self._store.job_link_audit(conn, job_id=composition.job.job_id)
             finalization = _receipt(
@@ -629,6 +690,11 @@ def _receipt(
     The finalization the agent proposed is carried verbatim; everything else is *derived from the
     rows* (the claims it wrote, the audit annotations, the halt latches) rather than from what the
     model said it did.
+
+    ``link_audit`` arrives keyed ``"<verdict>/<reason>"`` (from
+    ``account_research_store.job_link_audit``) and is carried through unchanged: a receipt saying
+    ``fetch_failed/page_unreachable: 4`` names a link problem, where a bare ``fetch_failed: 4``
+    would leave the reader to guess at one.
     """
     finalization = runtime.finalization or {}
     by_field: dict[str, int] = {}
@@ -656,18 +722,29 @@ def _receipt(
         "profile_sha256": bundle.profile.sha256,
         "manifest_sha256": bundle.manifest_sha256(),
         "model_id": model_id,
+        "model_spend": outcome.model_spend.as_receipt(),
         "error": outcome.error,
     }
 
 
-def _document_body(raw: bytes) -> str:
-    """A knowledge document's markdown, with its front matter stripped when it has any."""
-    text_body = raw.decode("utf-8")
-    try:
-        _, body = parse_front_matter(text_body)
-    except ValueError:
-        return text_body
-    return body
+def _hard_gate_keys(front: Mapping[str, Any]) -> tuple[str, ...]:
+    """The keys of the ICP's ``hard_gates``, in the order the document names them.
+
+    The synthesis skill writes ``hard_gates: [{key, rule, test}, …]``. Only the key is read here:
+    the rule and the test are for the model (they are in the ICP body it already holds), while the
+    key is what the finalization's verdicts are keyed to. Anything malformed is skipped rather than
+    fatal — a job must not fail to start over a stray list entry — and an ICP with no gates keys
+    nothing, which the tool reads as "any gate label is admitted".
+    """
+    gates = front.get("hard_gates")
+    if not isinstance(gates, list):
+        return ()
+    keys: list[str] = []
+    for gate in gates:
+        key = gate.get("key") if isinstance(gate, Mapping) else None
+        if isinstance(key, str) and key.strip() and key not in keys:
+            keys.append(key)
+    return tuple(keys)
 
 
 def _clients_for_job(clients: ProviderClients, media_budget: MediaBudget) -> ProviderClients:

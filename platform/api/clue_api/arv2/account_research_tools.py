@@ -58,7 +58,7 @@ from clue_api.arv2.account_research_claims import (
     unconfirmed_candidates,
 )
 from clue_api.arv2.account_research_refusals import RefusalError, refusal_json
-from clue_api.arv2.account_research_store import record_annotations
+from clue_api.arv2.account_research_store import AnnotationRow, record_annotations
 from clue_api.arv2.ai_ark_client import AiArkClient
 from clue_api.arv2.ats_client import (
     BoardFetchFailed,
@@ -86,6 +86,7 @@ from clue_api.arv2.media_feeds_client import (
     download_enclosure,
     fetch_feed,
     find_episode,
+    is_youtube,
     reject_native_video,
     youtube_metadata,
     youtube_words,
@@ -101,7 +102,9 @@ from clue_api.arv2.sinks import LedgerSink
 from clue_api.arv2.structuring_client import (
     AccountSubject,
     FieldCatalog,
+    SourceBlock,
     StructuringClient,
+    schema_hint,
 )
 from clue_api.arv2.text import substring_verdict
 from clue_api.arv2.transport import HttpxTransport, Transport
@@ -118,7 +121,9 @@ __all__ = [
     "EVIDENCE_RULES",
     "LOCK_TEMPLATE",
     "ProviderClients",
+    "SourceInput",
     "ToolRuntime",
+    "WriteFailure",
     "build_account_tools",
 ]
 
@@ -159,6 +164,33 @@ _TRANSCRIPT_EXCERPT_CHARS = 4000
 #: The page text a link audit reads. Long enough that a quote late in a long page is still found.
 _VERIFY_TEXT_MAX_CHARS = 20000
 
+#: Characters of the "already established" block one deep call carries. The block tells Exa what
+#: not to re-derive; past a few thousand characters it is the query, and the re-run's Zafran call
+#: spent its budget re-reading an AI Ark record instead of researching (34k-char query vs 2.9k).
+_DEEP_ESTABLISHED_MAX_CHARS = 6000
+
+
+def _clip_lines(block: str, max_chars: int) -> str:
+    """Whole lines from the top of ``block`` up to ``max_chars``, then one line saying how many
+    were left out and where they are. A block within the cap is returned unchanged."""
+    if len(block) <= max_chars:
+        return block
+    kept: list[str] = []
+    used = 0
+    lines = block.split("\n")
+    for line in lines:
+        if used + len(line) + 1 > max_chars:
+            break
+        kept.append(line)
+        used += len(line) + 1
+    omitted = len(lines) - len(kept)
+    kept.append(
+        f'… ({omitted} lines omitted; read_account_state(section="already_established") '
+        "has them all)"
+    )
+    return "\n".join(kept)
+
+
 #: Constitution §2, as the deep call's system prompt. Same-name contamination is the single
 #: recurring failure of this work, so the lock is stated to the provider in its own words rather
 #: than left implicit in the query.
@@ -171,7 +203,10 @@ Every same-name entity is excluded. When you meet one, name it and discard it wi
 a source is about a laptop line, a bookkeeping tool or a spice brand rather than this company, say
 so and drop it. Excluded same-name entities for this run: {exclusions}."""
 
-#: Constitution §3, as the deep call's evidence law.
+#: Constitution §3, as the deep call's evidence law. The sentence shape was chosen on the
+#: 2026-09-08 Exa experiment: a claims-shaped output schema lifted quote fidelity to 94-95% but
+#: cost two-thirds of the assertions, so asking the *report* for quote-first sentences keeps the
+#: budget on coverage while still giving the structuring pass clean spans.
 EVIDENCE_RULES = """EVIDENCE LAW
   * Every factual assertion carries a VERBATIM quote and the URL it came from.
   * NOT FOUND is a correct answer. Never estimate, never infer a number, never fill a gap with a
@@ -182,7 +217,12 @@ EVIDENCE_RULES = """EVIDENCE LAW
   * Prefer primary sources: the company's own pages, its job postings, the funding wire release,
     the investors' announcement posts, the founders' own writing.
   * For any acquisition, rumour or contested item, state explicitly whether it is CONFIRMED,
-    DENIED or UNRESOLVED, by whom, with the quote."""
+    DENIED or UNRESOLVED, by whom, with the quote.
+  * One assertion per sentence: the verbatim quote first, then the URL in parentheses, then at
+    most one clause of your own reading. A sentence never carries two facts, and a quote never
+    supports more than the sentence it sits in.
+  * A NOT FOUND item is its own sentence naming exactly what was looked for (the tool, the
+    person, the number), so that absence is recorded as precisely as presence."""
 
 
 class ProviderClients(Protocol):
@@ -201,6 +241,18 @@ class ProviderClients(Protocol):
     def media(self, caller: ProviderCaller, ledger: LedgerSink) -> GeminiMediaClient: ...
 
     def structuring(self, caller: ProviderCaller) -> StructuringClient: ...
+
+
+@dataclass(frozen=True)
+class WriteFailure:
+    """One draft the claim gate would not take, reported beside the ones it did.
+
+    It is a *result*, not an exception, because the alternative was losing a whole model-produced
+    batch to one unwritable value (see :meth:`ToolRuntime.write_each`).
+    """
+
+    field_key: str
+    error: str
 
 
 def _utcnow() -> datetime:
@@ -251,6 +303,11 @@ class ToolRuntime:
         #: Envelopes for tool calls the per-round ceiling dropped; the driver (Task 5) delivers
         #: them as the round's results.
         self.pending_refusals: list[ToolMessage] = []
+        #: The agent's own model rounds, buffered here and drained onto ``provider_call_ledger``
+        #: by the driver at settlement. A provider hop drains inside its own hop; a model call
+        #: happens on the loop's thread with no connection of its own, and the loop must not open
+        #: one per round — so the rounds ride here until the job settles.
+        self.model_ledger = BufferedLedger()
 
         self._refusals: dict[str, str] = {}
         self._semaphores: dict[str, asyncio.Semaphore] = {}
@@ -362,6 +419,30 @@ class ToolRuntime:
         async with self._conn_factory() as conn:
             return [await self._writer.write(conn, draft) for draft in drafts]
 
+    async def write_each(self, drafts: Sequence[ClaimDraft]) -> list[WriteReceipt | WriteFailure]:
+        """Write every draft in a transaction of its own, and report the ones that failed.
+
+        :meth:`write` is one transaction for the batch, which is right for a batch the *code*
+        built (an ATS board, a provider record): those drafts stand or fall together. It is wrong
+        for a batch a **model** produced. One unwritable value there — a key the registry refuses,
+        a value the store rejects — aborts the transaction and takes every other claim in the call
+        with it, so a run loses fifteen good claims to one bad one and the model is told only that
+        the tool errored.
+
+        Here each draft gets its own transaction, and a failure becomes a :class:`WriteFailure` in
+        the result rather than an exception: the model sees exactly which field did not land, and
+        the rest of the batch is already written.
+        """
+        results: list[WriteReceipt | WriteFailure] = []
+        for draft in drafts:
+            try:
+                async with self._conn_factory() as conn:
+                    results.append(await self._writer.write(conn, draft))
+            except Exception as error:  # noqa: BLE001 — one draft's failure is a row, never a stop
+                log.warning("arv2.claim_write_failed", field_key=draft.field_key, error=str(error))
+                results.append(WriteFailure(field_key=draft.field_key, error=str(error)[:300]))
+        return results
+
     async def job_claims(self) -> Sequence[Claim]:
         """This job's own claims: written by this run, about this account."""
         async with self._conn_factory() as conn:
@@ -372,13 +453,11 @@ class ToolRuntime:
             )
         return [claim for claim in claims if claim.entity_id == self.scope.account_id]
 
-    async def record_link_audit(self, claim_ids_by_verdict: Mapping[str, Sequence[UUID]]) -> int:
-        """Write one link-audit annotation per claim. An annotation is a check result beside the
-        claim, never an edit to append-only history."""
+    async def record_link_audit(self, rows: Sequence[AnnotationRow]) -> int:
+        """Write one link-audit annotation per claim — verdict *and* the reason behind it. An
+        annotation is a check result beside the claim, never an edit to append-only history."""
         async with self._conn_factory() as conn:
-            return await record_annotations(
-                conn, job_id=self.scope.job_id, claim_ids_by_verdict=claim_ids_by_verdict
-            )
+            return await record_annotations(conn, job_id=self.scope.job_id, rows=rows)
 
     def now(self) -> datetime:
         """The job's clock, injected so a finalization timestamp is testable."""
@@ -452,8 +531,10 @@ def _claim_json(claim: Claim) -> dict[str, Any]:
     }
 
 
-def _receipt_json(receipt: WriteReceipt, draft: ClaimDraft) -> dict[str, Any]:
-    return {
+def _receipt_json(
+    receipt: WriteReceipt, draft: ClaimDraft, catalog: FieldCatalog
+) -> dict[str, Any]:
+    row: dict[str, Any] = {
         "claim_id": str(receipt.claim_id),
         "field_key": receipt.field_key,
         "value": draft.value_json,
@@ -463,6 +544,22 @@ def _receipt_json(receipt: WriteReceipt, draft: ClaimDraft) -> dict[str, Any]:
         "outreach_safe": draft.outreach_safe,
         "markers": receipt.markers,
     }
+    if receipt.markers.get("schema_valid") is False:
+        # The claim is stored and visible with its marker (founder ruling 2026-09-08); the receipt
+        # is the one place the model learns, in the same turn, what shape the field wanted.
+        spec = catalog.spec(receipt.field_key)
+        if spec is None:
+            # This job's catalog is account-only, but ``write_claims`` admits any registered key,
+            # so a contact field can fail its DB schema here. Saying "any" would be a lie about a
+            # value that just failed a schema; the honest answer is that we cannot see the shape.
+            row["expected_shape"] = "not in this job's catalog"
+        else:
+            row["expected_shape"] = schema_hint(spec.value_schema)
+            row["hint"] = (
+                "rewrite the value in this shape and write it again with "
+                f"corrects_claim_id={receipt.claim_id}"
+            )
+    return row
 
 
 def _head(text: str | None, limit: int) -> str:
@@ -520,6 +617,11 @@ class ReadMediaFeedsArgs(_Args):
     person_role: str = ""
     feed_url: HttpUrl | None = None
     youtube_url: HttpUrl | None = None
+    #: More places the same appearance may load from — the podcast's other feed host, the
+    #: YouTube upload of the episode — tried in order only when the source before it would not
+    #: load. Each is a feed or a watch URL, told apart by host. Two runs produced no media because
+    #: one 429 and one dead feed were each the only URL the call carried.
+    alternate_urls: list[HttpUrl] = Field(default_factory=list, max_length=4)
     episode_title_contains: str | None = None
     episode_number: int | None = None
 
@@ -537,12 +639,34 @@ class ResearchDeepArgs(_Args):
     num_results: int = Field(20, ge=10, le=25)
 
 
+class SourceInput(_Args):
+    """One retrieved thing, with the URL it came from.
+
+    ``text`` is the material as retrieved; it is never the model's summary of it, because a
+    summary quoted verbatim is a quote of the model, not of the source.
+    """
+
+    url: HttpUrl | None = None
+    kind: Literal["page", "posting", "report", "transcript", "provider"] = "page"
+    text: str = Field(min_length=20, max_length=60_000)
+    title: str | None = None
+
+
 class StructureMaterialArgs(_Args):
+    """One structuring call's arguments.
+
+    The free ``material`` string this used to take is **gone**, deliberately and breakingly: one
+    string held the evidence and the caller's own framing together, so the model could quote the
+    framing as a verbatim span and the claim then cited whichever URL was nearest. Sources carry
+    their URLs; ``notes`` is the framing, and nothing in it may ever be quoted.
+    """
+
     subject_kind: Literal["account", "person"]
     subject_name: str = Field(min_length=2)
     subject_domain_or_company: str = Field(min_length=2)
     linkedin_url: str | None = None
-    material: str = Field(min_length=50, max_length=120_000)
+    sources: list[SourceInput] = Field(min_length=1, max_length=12)
+    notes: str | None = None
     mode: Literal["broad", "intent_sweep"] = "broad"
     already_known: str | None = None
 
@@ -697,7 +821,9 @@ async def _lookup_company(runtime: ToolRuntime, args: LookupCompanyArgs) -> dict
     if company is None:
         raise RefusalError("company_not_found", f"AI Ark holds no record for {args.domain}")
 
-    receipts = await runtime.write(ai_ark_company_claims(company, runtime.scope))
+    receipts = await runtime.write(
+        ai_ark_company_claims(company, runtime.scope, catalog=runtime.catalog)
+    )
     raw = company.raw if isinstance(company.raw, Mapping) else {}
     financial = raw.get("financial") if isinstance(raw.get("financial"), Mapping) else {}
     funding = financial.get("funding") if isinstance(financial, Mapping) else None
@@ -712,9 +838,11 @@ async def _lookup_company(runtime: ToolRuntime, args: LookupCompanyArgs) -> dict
             "hq_location": dict(company.location) if company.location else None,
         },
         "technologies": list(company.technologies),
-        # ``financial.funding`` is the record's own funding block (rounds, investors, totals). It is
-        # returned as context rather than written: no registered field carries it yet, and the
-        # agent quotes it into a claim only with the evidence it finds elsewhere.
+        # ``financial.funding`` is the record's own funding block. The two *amounts* it states are
+        # claimed in code (``account.total_funding`` / ``account.recent_funding``); the rest —
+        # investors, round dates, round count — has no registered home, so the whole block is still
+        # returned as context and the agent quotes it into a claim with the evidence it finds
+        # elsewhere.
         "funding": funding if isinstance(funding, Mapping) else None,
         "claim_ids": [str(receipt.claim_id) for receipt in receipts],
         "cost": _cost_json(company.cost),
@@ -765,11 +893,14 @@ class _MediaItem:
 
 
 def _podcast_hop(
-    runtime: ToolRuntime, args: ReadMediaFeedsArgs
+    runtime: ToolRuntime, args: ReadMediaFeedsArgs, feed_url: str
 ) -> Callable[[ProviderCaller], _MediaItem]:
-    """The whole podcast chain as one synchronous hop: feed → episode → audio → words → quotes."""
+    """The whole podcast chain as one synchronous hop: feed → episode → audio → words → quotes.
+
+    The feed to read is passed in, not taken off ``args``: one call may carry several candidate
+    sources and the caller decides which one this hop is for.
+    """
     scope = runtime.scope
-    feed_url = str(args.feed_url)
     max_bytes = runtime.settings.arv2_account_media_max_enclosure_mb * 1024 * 1024
     destination_root = Path(runtime.settings.arv2_raw_root) / "media" / str(scope.job_id)
 
@@ -847,10 +978,13 @@ def _podcast_hop(
 
 
 def _youtube_hop(
-    runtime: ToolRuntime, args: ReadMediaFeedsArgs
+    runtime: ToolRuntime, args: ReadMediaFeedsArgs, watch_url: str
 ) -> Callable[[ProviderCaller], _MediaItem]:
-    """The words path: metadata plus an indexed copy of the page. Nothing is transcribed."""
-    watch_url = str(args.youtube_url)
+    """The words path: metadata plus an indexed copy of the page. Nothing is transcribed.
+
+    The watch page is passed in for the same reason the feed is: the caller owns the candidate
+    order, the hop owns one URL.
+    """
 
     def hop(caller: ProviderCaller) -> _MediaItem:
         reject_native_video(watch_url)
@@ -881,19 +1015,69 @@ def _youtube_hop(
     return hop
 
 
+def _attempts_note(attempts: Sequence[Mapping[str, str]]) -> str:
+    return "; ".join(f"{attempt['url']} ({attempt['error']})" for attempt in attempts)
+
+
+def _with_attempts(detail: str, attempts: Sequence[Mapping[str, str]]) -> str:
+    """Fold the sources that would not load into a refusal a *later* candidate raised.
+
+    Without this the agent learns only that candidate N answered, never that candidates 1..N-1
+    were dead — so it hands a dead URL straight back on the next call and pays for it again.
+    """
+    if not attempts:
+        return detail
+    return f"{detail}; earlier sources that would not load: {_attempts_note(attempts)}"
+
+
 async def _read_media_feeds(runtime: ToolRuntime, args: ReadMediaFeedsArgs) -> dict[str, Any]:
-    podcast_first = args.feed_url is not None
-    hop = _podcast_hop(runtime, args) if podcast_first else _youtube_hop(runtime, args)
-    try:
-        item = await runtime.call_provider("media", hop)
-    except MediaCeilingExceeded as ceiling:
-        raise RefusalError("media_ceiling_reached", str(ceiling)) from ceiling
-    except EnclosureTooLarge as oversized:
-        raise RefusalError("enclosure_too_large", str(oversized)) from oversized
-    except UnsupportedMediaHost as walled:
-        raise RefusalError("native_video_rejected", str(walled)) from walled
-    except (MediaFetchError, RawParseError) as unreachable:
-        raise RefusalError("feed_not_found", str(unreachable)) from unreachable
+    # The primary first (feed before watch page when both are given: a transcript beats indexed
+    # page words), then the alternates in the order the model gave them. A source that will not
+    # LOAD hands over to the next; a source that loaded and answered (no matching episode, over
+    # the ceiling, a walled host) is the answer, and is not second-guessed by trying another URL.
+    candidates = [str(url) for url in (args.feed_url, args.youtube_url) if url is not None]
+    candidates.extend(str(url) for url in args.alternate_urls)
+    # One URL is one candidate: a model that hands the primary back in alternate_urls pays one
+    # fetch and one ledger row, not two. Order is the model's, first mention wins.
+    candidates = list(dict.fromkeys(candidates))
+    attempts: list[dict[str, str]] = []
+    item: _MediaItem | None = None
+    for url in candidates:
+        try:
+            # Before the hop is even chosen, so a walled host is refused with no request built no
+            # matter which argument carried it (media_feeds_client's law-11 clause: the direction
+            # to be wrong in is "refused something fetchable", never "fetched something walled").
+            reject_native_video(url)
+            hop = (
+                _youtube_hop(runtime, args, url)
+                if is_youtube(url)
+                else _podcast_hop(runtime, args, url)
+            )
+            item = await runtime.call_provider("media", hop)
+            break
+        except MediaCeilingExceeded as ceiling:
+            raise RefusalError(
+                "media_ceiling_reached", _with_attempts(str(ceiling), attempts)
+            ) from ceiling
+        except EnclosureTooLarge as oversized:
+            raise RefusalError(
+                "enclosure_too_large", _with_attempts(str(oversized), attempts)
+            ) from oversized
+        except UnsupportedMediaHost as walled:
+            raise RefusalError(
+                "native_video_rejected", _with_attempts(str(walled), attempts)
+            ) from walled
+        except RefusalError as answered:
+            # A refusal from inside the hop (episode_not_found, provider_halted:media) is this
+            # source's *answer*, so the loop still stops here — but the earlier sources that would
+            # not load ride along, or the agent hands a dead URL straight back next call.
+            raise RefusalError(
+                answered.refusal.code, _with_attempts(answered.refusal.detail, attempts)
+            ) from answered
+        except (MediaFetchError, RawParseError) as unreachable:
+            attempts.append({"url": url, "error": str(unreachable)})
+    if item is None:
+        raise RefusalError("feed_not_found", "no source loaded: " + _attempts_note(attempts))
 
     await runtime.write(
         [
@@ -927,6 +1111,8 @@ async def _read_media_feeds(runtime: ToolRuntime, args: ReadMediaFeedsArgs) -> d
         "quotes": [{"text": q["text"], "timestamp": q["timestamp"]} for q in item.quotes],
         "transcript_excerpt": _head(item.transcript_text, _TRANSCRIPT_EXCERPT_CHARS),
         "words": item.words,
+        # The sources that would not load before this one did; empty when the first one answered.
+        "source_attempts": attempts,
         "cost": [_cost_json(cost) for cost in item.costs if cost is not None],
     }
 
@@ -946,7 +1132,7 @@ async def _research_deep(runtime: ToolRuntime, args: ResearchDeepArgs) -> dict[s
         query_parts.append("SPECIAL PROBES\n" + "\n".join(f"- {probe}" for probe in args.probes))
     query_parts.append(
         "ALREADY ESTABLISHED (do not re-derive; find what is NOT here)\n"
-        + (scope.already_established or "(nothing yet)")
+        + _clip_lines(scope.already_established or "(nothing yet)", _DEEP_ESTABLISHED_MAX_CHARS)
     )
     query = "\n\n".join(query_parts)
 
@@ -991,10 +1177,21 @@ async def _structure_material(runtime: ToolRuntime, args: StructureMaterialArgs)
         domain=args.subject_domain_or_company,
         already_known=args.already_known,
     )
+    blocks = tuple(
+        SourceBlock(
+            url=str(source.url) if source.url else None,
+            kind=source.kind,
+            text=source.text,
+            title=source.title,
+        )
+        for source in args.sources
+    )
 
     def hop(caller: ProviderCaller) -> Any:
+        # The bundle is built inside the client from these blocks, so the fence, the quoting rule
+        # and the post-parse attribution can never disagree; there is no free bundle to pass.
         return runtime.clients.structuring(caller).structure_account(
-            subject, args.material, runtime.catalog, mode=args.mode
+            subject, "", runtime.catalog, mode=args.mode, sources=blocks, notes=args.notes
         )
 
     try:
@@ -1002,13 +1199,20 @@ async def _structure_material(runtime: ToolRuntime, args: StructureMaterialArgs)
     except RawParseError as unparseable:
         raise RefusalError("structuring_unparseable", str(unparseable)) from unparseable
 
-    drafts = structured_claims(output, scope=runtime.scope, subject_url_hint=None)
+    drafts = structured_claims(
+        output, scope=runtime.scope, subject_url_hint=None, catalog=runtime.catalog
+    )
     negatives = negative_claims(output.negatives, runtime.scope)
-    receipts = await runtime.write([*drafts, *negatives])
+    # One transaction per draft: a value the store will not take costs its own claim and nothing
+    # else. ``write_each`` returns one result per draft, in order, so the two halves stay aligned.
+    results = await runtime.write_each([*drafts, *negatives])
+    claim_results, negative_results = results[: len(drafts)], results[len(drafts) :]
     written = [
-        _receipt_json(receipt, draft)
-        for receipt, draft in zip(receipts[: len(drafts)], drafts, strict=False)
+        _receipt_json(result, draft, runtime.catalog)
+        for result, draft in zip(claim_results, drafts, strict=True)
+        if isinstance(result, WriteReceipt)
     ]
+    failures = [result for result in results if isinstance(result, WriteFailure)]
     return {
         "written": written,
         "proposed": [
@@ -1019,7 +1223,16 @@ async def _structure_material(runtime: ToolRuntime, args: StructureMaterialArgs)
             }
             for proposed in output.proposed
         ],
-        "negatives_written": len(negatives),
+        "negatives_written": sum(
+            1 for result in negative_results if isinstance(result, WriteReceipt)
+        ),
+        # Rows the mode's cap discarded after the parse, and drafts the claim gate would not take:
+        # both are things that happened to this call's output, and both are reported rather than
+        # swallowed (a sweep that keeps drifting broad, or a value that has no writable home).
+        "dropped_rows": output.dropped_rows,
+        "write_failures": [
+            {"field_key": failure.field_key, "error": failure.error} for failure in failures
+        ],
         "mode": output.mode,
         "cost": _cost_json(output.cost),
     }
@@ -1040,27 +1253,85 @@ async def _write_claims(runtime: ToolRuntime, args: WriteClaimsArgs) -> dict[str
             f"a named {COMMITTEE_FIELD} needs a confirmed_by URL naming the person "
             f"({len(unconfirmed)} claim(s) in this call have none)",
         )
-    drafts = agent_claims(args.claims, runtime.scope)
-    receipts = await runtime.write(drafts)
+    drafts = agent_claims(args.claims, runtime.scope, catalog=runtime.catalog)
+    # One transaction per draft. This is the largest model-produced batch in the toolbelt (cap
+    # fifty), so a single value the store will not take must cost its own claim and nothing else —
+    # never forty-nine good claims, and never a whole-batch ``tool_error`` the model retries
+    # identically. ``write_each`` returns one result per draft, in order.
+    results = await runtime.write_each(drafts)
     return {
         "written": [
-            _receipt_json(receipt, draft) for receipt, draft in zip(receipts, drafts, strict=True)
-        ]
+            _receipt_json(result, draft, runtime.catalog)
+            for result, draft in zip(results, drafts, strict=True)
+            if isinstance(result, WriteReceipt)
+        ],
+        "write_failures": [
+            {"field_key": result.field_key, "error": result.error}
+            for result in results
+            if isinstance(result, WriteFailure)
+        ],
     }
 
 
 async def _verify_links(runtime: ToolRuntime, args: VerifyLinksArgs) -> dict[str, Any]:
+    """Check every cited quote against the page it cites, and record *why* each verdict is what
+    it is.
+
+    A verdict on its own is not something a reader can act on. ``fetch_failed`` covers both a page
+    that returned no text and a page that would not load; ``NOT_FOUND`` covers both a quote the
+    model invented and a quote it lifted verbatim from a *report about* the account (real words,
+    wrong page). Those want different repairs, so each claim's annotation carries the reason —
+    ``on_page`` / ``partial_on_page`` / ``page_empty`` / ``page_unreachable`` / ``not_on_page`` /
+    ``second_hand_from_report`` / ``quoted_context`` — beside the verdict the CHECK admits.
+    """
     claims = [claim for claim in await runtime.job_claims() if claim.source_url]
     if args.claim_ids is not None:
         wanted = set(args.claim_ids)
         claims = [claim for claim in claims if str(claim.id) in wanted]
 
-    verdicts: dict[str, list[UUID]] = {"EXACT": [], "PARTIAL": [], "NOT_FOUND": []}
+    rows: list[AnnotationRow] = []
+    by_reason: dict[str, int] = {}
+    not_found: list[str] = []
     failed: list[str] = []
+    unreachable_urls: set[str] = set()
+    counts = {"EXACT": 0, "PARTIAL": 0}
     costs: list[dict[str, Any] | None] = []
+
+    def record(claim: Claim, url: str, verdict: str, reason: str) -> None:
+        markers = claim.write_markers or {}
+        block = markers.get("source_kind_block")
+        rows.append(
+            AnnotationRow(
+                claim_id=UUID(str(claim.id)),
+                verdict=verdict,
+                detail={
+                    "reason": reason,
+                    "url": url,
+                    "origin": claim.source_key,
+                    "structuring_mode": block if isinstance(block, str) else None,
+                },
+            )
+        )
+        key = f"{verdict}/{reason}"
+        by_reason[key] = by_reason.get(key, 0) + 1
+        if verdict in counts:
+            counts[verdict] += 1
+        elif verdict == "NOT_FOUND":
+            not_found.append(str(claim.id))
+        elif url not in failed:
+            failed.append(url)
+
     for claim in claims:
         url = claim.source_url or ""
-        if url in failed:
+        markers = claim.write_markers or {}
+        if markers.get("quoted_context") is True:
+            # Task 3 saw this quote sitting in the agent's own notes rather than in any source
+            # block. No page can contain it, so buying a fetch to discover that spends a contents
+            # call to learn nothing already known.
+            record(claim, url, "NOT_FOUND", "quoted_context")
+            continue
+        if url in unreachable_urls:
+            record(claim, url, "fetch_failed", "page_unreachable")
             continue
         text = runtime.cached_page(url)
         if text is None:
@@ -1070,21 +1341,34 @@ async def _verify_links(runtime: ToolRuntime, args: VerifyLinksArgs) -> dict[str
                 raise
             except Exception as unreachable:  # noqa: BLE001 — a dead link is a finding, not a stop
                 log.info("arv2.verify_links_fetch_failed", url=url, error=str(unreachable))
-                failed.append(url)
+                unreachable_urls.add(url)
+                record(claim, url, "fetch_failed", "page_unreachable")
                 continue
         if not text.strip():
             # A page that came back empty proves nothing about the quote. Calling that NOT_FOUND
             # would report an unreadable link as a fabricated one, which is the wrong accusation.
-            failed.append(url)
+            record(claim, url, "fetch_failed", "page_empty")
             continue
-        verdicts[substring_verdict(claim.evidence_span or "", text)].append(UUID(str(claim.id)))
+        verdict = substring_verdict(claim.evidence_span or "", text)
+        if verdict == "EXACT":
+            reason = "on_page"
+        elif verdict == "PARTIAL":
+            reason = "partial_on_page"
+        elif markers.get("source_kind_block") == "report":
+            # The words are real and were read out of a report about this account; they are simply
+            # not on the page the claim points at. That is a citation to repair, not a fabrication.
+            reason = "second_hand_from_report"
+        else:
+            reason = "not_on_page"
+        record(claim, url, verdict, reason)
 
-    await runtime.record_link_audit(verdicts)
+    await runtime.record_link_audit(rows)
     return {
-        "EXACT": len(verdicts["EXACT"]),
-        "PARTIAL": len(verdicts["PARTIAL"]),
-        "NOT_FOUND": [str(claim_id) for claim_id in verdicts["NOT_FOUND"]],
+        "EXACT": counts["EXACT"],
+        "PARTIAL": counts["PARTIAL"],
+        "NOT_FOUND": not_found,
         "fetch_failed": failed,
+        "by_reason": by_reason,
         "cost": costs,
     }
 
@@ -1107,14 +1391,93 @@ async def _fetch_for_audit(
     return text
 
 
+@dataclass(frozen=True)
+class _KeyedVerdicts:
+    """The finalization's verdicts once they are keyed to the ICP: one per gate, and what moved."""
+
+    verdicts: list[dict[str, Any]]
+    filled: tuple[str, ...]
+    duplicates: tuple[str, ...]
+
+
+def _fold_gate_key(label: str) -> str:
+    """The form two gate labels are compared in: case-folded, outer whitespace gone."""
+    return label.strip().casefold()
+
+
+def _key_verdicts_to_icp_gates(
+    admitted: tuple[str, ...], verdicts: list[dict[str, Any]]
+) -> _KeyedVerdicts:
+    """One verdict per ICP gate: unknown labels refused, second answers dropped, silence filled.
+
+    A run whose model invents its own gate labels produces a receipt no reviewer can compare with
+    the next account's, so a label the ICP does not name is refused rather than recorded. The
+    inverse — a gate the model simply never mentioned — is filled here as ``unclear`` / "not
+    assessed", because "we did not look" and "we looked and could not tell" are different answers
+    and silence reads as the second one.
+
+    The match folds case and surrounding whitespace first, and the accepted verdict is rewritten to
+    the ICP's own spelling of the key. ``"Geography"`` and ``"stage "`` are the gate the ICP named,
+    not new gates, and the failure here is asymmetric: folding a near-miss label costs nothing,
+    refusing it costs the run its only path to a finalized ending. A label that still resolves to
+    no gate after folding is refused exactly as before.
+
+    A **second** verdict for a gate already answered is dropped, never refused: it is noise rather
+    than a falsehood, the first answer is the one the agent reasoned to, and refusing the whole
+    call would throw away a finalization (summary, committee, gaps) over a repeated line. The
+    dropped labels are reported back so the model can see what happened.
+
+    An ICP with no hard gates keys to nothing, so every label it admits stays as the model wrote it
+    — the one-verdict-per-gate rule still holds, there is simply no list to check it against.
+    """
+    if admitted:
+        by_fold = {_fold_gate_key(key): key for key in admitted}
+        unknown = sorted(
+            {
+                str(verdict.get("gate") or "")
+                for verdict in verdicts
+                if _fold_gate_key(str(verdict.get("gate") or "")) not in by_fold
+            }
+        )
+        if unknown:
+            raise RefusalError(
+                "invalid_arguments",
+                f"fit verdicts are keyed to this ICP's hard gates; {unknown} name no gate of it. "
+                f"The admitted gate keys are {list(admitted)}",
+            )
+        verdicts = [
+            {**verdict, "gate": by_fold[_fold_gate_key(str(verdict.get("gate") or ""))]}
+            for verdict in verdicts
+        ]
+    kept: list[dict[str, Any]] = []
+    answered: list[str] = []
+    duplicates: list[str] = []
+    for verdict in verdicts:
+        gate = str(verdict.get("gate") or "")
+        if gate in answered:
+            duplicates.append(gate)
+            continue
+        answered.append(gate)
+        kept.append(verdict)
+    missing = tuple(key for key in admitted if key not in answered)
+    kept.extend(
+        {"gate": key, "verdict": "unclear", "rationale": "not assessed", "claim_ids": []}
+        for key in missing
+    )
+    return _KeyedVerdicts(kept, missing, tuple(dict.fromkeys(duplicates)))
+
+
 async def _finalize_research(runtime: ToolRuntime, args: FinalizeResearchArgs) -> dict[str, Any]:
     if runtime.finalization is not None:
         raise RefusalError("finalization_already_proposed", "this job is already finalized")
 
-    verdicts = [verdict.model_dump() for verdict in args.fit_verdicts]
+    keyed = _key_verdicts_to_icp_gates(
+        runtime.scope.icp_gate_keys, [verdict.model_dump() for verdict in args.fit_verdicts]
+    )
+    verdicts = keyed.verdicts
     candidates = [candidate.model_dump() for candidate in args.committee_candidates]
     drafts = [
-        *fit_verdict_claims(verdicts, runtime.scope),
+        *fit_verdict_claims(verdicts, runtime.scope, filled_by_tool=keyed.filled),
         *committee_candidate_claims(candidates, runtime.scope),
     ]
     receipts = await runtime.write(drafts)
@@ -1129,6 +1492,8 @@ async def _finalize_research(runtime: ToolRuntime, args: FinalizeResearchArgs) -
         "accepted": True,
         "claim_ids": [str(receipt.claim_id) for receipt in receipts],
         "dropped_candidates": dropped,
+        # The gates you answered twice: the first answer stands, the repeats were dropped.
+        "duplicate_gates": list(keyed.duplicates),
     }
 
 
@@ -1157,7 +1522,12 @@ def _governed(
             envelope = refusal_json("invalid_arguments", str(invalid)[:500])
         except Exception as error:  # noqa: BLE001 — the failure law: never a raise into the graph
             log.exception("arv2.account_tool_failed", tool=name)
-            envelope = refusal_json(f"tool_error:{type(error).__name__}", str(error)[:500])
+            # Deliberately NOT remembered. The refusal memory exists to stop the model paying twice
+            # for a call the engine has already judged; a ``tool_error`` is no judgement at all —
+            # it is the socket melting, the provider 500ing, a parse blowing up once. Remembering
+            # it forecloses the identical retry that would have worked, and the model's only
+            # remaining moves are to change a correct call or to finalize short.
+            return refusal_json(f"tool_error:{type(error).__name__}", str(error)[:500])
         runtime.remember_refusal(name, args, envelope)
         return envelope
 
@@ -1233,8 +1603,9 @@ def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             name="lookup_company",
             description=(
                 "Deterministic firmographics for one exact domain from the company database: "
-                "industry, headcount, revenue band, HQ, LinkedIn, technologies and funding. The "
-                "five mapped fields are written as claims in code, with the record path recorded."
+                "legal name, founding year, industry, headcount and band, revenue band, HQ, "
+                "LinkedIn, socials, languages, technologies and funding. Every registered field "
+                "the record carries is written as a claim in code, with the record path recorded."
             ),
             model=LookupCompanyArgs,
             body=_lookup_company,
@@ -1257,7 +1628,9 @@ def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
                 "Read a named leader's podcast episode (feed_url, by number or title fragment) or "
                 "a YouTube appearance (youtube_url, indexed page words — never a video download). "
                 "A podcast episode is transcribed, the speaker verified, and quotes mined only "
-                "when the speaker is verified."
+                "when the speaker is verified. Give every other place the same appearance may "
+                "load from as alternate_urls (another feed host, the YouTube upload); they are "
+                "tried in order only if the source before them will not load."
             ),
             model=ReadMediaFeedsArgs,
             body=_read_media_feeds,
@@ -1290,8 +1663,9 @@ def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             name="write_claims",
             description=(
                 "Write up to fifty claims yourself, each with a verbatim quote and the URL it came "
-                "from. Everything is stored; a missing URL, an unknown key or a schema miss is "
-                "recorded as a marker rather than refused."
+                "from. A missing URL, an unknown key or a schema miss is recorded as a marker "
+                "rather than refused; each claim is written on its own, so a value the store will "
+                "not take comes back in write_failures and the rest of the batch is still stored."
             ),
             model=WriteClaimsArgs,
             body=_write_claims,

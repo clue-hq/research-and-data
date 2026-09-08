@@ -700,6 +700,190 @@ conversation surface's promoted-profile pin (`PROJECT_CONVERSATION_AGENT_PROFILE
 human act through the CLI or `launch_arv2_account_research` itself; seam 1 is unchanged either
 way.
 
+### Structuring takes sources, and the framing is never evidence (R2 close)
+
+`structure_material` no longer takes one free `material` string. It takes **`sources[]`** (1–12),
+each a `{url, kind, text, title}` block — `kind` is `page | posting | report | transcript |
+provider` — plus one optional **`notes`** string. An old-shape call is refused
+`invalid_arguments`; the argument model forbids extras.
+
+- **Notes are never evidence.** The bundle renders every source as its own `=== SOURCE n (kind)
+  <url> …` block and the notes as a single `=== CONTEXT — NOT EVIDENCE (do not quote)` block. A
+  span that only appears in the notes comes back `NOT_FOUND` and is flagged `quoted_context` on the
+  claim. Each block's own text has the fence vocabulary neutralised first, so a hostile page cannot
+  close its block and re-open as a differently-attributed source.
+- **The cited URL is corrected to the block the quote came from.** When a claim's span sits
+  `EXACT` in a block that carries a URL, that URL wins over the one the model named (or supplied
+  none) and the claim records `source_url_corrected`; the block's kind rides along as
+  `source_kind_block` (which is what the audit later reads to say `second_hand_from_report`).
+- **A model-produced batch writes one draft at a time.** `ToolRuntime.write_each` opens one
+  transaction per draft, so one bad draft is a row in the result's
+  `write_failures: [{field_key, error}]` rather than an exception that takes the batch down. Both
+  model-produced batches use it — `structure_material`'s extraction and `write_claims`, which is
+  the larger of the two (cap fifty). `negatives_written` counts what actually landed, and
+  `dropped_rows` reports what a mode cap cut. The code-built batches (ATS board, provider record,
+  finalization) still write as one transaction, because those drafts stand or fall together.
+- **Proposed keys are normalised.** `normalise_proposed_key` folds spaces/dashes/slashes to `_`,
+  drops anything outside `[a-z0-9_.]`, rewrites `core_x` → `core.x`, prefixes a namespace-less key
+  with the subject, and — if the result still fails `is_valid_field_key` — falls back to
+  `<subject>.proposed_<sha256[:8]>`. The raw spelling is kept as the marker `proposed_key_raw`.
+  This is not cosmetic: the lenient gate calls `classify_field_key`, which **raises** on a
+  malformed key, so one bad suggested key used to take the whole write down with it.
+- **Scalar core fields are coerced.** For a field whose registry `type` is scalar,
+  `coerce_scalar` unwraps a single-carrier object (`value/count/year/amount/n/total/text/name`) and
+  turns a digit string into the number on an integer/number field. The original shape is kept as
+  the marker `coerced_from`; an unregistered key, a list on a list field, and a two-carrier object
+  are all left alone.
+- A vacant committee seat is now valid with no `name` at all
+  (`account.committee_candidate.required` is `["persona"]`).
+
+### What the AI Ark mapper claims (R2 close)
+
+`ai_ark_company_claims` now writes **every registered core/account field the record carries**, not
+five. Each widened value is a tier-1 `ExtractionMethod.API` claim (`source_key="ai_ark:company"`,
+`source_url=None`, markers `{json_path, provider_record: "ai_ark"}`), checked against the field's
+registered `value_schema` and skipped — with `arv2.ai_ark_value_does_not_fit_its_field` — when it
+does not fit or when the field is not registered in this deployment.
+
+| record path | field |
+| --- | --- |
+| `summary.name` | `core.account_name` |
+| `link.domain` | `core.primary_domain` |
+| `summary.legal_name` | `core.legal_name` |
+| `summary.description` | `core.company_about` |
+| `summary.industry` | `core.industry` |
+| `summary.founded_year` | `core.founded_year` |
+| `summary.type` | `core.company_type` |
+| `summary.staff.total` | `core.employee_count` |
+| `summary.staff.range` | `core.employee_range` (`{label, min, max}`, the provider's own stated range) |
+| `industries` (top level) | `core.industries_all` |
+| `languages` (top level) | `core.company_languages` |
+| `link.linkedin` / `link.crunchbase` / `link.twitter` | `core.company_linkedin_url` / `core.company_crunchbase_url` / `core.company_twitter_url` |
+| `contact.email` | `core.company_email` |
+| `technologies[].name` | `core.primary_tech_stack` |
+| `technologies` | `core.tech_stack_categorised` (`[{name, category}, …]`) |
+| `financial.revenue.annual` | `core.revenue_band` (bucket translation) |
+| `location.headquarter` | `core.hq_location` — the **registered** shape `{raw: raw_address, city, region: state, country, country_code (only when the record carries one)}`, null keys dropped; a headquarter with no `raw_address` writes no claim at all |
+| `financial.funding.total_amount` | `account.total_funding` — `{amount_usd, estimate_kind: "reported"}` |
+| `financial.funding.rounds[newest]` | `account.recent_funding` — `{amount_usd, round}`, newest **by `announced_at`**, never by list position; no amount on the newest round means no claim |
+
+**Funding amounts are read as USD** (founder ruling) and every such claim records
+`markers.currency_assumed = "USD"`, so `markers->>'currency_assumed'` finds everything resting on
+the assumption if a non-US record ever contradicts it. AI Ark states no currency of its own.
+`core.annual_revenue` stays **unmapped**: the record answers a revenue *range* with no amount and
+no currency, and `core.revenue_band` already carries the honest translation.
+
+### The agent's model calls are ledger rows (R2 close)
+
+Every model round of the loop lands one `provider_call_ledger` row — `provider="openrouter"`,
+`operation="agent_completion"`, `phase="result"`, `label="round-<n>"`, with `extras` carrying the
+served model, the prompt/completion/cached token counts and `cost_source`. Row ids are
+`model:{job_id}:{attempt}:{round}`: the attempt is in the id, so a suspended job that is re-driven
+does not collide its second attempt's early rounds with the first attempt's rows and lose them to
+`ON CONFLICT DO NOTHING`. A round that raises records `outcome="transport_error"` with the
+exception type as `error_code` and re-raises.
+
+**The cost is OpenRouter's or it is nothing** (founder ruling — we ship no price table of our own):
+
+1. `usage.cost` on the response (usage accounting is now asked for by default) → `cost_source =
+   metered`;
+2. else `GET {base}/generation?id=<generation id>` → `data.total_cost` → also **metered**. The
+   lookup is bounded and can never fail the call it prices: ≤5 s timeout, one retry on 5xx, one
+   retry after a 1 s pause on 404 (the meter lags the response), everything else swallowed to
+   `None` with a `gateway.cost_lookup_failed` log naming the generation so a reconciliation pass
+   can go back for it;
+3. else the pre-existing per-model price table, *only* when a deployment happens to populate it →
+   `estimate`, labelled so it can never be mistaken for a meter;
+4. else `0` / `unpriced`, and the row books `cost_usd = NULL` rather than a zero nobody measured.
+
+The rows drain **inside the settlement transaction, before `job_spend`**, so the job's `cost_usd`
+already includes the model spend, and the receipt carries a `model_spend` block (calls, tokens,
+cost, source). Streaming stays on the price sheet — `langchain_openai` drops OpenRouter's `cost`
+on the streaming and Responses paths — but this lane does not stream.
+
+### The link audit records why (R2 close)
+
+`verify_links` now records a **reason** per claim alongside its verdict, in the annotation's
+`detail_json` (`{reason, url, origin, structuring_mode}`):
+
+| reason | verdict | when |
+| --- | --- | --- |
+| `on_page` | `EXACT` | the span is on the page |
+| `partial_on_page` | `PARTIAL` | a near-miss span |
+| `page_empty` | `fetch_failed` | the page loaded with no text |
+| `page_unreachable` | `fetch_failed` | the fetch raised |
+| `not_on_page` | `NOT_FOUND` | the page loaded and does not carry the span |
+| `second_hand_from_report` | `NOT_FOUND` | same, but the claim's `source_kind_block` is `report` — the quote came through a report |
+| `quoted_context` | `NOT_FOUND` | the span sat in the agent's own notes; recorded from the marker, **with no fetch at all** |
+
+`job_link_audit` groups on `verdict` + reason and returns `"<verdict>/<reason>"` keys, which is
+what the job receipt now tallies. Two behaviour notes: **every** audited claim gets an annotation
+(a claim citing an already-failed URL used to be skipped silently — the URL is still fetched only
+once, but each claim now gets its own `fetch_failed/page_unreachable` row), and an annotation
+written before this change tallies as `<verdict>/unrecorded`, a label meaning "this row does not
+say why", never a reason.
+
+### Fit verdicts are keyed to the ICP's gates (R2 close)
+
+`finalize_research`'s `fit_verdicts` are keyed to the pinned ICP's `hard_gates[].key`, read from
+the ICP front matter at launch and carried on `JobScope.icp_gate_keys`:
+
+- a label is matched case-folded and stripped of surrounding whitespace, and the accepted verdict
+  is rewritten to the ICP's own spelling of the key, so `"Geography"` and `"stage "` are the gates
+  the ICP named rather than new ones (folding a near-miss costs nothing; refusing it costs the run
+  the only call that produces a finalized ending);
+- a verdict naming a gate the ICP does not have *after* that folding is refused
+  `invalid_arguments`, and the refusal names both the offending labels and the admitted keys —
+  nothing is written and the job is not finalized, so a corrected retry is possible;
+- an admitted gate the model did not assess is filled by the tool as
+  `{verdict: "unclear", rationale: "not assessed"}`, and the claim carries the marker
+  `filled_by_tool`;
+- a **duplicate** verdict for the same gate is dropped rather than refused (first answer wins) and
+  reported in `duplicate_gates`, so a repeated line never costs the finalization its summary, gaps
+  and committee.
+
+The same tuple is in the agent's context, so the list the model reads and the list the tool
+enforces cannot diverge: `AccountContext.block()` renders `"icp_gate_keys": [...]` in the JSON head
+and states that `finalize_research.fit_verdicts` carries exactly one verdict per key.
+
+Three neighbouring corrections landed with it:
+
+- **A transient `tool_error:` is not remembered.** It no longer goes through `remember_refusal`, so
+  the identical retry is not foreclosed by `identical_call_repeated`. Typed refusals and
+  `invalid_arguments` are still remembered.
+- **A provider timeout inside the graph ends `model_error`, not `runtime_cap`.** The invoke is its
+  own task; on `TimeoutError` the loop asks the task which it was — cancelled by the runtime cap
+  (`runtime_cap`, in-flight hops still drained) or finished with its own exception (`model_error`,
+  with `TimeoutError: …` in `error`).
+- **Malformed ICP front matter is a typed launch refusal.** Unparseable front matter, a
+  missing/blank `icp_key`, or a non-integer `version` each raise
+  `Arv2LaunchRefused("icp_front_matter_invalid", …)` naming the document, and the CLI prints it as
+  one `refused: …` line instead of a traceback. The launch pin and the bundle also now compute the
+  profile digest through the same helper, so a CRLF catalog cannot pin one digest and verify
+  another.
+
+### Measuring recall against the answer keys (R2 close)
+
+`platform/api/clue_api/arv2/answer_key_recall.py` grades a finished run's claims against the two
+answer keys (Probook's file, Zafran's loaded rows), and
+`scripts/arv2_answer_key_recall.py --run-id … --out …` writes `recall-probook.md`,
+`recall-zafran.md` and `recall.json` from one read-only connection. It touches no provider and
+spends nothing. Each key gets exactly one verdict — `exact > partial > field_only > missing` — and
+recall counts `exact + partial`. Structured values are compared by their **leaf values**, never by
+their object key names, so the two sides may shape `{"amount_usd": 40000000}` differently and still
+agree; numbers match within 10 %.
+
+The pre-close baseline is committed under `.context/arv2-r2-acceptance/recall-before/`:
+
+```
+probook recall 0.50 (exact 9 / partial 3 / field_only 9 / missing 3 of 24)
+zafran  recall 0.45 (exact 16 / partial 14 / field_only 27 / missing 9 of 66)
+```
+
+By section — Probook `core` 5/13, `account` 7/9, `account.resonance` 0/2; Zafran `core` 16/29,
+`account` 13/26, `account.resonance` 1/11. That is the number the post-close re-run is measured
+against.
+
 ### Configuration
 
 - `CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED` — the lane switch. Off: no fleet handler, no launch service,

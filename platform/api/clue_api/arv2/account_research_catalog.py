@@ -38,9 +38,15 @@ def arv2_account_catalog_root(version: str = ARV2_ACCOUNT_CATALOG_VERSION) -> Pa
 
 
 def arv2_account_profile_sha256(root: Path | None = None) -> str:
-    """The digest a launched job records beside :data:`ARV2_ACCOUNT_PROFILE_REF`."""
+    """The digest a launched job records beside :data:`ARV2_ACCOUNT_PROFILE_REF`.
+
+    Deliberately the *same* computation :func:`load_account_resources` makes, not a second one over
+    the same file: the launch pins this value and the driver compares the bundle's against it, so
+    two digest paths (raw bytes here, decoded text there) is a relaunch loop waiting for the first
+    profile written with CRLF line endings.
+    """
     base = root or arv2_account_catalog_root()
-    return hashlib.sha256((base / "profile.md").read_bytes()).hexdigest()
+    return _resource("profile", ARV2_ACCOUNT_PROFILE_REF, base / "profile.md").sha256
 
 
 @dataclass(frozen=True)
@@ -114,9 +120,14 @@ class AccountContext:
     effort: str
     committee_cap: int
     stop_policy: dict[str, int]
+    #: The keys of the pinned ICP's ``hard_gates`` — the gates ``finalize_research`` keys its fit
+    #: verdicts to. They are named in the head rather than left to be re-derived from the ICP
+    #: document, because a label the agent invents is refused at finalization, which is the most
+    #: expensive place in the job to learn the rule.
+    icp_gate_keys: tuple[str, ...] = ()
 
     def block(self) -> str:
-        """The context block: one JSON head, then the four read-only context documents."""
+        """The context block: one JSON head, the gate rule, then the four context documents."""
         head: dict[str, object] = {
             "account": {
                 "name": self.account_name,
@@ -131,10 +142,13 @@ class AccountContext:
                 "committee_cap": self.committee_cap,
             },
             "stop_policy": self.stop_policy,
+            "icp_gate_keys": list(self.icp_gate_keys),
         }
         return "\n\n".join(
             [
                 json.dumps(head, sort_keys=True),
+                "`finalize_research.fit_verdicts` carries exactly one verdict per key in "
+                "`icp_gate_keys`.",
                 "## context/icp.md\n" + self.icp_markdown.rstrip(),
                 "## context/persona.md\n" + self.persona_markdown.rstrip(),
                 "## context/catalog.md\n" + self.catalog_menu.rstrip(),

@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.answer_key import (
     ANSWER_KEY_NAMESPACE,  # research-run ids share the run ids' uuid5 namespace
     PEOPLE_RUN_ID,
+    ZAFRAN_ANSWER_KEY,
     ZAFRAN_MANIFEST,
     AnswerKeyManifest,
     MappedRows,
@@ -105,7 +106,6 @@ _DERIVED_ROLE_RATIONALE = (
     "role derived from the committee persona recorded by the name-scoped AI Ark lookup"
 )
 _DERIVED_ROLE_SOURCE_KEY = "ai_ark"
-_ANSWER_KEY_MARKER = "zafran-2026-09-02"
 
 
 class AlreadyLoaded(RuntimeError):
@@ -421,7 +421,7 @@ def _derived_role_drafts(zafran: MappedRows) -> tuple[RowDraft, ...]:
                 field_description=None,
                 markers={
                     "derived_role_from_persona": persona.source_row_id,
-                    "answer_key": _ANSWER_KEY_MARKER,
+                    "answer_key": ZAFRAN_ANSWER_KEY,
                 },
                 source_row_id=f"derived-role:{persona.source_row_id}",
             )
