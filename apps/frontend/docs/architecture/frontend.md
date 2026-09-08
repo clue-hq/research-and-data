@@ -93,10 +93,14 @@ Every backend-owned payload has:
    exist — never unrelated demo data selected by missing configuration;
 5. a written contract under `docs/api-contracts`.
 
-Accounts and Contacts are live-only. Their Server Component repositories use
-the authenticated server request seam, while browser-originated requests use
-the same-origin `/api/clue` BFF. Other flows may retain explicitly configured
-fixtures until their own cutover, but that choice remains feature-owned.
+Accounts and Contacts are live by default. Their Server Component repositories
+use the authenticated server request seam, while browser-originated requests use
+the same-origin `/api/clue` BFF. They also ship the design build's fixture
+repositories, selected only by the explicit opt-in `CLUE_ACCOUNTS_FIXTURE_MODE=true`
+(the exact string, read in exactly one module) for local design work. That flag is
+a switch, never a fallback: with it unset, a live read that fails fails loudly and
+no fixture stands in for it. Other flows may retain explicitly configured fixtures
+until their own cutover, but that choice remains feature-owned.
 
 Aryan can replace or extend HTTP adapters without changing presentation
 components. Fixtures must never be imported by components or routes.

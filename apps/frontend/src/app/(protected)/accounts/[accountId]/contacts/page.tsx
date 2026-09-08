@@ -18,7 +18,9 @@ export default async function AccountContactsPage({
     getAccountDetails(accountId),
     getAccountContacts(accountId),
   ]);
-  if (!account) notFound();
+  // `contacts` is `null` only when the account itself is unknown (E4 answers
+  // ACCOUNT_NOT_FOUND); an account with no committee is an empty list.
+  if (!account || contacts === null) notFound();
 
   // No contact is "featured": the drawer opens on a row click and loads that
   // row's detail then (source map §6). The page used to scan the list for the

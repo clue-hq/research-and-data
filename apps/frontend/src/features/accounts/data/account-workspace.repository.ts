@@ -4,6 +4,7 @@ import {
 } from "../model/account-workspace";
 import { openAiWorkspaceFixture } from "./account-workspace.fixture";
 import { zafranWorkspaceFixture } from "./zafran/insights";
+import { fetchRead } from "./frontend-api";
 import { accountsFixtureMode } from "./repository-mode";
 
 export interface AccountWorkspaceRepository {
@@ -22,41 +23,35 @@ export const fixtureAccountWorkspaceRepository: AccountWorkspaceRepository = {
   },
 };
 
+/**
+ * The live account workspace: `GET /frontend/v1/accounts/{id}/workspace` → `{data}`.
+ *
+ * This route has only ever served contract v1, but `?contract=v1` is sent all
+ * the same: the parameter is validated on every route of the surface, so
+ * sending it keeps one request shape across the five reads and makes a typo'd
+ * value fail here exactly as it would anywhere else.
+ */
 export function createHttpAccountWorkspaceRepository(
-  apiBaseUrl: string,
+  read: typeof fetchRead = fetchRead,
 ): AccountWorkspaceRepository {
   return {
     async get(accountId) {
-      const url = new URL(
-        `/api/v1/accounts/${encodeURIComponent(accountId)}/workspace`,
-        `${apiBaseUrl.replace(/\/$/, "")}/`,
+      const body = await read(
+        `/accounts/${encodeURIComponent(accountId)}/workspace`,
+        { recordNotFoundAllowed: true, searchParams: { contract: "v1" } },
       );
-      const response = await fetch(url, {
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-      });
-      if (response.status === 404) return null;
-      if (!response.ok) {
-        throw new Error(`Account workspace API returned ${response.status}`);
-      }
-      return AccountWorkspaceResponseSchema.parse(await response.json()).data;
+      if (body === null) return null;
+      return AccountWorkspaceResponseSchema.parse(body).data;
     },
   };
 }
 
 export async function getAccountWorkspace(
   accountId: string,
+  read: typeof fetchRead = fetchRead,
 ): Promise<AccountWorkspace | null> {
   const repository = accountsFixtureMode()
     ? fixtureAccountWorkspaceRepository
-    : liveRepository();
+    : createHttpAccountWorkspaceRepository(read);
   return repository.get(accountId);
-}
-
-/**
- * The live adapter lands in D4 Task 4 (the amended read contract). Until then
- * the live path refuses loudly: it must never silently fall back to fixtures.
- */
-function liveRepository(): never {
-  throw new Error("accounts live adapter lands in D4 Task 4");
 }

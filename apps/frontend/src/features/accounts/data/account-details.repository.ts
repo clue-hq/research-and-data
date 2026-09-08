@@ -4,6 +4,7 @@ import {
 } from "../model/account-detail";
 import { openAiAccountDetailFixture } from "./account-detail.fixture";
 import { zafranAccountDetailFixture } from "./zafran/account";
+import { fetchRead } from "./frontend-api";
 import { accountsFixtureMode } from "./repository-mode";
 
 export interface AccountDetailsRepository {
@@ -24,48 +25,35 @@ export const fixtureAccountDetailsRepository: AccountDetailsRepository = {
   },
 };
 
+/**
+ * The live account detail: `GET /frontend/v1/accounts/{id}?contract=v1` → `{data}`.
+ *
+ * `ACCOUNT_NOT_FOUND` is the one 404 that means "no such account"; `fetchRead`
+ * turns it into `null` and every other failure into a `ClueApiError`, so a
+ * wrong mount or a disabled read surface never renders as an empty account.
+ */
 export function createHttpAccountDetailsRepository(
-  apiBaseUrl: string,
+  read: typeof fetchRead = fetchRead,
 ): AccountDetailsRepository {
   return {
     async get(accountId) {
-      const url = new URL(
-        `/api/v1/accounts/${encodeURIComponent(accountId)}`,
-        `${apiBaseUrl.replace(/\/$/, "")}/`,
-      );
-      const response = await fetch(url, {
-        cache: "no-store",
-        headers: { Accept: "application/json" },
+      const body = await read(`/accounts/${encodeURIComponent(accountId)}`, {
+        recordNotFoundAllowed: true,
+        searchParams: { contract: "v1" },
       });
-
-      if (response.status === 404) {
-        return null;
-      }
-      if (!response.ok) {
-        throw new Error(
-          `Account details API returned ${response.status} ${response.statusText}`,
-        );
-      }
-
-      return AccountDetailResponseSchema.parse(await response.json()).data;
+      if (body === null) return null;
+      return AccountDetailResponseSchema.parse(body).data;
     },
   };
 }
 
 export async function getAccountDetails(
   accountId: string,
+  read: typeof fetchRead = fetchRead,
 ): Promise<AccountDetail | null> {
   const repository = accountsFixtureMode()
     ? fixtureAccountDetailsRepository
-    : liveRepository();
+    : createHttpAccountDetailsRepository(read);
 
   return repository.get(accountId);
-}
-
-/**
- * The live adapter lands in D4 Task 4 (the amended read contract). Until then
- * the live path refuses loudly: it must never silently fall back to fixtures.
- */
-function liveRepository(): never {
-  throw new Error("accounts live adapter lands in D4 Task 4");
 }

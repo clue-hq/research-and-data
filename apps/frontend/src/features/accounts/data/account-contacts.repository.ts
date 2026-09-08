@@ -12,10 +12,12 @@ import {
   zafranContactDetails,
   zafranContactsFixture,
 } from "./zafran/contacts";
+import { fetchRead } from "./frontend-api";
 import { accountsFixtureMode } from "./repository-mode";
 
 export interface AccountContactsRepository {
-  list(accountId: string): Promise<AccountContactSummary[]>;
+  /** `null` means "no such account" — an account with no committee is `[]`. */
+  list(accountId: string): Promise<AccountContactSummary[] | null>;
   get(
     accountId: string,
     contactId: string,
@@ -30,7 +32,7 @@ export const fixtureAccountContactsRepository: AccountContactsRepository = {
         : accountId === "zafran-security"
           ? zafranContactsFixture
           : null;
-    if (!contacts) return [];
+    if (!contacts) return null;
     return AccountContactsResponseSchema.parse({
       data: contacts,
     }).data;
@@ -49,62 +51,54 @@ export const fixtureAccountContactsRepository: AccountContactsRepository = {
   },
 };
 
+/**
+ * The live contacts reads, both under `?contract=v1`.
+ *
+ * E4 `GET /accounts/{id}/contacts` serves `{data, meta: {total}}`; the rows are
+ * the whole committee, so `meta.total` is redundant here and is not read (the
+ * schema is non-strict, so parsing the envelope with `{data}` is enough).
+ * E5 `GET /accounts/{id}/contacts/{contactId}` serves `{data}`.
+ */
 export function createHttpAccountContactsRepository(
-  apiBaseUrl: string,
+  read: typeof fetchRead = fetchRead,
 ): AccountContactsRepository {
-  const base = `${apiBaseUrl.replace(/\/$/, "")}/`;
   return {
     async list(accountId) {
-      const url = new URL(
-        `/api/v1/accounts/${encodeURIComponent(accountId)}/contacts`,
-        base,
+      const body = await read(
+        `/accounts/${encodeURIComponent(accountId)}/contacts`,
+        { recordNotFoundAllowed: true, searchParams: { contract: "v1" } },
       );
-      const response = await fetch(url, {
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-      });
-      if (!response.ok) {
-        throw new Error(`Account contacts API returned ${response.status}`);
-      }
-      return AccountContactsResponseSchema.parse(await response.json()).data;
+      if (body === null) return null;
+      return AccountContactsResponseSchema.parse(body).data;
     },
     async get(accountId, contactId) {
-      const url = new URL(
-        `/api/v1/accounts/${encodeURIComponent(accountId)}/contacts/${encodeURIComponent(contactId)}`,
-        base,
+      const body = await read(
+        `/accounts/${encodeURIComponent(accountId)}/contacts/${encodeURIComponent(contactId)}`,
+        { recordNotFoundAllowed: true, searchParams: { contract: "v1" } },
       );
-      const response = await fetch(url, {
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-      });
-      if (response.status === 404) return null;
-      if (!response.ok) {
-        throw new Error(`Contact details API returned ${response.status}`);
-      }
-      return AccountContactDetailResponseSchema.parse(await response.json())
-        .data;
+      if (body === null) return null;
+      return AccountContactDetailResponseSchema.parse(body).data;
     },
   };
 }
 
-function repository(): AccountContactsRepository {
+function repository(read: typeof fetchRead): AccountContactsRepository {
   return accountsFixtureMode()
     ? fixtureAccountContactsRepository
-    : liveRepository();
+    : createHttpAccountContactsRepository(read);
 }
 
-export function getAccountContacts(accountId: string) {
-  return repository().list(accountId);
+export function getAccountContacts(
+  accountId: string,
+  read: typeof fetchRead = fetchRead,
+) {
+  return repository(read).list(accountId);
 }
 
-export function getAccountContact(accountId: string, contactId: string) {
-  return repository().get(accountId, contactId);
-}
-
-/**
- * The live adapter lands in D4 Task 4 (the amended read contract). Until then
- * the live path refuses loudly: it must never silently fall back to fixtures.
- */
-function liveRepository(): never {
-  throw new Error("accounts live adapter lands in D4 Task 4");
+export function getAccountContact(
+  accountId: string,
+  contactId: string,
+  read: typeof fetchRead = fetchRead,
+) {
+  return repository(read).get(accountId, contactId);
 }

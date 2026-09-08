@@ -5,6 +5,7 @@ import {
   type ResearchStatus,
 } from "../model/account";
 import { accountFixtures } from "./accounts.fixture";
+import { fetchRead } from "./frontend-api";
 import { accountsFixtureMode } from "./repository-mode";
 
 export interface AccountsQuery {
@@ -87,55 +88,75 @@ export const fixtureAccountsRepository: AccountsRepository = {
   },
 };
 
+/** The largest page E1 serves (`MAX_LIMIT` on `GET /frontend/v1/accounts`). */
+export const ACCOUNTS_PAGE_LIMIT = 200;
+
+/**
+ * How many pages the list read will follow before it stops.
+ *
+ * 25 × 200 = 5,000 rows. Beyond that the read returns what it has rather than
+ * walking an unbounded workspace on one server render; the table would not be
+ * usable at that size anyway, and the honest fix is server-side paging on the
+ * screen, not a longer walk here.
+ */
+export const ACCOUNTS_PAGE_CAP = 25;
+
+/**
+ * The live accounts list: `GET /frontend/v1/accounts?contract=v1&limit=200`.
+ *
+ * The table keeps the design build's browser-side search, filter, sort and
+ * pagination (D4 ruling a), so this read returns the WHOLE list: it follows
+ * `meta.nextCursor` and concatenates each page's `data` in server order. The
+ * returned `meta.total` is the server's own count of the filtered set; the
+ * cursor is `null` because there is nothing left for the caller to page.
+ *
+ * `projectId` is the one query knob the backend owns, so it is forwarded.
+ * `search`, `sort`, `overallFit`, `researchStatus`, `limit` and `cursor` are
+ * browser-side concerns on this path and are deliberately not sent — E1 has no
+ * parameter for them, and a silently-ignored parameter is worse than none.
+ */
 export function createHttpAccountsRepository(
-  apiBaseUrl: string,
+  read: typeof fetchRead = fetchRead,
 ): AccountsRepository {
   return {
     async list(query = {}) {
-      const url = new URL("/api/v1/accounts", `${apiBaseUrl.replace(/\/$/, "")}/`);
+      const data: Account[] = [];
+      let cursor: string | undefined = undefined;
+      let total = 0;
 
-      for (const [key, value] of Object.entries(query)) {
-        if (value !== undefined && value !== "") {
-          url.searchParams.set(key, String(value));
-        }
-      }
-
-      const response = await fetch(url, {
-        cache: "no-store",
-        headers: {
-          Accept: "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(
-          `Accounts API returned ${response.status} ${response.statusText}`,
+      for (let page = 0; page < ACCOUNTS_PAGE_CAP; page += 1) {
+        const body = AccountsResponseSchema.parse(
+          await read("/accounts", {
+            searchParams: {
+              contract: "v1",
+              limit: ACCOUNTS_PAGE_LIMIT,
+              cursor,
+              projectId: query.projectId,
+            },
+          }),
         );
+        data.push(...body.data);
+        if (page === 0) total = body.meta.total;
+        if (body.meta.nextCursor === null) break;
+        cursor = body.meta.nextCursor;
       }
 
-      return AccountsResponseSchema.parse(await response.json());
+      return { data, meta: { total, nextCursor: null } };
     },
   };
 }
 
 export async function getAccounts(
   query?: AccountsQuery,
+  read: typeof fetchRead = fetchRead,
 ): Promise<AccountsResponse> {
   const repository = accountsFixtureMode()
     ? fixtureAccountsRepository
-    : liveRepository();
+    : createHttpAccountsRepository(read);
 
   return repository.list(query);
 }
 
 export async function getAccountPreviewRows(): Promise<Account[]> {
   return (await getAccounts()).data;
-}
-
-/**
- * The live adapter lands in D4 Task 4 (the amended read contract). Until then
- * the live path refuses loudly: it must never silently fall back to fixtures.
- */
-function liveRepository(): never {
-  throw new Error("accounts live adapter lands in D4 Task 4");
 }

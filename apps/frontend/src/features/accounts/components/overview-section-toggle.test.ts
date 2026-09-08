@@ -36,6 +36,24 @@ test("overview keeps business and fit visible, stacking only timing, committee a
   }
 });
 
+test("the served buying-committee section renders as the table, never as an ordinary section", () => {
+  // D4 ruling (e): contract v1 serves `buying-committee` in the overview block.
+  // Its slot is the committee TABLE, and the section's generated items are
+  // dropped — the tail resumes AFTER it (`committeeIndex + 1`).
+  assert.match(body, /\(section\) => section\.key === "buying-committee"/);
+  assert.match(body, /servedCommitteeIndex === -1\s*\n?\s*\? committeeIndex\s*:\s*committeeIndex \+ 1/);
+  assert.match(body, /<BuyingCommitteeTable[\s\S]*?members=\{account\.buyingCommittee\}/);
+  // The design build's own fixture has no such section; the table keeps its
+  // place immediately before How to approach.
+  assert.match(body, /\(section\) => section\.key === "how-to-approach"/);
+  assert.equal(
+    zafranAccountDetailFixture.overviewDisplay!.sections.some(
+      (section) => section.key === "buying-committee",
+    ),
+    false,
+  );
+});
+
 test("Watch-outs is omitted from shared overview rendering, not erased from the source data", () => {
   assert.match(body, /\(section\) => section\.key !== "watch-outs"/);
   const sections = zafranAccountDetailFixture.overviewDisplay!.sections;

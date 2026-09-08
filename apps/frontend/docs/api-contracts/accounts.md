@@ -87,6 +87,46 @@ rather than a silent fall back to FI-2. Timestamps are UTC and `Z`-suffixed (`20
 because `z.string().datetime()` accepts an offset only with `{ offset: true }`, which these schemas
 do not set.
 
+### Adapters (D4, 2026-09-09)
+
+The five repositories in `src/features/accounts/data/` are the only code that talks to these
+routes. Each one goes through `fetchRead` — the authenticated server request on a Server Component,
+the same-origin `/api/clue/frontend/v1/…` BFF in the browser — and each one sends `?contract=v1` on
+every request, including `/workspace`, which has only ever served v1 (the parameter is validated on
+every route of the surface, so sending it everywhere keeps one request shape and makes a typo'd
+value fail identically).
+
+| Repository | Request |
+| --- | --- |
+| `accounts.repository.ts` | `GET /accounts?contract=v1&limit=200[&cursor=…][&projectId=…]` |
+| `account-details.repository.ts` | `GET /accounts/{id}?contract=v1` |
+| `account-workspace.repository.ts` | `GET /accounts/{id}/workspace?contract=v1` |
+| `account-contacts.repository.ts` (list) | `GET /accounts/{id}/contacts?contract=v1` |
+| `account-contacts.repository.ts` (detail) | `GET /accounts/{id}/contacts/{contactId}?contract=v1` |
+
+**The list read returns the whole list.** The accounts table keeps the design build's browser-side
+search, filter, sort and pagination, so `getAccounts()` follows `meta.nextCursor` at `limit=200`
+(E1's `MAX_LIMIT`) and concatenates each page's `data` in server order. It stops after **25 pages —
+5,000 rows** — and returns what it has; beyond that size the honest fix is server-side paging on the
+screen, not a longer walk in the adapter. The returned `meta` is `{ total: <the server's own total>,
+nextCursor: null }`: the count is the backend's, and there is nothing left for the caller to page.
+`projectId` is the one query knob the backend owns and is forwarded; `search`, `sort`, `overallFit`,
+`researchStatus`, `limit` and `cursor` are browser-side concerns and are deliberately **not** sent,
+because E1 has no parameter for them and a silently-ignored parameter is worse than none.
+
+**Record 404s are `null`, everything else throws.** `ACCOUNT_NOT_FOUND` and `CONTACT_NOT_FOUND`
+resolve to `null` on E2, E3, E4 and E5 (on E4 that means "no such account" — an account with no
+committee is `[]`). E1 never 404s. Every other failure — a wrong mount, a disabled read surface, an
+auth or transport error — is a `ClueApiError`, which the page turns into a typed recovery screen via
+`accounts-read-result.ts`. There is no retry against a second transport and no partial answer.
+
+**Fixtures are an explicit opt-in, never a fallback.** `CLUE_ACCOUNTS_FIXTURE_MODE=true` — the exact
+string, read in exactly one module, `data/repository-mode.ts` — selects the design build's fixture
+repositories for local work. Any other value (including unset) selects the live adapters, and a live
+read that fails **fails**: it never falls back to fixture data. No file in the feature reads
+`CLUE_API_BASE_URL`; both rules are guarded by static tests in
+`data/account-live-repositories.test.ts`.
+
 ### D0 amendments (rulings)
 
 The models differ from `84f8ee7` in exactly these places, each marked in the file with a

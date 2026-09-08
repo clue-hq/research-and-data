@@ -30,13 +30,27 @@ export function AccountResearchBody({ account }: { account: AccountDetail }) {
   const sections = (account.overviewDisplay?.sections ?? []).filter(
     (section) => section.key !== "watch-outs",
   );
-  const committeeIndex = sections.findIndex(
-    (section) => section.key === "how-to-approach",
+  // The committee is a TABLE built from `account.buyingCommittee`, never prose.
+  // Contract v1 serves a `buying-committee` section in the overview block; that
+  // slot renders the table and the section's own generated items are dropped, so
+  // the served block never renders as an ordinary section. A block that omits
+  // the section (the design build's own fixture predates it) keeps the table
+  // where the design put it: immediately before `how-to-approach`.
+  const servedCommitteeIndex = sections.findIndex(
+    (section) => section.key === "buying-committee",
   );
+  const committeeIndex =
+    servedCommitteeIndex === -1
+      ? sections.findIndex((section) => section.key === "how-to-approach")
+      : servedCommitteeIndex;
   const sectionsBeforeCommittee =
     committeeIndex === -1 ? sections : sections.slice(0, committeeIndex);
   const sectionsAfterCommittee =
-    committeeIndex === -1 ? [] : sections.slice(committeeIndex);
+    committeeIndex === -1
+      ? []
+      : sections.slice(
+          servedCommitteeIndex === -1 ? committeeIndex : committeeIndex + 1,
+        );
   const contacts = account.contacts.map((contact) => ({
     accountId: account.id,
     contactId: contact.id,
