@@ -54,7 +54,7 @@ from clue_api.arv2.display.page import (
     default_runner_factory,
     ensure_page,
 )
-from clue_api.arv2.display.personas import persona_label
+from clue_api.arv2.display.personas import persona_display, persona_label
 from clue_api.arv2.display.recipes import Page, SectionRecipe, read_recipes
 from clue_api.arv2.errors import Arv2Error, ProviderHalted, ProviderTransportError
 from clue_api.frontend_read.contract_v1 import AccountContact, BuyingCommitteeMember
@@ -537,7 +537,11 @@ async def buying_committee(
                 contact_id=member.id,
                 name=member.name,
                 title=title or UNKNOWN_TITLE,
-                persona=persona,
+                # Display text on the wire, the vocabulary value everywhere below it: the card
+                # says "Economic buyer", while ``_why_they_matter`` still reasons about
+                # ``economic_buyer`` (D4-b decision 5). ``persona`` is a required non-empty string
+                # here, so :func:`persona_display` never returns ``None`` for a real member.
+                persona=persona_display(persona) or persona,
                 email=facts.label,
                 email_claim_id=facts.claim_id,
                 linkedin_url=url if safe_public_url(url) else None,
@@ -571,7 +575,8 @@ async def rail_contacts(
             id=member.id,
             name=member.name,
             title=title_of(displayable(latest.get((member.id, TITLE_KEY)), policy)),
-            persona=member.persona,
+            # As on the committee card: the chip prints words, never the vocabulary value.
+            persona=persona_display(member.persona),
             email_verified=(
                 email_facts(
                     displayable(latest.get((member.id, WORK_EMAIL_KEY)), policy)

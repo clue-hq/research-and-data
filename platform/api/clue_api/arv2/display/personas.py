@@ -15,7 +15,13 @@ importer is unaffected.
 
 from __future__ import annotations
 
-__all__ = ["PERSONA_LABELS", "PERSONA_RANK", "persona_label", "persona_rank"]
+__all__ = [
+    "PERSONA_LABELS",
+    "PERSONA_RANK",
+    "persona_display",
+    "persona_label",
+    "persona_rank",
+]
 
 #: Committee ordering. A persona outside this tuple sorts last, then by name.
 PERSONA_RANK: tuple[str, ...] = (
@@ -48,3 +54,27 @@ def persona_rank(persona: str | None) -> int:
 def persona_label(persona: str | None) -> str | None:
     """``persona`` in the words a person reads, or ``None`` when it is outside the vocabulary."""
     return PERSONA_LABELS.get(persona or "")
+
+
+def persona_display(persona: str | None) -> str | None:
+    """``persona`` as a **screen** prints it — the vocabulary is never served raw (D4-b decision 5).
+
+    Every ``persona`` slot on contract v1 carries display text, not the pipeline's enum value: a
+    marketer reading the contacts table sees "Economic buyer", never ``economic_buyer``. The
+    vocabulary value survives *inside* the read layer — the chip tone, the influence default and
+    the committee ordering all still key on it — so this conversion happens at the wire, once.
+
+    It differs from :func:`persona_label` on exactly one case, and the difference is the point.
+    ``persona_label`` returns ``None`` for a value outside the vocabulary, because its caller (the
+    committee card's "why they matter" placeholder) would rather say nothing than put a word it
+    cannot vouch for into a sentence. Here the field is *required* and something must be served, so
+    an unknown value is spelled as words — ``"weird_value"`` → ``"Weird value"`` — which is still
+    the row's own value, only legible. Nothing is invented either way.
+
+    Already-converted text is left alone (``"Economic buyer"`` in, ``"Economic buyer"`` out), which
+    is what makes ``scripts/rewrite_display_persona_labels.py`` safe to run twice.
+    """
+    if persona is None or not persona.strip():
+        return None
+    value = persona.strip()
+    return PERSONA_LABELS.get(value) or value.replace("_", " ").capitalize()

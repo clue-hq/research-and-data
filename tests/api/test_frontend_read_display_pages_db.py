@@ -473,7 +473,8 @@ def test_the_buying_committee_is_persona_ordered_and_reads_through_the_display_p
             nick = rows[0]
             assert nick.name == "Nick Fisher"
             assert nick.title == "VP of Marketing"
-            assert nick.persona == "economic_buyer"
+            # Display text on the wire (D4-b decision 5), never the vocabulary value.
+            assert nick.persona == "Economic buyer"
             assert nick.email == "nick@zafran.io"
             assert nick.email_claim_id == seeded.claims["nick_email"]
             assert nick.why_they_matter == "Owns the marketing budget"
@@ -482,7 +483,7 @@ def test_the_buying_committee_is_persona_ordered_and_reads_through_the_display_p
             # Vari has a persona and a LinkedIn URL, and nothing else: the required strings take
             # their documented placeholders rather than an invented title or reason.
             vari = rows[1]
-            assert vari.persona == "champion"
+            assert vari.persona == "Champion"
             assert vari.title == "—"
             assert vari.why_they_matter == "Committee member"
             assert vari.email is None and vari.email_claim_id is None
@@ -492,7 +493,7 @@ def test_the_buying_committee_is_persona_ordered_and_reads_through_the_display_p
             )
             assert [chip.id for chip in chips] == [str(seeded.nick), str(seeded.vari)]
             assert [chip.title for chip in chips] == ["VP of Marketing", None]
-            assert [chip.persona for chip in chips] == ["economic_buyer", "champion"]
+            assert [chip.persona for chip in chips] == ["Economic buyer", "Champion"]
             assert [chip.email_verified for chip in chips] == [True, False]
             assert all(chip.has_detail for chip in chips)
 

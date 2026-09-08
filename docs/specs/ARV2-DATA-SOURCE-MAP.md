@@ -232,6 +232,17 @@ Everything in §3.1 is repeated on the detail object, plus:
 | buying committee table | `buyingCommittee[]` | members = `entity_research_account_coverage.committee_member_ids` of the **latest** coverage row for the account (`ORDER BY created_at DESC, coverage_id DESC LIMIT 1`), each resolved through `contact_entity` (survivor). Per member: `contactId = contact_entity.id`; `name = contact_entity.full_name`; `title = claim[contact.current_title]`; `persona = claim[contact.persona].value_json`; `email = claim[core.work_email].value_json.address`, `emailClaimId = that claim's id` (both `null` when absent); `linkedinUrl = contact_entity.linkedin_url`; `whyTheyMatter = claim[contact.role_on_committee].value_json.rationale` | avatar without `src` (`research-content.tsx:963`) — presentation, unchanged |
 | evidence for every chip | `researchEvidence[]` | §3.9, for the union of claim ids cited by `overviewDisplay` + `buyingCommittee[].emailClaimId` | — |
 
+**As built (D4-b, 2026-09-09).** `revenueLabel` and `fundingLabel` read their registry **objects**
+rather than rendering them generically: `core.annual_revenue`'s `{amount_min, amount_max,
+currency}` becomes `"$10M–25M"` (one bound → `"$10M+"` / `"up to $25M"`; an `amount` → one figure),
+and `fundingLabel` joins the latest funding round to the running total — `"Series C · $60M ·
+$130.5M"` — reading the provider's list shape (`[{type, raised_amount, announced_at}, …]`, latest
+announcement wins) as well as the registry sketch's single object. An amount the source did not
+denominate gets **no** currency symbol (`"60M"`): defaulting to `$` would turn an undenominated
+figure into a dollar figure. `buyingCommittee[].persona` (and every other `persona` on the wire) is
+served as **display text** — `"Economic buyer"`, never `economic_buyer`; the vocabulary value still
+drives `personaTone`, `influence` and the committee ordering behind it.
+
 **As built (D3, 2026-09-08).** `buyingCommittee[]` is not a second implementation of the
 coverage query: it is D2's `committee_members` behind `display_pages.committee()` — the latest
 coverage row's `committee_member_ids` when one exists, **else every contact under the account with
@@ -272,6 +283,15 @@ Rows = the committee members of §3.3 (same coverage query), ordered by persona 
 | socials | `socials[]` | `["linkedin"]` when `contact_entity.linkedin_url` is set; `"x"` appended when `claim[contact.x_url]` exists (not produced by the lane in v1) | — |
 | open action | `profileAction` | `"page"` when the contact has ≥1 live claim or ≥1 display block; else `"none"`. `"preview"` is not served in v1 (the dummy's featured-contact drawer is a fixture behaviour, `contacts/page.tsx:26-28`) | — |
 | lookup button | — | the dummy's `LookupEmailButton` is a `setTimeout` stub (`use-email-lookup-controller.ts:20-25`). Production wires it to the existing `POST .../contacts/{id}/email-lookup` + poll (`contacts.py:711, 740`) in D4 | — |
+
+**As built (D4-b, 2026-09-09).** `persona` on the wire is **display text** — `"Economic buyer"`,
+`"Technical evaluator"`, and an unrecognised value spelled as words (`weird_value` → `"Weird
+value"`) rather than served raw. The `persona_map` vocabulary value is what `personaTone`, the
+`influence` default and the persona-rank ordering still read; only the string the browser prints
+changed. The same conversion applies to E5, to E2's committee card and contact chips, to
+`reports[]`, and to the contact chips *inside* generated display blocks — those are written into
+`display_block.body_json` at generation time, so the blocks already at rest were corrected once by
+`scripts/rewrite_display_persona_labels.py`.
 
 **As built (D3, 2026-09-08).** The E4 row set **is** the coverage committee of §3.3, resolved
 through the same `display_pages.committee()` seam and one claims read — not a second query. Two

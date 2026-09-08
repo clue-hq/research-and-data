@@ -2171,7 +2171,9 @@ def test_the_v1_contract_serves_the_account_detail_for_a_fully_populated_account
             # ``revenue_label``'s shipped rule: the rendered claim wins over the band.
             assert detail["revenueLabel"] == "$45M ARR"
             assert detail["foundedLabel"] == "2022"
-            assert detail["fundingLabel"] == "Series C · $130.5M"
+            # The round object's own ``amount_usd`` becomes ``$60M``; the total is stored here as
+            # prose and is served as the sentence it is.
+            assert detail["fundingLabel"] == "Series C · $60M · $130.5M"
             assert detail["overallFit"] == "High"
             assert detail["fitScore"] == 82
             assert "fitScoreLabel" not in detail
@@ -2199,7 +2201,7 @@ def test_the_v1_contract_serves_the_account_detail_for_a_fully_populated_account
             ]
             assert all(contact["hasDetail"] is True for contact in detail["contacts"])
             assert detail["contacts"][0]["title"] == "VP of Security"
-            assert detail["contacts"][0]["persona"] == "economic_buyer"
+            assert detail["contacts"][0]["persona"] == "Economic buyer"
             assert detail["contacts"][0]["emailVerified"] is True
 
             # --- the buying committee, persona-ordered
@@ -2208,7 +2210,7 @@ def test_the_v1_contract_serves_the_account_detail_for_a_fully_populated_account
             dana = committee_rows[0]
             assert dana["contactId"] == str(fixture.dana)
             assert dana["title"] == "VP of Security"
-            assert dana["persona"] == "economic_buyer"
+            assert dana["persona"] == "Economic buyer"
             assert dana["email"] == "dana@zafran.io"
             assert dana["emailClaimId"] == fixture.email_claim_ids[0]
             assert dana["whyTheyMatter"] == "Owns the security budget."

@@ -125,6 +125,7 @@ from clue_api.frontend_read.v1_shared import (
     iso_utc,
     linkedin_label,
     location_label,
+    persona_display,
     persona_influence,
     persona_tone,
     research_evidence_for,
@@ -679,7 +680,10 @@ def _summary_row(
         id=contact_id,
         name=name,
         title=title_of(displayable(latest.get(TITLE_KEY), policy)),
-        persona=persona,
+        # The wire gets display text; the tone and the influence default keep reading the
+        # vocabulary value beside it (D4-b decision 5). ``persona`` is required non-empty, and
+        # :func:`_persona_of` never returns an empty string, so the fallback is unreachable.
+        persona=persona_display(persona) or persona,
         persona_tone=persona_tone(persona),
         influence=_influence(displayable(latest.get(ROLE_KEY), policy), persona),
         email_status=facts.status,
@@ -866,7 +870,9 @@ def _reports(
                 contact_id=member.id,
                 name=member.name or member.id,
                 title=title_of(displayable(latest.get((member.id, TITLE_KEY)), policy)),
-                persona=_persona_of(displayable(latest.get((member.id, PERSONA_KEY)), policy)),
+                persona=persona_display(
+                    _persona_of(displayable(latest.get((member.id, PERSONA_KEY)), policy))
+                ),
             )
         )
     return tuple(refs)

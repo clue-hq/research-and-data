@@ -1627,7 +1627,9 @@ def test_the_v1_contacts_table_is_the_researched_committee_in_screen_order() -> 
 
             nick = next(row for row in body["data"] if row["id"] == str(fixture.nick))
             assert nick["title"] == "VP of Marketing"
-            assert nick["persona"] == "economic_buyer"
+            # Display text on the wire (D4-b decision 5); the *tone* still keys on the vocabulary
+            # value behind it, which is why the two fields do not look like they agree.
+            assert nick["persona"] == "Economic buyer"
             assert nick["personaTone"] == "olive"
             # The committee claim carries its own influence, so the persona default is not used.
             assert nick["influence"] == "High"
@@ -1690,6 +1692,8 @@ def test_the_v1_contact_page_serves_every_rail_fact_the_display_and_its_evidence
             assert [ref["contactId"] for ref in data["reports"]] == [str(fixture.ravi)]
             assert data["reports"][0]["name"] == "Ravi Mehta"
             assert data["reports"][0]["accountId"] == str(fixture.zafran)
+            # A ``ResearchContactReference`` carries display text like every other persona slot.
+            assert data["reports"][0]["persona"] == "Champion"
 
             # --- the generated page: the whole recipe grammar, written section and all
             assert data["contactDisplay"]["page"] == "contact"
@@ -1740,8 +1744,9 @@ def test_a_researched_contact_with_no_committee_facts_is_listed_and_has_a_page()
             data = response.json()["data"]
             assert data["name"] == "Priya Raman"
             assert data["title"] == "Head of RevOps"
-            # No committee claim and no persona claim: the neutral member of the vocabulary.
-            assert data["persona"] == "user"
+            # No committee claim and no persona claim: the neutral member of the vocabulary,
+            # served as the word a marketer reads.
+            assert data["persona"] == "User"
             assert data["influence"] == "Medium"
             assert data["socials"] == []
             assert data["linkedinUrl"] == "https://www.linkedin.com/"

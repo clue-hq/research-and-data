@@ -289,7 +289,8 @@ DisplayBlock { page ∈ insights|overview|contact, sections[] }
 ```
 
 `BuyingCommitteeMember` (E2): `{ contactId, name, title, persona, email|null, emailClaimId|null,
-linkedinUrl|null, whyTheyMatter }`. `AccountOwner` (`owner`, `createdBy`, and the `person` actor):
+linkedinUrl|null, whyTheyMatter }` — `persona` is served display text, e.g. `Economic buyer`, as it
+is on every `persona` slot including `ContactRef`'s. `AccountOwner` (`owner`, `createdBy`, and the `person` actor):
 `{ id, name, avatarUrl? }`. `AccountActivity` (E2, E3): `{ id, kind ∈
 contacts|summary|created|artifact|updated, text, timeLabel, actor? ({type:"clue"} \| {type:"person",
 id, name, avatarUrl?}), action?, occurredAt?, isSample? }`.
@@ -348,9 +349,9 @@ labels where the list serves bands, and drops the list-only membership fields.
 | `industryLabels` | string[] | optional (default `[]`) | relaxed from `.min(1)` (S5) |
 | `headcountLabel` | string | required | the rail's headcount wording |
 | `locationsLabel` | string | required | the rail's locations wording |
-| `revenueLabel` | string | required | the rail's revenue wording |
+| `revenueLabel` | string | required | served wording read from the `core.annual_revenue` object — `"$10M–25M"`, `"$10M+"`, `"up to $25M"`; else the band; else `"Unknown"` |
 | `foundedLabel` | string | optional | omitted when the founding year is unknown |
-| `fundingLabel` | string | optional | omitted when funding is unknown |
+| `fundingLabel` | string | optional | served wording — the latest round joined to the running total, `"Series C · $60M · $130.5M"`; omitted when funding is unknown |
 | `fitScore` | int 0–100 \| null | required (nullable) | `null` until scored |
 | `fitScoreLabel` | string | optional | served wording for the score |
 | `createdAt` | ISO-8601 datetime | required | `account_entity.created_at` |
@@ -361,7 +362,7 @@ labels where the list serves bands, and drops the list-only membership fields.
 | `summaryParagraphs` | string[] | optional (default `[]`) | legacy prose slot; never fabricated (S5) |
 | `businessParagraphs` | string[] | optional (default `[]`) | legacy prose slot; never fabricated (S5) |
 | `fitCriteria` | AccountFitCriterion[] | required | `{id, matched, title, evidence}`; legacy, may be `[]` |
-| `contacts` | AccountContact[] | required | `{id, name, avatarUrl?, title?, persona?, emailVerified?, hasDetail}` |
+| `contacts` | AccountContact[] | required | `{id, name, avatarUrl?, title?, persona?, emailVerified?, hasDetail}`; `persona` is served display text, e.g. `Economic buyer` |
 | `insights` | AccountInsight[] | required | `{id, source ∈ link\|linkedin\|x, title, dateLabel, url}` |
 | `activity` | AccountActivity[] | required | see Shared shapes |
 | `headerMetadata` | string[] | optional (default `[]`) | the header's served chip strings |
@@ -397,7 +398,7 @@ labels where the list serves bands, and drops the list-only membership fields.
 | `id` | string | required | opaque `contact_entity` id |
 | `name` | string | required | the contact's resolved name |
 | `title` | string \| null | required (nullable) | `null` when no title claim exists; the row shows "—" (S7) |
-| `persona` | string | required | the committee persona |
+| `persona` | string | required | served display text, e.g. `Economic buyer` — never the backend vocabulary value |
 | `personaTone` | `olive`\|`orange`\|`blue`\|`cyan`\|`green`\|`pink`\|`red` | required | the served chip tone for that persona |
 | `influence` | `High` \| `Medium` \| `Low` | required | persona-derived default when the claim lacks it (S8) |
 | `avatarUrl` | url or path (`/…`) | optional | omitted when unknown; no third-party avatar fetch |
@@ -419,7 +420,7 @@ labels where the list serves bands, and drops the list-only membership fields.
 | `id` | string | required | as E4 |
 | `name` | string | required | as E4 |
 | `title` | string \| null | required (nullable) | as E4 (S7) |
-| `persona` | string | required | as E4 |
+| `persona` | string | required | as E4 — served display text, e.g. `Economic buyer` |
 | `personaTone` | enum (7) | required | as E4 |
 | `influence` | `High` \| `Medium` \| `Low` | required | as E4 |
 | `avatarUrl` | url or path (`/…`) | optional | as E4 |

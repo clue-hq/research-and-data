@@ -31,7 +31,7 @@ reverse import stays forbidden.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any, Literal, cast
@@ -45,6 +45,7 @@ from clue_api.arv2.display.evidence import evidence_for_ids
 from clue_api.arv2.display.personas import (
     PERSONA_LABELS,
     PERSONA_RANK,
+    persona_display,
     persona_label,
     persona_rank,
 )
@@ -88,6 +89,7 @@ __all__ = [
     "employee_range_label",
     "fit_band",
     "fit_score_100",
+    "format_money",
     "funding_label",
     "headcount_label",
     "industry_labels",
@@ -96,6 +98,7 @@ __all__ = [
     "last_modified_for",
     "linkedin_label",
     "owners_for",
+    "persona_display",
     "persona_label",
     "persona_rank",
     "research_evidence_for",
@@ -335,24 +338,195 @@ def headcount_label(count: int | None, range_: str | None) -> str:
     return band or EMPTY_BAND
 
 
+#: The symbol a currency prints as. A code outside this map is written as a prefix instead
+#: (``"INR 12M"``) — a code a marketer can read beats a symbol we would have to guess at.
+_CURRENCY_SYMBOLS: dict[str, str] = {"USD": "$", "EUR": "€", "GBP": "£"}
+
+#: Compact money units, largest first. One decimal at most: ``$130.5M`` is a figure, ``$130.53M``
+#: is a spreadsheet cell.
+_MONEY_UNITS: tuple[tuple[int, str], ...] = ((1_000_000_000, "B"), (1_000_000, "M"), (1_000, "K"))
+
+#: The range separator on a revenue band — an en dash, not a hyphen.
+_RANGE_DASH = "–"
+
+
+def _number(value: object) -> float | None:
+    """``value`` as a positive number, from an int, a float or a numeric string; else ``None``.
+
+    ``bool`` is excluded explicitly (it is an ``int`` in Python and ``True`` is not one dollar), and
+    so is a non-positive amount: a company with zero or negative revenue is a bad row, not a small
+    company — the same reading :func:`band_for_headcount` gives a headcount below 1.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        number = float(value)
+    elif isinstance(value, str):
+        try:
+            number = float(value.strip().replace(",", ""))
+        except ValueError:
+            return None
+    else:
+        return None
+    return number if number > 0 else None
+
+
+def _compact(amount: float) -> str:
+    """``10000000`` → ``"10M"``; ``130500000`` → ``"130.5M"``; ``900`` → ``"900"``. No symbol."""
+    for size, unit in _MONEY_UNITS:
+        if amount >= size:
+            scaled = round(amount / size, 1)
+            whole = int(scaled)
+            return f"{whole}{unit}" if scaled == whole else f"{scaled}{unit}"
+    whole = int(round(amount))
+    return str(whole)
+
+
+def _symbol(currency: object) -> str:
+    """The prefix ``currency`` prints as: a symbol, a code, or nothing when we were not told.
+
+    An unknown currency yields the **empty** prefix rather than ``"$"``. Defaulting to a dollar
+    sign would turn an amount the provider never denominated into a dollar figure — a small
+    fabrication on a card a marketer quotes in an email — so a bare ``"60M"`` is the honest answer.
+    """
+    code = _text(currency)
+    if code is None:
+        return ""
+    code = code.upper()
+    return _CURRENCY_SYMBOLS.get(code) or f"{code} "
+
+
+def format_money(amount: object, currency: object) -> str | None:
+    """``(130500000, "USD")`` → ``"$130.5M"``; ``(12000000, "INR")`` → ``"INR 12M"``.
+
+    ``None`` for anything that is not a positive number, so a caller can fall through to whatever
+    it holds instead of printing ``"None"`` or the raw object at a marketer.
+    """
+    number = _number(amount)
+    return None if number is None else f"{_symbol(currency)}{_compact(number)}"
+
+
 def revenue_label(annual_revenue_json: object, revenue_band: str | None) -> str:
-    """The rendered ``core.annual_revenue`` claim, else the band, else ``"Unknown"``."""
-    rendered = _text(render_value_text("core.annual_revenue", annual_revenue_json))
-    return rendered or _text(revenue_band) or EMPTY_BAND
+    """What the revenue row says, read from the ``core.annual_revenue`` **object** (decision 5).
+
+    The registry stores a provider estimate as ``{"amount_min": …, "amount_max": …, "currency": …,
+    "as_of": …, "estimate_kind": …}``. Rendering that generically put
+    ``"amount_max: 25000000; amount_min: 10000000; as_of: 2026-08-22; …"`` on the account page —
+    a pipeline string, which the founder's D4-b ruling forbids on a screen. So the shape is read:
+
+    * both bounds → ``"$10M–25M"`` — the symbol once, the unit on each side, so a range that
+      crosses a unit still reads (``"$750K–1.2M"``);
+    * one bound → ``"$10M+"`` (a floor) or ``"up to $25M"`` (a ceiling);
+    * a single ``amount`` → :func:`format_money`;
+    * a plain string (the lenient writer does not enforce the value schema) → itself.
+
+    Failing all of that, the ``core.revenue_band`` claim, then ``"Unknown"``. Nothing is invented:
+    an object whose numbers do not parse falls through exactly like a missing claim.
+    """
+    if isinstance(annual_revenue_json, dict):
+        rendered = _revenue_from_object(annual_revenue_json)
+        if rendered is not None:
+            return rendered
+    else:
+        stated = _text(annual_revenue_json)
+        if stated is not None:
+            return stated
+    return _text(revenue_band) or EMPTY_BAND
+
+
+def _revenue_from_object(value: Mapping[str, Any]) -> str | None:
+    """The band or point estimate inside a ``core.annual_revenue`` object; ``None`` when neither."""
+    symbol = _symbol(value.get("currency"))
+    low = _number(value.get("amount_min"))
+    high = _number(value.get("amount_max"))
+    if low is not None and high is not None:
+        return f"{symbol}{_compact(low)}{_RANGE_DASH}{_compact(high)}"
+    if low is not None:
+        return f"{symbol}{_compact(low)}+"
+    if high is not None:
+        return f"up to {symbol}{_compact(high)}"
+    return format_money(value.get("amount"), value.get("currency"))
+
+
+def _round_name(value: object) -> str | None:
+    """A funding round as a person names it: ``"SERIES_C"`` → ``"Series C"``; ``"Series B"`` stays.
+
+    The provider's own records name the round in the pipeline's shouting form; the registry sketch
+    names it in words. Only the shouting form is rewritten (all upper case, or carrying an
+    underscore) so a rationale-style name — ``"Series C extension"`` — is served exactly as written.
+    """
+    name = _text(value)
+    if name is None:
+        return None
+    if name == name.upper() or "_" in name:
+        return name.replace("_", " ").title()
+    return name
+
+
+def _recent_round(value: object) -> str | None:
+    """The latest funding round as one phrase — ``"Series C · $60M"`` — or ``None``.
+
+    Three shapes reach this, all of them real. The registry sketch is one object
+    (``{"round", "amount", "currency", "date", "investors"}``); the provider's own record (what the
+    answer key stores for Zafran) is a **list** of rounds keyed ``{"type", "raised_amount",
+    "announced_at", "investors"}``, newest first but not guaranteed so — the latest announcement
+    wins, and a list with no dates keeps its own order; a prose value is served as the sentence it
+    is. The round name alone, or the amount alone, is served when only one of them is known.
+    """
+    if isinstance(value, list):
+        rounds = [item for item in value if isinstance(item, dict)]
+        if not rounds:
+            return None
+        latest = max(
+            enumerate(rounds),
+            key=lambda pair: (
+                _text(pair[1].get("announced_at")) or _text(pair[1].get("date")) or "",
+                -pair[0],
+            ),
+        )[1]
+        return _recent_round(latest)
+    if isinstance(value, dict):
+        name = _round_name(value.get("round") or value.get("type"))
+        money = _money_of(value)
+        parts = [part for part in (name, money) if part is not None]
+        return " · ".join(parts) if parts else None
+    return _text(value)
+
+
+def _money_of(value: Mapping[str, Any]) -> str | None:
+    """The amount inside a funding object, under whichever of its three keys carries it.
+
+    ``amount`` is the registry's key and ``raised_amount`` the provider's; ``amount_usd`` is what
+    the synthesis lane writes, and it states its own currency in its name — so it is the one key
+    that does not consult the object's ``currency``.
+    """
+    for key in ("amount", "raised_amount"):
+        if value.get(key) is not None:
+            return format_money(value.get(key), value.get("currency"))
+    return format_money(value.get("amount_usd"), "USD")
+
+
+def _total_funding(value: object) -> str | None:
+    """The running total as money — ``{"amount": 130500000, "currency": "USD", …}`` → ``"$130.5M"``.
+
+    A prose value is served as the sentence it is.
+    """
+    return _money_of(value) if isinstance(value, dict) else _text(value)
 
 
 def funding_label(recent_funding_json: object, total_funding_json: object) -> str | None:
-    """``"Series B · $50M"`` from the latest round and the running total; whichever exists.
+    """``"Series C · $60M · $130.5M"`` — the latest round, then the running total.
 
-    The round is read as a *key* of the ``account.recent_funding`` object, not by rendering the
-    whole value: the object also carries an amount and a date, and "Series B; $30M; 2025-11-02 ·
-    $50M" is not a label.
+    Whichever half exists is served alone; ``None`` when neither says anything. Both halves are
+    read out of their registry **objects** rather than rendered generically, for the same reason
+    :func:`revenue_label` is: ``"amount: 130500000; currency: USD; investors: 9; rounds: 4"`` is a
+    pipeline string, not a label.
     """
-    round_name = (
-        _text(recent_funding_json.get("round")) if isinstance(recent_funding_json, dict) else None
-    )
-    total = _text(render_value_text("account.total_funding", total_funding_json))
-    parts = [part for part in (round_name, total) if part]
+    parts = [
+        part
+        for part in (_recent_round(recent_funding_json), _total_funding(total_funding_json))
+        if part is not None
+    ]
     return " · ".join(parts) if parts else None
 
 

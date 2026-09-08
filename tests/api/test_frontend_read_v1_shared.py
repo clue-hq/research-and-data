@@ -51,12 +51,14 @@ from clue_api.frontend_read.v1_shared import (
     email_facts,
     fit_band,
     fit_score_100,
+    format_money,
     funding_label,
     headcount_label,
     industry_labels,
     last_modified_for,
     linkedin_label,
     owners_for,
+    persona_display,
     research_evidence_for,
     revenue_label,
     socials,
@@ -288,11 +290,61 @@ def test_headcount_label_serves_whichever_half_exists() -> None:
     assert headcount_label(None, None) == "Unknown"
 
 
-def test_revenue_label_prefers_the_rendered_claim_then_the_band() -> None:
+def test_format_money_is_compact_with_at_most_one_decimal() -> None:
+    assert format_money(10_000_000, "USD") == "$10M"
+    assert format_money(130_500_000, "USD") == "$130.5M"
+    assert format_money(1_200_000_000, "USD") == "$1.2B"
+    assert format_money(750_000, "USD") == "$750K"
+    assert format_money(900, "USD") == "$900"
+    # A numeric string is a number: the lenient writer does not enforce the value schema.
+    assert format_money("60000000", "USD") == "$60M"
+
+
+def test_format_money_names_the_currency_it_was_given_and_nothing_else() -> None:
+    assert format_money(12_000_000, "EUR") == "€12M"
+    assert format_money(12_000_000, "GBP") == "£12M"
+    # A code with no symbol we can vouch for is written out, not guessed at.
+    assert format_money(12_000_000, "INR") == "INR 12M"
+    # And an amount nobody denominated gets NO symbol: defaulting to "$" would turn an
+    # undenominated figure into a dollar figure on a card a marketer quotes.
+    assert format_money(60_000_000, None) == "60M"
+
+
+def test_format_money_refuses_everything_that_is_not_a_positive_number() -> None:
+    assert format_money(None, "USD") is None
+    assert format_money("private", "USD") is None
+    assert format_money({"amount": 5}, "USD") is None
+    assert format_money(0, "USD") is None
+    assert format_money(-5_000_000, "USD") is None
+    # ``True`` is an ``int`` in Python; it is not one dollar.
+    assert format_money(True, "USD") is None
+
+
+def test_revenue_label_reads_the_registry_object_never_renders_it() -> None:
+    # The exact ``core.annual_revenue`` value the D1 answer key stores for Zafran Security.
+    zafran = {
+        "amount_min": 10_000_000,
+        "amount_max": 25_000_000,
+        "currency": "USD",
+        "as_of": "2026-08-22",
+        "estimate_kind": "provider_estimate",
+    }
+    assert revenue_label(zafran, "10m_50m") == "$10M–25M"
+    # The symbol once, the unit on each side — so a range that crosses a unit still reads.
+    assert revenue_label({"amount_min": 750_000, "amount_max": 1_200_000}, None) == "750K–1.2M"
+    assert revenue_label({"amount_min": 10_000_000, "currency": "USD"}, None) == "$10M+"
+    assert revenue_label({"amount_max": 25_000_000, "currency": "USD"}, None) == "up to $25M"
+    assert revenue_label({"amount": 30_000_000, "currency": "USD"}, None) == "$30M"
+
+
+def test_revenue_label_falls_through_to_the_band_then_unknown() -> None:
     assert revenue_label("$30M ARR", None) == "$30M ARR"
     assert revenue_label(None, "$10M-$50M") == "$10M-$50M"
     assert revenue_label(None, None) == "Unknown"
     assert revenue_label("", "$10M-$50M") == "$10M-$50M"
+    # An object whose numbers do not parse falls through exactly like a missing claim.
+    assert revenue_label({"estimate_kind": "provider_estimate"}, "$10M-$50M") == "$10M-$50M"
+    assert revenue_label({"amount": "undisclosed"}, None) == "Unknown"
 
 
 def test_funding_label_joins_the_round_and_the_total() -> None:
@@ -300,8 +352,58 @@ def test_funding_label_joins_the_round_and_the_total() -> None:
     assert funding_label({"round": "Series B"}, None) == "Series B"
     assert funding_label(None, "$50M") == "$50M"
     assert funding_label(None, None) is None
+    # ``"$30M"`` is not a number, so the round says nothing and the label is empty.
     assert funding_label({"amount": "$30M"}, None) is None
-    assert funding_label("Series B", None) is None
+    # A prose value is the sentence it is — the synthesis lane writes these.
+    assert funding_label("Series B closed in 2024", None) == "Series B closed in 2024"
+
+
+def test_funding_label_reads_the_registry_objects_never_renders_them() -> None:
+    recent = {
+        "round": "Series C",
+        "amount": 60_000_000,
+        "currency": "USD",
+        "date": "2025-12-02",
+        "investors": ["Menlo Ventures"],
+    }
+    total = {"amount": 130_500_000, "currency": "USD", "rounds": 4, "investors": 9}
+    assert funding_label(recent, None) == "Series C · $60M"
+    assert funding_label(None, total) == "$130.5M"
+    assert funding_label(recent, total) == "Series C · $60M · $130.5M"
+    # The synthesis lane's own shape names its currency in its key — on either half.
+    assert funding_label(None, {"amount_usd": 130_000_000, "semantics": "reported"}) == "$130M"
+    assert funding_label({"round": "Series C", "amount_usd": 60_000_000}, None) == "Series C · $60M"
+
+
+def test_funding_label_takes_the_latest_round_from_the_providers_list() -> None:
+    """The shape the answer key actually stores for Zafran: a list, keyed the provider's way.
+
+    ``type``/``raised_amount``/``announced_at`` rather than the registry sketch's
+    ``round``/``amount``/``date``, and the rounds carry no currency of their own — so the label is
+    honest about the unit and silent about the denomination.
+    """
+    rounds = [
+        {"type": "SERIES_B", "announced_at": "2024-09-08", "raised_amount": 40_000_000},
+        {"type": "SERIES_C", "announced_at": "2025-12-02", "raised_amount": 60_000_000},
+        {"type": "SEED_ROUND", "announced_at": "2024-03-28", "raised_amount": 5_500_000},
+    ]
+    assert funding_label(rounds, None) == "Series C · 60M"
+    # A list that states no dates keeps its own order rather than inventing one.
+    assert funding_label([{"type": "SERIES_A"}, {"type": "SEED_ROUND"}], None) == "Series A"
+    assert funding_label([], None) is None
+    # A round already named in words is served exactly as written, never re-title-cased.
+    assert funding_label([{"round": "Series C extension"}], None) == "Series C extension"
+
+
+def test_persona_display_serves_words_and_is_idempotent() -> None:
+    assert persona_display("economic_buyer") == "Economic buyer"
+    assert persona_display("technical_evaluator") == "Technical evaluator"
+    # A value outside the vocabulary is still served — spelled, not invented.
+    assert persona_display("weird_value") == "Weird value"
+    # Its own output maps to itself: this is what makes the one-shot rewrite safe to run twice.
+    assert persona_display("Economic buyer") == "Economic buyer"
+    assert persona_display(None) is None
+    assert persona_display("  ") is None
 
 
 def test_website_url_and_label_come_from_the_primary_domain() -> None:
