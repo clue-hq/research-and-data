@@ -21,6 +21,18 @@ function cloneScene(): Scene {
 }
 
 describe("operation builders", () => {
+  it("preserves supplied typography intent without adding it to raw edits", () => {
+    const node = cloneScene().nodes.node_contact_name;
+    const kind = set(node.kind);
+    const explicit = JSON.parse(JSON.stringify(nodePatch({
+      kind,
+      explicit_text_tokens: { font_size: true, style: false }
+    })));
+    expect(explicit.explicit_text_tokens).toEqual({ font_size: true, style: false });
+    const raw = JSON.parse(JSON.stringify(nodePatch({ kind })));
+    expect(Object.hasOwn(raw, "explicit_text_tokens")).toBe(false);
+  });
+
   it("builds canonical sparse node patches with explicit computed invalidation", () => {
     const scene = cloneScene();
     const node = scene.nodes.node_contact_name;

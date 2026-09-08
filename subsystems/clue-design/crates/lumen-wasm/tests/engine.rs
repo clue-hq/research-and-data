@@ -17,6 +17,49 @@ fn parse(payload: String) -> Value {
     serde_json::from_str(&payload).expect("engine returns JSON")
 }
 
+#[test]
+fn explicit_same_text_tokens_survive_wasm_wire_replay_but_raw_edits_detach() {
+    let mut scene: Value = serde_json::from_str(MINIMAL_SCENE).unwrap();
+    let text = &mut scene["nodes"]["node_contact_name"]["kind"];
+    text["font_size"] = json!(16);
+    text["style_token"] = json!("type.display");
+    text["font_size_token"] = json!("type.size.7xl");
+    let mut engine = Engine::from_scene_json(&scene.to_string()).unwrap();
+    let mut kind = scene["nodes"]["node_contact_name"]["kind"].clone();
+    kind["font_size"] = json!(80);
+    let mut patch = node_transform_patch(0.0, 0.0);
+    patch["transform"] = json!({"kind": "unchanged"});
+    patch["kind"] = json!({"kind": "set", "value": kind});
+    patch["explicit_text_tokens"] = json!({"style": true, "font_size": true});
+    let operation = json!({"kind": "update_node", "node_id": "node_contact_name", "patch": patch});
+    let result = parse(engine.apply_operations(&json!([operation]).to_string()));
+    assert_eq!(result["ok"], true);
+    let applied = parse(engine.scene_json());
+    assert_eq!(
+        applied["nodes"]["node_contact_name"]["kind"]["font_size_token"],
+        "type.size.7xl"
+    );
+    let mut raw = operation;
+    raw["patch"]
+        .as_object_mut()
+        .unwrap()
+        .remove("explicit_text_tokens");
+    raw["patch"]["kind"]["value"]["font_size"] = json!(44);
+    let result = parse(engine.apply_operations(&json!([raw]).to_string()));
+    assert_eq!(result["ok"], true);
+    let applied = parse(engine.scene_json());
+    assert_eq!(
+        applied["nodes"]["node_contact_name"]["kind"]["font_size"].as_f64(),
+        Some(44.0)
+    );
+    assert!(applied["nodes"]["node_contact_name"]["kind"]
+        .get("style_token")
+        .is_none());
+    assert!(applied["nodes"]["node_contact_name"]["kind"]
+        .get("font_size_token")
+        .is_none());
+}
+
 fn transform(x: f64, y: f64) -> Value {
     json!({
         "x": x,

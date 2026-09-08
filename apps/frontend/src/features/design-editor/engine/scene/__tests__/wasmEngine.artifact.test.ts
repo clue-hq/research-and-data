@@ -5,7 +5,7 @@ import { pressArmedAfterFreeze } from "../../../adapter/scene-gestures";
 import parityFixture from "./__fixtures__/edit-parity-cases.json";
 import minimalSceneFixture from "./__fixtures__/minimal_scene.json";
 import type { Operation, Scene } from "../contracts";
-import { updateNodeTransform, updateTextNode } from "../operations";
+import { nodePatch, set, updateNodeTransform, updateTextNode } from "../operations";
 import type { StructuredEdit } from "../structuredEdits";
 import { WasmEngine } from "../wasmEngine";
 import { loadWasmModuleFromDisk, wasmArtifactPresent } from "./wasm-module-loader";
@@ -40,6 +40,44 @@ function cloneScene(scene: Scene): Scene {
 }
 
 describe.skipIf(!wasmArtifactPresent)("WasmEngine (real artifact)", () => {
+  it("preserves explicit typography intent through replay and undo before raw edits detach", async () => {
+    const module = await loadWasmModuleFromDisk();
+    const scene = cloneScene(baseScene);
+    const node = scene.nodes.node_contact_name;
+    if (node.kind.kind !== "text") throw new Error("expected text node");
+    node.kind.font_size_token = "type.size.7xl";
+    node.kind.style_token = "type.display";
+    const engine = new WasmEngine(module, scene);
+    const original = engine.scene.nodes[node.id].kind;
+    const authored = engine.applyOperations([{
+      kind: "update_node",
+      node_id: node.id,
+      patch: nodePatch({
+        kind: set({ ...node.kind, font_size: 80 }),
+        explicit_text_tokens: { font_size: true, style: true }
+      })
+    }]);
+    expect(authored.accepted).toBe(true);
+    expect(engine.scene.nodes[node.id].kind).toMatchObject({
+      font_size: 80, font_size_token: "type.size.7xl", style_token: "type.display"
+    });
+    const undo = engine.applyOperations(JSON.parse(JSON.stringify(authored.inverseOperations)));
+    expect(undo.accepted).toBe(true);
+    expect(engine.scene.nodes[node.id].kind).toEqual(original);
+    const redo = engine.applyOperations(JSON.parse(JSON.stringify(undo.inverseOperations)));
+    expect(redo.accepted).toBe(true);
+    expect(engine.scene.nodes[node.id].kind).toMatchObject({
+      font_size: 80, font_size_token: "type.size.7xl", style_token: "type.display"
+    });
+    const raw = engine.applyOperations([updateTextNode(engine.scene.nodes[node.id], { font_size: 44 })]);
+    expect(raw.accepted).toBe(true);
+    const rawKind = engine.scene.nodes[node.id].kind;
+    if (rawKind.kind !== "text") throw new Error("expected text node");
+    expect(rawKind.font_size).toBe(44);
+    expect(rawKind.font_size_token).toBeUndefined();
+    expect(rawKind.style_token).toBeUndefined();
+  });
+
   it("reports the version handshake payload", async () => {
     const module = await loadWasmModuleFromDisk();
     const engine = new WasmEngine(module, cloneScene(baseScene));

@@ -21,7 +21,7 @@
 //! The whole batch applies through the session's checked path.
 
 use crate::operations::{FieldPatch, NodePatch, OptionalFieldPatch};
-use crate::scene::{Node, NodeKind, ParentRef, Scene};
+use crate::scene::{ExplicitTextTokens, Node, NodeKind, ParentRef, Scene};
 use crate::{NodeId, Operation};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -241,6 +241,16 @@ fn diff_node(live: &Node, intended: &Node) -> Option<NodePatch> {
     }
     if !node_kind_eq(&live.kind, &intended.kind) {
         patch.kind = FieldPatch::Set(intended.kind.clone());
+        // A declarative text kind is the complete intended state, including
+        // identical bindings and explicit absence, not an inspector spread.
+        if matches!(&intended.kind, NodeKind::Text(_)) {
+            patch.explicit_text_tokens = Some(ExplicitTextTokens {
+                style: true,
+                font_size: true,
+                line_height: true,
+                letter_spacing: true,
+            });
+        }
         changed = true;
     }
     if live.transform != intended.transform {

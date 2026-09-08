@@ -814,12 +814,19 @@ pub fn span_validation_errors(content: &str, spans: &[TextSpan]) -> Vec<SpanVali
 
 /// Which token bindings an edit explicitly authored. Explicit tokens are
 /// never cleared by [`TextNode::clear_stale_tokens`].
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ExplicitTextTokens {
     pub style: bool,
     pub font_size: bool,
     pub line_height: bool,
     pub letter_spacing: bool,
+}
+
+impl ExplicitTextTokens {
+    pub fn is_empty(&self) -> bool {
+        !self.style && !self.font_size && !self.line_height && !self.letter_spacing
+    }
 }
 
 impl TextNode {

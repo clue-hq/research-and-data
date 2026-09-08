@@ -241,6 +241,161 @@ fn dsl_explicit_token_patch_survives_a_raw_edit() {
 }
 
 #[test]
+fn sparse_same_token_reapplication_survives_serialized_operations() {
+    let mut scene = scene_with_tokened_headline();
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("headline")),
+        EditPatch::Node(NodeEditPatch {
+            text: Some(TextEditPatch {
+                font_size: FieldPatch::Set(96.0),
+                line_height: FieldPatch::Set(1.2),
+                letter_spacing: FieldPatch::Set(0.0),
+                style_token: OptionalFieldPatch::Set("$type.h1".to_owned()),
+                font_size_token: OptionalFieldPatch::Set("$type.size.5xl".to_owned()),
+                line_height_token: OptionalFieldPatch::Set("$type.leading.tight".to_owned()),
+                letter_spacing_token: OptionalFieldPatch::Set("$type.tracking.tight".to_owned()),
+                ..TextEditPatch::default()
+            }),
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap();
+    let operations: Vec<Operation> =
+        serde_json::from_value(serde_json::to_value(&batch.operations).unwrap()).unwrap();
+    scene.apply_operations(operations).unwrap();
+    let text = headline_text(&scene);
+    assert_eq!(text.font_size, 96.0);
+    assert_eq!(text.style_token.as_deref(), Some("$type.h1"));
+    assert_eq!(text.font_size_token.as_deref(), Some("$type.size.5xl"));
+    assert_eq!(
+        text.line_height_token.as_deref(),
+        Some("$type.leading.tight")
+    );
+    assert_eq!(
+        text.letter_spacing_token.as_deref(),
+        Some("$type.tracking.tight")
+    );
+}
+
+#[test]
+fn full_kind_same_token_intent_survives_replay_and_undo_redo() {
+    let mut scene = scene_with_tokened_headline();
+    let original = headline_text(&scene).clone();
+    let operation = kind_replace(&scene, |text| text.font_size = 96.0);
+    let mut wire = serde_json::to_value(operation).unwrap();
+    wire["patch"]["explicit_text_tokens"] = serde_json::json!({"style": true, "font_size": true});
+    let operation: Operation = serde_json::from_value(wire).unwrap();
+    let inverses = scene
+        .invert_operations(std::slice::from_ref(&operation))
+        .unwrap()
+        .unwrap();
+    scene.apply_operation(operation.clone()).unwrap();
+    assert_eq!(
+        headline_text(&scene).font_size_token.as_deref(),
+        Some("$type.size.5xl")
+    );
+    assert_eq!(
+        headline_text(&scene).style_token.as_deref(),
+        Some("$type.h1")
+    );
+    let inverse_wire = serde_json::to_string(&inverses).unwrap();
+    scene
+        .apply_operations(serde_json::from_str::<Vec<Operation>>(&inverse_wire).unwrap())
+        .unwrap();
+    assert_eq!(headline_text(&scene), &original);
+    scene.apply_operation(operation).unwrap();
+    assert_eq!(headline_text(&scene).font_size, 96.0);
+    assert_eq!(
+        headline_text(&scene).font_size_token.as_deref(),
+        Some("$type.size.5xl")
+    );
+}
+
+#[test]
+fn explicit_text_token_intent_requires_a_text_kind_update() {
+    let mut scene = scene_with_tokened_headline();
+    let operation = Operation::UpdateNode {
+        node_id: NodeId::from("headline"),
+        patch: NodePatch::default(),
+    };
+    let mut wire = serde_json::to_value(operation).unwrap();
+    wire["patch"]["explicit_text_tokens"] = serde_json::json!({"font_size": true});
+    let operation: Operation = serde_json::from_value(wire).unwrap();
+    assert_eq!(
+        scene.apply_operation(operation).unwrap_err().code,
+        "op.text_token_intent"
+    );
+}
+
+#[test]
+fn reconcile_reapplies_same_tokens_as_part_of_the_intended_text() {
+    let mut scene = Scene::new(DocumentId::from("doc_reconcile_tokens"), "Token replay");
+    let result = lumen_core::compile_dsl_into_scene(
+        "page square size(1080,1080,px)\n  artboard fr s(fill,fill)\n    headline text \"Before\" s(900,hug) style($type.display) font_size(64)",
+        &mut scene,
+    );
+    assert!(result.operation_error.is_none());
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("headline")),
+        EditPatch::Node(NodeEditPatch {
+            text: Some(TextEditPatch {
+                font_size_token: OptionalFieldPatch::Set("type.size.6xl".into()),
+                ..TextEditPatch::default()
+            }),
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap();
+    batch.apply_checked(&mut scene).unwrap();
+    let result = lumen_core::compile_dsl_into_scene(
+        "reconcile(artboard)\n  headline text \"After\" s(900,hug) style($type.display) font_size($type.size.6xl)",
+        &mut scene,
+    );
+    assert!(result.operation_error.is_none());
+    assert_eq!(headline_text(&scene).content, "After");
+    assert_eq!(
+        headline_text(&scene).font_size_token.as_deref(),
+        Some("type.size.6xl")
+    );
+    assert_eq!(
+        headline_text(&scene).style_token.as_deref(),
+        Some("type.display")
+    );
+}
+
+#[test]
+fn sparse_explicit_clear_survives_serialized_operations() {
+    let mut scene = scene_with_tokened_headline();
+    let batch = build_modify_operations(
+        &scene,
+        EditTargetRef::Node(NodeId::from("headline")),
+        EditPatch::Node(NodeEditPatch {
+            text: Some(TextEditPatch {
+                font_size: FieldPatch::Set(44.0),
+                font_size_token: OptionalFieldPatch::Clear,
+                style_token: OptionalFieldPatch::Clear,
+                ..TextEditPatch::default()
+            }),
+            ..NodeEditPatch::default()
+        }),
+    )
+    .unwrap();
+    let wire = serde_json::to_string(&batch.operations).unwrap();
+    scene
+        .apply_operations(serde_json::from_str::<Vec<Operation>>(&wire).unwrap())
+        .unwrap();
+    assert_eq!(headline_text(&scene).font_size, 44.0);
+    assert!(headline_text(&scene).font_size_token.is_none());
+    assert!(headline_text(&scene).style_token.is_none());
+    assert_eq!(
+        headline_text(&scene).line_height_token.as_deref(),
+        Some("$type.leading.tight")
+    );
+}
+
+#[test]
 fn dsl_content_only_edit_keeps_all_tokens() {
     let mut scene = scene_with_tokened_headline();
     let batch = build_modify_operations(

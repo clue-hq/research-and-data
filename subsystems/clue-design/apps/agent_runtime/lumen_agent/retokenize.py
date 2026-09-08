@@ -171,7 +171,7 @@ def _retokenize_text_kind(
     ramp: dict[float, str],
     kit_families: set[str],
     tolerance: float,
-) -> Optional[JsonObject]:
+) -> Optional[tuple[JsonObject, JsonObject]]:
     if kind.get("style_token"):
         return None
     family = str(kind.get("font_family") or "").lower()
@@ -183,23 +183,23 @@ def _retokenize_text_kind(
     for role in exact:
         if abs(role["size"] - size) < 0.25:
             updated["style_token"] = role["token"]
-            return updated
+            return updated, {"style": True}
     if exact:
         if size in ramp:
             updated["style_token"] = exact[0]["token"]
             updated["font_size_token"] = ramp[size]
-            return updated
+            return updated, {"style": True, "font_size": True}
         if tolerance > 0 and ramp:
             nearest = min(ramp, key=lambda step: abs(step - size))
             if size > 0 and abs(nearest - size) / size <= tolerance:
                 updated["style_token"] = exact[0]["token"]
                 updated["font_size_token"] = ramp[nearest]
                 updated["font_size"] = nearest
-                return updated
+                return updated, {"style": True, "font_size": True}
     # No role fits: a ramp-exact size still earns its size token.
     if family in kit_families and size in ramp:
         updated["font_size_token"] = ramp[size]
-        return updated
+        return updated, {"font_size": True}
     return None
 
 
@@ -301,11 +301,15 @@ def build_retokenize_operations(
 
         kind = node.get("kind")
         if isinstance(kind, dict) and kind.get("kind") == "text":
-            new_kind = _retokenize_text_kind(
+            text_rebind = _retokenize_text_kind(
                 kind, roles, ramp, kit_families, size_snap_tolerance
             )
-            if new_kind is not None:
+            if text_rebind is not None:
+                new_kind, explicit_tokens = text_rebind
                 patch["kind"] = _set(new_kind)
+                # The ledger replays against unresolved authoring state.
+                # Preserve deliberate same-token reapplication there too.
+                patch["explicit_text_tokens"] = explicit_tokens
                 touched = True
 
         if touched:

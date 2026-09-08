@@ -1537,6 +1537,69 @@ def test_checkpoints_reach_the_same_head_as_one_finalize_write(
     assert len(store.list_envelopes(at_once["id"])) == 1
 
 
+def test_retokenized_text_matches_runtime_after_checkpoint_save_and_preflight(
+    client: TestClient,
+) -> None:
+    """Same-token rebinding retains the accepted size across the real persist seam."""
+    from lumen_agent.retokenize import build_retokenize_operations
+    from lumen_api.main import execute_agent_turn_job
+
+    core = client.app.state.core
+    kit = core.platform_default_brand_kit()
+    for name, entry in kit["tokens"]["typography"].items():
+        style = entry["value"]["default"]
+        if style.get("kind") == "style":
+            style.update(
+                font_family="Inter",
+                font_weight=400,
+                font_size=51.0 if name == "type.display" else 16.0,
+            )
+    sizes = []
+    for checkpointed in (False, True):
+        seed = core.new_scene(f"doc_token_replay_{checkpointed}", "Typography replay")
+        unresolved = core.compile_dsl_into_scene(seed, '''page square size(1080,1080,px)
+  artboard fr s(fill,fill) fill($surface.page)
+    headline text "One clear idea" s(900,hug) style($type.display) font_size($type.size.7xl) fill($text.primary)
+''')["scene"]
+        # Establish the isolated test tenant through the normal API before
+        # preflight loads the tenant's optional font-library cache.
+        response = client.post("/documents", json={"title": "Typography replay", "scene": unresolved})
+        assert response.status_code == 200, response.text
+        document = response.json()["document"]
+        store = HybridRepository()
+        runtime = core.preflight_scene(unresolved, kit)
+        assert not runtime["preflight"]["has_errors"]
+        assert runtime["scene"]["nodes"]["headline"]["kind"]["font_size"] == 80.0
+        operations = build_retokenize_operations(runtime["scene"], kit)
+        assert len(operations) >= 2, "exercise incremental checkpoint tails"
+        runtime_final = core.preflight_scene(
+            core.apply_operations(runtime["scene"], operations)["scene"], kit
+        )
+        assert not runtime_final["preflight"]["has_errors"]
+        runner = (
+            checkpointing_runner([operations[:1], operations[1:]])
+            if checkpointed else proposing_runner(operations)
+        )
+        status, response, _, _ = execute_agent_turn_job(
+            _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0)),
+            store=store,
+            host=_turn_host(client, runner),
+            event_sink=None,
+        )
+        assert status == "succeeded", response
+        saved = store.require_document(document["id"])
+        assert saved["current_version"] == len(operations)
+        assert saved["scene"]["nodes"]["headline"]["kind"]["font_size_token"] == "type.size.7xl"
+        preflight = core.preflight_scene(saved["scene"], kit)
+        assert not preflight["preflight"]["has_errors"]
+        assert (
+            preflight["scene"]["nodes"]["headline"]["kind"]
+            == runtime_final["scene"]["nodes"]["headline"]["kind"]
+        )
+        sizes.append(preflight["scene"]["nodes"]["headline"]["kind"]["font_size"])
+    assert sizes == [80.0, 80.0]
+
+
 def test_a_run_that_fails_after_an_accepted_round_leaves_that_round_as_the_head(
     client: TestClient,
 ) -> None:

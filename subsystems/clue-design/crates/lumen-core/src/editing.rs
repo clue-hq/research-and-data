@@ -564,6 +564,17 @@ pub struct TextEditPatch {
     pub spans: FieldPatch<Vec<TextSpan>>,
 }
 
+impl TextEditPatch {
+    fn explicit_tokens(&self) -> ExplicitTextTokens {
+        ExplicitTextTokens {
+            style: !self.style_token.is_unchanged(),
+            font_size: !self.font_size_token.is_unchanged(),
+            line_height: !self.line_height_token.is_unchanged(),
+            letter_spacing: !self.letter_spacing_token.is_unchanged(),
+        }
+    }
+}
+
 /// One targeted edit against a fill/stroke/effect stack entry, addressed by
 /// the entry's stable id (Effects Contract V0 / Phase D extension). Entry
 /// edits compose: they apply in order on top of any whole-stack patch, and
@@ -1047,6 +1058,8 @@ pub fn build_node_modify(
             )
             .with_target(EditTargetRef::Node(node_id)));
         };
+        let explicit = text_patch.explicit_tokens();
+        node_patch.explicit_text_tokens = (!explicit.is_empty()).then_some(explicit);
         let next_text = apply_text_edit_patch(current_text.clone(), text_patch);
         node_patch.kind = FieldPatch::Set(NodeKind::Text(next_text));
     }
@@ -2679,12 +2692,7 @@ fn apply_text_edit_patch(mut text: TextNode, patch: TextEditPatch) -> TextNode {
     let before = text.clone();
     // A token field the patch addressed (set OR cleared) is an explicit
     // authoring decision; only untouched tokens are eligible for staleness.
-    let explicit = ExplicitTextTokens {
-        style: !patch.style_token.is_unchanged(),
-        font_size: !patch.font_size_token.is_unchanged(),
-        line_height: !patch.line_height_token.is_unchanged(),
-        letter_spacing: !patch.letter_spacing_token.is_unchanged(),
-    };
+    let explicit = patch.explicit_tokens();
     apply_field_patch(&mut text.content, patch.content);
     apply_field_patch(&mut text.font_family, patch.font_family);
     apply_field_patch(&mut text.font_size, patch.font_size);
