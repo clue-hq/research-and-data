@@ -281,7 +281,11 @@ def build_frontend_read_router(
     )
     register_account_activity_routes(router, conn_factory=conn_factory)
     register_account_detail_routes(
-        router, conn_factory=conn_factory, evidence_storage=evidence_storage, display=display
+        router,
+        conn_factory=conn_factory,
+        settings=settings,
+        display=display,
+        evidence_storage=evidence_storage,
     )
     register_contact_routes(
         router,

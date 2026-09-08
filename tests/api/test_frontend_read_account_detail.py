@@ -38,12 +38,21 @@ from pydantic import JsonValue
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.catalog_seed import load_arv2_pack
+from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
+from clue_api.arv2.display.blocks import insert_block
+from clue_api.arv2.display.gather import SectionInput
+from clue_api.arv2.display.recipes import load_display_recipes, recipes_for
+from clue_api.arv2.display.render import display_claim
+from clue_api.arv2.display.runner import SectionDraft
 from clue_api.client_context_binding import bind_workspace_client
 from clue_api.frontend_read import FRONTEND_READ_PREFIX
+from clue_api.frontend_read.contract_v1 import AccountDetailResponseV1
 from clue_api.projections_app import create_projections_app
 from clue_config import load_settings
 from clue_core import (
     AccountStatus,
+    ClaimId,
     Confidence,
     EntityId,
     EntityType,
@@ -74,7 +83,14 @@ from clue_fleet import (
     EntityResearchRunEnvelope,
     launch_entity_research_run,
 )
-from clue_research.claimstore import insert_claim, record_run_lineage, register_field
+from clue_research.claimstore import (
+    WorkspaceScope,
+    claims_by_ids,
+    insert_claim,
+    record_run_lineage,
+    register_field,
+)
+from clue_research.claimstore.packs import load_core_pack
 from clue_research.durable import (
     AccountRunStatus,
     ensure_project_run,
@@ -99,6 +115,7 @@ from clue_research.profiling.committee import PERSONA, ROLE_ON_COMMITTEE, load_c
 from clue_spine import Project
 from clue_storage import artifact_key, content_address, record_artifact
 from tests._workspace import seed_project, seed_workspace
+from tests.api.contract_v1.oracle import zod_validate
 from tests.db.conftest import run_async
 from tests.fleet.entity_research_r2_helpers import lifecycle_fixture
 from tests.profiling.conftest import conn_session_factory, rollback_conn
@@ -154,10 +171,19 @@ class _MemoryStorage:
 
 
 def _app(conn: AsyncConnection, *, evidence_storage: _MemoryStorage | None = None):
+    """The real projections app with the flag on and the DB seam bound to the test's connection.
+
+    ``arv2_display_generate_on_read=False`` is not decoration: the composition root reads a real
+    ``Secrets()``, so on a developer machine with ``OPENROUTER_API_KEY`` set the D3 display seam
+    would build a live runner and this suite would *spend money* writing pages. Off, the seam is a
+    pure projection — it composes the blocks the fixture stored and calls nothing.
+    """
     return create_projections_app(
         surface=None,  # type: ignore[arg-type]
         tool_invoker=None,  # type: ignore[arg-type]
-        settings=load_settings(_env_file=None, frontend_read_enabled=True),
+        settings=load_settings(
+            _env_file=None, frontend_read_enabled=True, arv2_display_generate_on_read=False
+        ),
         conn_factory=conn_session_factory(conn),
         ingestion_storage=evidence_storage,
         manage_db_lifespan=False,
@@ -174,9 +200,15 @@ async def _get(
     *,
     workspace_id: str = _WS,
     evidence_storage: _MemoryStorage | None = None,
+    contract: str | None = None,
 ) -> httpx.Response:
+    """One detail request. ``contract=None`` is the FI-2 payload; ``"v1"`` selects contract v1."""
     async with _client(_app(conn, evidence_storage=evidence_storage)) as client:
-        return await client.get(f"{_BASE}/{account_id}", headers={"X-Workspace-Id": workspace_id})
+        return await client.get(
+            f"{_BASE}/{account_id}",
+            params={} if contract is None else {"contract": contract},
+            headers={"X-Workspace-Id": workspace_id},
+        )
 
 
 def _sections(payload: dict[str, Any]) -> dict[str | None, dict[str, Any]]:
@@ -185,13 +217,15 @@ def _sections(payload: dict[str, Any]) -> dict[str | None, dict[str, Any]]:
 
 
 async def _count_statements(
-    conn: AsyncConnection, account_id: uuid.UUID
+    conn: AsyncConnection, account_id: uuid.UUID, *, contract: str | None = None
 ) -> tuple[int, dict[str, Any]]:
     """``(statements issued, payload)`` for one detail request.
 
     The endpoint composes a fixed number of batched reads per account, so this count is a
     *constant* the tests can compare across fixtures of different shapes — which is how the N+1
-    guard proves a per-section lookup has not crept into the composition.
+    guard proves a per-section lookup has not crept into the composition. Each contract has its
+    own constant: the v1 branch composes more sources than the FI-2 one, so the two counts are
+    compared against themselves, never against each other.
     """
     statements = 0
 
@@ -201,7 +235,7 @@ async def _count_statements(
 
     event.listen(conn.sync_connection, "before_cursor_execute", count)
     try:
-        response = await _get(conn, account_id)
+        response = await _get(conn, account_id, contract=contract)
     finally:
         event.remove(conn.sync_connection, "before_cursor_execute", count)
     assert response.status_code == 200
@@ -1696,5 +1730,649 @@ def test_the_project_run_context_rule_is_latest_run_wins() -> None:
                 )
                 is None
             )
+
+    run_async(scenario())
+
+
+# --- ARV2 D3 E2: the contract-v1 detail under ``?contract=v1`` ---------------------------------
+#
+# The D3 ruling: contract v1 is selected per request. Everything above this line is the FI-2
+# contract and keeps passing byte-for-byte — one route serves both until the D4 re-lift retires
+# the FI-2 branch, so no FI-2 field is renamed, wrapped or removed here.
+#
+# Two fixture choices are deliberate and recorded rather than left to be re-derived:
+#
+# * **the committee reaches the page through D2's fallback member source** — every contact under
+#   the account that holds a live claim — not through an ``entity_research_account_coverage``
+#   row. ``committee_members`` supports both, and the fallback is the shape a workspace is
+#   actually in until a fleet run publishes coverage;
+# * **every claim is written through the D1 lenient writer**, not through ``insert_claim``. The
+#   registry declares ``account.total_funding`` an object and ``core.work_email`` a string, while
+#   the providers the ARV2 lane actually reads return ``"$130.5M"`` and ``{address, status}``. The
+#   lenient writer is the lane's own write path and stores exactly that, so the rail labels here
+#   are proven against the shapes production really holds.
+
+
+#: The retained evidence behind Dana's title claim — the one the stored overview section cites.
+_TITLE_ARTIFACT_BODY = b"Dana Katz, VP of Security at Zafran."
+_TITLE_ARTIFACT_KEY = artifact_key(_WS, content_address(_TITLE_ARTIFACT_BODY))
+
+
+async def _seed_user(
+    conn: AsyncConnection,
+    user_id: str,
+    *,
+    display_name: str | None = None,
+    first_name: str | None = None,
+    last_name: str | None = None,
+) -> str:
+    await conn.execute(
+        text(
+            "INSERT INTO platform_user (user_id, display_name, first_name, last_name) "
+            "VALUES (:u, :d, :f, :l) ON CONFLICT (user_id) DO NOTHING"
+        ),
+        {"u": user_id, "d": display_name, "f": first_name, "l": last_name},
+    )
+    return user_id
+
+
+async def _lenient_claim(
+    conn: AsyncConnection,
+    *,
+    entity_id: EntityId,
+    entity_type: EntityType,
+    field_key: str,
+    value: Any,
+    research_mode: ResearchMode = ResearchMode.ACCOUNT_PROFILING,
+    **overrides: Any,
+) -> str:
+    """One claim through the D1 lenient writer — the ARV2 lane's own write path, deliberately.
+
+    The whole v1 fixture writes this way because the *lane* writes this way, and the difference is
+    load-bearing for the rail labels: ``insert_claim`` validates a value against the registry's
+    declared schema, while the D1 writer stores what the provider actually returned and records
+    the divergence as a marker. ``account.total_funding`` is declared an object and comes back
+    ``"$130.5M"``; ``core.work_email`` is declared a string and comes back
+    ``{address, status}``. Writing this fixture strictly would therefore let the endpoint be
+    proven against shapes the ARV2 lane never stores.
+    """
+    receipt = await LenientClaimWriter(lenient=True).write(
+        conn,
+        ClaimDraft(
+            entity_id=entity_id,
+            entity_type=entity_type,
+            field_key=field_key,
+            value_json=value,
+            extraction_method=ExtractionMethod.API,
+            run_id=new_run_id(),
+            research_mode=research_mode,
+            workspace_id=_WS,
+            **overrides,
+        ),
+    )
+    return str(receipt.claim_id)
+
+
+async def _v1_contact(
+    conn: AsyncConnection,
+    *,
+    account_id: EntityId,
+    name: str,
+    suffix: str,
+    persona: str,
+    title: str,
+    email: str,
+    rationale: str,
+    title_artifact_key: str | None = None,
+) -> tuple[EntityId, str, str]:
+    """One committee member with the four claims the account detail reads about them.
+
+    Returns ``(contact id, title claim id, work-email claim id)`` — the two claim ids the
+    assertions need to name.
+    """
+    contact = await insert_contact_entity(
+        conn,
+        account_entity_id=account_id,
+        full_name=name,
+        linkedin_url=f"https://www.linkedin.com/in/{suffix}",
+        status=AccountStatus.ACTIVE,
+    )
+    title_claim_id = await _lenient_claim(
+        conn,
+        entity_id=contact,
+        entity_type=EntityType.CONTACT,
+        field_key="contact.current_title",
+        value=title,
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        source_url="https://zafran.io/team",
+        evidence_span=f"{name}, {title} at Zafran.",
+        # Stamped at write time, never patched afterwards: ``claim`` is append-only and its
+        # provenance columns are immutable by trigger.
+        artifact_key=title_artifact_key,
+    )
+    for field_key, value in (
+        ("contact.persona", persona),
+        ("contact.role_on_committee", {"role": persona, "rationale": rationale}),
+    ):
+        await _lenient_claim(
+            conn,
+            entity_id=contact,
+            entity_type=EntityType.CONTACT,
+            field_key=field_key,
+            value=value,
+            research_mode=ResearchMode.CONTACT_PROFILING,
+            source_url="https://zafran.io/team",
+        )
+    email_claim_id = await _lenient_claim(
+        conn,
+        entity_id=contact,
+        entity_type=EntityType.CONTACT,
+        field_key="core.work_email",
+        value={"address": email, "status": "verified_smtp"},
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        source_url="https://zafran.io/team",
+    )
+    return contact, title_claim_id, email_claim_id
+
+
+async def _finalize_job(conn: AsyncConnection, job_id: uuid.UUID, *, outcome: str) -> None:
+    """Drive a launched job to its terminal row (its own lifecycle is R2's suite's subject)."""
+    await conn.execute(
+        text(
+            """
+            UPDATE entity_research_job
+            SET state = 'terminal',
+                finalization_outcome = :outcome,
+                finalization_receipt_ref = :receipt,
+                terminal_at = now()
+            WHERE job_id = :job_id
+            """
+        ),
+        {"outcome": outcome, "receipt": f"receipt:{job_id}", "job_id": job_id},
+    )
+
+
+async def _seed_overview_block(
+    conn: AsyncConnection, *, account_id: EntityId, cited: Sequence[str], now: datetime
+) -> None:
+    """One live ``overview/what-they-do`` block, written by hand through D2's own ``insert_block``.
+
+    No model is called: what this fixture needs is a *stored* section, and building the draft here
+    is how the read surface can be proven to compose what is stored rather than to write anything.
+
+    ``cited`` deliberately mixes an account claim with a **contact** claim — an overview section
+    legitimately speaks about both — which is what makes the E7 union testable: a contact claim is
+    evidence the v1 page cites and the FI-2 body never exposes.
+    """
+    recipe = next(item for item in recipes_for("overview") if item.section_key == "what-they-do")
+    claims = await claims_by_ids(
+        conn,
+        [ClaimId(uuid.UUID(claim_id)) for claim_id in cited],
+        scope=WorkspaceScope.for_workspace(_WS),
+    )
+    section = SectionInput(
+        recipe=recipe,
+        claims=tuple(display_claim(claim, subject=None) for claim in claims.values()),
+        deduped={},
+    )
+    draft = SectionDraft(
+        section_key=recipe.section_key,
+        intro=[
+            {
+                "text": "Zafran runs a threat-exposure management platform.",
+                "claimIds": [cited[0]],
+            }
+        ],
+        items=[
+            {
+                "id": "what-they-do-1",
+                "h2": "Exposure management, not another scanner",
+                "body": [
+                    {"text": "They mitigate what they cannot patch.", "claimIds": list(cited)}
+                ],
+                "sendLine": None,
+                "contactRefs": [],
+                "priority": 1,
+                "newSinceLastVisit": False,
+            }
+        ],
+        cited_claim_ids=list(cited),
+        checks={"unknown_aliases": [], "off_recipe": []},
+        aliases={f"c{index}": claim_id for index, claim_id in enumerate(cited, start=1)},
+        cost=None,
+        model="x-ai/grok-4.6",
+        raw_refs=(),
+    )
+    await insert_block(
+        conn,
+        workspace_id=_WS,
+        subject_kind="account",
+        subject_id=str(account_id),
+        page="overview",
+        recipe=recipe,
+        draft=draft,
+        section=section,
+        now=now,
+    )
+
+
+class _V1Fixture:
+    def __init__(
+        self,
+        *,
+        base: _Fixture,
+        zafran: EntityId,
+        dana: EntityId,
+        ravi: EntityId,
+        cited_claim_ids: tuple[str, ...],
+        email_claim_ids: tuple[str, ...],
+        created_at: datetime,
+    ) -> None:
+        self.base = base
+        self.zafran = zafran
+        self.dana = dana
+        self.ravi = ravi
+        #: What the stored overview section cites: ``(account claim, Dana's title claim)``.
+        self.cited_claim_ids = cited_claim_ids
+        self.email_claim_ids = email_claim_ids
+        self.created_at = created_at
+
+
+async def _build_v1(conn: AsyncConnection) -> _V1Fixture:
+    """The FI-2 fixture plus one fully-populated account — the shape the v1 detail is built for.
+
+    Zafran carries every source the v1 detail composes: the rail's neutral facts, an owner and a
+    creator, memberships in both projects, a fit score under the *primary* project (and a lower
+    one under the other, so attribution is provable), a finished research job, two committee
+    members with their titles/personas/roles/emails, one stored overview section, and one activity
+    event. The FI-2 accounts stay exactly as they were, so both halves of this file share a seed.
+    """
+    base = await _build(conn)
+    await load_core_pack(conn)
+    await load_arv2_pack(conn)
+    await load_display_recipes(conn)
+    await _seed_user(conn, "u_owner", display_name="Ada Lovelace")
+    await _seed_user(conn, "u_creator", first_name="Grace", last_name="Hopper")
+
+    created_at = datetime(2026, 8, 1, 15, 0, tzinfo=UTC)
+    zafran = await _account(conn, name="Zafran", domain="zafran.io")
+    await conn.execute(
+        text(
+            "UPDATE account_entity SET created_at = :at, owner_user_id = 'u_owner', "
+            "created_by_user_id = 'u_creator' WHERE id = :id"
+        ),
+        {"at": created_at, "id": zafran},
+    )
+    membership_base = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
+    for project, added_via, offset in (
+        (base.project_a, "discovered", timedelta()),
+        (base.project_b, "imported", timedelta(minutes=5)),
+    ):
+        await ensure_project_account(
+            conn,
+            workspace_id=_WS,
+            project_id=project.project_id,
+            account_entity_id=zafran,
+            added_via=added_via,
+            added_at=membership_base + offset,
+        )
+
+    cited_claim_id: str | None = None
+    for field_key, value in (
+        ("core.employee_count", 167),
+        # The registry shapes, not convenient strings: ``employee_range`` is an object whose only
+        # required key is ``label``, ``hq_location`` an object whose required key is ``raw``.
+        ("core.employee_range", {"label": "51-200", "min": 51, "max": 200}),
+        ("core.revenue_band", "50m_100m"),
+        ("core.annual_revenue", "$45M ARR"),
+        ("core.hq_location", {"raw": "Tel Aviv, Israel", "city": "Tel Aviv", "country": "Israel"}),
+        ("core.industry", "Cybersecurity"),
+        ("core.industries_all", ["Cybersecurity", "Security software"]),
+        ("core.company_linkedin_url", "https://www.linkedin.com/company/zafran"),
+        ("core.founded_year", 2022),
+        ("account.recent_funding", {"round": "Series C", "amount_usd": 60000000}),
+        ("account.total_funding", "$130.5M"),
+    ):
+        claim_id = await _lenient_claim(
+            conn,
+            entity_id=zafran,
+            entity_type=EntityType.ACCOUNT,
+            field_key=field_key,
+            value=value,
+            source_key="exa_contents",
+            source_url="https://zafran.io/about",
+            evidence_span="Zafran is a cybersecurity company.",
+        )
+        if field_key == "core.industry":
+            cited_claim_id = claim_id
+    assert cited_claim_id is not None
+
+    await _score(
+        conn,
+        account_id=zafran,
+        project_id=base.project_a.project_id,
+        fit=0.82,
+        intent=0.5,
+        icp_key="alpha",
+        icp_version=1,
+    )
+    # A *lower* score under the non-primary project: the detail must report the primary project's
+    # fit, never whichever score happens to sort first.
+    await _score(
+        conn,
+        account_id=zafran,
+        project_id=base.project_b.project_id,
+        fit=0.20,
+        intent=None,
+        icp_key="beta",
+        icp_version=3,
+    )
+    launch = await _launch_research_job(
+        conn, project_id=base.project_a.project_id, account_id=zafran
+    )
+    await _finalize_job(conn, launch["job_id"], outcome="completed")
+
+    # Dana's title claim carries a retained artifact from birth: the stored overview section
+    # cites it, which is what makes the E7 union (FI-2 evidence ∪ v1 page citations) provable.
+    await record_artifact(
+        conn,
+        storage_key=_TITLE_ARTIFACT_KEY,
+        workspace_id=_WS,
+        content_sha256=content_address(_TITLE_ARTIFACT_BODY),
+        media_type="text/plain",
+        size_bytes=len(_TITLE_ARTIFACT_BODY),
+        source_key="exa_contents",
+        source_url="https://zafran.io/team",
+    )
+    dana, dana_title, dana_email = await _v1_contact(
+        conn,
+        title_artifact_key=_TITLE_ARTIFACT_KEY,
+        account_id=zafran,
+        name="Dana Katz",
+        suffix="dana-katz",
+        persona="economic_buyer",
+        title="VP of Security",
+        email="dana@zafran.io",
+        rationale="Owns the security budget.",
+    )
+    ravi, _ravi_title, ravi_email = await _v1_contact(
+        conn,
+        account_id=zafran,
+        name="Ravi Mehta",
+        suffix="ravi-mehta",
+        persona="champion",
+        title="Director of Detection Engineering",
+        email="ravi@zafran.io",
+        rationale="Runs the team that would use it.",
+    )
+
+    cited = (cited_claim_id, dana_title)
+    await _seed_overview_block(conn, account_id=zafran, cited=cited, now=datetime.now(UTC))
+    await conn.execute(
+        text(
+            "INSERT INTO account_activity_event (workspace_id, account_entity_id, kind, "
+            "actor_kind, text, action, occurred_at) "
+            "VALUES (:w, :a, 'summary', 'clue', :t, :ac, :o)"
+        ),
+        {
+            "w": _WS,
+            "a": zafran,
+            "t": "Summary refreshed",
+            "ac": "View summary",
+            "o": datetime.now(UTC) - timedelta(hours=3),
+        },
+    )
+    return _V1Fixture(
+        base=base,
+        zafran=zafran,
+        dana=dana,
+        ravi=ravi,
+        cited_claim_ids=cited,
+        email_claim_ids=(dana_email, ravi_email),
+        created_at=created_at,
+    )
+
+
+def _overview(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {section["key"]: section for section in payload["overviewDisplay"]["sections"]}
+
+
+def test_the_v1_contract_serves_the_account_detail_for_a_fully_populated_account() -> None:
+    """Every v1 field of the detail, composed from the sources decisions 5/8/9/15/16 name — and
+    the whole body validated twice: by the strict pydantic model and by the frontend's own Zod."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1(conn)
+            response = await _get(conn, fixture.zafran, contract="v1")
+            assert response.status_code == 200
+            body = response.json()
+
+            # The envelope, and the strict wire model: extra keys forbidden, required-nullable
+            # fields present.
+            assert set(body) == {"data"}
+            AccountDetailResponseV1.model_validate(body)
+            detail = body["data"]
+
+            assert detail["id"] == str(fixture.zafran)
+            assert detail["name"] == "Zafran"
+            assert detail["previewTitle"] == "Zafran"
+            assert detail["logoPath"] is None
+            assert detail["websiteUrl"] == "https://zafran.io"
+            assert detail["websiteLabel"] == "zafran.io"
+            assert detail["researchStatus"] == "completed"
+            assert detail["researchStatusLabel"] == "Researched"
+            assert detail["owner"] == {"id": "u_owner", "name": "Ada Lovelace"}
+            assert detail["createdBy"] == {"id": "u_creator", "name": "Grace Hopper"}
+            assert detail["industryLabels"] == ["Cybersecurity", "Security software"]
+            assert detail["headcountLabel"] == "167 (51-200)"
+            assert detail["locationsLabel"] == "Tel Aviv, Israel"
+            # ``revenue_label``'s shipped rule: the rendered claim wins over the band.
+            assert detail["revenueLabel"] == "$45M ARR"
+            assert detail["foundedLabel"] == "2022"
+            assert detail["fundingLabel"] == "Series C · $130.5M"
+            assert detail["overallFit"] == "High"
+            assert detail["fitScore"] == 82
+            assert "fitScoreLabel" not in detail
+            assert detail["createdAt"] == "2026-08-01T15:00:00Z"
+            assert detail["lastModifiedAt"].endswith("Z")
+            assert detail["lastModifiedAt"] >= detail["createdAt"]
+            assert detail["socials"] == [
+                {
+                    "id": "linkedin",
+                    "label": "LinkedIn",
+                    "url": "https://www.linkedin.com/company/zafran",
+                }
+            ]
+            # The legacy slots the display layer replaced: empty lists, never absent keys.
+            assert detail["summaryParagraphs"] == []
+            assert detail["businessParagraphs"] == []
+            assert detail["headerMetadata"] == []
+            assert detail["fitCriteria"] == []
+            assert detail["insights"] == []
+
+            # --- the rail's contact chips
+            assert [contact["name"] for contact in detail["contacts"]] == [
+                "Dana Katz",
+                "Ravi Mehta",
+            ]
+            assert all(contact["hasDetail"] is True for contact in detail["contacts"])
+            assert detail["contacts"][0]["title"] == "VP of Security"
+            assert detail["contacts"][0]["persona"] == "economic_buyer"
+            assert detail["contacts"][0]["emailVerified"] is True
+
+            # --- the buying committee, persona-ordered
+            committee_rows = detail["buyingCommittee"]
+            assert [row["name"] for row in committee_rows] == ["Dana Katz", "Ravi Mehta"]
+            dana = committee_rows[0]
+            assert dana["contactId"] == str(fixture.dana)
+            assert dana["title"] == "VP of Security"
+            assert dana["persona"] == "economic_buyer"
+            assert dana["email"] == "dana@zafran.io"
+            assert dana["emailClaimId"] == fixture.email_claim_ids[0]
+            assert dana["whyTheyMatter"] == "Owns the security budget."
+            assert dana["linkedinUrl"] == "https://www.linkedin.com/in/dana-katz"
+
+            # --- the generated page: the whole recipe grammar, written section and all
+            sections = _overview(detail)
+            assert detail["overviewDisplay"]["page"] == "overview"
+            assert list(sections) == [
+                "what-they-do",
+                "why-they-fit",
+                "why-now",
+                "buying-committee",
+                "how-to-approach",
+                "watch-outs",
+            ]
+            written = sections["what-they-do"]
+            assert written["empty"] is False
+            assert written["intro"][0]["text"].startswith("Zafran runs")
+            assert written["items"][0]["id"] == "what-they-do-1"
+            assert all(
+                sections[key]["empty"] is True for key in sections if key != "what-they-do"
+            ), "generation is off in this suite, so nothing else can have been written"
+
+            # --- the evidence drawer covers every id the page and the committee cite
+            evidence = {row["claimId"]: row for row in detail["researchEvidence"]}
+            assert set(evidence) == {*fixture.cited_claim_ids, *fixture.email_claim_ids}
+            assert all("fieldKey" not in row for row in detail["researchEvidence"])
+            assert evidence[fixture.cited_claim_ids[0]]["provider"] == "Exa"
+
+            # --- activity
+            assert len(detail["activity"]) == 1
+            entry = detail["activity"][0]
+            assert entry["actor"] == {"type": "clue"}
+            assert entry["text"] == "Summary refreshed"
+            assert entry["timeLabel"] == "3 hours ago"
+            assert entry["occurredAt"].endswith("Z")
+
+            zod_validate(detail, "AccountDetailSchema")
+
+    run_async(scenario())
+
+
+def test_the_same_id_without_the_parameter_still_serves_the_fi2_detail() -> None:
+    """The ruling: no FI-2 field is renamed, wrapped or removed while both contracts are served."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1(conn)
+            body = (await _get(conn, fixture.zafran)).json()
+
+            assert "neutralFacts" in body
+            assert "data" not in body
+            assert "projectSections" in body
+            assert "coverage" in body
+            assert "buyingCommittee" not in body
+            assert "overviewDisplay" not in body
+
+    run_async(scenario())
+
+
+def test_an_unknown_id_is_an_enveloped_404_in_v1_mode() -> None:
+    """The v1 branch resolves the account by exactly the FI-2 rules, refusal included."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _build_v1(conn)
+            response = await _get(conn, uuid.uuid4(), contract="v1")
+
+            assert response.status_code == 404
+            error = response.json()["error"]
+            assert error["code"] == "ACCOUNT_NOT_FOUND"
+            assert error["requestId"] == response.headers["X-Request-Id"]
+
+    run_async(scenario())
+
+
+def test_a_merged_loser_is_followed_silently_in_v1() -> None:
+    """The FI-2 body names the id the caller asked for; the v1 shape has no ``redirectedFrom``
+    slot, so the survivor is simply served."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1(conn)
+            loser = await _account(conn, name="Zafran Dup", domain="zafran-dup.test")
+            await mark_merged(conn, EntityType.ACCOUNT, loser_id=loser, survivor_id=fixture.zafran)
+
+            detail = (await _get(conn, loser, contract="v1")).json()["data"]
+            assert detail["id"] == str(fixture.zafran)
+            assert detail["name"] == "Zafran"
+            assert "redirectedFrom" not in detail
+
+    run_async(scenario())
+
+
+def test_the_v1_detail_is_a_constant_number_of_statements() -> None:
+    """The v1 detail composes more sources than the FI-2 one; it must still cost a fixed number of
+    batched reads, not one per committee member, owner or custom field.
+
+    The growth axes are the two that could plausibly grow a per-row lookup: the committee (every
+    contact under the account that holds a claim is a member) and the memberships."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1(conn)
+            baseline, before = await _count_statements(conn, fixture.zafran, contract="v1")
+
+            await _v1_contact(
+                conn,
+                account_id=fixture.zafran,
+                name="Zoe Adler",
+                suffix="zoe-adler",
+                persona="technical_evaluator",
+                title="Staff Engineer",
+                email="zoe@zafran.io",
+                rationale="Evaluates the integration.",
+            )
+            for ordinal in range(3):
+                extra = await seed_project(conn, _WS, name=f"Extra project {ordinal}")
+                await ensure_project_account(
+                    conn,
+                    workspace_id=_WS,
+                    project_id=extra.project_id,
+                    account_entity_id=fixture.zafran,
+                    added_via="manual",
+                    added_at=datetime(2026, 8, 2, 12, ordinal, tzinfo=UTC),
+                )
+            widened, after = await _count_statements(conn, fixture.zafran, contract="v1")
+
+            assert len(before["data"]["buyingCommittee"]) == 2
+            assert len(after["data"]["buyingCommittee"]) == 3, "the committee really did grow"
+            assert baseline > 0, "the listener really fired"
+            assert widened == baseline
+
+    run_async(scenario())
+
+
+def test_a_claim_cited_only_by_the_v1_page_is_authorised_for_the_evidence_stream() -> None:
+    """E7 authorises against the union of both contracts' evidence.
+
+    The FI-2 detail exposes account claims through ``neutralFacts``/``projectSections`` and no
+    contact claim at all; the v1 page cites both. The stored overview section here cites Dana's
+    **title** claim — evidence this account's screen shows and the FI-2 body never names — so it
+    can only be authorised through the v1 half of the union."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = _MemoryStorage({_TITLE_ARTIFACT_KEY: _TITLE_ARTIFACT_BODY})
+            fixture = await _build_v1(conn)
+            contact_claim_id = fixture.cited_claim_ids[1]
+            assert contact_claim_id not in str((await _get(conn, fixture.zafran)).json()), (
+                "the FI-2 body must not expose it, or this test proves nothing"
+            )
+
+            path = f"{_BASE}/{fixture.zafran}/evidence/{contact_claim_id}"
+            unknown = f"{_BASE}/{fixture.zafran}/evidence/{uuid.uuid4()}"
+            async with _client(_app(conn, evidence_storage=storage)) as client:
+                served = await client.get(path, headers={"X-Workspace-Id": _WS})
+                crossed = await client.get(path, headers={"X-Workspace-Id": _OTHER_WS})
+                uncited = await client.get(unknown, headers={"X-Workspace-Id": _WS})
+
+            assert served.status_code == 200
+            assert served.content == _TITLE_ARTIFACT_BODY
+            assert crossed.status_code == 404
+            # The union widens authorisation, it does not remove it.
+            assert uncited.status_code == 404
 
     run_async(scenario())
