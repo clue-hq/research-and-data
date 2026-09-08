@@ -81,3 +81,45 @@ worktree (storage root repointed to `san-salvador/.artifacts`; answer key reload
   provider_call_ledger** (gateway logs cost_cents 0 for grok-4.6 agent completions) — money-truth gap;
   one job per worker at a time; context ~97k tokens by round 13 (no model_error).
 - PR #49 MERGED into integration/design-improvement (a758b5b1f, 2026-09-08). New branch track-r2-v1 for R2 close.
+
+## R2 close — 2026-09-08 (branch `explain-r2-close-plan-simply`, local only, nothing pushed)
+
+The six tasks of `.superpowers/sdd/2026-09-08-arv2-r2-close/` (briefs + per-task reports there),
+each closing a follow-up the Task-7 acceptance run observed. Docs updated by Task 6:
+`platform/api/clue_api/arv2/README.md` (R2 section), `docs/specs/ARV2-MASTER-PLAN.md` §9 R2 row,
+this file.
+
+| task | what it shipped | commits |
+| --- | --- | --- |
+| 1 | Answer-key recall measurement: `answer_key_recall.py` + `scripts/arv2_answer_key_recall.py`; structured values graded by their leaf values, not their key names; baseline recorded | `811b25837`, fix `b3811058a` |
+| 2 | The agent's model rounds are `provider_call_ledger` rows (`openrouter` / `agent_completion`, ids carry the job attempt), cost from OpenRouter's `usage.cost` or its `/generation` endpoint (`cost_source` metered\|estimate\|unpriced), receipt carries `model_spend` | `73925fb95`, `f0c4507a9`, `cf9420b10`, `cb8ece1e5` |
+| 3 | Structuring hardened: `structure_material` takes `sources[]`+`notes` (notes are never evidence; the cited URL is corrected to the source block), per-draft writes with `write_failures`, proposed-key normalisation, scalar coercion with `coerced_from`, vacant committee seats; AI Ark mapper widened to every registered core/account field the record carries, HQ in the registered shape, funding as USD | `0e47f7e4c`, `e41d0b8c0` |
+| 4 | The link audit records a reason per claim (`on_page`, `partial_on_page`, `page_empty`, `page_unreachable`, `not_on_page`, `second_hand_from_report`, `quoted_context`); the receipt tallies `verdict/reason` | `ce006fd97` |
+| 5 | Fit verdicts keyed to the ICP's `hard_gates[].key` (unknown label refused, missing gate filled `unclear`, duplicates dropped; the keys are in the agent's context); transient `tool_error` not remembered; provider timeout ends `model_error`; malformed ICP front matter refuses `icp_front_matter_invalid`; one profile digest | `69b27e3e8`, `6ff1f6bb2` |
+| 6 | Docs + memory (this entry) | this commit |
+
+### Founder rulings taken during the close
+- **Model cost comes from OpenRouter only** — its reported `usage.cost` or its `/generation`
+  endpoint. We ship no price table of our own; a deployment-supplied price is labelled `estimate`,
+  and an unpriced round books `cost_usd = NULL`, never an invented zero.
+- **Schema-invalid claims stay visible; the shapes are fixed at the source.** Nothing is dropped
+  for failing its schema — the mappers and the coercion write the registered shape instead
+  (`core.hq_location`, scalar core fields, vacant committee seats).
+- **AI Ark funding amounts are read as USD**, with the assumption recorded per claim
+  (`markers.currency_assumed = "USD"`). `core.annual_revenue` stays unmapped: a range with no
+  amount and no currency is not a fact.
+- **Measurement first** — the recall baseline is taken before the fixes, so the re-run has
+  something to be measured against.
+- **The Exa claims-mode experiment is deferred** (not part of this close).
+
+### Baseline recall (pre-close, `.context/arv2-r2-acceptance/recall-before/`)
+```
+probook recall 0.50 (exact 9 / partial 3 / field_only 9 / missing 3 of 24)
+zafran  recall 0.45 (exact 16 / partial 14 / field_only 27 / missing 9 of 66)
+```
+Sections — Probook `core` 5/13, `account` 7/9, `account.resonance` 0/2;
+Zafran `core` 16/29, `account` 13/26, `account.resonance` 1/11.
+
+### Task 7 re-run: founder-triggered, pending
+The re-run against the same two accounts, graded with the same script into a `recall-after`
+directory, is the close's exit gate. Nothing in tasks 1–6 has been exercised live.
