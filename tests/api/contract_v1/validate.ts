@@ -1,10 +1,12 @@
 /**
- * The Zod oracle for contract v1 (ARV2 D3, task 1).
+ * The Zod oracle for contract v1 (ARV2 D3, task 1; re-pointed at the monorepo models in D4 task 3).
  *
- * The five schema files under `./zod/` are vendored verbatim from the dummy frontend
- * (`clue-frontend` @ `84f8ee7`, `src/features/accounts/model/`) and carry only the D0/D3
- * contract amendments, each marked with a `// D0 ruling Rn/Sn` or `// D3 ruling` comment.
- * A diff of `./zod/` against that commit must show the amendments and nothing else.
+ * The five schema files it imports ARE the frontend's own accounts models
+ * (`apps/frontend/src/features/accounts/model/`). They were vendored under `./zod/` while the
+ * frontend still lived in the dummy repo; the D4 re-lift landed them in `apps/frontend`, so the
+ * oracle now reads the shipped models directly and there is exactly one copy of contract v1's
+ * presentation truth. Each D0/D3 amendment is still marked in place with a
+ * `// D0 ruling Rn/Sn` or `// D3 ruling` comment.
  *
  * Two CLI modes, both driven from `tests/api/contract_v1/test_contract_v1.py`:
  *
@@ -18,18 +20,17 @@
  *       Parses the file with the named schema. Exit 0 on success; exit 1 with the Zod error
  *       on stderr otherwise.
  *
- * `zod` is resolved from the dummy frontend's `node_modules` — see `README.md` for the exact
- * incantation.
+ * `zod` is resolved from `apps/frontend/node_modules` — see `README.md` for the exact incantation.
  */
 import { readFileSync } from "node:fs";
 
-import { AccountSchema } from "./zod/account";
-import { AccountDetailSchema } from "./zod/account-detail";
-import { AccountWorkspaceSchema } from "./zod/account-workspace";
+import { AccountSchema } from "../../../apps/frontend/src/features/accounts/model/account";
+import { AccountDetailSchema } from "../../../apps/frontend/src/features/accounts/model/account-detail";
+import { AccountWorkspaceSchema } from "../../../apps/frontend/src/features/accounts/model/account-workspace";
 import {
   AccountContactDetailSchema,
   AccountContactSummarySchema,
-} from "./zod/account-contact";
+} from "../../../apps/frontend/src/features/accounts/model/account-contact";
 
 const SCHEMAS: Record<string, { shape: Record<string, unknown> }> = {
   AccountSchema,

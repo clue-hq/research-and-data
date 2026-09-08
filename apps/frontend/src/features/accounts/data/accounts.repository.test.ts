@@ -1,52 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createHttpAccountsRepository } from "./accounts.repository";
 
-test("the Accounts repository always reads the live endpoint", async () => {
-  let requestedPath = "";
-  let requestedOptions: unknown;
-  const repository = createHttpAccountsRepository(async (path, options) => {
-    requestedPath = path;
-    requestedOptions = options;
-    return {
-      data: [],
-      meta: { total: 0, nextCursor: null },
-    };
-  });
+// The selector is explicit: without the flag the live path refuses rather than
+// silently serving fixtures, so this suite turns fixture mode on deliberately.
+process.env.CLUE_ACCOUNTS_FIXTURE_MODE = "true";
 
-  const response = await repository.list({
-    cursor: "cursor-1",
-    limit: 25,
-    page: 3,
-    projectId: "project-1",
-  });
+import {
+  getAccountPreviewRows,
+  getAccounts,
+} from "./accounts.repository";
 
-  assert.equal(requestedPath, "/accounts");
-  assert.deepEqual(requestedOptions, {
-    searchParams: {
-      cursor: "cursor-1",
-      limit: 25,
-      page: 3,
-      projectId: "project-1",
-    },
-  });
-  assert.deepEqual(response, {
-    data: [],
-    meta: {
-      total: 0,
-      nextCursor: null,
-      page: null,
-      pageSize: null,
-      totalPages: null,
-    },
-  });
+test("account preview reuses the same rows as the accounts table", async () => {
+  const [accountsResponse, previewRows] = await Promise.all([
+    getAccounts(),
+    getAccountPreviewRows(),
+  ]);
+
+  assert.deepEqual(
+    previewRows.map(({ id, name }) => ({ id, name })),
+    accountsResponse.data.map(({ id, name }) => ({ id, name })),
+  );
 });
 
-test("the live repository rejects a malformed wire response", async () => {
-  const repository = createHttpAccountsRepository(async () => ({
-    data: [{ id: "missing-required-account-fields" }],
-    meta: { total: 1, nextCursor: null },
-  }));
+test("accounts can be filtered and sorted by project", async () => {
+  const response = await getAccounts({
+    projectId: "custom-reports",
+    sort: "project_asc",
+  });
 
-  await assert.rejects(repository.list(), /name/);
+  assert.deepEqual(
+    response.data.map((account) => account.name),
+    ["Antigravity", "Cursor", "Midjourney", "Mistral AI", "Perplexity AI"],
+  );
+  assert.equal(response.meta.total, 5);
 });

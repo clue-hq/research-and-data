@@ -1,41 +1,75 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import type { AccountDetail } from "../model/account-detail";
+import { useDrawerTransition } from "../hooks/use-drawer-transition";
+import motion from "./account-motion.module.css";
 import {
-  AccountCoveragePanel,
   AccountDetailsList,
   AccountIdentity,
   AccountTextSection,
   PreviewToolbar,
 } from "./account-detail-primitives";
+import components from "./account-components.module.css";
+import { AccountResearchBody } from "./account-research-overview";
 
 export function AccountPreviewDrawer({
   account,
 }: {
   account: AccountDetail;
 }) {
+  const router = useRouter();
+  const transition = useDrawerTransition();
+  const navigate = (href: string) => {
+    router.prefetch(href);
+    transition.close(() => router.push(href, { scroll: false }));
+  };
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) navigate("/accounts");
+    };
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  });
+
   return (
     <aside
       aria-label={`${account.name} account preview`}
-      className="clue-panel-enter fixed top-0 right-0 z-30 h-dvh w-[min(727px,100vw)] overflow-hidden bg-white shadow-[-6px_0_18px_rgba(0,24,62,0.08)] before:absolute before:inset-y-0 before:left-0 before:z-40 before:w-px before:bg-[var(--clue-border-neutral)]"
+      className={`${motion.drawer} ${components.previewDrawer}`}
+      data-closing={transition.closing}
+      onAnimationEnd={transition.onAnimationEnd}
     >
-      <PreviewToolbar account={account} />
-      <div className="h-[calc(100dvh-48px)] w-full overscroll-contain overflow-y-auto px-8 pb-12 [scrollbar-color:#c9ced6_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin]">
-        <div className="mt-12">
+      <PreviewToolbar account={account} onNavigateTo={navigate} />
+      <div className={components.previewContent}>
+        <div>
           <AccountIdentity account={account} />
         </div>
         <div className="mt-9">
-          <AccountDetailsList account={account} showCommittee />
+          <AccountDetailsList account={account} showContacts />
         </div>
-        <div className="mt-9">
-          <AccountTextSection
-            emptyNote="No written account summary has been composed yet."
-            prose={account.summary}
-            restrictedNote="The account summary is unavailable for display."
-            title="Account summary"
-          />
-        </div>
-        <div className="mt-9">
-          <AccountCoveragePanel account={account} />
-        </div>
+        {account.overviewDisplay ? (
+          <AccountResearchBody account={account} />
+        ) : (
+          <>
+            {account.summaryParagraphs.length > 0 ? (
+              <div className="mt-9">
+                <AccountTextSection
+                  paragraphs={account.summaryParagraphs}
+                  title="Account summary"
+                />
+              </div>
+            ) : null}
+            {account.businessParagraphs.length > 0 ? (
+              <div className="mt-9">
+                <AccountTextSection
+                  paragraphs={account.businessParagraphs}
+                  title="About their business"
+                />
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
     </aside>
   );

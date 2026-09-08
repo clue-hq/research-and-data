@@ -431,7 +431,7 @@ The modules, under `frontend_read/`:
 
 | Module | What it owns |
 |---|---|
-| `contract_v1.py` | The five pydantic payload models and their shared sub-types (`ResearchEvidence`, `ResearchDisplayBlock`, `BuyingCommitteeMember`, `AccountActivity`, …), plus `V1_PAYLOADS` — the mapping the parity suite iterates against the vendored Zod in `tests/api/contract_v1/zod/`. |
+| `contract_v1.py` | The five pydantic payload models and their shared sub-types (`ResearchEvidence`, `ResearchDisplayBlock`, `BuyingCommitteeMember`, `AccountActivity`, …), plus `V1_PAYLOADS` — the mapping the parity suite iterates against the frontend's Zod in `apps/frontend/src/features/accounts/model/`. |
 | `v1_shared.py` | Everything two or more endpoints compute: `arv2_display_allowed` (the D3 display predicate), the five label maps, the fit/band/label helpers, `email_facts`, tenure/education/LinkedIn/time labels, owners, custom fields, `last_modified_for`, `activity_for`, and `research_evidence_for`. |
 | `display_pages.py` | The one seam onto D2. `DisplayPages.page(...)` composes a page from live blocks, degrades to an empty block rather than raising, and schedules stale-section regeneration in the background (never awaited by the request); `generate=False` is the authorisation-read mode the evidence routes use. It also owns `committee` / `buying_committee` / `rail_contacts` over one claims read. |
 | `account_workspace.py` | E3, end to end. |
@@ -442,6 +442,22 @@ The modules, under `frontend_read/`:
 `committee_members` (with `resolve_subject`) and `read_recipes`, plus the pure `render_value_text`.
 No endpoint reaches into `display_block` rows, prompts, the runner or the floor: if a screen needs
 something the display module does not expose, the new function is D2's to add, not D3's to inline.
+
+**D4 (2026-09-09) re-pointed the frontend at `?contract=v1` and changed nothing here.** The
+`apps/frontend` accounts feature was re-lifted from the design build and its five repositories now
+read E1–E5 through the authenticated BFF with `contract=v1` on every request — E1 walking
+`meta.nextCursor` at `limit=200` because the table pages in the browser. **No backend behaviour
+changed**: the only edits under `platform/` are two prose pointers — this file's module table and
+`contract_v1.py`'s docstring — that now name `apps/frontend/src/features/accounts/model/` instead of
+the retired vendored Zod copy. Both contracts are therefore still served. **The next backend PR is the FI-2 deletion**: drop the
+FI-2 readers in `accounts_list.py` / `account_detail.py` / `contacts.py` (with
+`AccountDetail`/`neutralFacts`/`projectSections`), `app.contract_mode` / `ContractDep` and the
+`contract` parameter itself, and the FI-2 route tests with them — after which `?contract=v1` comes
+off the adapters too. Two v1 reader fixes ride with it (both recorded at D3 and confirmed by the D4
+walk): `revenueLabel` / `fundingLabel` must read the registry objects' own keys the way
+`employeeBand` and `locationsLabel` do — today the rail prints
+`"amount_max: 25000000; amount_min: 10000000; …"` — and `AccountContactDetailV1.linkedinUrl` should
+become nullable so the site-root fallback can go away.
 
 ## Notes recorded at R1 integration (2026-09-07)
 

@@ -3,7 +3,6 @@
 interface AccountCheckboxProps {
   checked: boolean;
   className?: string;
-  indeterminate?: boolean;
   label: string;
   onChange: () => void;
 }
@@ -11,27 +10,24 @@ interface AccountCheckboxProps {
 export function AccountCheckbox({
   checked,
   className = "",
-  indeterminate = false,
   label,
   onChange,
 }: AccountCheckboxProps) {
   return (
     <button
-      aria-checked={indeterminate ? "mixed" : checked}
+      aria-checked={checked}
       aria-label={label}
-      className={`relative size-4 rounded-[4px] border-[0.5px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#567644] ${
-        checked || indeterminate
+      className={`relative size-4 rounded-[var(--clue-ds-product-component-button-md-radius)] border-[0.5px] transition-colors focus-visible:outline-none focus-visible:shadow-[var(--clue-ds-product-component-button-effect-focus-transparent)] ${
+        checked
           ? "border-[var(--clue-content-neutral)] bg-[var(--clue-content-neutral)]"
-          : "border-[#b5bcc6] bg-white"
+          : "border-[var(--clue-border-neutral)] bg-[var(--clue-background-neutral)]"
       } ${className}`}
       onClick={onChange}
       role="checkbox"
       type="button"
     >
-      {indeterminate ? (
-        <span className="absolute top-[7px] left-[3px] h-px w-2 bg-white" />
-      ) : checked ? (
-        <span className="absolute top-[3px] left-[4px] h-[5px] w-[7px] rotate-[-45deg] border-b border-l border-white" />
+      {checked ? (
+        <span className="absolute top-[3px] left-[4px] h-[5px] w-[7px] rotate-[-45deg] border-b border-l border-[var(--clue-background-neutral)]" />
       ) : null}
     </button>
   );

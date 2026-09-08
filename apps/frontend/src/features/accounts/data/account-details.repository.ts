@@ -1,18 +1,36 @@
 import {
-  AccountDetailSchema,
+  AccountDetailResponseSchema,
   type AccountDetail,
 } from "../model/account-detail";
+import { openAiAccountDetailFixture } from "./account-detail.fixture";
+import { zafranAccountDetailFixture } from "./zafran/account";
 import { fetchRead } from "./frontend-api";
+import { accountsFixtureMode } from "./repository-mode";
 
 export interface AccountDetailsRepository {
   get(accountId: string): Promise<AccountDetail | null>;
 }
 
+export const fixtureAccountDetailsRepository: AccountDetailsRepository = {
+  async get(accountId) {
+    const account = [
+      openAiAccountDetailFixture,
+      zafranAccountDetailFixture,
+    ].find((candidate) => candidate.id === accountId);
+    if (!account) return null;
+
+    return AccountDetailResponseSchema.parse({
+      data: account,
+    }).data;
+  },
+};
+
 /**
- * The detail is a single resource: the backend returns the object itself, with
- * no `{data}` wrapper (only the two list endpoints use one). A merged loser's
- * id is followed to its survivor, with `redirectedFrom` naming what was asked
- * for; an unknown id is a `404`, which the transport turns into `null`.
+ * The live account detail: `GET /frontend/v1/accounts/{id}?contract=v1` → `{data}`.
+ *
+ * `ACCOUNT_NOT_FOUND` is the one 404 that means "no such account"; `fetchRead`
+ * turns it into `null` and every other failure into a `ClueApiError`, so a
+ * wrong mount or a disabled read surface never renders as an empty account.
  */
 export function createHttpAccountDetailsRepository(
   read: typeof fetchRead = fetchRead,
@@ -21,14 +39,21 @@ export function createHttpAccountDetailsRepository(
     async get(accountId) {
       const body = await read(`/accounts/${encodeURIComponent(accountId)}`, {
         recordNotFoundAllowed: true,
+        searchParams: { contract: "v1" },
       });
-      return body === null ? null : AccountDetailSchema.parse(body);
+      if (body === null) return null;
+      return AccountDetailResponseSchema.parse(body).data;
     },
   };
 }
 
 export async function getAccountDetails(
   accountId: string,
+  read: typeof fetchRead = fetchRead,
 ): Promise<AccountDetail | null> {
-  return createHttpAccountDetailsRepository().get(accountId);
+  const repository = accountsFixtureMode()
+    ? fixtureAccountDetailsRepository
+    : createHttpAccountDetailsRepository(read);
+
+  return repository.get(accountId);
 }

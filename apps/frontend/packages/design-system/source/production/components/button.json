@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "component": "Button",
+  "source": {
+    "fileKey": "Gqz4ROcgy5sZ4HMWsLpOVf",
+    "fileName": "Clue Design System",
+    "pageId": "69:3108",
+    "pageName": "Button",
+    "capturedAt": "2026-08-18",
+    "method": "Figma Plugin API inspection"
+  },
+  "canonical": {
+    "componentSetId": "1390:48408",
+    "componentKey": "6e7c44bfbc0ea6fdb291fc342dc8791beb561ca5",
+    "variantCount": 60,
+    "axes": {
+      "type": ["primary", "secondary", "transparent", "critical"],
+      "status": ["resting", "hover", "pressed", "disabled", "focused"],
+      "size": ["lg", "md", "sm"]
+    }
+  },
+  "tokens": [
+    { "name": "component/button/border-width", "unit": "px", "value": 0.5 },
+    { "name": "component/button/gap", "unit": "px", "value": 4 },
+    { "name": "component/button/sm/height", "unit": "px", "value": 26 },
+    { "name": "component/button/sm/padding-block", "unit": "px", "value": 2 },
+    { "name": "component/button/sm/padding-inline", "unit": "px", "value": 8 },
+    { "name": "component/button/sm/radius", "unit": "px", "value": 2 },
+    { "name": "component/button/sm/icon-size", "unit": "px", "value": 12 },
+    { "name": "component/button/md/height", "unit": "px", "value": 32 },
+    { "name": "component/button/md/padding-block", "unit": "px", "value": 4 },
+    { "name": "component/button/md/padding-inline", "unit": "px", "value": 12 },
+    { "name": "component/button/md/radius", "unit": "px", "value": 4 },
+    { "name": "component/button/md/icon-size", "unit": "px", "value": 14 },
+    { "name": "component/button/lg/height", "unit": "px", "value": 44 },
+    { "name": "component/button/lg/padding-block", "unit": "px", "value": 8 },
+    { "name": "component/button/lg/padding-inline", "unit": "px", "value": 20 },
+    { "name": "component/button/lg/radius", "unit": "px", "value": 4 },
+    { "name": "component/button/lg/icon-size", "unit": "px", "value": 16 },
+    { "name": "component/button/effect/resting-primary", "kind": "raw", "value": "0 2px 0 rgb(0 0 0 / 5%), inset 0 0 0 rgb(0 0 0 / 20%)" },
+    { "name": "component/button/effect/resting-surface", "kind": "raw", "value": "0 2px 0 rgb(0 0 0 / 5%), inset 0 1px 0 1px rgb(255 255 255 / 100%)" },
+    { "name": "component/button/effect/focus-primary", "kind": "raw", "value": "0 0 0 2px var(--clue-ds-color-bg-neutral), 0 0 0 3px var(--clue-ds-color-components-button-focus-ring), 0 2px 0 rgb(0 0 0 / 5%)" },
+    { "name": "component/button/effect/focus-surface", "kind": "raw", "value": "inset 0 1px 0 1px rgb(255 255 255 / 100%), 0 0 0 2px var(--clue-ds-color-bg-neutral), 0 0 0 3px var(--clue-ds-color-components-button-focus-ring), 0 2px 0 rgb(0 0 0 / 5%)" },
+    { "name": "component/button/effect/focus-transparent", "kind": "raw", "value": "0 0 0 2px var(--clue-ds-color-bg-neutral), 0 0 0 3px var(--clue-ds-color-components-button-focus-ring)" }
+  ]
+}

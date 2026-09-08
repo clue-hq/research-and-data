@@ -1,71 +1,57 @@
-import { useMemo, useRef, useState, useTransition } from "react";
-import type { Account, AccountsResponse } from "../model/account";
-import type { AccountRecovery } from "../model/account-recovery";
-import type { AccountBulkCapabilities } from "../model/bulk-actions";
-import { loadAccountsPage } from "../data/accounts.actions";
-import { addAccountsToProject } from "../data/bulk-actions.repository";
-import { ClueApiError } from "../data/clue-api-error";
+import { useMemo, useRef, useState } from "react";
+import type { Account } from "../model/account";
 import { useChatTransport } from "@/features/projects/data/projects-transport";
+import { useAccountWorkspaceOwner } from "./use-account-owner";
+import { resolveAccountOwner } from "../model/account-owner";
+import type { AccountBulkCapabilities } from "../model/bulk-actions";
 import {
-  defaultAccountColumnOrder,
-  defaultAccountColumnWidths,
-  defaultAccountColumns,
+  createLocalAccount,
+  isLocalDraftAccount,
+  type AccountRow,
+} from "../model/create-account";
+import { addSelectedAccountsToProject } from "../data/bulk-actions.repository";
+import {
+  createAccountColumnDefinitions,
+  createAccountColumnOrder,
+  createAccountColumnVisibility,
+  createAccountColumnWidths,
   type AccountColumnKey,
   type AccountSort,
   type AccountTableDensity,
 } from "../model/account-table-view";
-import type { AccountFilterRule } from "../model/account-query";
 import {
   createDefaultAccountFilterRules,
   filterAccounts,
   sortAccounts,
 } from "../model/account-query";
 
-/** The deferred, explicitly non-durable create control remains untouched in this slice. */
-function createLocalAccount(name: string, domain: string): Account {
-  const slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-
-  return {
-    id: `${slug}-${crypto.randomUUID()}`,
-    name,
-    domain,
-    employeeCount: null,
-    revenueBand: null,
-    logoUrl: null,
-    projects: [],
-    primaryProjectId: null,
-    scores: [],
-    researchStatus: [],
-    updatedAt: null,
-  };
-}
-
 export function useAccountsScreenController(
   initialAccounts: Account[],
-  initialMeta: AccountsResponse["meta"],
   bulkCapabilities: AccountBulkCapabilities,
+  submitAddToProject: typeof addSelectedAccountsToProject = addSelectedAccountsToProject,
 ) {
+  const workspaceOwner = useAccountWorkspaceOwner();
+  // The chat handoff exists only against the real backend: in fixture mode the
+  // projects transport has nowhere to prepare a composer draft.
   const chatHandoffAvailable = useChatTransport().mode === "http";
-  const [search, setSearchState] = useState("");
-  const [accountRows, setAccountRows] = useState(initialAccounts);
-  const [durableAccountIds, setDurableAccountIds] = useState(
-    () => new Set(initialAccounts.map((account) => account.id)),
+  const initialColumnDefinitions = createAccountColumnDefinitions(
+    initialAccounts,
   );
-  const [page, setPage] = useState(initialMeta.page ?? 1);
-  const [pageSize, setPageSize] = useState(initialMeta.pageSize ?? 20);
-  const [totalPages, setTotalPages] = useState(initialMeta.totalPages ?? 1);
-  const [totalCount, setTotalCount] = useState(initialMeta.total);
-  const [loadRecovery, setLoadRecovery] = useState<AccountRecovery | null>(null);
-  const [isPageLoading, startPageTransition] = useTransition();
-  const [filters, setFiltersState] = useState(createDefaultAccountFilterRules);
-  const [sort, setSortState] = useState<AccountSort>("default");
-  const [density, setDensity] = useState<AccountTableDensity>("spacious");
-  const [columnOrder, setColumnOrder] = useState(defaultAccountColumnOrder);
-  const [columnWidths, setColumnWidths] = useState(defaultAccountColumnWidths);
-  const [visibleColumns, setVisibleColumns] = useState(defaultAccountColumns);
+  const [search, setSearch] = useState("");
+  const [accountRows, setAccountRows] = useState<AccountRow[]>(initialAccounts);
+  const [filters, setFilters] = useState(createDefaultAccountFilterRules);
+  const [sort, setSort] = useState<AccountSort>("default");
+  const [density, setDensity] =
+    useState<AccountTableDensity>("spacious");
+  const [columnOrder, setColumnOrder] = useState(
+    () => createAccountColumnOrder(initialColumnDefinitions),
+  );
+  const [columnWidths, setColumnWidths] = useState(
+    () => createAccountColumnWidths(initialColumnDefinitions),
+  );
+  const [visibleColumns, setVisibleColumns] = useState(
+    () => createAccountColumnVisibility(initialColumnDefinitions),
+  );
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -74,6 +60,8 @@ export function useAccountsScreenController(
   );
   const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
   const [bulkNotice, setBulkNotice] = useState<string | null>(null);
+  // One idempotency key per attempt at the same selection, so a retry after a
+  // timeout resumes the same operation instead of starting a second one.
   const bulkAttemptKey = useRef<string | null>(null);
 
   const visibleAccounts = useMemo(() => {
@@ -83,110 +71,79 @@ export function useAccountsScreenController(
         !normalizedSearch ||
         account.name.toLocaleLowerCase().includes(normalizedSearch),
     );
-    return sortAccounts(filterAccounts(searched, filters), sort);
+    return sortAccounts(filterAccounts(searched, filters), sort).map((account) => ({
+      ...account, owner: resolveAccountOwner(account),
+    }));
   }, [accountRows, filters, search, sort]);
 
-  const hasActiveFilter = useMemo(
-    () => search.trim() !== "" || filters.some((rule) => rule.value.trim() !== ""),
-    [filters, search],
+  const columnDefinitions = useMemo(
+    () => createAccountColumnDefinitions(accountRows),
+    [accountRows],
   );
+
+  // The research-status filter's vocabulary is the served `researchStatusLabel`
+  // of the rows in hand — the browser keeps no status label map (source map §6).
+  const researchStatusOptions = useMemo(() => {
+    const options = new Map<string, { label: string; value: string }>();
+    for (const account of accountRows) {
+      options.set(account.researchStatus, {
+        label: account.researchStatusLabel ?? account.researchStatus,
+        value: account.researchStatus,
+      });
+    }
+    return [...options.values()].sort((first, second) =>
+      first.label.localeCompare(second.label),
+    );
+  }, [accountRows]);
 
   const projectOptions = useMemo(() => {
     const projects = new Map<string, Account["projects"][number]>();
     for (const account of accountRows) {
-      for (const project of account.projects) projects.set(project.projectId, project);
+      for (const project of account.projects) projects.set(project.id, project);
     }
     return [...projects.values()].sort((first, second) =>
-      (first.name ?? "").localeCompare(second.name ?? ""),
+      first.name.localeCompare(second.name),
     );
   }, [accountRows]);
+
+  // A local draft exists only in this tab, so no server-side bulk action can
+  // name it: it is never selectable.
+  const selectableAccountIds = useMemo(
+    () =>
+      new Set(
+        accountRows
+          .filter((account) => !isLocalDraftAccount(account))
+          .map((account) => account.id),
+      ),
+    [accountRows],
+  );
+
+  /**
+   * The selection a bulk action can actually act on.
+   *
+   * Searching, filtering or sorting does NOT clear the selection (that is the
+   * design build's behaviour, and a filter is not a deselection): a row hidden
+   * by the current view keeps its checkbox and comes back with it. It is simply
+   * not counted while it is out of view, so nothing is ever submitted that the
+   * operator cannot see.
+   */
+  const visibleSelectedAccountIds = useMemo(
+    () =>
+      new Set(
+        visibleAccounts
+          .filter(
+            (account) =>
+              selectedAccountIds.has(account.id) &&
+              selectableAccountIds.has(account.id),
+          )
+          .map((account) => account.id),
+      ),
+    [selectableAccountIds, selectedAccountIds, visibleAccounts],
+  );
 
   function clearSelection() {
     setSelectedAccountIds(new Set());
     bulkAttemptKey.current = null;
-  }
-
-  function toggleColumn(column: AccountColumnKey) {
-    if (column === "company") return;
-    setVisibleColumns((current) => ({ ...current, [column]: !current[column] }));
-  }
-
-  function moveColumn(column: AccountColumnKey, direction: -1 | 1) {
-    if (column === "company") return;
-    setColumnOrder((current) => {
-      const currentIndex = current.indexOf(column);
-      const nextIndex = currentIndex + direction;
-      if (currentIndex < 0 || nextIndex <= 0 || nextIndex >= current.length) return current;
-      const next = [...current];
-      [next[currentIndex], next[nextIndex]] = [next[nextIndex], next[currentIndex]];
-      return next;
-    });
-  }
-
-  function reorderColumn(source: AccountColumnKey, target: AccountColumnKey) {
-    if (source === target || source === "company") return;
-    setColumnOrder((current) => {
-      const next = current.filter((column) => column !== source);
-      const targetIndex = target === "company" ? 1 : next.indexOf(target);
-      next.splice(targetIndex, 0, source);
-      return next;
-    });
-  }
-
-  function setColumnWidth(column: AccountColumnKey, width: number) {
-    setColumnWidths((current) => ({ ...current, [column]: width }));
-  }
-
-  function resetColumnWidth(column: AccountColumnKey) {
-    setColumnWidths((current) => ({
-      ...current,
-      [column]: defaultAccountColumnWidths[column],
-    }));
-  }
-
-  function createAccount(name: string, domain: string) {
-    setAccountRows((current) => [createLocalAccount(name, domain), ...current]);
-    clearSelection();
-  }
-
-  function loadPage(nextPage: number, nextPageSize = pageSize) {
-    if (isPageLoading) return;
-    clearSelection();
-    startPageTransition(async () => {
-      try {
-        const result = await loadAccountsPage(nextPage, nextPageSize);
-        if (result.status === "recovery") {
-          setLoadRecovery(result.recovery);
-          return;
-        }
-        const { response } = result;
-        setAccountRows(response.data);
-        setDurableAccountIds(new Set(response.data.map((account) => account.id)));
-        setPage(response.meta.page ?? nextPage);
-        setPageSize(response.meta.pageSize ?? nextPageSize);
-        setTotalPages(response.meta.totalPages ?? 1);
-        setTotalCount(response.meta.total);
-        setLoadRecovery(null);
-      } catch (error) {
-        console.error("Unexpected Accounts pagination failure", error);
-        setLoadRecovery({ kind: "contract_error", requestId: null, retryable: false });
-      }
-    });
-  }
-
-  function setSearch(value: string) {
-    clearSelection();
-    setSearchState(value);
-  }
-
-  function setFilters(value: AccountFilterRule[]) {
-    clearSelection();
-    setFiltersState(value);
-  }
-
-  function setSort(value: AccountSort) {
-    clearSelection();
-    setSortState(value);
   }
 
   function setSelectedProjectId(value: string) {
@@ -194,8 +151,122 @@ export function useAccountsScreenController(
     bulkAttemptKey.current = null;
   }
 
+  async function executeAddToProject() {
+    if (
+      !selectedProjectId ||
+      visibleSelectedAccountIds.size === 0 ||
+      isBulkSubmitting
+    ) {
+      return;
+    }
+    if (visibleSelectedAccountIds.size > bulkCapabilities.addToProject.maxItems) {
+      return;
+    }
+    const project = bulkCapabilities.projects.find(
+      (option) => option.id === selectedProjectId,
+    );
+    if (!project) return;
+
+    const idempotencyKey = bulkAttemptKey.current ?? crypto.randomUUID();
+    bulkAttemptKey.current = idempotencyKey;
+    setIsBulkSubmitting(true);
+    setBulkNotice(null);
+    try {
+      const outcome = await submitAddToProject({
+        accountIds: [...visibleSelectedAccountIds],
+        idempotencyKey,
+        project,
+        rows: accountRows,
+      });
+      if (outcome.status === "session_expired") {
+        window.location.assign("/sign-in?reason=session_expired");
+        return;
+      }
+      if (outcome.status === "added") {
+        setAccountRows(outcome.rows);
+        setBulkNotice(outcome.notice);
+        clearSelection();
+        return;
+      }
+      setBulkNotice(outcome.notice);
+    } finally {
+      setIsBulkSubmitting(false);
+    }
+  }
+
+  function toggleColumn(column: AccountColumnKey) {
+    if (column === "company") return;
+
+    setVisibleColumns((current) => ({
+      ...current,
+      [column]: !current[column],
+    }));
+  }
+
+  function moveColumn(column: AccountColumnKey, direction: -1 | 1) {
+    if (column === "company") return;
+
+    setColumnOrder((current) => {
+      const currentIndex = current.indexOf(column);
+      const nextIndex = currentIndex + direction;
+      if (
+        currentIndex < 0 ||
+        nextIndex <= 0 ||
+        nextIndex >= current.length
+      ) {
+        return current;
+      }
+
+      const next = [...current];
+      [next[currentIndex], next[nextIndex]] = [
+        next[nextIndex],
+        next[currentIndex],
+      ];
+      return next;
+    });
+  }
+
+  function reorderColumn(
+    source: AccountColumnKey,
+    target: AccountColumnKey,
+  ) {
+    if (source === target || source === "company") return;
+
+    setColumnOrder((current) => {
+      const next = current.filter((column) => column !== source);
+      const targetIndex =
+        target === "company" ? 1 : next.indexOf(target);
+      next.splice(targetIndex, 0, source);
+      return next;
+    });
+  }
+
+  function setColumnWidth(column: AccountColumnKey, width: number) {
+    setColumnWidths((current) => ({
+      ...current,
+      [column]: width,
+    }));
+  }
+
+  function resetColumnWidth(column: AccountColumnKey) {
+    const defaultWidth =
+      columnDefinitions.find((definition) => definition.key === column)
+        ?.width ?? 140;
+    setColumnWidths((current) => ({
+      ...current,
+      [column]: defaultWidth,
+    }));
+  }
+
+  function createAccount(name: string, websiteUrl: string) {
+    setAccountRows((current) => [
+      createLocalAccount(name, websiteUrl, workspaceOwner),
+      ...current,
+    ]);
+  }
+
   function toggleAccount(accountId: string) {
-    if (!durableAccountIds.has(accountId)) return;
+    if (!selectableAccountIds.has(accountId)) return;
     bulkAttemptKey.current = null;
     setSelectedAccountIds((current) => {
       const next = new Set(current);
@@ -208,83 +279,21 @@ export function useAccountsScreenController(
   function toggleAllVisibleAccounts() {
     bulkAttemptKey.current = null;
     setSelectedAccountIds((current) => {
+      const next = new Set(current);
       const selectable = visibleAccounts.filter((account) =>
-        durableAccountIds.has(account.id),
+        selectableAccountIds.has(account.id),
       );
       const allVisibleSelected =
         selectable.length > 0 &&
-        selectable.every((account) => current.has(account.id));
-      return allVisibleSelected
-        ? new Set()
-        : new Set(
-            selectable.map((account) => account.id),
-          );
-    });
-  }
+        selectable.every((account) => next.has(account.id));
 
-  async function executeAddToProject() {
-    if (!selectedProjectId || selectedAccountIds.size === 0 || isBulkSubmitting) return;
-    if (selectedAccountIds.size > bulkCapabilities.addToProject.maxItems) return;
-    const idempotencyKey = bulkAttemptKey.current ?? crypto.randomUUID();
-    bulkAttemptKey.current = idempotencyKey;
-    setIsBulkSubmitting(true);
-    setBulkNotice(null);
-    try {
-      const result = await addAccountsToProject({
-        accountIds: [...selectedAccountIds],
-        idempotencyKey,
-        projectId: selectedProjectId,
-      });
-      const project = bulkCapabilities.projects.find(
-        (option) => option.id === selectedProjectId,
-      );
-      const reflectedIds = new Set(
-        result.items
-          .filter((item) => item.outcome === "completed" || item.outcome === "unchanged")
-          .map((item) => item.subjectId),
-      );
-      setAccountRows((current) =>
-        current.map((account) =>
-          !project ||
-          !reflectedIds.has(account.id) ||
-          account.projects.some((membership) => membership.projectId === project.id)
-            ? account
-            : {
-                ...account,
-                projects: [
-                  ...account.projects,
-                  {
-                    projectId: project.id,
-                    name: project.name,
-                    addedVia: "manual" as const,
-                    addedAt: null,
-                  },
-                ],
-                primaryProjectId: account.primaryProjectId ?? project.id,
-              },
-        ),
-      );
-      const parts = [
-        result.counts.completed ? `${result.counts.completed} added` : null,
-        result.counts.unchanged ? `${result.counts.unchanged} already in project` : null,
-        result.counts.ineligible ? `${result.counts.ineligible} ineligible` : null,
-        result.counts.failed ? `${result.counts.failed} failed` : null,
-      ].filter(Boolean);
-      setBulkNotice(parts.join(" · "));
-      clearSelection();
-    } catch (error) {
-      if (error instanceof ClueApiError && error.status === 401) {
-        window.location.assign("/sign-in?reason=session_expired");
-        return;
+      for (const account of selectable) {
+        if (allVisibleSelected) next.delete(account.id);
+        else next.add(account.id);
       }
-      setBulkNotice(
-        error instanceof ClueApiError && error.status === 403
-          ? "You no longer have permission to add Accounts to this project."
-          : "The Account action could not finish. Try again to safely resume it.",
-      );
-    } finally {
-      setIsBulkSubmitting(false);
-    }
+
+      return next;
+    });
   }
 
   return {
@@ -293,43 +302,38 @@ export function useAccountsScreenController(
     chatHandoffAvailable,
     clearBulkNotice: () => setBulkNotice(null),
     clearSelection,
+    createAccount,
+    columnDefinitions,
     columnOrder,
     columnWidths,
-    createAccount,
     density,
     executeAddToProject,
     filters,
-    hasActiveFilter,
     isBulkSubmitting,
-    isPageLoading,
-    loadPage,
-    loadRecovery,
-    moveColumn,
-    page,
-    pageSize,
-    projectOptions,
-    reorderColumn,
-    resetColumnWidth,
-    search,
-    selectedAccountIds,
-    selectableAccountIds: durableAccountIds,
+    selectableAccountIds,
     selectedProjectId,
     selectionEnabled:
       bulkCapabilities.addToProject.allowed ||
       (chatHandoffAvailable && bulkCapabilities.addToChat.allowed),
+    setSelectedProjectId,
+    moveColumn,
+    reorderColumn,
+    resetColumnWidth,
+    search,
+    selectedAccountIds,
+    projectOptions,
+    researchStatusOptions,
+    setFilters,
     setColumnWidth,
     setDensity,
-    setFilters,
     setSearch,
-    setSelectedProjectId,
     setSort,
     sort,
     toggleAccount,
     toggleAllVisibleAccounts,
     toggleColumn,
-    totalCount,
-    totalPages,
     visibleAccounts,
+    visibleSelectedAccountIds,
     visibleColumns,
   };
 }

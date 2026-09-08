@@ -1,8 +1,8 @@
 """Contract v1 — the wire models for the five accounts-screen payloads (ARV2 D3).
 
-This module is the backend half of one contract whose *presentation truth* is the dummy frontend
-(`clue-frontend` @ ``84f8ee7``, ``src/features/accounts/model/*.ts``). Those Zod schemas are
-vendored, with the D0/D3 amendments applied, under ``tests/api/contract_v1/zod/``, and
+This module is the backend half of one contract whose *presentation truth* is the frontend's own
+Zod: ``apps/frontend/src/features/accounts/model/*.ts``, carrying the D0/D3 amendments (they were
+vendored under ``tests/api/contract_v1/zod/`` until the D4 re-lift landed them in the monorepo).
 ``tests/api/contract_v1/test_contract_v1.py`` holds the two sides together:
 
 * every model's alias set equals its Zod schema's field set, and
