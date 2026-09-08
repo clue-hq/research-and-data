@@ -71,12 +71,17 @@ __all__ = [
     "COMMITTEE_FIELD_KEYS",
     "DEFAULT_PERSONA",
     "DEFAULT_WHY_THEY_MATTER",
+    "ROLE_KEY",
     "UNKNOWN_TITLE",
+    "WORK_EMAIL_KEY",
     "DisplayPages",
     "PageRead",
     "buying_committee",
     "committee",
+    "committee_claims",
+    "displayable",
     "rail_contacts",
+    "title_of",
 ]
 
 log = get_logger("clue_api.frontend_read.display")
@@ -393,14 +398,23 @@ async def committee(
     return sorted(members, key=lambda member: (persona_rank(member.persona), member.name))
 
 
-async def _committee_claims(
-    conn: AsyncConnection, *, workspace_id: str, members: Sequence[SubjectRef]
+async def committee_claims(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    members: Sequence[SubjectRef],
+    field_keys: Sequence[str] = COMMITTEE_FIELD_KEYS,
 ) -> dict[tuple[str, str], Claim]:
     """``(contact id, field key) -> the latest live claim``, for the whole committee in one read.
 
     ``claims_for_entities`` orders by ``field_key, collected_at DESC, id``, so the first row seen
     for a pair is the newest one — the same tie-break the merge itself uses. The read is
     entity-scoped *and* workspace-scoped, never ``claim.workspace_id`` alone.
+
+    ``field_keys`` defaults to the card's own :data:`COMMITTEE_FIELD_KEYS`; a caller that needs a
+    different slice of the same people (the contact page's ``reports`` chips read
+    ``contact.reports_to`` over the committee) passes its own rather than opening a second read
+    path that could disagree about which claim is the latest.
     """
     entity_ids = [EntityId(uuid.UUID(member.id)) for member in members]
     if not entity_ids:
@@ -408,7 +422,7 @@ async def _committee_claims(
     rows = await claims_for_entities(
         conn,
         entity_ids,
-        list(COMMITTEE_FIELD_KEYS),
+        list(field_keys),
         scope=WorkspaceScope.for_workspace(workspace_id),
     )
     latest: dict[tuple[str, str], Claim] = {}
@@ -417,14 +431,14 @@ async def _committee_claims(
     return latest
 
 
-def _displayable(claim: Claim | None, policy: WorkspacePolicy) -> Claim | None:
+def displayable(claim: Claim | None, policy: WorkspacePolicy) -> Claim | None:
     """``claim`` if the workspace's policy permits showing it, else ``None``."""
     if claim is None or not arv2_display_allowed(claim, policy):
         return None
     return claim
 
 
-def _title_of(claim: Claim | None) -> str | None:
+def title_of(claim: Claim | None) -> str | None:
     """A displayable ``contact.current_title`` as the string it is declared to be.
 
     A non-string value is a registry violation; stringifying it would put an object on the card, so
@@ -473,13 +487,13 @@ async def buying_committee(
     :data:`DEFAULT_PERSONA`, :data:`DEFAULT_WHY_THEY_MATTER`. ``linkedinUrl`` is the *entity's*
     column (not a claim) and survives only if it is a safe public URL.
     """
-    latest = await _committee_claims(conn, workspace_id=workspace_id, members=members)
+    latest = await committee_claims(conn, workspace_id=workspace_id, members=members)
     entities = await get_contacts(conn, [EntityId(uuid.UUID(member.id)) for member in members])
 
     served: list[BuyingCommitteeMember] = []
     for member in members:
-        title = _title_of(_displayable(latest.get((member.id, TITLE_KEY)), policy))
-        facts = email_facts(_displayable(latest.get((member.id, WORK_EMAIL_KEY)), policy))
+        title = title_of(displayable(latest.get((member.id, TITLE_KEY)), policy))
+        facts = email_facts(displayable(latest.get((member.id, WORK_EMAIL_KEY)), policy))
         entity = entities.get(EntityId(uuid.UUID(member.id)))
         url = None if entity is None else entity.linkedin_url
         served.append(
@@ -492,7 +506,7 @@ async def buying_committee(
                 email_claim_id=facts.claim_id,
                 linkedin_url=url if safe_public_url(url) else None,
                 why_they_matter=_why_they_matter(
-                    _displayable(latest.get((member.id, ROLE_KEY)), policy)
+                    displayable(latest.get((member.id, ROLE_KEY)), policy)
                 ),
             )
         )
@@ -513,16 +527,16 @@ async def rail_contacts(
     at all) is ``False``, which is what the chip means. ``has_detail`` is always true: every
     committee member the screens list has a contact page.
     """
-    latest = await _committee_claims(conn, workspace_id=workspace_id, members=members)
+    latest = await committee_claims(conn, workspace_id=workspace_id, members=members)
     return [
         AccountContact(
             id=member.id,
             name=member.name,
-            title=_title_of(_displayable(latest.get((member.id, TITLE_KEY)), policy)),
+            title=title_of(displayable(latest.get((member.id, TITLE_KEY)), policy)),
             persona=member.persona,
             email_verified=(
                 email_facts(
-                    _displayable(latest.get((member.id, WORK_EMAIL_KEY)), policy)
+                    displayable(latest.get((member.id, WORK_EMAIL_KEY)), policy)
                 ).verified_at
                 is not None
             ),

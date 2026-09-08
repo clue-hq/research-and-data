@@ -28,9 +28,11 @@ therefore the *production* case today, and the populated ones are the post-R11 c
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from collections.abc import AsyncIterator, Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -41,12 +43,24 @@ from pydantic import JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.display.blocks import insert_block
+from clue_api.arv2.display.gather import SectionInput
+from clue_api.arv2.display.recipes import recipes_for
+from clue_api.arv2.display.render import display_claim
+from clue_api.arv2.display.runner import SectionDraft
 from clue_api.client_context_binding import bind_workspace_client
 from clue_api.frontend_read import FRONTEND_READ_PREFIX
+from clue_api.frontend_read.contract_v1 import (
+    AccountContactDetailResponseV1,
+    AccountContactsResponseV1,
+)
+from clue_api.frontend_read.display_pages import DisplayPages
+from clue_api.frontend_read.v1_shared import tenure
 from clue_api.projections_app import create_projections_app
 from clue_config import load_settings
 from clue_core import (
     AccountStatus,
+    ClaimId,
     Confidence,
     EntityId,
     EntityType,
@@ -63,7 +77,12 @@ from clue_core import (
     new_project_run_id,
     new_run_id,
 )
-from clue_research.claimstore import insert_claim, load_core_pack
+from clue_research.claimstore import (
+    WorkspaceScope,
+    claims_by_ids,
+    insert_claim,
+    load_core_pack,
+)
 from clue_research.durable import (
     AccountRunStatus,
     ensure_project_run,
@@ -83,6 +102,20 @@ from clue_research.profiling.fields import load_deep_profiling_pack
 from clue_spine import Project
 from clue_storage import artifact_key, content_address, record_artifact
 from tests._workspace import seed_project, seed_workspace
+from tests.api.contract_v1.oracle import zod_validate
+
+# The v1 seed and its harness, shared rather than re-written: the contacts table, the contact page
+# and the account detail are three views of one account and must be proven against one seed. The
+# names are module-private in that suite only because nothing else had needed them.
+from tests.api.test_frontend_read_account_detail import (  # noqa: PLC2701
+    _WS as _V1_WS,
+)
+from tests.api.test_frontend_read_account_detail import (  # noqa: PLC2701
+    _build_v1,
+    _launch_research_job,
+    _lenient_claim,
+    _V1Fixture,
+)
 from tests.db.conftest import run_async
 from tests.profiling.conftest import conn_session_factory, rollback_conn
 
@@ -108,6 +141,16 @@ _SOLO_APPEARANCES: tuple[dict[str, str], ...] = (
     {"title": "panel at SaaStr"},
     {"title": "podcast on Ops Weekly"},
 )
+
+#: The five contact-page sections, in recipe order. Pinned here so a recipe reordering has to be a
+#: deliberate change to a contract the frontend renders in order, not a silent one.
+_CONTACT_SECTION_ORDER = [
+    "why-this-person",
+    "problem-right-now",
+    "openers",
+    "angles",
+    "do-not-mention",
+]
 
 
 # --- harness --------------------------------------------------------------------------------
@@ -144,10 +187,21 @@ def _app(
     enabled: bool = True,
     evidence_storage: _MemoryStorage | None = None,
 ):
+    """The real projections app with the flag on and the DB seam bound to the test's connection.
+
+    ``arv2_display_generate_on_read=False`` is not decoration: the composition root reads a real
+    ``Secrets()``, so on a developer machine with ``OPENROUTER_API_KEY`` set the D3 display seam
+    would build a live runner and the ``?contract=v1`` half of this suite would *spend money*
+    writing contact pages. Off, the seam is a pure projection over the blocks the fixture stored.
+    """
     return create_projections_app(
         surface=None,  # type: ignore[arg-type]
         tool_invoker=None,  # type: ignore[arg-type]
-        settings=load_settings(_env_file=None, frontend_read_enabled=enabled),
+        settings=load_settings(
+            _env_file=None,
+            frontend_read_enabled=enabled,
+            arv2_display_generate_on_read=False,
+        ),
         conn_factory=conn_session_factory(conn),
         ingestion_storage=evidence_storage,
         manage_db_lifespan=False,
@@ -1243,3 +1297,618 @@ def test_the_display_gate_is_the_shared_c7_predicate() -> None:
     from clue_api.research_view_governance import display_allowed
 
     assert contacts.display_allowed is display_allowed
+
+
+# --- contract v1 (ARV2 D3, E4/E5) -------------------------------------------------------------
+#
+# The v1 half of this suite, and deliberately the **same seed** the account-detail and
+# account-workspace suites use: the contacts table and the contact page are the other two views of
+# one account, so proving them against a private fixture would let three screens be built from
+# three different pictures of the same company. ``_build_v1`` is imported from that suite and
+# extended with the ARV2 contact this contract is actually about — a fully-researched person
+# carrying every rail fact E5 renders — plus:
+#
+# * a **coverage row**, so the committee is the research's own list rather than "every contact with
+#   a claim". Without it the fallback would put every seeded person on the committee and the
+#   non-committee-but-addressable case (the E5 ruling) could not exist;
+# * a person the coverage row leaves out who still holds claims (served on E5, absent from E4);
+# * a person with no claims at all (the honest 404);
+# * one stored ``contact/openers`` section, written by hand through D2's own ``insert_block`` so
+#   the read surface is proven to compose what is stored rather than to write anything.
+
+
+class _V1Contacts:
+    def __init__(
+        self,
+        *,
+        v1: _V1Fixture,
+        nick: EntityId,
+        priya: EntityId,
+        blank: EntityId,
+        email_claim_id: str,
+        location_claim_id: str,
+        signal_claim_ids: tuple[str, str],
+    ) -> None:
+        self.v1 = v1
+        self.zafran = v1.zafran
+        self.dana = v1.dana
+        self.ravi = v1.ravi
+        #: The fully-researched ARV2 contact E5 is about.
+        self.nick = nick
+        #: Under the account, holding claims, absent from the coverage committee.
+        self.priya = priya
+        #: Under the account, no claims and no page.
+        self.blank = blank
+        self.email_claim_id = email_claim_id
+        self.location_claim_id = location_claim_id
+        #: What the stored ``openers`` section cites.
+        self.signal_claim_ids = signal_claim_ids
+
+
+#: The current position the career history records — the tenure the header is computed from.
+_V1_POSITION_START = date(2024, 4, 1)
+
+
+async def _seed_coverage(
+    conn: AsyncConnection,
+    *,
+    account_id: EntityId,
+    project_id: str,
+    members: Sequence[EntityId],
+) -> None:
+    """One finalized ``entity_research_account_coverage`` row naming this account's committee.
+
+    The coverage row is what makes committee membership the *research's* answer rather than "every
+    contact the store holds a claim for", which is the fallback ``committee_members`` uses before
+    any run has published one. The run and job rows are the FK anchors it hangs off, launched
+    through the same production entry point the detail suite uses.
+    """
+    launch = await _launch_research_job(conn, project_id=project_id, account_id=account_id)
+    coverage = {"origin": "frontend-read-contacts-v1"}
+    body = json.dumps(coverage, sort_keys=True)
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_account_coverage
+                (coverage_id, research_run_id, job_id, workspace_id, account_entity_id,
+                 result_refs, completed_field_keys, unresolved_field_keys, unresolved_reasons,
+                 committee_result_refs, committee_member_ids, committee_status, review_flags,
+                 claim_refs, evidence_refs, coverage_json, coverage_sha256)
+            VALUES (:coverage_id, :run_id, :job_id, :workspace_id, :account, :empty, :empty,
+                    :empty, :empty, :empty, :members, 'complete', :empty, :empty, :empty,
+                    CAST(:coverage AS jsonb), :sha)
+            """
+        ),
+        {
+            "coverage_id": uuid.uuid4(),
+            "run_id": launch["research_run_id"],
+            "job_id": launch["job_id"],
+            "workspace_id": _V1_WS,
+            "account": account_id,
+            "empty": [],
+            "members": [uuid.UUID(str(member)) for member in members],
+            "coverage": body,
+            "sha": hashlib.sha256(body.encode()).hexdigest(),
+        },
+    )
+
+
+async def _seed_openers_block(
+    conn: AsyncConnection, *, contact_id: EntityId, cited: Sequence[str]
+) -> None:
+    """One live ``contact/openers`` block for this person, with the send line the page renders."""
+    recipe = next(item for item in recipes_for("contact") if item.section_key == "openers")
+    claims = await claims_by_ids(
+        conn,
+        [ClaimId(uuid.UUID(claim_id)) for claim_id in cited],
+        scope=WorkspaceScope.for_workspace(_V1_WS),
+    )
+    section = SectionInput(
+        recipe=recipe,
+        claims=tuple(display_claim(claim, subject=None) for claim in claims.values()),
+        deduped={},
+    )
+    draft = SectionDraft(
+        section_key=recipe.section_key,
+        intro=[],
+        items=[
+            {
+                "id": "openers-1",
+                "h2": "He is hiring a demand-gen lead",
+                "body": [
+                    {"text": "He posted about the search last week.", "claimIds": list(cited)}
+                ],
+                "sendLine": {
+                    "channel": "linkedin",
+                    "text": "Saw you are hiring a demand-gen lead — how are you sequencing it?",
+                    "claimIds": [cited[0]],
+                },
+                "contactRefs": [],
+                "priority": 1,
+                "newSinceLastVisit": False,
+            }
+        ],
+        cited_claim_ids=list(cited),
+        checks={"unknown_aliases": [], "off_recipe": []},
+        aliases={f"c{index}": claim_id for index, claim_id in enumerate(cited, start=1)},
+        cost=None,
+        model="x-ai/grok-4.6",
+        raw_refs=(),
+    )
+    await insert_block(
+        conn,
+        workspace_id=_V1_WS,
+        subject_kind="contact",
+        subject_id=str(contact_id),
+        page="contact",
+        recipe=recipe,
+        draft=draft,
+        section=section,
+        now=datetime.now(UTC),
+    )
+
+
+async def _build_v1_contacts(conn: AsyncConnection) -> _V1Contacts:
+    """The shared v1 account, plus the three people the contacts contract is proven over."""
+    v1 = await _build_v1(conn)
+    await load_deep_profiling_pack(conn)
+
+    nick = await insert_contact_entity(
+        conn,
+        account_entity_id=v1.zafran,
+        full_name="Nick Fisher",
+        linkedin_url="https://www.linkedin.com/in/nicholastfisher",
+        status=AccountStatus.ACTIVE,
+    )
+    for field_key, value in (
+        (_TITLE, "VP of Marketing"),
+        (PERSONA, "economic_buyer"),
+        (
+            ROLE_ON_COMMITTEE,
+            {
+                "role": "economic_buyer",
+                "rationale": "Owns the demand-generation budget.",
+                "influence": "High",
+            },
+        ),
+        ("contact.facet.alma_mater", {"institution": "Columbia", "degree": "MBA"}),
+        (
+            "contact.facet.career_history",
+            [
+                {
+                    "company": "Zafran",
+                    "titles": ["VP of Marketing"],
+                    "date": {"start": _V1_POSITION_START.isoformat(), "end": None},
+                },
+                {
+                    "company": "Cato Networks",
+                    "titles": ["Director of Demand Gen"],
+                    "date": {"start": "2021-02-01", "end": "2024-03-31"},
+                },
+            ],
+        ),
+        ("contact.network_statistics", {"followers": 6808, "connections": 500}),
+        ("contact.member_badges", ["creator"]),
+        ("contact.facet.best_channel", "LinkedIn, then email"),
+    ):
+        await _lenient_claim(
+            conn,
+            entity_id=nick,
+            entity_type=EntityType.CONTACT,
+            field_key=field_key,
+            value=value,
+            research_mode=ResearchMode.CONTACT_PROFILING,
+            source_url="https://www.linkedin.com/in/nicholastfisher",
+            evidence_span="Nick Fisher, VP of Marketing at Zafran.",
+        )
+    email_claim_id = await _lenient_claim(
+        conn,
+        entity_id=nick,
+        entity_type=EntityType.CONTACT,
+        field_key="core.work_email",
+        value={"address": "nick@zafran.io", "status": "verified_smtp"},
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        source_url="https://zafran.io/team",
+    )
+    location_claim_id = await _lenient_claim(
+        conn,
+        entity_id=nick,
+        entity_type=EntityType.CONTACT,
+        field_key="contact.current_location",
+        value={"raw": "New York, New York", "country": "United States"},
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        source_url="https://www.linkedin.com/in/nicholastfisher",
+    )
+    # Two outreach-usable P1 signals and one the appropriateness gate refused: the header's count
+    # is the *usable* one, so an unsafe P1 must not be counted (and is not displayable either).
+    signal_ids: list[str] = []
+    for field_key, value, source_url, span in (
+        (
+            _RECENT_POST,
+            "Hiring a demand-gen lead — DM me.",
+            "https://www.linkedin.com/posts/nicholastfisher-hiring",
+            "Hiring a demand-gen lead — DM me.",
+        ),
+        (
+            "contact.facet.hooks",
+            ["Ran the Cato demand-gen team through its Series C"],
+            "https://www.linkedin.com/in/nicholastfisher",
+            "Ran the Cato demand-gen team through its Series C.",
+        ),
+    ):
+        signal_ids.append(
+            await _lenient_claim(
+                conn,
+                entity_id=nick,
+                entity_type=EntityType.CONTACT,
+                field_key=field_key,
+                value=value,
+                research_mode=ResearchMode.CONTACT_PROFILING,
+                source_url=source_url,
+                evidence_span=span,
+                signal_priority=1,
+                outreach_safe=True,
+            )
+        )
+    signals = (signal_ids[0], signal_ids[1])
+    await _lenient_claim(
+        conn,
+        entity_id=nick,
+        entity_type=EntityType.CONTACT,
+        field_key="contact.facet.excluded_lookalike",
+        value={"title": "a different Nick Fisher", "reason": "wrong company"},
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        source_url="https://www.linkedin.com/in/another-nick-fisher",
+        signal_priority=1,
+        outreach_safe=False,
+    )
+    # Ravi reports to Nick — the ``reports`` chips are committee members pointing *at* the subject.
+    await _lenient_claim(
+        conn,
+        entity_id=v1.ravi,
+        entity_type=EntityType.CONTACT,
+        field_key="contact.reports_to",
+        value={"contact_id": str(nick), "name": "Nick Fisher"},
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        source_url="https://zafran.io/team",
+    )
+
+    # Under the account, researched, and left off the coverage committee — the E5 ruling's case.
+    # No LinkedIn URL either, which is the second thing this person proves.
+    priya = await insert_contact_entity(
+        conn,
+        account_entity_id=v1.zafran,
+        full_name="Priya Raman",
+        linkedin_url=None,
+        status=AccountStatus.ACTIVE,
+    )
+    await _lenient_claim(
+        conn,
+        entity_id=priya,
+        entity_type=EntityType.CONTACT,
+        field_key=_TITLE,
+        value="Head of RevOps",
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        source_url="https://zafran.io/team",
+    )
+    # Under the account and never researched: no claims, no page, no contact detail.
+    blank = await insert_contact_entity(
+        conn,
+        account_entity_id=v1.zafran,
+        full_name="Blank Person",
+        linkedin_url=None,
+        status=AccountStatus.ACTIVE,
+    )
+
+    await _seed_coverage(
+        conn,
+        account_id=v1.zafran,
+        project_id=v1.base.project_a.project_id,
+        members=(v1.dana, nick, v1.ravi),
+    )
+    await _seed_openers_block(conn, contact_id=nick, cited=signals)
+    return _V1Contacts(
+        v1=v1,
+        nick=nick,
+        priya=priya,
+        blank=blank,
+        email_claim_id=email_claim_id,
+        location_claim_id=location_claim_id,
+        signal_claim_ids=signals,
+    )
+
+
+async def _list_v1(
+    conn: AsyncConnection,
+    account_id: uuid.UUID | str,
+    *,
+    workspace_id: str = _V1_WS,
+    contract: str | None = "v1",
+) -> httpx.Response:
+    async with _client(_app(conn)) as client:
+        return await client.get(
+            f"{_BASE}/{account_id}/contacts",
+            params={} if contract is None else {"contract": contract},
+            headers={"X-Workspace-Id": workspace_id},
+        )
+
+
+async def _profile_v1(
+    conn: AsyncConnection,
+    account_id: uuid.UUID | str,
+    contact_id: uuid.UUID | str,
+    *,
+    workspace_id: str = _V1_WS,
+    contract: str | None = "v1",
+) -> httpx.Response:
+    async with _client(_app(conn)) as client:
+        return await client.get(
+            f"{_BASE}/{account_id}/contacts/{contact_id}",
+            params={} if contract is None else {"contract": contract},
+            headers={"X-Workspace-Id": workspace_id},
+        )
+
+
+def test_the_v1_contacts_table_is_the_coverage_committee_in_screen_order() -> None:
+    """E4: every field of the row, from the sources decisions 2/12/13 name — and the order the
+    screens show, which is the account detail's committee order, not insertion order."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1_contacts(conn)
+            response = await _list_v1(conn, fixture.zafran)
+            assert response.status_code == 200
+            body = response.json()
+
+            assert set(body) == {"data", "meta"}
+            AccountContactsResponseV1.model_validate(body)
+            assert body["meta"]["total"] == 3
+            # Persona rank first (economic_buyer, then champion), then name — and the two people
+            # the coverage row leaves out are absent from the table entirely.
+            assert [row["name"] for row in body["data"]] == [
+                "Dana Katz",
+                "Nick Fisher",
+                "Ravi Mehta",
+            ]
+
+            nick = next(row for row in body["data"] if row["id"] == str(fixture.nick))
+            assert nick["title"] == "VP of Marketing"
+            assert nick["persona"] == "economic_buyer"
+            assert nick["personaTone"] == "olive"
+            # The committee claim carries its own influence, so the persona default is not used.
+            assert nick["influence"] == "High"
+            assert nick["emailStatus"] == "available"
+            assert nick["emailLabel"] == "nick@zafran.io"
+            assert nick["socials"] == ["linkedin"]
+            assert nick["profileAction"] == "page"
+            assert "avatarUrl" not in nick
+
+            for row in body["data"]:
+                zod_validate(row, "AccountContactSummarySchema")
+
+    run_async(scenario())
+
+
+def test_the_v1_contact_page_serves_every_rail_fact_the_display_and_its_evidence() -> None:
+    """E5: the row, the rail's served labels, the generated page and the provenance behind it."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1_contacts(conn)
+            response = await _profile_v1(conn, fixture.zafran, fixture.nick)
+            assert response.status_code == 200
+            body = response.json()
+
+            assert set(body) == {"data"}
+            AccountContactDetailResponseV1.model_validate(body)
+            data = body["data"]
+
+            # --- the row, repeated verbatim from the table
+            assert data["id"] == str(fixture.nick)
+            assert data["name"] == "Nick Fisher"
+            assert data["title"] == "VP of Marketing"
+            assert data["influence"] == "High"
+            assert data["profileAction"] == "page"
+
+            # --- the account this page hangs under
+            assert data["accountId"] == str(fixture.zafran)
+            assert data["accountName"] == "Zafran"
+            assert data["accountLogoPath"] is None
+
+            # --- the served rail labels (never derived in the browser)
+            assert data["recentSignalsLabel"] == "2 signals", "the unsafe P1 is not a usable signal"
+            assert data["linkedinLabel"] == "nicholastfisher"
+            assert data["linkedinUrl"] == "https://www.linkedin.com/in/nicholastfisher"
+            assert data["emailVerifiedAt"] is not None
+            assert data["emailClaimId"] == fixture.email_claim_id
+            assert data["locationLabel"] == "New York, New York"
+            assert data["locationClaimId"] == fixture.location_claim_id
+            assert data["bestFirstChannelLabel"] == "LinkedIn, then email"
+            assert data["educationLabel"] == "Columbia, MBA"
+            assert data["tenureLabel"] == tenure(_V1_POSITION_START, now=date.today())[0]
+            assert data["employmentStartedAt"] == _V1_POSITION_START.isoformat()
+            assert data["linkedinFollowers"] == 6808
+            assert data["linkedinCreator"] is True
+            assert "xLabel" not in data
+            assert "xUrl" not in data
+
+            # --- who reports to this person
+            assert [ref["contactId"] for ref in data["reports"]] == [str(fixture.ravi)]
+            assert data["reports"][0]["name"] == "Ravi Mehta"
+            assert data["reports"][0]["accountId"] == str(fixture.zafran)
+
+            # --- the generated page: the whole recipe grammar, written section and all
+            assert data["contactDisplay"]["page"] == "contact"
+            sections = {section["key"]: section for section in data["contactDisplay"]["sections"]}
+            assert list(sections) == _CONTACT_SECTION_ORDER
+            assert sections["openers"]["empty"] is False
+            assert sections["openers"]["items"][0]["sendLine"]["channel"] == "linkedin"
+            assert [key for key, section in sections.items() if section["empty"] is True] == [
+                "why-this-person",
+                "problem-right-now",
+                "angles",
+                "do-not-mention",
+            ], "generation is off in this suite, so nothing else can have been written"
+
+            # --- the evidence behind every citation and both claim-id chips
+            evidence = {row["claimId"] for row in data["researchEvidence"]}
+            assert evidence == {
+                *fixture.signal_claim_ids,
+                fixture.email_claim_id,
+                fixture.location_claim_id,
+            }
+            assert all("fieldKey" not in row for row in data["researchEvidence"])
+
+            # --- the two legacy slots the display layer replaced
+            assert data["overviewParagraphs"] == []
+            assert data["evidence"] == []
+
+            assert data["lastModifiedAt"].endswith("Z")
+            zod_validate(data, "AccountContactDetailSchema")
+
+    run_async(scenario())
+
+
+def test_a_researched_contact_off_the_coverage_committee_still_has_a_page() -> None:
+    """The E5 addressability ruling: a contact **under this account** holding a live claim has a
+    page whether or not the latest coverage row listed them — and a contact with no safe LinkedIn
+    URL is served with the site root rather than a fabricated profile link or a 404."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1_contacts(conn)
+            listed = {row["id"] for row in (await _list_v1(conn, fixture.zafran)).json()["data"]}
+            assert str(fixture.priya) not in listed
+
+            response = await _profile_v1(conn, fixture.zafran, fixture.priya)
+            assert response.status_code == 200
+            data = response.json()["data"]
+            assert data["name"] == "Priya Raman"
+            assert data["title"] == "Head of RevOps"
+            # No committee claim and no persona claim: the neutral member of the vocabulary.
+            assert data["persona"] == "user"
+            assert data["influence"] == "Medium"
+            assert data["socials"] == []
+            assert data["linkedinUrl"] == "https://www.linkedin.com/"
+            assert data["linkedinLabel"] == "LinkedIn"
+            assert data["recentSignalsLabel"] == "No signals yet"
+            assert data["reports"] == []
+            AccountContactDetailResponseV1.model_validate({"data": data})
+            zod_validate(data, "AccountContactDetailSchema")
+
+    run_async(scenario())
+
+
+def test_a_contact_with_neither_claims_nor_a_page_is_an_enveloped_404() -> None:
+    """The other half of the ruling: being under the account is not on its own a page."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1_contacts(conn)
+            response = await _profile_v1(conn, fixture.zafran, fixture.blank)
+
+            assert response.status_code == 404
+            error = response.json()["error"]
+            assert error["code"] == "CONTACT_NOT_FOUND"
+            assert error["requestId"] == response.headers["X-Request-Id"]
+
+    run_async(scenario())
+
+
+def test_the_contact_routes_serve_both_contracts_side_by_side() -> None:
+    """``?contract=v1`` selects the ARV2 payloads; its absence leaves the FI-2 ones byte-for-byte.
+
+    Proven on **this suite's own FI-2 fixture**, where the governed committee is populated. On the
+    ARV2 seed the FI-2 reader legitimately sees nobody — its committee comes from
+    ``account_run.references_index``, whose only production writer sits behind the M8D R1
+    quarantine — so an unchanged FI-2 payload would be indistinguishable there from a broken one.
+
+    The two contracts also disagree about *who* is listed, on purpose: the ARV2 display predicate
+    does not consult ``identity_binding`` (D3 ruling S10), so the weakly-bound person the governed
+    FI-2 reader drops is a real contact with real claims to the v1 table.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+
+            fi2_rows = (await _list(conn, fixture.acme)).json()
+            assert {"roleOnCommittee", "signals", "projectIds"} <= set(fi2_rows["data"][0])
+            fi2_profile = (await _profile(conn, fixture.acme, fixture.shared)).json()
+            assert "data" not in fi2_profile
+            assert {"professionalFacts", "overview", "roleOnCommittee"} <= set(fi2_profile)
+
+            v1_rows = (await _list_v1(conn, fixture.acme, workspace_id=_WS)).json()
+            assert {"personaTone", "influence", "profileAction"} <= set(v1_rows["data"][0])
+            assert all("roleOnCommittee" not in row for row in v1_rows["data"])
+            assert v1_rows["meta"]["total"] == len(v1_rows["data"])
+
+            v1_profile = (
+                await _profile_v1(conn, fixture.acme, fixture.shared, workspace_id=_WS)
+            ).json()
+            assert set(v1_profile) == {"data"}
+            assert {"recentSignalsLabel", "contactDisplay", "lastModifiedAt"} <= set(
+                v1_profile["data"]
+            )
+            assert v1_profile["data"]["id"] == str(fixture.shared)
+
+    run_async(scenario())
+
+
+def test_an_unrecognised_contract_value_is_refused_on_both_contact_routes() -> None:
+    """A typo'd ``?contract=v2`` that quietly served *something* is what the parameter prevents."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1_contacts(conn)
+            for response in (
+                await _list_v1(conn, fixture.zafran, contract="v2"),
+                await _profile_v1(conn, fixture.zafran, fixture.nick, contract="v2"),
+            ):
+                assert response.status_code == 422
+                error = response.json()["error"]
+                assert error["code"] == "VALIDATION_ERROR"
+                assert error["requestId"] == response.headers["X-Request-Id"]
+
+    run_async(scenario())
+
+
+def test_the_v1_evidence_route_authorises_a_claim_the_contact_page_cites() -> None:
+    """The evidence route authorises against the **union** of both contracts.
+
+    The FI-2 profile is committee-only and exposes only claims with a retained blob, so a claim the
+    v1 contact page cites would open onto a 404 if the v1 half were not consulted. It is consulted
+    with ``generate=False``, so the check can never write a page or schedule one.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1_contacts(conn)
+            cited = fixture.signal_claim_ids[0]
+            storage = _MemoryStorage()
+
+            async with _client(_app(conn, evidence_storage=storage)) as client:
+                response = await client.get(
+                    f"{_BASE}/{fixture.zafran}/contacts/{fixture.nick}/evidence/{cited}",
+                    headers={"X-Workspace-Id": _V1_WS},
+                )
+            # Authorised (it is not the "no such evidence" refusal) but nothing is retained for
+            # this claim, so the stream itself is still the same honest 404.
+            assert response.status_code == 404
+            assert response.json()["error"]["code"] == "EVIDENCE_NOT_FOUND"
+
+            page = await DisplayPages(
+                settings=load_settings(_env_file=None, arv2_display_generate_on_read=False),
+                secrets=None,
+                conn_factory=conn_session_factory(conn),
+            ).page(
+                conn,
+                workspace_id=_V1_WS,
+                subject_kind="contact",
+                subject_id=str(fixture.nick),
+                page="contact",
+                generate=False,
+            )
+            assert cited in page.cited_claim_ids
+
+    run_async(scenario())
