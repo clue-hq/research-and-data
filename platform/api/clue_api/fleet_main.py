@@ -48,6 +48,7 @@ import contextlib
 from collections.abc import Awaitable, Callable
 from uuid import UUID
 
+from clue_agents.ports import AgentModelProvider
 from clue_api.agent_cleanup import AgentWorkspaceCleanupJob
 from clue_api.agent_execution_wiring import DbAgentPlanJournal
 from clue_api.agent_model_wiring import build_agent_model_provider
@@ -64,6 +65,11 @@ from clue_api.agent_turn_fleet_wiring import (
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
+from clue_api.arv2.account_research_driver import (
+    Arv2AccountResearchWorkHandler,
+    build_arv2_account_research_handler,
+)
+from clue_api.arv2.account_research_launch import DbArv2LaunchService
 from clue_api.arv2.onboarding_driver import (
     OnboardingRunWorkHandler,
     SynthesisLauncher,
@@ -612,6 +618,47 @@ def _build_onboarding_handler(
     )
 
 
+def _build_arv2_account_research_handler(
+    settings: Settings,
+    secrets: Secrets,
+    *,
+    storage: StorageBackend,
+    model_provider: AgentModelProvider | None,
+) -> Arv2AccountResearchWorkHandler | None:
+    """The ARV2 account-research lane (Track R, R2) on this worker, behind its own flag.
+
+    Same posture as onboarding above, and for the same reason: a worker that is missing a
+    credential (or the model provider that needs one) gets a named warning and **no handler**, so
+    the enqueued jobs wait for a correctly-configured worker instead of failing one by one after
+    they have already spent model rounds.
+
+    The artifact sink and the model provider are injected from *outside* the lane — ARV2 may not
+    open a second write path into the artifact table, and it may not reach the vendor SDK behind
+    ``clue_gateway``. What the lane itself decides is which credentials a job needs and which
+    model id it runs on (``build_arv2_account_research_handler``).
+    """
+    if not settings.arv2_account_research_enabled:
+        return None
+    if model_provider is None:
+        log.warning(
+            "arv2.account_handler_not_composed",
+            reason="CLUE_OPENROUTER_API_KEY is not configured",
+            detail=(
+                "CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED is on but this worker has no model "
+                "credential; account research jobs stay queued until a worker with "
+                "CLUE_OPENROUTER_API_KEY drains them"
+            ),
+        )
+        return None
+    return build_arv2_account_research_handler(
+        settings,
+        secrets,
+        storage=storage,
+        artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
+        model_provider=model_provider,
+    )
+
+
 async def _serve() -> None:
     """Open the process-wide DB + Redis lifecycles, register the boot handlers, and drive the worker
     (with the orphan sweep alongside) until a graceful stop."""
@@ -734,6 +781,15 @@ async def _serve() -> None:
             secrets=secrets,
             storage=storage,
         )
+        # ARV2 Track R, R2 (seam 1). The launch service is composed only where the lane is: with
+        # the flag off the two tools still register and refuse
+        # ``arv2_account_research_not_composed`` before any spend. It shares this process's work
+        # queue, so a launched job is queued through exactly the machinery that drains it.
+        arv2_account_launch = (
+            DbArv2LaunchService(settings, storage, queue=work_queue)
+            if settings.arv2_account_research_enabled
+            else None
+        )
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
@@ -764,6 +820,7 @@ async def _serve() -> None:
             research_view_recheck=(research_views.recheck if research_views is not None else None),
             contact_content_handoff=contact_content_handoff,
             entity_research_launches=entity_research_launches,
+            arv2_account_launch=arv2_account_launch,
             prose_synthesis=prose_synthesis,
             value_narrative=value_narrative,
         )
@@ -973,6 +1030,20 @@ async def _serve() -> None:
                 _SynthesisSeam(synthesis_launcher) if synthesis_launcher is not None else None
             ),
         )
+        # R2: the same model provider the other governed agents use, built here only when the lane
+        # is on and this process has the credential — ``build_agent_model_provider`` raises without
+        # one, and a fleet worker must not fail its boot over an optional lane.
+        arv2_account_models = (
+            build_agent_model_provider(config=gateway_config, secrets=secrets)
+            if settings.arv2_account_research_enabled and secrets.openrouter_api_key is not None
+            else None
+        )
+        arv2_account_research_handler = _build_arv2_account_research_handler(
+            settings,
+            secrets,
+            storage=storage,
+            model_provider=arv2_account_models,
+        )
         worker = build_multi_work_worker(
             settings,
             driver=driver,
@@ -984,6 +1055,7 @@ async def _serve() -> None:
             stage0_recon_handler=stage0_recon_handler,
             official_site_crawl_handler=official_site_crawl.handler,
             onboarding_handler=onboarding_handler,
+            arv2_account_research_handler=arv2_account_research_handler,
             # Part II D5 Round B: design agent turns drain on THIS worker when the switch is on.
             design_handler=build_design_job_handler(enabled=settings.design_runtime_enabled),
             queue=work_queue,

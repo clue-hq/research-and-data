@@ -487,3 +487,101 @@ Two things worth knowing before touching it:
   credentials*, so `exa_search_evidence@1` registers but refuses `exa_not_configured` before any
   spend — deliberate, so no test toolbelt composes a live billable Exa client off a stray `.env`
   key. A production composition root must pass a real `Secrets` explicitly; `fleet_main` does.
+
+## R2 — the account research agent
+
+One `arv2_account_research` fleet task is **one account**: its own lease, its own job row, its own
+failure. An account that goes wrong takes only itself down, and the rest of the run keeps moving.
+
+### The module map (nine modules)
+
+| module | what it owns |
+| --- | --- |
+| `account_research_catalog.py` | the sha-pinned `arv2-account/v1` catalog (profile, prompt, three skills), the resource bundle, and the system prompt built from it |
+| `account_research_refusals.py` | the refusal codes and the envelope the model receives; each code's `reaction` sentence is the manual's row, word for word |
+| `account_research_store.py` | one function per run/job transition, plus the annotation writer and the readers the driver composes from |
+| `provider_ledger.py` | the buffered raw/ledger sinks: `ProviderCaller` writes them from the worker thread, the async side drains raw bodies to artifacts and rows to `provider_call_ledger` right after the hop |
+| `account_research_claims.py` | the deterministic claim mappers (provider record → typed draft) and the prose-claim carry-across |
+| `account_research_tools.py` | the twelve governed tools and the `ToolRuntime` behind them (halt latch, provider semaphore, the drain, the lenient claim write) |
+| `account_research_agent.py` | the `create_agent` loop and its cap-to-finalize middlewares |
+| `account_research_driver.py` | the fleet handler: compose under the launch's pins, run the agent, settle the receipt |
+| `account_research_launch.py` | **seam 1** — the launch function, its typed refusals, the `Arv2LaunchService` seam, and the two toolbelt tools |
+
+### The failure law
+
+**A tool never raises into the graph, and `handle` contains every exception.** Every tool failure
+comes back as the refusal envelope (it spends nothing, suspends nothing, ends nothing); every job
+failure lands the job `needs_review` with a named `failure_code` a human can act on. The fleet
+plane knows nothing about `arv2_research_job` rows, so an escaping exception would strand a job on
+`in_progress` forever.
+
+### One caller per invocation, and the buffered drain
+
+`ProviderCaller` is synchronous and its totals/halt latch are unlocked mutable state, so **each
+provider hop gets a fresh caller inside `asyncio.to_thread`** — never one shared across threads.
+Its sinks only *buffer* (a Postgres write from that thread would need a loop hand-off inside a lock
+the driver already holds); the async side drains them immediately after the hop, raw bodies to the
+artifact store and ledger rows to `provider_call_ledger` stamped with the job id.
+
+### The job states
+
+`not_started → in_progress → completed | needs_review`, with `suspended` as a pause (a stopped or
+lease-lost task parks there and is re-claimable). Runs share the same five words, and a run's
+status is *derived* from its jobs in one statement rather than set by whoever finished one.
+
+### Launching (seam 1)
+
+```python
+async def launch_arv2_account_research(
+    conn, request: Arv2LaunchRequest, *, settings: Settings, storage: StorageBackend,
+    queue: WorkQueue, profile_sha256: str, now: Callable[[], datetime] = _utcnow,
+) -> Arv2LaunchReceipt
+```
+
+It needs **only** account rows, an ICP artifact ref (key + sha256) and a product-selection version
+— no `icp_spec`, no `account_research_directive`, no Stage-0 pin on the project run (standing rule
+item 5). The run id is `uuid5` over the digest of the signed-off request, so relaunching the same
+request returns the same run, writes no second job and buys no second task. Every refusal is a
+typed `Arv2LaunchRefused` with a stable code: `lane_disabled`, `account_not_found:<id>`,
+`account_not_in_workspace:<id>`, `icp_artifact_not_found`, `icp_artifact_not_confirmed`,
+`icp_digest_mismatch`, `product_selection_version_unknown`, `project_not_found`.
+
+Two toolbelt tools sit on it — `launch_arv2_account_research@1` (SPEND, refuses
+`launch_action_ref_missing` without a captured user action) and
+`read_arv2_account_research_run@1` (READ, the run row plus its job states). Both register on every
+deployment and refuse `arv2_account_research_not_composed` where the lane is not composed. The CLI
+for the answer-key runs is `scripts/launch_arv2_account_research.py`.
+
+**The Head-of-ABM grant is deferred to O6** (ruling, 2026-09-08). Both tools are registered
+UNGRANTED in `C6_AGENT_TOOL_AUTHORITY`, the way the ad-assets lane and the pre-P3.3 design writes
+were: the platform's write surface stays complete and auditable, and the role decision lands with
+the profile version that teaches the launch. Granting is not a dict edit —
+`build_agent_profile_registry` refuses to compose when a role's authority and its profile's tool
+list disagree, so the grant needs a new `head-of-abm` profile version carrying both pins *and* the
+conversation surface's promoted-profile pin (`PROJECT_CONVERSATION_AGENT_PROFILE_ID`, checked at
+`agent_turn_fleet_wiring.py:561`) moving with it. Until O6 mints that version, launching R2 is a
+human act through the CLI or `launch_arv2_account_research` itself; seam 1 is unchanged either
+way.
+
+### Configuration
+
+- `CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED` — the lane switch. Off: no fleet handler, no launch service,
+  and the two tools refuse `arv2_account_research_not_composed`.
+- `ARV2_ACCOUNT_AGENT_MODEL` / `ARV2_ACCOUNT_AGENT_MODEL_EFFORT` — the model this lane runs on, read
+  directly by the driver (R2 composes its own loop, so there is no profile version to bump when the
+  model changes). A worker with the flag on but no model id — or missing `CLUE_EXA_API_KEY`,
+  `CLUE_OPENROUTER_API_KEY`, `CLUE_AI_ARK_API_KEY` or `CLUE_GEMINI_API_KEY` — logs
+  `arv2.account_handler_not_composed` and composes **no handler**, so its jobs wait for a
+  correctly-configured worker.
+- The stop policy (founder, 2026-09-08): `CLUE_ARV2_ACCOUNT_MAX_MODEL_ROUNDS=100`,
+  `CLUE_ARV2_ACCOUNT_MAX_TOOL_CALLS_PER_ROUND=50`, `CLUE_ARV2_ACCOUNT_MAX_RUNTIME_S=1800`, and no
+  total-call or zero-yield cap.
+
+### Known residual
+
+**A lease lost mid-hop can lose that hop's ledger rows.** The sinks buffer in the worker thread and
+drain on the async side; if the lease is lost (or the task is cancelled) between the provider
+answering and the drain, that hop's raw artifacts and `provider_call_ledger` rows are never
+written, so money that was spent is missing from the money trail. The runtime cap already waits,
+bounded, for in-flight hops; a lost lease does not get that courtesy, because the fleet cancels the
+handler. Bounded by one hop per job.

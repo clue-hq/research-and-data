@@ -66,6 +66,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.account_research_fleet import read_latest_account_fleet_for_project_run
 from clue_api.agent_gate_wiring import register_agent_gate_tools
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.arv2.account_research_launch import Arv2LaunchService, build_arv2_launch_tools
 from clue_api.auth_tool_context import require_human_authority
 from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
 from clue_api.client_knowledge_tools import (
@@ -2637,6 +2638,7 @@ def build_toolbelt(
     independent_contact_research: IndependentContactResearchRunner | None = None,
     contact_content_handoff: ContactContentHandoffService | None = None,
     entity_research_launches: EntityResearchLaunchServices | None = None,
+    arv2_account_launch: Arv2LaunchService | None = None,
     prose_synthesis: ProseSynthesisServices | None = None,
     value_narrative: ValueNarrativeServices | None = None,
 ) -> ToolRegistry:
@@ -2775,6 +2777,13 @@ def build_toolbelt(
         budget_controls_enabled=resolved_settings.budget_controls_enabled,
         conn_factory=conn_factory,
     ):
+        registry.register(tool, make_default=True)
+    # ARV2 Track R, R2 (seam 1). Registered on every deployment so the platform's write surface
+    # stays complete and the authority audit sees both tools; ``arv2_account_launch`` is composed
+    # only where the lane is (the projections app root and ``fleet_main``, behind
+    # ``arv2_account_research_enabled``). Without it the pair registers and refuses
+    # ``arv2_account_research_not_composed`` before any spend.
+    for tool in build_arv2_launch_tools(arv2_account_launch):
         registry.register(tool, make_default=True)
     registry.register(
         quarantine_entity_research_tool(

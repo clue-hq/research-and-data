@@ -77,7 +77,20 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # alone: it is the one SPEND tool of the onboarding synthesis turn (plan §4.5 — at most one
     # call per persona role, behind `CLUE_ONBOARDING_PERSONA_EVIDENCE_ENABLED`), and no other role
     # has a reason to buy a deep-reasoning web search from inside a conversation.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 120
+    # ARV2 Track R, R2 adds the account-research lane's two toolbelt surfaces (120 -> 122), both
+    # UNGRANTED for now. `launch_arv2_account_research` is the seam-1 launch (SPEND, admitted only
+    # from a captured user action) and its read counterpart is the same seam's reverse edge; the
+    # Head of ABM is their eventual holder. The grant is deliberately not made here, because it is
+    # not a dict edit: `build_agent_profile_registry` refuses to compose when a role's authority
+    # and its profile's tool list disagree, so the grant needs a new head-of-abm profile version
+    # carrying both pins AND the conversation surface's promoted-profile pin moving with it. O6 —
+    # the slice that teaches the Head of ABM this launch — owns that bump. Today the launch is a
+    # human act through `scripts/launch_arv2_account_research.py`, so nothing is gated on it.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 122
+    assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_account_research"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["read_arv2_account_research_run"] == ()
+    assert c6_roles_for_tool("launch_arv2_account_research@1") == ()
+    assert c6_roles_for_tool("read_arv2_account_research_run@1") == ()
     assert C6_AGENT_TOOL_AUTHORITY["open_design_leg"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["finish_design_leg"] == (AgentRole.DESIGN,)
     design_grants = {

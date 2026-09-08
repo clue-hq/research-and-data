@@ -221,6 +221,18 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "list_product_knowledge": (AgentRole.HEAD_OF_ABM,),
     "launch_account_deep": (),
     "launch_account_research": (AgentRole.HEAD_OF_ABM,),
+    # ARV2 Track R, R2 (seam 1). Registered UNGRANTED, on the terms the ad-assets lane and the
+    # pre-P3.3 design writes already established: the platform's write surface stays complete and
+    # auditable, and the role decision lands with the profile version that teaches it. Granting is
+    # not a dict edit here — `build_agent_profile_registry` refuses to compose when a role's
+    # authority and its profile's tool list disagree, so the Head-of-ABM grant requires a new
+    # head-of-abm profile version carrying both pins AND the conversation surface's promoted
+    # profile pin moving with it (`PROJECT_CONVERSATION_AGENT_PROFILE_ID`, checked at
+    # `agent_turn_fleet_wiring.py:561`). That is O6's bump — it is the slice that gives the Head of
+    # ABM the launch, along with the prompt/skill content telling it what to confirm first. Until
+    # then the lane is launched by a human: `scripts/launch_arv2_account_research.py`.
+    "launch_arv2_account_research": (),
+    "read_arv2_account_research_run": (),
     "launch_selected_account_research": (AgentRole.HEAD_OF_ABM,),
     "launch_contact_research": (AgentRole.HEAD_OF_ABM,),
     # P3.4 (PD-part3 §1-D1/§2.3): delegating to Design is the Head of ABM's own act — the tool
