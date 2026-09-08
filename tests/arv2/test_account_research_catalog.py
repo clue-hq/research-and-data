@@ -14,7 +14,7 @@ from clue_api.arv2.account_research_catalog import (
     build_system_prompt,
     load_account_resources,
 )
-from clue_api.arv2.account_research_refusals import REFUSAL_CODES, refusal_json
+from clue_api.arv2.account_research_refusals import REACTIONS, REFUSAL_CODES, refusal_json
 
 FILES = ("profile.md", "prompt.md", "dossier.md", "audit.md", "manual.md")
 
@@ -63,6 +63,28 @@ def test_manual_names_every_refusal_code_the_driver_can_emit() -> None:
     named = set(re.findall(r"`([a-z_]+(?::<[a-z_]+>)?)`", manual))
     missing = {code for code in REFUSAL_CODES if code not in named}
     assert not missing, f"manual.md lacks a row for: {sorted(missing)}"
+
+
+def test_every_reaction_is_the_manual_row_word_for_word() -> None:
+    """The guard ``account_research_refusals``'s docstring already claims exists.
+
+    ``refusal_json`` embeds ``reaction`` in the envelope the model reads *in the same turn*, so a
+    reaction that has drifted from the manual is a more proximate instruction than the manual
+    itself. The R2 follow-ups slice rewrote the ``feed_not_found`` row and left the table behind;
+    the old test only checked that each code was *named* somewhere in the file.
+    """
+    manual = (arv2_account_catalog_root() / "manual.md").read_text(encoding="utf-8")
+    rows = re.findall(r"^\|\s*`([a-z_]+)`\s*\|(?:[^|]*)\|([^|]*)\|\s*$", manual, re.MULTILINE)
+    covered = {code for code, _ in rows} & set(REFUSAL_CODES)
+    assert covered == set(REFUSAL_CODES), (
+        f"manual.md has no reaction row for: {sorted(set(REFUSAL_CODES) - covered)}"
+    )
+    drifted = {
+        code: (REACTIONS[code], reaction.strip())
+        for code, reaction in rows
+        if code in REACTIONS and REACTIONS[code] != reaction.strip()
+    }
+    assert not drifted, f"REACTIONS and manual.md disagree: {drifted}"
 
 
 def test_refusal_envelope_is_recoverable_json_with_the_manual_reaction() -> None:

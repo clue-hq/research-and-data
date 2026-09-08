@@ -548,11 +548,17 @@ def _receipt_json(
         # The claim is stored and visible with its marker (founder ruling 2026-09-08); the receipt
         # is the one place the model learns, in the same turn, what shape the field wanted.
         spec = catalog.spec(receipt.field_key)
-        row["expected_shape"] = schema_hint(spec.value_schema if spec else None)
-        row["hint"] = (
-            "rewrite the value in this shape and write it again with "
-            f"corrects_claim_id={receipt.claim_id}"
-        )
+        if spec is None:
+            # This job's catalog is account-only, but ``write_claims`` admits any registered key,
+            # so a contact field can fail its DB schema here. Saying "any" would be a lie about a
+            # value that just failed a schema; the honest answer is that we cannot see the shape.
+            row["expected_shape"] = "not in this job's catalog"
+        else:
+            row["expected_shape"] = schema_hint(spec.value_schema)
+            row["hint"] = (
+                "rewrite the value in this shape and write it again with "
+                f"corrects_claim_id={receipt.claim_id}"
+            )
     return row
 
 
@@ -1009,6 +1015,21 @@ def _youtube_hop(
     return hop
 
 
+def _attempts_note(attempts: Sequence[Mapping[str, str]]) -> str:
+    return "; ".join(f"{attempt['url']} ({attempt['error']})" for attempt in attempts)
+
+
+def _with_attempts(detail: str, attempts: Sequence[Mapping[str, str]]) -> str:
+    """Fold the sources that would not load into a refusal a *later* candidate raised.
+
+    Without this the agent learns only that candidate N answered, never that candidates 1..N-1
+    were dead — so it hands a dead URL straight back on the next call and pays for it again.
+    """
+    if not attempts:
+        return detail
+    return f"{detail}; earlier sources that would not load: {_attempts_note(attempts)}"
+
+
 async def _read_media_feeds(runtime: ToolRuntime, args: ReadMediaFeedsArgs) -> dict[str, Any]:
     # The primary first (feed before watch page when both are given: a transcript beats indexed
     # page words), then the alternates in the order the model gave them. A source that will not
@@ -1016,31 +1037,47 @@ async def _read_media_feeds(runtime: ToolRuntime, args: ReadMediaFeedsArgs) -> d
     # the ceiling, a walled host) is the answer, and is not second-guessed by trying another URL.
     candidates = [str(url) for url in (args.feed_url, args.youtube_url) if url is not None]
     candidates.extend(str(url) for url in args.alternate_urls)
+    # One URL is one candidate: a model that hands the primary back in alternate_urls pays one
+    # fetch and one ledger row, not two. Order is the model's, first mention wins.
+    candidates = list(dict.fromkeys(candidates))
     attempts: list[dict[str, str]] = []
     item: _MediaItem | None = None
     for url in candidates:
-        hop = (
-            _youtube_hop(runtime, args, url)
-            if is_youtube(url)
-            else _podcast_hop(runtime, args, url)
-        )
         try:
+            # Before the hop is even chosen, so a walled host is refused with no request built no
+            # matter which argument carried it (media_feeds_client's law-11 clause: the direction
+            # to be wrong in is "refused something fetchable", never "fetched something walled").
+            reject_native_video(url)
+            hop = (
+                _youtube_hop(runtime, args, url)
+                if is_youtube(url)
+                else _podcast_hop(runtime, args, url)
+            )
             item = await runtime.call_provider("media", hop)
             break
         except MediaCeilingExceeded as ceiling:
-            raise RefusalError("media_ceiling_reached", str(ceiling)) from ceiling
+            raise RefusalError(
+                "media_ceiling_reached", _with_attempts(str(ceiling), attempts)
+            ) from ceiling
         except EnclosureTooLarge as oversized:
-            raise RefusalError("enclosure_too_large", str(oversized)) from oversized
+            raise RefusalError(
+                "enclosure_too_large", _with_attempts(str(oversized), attempts)
+            ) from oversized
         except UnsupportedMediaHost as walled:
-            raise RefusalError("native_video_rejected", str(walled)) from walled
+            raise RefusalError(
+                "native_video_rejected", _with_attempts(str(walled), attempts)
+            ) from walled
+        except RefusalError as answered:
+            # A refusal from inside the hop (episode_not_found, provider_halted:media) is this
+            # source's *answer*, so the loop still stops here — but the earlier sources that would
+            # not load ride along, or the agent hands a dead URL straight back next call.
+            raise RefusalError(
+                answered.refusal.code, _with_attempts(answered.refusal.detail, attempts)
+            ) from answered
         except (MediaFetchError, RawParseError) as unreachable:
             attempts.append({"url": url, "error": str(unreachable)})
     if item is None:
-        raise RefusalError(
-            "feed_not_found",
-            "no source loaded: "
-            + "; ".join(f"{attempt['url']} ({attempt['error']})" for attempt in attempts),
-        )
+        raise RefusalError("feed_not_found", "no source loaded: " + _attempts_note(attempts))
 
     await runtime.write(
         [

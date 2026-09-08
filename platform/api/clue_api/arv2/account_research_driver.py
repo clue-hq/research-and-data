@@ -121,8 +121,11 @@ def format_established(claims: Sequence[Claim]) -> str:
     """The "already established" block: one compact line per live claim, newest first.
 
     Values are compact JSON (not Python ``repr``), cut at :data:`_ESTABLISHED_VALUE_CHARS` with
-    an ellipsis; the source is the URL, else the source key. The full value is one
-    ``read_account_state`` call away, and that is where a model that needs it should look.
+    an ellipsis; the source is the URL, else the source key. The block is a *prefix*, and by
+    design the truncated remainder is not recoverable by any tool in this job:
+    ``read_account_state(section="already_established")`` returns this same cut block, and
+    ``section="claims"`` returns only *this run's* claims, while the block is prior runs'. The
+    line exists to tell the agent the field is known, not what it says in full.
     """
     lines: list[str] = []
     for claim in claims[:_ESTABLISHED_LINE_CAP]:

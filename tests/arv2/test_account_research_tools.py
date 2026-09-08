@@ -892,6 +892,25 @@ def test_write_claims_receipts_carry_no_shape_when_the_value_fit() -> None:
     assert "expected_shape" not in row and "hint" not in row
 
 
+def test_write_claims_says_so_when_the_failing_field_is_not_in_this_jobs_catalog() -> None:
+    """The account job's catalog is account-only; a contact key can still fail its DB schema.
+
+    ``schema_hint(None)`` renders "any", which would tell the model any shape was fine about a
+    value that just failed a schema — and the rewrite hint would be unfollowable.
+    """
+    runtime, _, writer, _ = _runtime()
+    writer.schema_invalid = {"contact.facet.hobby"}
+    claim = _claim_input(0)
+    claim["field_key"] = "contact.facet.hobby"
+
+    result = _call(runtime, "write_claims", claims=[claim])
+
+    (row,) = result["written"]
+    assert row["markers"]["schema_valid"] is False
+    assert row["expected_shape"] == "not in this job's catalog"
+    assert "hint" not in row
+
+
 # -- structure_material ---------------------------------------------------------------------------
 
 
@@ -1347,6 +1366,17 @@ def test_read_media_feeds_does_not_fall_through_past_a_feed_that_loaded_but_had_
 ) -> None:
     """A feed that loaded and has no matching episode is an answer, not a load failure."""
     _stub_podcast(monkeypatch, tmp_path)
+    # ``_stub_podcast`` answers every URL with the same podcast, so the refusal code alone cannot
+    # tell a stop from a fall-through: the second candidate would refuse identically. The URLs
+    # fetched are what proves the loop stopped.
+    calls: list[str] = []
+    stubbed_fetch = tools.fetch_feed
+
+    def fetch(url: str, caller: Any) -> Any:
+        calls.append(url)
+        return stubbed_fetch(url, caller)
+
+    monkeypatch.setattr(tools, "fetch_feed", fetch)
     runtime, _, _, _ = _runtime()
     refused = _call(
         runtime,
@@ -1357,6 +1387,120 @@ def test_read_media_feeds_does_not_fall_through_past_a_feed_that_loaded_but_had_
         episode_title_contains="no such episode",
     )
     assert refused["code"] == "episode_not_found"
+    assert calls == ["https://pod.test/feed"], "the answered feed ended the loop"
+
+
+def test_read_media_feeds_refuses_a_walled_host_before_any_request_is_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Routing is by host, so the walled guard must run before the hop is chosen, not inside it.
+
+    A LinkedIn post URL handed in as ``youtube_url`` is not a YouTube URL, so it takes the podcast
+    hop — and would be fetched for real if ``reject_native_video`` only lived in the YouTube hop.
+    """
+
+    def never(url: str, caller: Any) -> Any:
+        raise AssertionError("must not fetch")
+
+    monkeypatch.setattr(tools, "fetch_feed", never)
+    runtime, _, writer, _ = _runtime()
+
+    refused = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        youtube_url="https://www.linkedin.com/posts/someone_activity-1",
+    )
+
+    assert refused["code"] == "native_video_rejected"
+    assert writer.drafts == []
+
+
+def test_read_media_feeds_prefers_the_feed_over_the_watch_page_when_both_are_given(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """New behaviour: ``youtube_url`` used to be ignored whenever ``feed_url`` was present."""
+    _stub_podcast(monkeypatch, tmp_path)
+    calls: list[str] = []
+    stubbed_fetch = tools.fetch_feed
+
+    def fetch(url: str, caller: Any) -> Any:
+        calls.append(url)
+        return stubbed_fetch(url, caller)
+
+    def never(url: str, caller: Any) -> Any:
+        raise AssertionError("the watch page is a fallback, not a second call")
+
+    monkeypatch.setattr(tools, "fetch_feed", fetch)
+    monkeypatch.setattr(tools, "youtube_metadata", never)
+    runtime, _, _, _ = _runtime()
+
+    found = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        feed_url="https://pod.test/feed",
+        youtube_url="https://www.youtube.com/watch?v=abcdefghijk",
+        episode_number=42,
+    )
+
+    assert found["item"]["kind"] == "podcast"
+    assert calls == ["https://pod.test/feed"]
+
+
+def test_read_media_feeds_fetches_a_url_repeated_in_alternate_urls_only_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _stub_podcast(monkeypatch, tmp_path)
+    calls: list[str] = []
+
+    def fetch(url: str, caller: Any) -> Any:
+        calls.append(url)
+        raise MediaFetchError(url, 404, None)
+
+    monkeypatch.setattr(tools, "fetch_feed", fetch)
+    runtime, _, _, _ = _runtime()
+
+    refused = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        feed_url="https://pod.test/feed",
+        alternate_urls=["https://pod.test/feed"],
+    )
+
+    assert refused["code"] == "feed_not_found"
+    assert calls == ["https://pod.test/feed"], "a repeated URL is one candidate, one fetch"
+
+
+def test_read_media_feeds_names_the_dead_earlier_sources_in_a_later_refusal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Candidate 1 would not load, candidate 2 answered: the agent must learn both facts."""
+    _stub_podcast(monkeypatch, tmp_path)
+    stubbed_fetch = tools.fetch_feed
+
+    def fetch(url: str, caller: Any) -> Any:
+        if url == "https://dead.test/feed":
+            raise MediaFetchError(url, 429, None)
+        return stubbed_fetch(url, caller)
+
+    monkeypatch.setattr(tools, "fetch_feed", fetch)
+    runtime, _, _, _ = _runtime()
+
+    refused = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        feed_url="https://dead.test/feed",
+        alternate_urls=["https://pod.test/feed"],
+        episode_title_contains="no such episode",
+    )
+
+    assert refused["code"] == "episode_not_found"
+    assert "earlier sources that would not load" in refused["detail"]
+    assert "https://dead.test/feed" in refused["detail"]
+    assert "429" in refused["detail"]
 
 
 def test_read_media_feeds_needs_one_of_the_two_urls() -> None:

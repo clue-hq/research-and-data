@@ -26,7 +26,12 @@ REACTIONS: dict[str, str] = {
         "Record the URL as unreadable; try a different known URL, never a search for the same page."
     ),
     "company_not_found": "AI Ark has no record for this domain; continue from the web sources.",
-    "feed_not_found": "No podcast or YouTube for this person; media stays empty; move on.",
+    "feed_not_found": (
+        "Every URL given failed to load (the message names each with its error). If you have not "
+        "yet passed alternates — the podcast's other feed host, the YouTube upload of the same "
+        "episode — call once more with them in alternate_urls; otherwise media stays empty for "
+        "this person; move on."
+    ),
     "episode_not_found": "The feed has no matching episode; media stays empty for this person.",
     "media_ceiling_reached": (
         "Skip this item; the reservation was released; do not shorten and retry."
