@@ -30,7 +30,7 @@ from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
 from clue_core import decode_jsonb
 
 __all__ = [
-    "PERSON_ACCOUNT_FIELDS",
+    "PERSON_EXTRA_FIELDS",
     "UNRECORDED_REASON",
     "UNSPECIFIED_FAILURE",
     "AnnotationRow",
@@ -559,29 +559,23 @@ async def read_account_catalog(conn: AsyncConnection) -> FieldCatalog:
     )
 
 
-#: The account-side fields a *person* job may write against. Not the whole account menu: a person
-#: job researches one person, and the account facts it can add to are exactly the ones the contact
-#: display recipes compose a contact page from (``display/recipes.py``: the contact sections' own
-#: allowed account keys), plus the person's work email, which is a ``core.*`` contact channel.
-#: Enumerated rather than pattern-matched because "which account facts belong on a person job" is a
-#: product decision, not a namespace.
-PERSON_ACCOUNT_FIELDS: tuple[str, ...] = (
-    "account.abm_program_maturity",
-    "account.claimed_outcomes_metrics",
-    "account.gtm_tooling_stack",
-    "account.hiring_velocity",
-    "account.named_customers",
-    "account.open_requisitions",
-    "account.operational_pain",
-    "core.work_email",
-)
+#: The one non-``contact.*`` field a person job may write against: the person's own work email,
+#: which the registry holds in the ``core.*`` namespace as a contact channel rather than as a
+#: company fact.
+#:
+#: **No ``account.*`` key belongs on this menu.** A person job stamps every claim it writes to the
+#: contact (``account_research_claims._draft``), so an account fact offered here would be written
+#: *on the person* — a company's open requisitions recorded as a fact about one employee, where no
+#: reader of the account looks. The person agent reads the account's facts from the
+#: already-established block the driver supplies in its context, and writes none of them.
+PERSON_EXTRA_FIELDS: tuple[str, ...] = ("core.work_email",)
 
 
 async def read_person_catalog(conn: AsyncConnection) -> FieldCatalog:
     """The person-side field menu one person job may write against.
 
     Every registered ``contact.*`` field — plain facts in the contact section, personal hooks in
-    the facet section — plus :data:`PERSON_ACCOUNT_FIELDS`. Read from the registry for the same
+    the facet section — plus :data:`PERSON_EXTRA_FIELDS`. Read from the registry for the same
     reason :func:`read_account_catalog` is: a pack that adds a contact field is a row, and the menu
     grows with it without a code change.
 
@@ -601,7 +595,7 @@ async def read_person_catalog(conn: AsyncConnection) -> FieldCatalog:
                     "WHERE active AND (field_key LIKE 'contact.%' OR field_key = ANY(:extra)) "
                     "ORDER BY field_key"
                 ),
-                {"extra": list(PERSON_ACCOUNT_FIELDS)},
+                {"extra": list(PERSON_EXTRA_FIELDS)},
             )
         )
         .mappings()

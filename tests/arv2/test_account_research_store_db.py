@@ -579,10 +579,15 @@ def test_a_subject_without_its_entity_is_unrepresentable() -> None:
     run_async(scenario())
 
 
-def test_the_person_catalog_is_the_contact_menu_plus_the_account_fields_it_reads() -> None:
+def test_the_person_catalog_is_the_contact_menu_plus_the_work_email() -> None:
     """Read from the registry, never enumerated in code: the person menu is every registered
-    ``contact.*`` field plus the handful of account/core fields a contact recipe composes from,
-    and a facet carries the ``use_class_hint`` the registry declares in its ``validation``."""
+    ``contact.*`` field plus the person's own work email, and a facet carries the
+    ``use_class_hint`` the registry declares in its ``validation``.
+
+    No ``account.*`` key is on it. A person job stamps every claim to the contact, so an account
+    fact offered here would be written on the person; the agent reads the account's facts from the
+    already-established block its context carries instead.
+    """
 
     async def scenario() -> None:
         async with rollback_conn(seed_pack=True) as conn:  # CORE_PACK → core.work_email
@@ -601,16 +606,10 @@ def test_the_person_catalog_is_the_contact_menu_plus_the_account_fields_it_reads
                 "contact.facet.alma_mater",
                 "contact.facet.hobby",
                 "core.work_email",
-                "account.open_requisitions",
-                "account.abm_program_maturity",
-                "account.hiring_velocity",
-                "account.gtm_tooling_stack",
-                "account.operational_pain",
-                "account.claimed_outcomes_metrics",
-                "account.named_customers",
             } <= keys
-            # The account side is only what a contact recipe reads, never the whole account menu.
-            assert "core.revenue_band" not in keys and "account.reputation_risk" not in keys
+            # An account fact written through this menu would land on the person, so none is on it.
+            assert not [key for key in keys if key.startswith("account.")]
+            assert "core.revenue_band" not in keys and "core.employee_count" not in keys
 
             hobby = catalog.spec("contact.facet.hobby")
             assert hobby is not None and hobby.use_class_hint == "personal-public-non-sensitive"
@@ -622,16 +621,7 @@ def test_the_person_catalog_is_the_contact_menu_plus_the_account_fields_it_reads
             assert title.value_schema == {"type": "string"}
 
             # The three menu sections are the three the model is shown.
-            assert {spec.key for spec in catalog.account} == {
-                "account.abm_program_maturity",
-                "account.claimed_outcomes_metrics",
-                "account.gtm_tooling_stack",
-                "account.hiring_velocity",
-                "account.named_customers",
-                "account.open_requisitions",
-                "account.operational_pain",
-                "core.work_email",
-            }
+            assert {spec.key for spec in catalog.account} == {"core.work_email"}
             assert all(spec.key.startswith("contact.facet.") for spec in catalog.facet)
             assert all(
                 spec.key.startswith("contact.") and not spec.key.startswith("contact.facet.")

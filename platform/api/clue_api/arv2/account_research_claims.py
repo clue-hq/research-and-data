@@ -744,10 +744,14 @@ def ai_ark_company_claims(
 #: The person record's scalar fields, as (mapped attribute, field key, the record path it was read
 #: from). The attributes are ``ai_ark_client.person_from_record``'s own mapping, so the path here is
 #: a citation of where the value came from, never a second parse of the record.
+#:
+#: The record's ``link.linkedin`` is deliberately **not** here. The person's LinkedIn URL is the
+#: contact entity's own ``linkedin_url`` column — the identity strong key the lock was made on —
+#: and that is where every reader takes it from. A claim on it would register a field nobody reads
+#: and offer a second, divergent answer to a question the entity row already answers.
 _AI_ARK_PERSON_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("title", "contact.current_title", "profile.title"),
     ("headline", "contact.headline", "profile.headline"),
-    ("linkedin_url", "contact.linkedin_url", "link.linkedin"),
 )
 
 

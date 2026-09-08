@@ -1323,9 +1323,6 @@ def test_the_ai_ark_person_record_maps_onto_its_registered_contact_fields() -> N
 
     assert drafts["contact.current_title"].value_json == "VP of Marketing"
     assert drafts["contact.headline"].value_json == "VP Marketing at Zafran Security"
-    assert drafts["contact.linkedin_url"].value_json == (
-        "https://www.linkedin.com/in/nicholastfisher"
-    )
     assert drafts["contact.current_location"].value_json == {
         "raw": "New York, New York, United States, North America",
         "country": "United States",
@@ -1340,6 +1337,9 @@ def test_the_ai_ark_person_record_maps_onto_its_registered_contact_fields() -> N
         "creator": True,
         "hiring": False,
     }
+    # The person's LinkedIn URL is the contact entity's own column — the identity strong key the
+    # lock was made on — so the mapper writes no claim that could answer it a second time.
+    assert "contact.linkedin_url" not in drafts
 
 
 def test_every_ai_ark_person_claim_cites_its_raw_path_and_never_a_fabricated_url() -> None:
@@ -1348,7 +1348,6 @@ def test_every_ai_ark_person_claim_cites_its_raw_path_and_never_a_fabricated_url
     assert {key: draft.markers["json_path"] for key, draft in drafts.items()} == {
         "contact.current_title": "profile.title",
         "contact.headline": "profile.headline",
-        "contact.linkedin_url": "link.linkedin",
         "contact.current_location": "location",
         "contact.network_statistics": "statistics.network",
         "contact.member_badges": "member_badges",
