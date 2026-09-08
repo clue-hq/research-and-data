@@ -135,6 +135,7 @@ class FakeExa:
     threads: set[int] = field(default_factory=set)
     concurrent: int = 0
     peak: int = 0
+    queries: list[str] = field(default_factory=list)
     guard: threading.Lock = field(default_factory=threading.Lock)
 
     def agent_run(
@@ -168,10 +169,11 @@ class FakeExa:
         label: str = "exa-deep",
         **_: Any,
     ) -> ExaDeepResult:
-        del system_prompt, query, output_schema
+        del system_prompt, output_schema
         with self.guard:
             self.threads.add(threading.get_ident())
             self.calls.append(label)
+            self.queries.append(query)
         return self.deep_answer
 
 
@@ -269,12 +271,20 @@ async def _no_products(conn: Any, **kw: Any) -> tuple[ProductLink, ...]:
     return ()
 
 
+async def _no_known_products(conn: Any, brand_id: str) -> tuple[str, ...]:
+    """The offline stand-in for the brand's product read: these tests never reach a database, and
+    the production default would run SQL on the null connection."""
+    del conn, brand_id
+    return ()
+
+
 def _handler(
     exa: FakeExa,
     store: FakeStore,
     *,
     synthesis: Any = None,
     links: Any = None,
+    known_products: Any = None,
     settings_overrides: dict[str, Any] | None = None,
 ) -> OnboardingRunWorkHandler:
     settings = Settings(_env_file=None, **(settings_overrides or {}))
@@ -288,6 +298,7 @@ def _handler(
         clock=lambda: date(2026, 9, 7),
         store=store,
         synchronize_catalog=links or _no_products,
+        known_products=known_products or _no_known_products,
     )
 
 
@@ -493,3 +504,54 @@ def test_the_lineup_merge_never_moves_an_own_domain_entry_so_grounding_stays_att
     ]
     assert [entry["short_description"] for entry in products[:3]] == ["One.", "Same name.", "Two."]
     assert merged.grounding == own_grounding, "only the own-domain pass's grounding is carried"
+
+
+def test_the_lineup_query_names_the_products_already_on_file_on_a_re_run() -> None:
+    """Both passes ask the same question, so both must carry the hint: an open-web pass that did
+    not know the on-file names is exactly where a near-miss spelling gets invented."""
+    exa = FakeExa({"overview": _agent(OVERVIEW), "reviews": _agent(REVIEWS)}, _deep([]))
+    handler = _handler(
+        exa,
+        FakeStore(),
+        known_products=lambda conn, brand: asyncio.sleep(0, result=("MagicFlow", "Aura AI Scribe")),
+    )
+
+    asyncio.run(handler.handle(_context(uuid4())))
+
+    assert len(exa.queries) == 2
+    for query in exa.queries:
+        assert "Exhaustive list of products of insighthealth.ai" in query
+        assert "Known products already on file for this company" in query
+        assert "MagicFlow" in query
+        assert "Aura AI Scribe" in query
+
+
+def test_a_first_run_asks_the_bare_question() -> None:
+    """Nothing on file, nothing to name — the hint is absent rather than empty."""
+    exa = FakeExa({"overview": _agent(OVERVIEW), "reviews": _agent(REVIEWS)}, _deep([]))
+    handler = _handler(exa, FakeStore())
+
+    asyncio.run(handler.handle(_context(uuid4())))
+
+    assert exa.queries == ["Exhaustive list of products of insighthealth.ai"] * 2
+
+
+def test_an_unreadable_product_list_degrades_to_the_bare_question_instead_of_failing_the_run() -> (
+    None
+):
+    """The hint is an optimization, not an input. Losing it costs a re-run some name drift; letting
+    it raise would cost the whole run, because ``handle``'s containment fails the run row."""
+
+    async def exploding(conn: Any, brand_id: str) -> tuple[str, ...]:
+        del conn, brand_id
+        raise RuntimeError("db down")
+
+    exa = FakeExa({"overview": _agent(OVERVIEW), "reviews": _agent(REVIEWS)}, _deep([]))
+    store = FakeStore()
+    handler = _handler(exa, store, known_products=exploding)
+
+    result = asyncio.run(handler.handle(_context(uuid4())))
+
+    assert result.outcome == "completed"
+    assert exa.queries == ["Exhaustive list of products of insighthealth.ai"] * 2
+    assert not [event for event in store.events if event[0] == "fail_run"]

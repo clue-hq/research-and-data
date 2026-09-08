@@ -16,7 +16,7 @@ stranded on ``running`` forever.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
@@ -67,6 +67,7 @@ from clue_fleet import FleetTaskKind
 from clue_fleet.lease import WorkId
 from clue_fleet.work_worker import WorkContext, WorkResult
 from clue_obs import get_logger
+from clue_spine import list_products
 
 log = get_logger("clue_api.arv2.onboarding_driver")
 
@@ -96,6 +97,21 @@ LINEUP_SYSTEM_PROMPT = (
     "integrations and partner programs separate from standalone products; never invent an "
     "offering; when unsure of a field, omit it."
 )
+
+#: The re-run hint. The lineup is asked the same question on every run, so on run two it re-derives
+#: names it already named — four live runs on one workspace spelled the same offerings differently
+#: enough to grow the product rows from 19 to 28. Naming what is on file lets the model reuse a
+#: spelling instead of inventing a near-miss. It rides the QUERY, never the system prompt or the
+#: schema: the catalog contract fixes those.
+_KNOWN_PRODUCTS_HINT = (
+    "Known products already on file for this company (reuse these exact names when an offering is "
+    "the same product; add only genuinely distinct offerings): "
+)
+
+
+async def _default_known_products(conn: AsyncConnection, brand_id: str) -> Sequence[str]:
+    return sorted(product.name for product in await list_products(conn, brand_id))
+
 
 #: The reason an ``empty`` step records when nothing failed and nothing was found. ``empty`` may
 #: not carry a ``failure_code`` (the O1 CHECK is biconditional), so this rides ``failure_message``.
@@ -265,6 +281,7 @@ class OnboardingRunWorkHandler:
         clock: Callable[[], date] = date.today,
         store: Any = default_store,
         synchronize_catalog: Callable[..., Any] = default_synchronize,
+        known_products: Callable[[AsyncConnection, str], Awaitable[Sequence[str]]] | None = None,
     ) -> None:
         self._settings = settings
         self._conn_factory = conn_factory
@@ -277,6 +294,9 @@ class OnboardingRunWorkHandler:
         # call site so the offline tests can record every transition in order without a database.
         self._store = store
         self._sync = synchronize_catalog
+        # Same reason as the store and the synchronizer: the offline driver tests must never reach
+        # a database, and the lineup's re-run hint is a read.
+        self._known_products = known_products or _default_known_products
         # The driver holds at most ONE connection at a time. Its row writes are small, ordered
         # facts about one run and the parallelism that matters is the provider calls (which run
         # off both the loop and this lock), so serializing them costs nothing — and it lets a
@@ -535,6 +555,9 @@ class OnboardingRunWorkHandler:
         The own-domain pass is the authority and the open-web pass is coverage; ``catalog_sync`` is
         its own step because minting product rows is a different kind of failure from failing to
         find products, and the page must be able to tell them apart.
+
+        On a re-run the query also names the products already on file (:data:`_KNOWN_PRODUCTS_HINT`)
+        so the model reuses a spelling rather than inventing a near-miss of it.
         """
         step_id = self._step_id(scope, "lineup")
         document_id = self._document_id(scope, "product/catalog.md")
@@ -557,8 +580,23 @@ class OnboardingRunWorkHandler:
                 kind="product-catalog",
                 step_id=step_id,
             )
+            try:
+                known: Sequence[str] = await self._known_products(conn, scope.brand_id)
+            except Exception as error:
+                # The hint is an optimization, not an input: a run that cannot read what is on file
+                # asks the bare question rather than failing. (Losing it costs a re-run some name
+                # drift; failing here would cost the whole run.)
+                log.warning(
+                    "onboarding.known_products_unavailable",
+                    run_id=str(scope.run_id),
+                    brand_id=scope.brand_id,
+                    reason=str(error)[:200],
+                )
+                known = ()
         client = self._exa(run_id=scope.run_id, step_label="lineup")
         query = f"Exhaustive list of products of {scope.company_domain}"
+        if known:
+            query = f"{query}\n\n{_KNOWN_PRODUCTS_HINT}{'; '.join(known)}"
         schema = product_catalog_output_schema()
         try:
             own = await asyncio.to_thread(

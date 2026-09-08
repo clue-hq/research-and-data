@@ -42,8 +42,33 @@ class ProductLink:
     lineage_id: UUID
 
 
+#: Trademark/service-mark/copyright marks a company decorates its own product names with. They are
+#: stripped BEFORE NFKC, which would otherwise expand ``™`` into the letters ``tm`` and make
+#: ``Aura™`` normalize to ``auratm`` — a different identity from ``Aura``.
+_MARKS = str.maketrans("", "", "™®©℠")
+
+#: Tokens that say nothing about WHICH product this is. Four live runs on one workspace grew the
+#: product rows from 19 to 28 because the lineup called the same offering "AI Front Desk" once and
+#: "AI FrontDesk Agent" the next time. Dropping them is a comparison aid only — a normalized hit
+#: still has to survive the resolution ladder, and nothing here renames or merges anything.
+_GENERIC_TOKENS = frozenset({"ai", "agent", "agents"})
+
+_TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
+
+
 def normalize_identity(value: str) -> str:
-    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", value).strip()).casefold()
+    """A comparison key for a product name: mark-free, case-free, spacing- and punctuation-free,
+    with the generic ``ai``/``agent`` tokens dropped.
+
+    Whitespace and punctuation are not identity ("Front Desk" and "FrontDesk" are one product), so
+    the surviving tokens are joined with nothing. A name made ENTIRELY of generic tokens (a product
+    literally called "AI Agent") keeps them — dropping every token would collapse it onto every
+    other all-generic name, and onto the empty key.
+    """
+    folded = unicodedata.normalize("NFKC", value.translate(_MARKS)).casefold()
+    tokens = _TOKEN.findall(folded)
+    kept = [token for token in tokens if token not in _GENERIC_TOKENS]
+    return "".join(kept or tokens)
 
 
 def _fingerprint(entry: CatalogProduct) -> str:
@@ -58,7 +83,13 @@ def _fingerprint(entry: CatalogProduct) -> str:
 
 
 def _candidates(entry: CatalogProduct, products: Sequence[Product]) -> list[Product]:
-    observed = {normalize_identity(entry.name)} | {normalize_identity(a) for a in entry.aliases}
+    # An empty key is not an identity (a name of nothing but punctuation or marks normalizes to
+    # ""), so it may never match another empty one.
+    observed = {
+        key
+        for key in {normalize_identity(entry.name)} | {normalize_identity(a) for a in entry.aliases}
+        if key
+    }
     hits: list[Product] = []
     for product in products:
         names = {normalize_identity(product.name)} | {
