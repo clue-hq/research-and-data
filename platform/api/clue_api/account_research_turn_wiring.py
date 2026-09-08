@@ -7,6 +7,7 @@ from decimal import Decimal
 from uuid import UUID, uuid5
 
 from pydantic import JsonValue
+from sqlalchemy import text
 
 from clue_agents import (
     AgentConstitution,
@@ -77,6 +78,7 @@ from clue_research.durable import (
 )
 from clue_research.identity import get_account, get_contact
 from clue_spine import Brand, Product, Project, get_brand, get_product, get_project
+from clue_storage import StorageBackend, read_verified_artifact
 from clue_toolbelt import ToolInvoker, ToolRegistry
 
 __all__ = [
@@ -176,8 +178,16 @@ def account_research_context_policy() -> ContextAssemblyPolicy:
 class DbCompiledContextCardReader:
     """Compile minimal, typed cards from the owning stores; never query agent-owned state."""
 
-    def __init__(self, *, conn_factory: ConnFactory = transaction) -> None:
+    def __init__(
+        self,
+        *,
+        conn_factory: ConnFactory = transaction,
+        storage: StorageBackend | None = None,
+    ) -> None:
         self._conn_factory = conn_factory
+        # Only the ``brand_knowledge_document`` type needs blob bytes; every other type compiles
+        # from durable rows alone, so a reader built without storage still serves them all.
+        self._storage = storage
 
     async def read(
         self,
@@ -232,6 +242,40 @@ class DbCompiledContextCardReader:
                 # A fresh document's CAS counter is 0, and DomainObjectRef versions are
                 # >= 1 — an unwritten document is honestly unversioned.
                 version = document.get("current_version") or None
+            elif object_type == "brand_knowledge_document":
+                # O4: an onboarding knowledge document rides the focus layer as its own markdown.
+                # The body is the verified artifact, never a re-rendered summary.
+                if self._storage is None:
+                    return None
+                try:
+                    document_id = UUID(object_id)
+                except ValueError:
+                    return None
+                row = (
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT version, artifact_key FROM brand_knowledge_document "
+                                "WHERE document_id = :document_id AND workspace_id = :workspace_id"
+                            ),
+                            {"document_id": document_id, "workspace_id": workspace_id},
+                        )
+                    )
+                    .mappings()
+                    .first()
+                )
+                # A document still running has no bytes yet — an honest miss, never a blank body.
+                if row is None or row["artifact_key"] is None:
+                    return None
+                _, data = await read_verified_artifact(
+                    conn,
+                    self._storage,
+                    storage_key=str(row["artifact_key"]),
+                    workspace_id=workspace_id,
+                )
+                value = None
+                body = data.decode()
+                version = int(row["version"])
             elif object_type == "contact":
                 try:
                     entity_id = EntityId(UUID(object_id))

@@ -399,27 +399,76 @@ def test_the_catalog_reconciler_is_composed_per_run_only_with_a_model_credential
 
 
 def test_the_synthesis_seam_hands_o4_outcomes_to_the_o3_handler(tmp_path: Path) -> None:
-    """The O3 ⇄ O4 join: the launcher's result becomes the driver's ``SynthesisOutcome``
-    field for field, and the composed handler carries the seam rather than ``None``."""
+    """The O3 ⇄ O4 join, both calls: O4's ``IcpSynthesisResult``/``OnboardingSynthesisResult``
+    become the driver's ``IcpSynthesisOutcome``/``SynthesisOutcome`` field for field (and the
+    driver's ``IcpRef`` becomes O4's ``RegisteredIcp`` on the way back in), and the composed
+    handler carries the seam rather than ``None``."""
     from decimal import Decimal
 
-    from clue_api.arv2.onboarding_driver import SynthesisOutcome
+    from clue_api.arv2.onboarding_driver import IcpRef, IcpSynthesisOutcome, SynthesisOutcome
     from clue_api.fleet_main import _SynthesisSeam
-    from clue_api.onboarding_synthesis_wiring import OnboardingSynthesisResult
+    from clue_api.onboarding_synthesis_wiring import (
+        IcpSynthesisResult,
+        OnboardingSynthesisResult,
+        RegisteredIcp,
+    )
+
+    document_id = uuid4()
+    registered = RegisteredIcp(
+        document_id=document_id,
+        icp_key="clinical-ops",
+        version=2,
+        path="audience/icp-clinical-ops.md",
+    )
+    handed: list[RegisteredIcp] = []
 
     class _Launcher:
-        async def launch(self, **kwargs: object) -> OnboardingSynthesisResult:
+        async def launch_icps(self, **kwargs: object) -> IcpSynthesisResult:
+            return IcpSynthesisResult("completed", None, None, Decimal("0.03"), (registered,))
+
+        async def launch_persona(
+            self, *, icp: RegisteredIcp, **kwargs: object
+        ) -> OnboardingSynthesisResult:
+            handed.append(icp)
             return OnboardingSynthesisResult(
-                "completed", None, None, Decimal("0.03"), (uuid4(), uuid4())
+                "failed", "turn_failed", "boom", Decimal("0.05"), (uuid4(),)
             )
 
     seam = _SynthesisSeam(_Launcher())  # type: ignore[arg-type]
-    outcome = run_async(
-        seam.launch(workspace_id="ws", brand_id="brd", run_id=uuid4(), step_id=uuid4())
+    icp_outcome = run_async(
+        seam.launch_icps(workspace_id="ws", brand_id="brd", run_id=uuid4(), step_id=uuid4())
     )
-    assert outcome == SynthesisOutcome(
-        status="completed", failure_code=None, failure_message=None, cost_usd=Decimal("0.03")
+    assert icp_outcome == IcpSynthesisOutcome(
+        status="completed",
+        failure_code=None,
+        failure_message=None,
+        cost_usd=Decimal("0.03"),
+        icps=(
+            IcpRef(
+                document_id=document_id,
+                icp_key="clinical-ops",
+                version=2,
+                path="audience/icp-clinical-ops.md",
+            ),
+        ),
     )
+
+    persona_outcome = run_async(
+        seam.launch_persona(
+            workspace_id="ws",
+            brand_id="brd",
+            run_id=uuid4(),
+            step_id=uuid4(),
+            icp=icp_outcome.icps[0],
+        )
+    )
+    assert persona_outcome == SynthesisOutcome(
+        status="failed",
+        failure_code="turn_failed",
+        failure_message="boom",
+        cost_usd=Decimal("0.05"),
+    )
+    assert handed == [registered], "the driver's IcpRef reaches O4 as its own RegisteredIcp"
 
     secrets = Secrets(_env_file=None, exa_api_key=SecretStr("exa-test"))  # type: ignore[call-arg]
     composed = _build_onboarding_handler(

@@ -22,6 +22,7 @@ from clue_agents import (
 from clue_api.agent_registry_wiring import (
     C6_ACTIVE_PROFILE_VERSIONS,
     C6_AGENT_TOOL_AUTHORITY,
+    ONBOARDING_ICP_SURFACE,
     PROJECT_CONVERSATION_SURFACE,
     ToolRegistryAgentCatalog,
     build_agent_profile_registry,
@@ -107,11 +108,13 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
         ),
         AgentRole.REVIEWER: "1cd0fc4e5c8276983c5e0b8d9a83904be82a95ed57f27c9c1dfd9f5a3887df46",
-        # ARV2 Track O, O4: onboarding-synthesis@v1 — prompt v1, the icp-synthesis and
-        # audience-persona v1 skills, and the single `exa_search_evidence@1` grant. Digest
-        # measured off this tree.
+        # ARV2 Track O, O4: onboarding-synthesis@v2 — prompt v2, the icp-synthesis and
+        # audience-persona v2 skills, and the single `exa_search_evidence@1` grant. v2 is the
+        # synthesis split: one task per turn, the known-ICPs reuse rule in the ICP skill, and a
+        # persona skill that writes the one document for the one ICP its user message names.
+        # Digest measured off this tree.
         AgentRole.ONBOARDING_SYNTHESIS: (
-            "d6054fb39fd8e3edb5c70e53f5c2fb93736348d50e017ed566fd1b7ab9dec39a"
+            "676ef758e01e667ee9ad18f2a25203bbd71d86ffe0d32c04f2a95e9a9a8286da"
         ),
     }
     # The model pin is per role, not blanket: the 2026-08-27 demo-night correction moved the
@@ -413,6 +416,35 @@ def test_stage0_skill_routes_first_selected_product_fact_without_a_product_kb() 
     assert "Never leave a clearly matching fact unmapped" in body
     assert "`client.product_use_case`" in body
     assert "publishes Product-KB v1" in body
+
+
+def test_onboarding_icp_surface_withholds_the_evidence_tool_under_one_profile() -> None:
+    """The ICP turn writes from the files: the evidence tool is not installed, not discouraged."""
+
+    with hermetic_flag_env():
+        registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+    full = registry.resolve(AgentRole.ONBOARDING_SYNTHESIS)
+    icp = registry.resolve(AgentRole.ONBOARDING_SYNTHESIS, surface=ONBOARDING_ICP_SURFACE)
+
+    assert "exa_search_evidence@1" in {pin.address for pin in full.profile.tools}
+    assert {pin.address for pin in icp.profile.tools} == set()
+    # A surface is a ceiling on one reviewed profile, never a second profile: the ICP turn and the
+    # persona turns resolve the same profile resource and the same prompt.
+    assert icp.profile_ref == full.profile_ref
+    assert icp.profile_ref.address == "profile:onboarding-synthesis@v2"
+    assert icp.resource_manifest.prompt == full.resource_manifest.prompt
+    assert icp.resource_manifest.profile == full.resource_manifest.profile
+    # The manifest binds the EFFECTIVE authority, not the reviewed ceiling, so the narrowed
+    # resolution has its own aggregate digest — that is the manifest doing its job, and the
+    # equality that matters (same reviewed resources) is asserted above. The persona skill goes
+    # with the tool it requires, which is the outcome we want: the ICP turn is not handed a skill
+    # whose whole procedure is an evidence pass it cannot run.
+    assert icp.resource_manifest.aggregate_sha256 != full.resource_manifest.aggregate_sha256
+    assert [ref.address for ref in full.resource_manifest.skills] == [
+        "skill:icp-synthesis@v2",
+        "skill:audience-persona@v2",
+    ]
+    assert [ref.address for ref in icp.resource_manifest.skills] == ["skill:icp-synthesis@v2"]
 
 
 def test_account_research_role_and_surface_are_not_active(

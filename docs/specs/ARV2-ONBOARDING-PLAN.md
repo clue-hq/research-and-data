@@ -98,7 +98,8 @@ onboarding_run (
   cost_usd numeric, finished_at
 )
 onboarding_step (
-  step_id, run_id, kind ∈ {overview, lineup, catalog_sync, reviews, synthesis, product_research},
+  step_id, run_id, kind ∈ {overview, lineup, catalog_sync, reviews, synthesis, product_research,
+                           persona},   -- 'persona' added 2026-09-08 by the synthesis split (§5)
   subject_ref text NULL,            -- product_id for product_research; icp_key for per-ICP work
   phase ∈ {fast, background},
   status ∈ {queued, running, completed, empty, failed},
@@ -284,6 +285,61 @@ bounded list, possibly empty. Effect class SPEND; replay policy journaled; no wr
 
 ## 5. The synthesis agent — `onboarding-synthesis@v1`
 
+**Addendum 2026-09-08 — the synthesis split (`onboarding-synthesis@v2`).** Everything below stays
+the contract for *what* the agent writes; what changed is that it no longer writes it in one turn.
+Design: `docs/superpowers/specs/2026-09-08-arv2-onboarding-o4-synthesis-split-design.md` (founder-
+approved 2026-09-08); measured on the two successful Insight Health runs, where the ICPs were
+finished about four minutes in but reached the Knowledge page eight to ten minutes later, behind
+three personas queued inside the same turn.
+
+- **One run is now `1 + N` turns**, same recipe (`onboarding-synthesis-unit@1`), same per-brand
+  system project, same per-turn budget envelope: **one ICP turn**, then **one persona turn per ICP
+  it registered**. Identity is the turn's key, not the run's:
+  `identity_key = f"{run_id}:icp"` and `f"{run_id}:persona:{icp_key}"`, with the execution id
+  `operation_id_from_key(identity_key, "onboarding-synthesis-unit@1")` and the turn id
+  `uuid5(TURN_NAMESPACE, identity_key)`. Old single-turn runs are dev data and are not migrated.
+- **The ICP turn runs on a declared surface, `onboarding_icp` (`ONBOARDING_ICP_SURFACE`), which
+  withholds `exa_search_evidence`** — the ICP skill's "from the files and nothing else" becomes a
+  tool that is not installed rather than a sentence. That role's whole spendable surface is that
+  one tool, so the ICP turn is structurally unable to spend. Consequence, deliberate: the effective
+  skill set on that surface drops `audience-persona` (the skill requires the withheld tool), so the
+  ICP turn is not handed a procedure it cannot run. Persona turns resolve the unnarrowed role.
+- **Inputs are chosen per turn and ride the opening context.** The ICP turn gets the core three
+  (company overview, product catalog, customer reviews) **plus every ICP already on file** — that
+  is what makes a re-run refine a profile instead of renaming it — and every product-research file
+  on disk. A persona turn gets the core three, **the one ICP it was given** (exact version), and
+  only the product-research files whose `product_id` that ICP names (a file whose own product id
+  cannot be read is kept; omission is the costly error). `audience-persona` documents are never an
+  input to either turn. The core documents are passed as exact-version `focus_refs` and become
+  messages in the opening context — `DbCompiledContextCardReader` serves the object type
+  `brand_knowledge_document` from the verified artifact body — and are *also* seeded read-only
+  under `inputs/brand/knowledge/` so citations keep their paths. The L5 focus budget rises to
+  262 144 bytes (`utf8-bytes-v1`); v1's 8 KiB could not hold a company overview, so every input
+  arrived as a path only.
+- **The known-ICPs rule** (ruling 2, shaped like the lineup's known-products rule) is in
+  `skills/icp-synthesis/v2` *and* in the ICP turn's user message, which names each key on file with
+  its path and version: reuse a key when the buyer motion is the same, propose a new key only when
+  it is genuinely different, never carry a key forward to fill a slot. Ruling 3: the skill reads
+  the product file for each product a profile names, not "every file under `product/`".
+- **Resources:** `prompts/onboarding-synthesis/v2/SYSTEM.md`, `skills/icp-synthesis/v2`,
+  `skills/audience-persona/v2`, `profiles/onboarding-synthesis/v2` (v1 retired). Registry digest
+  `676ef758e01e667ee9ad18f2a25203bbd71d86ffe0d32c04f2a95e9a9a8286da`. Model, timeouts and round
+  cap are unchanged from v1.
+- **Steps and failure law:** the `synthesis` step keeps its kind and its fast phase and now covers
+  the ICP turn only; each persona turn is a `kind='persona'` step, `phase='background'`,
+  `subject_ref=<icp_key>`, opened the moment the ICP turn returns and sharing the one
+  `onboarding_max_parallel_runs` semaphore with the product fan-out. An ICP turn that ends anything
+  but `completed` opens no persona step. One persona failing takes only its own step. Migration
+  `ae4a5dfb3943` (down `a3602967bb73`) widens the §3 kind CHECK to admit `persona`; its downgrade
+  RAISEs if a persona step exists.
+- **Containment:** each launcher call is wrapped in `asyncio.wait_for(...,
+  SYNTHESIS_TURN_HARD_TIMEOUT_S)` (1800 s) and a trip lands that one step `failed` with
+  `turn_hung`. This is not an agent cap (the profile already has a 1200 s turn timeout) — it exists
+  because `RecipeExecutor.execute` can spin forever when a recipe gate is opened and its dynamic
+  child never completes (a refused governed tool call is still a tool result), and a launcher call
+  that never returns would strand the run on `running`. That executor hazard is the execution
+  substrate's to fix; the guard only contains it.
+
 **What it is.** A catalog profile (`platform/agents/catalog/profiles/onboarding-synthesis/v1/`),
 run once per onboarding as one agent turn on the fleet, in an isolated workspace with the three
 fast-recon documents materialized read-only. It is not the Head-of-ABM (which reads ICPs; it does
@@ -423,6 +479,11 @@ titles[], buying_triggers[], evidence_urls[]}`. Body: the eleven sections per ro
 lane reads `titles[]` for committee resolution and `buying_triggers[]` as signal instructions; the
 frontend reads `personas[].role` to label committee members.
 
+**Addendum 2026-09-08 (the synthesis split, §5).** One persona document is now written by its own
+turn, for the one ICP that turn was given, so `icp_version` is **the registered ICP document row's
+version** — the version named in the persona turn's user message alongside the ICP's input path —
+never a literal `1`. `skills/audience-persona/v2` says so; the front-matter shape is unchanged.
+
 ### 6.3 The L2 brand-knowledge index card — `BrandKnowledgeIndexCard@1`
 
 Bounded (≤ 2k tokens by the byte counter): one line per `brand_knowledge_document` in the current
@@ -487,7 +548,7 @@ Knowledge section is re-lifted, not patched (principle 7); anything the dummy ha
 | O1 | Substrate | Migration: §3 tables, `project_product`, `product_set_selection` kind + per-element answer trigger; flags (§10) in `.env.example`; `ONBOARDING_SYNTHESIS_AGENT_MODEL` in the agent-model block | One alembic head; `make db-smoke` green; parity test green; checklist items 3, 7 | agent-built, Aryan merges |
 | O2 | Exa Agent surface (leaf) — **re-based on R1 (merged 2026-09-07, PR #45)** | R1 already ships `platform/api/clue_api/arv2/exa_client.py` (search, contents, `deep_reasoning_body` with a caller-supplied `outputSchema`, `product_catalog_output_schema()` = the catalog contract §3 verbatim) behind the `ProviderCaller` wrapper (estimate row → raw record → retry/halt → result row; `sinks.py` file/memory sinks; `provider_call_ledger` spec in master plan §4). O2 therefore adds only: the Exa **Agent** surface (`/agent/runs` create + poll + stream, `output.text`/`structured`/`grounding`, `costDollars`) through the same `ProviderCaller`; the four remaining request templates (overview §4.2, reviews §4.3, per-product §4.4, evidence §4.5) as builder functions next to `product_catalog_output_schema`; the artifact mappers (§4 of each contract). Tests follow R1's founder ruling: **live against Exa, skipping with the env-var name when the key is unset; no replay fixtures.** | Live test on Insight Health reproduces the overview run's shape (`schema_satisfied`, 8 grounding rows, facts non-null) and the catalog run's 12 entries; ledger rows carry `costDollars.total` | agent-built from a charter; Aryan reviews |
 | O3 | Research steps on the fleet | `arv2/onboarding_driver.py` (fleet job), `POST /onboarding` 202, step graph, catalog sync re-pointed at the artifact, background fan-out + cap, document rows with statuses | One unseeded Insight Health run: every document present or honestly failed; ledger complete; nothing on the web loop | agent-built, Aryan composes |
-| O4 | Synthesis agent | Profile/prompt/two skills (§5), `exa_search_evidence@1`, materialization of inputs, outputs→documents registration | 2–3 ICPs + personas for Insight Health; no fictional names; every specific fact cited; per-role evidence when found; matches Shashank's answer keys; checklist item 1 | content Shashank, wiring agent-built, Aryan promotes |
+| O4 | Synthesis agent | Profile/prompt/two skills (§5), `exa_search_evidence@1`, materialization of inputs, outputs→documents registration. **+ 2026-09-08 — the synthesis split** (§5 addendum; branch `onboarding/o4-synthesis-split`, spec `docs/superpowers/specs/2026-09-08-arv2-onboarding-o4-synthesis-split-design.md`): `onboarding-synthesis@v2`, one ICP turn + one persona turn per ICP, the `onboarding_icp` surface, per-turn input selection into the opening context, migration `ae4a5dfb3943` | 2–3 ICPs + personas for Insight Health; no fictional names; every specific fact cited; per-role evidence when found; matches Shashank's answer keys; checklist item 1. **Split gate (2026-09-08, owed — founder-triggered):** one unseeded Insight Health re-run where the three ICP documents are servable within ~6 minutes while `persona` steps still run, three `persona` steps run concurrently and the run settles `completed`, the ICP keys on file are reused, each persona's `icp_version` equals its ICP row's version, fifteen `exa_search_evidence@1` invocations, none of them attributed to the ICP turn | content Shashank, wiring agent-built, Aryan promotes |
 | O5 | Brand-context read surface | §7 endpoints; frontend Knowledge section re-lifted from the dummy on the real endpoints; status chips; progressive fill | With `CLUE_API_BASE_URL` set the page renders the real tree and fills as steps land; frontend gates green | agent-built from Shashank's charter; Aryan merges |
 | O6 | Head-of-ABM integration | §8: profile, index card source, materialization, Stage-0 skill v21, product-set gate tool, ICP gate on artifact refs, launch fields | New project on Insight Health: interview → ICP pick → product set → ICP confirmation → launch; old lane off; checklist 7/7 | Aryan (integration point) |
 | O7 | Acceptance | Unseeded onboarding on Clue (cluehq.ai) and one more seller; cost/latency table per step; defect list; evidence under `.context/` | Founders sign; old Stage-0 recon stays flag-off until Phase 6 | both |

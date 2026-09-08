@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
@@ -21,6 +21,7 @@ from clue_api.agent_platform_wiring import (
     evaluate_agent_canary,
     run_owned_agent_surface,
 )
+from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_config import Settings
 from clue_core import (
     EFFECTIVE_RESEARCH_DIRECTIVE_MAX_BYTES,
@@ -29,6 +30,7 @@ from clue_core import (
 from clue_research.durable import AspectPlan, ResearchPlan
 from clue_research.identity import insert_account_entity
 from tests._workspace import seed_project, seed_workspace
+from tests.api.test_stage0_setup_db import _MemoryStorage
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
     conn_session_factory,
@@ -190,6 +192,120 @@ def test_compiled_context_cards_are_typed_and_workspace_scoped(
                 )
                 is None
             )
+
+    run_async(scenario())
+
+
+def test_a_knowledge_document_card_carries_its_verified_body_and_version(
+    require_c68_db: None,
+) -> None:
+    """O4: an onboarding knowledge document rides the focus layer as a card of its own markdown."""
+
+    del require_c68_db
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            workspace_id = "ws-o4-doc-card"
+            project = await seed_project(conn, workspace_id)
+            factory = conn_session_factory(conn)
+            storage = _MemoryStorage()
+            body = "---\nkind: company-overview\n---\n\n# Company overview\n"
+            ref = await DurableAgentArtifactStore(
+                storage=storage, conn_factory=factory
+            ).persist_body(
+                workspace_id=workspace_id,
+                data=body.encode(),
+                media_type="text/markdown",
+            )
+            document_id = uuid4()
+            await conn.execute(
+                text(
+                    "INSERT INTO brand_knowledge_document (document_id, workspace_id, brand_id, "
+                    "folder, path, kind, version, status, artifact_key, artifact_sha256) "
+                    "VALUES (:doc, :ws, :brand, 'company', 'company/overview.md', "
+                    "'company-overview', 3, 'ready', :key, :sha)"
+                ),
+                {
+                    "doc": document_id,
+                    "ws": workspace_id,
+                    "brand": project.brand_id,
+                    "key": ref.artifact_key,
+                    "sha": ref.sha256,
+                },
+            )
+
+            reader = DbCompiledContextCardReader(conn_factory=factory, storage=storage)
+            card = await reader.read(
+                workspace_id=workspace_id,
+                object_type="brand_knowledge_document",
+                object_id=str(document_id),
+            )
+            assert card is not None
+            assert card.body == body
+            assert card.ref.version == 3
+            assert card.ref.object_type == "brand_knowledge_document"
+
+            # Another workspace never sees the document, and neither does a bad id.
+            assert (
+                await reader.read(
+                    workspace_id="another-workspace",
+                    object_type="brand_knowledge_document",
+                    object_id=str(document_id),
+                )
+                is None
+            )
+            assert (
+                await reader.read(
+                    workspace_id=workspace_id,
+                    object_type="brand_knowledge_document",
+                    object_id=str(uuid4()),
+                )
+                is None
+            )
+            assert (
+                await reader.read(
+                    workspace_id=workspace_id,
+                    object_type="brand_knowledge_document",
+                    object_id="not-a-uuid",
+                )
+                is None
+            )
+
+            # A still-running document has no bytes yet — an honest miss, never a fabricated body.
+            running_id = uuid4()
+            await conn.execute(
+                text(
+                    "INSERT INTO brand_knowledge_document (document_id, workspace_id, brand_id, "
+                    "folder, path, kind, version, status) VALUES (:doc, :ws, :brand, 'company', "
+                    "'company/overview.md', 'company-overview', 4, 'running')"
+                ),
+                {"doc": running_id, "ws": workspace_id, "brand": project.brand_id},
+            )
+            assert (
+                await reader.read(
+                    workspace_id=workspace_id,
+                    object_type="brand_knowledge_document",
+                    object_id=str(running_id),
+                )
+                is None
+            )
+
+            # Every existing caller builds the reader without storage; this type then reads nothing.
+            storageless = DbCompiledContextCardReader(conn_factory=factory)
+            assert (
+                await storageless.read(
+                    workspace_id=workspace_id,
+                    object_type="brand_knowledge_document",
+                    object_id=str(document_id),
+                )
+                is None
+            )
+            project_card = await storageless.read(
+                workspace_id=workspace_id,
+                object_type="project",
+                object_id=project.project_id,
+            )
+            assert project_card is not None
 
     run_async(scenario())
 
