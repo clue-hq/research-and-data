@@ -17,6 +17,7 @@ from uuid import uuid4
 from clue_api.arv2.account_research_claims import (
     ClaimInput,
     JobScope,
+    _hq_location,
     agent_claims,
     ai_ark_company_claims,
     ats_posting_claims,
@@ -231,6 +232,7 @@ def test_ai_ark_company_maps_only_registered_keys_at_their_real_raw_paths() -> N
             "continent": "North America",
             "country": "US",
             "city": "New York",
+            "state": "New York",
             "raw_address": "New York, New York, United States",
         },
         raw={
@@ -271,6 +273,7 @@ def test_ai_ark_company_maps_only_registered_keys_at_their_real_raw_paths() -> N
     assert drafts["core.hq_location"].value_json == {
         "raw": "New York, New York, United States",
         "city": "New York",
+        "region": "New York",
         "country": "US",
     }
     assert drafts["core.hq_location"].markers["json_path"] == "location.headquarter"
@@ -281,6 +284,24 @@ def test_ai_ark_company_maps_only_registered_keys_at_their_real_raw_paths() -> N
         and d.markers["provider_record"] == "ai_ark"
         for d in drafts.values()
     )
+
+
+def test_hq_location_emits_country_code_only_when_the_record_carries_one() -> None:
+    """``region`` is the provider's ``state`` and ``country_code`` is only ever the provider's own
+    ISO code: no name-to-code table lives here, because the mapper does not decide what a value
+    means. ``raw`` stays required — half a location is not a location this field can hold."""
+    assert _hq_location(
+        {
+            "raw_address": "Tel Aviv, Israel",
+            "city": "Tel Aviv",
+            "country": "Israel",
+            "country_code": "IL",
+        }
+    ) == {"raw": "Tel Aviv, Israel", "city": "Tel Aviv", "country": "Israel", "country_code": "IL"}
+    assert _hq_location({"raw_address": "Tel Aviv, Israel", "state": None}) == {
+        "raw": "Tel Aviv, Israel"
+    }
+    assert _hq_location({"city": "Tel Aviv"}) is None
 
 
 def test_ai_ark_company_omits_the_fields_the_record_did_not_carry() -> None:

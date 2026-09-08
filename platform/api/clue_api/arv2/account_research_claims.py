@@ -334,11 +334,12 @@ def _provider_value(raw: object) -> JsonValue | None:
 def _hq_location(location: Mapping[str, Any] | None) -> JsonValue | None:
     """``location.headquarter`` as the registered ``core.hq_location`` shape.
 
-    The provider answers ``continent/country/city/raw_address/position``; the registry requires
-    ``raw`` and knows ``city``/``region``/``country``/``country_code``. Writing the provider's own
-    object straight through is what made every AI Ark HQ claim land ``schema_valid=false`` on both
-    live accounts — the value was right and its shape was foreign. ``raw`` is the provider's
-    ``raw_address``, which is the whole point of that key: the source's own unparsed string.
+    The provider answers ``continent/country/city/state/raw_address/position``; the registry
+    requires ``raw`` and knows ``city``/``region``/``country``/``country_code``. ``state`` is
+    ``region``. Writing the provider's own object straight through is what made every AI Ark HQ
+    claim land ``schema_valid=false`` on both live accounts — the value was right and its shape was
+    foreign. ``raw`` is the provider's ``raw_address``, which is the whole point of that key: the
+    source's own unparsed string.
 
     No ``raw_address`` means no claim: ``raw`` is the required key, and a location the provider
     never spelled out is not a location this field can hold.
@@ -350,7 +351,12 @@ def _hq_location(location: Mapping[str, Any] | None) -> JsonValue | None:
         {
             "raw": raw_address,
             "city": _dig(location, "city"),
+            # The provider's ``state`` is the registry's ``region``; the record carries no ISO code
+            # for either, so ``country_code`` appears only when the provider spelled one out —
+            # never from a name→code table (the mapper does not decide what a value means).
+            "region": _dig(location, "state"),
             "country": _dig(location, "country"),
+            "country_code": _dig(location, "country_code"),
         },
         keep=("raw",),
     )
