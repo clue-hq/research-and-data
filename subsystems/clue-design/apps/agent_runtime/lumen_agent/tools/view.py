@@ -87,16 +87,23 @@ def _latest_preview_png(tools: LumenDesignTools) -> Optional[Path]:
 
 
 def _asset_manifest_ids(tools: LumenDesignTools) -> list[str]:
-    """Every asset id this turn can view: the kit's, then the workspace library's.
+    """Asset ids available to this turn: kit, workspace library, then current scene.
 
     W1.1: the library half is the only DISCOVERY surface a scene turn has for a
     pre-generated asset — the manifest is looked up by id, never rendered into the
     prompt, so without it an agent that mistypes an id is told nothing useful.
-    The API caps the library manifest (see `SCENE_TURN_ASSET_LIBRARY_MAX`), so this
-    list stays short by construction."""
+    The current scene also contains assets generated after those startup
+    manifests were frozen. Discover only those registered ids, never store files.
+    """
     kit = tools.config.brand_kit_assets or {}
     library = tools.config.asset_library or {}
-    return sorted(kit.keys()) + sorted(set(library.keys()) - set(kit.keys()))
+    scene_assets = tools.scene.get("assets") or {}
+    manifest_ids = set(kit) | set(library)
+    return (
+        sorted(kit)
+        + sorted(set(library) - set(kit))
+        + sorted(set(scene_assets) - manifest_ids)
+    )
 
 
 def _reference_entries(tools: LumenDesignTools) -> list[tuple[int, str, dict]]:
@@ -200,7 +207,7 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
 
     - "preview" -> latest rendered PNG as [text, image]; text-only when none,
       or a stale-render refusal when the scene changed since the last render.
-    - "asset:<id>" -> that kit asset's preview thumbnail as [text, image];
+    - "asset:<id>" -> that kit, library, or current scene asset's preview as [text, image];
       text-only listing available ids when unknown/missing.
     Every call records a `view_called` trace event.
     """
@@ -243,18 +250,18 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
 
     if target.startswith("asset:"):
         asset_id = target[len("asset:"):]
-        # W1.1: two by-value manifests answer `asset:<id>` — the attached kit's
-        # assets, then the workspace ASSET LIBRARY. Before this, only the kit was
-        # consulted, so a pre-generated `asset_gen_*` background was invisible to a
-        # scene turn however real it was in the database (Apollo POC 2026-08-26,
-        # `.context/ref-ads-pilot-apollo-report.md` §6.1). Kit first: an id in both
-        # is a kit asset, and the kit entry carries the curated title/usage.
+        # Preserve the kit/library lookup order, then fall back to the current
+        # scene for assets generated after the by-value manifests were frozen.
+        # The same resolver keeps every source bound to this run's asset store.
         entry = (tools.config.brand_kit_assets or {}).get(asset_id)
         if not isinstance(entry, dict):
             entry = (tools.config.asset_library or {}).get(asset_id)
         resolved = None
-        record = entry.get("record") or {} if isinstance(entry, dict) else {}
         if isinstance(entry, dict):
+            record = entry.get("record") or {}
+        else:
+            record = (tools.scene.get("assets") or {}).get(asset_id) or {}
+        if record:
             resolved = tools._asset_preview_path(record)
         if resolved is None and record:
             # D3: a vector whose stored thumbnail is not pixels has no preview to
@@ -364,8 +371,9 @@ def make_view_tool(tools: LumenDesignTools):
     def view(target: str) -> list:
         """Look at real pixels. target="preview" returns the latest rendered PNG;
         target="asset:<asset_id>" returns that asset's source preview thumbnail —
-        a brand-kit asset OR one from this workspace's asset library (including
-        pre-generated imagery). Returns image content so you can judge by looking,
+        a brand-kit asset, a workspace library asset, or an asset registered in
+        the current scene (including newly generated imagery). Returns image
+        content so you can judge by looking,
         not by guessing from metadata."""
         # Containment (sweep A2): NOTHING inside view() — a provider-rejectable
         # image, an unreadable file, a corrupt/undecodable thumbnail — may
