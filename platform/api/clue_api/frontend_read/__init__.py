@@ -14,6 +14,7 @@ from clue_api.frontend_read.account_detail import (
     AccountProjectSection,
     read_account_detail,
 )
+from clue_api.frontend_read.account_workspace import read_account_workspace
 from clue_api.frontend_read.accounts_list import (
     AccountListResponse,
     AccountListRow,
@@ -68,5 +69,6 @@ __all__ = [
     "list_accounts",
     "list_accounts_v1",
     "read_account_detail",
+    "read_account_workspace",
     "read_prose",
 ]
