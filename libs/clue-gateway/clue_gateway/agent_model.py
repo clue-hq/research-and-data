@@ -7,6 +7,7 @@ import os
 import re
 import time
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol, cast, runtime_checkable
 
@@ -219,9 +220,16 @@ _GENERATION_PATH = "/generation"
 #: The ceiling on one lookup. Small on purpose: the call it prices has already been paid for, and
 #: the caller is holding a fleet lease.
 _COST_LOOKUP_TIMEOUT_S = 5.0
-#: One retry, and only for an upstream fault. A 404 means the meter has not caught up (or never
-#: will) and re-asking immediately would not change that.
+#: Exactly one retry, for the two failures that are plausibly momentary: an upstream fault, and a
+#: 404. A 404 is the *expected* live shape for a job's last round — the lookup runs the instant the
+#: completion returns and OpenRouter's meter can lag the response — so it is re-asked once rather
+#: than written off. Everything else (a malformed body, an auth failure) will answer the same way
+#: twice and is not worth a second call.
 _COST_LOOKUP_ATTEMPTS = 2
+#: How long to wait before re-asking about a generation the meter had not recorded yet. Long
+#: enough for the lag, short enough that the worst case (timeout + lag + timeout) stays well
+#: inside the fleet lease the caller is holding.
+_METER_LAG_BACKOFF_S = 1.0
 #: Ids LangChain mints for its own runs. They are not generation ids and must never be looked up.
 _LANGCHAIN_ID_PREFIXES = ("lc_run", "run-")
 
@@ -240,10 +248,18 @@ class GenerationCostLookup(Protocol):
     async def acost_cents(self, generation_id: str) -> Decimal | None: ...
 
 
+@dataclass(frozen=True)
+class _Retry:
+    """Ask again, after ``after_s`` seconds. Distinguishes "attempt again" from a real ``None``."""
+
+    after_s: float
+
+
 class OpenRouterGenerationCost:
     """``GET {base_url}/generation?id=…`` → ``data.total_cost`` (USD) as cents.
 
-    Bounded and silent by construction: one short request, one retry on 5xx, every failure
+    Bounded and silent by construction: one short request, one retry (immediately on an upstream
+    fault, after a second on a 404 — the meter can lag the response it prices), every failure
     swallowed into ``None`` after a ``gateway.cost_lookup_failed`` log that names the generation.
     Pricing a call must never be able to fail the call.
     """
@@ -254,12 +270,16 @@ class OpenRouterGenerationCost:
         base_url: str,
         api_key: SecretStr,
         timeout_s: float = _COST_LOOKUP_TIMEOUT_S,
+        # Overridable only so a test can assert the retry without really waiting a second for it.
+        # Production never passes it; the ceiling above is what bounds this in anger.
+        meter_lag_backoff_s: float = _METER_LAG_BACKOFF_S,
         http_client: Any | None = None,
         http_async_client: Any | None = None,
     ) -> None:
         self._url = f"{base_url.rstrip('/')}{_GENERATION_PATH}"
         self._api_key = api_key
         self._timeout_s = min(timeout_s, _COST_LOOKUP_TIMEOUT_S)
+        self._meter_lag_backoff_s = meter_lag_backoff_s
         self._http_client = http_client
         self._http_async_client = http_async_client
 
@@ -279,9 +299,11 @@ class OpenRouterGenerationCost:
                     )
             except Exception as error:  # noqa: BLE001 - pricing never fails the call it prices
                 return self._gave_up(generation_id, reason=repr(error))
-            retry = self._retry_or_result(response, generation_id, attempt=attempt)
-            if retry is not _RETRY:
-                return cast("Decimal | None", retry)
+            verdict = self._retry_or_result(response, generation_id, attempt=attempt)
+            if not isinstance(verdict, _Retry):
+                return verdict
+            if verdict.after_s:
+                time.sleep(verdict.after_s)
         return None  # pragma: no cover - the loop returns on its last attempt
 
     async def acost_cents(self, generation_id: str) -> Decimal | None:
@@ -298,9 +320,12 @@ class OpenRouterGenerationCost:
                         )
             except Exception as error:  # noqa: BLE001 - pricing never fails the call it prices
                 return self._gave_up(generation_id, reason=repr(error))
-            retry = self._retry_or_result(response, generation_id, attempt=attempt)
-            if retry is not _RETRY:
-                return cast("Decimal | None", retry)
+            verdict = self._retry_or_result(response, generation_id, attempt=attempt)
+            if not isinstance(verdict, _Retry):
+                return verdict
+            if verdict.after_s:
+                # Awaited, not slept: this runs on the loop the agent graph is driving.
+                await asyncio.sleep(verdict.after_s)
         return None  # pragma: no cover - the loop returns on its last attempt
 
     def _headers(self) -> dict[str, str]:
@@ -308,11 +333,18 @@ class OpenRouterGenerationCost:
 
     def _retry_or_result(
         self, response: Any, generation_id: str, *, attempt: int
-    ) -> Decimal | None | object:
-        """One attempt's verdict: a cost, an honest ``None``, or the ``_RETRY`` sentinel."""
+    ) -> Decimal | None | _Retry:
+        """One attempt's verdict: a cost, an honest ``None``, or "ask again after N seconds"."""
         status = int(getattr(response, "status_code", 0))
-        if status >= 500 and attempt < _COST_LOOKUP_ATTEMPTS:
-            return _RETRY
+        if attempt < _COST_LOOKUP_ATTEMPTS:
+            if status >= 500:
+                # An upstream fault: nothing to wait for, the next replica may just answer.
+                return _Retry(0.0)
+            if status == 404:
+                # The meter has not recorded this generation yet. Give it a moment — this is the
+                # ordinary shape for the last round of a job, where the lookup runs immediately
+                # after the completion returns.
+                return _Retry(self._meter_lag_backoff_s)
         if status != 200:
             return self._gave_up(generation_id, reason=f"http_{status}")
         try:
@@ -333,10 +365,6 @@ class OpenRouterGenerationCost:
         # reconciliation can fetch what this call could not.
         log.warning("gateway.cost_lookup_failed", generation_id=generation_id, reason=reason)
         return None
-
-
-#: Sentinel distinguishing "attempt again" from a real ``None`` verdict.
-_RETRY: object = object()
 
 
 def _generation_id(message: BaseMessage | None, payload: Mapping[str, Any] | None) -> str | None:

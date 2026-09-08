@@ -1165,7 +1165,6 @@ def test_the_generation_lookup_retries_an_upstream_fault_exactly_once() -> None:
 @pytest.mark.parametrize(
     "response",
     [
-        httpx.Response(404, text="not found"),
         httpx.Response(200, json={"data": {}}),
         httpx.Response(200, text="not json"),
     ],
@@ -1239,3 +1238,80 @@ def test_the_async_path_awaits_the_generation_lookup_rather_than_blocking_the_lo
     assert lookup.asked_async == ["gen-async-1"]
     assert Decimal(response.response_metadata["clue_cost_cents"]) == Decimal("7.89")
     assert response.response_metadata["clue_cost_source"] == "metered"
+
+
+def _lagging_meter(*, backoff_s: float = 0.0, **kwargs: Any) -> OpenRouterGenerationCost:
+    return OpenRouterGenerationCost(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=SecretStr("test-openrouter-key"),
+        meter_lag_backoff_s=backoff_s,
+        **kwargs,
+    )
+
+
+def test_the_generation_lookup_retries_a_404_once_because_the_meter_can_lag_the_response() -> None:
+    """A 404 is the ordinary shape for a job's last round: the lookup runs the instant the
+    completion returns, and OpenRouter has not finished recording the generation yet."""
+
+    client, seen = _generation_transport(
+        [
+            httpx.Response(404, text="not found"),
+            httpx.Response(200, json={"data": {"total_cost": 0.0456}}),
+        ]
+    )
+
+    assert _lagging_meter(http_client=client).cost_cents("gen-abc123") == Decimal("4.5600")
+    assert len(seen) == 2, "asked once, waited, asked again"
+
+
+def test_a_meter_that_never_records_the_generation_gives_up_after_the_second_ask() -> None:
+    client, seen = _generation_transport(
+        [httpx.Response(404, text="not found"), httpx.Response(404, text="not found")]
+    )
+
+    assert _lagging_meter(http_client=client).cost_cents("gen-abc123") is None
+    assert len(seen) == 2, "exactly one retry — never a third ask"
+
+
+def test_a_lagging_meter_still_lands_a_metered_cost_on_the_message() -> None:
+    """End to end over the real lookup: the 404 the first ask gets must not cost the job its
+    money truth."""
+
+    client, _ = _generation_transport(
+        [
+            httpx.Response(404, text="not found"),
+            httpx.Response(200, json={"data": {"total_cost": 0.0456}}),
+        ]
+    )
+    model = _governed(
+        {"prompt_tokens": 100, "completion_tokens": 20},
+        lookup=_lagging_meter(http_client=client),
+        response_id="gen-abc123",
+    )
+
+    response = model.invoke("What did that cost?")
+
+    assert Decimal(response.response_metadata["clue_cost_cents"]) == Decimal("4.56")
+    assert response.response_metadata["clue_cost_source"] == "metered"
+
+
+def test_the_async_lookup_awaits_the_lag_rather_than_blocking_and_still_retries_once() -> None:
+    """The production path again: the ARV2 loop is async, so the second ask must come after an
+    awaited pause, not a blocking one."""
+
+    seen: list[httpx.Request] = []
+    responses = [
+        httpx.Response(404, text="not found"),
+        httpx.Response(200, json={"data": {"total_cost": 0.0456}}),
+    ]
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return responses[min(len(seen) - 1, len(responses) - 1)]
+
+    async def ask() -> Decimal | None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            return await _lagging_meter(http_async_client=client).acost_cents("gen-abc123")
+
+    assert asyncio.run(ask()) == Decimal("4.5600")
+    assert len(seen) == 2
