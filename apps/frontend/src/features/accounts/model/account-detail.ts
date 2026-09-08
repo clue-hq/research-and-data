@@ -62,14 +62,14 @@ export const AccountDetailSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   previewTitle: z.string().min(1),
-  logoPath: z.string().startsWith("/"),
-  websiteUrl: HttpUrlSchema,
+  logoPath: z.string().startsWith("/").nullable(), // D0 ruling S2
+  websiteUrl: HttpUrlSchema.nullable(), // D3 ruling (source map: null when no primary_domain)
   websiteLabel: z.string().min(1),
   researchStatus: ResearchStatusSchema,
   researchStatusLabel: z.string().min(1).optional(),
   owner: AccountOwnerSchema.nullish(),
   createdBy: AccountOwnerSchema.nullish(),
-  industryLabels: z.array(z.string().min(1)).min(1),
+  industryLabels: z.array(z.string().min(1)).default([]), // D0 ruling S5
   headcountLabel: z.string().min(1),
   locationsLabel: z.string().min(1),
   revenueLabel: z.string().min(1),
@@ -81,9 +81,9 @@ export const AccountDetailSchema = z.object({
   lastModifiedAt: z.string().datetime(),
   socials: z.array(AccountSocialSchema).default([]),
   customFields: z.array(AccountCustomFieldSchema).default([]),
-  overallFit: AccountFitSchema,
-  summaryParagraphs: z.array(z.string().min(1)).min(1),
-  businessParagraphs: z.array(z.string().min(1)).min(1),
+  overallFit: AccountFitSchema.nullable(), // D0 ruling R7
+  summaryParagraphs: z.array(z.string().min(1)).default([]), // D0 ruling S5
+  businessParagraphs: z.array(z.string().min(1)).default([]), // D0 ruling S5
   fitCriteria: z.array(AccountFitCriterionSchema),
   contacts: z.array(AccountContactSchema),
   insights: z.array(AccountInsightSchema),

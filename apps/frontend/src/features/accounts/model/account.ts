@@ -1,11 +1,13 @@
 import { z } from "zod";
 import { HttpUrlSchema } from "./research-display";
 
+// D0 ruling S11: adopt the backend's five values; drop "fully_enriched" / "failed".
 export const ResearchStatusSchema = z.enum([
   "not_started",
   "in_progress",
-  "fully_enriched",
-  "failed",
+  "needs_review",
+  "completed",
+  "suspended",
 ]);
 
 export const AccountFitSchema = z.enum(["High", "Medium", "Low"]);
@@ -44,12 +46,12 @@ export const AccountCustomFieldSchema = z.object({
 export const AccountSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  logoPath: z.string().startsWith("/"),
-  websiteUrl: HttpUrlSchema,
+  logoPath: z.string().startsWith("/").nullable(), // D0 ruling S2
+  websiteUrl: HttpUrlSchema.nullable(), // D3 ruling (source map: null when no primary_domain)
   researchStatus: ResearchStatusSchema,
   researchStatusLabel: z.string().min(1).optional(),
   researchIsRefreshing: z.boolean().default(false),
-  overallFit: AccountFitSchema,
+  overallFit: AccountFitSchema.nullable(), // D0 ruling R7
   fitScore: z.number().int().min(0).max(100).nullable(),
   revenueBand: z.string().min(1),
   employeeBand: z.string().min(1),

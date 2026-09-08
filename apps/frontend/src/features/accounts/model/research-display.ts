@@ -96,7 +96,9 @@ export const BuyingCommitteeMemberSchema = z.object({
   persona: z.string().min(1),
   email: z.string().email().nullable(),
   emailClaimId: z.string().min(1).nullable(),
-  linkedinUrl: HttpUrlSchema,
+  // D3 ruling: a committee member resolved from a coverage row may have no LinkedIn URL;
+  // the dummy renders the link only when present.
+  linkedinUrl: HttpUrlSchema.nullable(),
   whyTheyMatter: z.string().min(1),
 });
 

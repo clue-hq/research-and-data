@@ -27,7 +27,7 @@ export const ContactPersonaToneSchema = z.enum([
 export const AccountContactSummarySchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  title: z.string().min(1),
+  title: z.string().min(1).nullable(), // D0 ruling S7
   persona: z.string().min(1),
   personaTone: ContactPersonaToneSchema,
   influence: z.enum(["High", "Medium", "Low"]),
@@ -55,13 +55,14 @@ export const ContactEvidenceSchema = z.object({
 export const AccountContactDetailSchema = AccountContactSummarySchema.extend({
   accountId: z.string().min(1),
   accountName: z.string().min(1),
-  accountLogoPath: z.string().startsWith("/"),
+  accountLogoPath: z.string().startsWith("/").nullable(), // D0 ruling S2
   recentSignalsLabel: z.string().min(1),
   linkedinLabel: z.string().min(1),
   linkedinUrl: HttpUrlSchema,
   xLabel: z.string().min(1).optional(),
   xUrl: HttpUrlSchema.optional(),
   emailVerifiedAt: z.string().date().optional(),
+  emailClaimId: z.string().min(1).nullable().default(null), // D0 ruling R5
   locationLabel: z.string().min(1).optional(),
   bestFirstChannelLabel: z.string().min(1).optional(),
   educationLabel: z.string().min(1).optional(),
@@ -71,10 +72,11 @@ export const AccountContactDetailSchema = AccountContactSummarySchema.extend({
   linkedinCreator: z.boolean().optional(),
   locationClaimId: z.string().optional(),
   reports: z.array(ResearchContactReferenceSchema).default([]),
-  overviewParagraphs: z.array(z.string().min(1)).min(1),
+  overviewParagraphs: z.array(z.string().min(1)).default([]), // D0 ruling S5
   evidence: z.array(ContactEvidenceSchema),
   researchEvidence: z.array(ResearchEvidenceSchema).default([]),
   contactDisplay: ResearchDisplayBlockSchema.optional(),
+  lastModifiedAt: z.string().datetime(), // D0 ruling R8 (the contact's own latest verifiedAt)
 });
 
 export const AccountContactsResponseSchema = z.object({

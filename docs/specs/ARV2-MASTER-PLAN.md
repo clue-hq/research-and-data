@@ -278,8 +278,9 @@ frontend-owned and travel with the re-lift.
 **As built (D3, 2026-09-08) — contract v1 is executable.** The five payloads above are no
 longer prose: they are pydantic models in `platform/api/clue_api/frontend_read/contract_v1.py`
 (strict, alias-serialised, required-nullable vs absent-optional mirrored field for field) checked
-against the frontend's **own** Zod, vendored under `tests/api/contract_v1/zod/` and run for real
-through the dummy's `zod` package by `tests/api/contract_v1/oracle.py` — so "the payload matches the
+against the frontend's **own** Zod — vendored under `tests/api/contract_v1/zod/` at D3 and moved to
+`apps/frontend/src/features/accounts/model/` by the D4 re-lift — run for real through
+`apps/frontend`'s `zod` package by `tests/api/contract_v1/oracle.py` — so "the payload matches the
 contract" is a test, not a reading. They are served under **`?contract=v1`** beside the untouched
 FI-2 payloads (source map §1); D4 re-points the adapters and deletes the FI-2 branches and the
 parameter together. The §8 D0-a amendments are **staged in the vendored copy**, marked `// D3
