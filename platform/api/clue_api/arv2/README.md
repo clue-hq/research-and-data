@@ -526,7 +526,7 @@ it under, not defects in it.
   that lies about all three is still read into memory once. A streaming/size-capped transport
   (`send_to(request, sink, max_bytes)`) is R2 work.
 
-## O4 — the synthesis turn (`clue_api/onboarding_synthesis_wiring.py`)
+## O4 — the synthesis turns (`clue_api/onboarding_synthesis_wiring.py`)
 
 The step that turns the brand's onboarding research into audience documents. It is **not** in this
 package: composing one governed deepagent turn means touching the agent/execution substrate, which
@@ -553,9 +553,13 @@ Two things worth knowing before touching it:
 
 - **The flat skill file is a duplicate on purpose.** `platform/agents/skills/audience-persona-v1/SKILL.md`
   exists only so the execution layer's flat skill discovery can resolve the `skill` pin the recipe
-  requires. **The catalog copy — `platform/agents/catalog/skills/audience-persona/v1/SKILL.md` — is
-  authoritative**: it is the sha-pinned resource the profile carries and the agent actually reads.
-  Edit the catalog file; the flat one is a pin stub and says so in its own body.
+  requires — that pin is `audience-persona@v1` and stays there. **The catalog copy is
+  authoritative**: it is the sha-pinned resource the profile carries and the agent actually reads,
+  and since the synthesis split that is
+  `platform/agents/catalog/skills/audience-persona/v2/SKILL.md` (`onboarding-synthesis@v2` pins the
+  two `v2` skills; the `v1` profile is `retired`). Edit the catalog file the active profile pins;
+  the flat one is a pin stub and says so in its own body — where it still names the `v1` catalog
+  path, harmless but stale, left alone so the recipe's discovery digest is not disturbed.
 - **`build_toolbelt(secrets=...)` is fail-closed.** The default `secrets=None` means *no
   credentials*, so `exa_search_evidence@1` registers but refuses `exa_not_configured` before any
   spend — deliberate, so no test toolbelt composes a live billable Exa client off a stray `.env`
