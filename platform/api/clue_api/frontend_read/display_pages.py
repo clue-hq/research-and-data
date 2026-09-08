@@ -166,6 +166,7 @@ class DisplayPages:
         subject_kind: SubjectKind,
         subject_id: str,
         page: Page,
+        generate: bool = True,
     ) -> PageRead:
         """This subject's page: stored sections always, missing ones written when we can.
 
@@ -174,6 +175,16 @@ class DisplayPages:
         :class:`~clue_api.arv2.display.gather.SubjectNotFound` rather than being paid for; the ids
         it yields are also what the staleness scan watches, since a section mixing account and
         contact keys goes stale when either side moves.
+
+        ``generate=False`` makes this read a **pure projection with no side effects**, whatever the
+        seam is configured to do: no ``ensure_page`` call, and no background rewrite scheduled
+        either. It exists for callers that need to know what a page *says* without being a reason
+        for it to be written — the evidence route asks this seam which claims the page cites in
+        order to decide whether a caller may stream one, and an authorisation check must never be
+        a spend path (nor a scheduler: a GET that authorises must be safe to retry). ``generated``
+        is then empty and ``degraded_reason`` is ``None``, because nothing was attempted; ``stale``
+        is still computed and reported, since saying so costs nothing and a caller may want to
+        know. A read that *does* want the page repaired simply leaves ``generate`` at its default.
         """
         recipes = await read_recipes(conn, page, workspace_id=workspace_id)
         expansion = await _expansion(
@@ -182,7 +193,7 @@ class DisplayPages:
 
         generated: tuple[str, ...] = ()
         degraded_reason: str | None = None
-        if self._runner_factory is not None:
+        if generate and self._runner_factory is not None:
             try:
                 result = await ensure_page(
                     conn,
@@ -226,7 +237,7 @@ class DisplayPages:
             blocks=blocks,
         )
         stale_keys = tuple(entry.section_key for entry in stale)
-        if stale_keys:
+        if stale_keys and generate:
             self.schedule_regeneration(
                 workspace_id=workspace_id,
                 subject_kind=subject_kind,

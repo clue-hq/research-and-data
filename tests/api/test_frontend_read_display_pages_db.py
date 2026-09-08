@@ -224,6 +224,103 @@ def test_the_first_read_generates_the_page_and_the_second_serves_it_unpaid() -> 
     run_async(_run())
 
 
+# -- (b2) generate=False: a stored-only read, with no spend and no side effect -------------------
+
+
+def test_generation_can_be_refused_per_read_so_an_authorisation_check_never_spends() -> None:
+    """``generate=False`` is a pure projection *whatever the seam is configured to do*.
+
+    The evidence route asks this seam which claims a page cites in order to decide whether a
+    caller may stream one. That question must not be a reason to write the page: an authorisation
+    check that spends money is a denial-of-wallet, and one that schedules a background rewrite
+    makes a GET unsafe to retry. So with a live runner in hand and every section unwritten, this
+    read must call nothing, schedule nothing, and still answer honestly about what is stored.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            seeded = await seed_display_fixture(conn, workspace_id=WORKSPACE)
+            transport = RoutingTransport()
+            pages = _pages(conn, runner_factory=_factory(transport))
+            assert pages.generates is True, "the runner really exists, or this proves nothing"
+
+            read = await pages.page(
+                conn,
+                workspace_id=seeded.workspace_id,
+                subject_kind="contact",
+                subject_id=str(seeded.nick),
+                page="contact",
+                generate=False,
+            )
+
+            assert transport.sections == [], "no provider call may be made to authorise a read"
+            assert read.generated == ()
+            assert read.degraded_reason is None
+            # The page grammar is still served, honestly empty.
+            assert [section["key"] for section in _sections(read)] == list(CONTACT_SECTIONS)
+            assert all(section["empty"] for section in _sections(read))
+            assert read.cited_claim_ids == ()
+            # Nothing was scheduled either: ``drain`` is a no-op because there is no task table.
+            assert pages._regenerating == {}
+            await pages.drain()
+            assert transport.sections == []
+            assert await _retired_blocks(conn, seeded.workspace_id) == 0
+
+            # ...and the same seam still generates when a read asks it to, so the refusal is the
+            # caller's decision and not a broken runner.
+            paid = await _contact_page(pages, conn, seeded)
+            assert paid.generated == CONTACT_SECTIONS
+
+    run_async(_run())
+
+
+def test_a_stale_page_read_with_generate_false_reports_staleness_and_schedules_nothing() -> None:
+    """The other half of the no-side-effects promise: a stale section is *reported*, not repaired.
+
+    A normal read schedules the background rewrite; a ``generate=False`` read must not, or an
+    evidence request would keep paying for a page nobody asked to see.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            seeded = await seed_display_fixture(conn, workspace_id=WORKSPACE)
+            transport = RoutingTransport()
+            pages = _pages(conn, runner_factory=_factory(transport))
+            written = await _contact_page(pages, conn, seeded)
+            assert written.generated == CONTACT_SECTIONS
+
+            # Move the research underneath the written page.
+            await write_claim(
+                conn,
+                seeded.claims,
+                label="fresh_hobby",
+                workspace_id=seeded.workspace_id,
+                entity_id=seeded.nick,
+                entity_type=EntityType.CONTACT,
+                field_key="contact.facet.hobby",
+                value_json=["Restoring a 1972 Alfa Romeo"],
+                extraction_method=ExtractionMethod.SCRAPE,
+            )
+            written_calls = len(transport.sections)
+
+            read = await pages.page(
+                conn,
+                workspace_id=seeded.workspace_id,
+                subject_kind="contact",
+                subject_id=str(seeded.nick),
+                page="contact",
+                generate=False,
+            )
+
+            assert read.stale, "the page really is stale"
+            assert read.generated == ()
+            assert pages._regenerating == {}
+            await pages.drain()
+            assert len(transport.sections) == written_calls, "no rewrite was paid for"
+
+    run_async(_run())
+
+
 # -- (c) a halted provider degrades the page, it never breaks the request ------------------------
 
 

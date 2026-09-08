@@ -1014,7 +1014,8 @@ def register_account_detail_routes(
         contact claim at all, and an overview section legitimately speaks about the committee — so
         authorising against one of them would make an evidence chip the ARV2 page renders open
         onto a 404. The v1 half is consulted only after the FI-2 half declines, so an FI-2-only
-        deployment pays nothing for it.
+        deployment pays nothing for it — and it is consulted with ``generate=False``, so
+        authorising a request can neither write a page nor schedule one.
         """
 
         if evidence_storage is None:
@@ -1050,13 +1051,16 @@ def register_account_detail_routes(
             )
             if not authorized:
                 # ``detail.id`` is the survivor, so a merged-loser url authorises against the page
-                # the caller would actually be looking at.
+                # the caller would actually be looking at. ``generate=False`` is load-bearing: an
+                # authorisation check must never be a spend path, so this asks only what the
+                # **stored** blocks cite and neither writes a section nor schedules a rewrite.
                 page = await display.page(
                     conn,
                     workspace_id=workspace_id,
                     subject_kind="account",
                     subject_id=str(detail.id),
                     page=OVERVIEW_PAGE,
+                    generate=False,
                 )
                 authorized = str(claim_id) in page.cited_claim_ids
             if not authorized:

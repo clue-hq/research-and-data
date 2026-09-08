@@ -40,7 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.catalog_seed import load_arv2_pack
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
-from clue_api.arv2.display.blocks import insert_block
+from clue_api.arv2.display.blocks import insert_block, supersede_blocks
 from clue_api.arv2.display.gather import SectionInput
 from clue_api.arv2.display.recipes import load_display_recipes, recipes_for
 from clue_api.arv2.display.render import display_claim
@@ -2374,5 +2374,52 @@ def test_a_claim_cited_only_by_the_v1_page_is_authorised_for_the_evidence_stream
             assert crossed.status_code == 404
             # The union widens authorisation, it does not remove it.
             assert uncited.status_code == 404
+
+    run_async(scenario())
+
+
+def test_the_evidence_route_authorises_against_stored_display_blocks_only() -> None:
+    """The evidence stream has no ``?contract`` parameter — it serves both contracts' readers — and
+    its v1 half asks the display seam with ``generate=False``.
+
+    So authorisation follows what is **stored**: retire the section that cites the claim and the
+    same request is refused, rather than the route rebuilding the page to find a reason to say yes.
+    An authorisation check that can write a page is a spend path, and a GET that schedules work is
+    not safe to retry.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = _MemoryStorage({_TITLE_ARTIFACT_KEY: _TITLE_ARTIFACT_BODY})
+            fixture = await _build_v1(conn)
+            contact_claim_id = fixture.cited_claim_ids[1]
+            path = f"{_BASE}/{fixture.zafran}/evidence/{contact_claim_id}"
+
+            async with _client(_app(conn, evidence_storage=storage)) as client:
+                cited = await client.get(path, headers={"X-Workspace-Id": _WS})
+            assert cited.status_code == 200
+
+            await supersede_blocks(
+                conn,
+                workspace_id=_WS,
+                subject_kind="account",
+                subject_id=str(fixture.zafran),
+                page="overview",
+                section_keys=["what-they-do"],
+                now=datetime.now(UTC),
+            )
+            async with _client(_app(conn, evidence_storage=storage)) as client:
+                uncited = await client.get(path, headers={"X-Workspace-Id": _WS})
+                detail = await client.get(
+                    f"{_BASE}/{fixture.zafran}",
+                    params={"contract": "v1"},
+                    headers={"X-Workspace-Id": _WS},
+                )
+
+            assert uncited.status_code == 404
+            assert uncited.json()["error"]["code"] == "EVIDENCE_NOT_FOUND"
+            # The page really is unwritten now — nothing regenerated it behind the request.
+            sections = _overview(detail.json()["data"])
+            assert sections["what-they-do"]["empty"] is True
 
     run_async(scenario())
