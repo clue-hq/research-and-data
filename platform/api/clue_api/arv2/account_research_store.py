@@ -1,0 +1,428 @@
+"""Row transitions of the R2 account-research substrate (``a3602967bb73``; master plan §5).
+
+One function per transition, each honouring the CHECKs the migration installed: a job's status and
+its ``finished_at`` move together, ``needs_review`` is the only status that carries a failure code,
+and a run's status is *derived* from its jobs rather than set by whoever finished one — a run is
+"in progress" while any account still has work, "needs review" when one of them ended flagged, and
+"completed" only when every job did.
+
+One job per account (the migration's ruling): an account that fails takes only itself down. So the
+run row is a launch record — what the request was pinned to — and the jobs are the moving parts.
+Nothing here calls a provider or an agent.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+from typing import Any, Literal
+from uuid import UUID
+
+from sqlalchemy import RowMapping, text
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from clue_core import decode_jsonb
+
+__all__ = [
+    "UNSPECIFIED_FAILURE",
+    "JobRow",
+    "JobStatus",
+    "RunRow",
+    "TerminalJob",
+    "begin_job",
+    "create_job",
+    "create_run",
+    "finish_job",
+    "list_jobs",
+    "read_job",
+    "read_run",
+    "record_annotations",
+    "refresh_run_status",
+    "suspend_job",
+]
+
+#: The seam-1 states, shared by runs and jobs so a reader learns one vocabulary.
+JobStatus = Literal["not_started", "in_progress", "needs_review", "completed", "suspended"]
+
+#: The two statuses a job can *finish* on. ``suspended`` is a pause, not a terminal.
+TerminalJob = Literal["completed", "needs_review"]
+
+#: What a ``needs_review`` job records when its caller named no reason. The CHECK is biconditional,
+#: so "flagged with no code" is not a row the database will take; an honest placeholder beats an
+#: IntegrityError on the one path that exists to surface a problem to a human.
+UNSPECIFIED_FAILURE = "unspecified"
+
+_RUN_COLUMNS = (
+    "run_id, workspace_id, project_id, brand_id, project_run_id, icp_artifact_key, "
+    "icp_artifact_sha256, icp_key, icp_version, product_selection_version, effort, "
+    "committee_cap, directive_text, profile_ref, profile_sha256, requested_by_user_id, "
+    "request_sha256, status, created_at, finished_at"
+)
+
+#: The run's status, derived from its jobs in one statement so two drivers finishing two accounts
+#: at the same time cannot compute it from stale reads. ``array_agg`` over a run with no jobs is
+#: NULL, which would make every ``= ANY`` comparison NULL and land the run on ``completed`` with a
+#: NULL ``finished_at`` (an illegal row) — the COALESCE makes the empty run legally completed.
+_REFRESH_RUN = text(
+    """
+    WITH s AS (
+        SELECT COALESCE(array_agg(status), ARRAY[]::text[]) AS statuses
+        FROM arv2_research_job WHERE run_id = :run_id
+    )
+    UPDATE arv2_research_run r SET status = CASE
+        WHEN 'in_progress' = ANY(s.statuses) THEN 'in_progress'
+        WHEN 'not_started' = ANY(s.statuses) THEN CASE
+            WHEN 'completed' = ANY(s.statuses) OR 'needs_review' = ANY(s.statuses)
+            THEN 'in_progress' ELSE 'not_started' END
+        WHEN 'suspended' = ANY(s.statuses) THEN 'suspended'
+        WHEN 'needs_review' = ANY(s.statuses) THEN 'needs_review'
+        ELSE 'completed' END,
+      finished_at = CASE
+        WHEN NOT ('in_progress' = ANY(s.statuses) OR 'not_started' = ANY(s.statuses)
+                  OR 'suspended' = ANY(s.statuses))
+        THEN now() ELSE NULL END
+    FROM s WHERE r.run_id = :run_id RETURNING r.status
+    """
+)
+
+
+@dataclass(frozen=True)
+class RunRow:
+    """One launched research request, with everything the launch was pinned to.
+
+    The pins (the ICP artifact and its sha, the ICP key/version, the product selection version, the
+    profile ref and its sha, the request sha) are what make a run replayable against exactly the
+    inputs a human signed off on, rather than whatever recon has since advanced to.
+    """
+
+    run_id: UUID
+    workspace_id: str
+    project_id: str
+    brand_id: str
+    project_run_id: UUID
+    icp_artifact_key: str
+    icp_artifact_sha256: str
+    icp_key: str
+    icp_version: int
+    product_selection_version: int
+    effort: str
+    committee_cap: int
+    directive_text: str
+    profile_ref: str
+    profile_sha256: str
+    requested_by_user_id: str
+    request_sha256: str
+    status: JobStatus = "not_started"
+    created_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class JobRow:
+    """One account inside a run. ``finalization`` is the decoded ``finalization_json`` payload."""
+
+    job_id: UUID
+    run_id: UUID
+    workspace_id: str
+    account_entity_id: UUID
+    status: JobStatus
+    attempt: int
+    started_at: datetime | None
+    finished_at: datetime | None
+    finalization: dict[str, Any] | None
+    failure_code: str | None
+    failure_message: str | None
+    model_rounds: int
+    tool_calls: int
+    cost_usd: Decimal
+    credits: Decimal
+    media_seconds: int
+
+
+async def create_run(conn: AsyncConnection, row: RunRow) -> bool:
+    """Insert the launch record. Returns whether it was inserted (a re-launch of the same id is a
+    no-op, never a second run against the same signed-off request)."""
+    result = await conn.execute(
+        text(
+            f"INSERT INTO arv2_research_run ({_RUN_COLUMNS}) VALUES ("
+            " :run_id, :workspace_id, :project_id, :brand_id, :project_run_id, :icp_artifact_key, "
+            " :icp_artifact_sha256, :icp_key, :icp_version, :product_selection_version, :effort, "
+            " :committee_cap, :directive_text, :profile_ref, :profile_sha256, "
+            " :requested_by_user_id, :request_sha256, :status, COALESCE(:created_at, now()), "
+            " :finished_at) ON CONFLICT (run_id) DO NOTHING"
+        ),
+        {
+            "run_id": row.run_id,
+            "workspace_id": row.workspace_id,
+            "project_id": row.project_id,
+            "brand_id": row.brand_id,
+            "project_run_id": row.project_run_id,
+            "icp_artifact_key": row.icp_artifact_key,
+            "icp_artifact_sha256": row.icp_artifact_sha256,
+            "icp_key": row.icp_key,
+            "icp_version": row.icp_version,
+            "product_selection_version": row.product_selection_version,
+            "effort": row.effort,
+            "committee_cap": row.committee_cap,
+            "directive_text": row.directive_text,
+            "profile_ref": row.profile_ref,
+            "profile_sha256": row.profile_sha256,
+            "requested_by_user_id": row.requested_by_user_id,
+            "request_sha256": row.request_sha256,
+            "status": row.status,
+            "created_at": row.created_at,
+            "finished_at": row.finished_at,
+        },
+    )
+    return result.rowcount == 1
+
+
+async def create_job(
+    conn: AsyncConnection,
+    *,
+    job_id: UUID,
+    run_id: UUID,
+    workspace_id: str,
+    account_entity_id: UUID,
+) -> bool:
+    """Queue one account. Returns whether the row was inserted.
+
+    ``arv2_research_job_once`` is unique on ``(run_id, account_entity_id)``, so re-queuing an
+    account in the same run is refused there too — this conflict clause makes both spellings of
+    "already queued" the same quiet ``False`` rather than one no-op and one IntegrityError.
+    """
+    result = await conn.execute(
+        text(
+            "INSERT INTO arv2_research_job (job_id, run_id, workspace_id, account_entity_id) "
+            "VALUES (:job_id, :run_id, :workspace_id, :account_entity_id) "
+            "ON CONFLICT DO NOTHING"
+        ),
+        {
+            "job_id": job_id,
+            "run_id": run_id,
+            "workspace_id": workspace_id,
+            "account_entity_id": account_entity_id,
+        },
+    )
+    return result.rowcount == 1
+
+
+async def begin_job(conn: AsyncConnection, *, job_id: UUID) -> JobRow | None:
+    """Claim a job for this attempt: ``not_started``/``suspended`` → ``in_progress``.
+
+    Guarded on those two statuses so a re-delivered fleet task can neither restart a job another
+    worker is driving nor revive a finished one; ``None`` says "not mine to run", which is a
+    normal outcome of a redelivery, not an error.
+    """
+    row = (
+        (
+            await conn.execute(
+                text(
+                    "UPDATE arv2_research_job SET status = 'in_progress', attempt = attempt + 1, "
+                    " started_at = now(), updated_at = now() "
+                    "WHERE job_id = :job_id AND status IN ('not_started', 'suspended') RETURNING *"
+                ),
+                {"job_id": job_id},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    return _job(row) if row is not None else None
+
+
+async def finish_job(
+    conn: AsyncConnection,
+    *,
+    job_id: UUID,
+    status: TerminalJob,
+    finalization: dict[str, Any],
+    failure_code: str | None = None,
+    failure_message: str | None = None,
+    model_rounds: int,
+    tool_calls: int,
+    cost_usd: Decimal,
+    credits: Decimal,
+    media_seconds: int,
+) -> None:
+    """Land a job on a terminal status with its finalization and its spend.
+
+    ``arv2_research_job_failure`` is biconditional, so the code is derived from the status rather
+    than trusted from the caller: a ``completed`` job drops any failure pair it was handed, and a
+    ``needs_review`` job that named no code records :data:`UNSPECIFIED_FAILURE`.
+    """
+    code = (failure_code or UNSPECIFIED_FAILURE) if status == "needs_review" else None
+    await conn.execute(
+        text(
+            "UPDATE arv2_research_job SET status = :status, finished_at = now(), "
+            " finalization_json = CAST(:finalization AS jsonb), failure_code = :code, "
+            " failure_message = :message, model_rounds = :model_rounds, tool_calls = :tool_calls, "
+            " cost_usd = :cost_usd, credits = :credits, media_seconds = :media_seconds, "
+            " updated_at = now() WHERE job_id = :job_id"
+        ),
+        {
+            "status": status,
+            "finalization": _dump_json(finalization),
+            "code": code,
+            "message": failure_message if code is not None else None,
+            "model_rounds": int(model_rounds),
+            "tool_calls": int(tool_calls),
+            "cost_usd": cost_usd,
+            "credits": credits,
+            "media_seconds": int(media_seconds),
+            "job_id": job_id,
+        },
+    )
+
+
+async def suspend_job(conn: AsyncConnection, *, job_id: UUID) -> None:
+    """Park a job for requeue (a lost lease, a stop request, a run-level pause).
+
+    Guarded off the terminal statuses so the requeue path can never walk a finished job back into
+    the queue — and so the biconditional ``finished_at`` CHECK stays satisfied without this
+    function having to clear a column it does not own.
+    """
+    await conn.execute(
+        text(
+            "UPDATE arv2_research_job SET status = 'suspended', updated_at = now() "
+            "WHERE job_id = :job_id AND status NOT IN ('completed', 'needs_review')"
+        ),
+        {"job_id": job_id},
+    )
+
+
+async def refresh_run_status(conn: AsyncConnection, *, run_id: UUID) -> str:
+    """Recompute the run's status from its jobs and return it; sets ``finished_at`` iff terminal.
+
+    Called after every job transition, so the run row is never a second opinion about its jobs.
+    """
+    return str((await conn.execute(_REFRESH_RUN, {"run_id": run_id})).scalar_one())
+
+
+async def read_run(conn: AsyncConnection, *, run_id: UUID) -> RunRow | None:
+    row = (
+        (
+            await conn.execute(
+                text(f"SELECT {_RUN_COLUMNS} FROM arv2_research_run WHERE run_id = :run_id"),
+                {"run_id": run_id},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    return _run(row) if row is not None else None
+
+
+async def read_job(conn: AsyncConnection, *, job_id: UUID) -> JobRow | None:
+    row = (
+        (
+            await conn.execute(
+                text("SELECT * FROM arv2_research_job WHERE job_id = :job_id"), {"job_id": job_id}
+            )
+        )
+        .mappings()
+        .first()
+    )
+    return _job(row) if row is not None else None
+
+
+async def list_jobs(conn: AsyncConnection, *, run_id: UUID) -> tuple[JobRow, ...]:
+    """Every job of a run, oldest first — the order the driver queued the accounts in."""
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT * FROM arv2_research_job WHERE run_id = :run_id "
+                    "ORDER BY created_at, job_id"
+                ),
+                {"run_id": run_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(_job(row) for row in rows)
+
+
+async def record_annotations(
+    conn: AsyncConnection,
+    *,
+    job_id: UUID,
+    claim_ids_by_verdict: Mapping[str, Sequence[UUID]],
+) -> int:
+    """Write the link-audit verdict for each claim; returns how many annotations were written.
+
+    An annotation is a *check result*, never the claim's own value, which is why it is a row beside
+    the claim rather than an edit to append-only history.
+    """
+    params = [
+        {"claim_id": claim_id, "job_id": job_id, "verdict": verdict}
+        for verdict, claim_ids in claim_ids_by_verdict.items()
+        for claim_id in claim_ids
+    ]
+    if not params:
+        return 0
+    await conn.execute(
+        text(
+            "INSERT INTO arv2_claim_annotation (claim_id, job_id, kind, verdict) "
+            "VALUES (:claim_id, :job_id, 'link_audit', :verdict)"
+        ),
+        params,
+    )
+    return len(params)
+
+
+def _dump_json(payload: Mapping[str, Any]) -> str:
+    """The finalization payload as jsonb text. ``default=str`` so a Decimal or a datetime the
+    driver put in its finalization is stored rather than raising at the last step of a job."""
+    return json.dumps(dict(payload), sort_keys=True, default=str)
+
+
+def _run(row: RowMapping) -> RunRow:
+    return RunRow(
+        run_id=row["run_id"],
+        workspace_id=row["workspace_id"],
+        project_id=row["project_id"],
+        brand_id=row["brand_id"],
+        project_run_id=row["project_run_id"],
+        icp_artifact_key=row["icp_artifact_key"],
+        icp_artifact_sha256=row["icp_artifact_sha256"],
+        icp_key=row["icp_key"],
+        icp_version=row["icp_version"],
+        product_selection_version=row["product_selection_version"],
+        effort=row["effort"],
+        committee_cap=row["committee_cap"],
+        directive_text=row["directive_text"],
+        profile_ref=row["profile_ref"],
+        profile_sha256=row["profile_sha256"],
+        requested_by_user_id=row["requested_by_user_id"],
+        request_sha256=row["request_sha256"],
+        status=row["status"],
+        created_at=row["created_at"],
+        finished_at=row["finished_at"],
+    )
+
+
+def _job(row: RowMapping) -> JobRow:
+    finalization = decode_jsonb(row["finalization_json"])
+    return JobRow(
+        job_id=row["job_id"],
+        run_id=row["run_id"],
+        workspace_id=row["workspace_id"],
+        account_entity_id=row["account_entity_id"],
+        status=row["status"],
+        attempt=row["attempt"],
+        started_at=row["started_at"],
+        finished_at=row["finished_at"],
+        finalization=finalization,
+        failure_code=row["failure_code"],
+        failure_message=row["failure_message"],
+        model_rounds=row["model_rounds"],
+        tool_calls=row["tool_calls"],
+        cost_usd=row["cost_usd"],
+        credits=row["credits"],
+        media_seconds=row["media_seconds"],
+    )
