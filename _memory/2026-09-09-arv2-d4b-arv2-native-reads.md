@@ -270,3 +270,21 @@ exactly.
    `tests/api/test_onboarding_synthesis_wiring_db.py` hangs with a real key (a real model turn).
 8. Cosmetic, left alone: the loader DB test's `_skip_if_already_loaded` docstring still explains the
    skip via "the M8D coverage/finalization rows are append-only" — stale reason, correct skip.
+
+## Tier-B rulings recorded (2026-09-09, after the D4-b close-out)
+
+The founder ruled on every Tier-B family of `docs/specs/ARV2-PHASE6-LEGACY-DELETION-INVENTORY.md`
+§1.2 (table pasted back as a screenshot, `.context/attachments/xagCCh/image.png`): drop verification/
+eval, coverage, economics, discovery (17), official-site crawler, external research/enrichment/
+channels (minus `contact_channel_suppression`), and the Stage-0 singletons; keep compliance and the
+claim-store rings. The two requested checks were run: `tool_invocation` is the toolbelt's A9
+idempotency ledger (`clue_toolbelt/idempotency.py`, migration `49911e6aac37`) → keep;
+`review_session`/`review_action` are the M13.1 review surface (`c48ebe0a1e62`), wired at
+`clue_api/__init__` + `fleet_wiring` → keep unowned, but its `account_handoff` join and
+`conflict_flag` annotation must be unwound in Phase 6. Six more tables were misfiled as old-lane
+singletons and are platform substrate: `ingestion_job/segment` (brand-kit ingestion),
+`supervisor_diagnosis/observation` (execution supervisor), `account_entity_embedding` (identity
+resolution). Net: 72 Tier-B drop + 83 Tier-A = 155 tables in ONE reversible migration; §3 step 7 is
+folded into step 6; the couplings table in §1.2 lists the Tier-C readers (`claimstore/merge.py`,
+`compliance/dsar.py`, `review/*`, `narrative/support.py`, `observability_wiring.py`) the plan
+must edit before the drop. Next: write the Phase-6 deletion plan from the inventory.
