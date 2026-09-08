@@ -183,6 +183,9 @@ def _fetch_creative(url: str) -> tuple[bytes, str]:
 @pytest.fixture
 def lane_on(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
+    # Pipeline tests drive the offered job with injected providers in _run_job;
+    # an embedded worker would race that drive with the production providers.
+    monkeypatch.setattr(settings, "lumen_embedded_fleet_worker", False, raising=False)
 
 
 @pytest.fixture(autouse=True)
@@ -779,6 +782,7 @@ def test_the_fleet_worker_executes_an_ad_assets_job(
     lease and fence as every other design job. Everything the pipeline does is asserted by the
     tests above, which drive the runner directly (see ``_run_job``).
     """
+    monkeypatch.setattr(settings, "lumen_embedded_fleet_worker", True, raising=False)
     client = _client(tmp_path)
     brand_kit_id = _seed_brand_kit(client)
     _install_stub_runner(
