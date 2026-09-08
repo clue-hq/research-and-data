@@ -1,11 +1,11 @@
 # answer-key recall — zafran
 
-account **zafran** · keys 66 · exact 13 · partial 13 · field_only 31 · missing 9 · **recall 39%**
+account **zafran** · keys 66 · exact 16 · partial 14 · field_only 27 · missing 9 · **recall 45%**
 
 | section | hits | keys | recall |
 | --- | ---: | ---: | ---: |
 | `core` | 16 | 29 | 55% |
-| `account` | 9 | 26 | 35% |
+| `account` | 13 | 26 | 50% |
 | `account.resonance` | 1 | 11 | 9% |
 
 ## misses
@@ -19,9 +19,6 @@ account **zafran** · keys 66 · exact 13 · partial 13 · field_only 31 · miss
   - key: `info@zafran.io`
 - **core.annual_revenue** (zaf-015) — missing
   - key: `{"amount_max": 25000000, "amount_min": 10000000, "as_of": "2026-08-22", "currency": "USD", "estimate_kind": "provider_estimate"}`
-- **account.total_funding** (zaf-017) — field_only
-  - key: `{"amount": 130500000, "currency": "USD", "investors": 9, "rounds": 4}`
-  - run: `{"amount_usd": 130000000, "as_of": "2025-12-02", "note": "Cisco and Amex strategic cheques undisclosed; CTech estimated post-Cisco >$140M — NOT FOUND as company figure", "semantics": "company_reported"}`
 - **account.recent_funding** (zaf-018) — field_only
   - key: `[{"announced_at": "2025-12-02", "investors": ["Vintage Investment Partners", "Cyberstarts", "Amex Ventures", "PSP Growth", "Knollwood Investment Advisory", "Sequoia Capital", "Menlo Ventures"], "raised_amount": 60000000…`
   - run: `{"amount_semantics": "not disclosed by company", "amount_usd": null, "date": "2026-07-22", "investor": "Cisco Investments", "round": "strategic investment"}`
@@ -40,12 +37,6 @@ account **zafran** · keys 66 · exact 13 · partial 13 · field_only 31 · miss
 - **account.open_requisitions** (zaf-087) — field_only
   - key: `[{"compensation_published": false, "days_open": 81, "department": "Sales", "employment_type": "FullTime", "is_remote": true, "job_url": "https://jobs.ashbyhq.com/zafran-security/22702028-c1c6-4147-b099-0bc62d81b978", "l…`
   - run: `[{"days_open": 1, "dept": "R&D", "published": "2026-09-07", "still_listed": true, "title": "AI Team Lead", "url": "https://jobs.ashbyhq.com/zafran-security/ea6842b5-eae2-4835-8c51-dc3e59555bef"}]`
-- **account.hiring_velocity** (zaf-088) — field_only
-  - key: `{"by_department": {"Customer Success": 1, "Finance": 1, "G&A": 1, "HR": 1, "Marketing": 3, "Product": 1, "R&D": 8, "Sales": 11}, "longest_open_marketing_req_days": 77, "open_reqs_total": 27, "published_last_30_days": 9,…`
-  - run: `{"longest_open_gtm_days": 87, "marketing_open": ["Senior Manager, ABM & Integrated Campaigns", "Sr Technical Marketing Manager", "Business Development Representative", "Senior Manager, Field & Event Marketing"], "note":…`
-- **account.named_customers** (zaf-093) — field_only
-  - key: `[{"name": "Ricardo Lafosse", "quote": " platform page See the Full Platform ## Ranked #1 for Continuous Threat Exposure Management (CTEM) ״Zafran is tackling vulnerabilities from a hacker's perspective. They add a true …`
-  - run: `{"assets": "30,000+", "name": "Lumen Technologies", "role": "Brett Wentworth, Vice President & Deputy Chief Security Officer"}`
 - **account.media_layer_index** (zaf-094) — field_only
   - key: `[{"cost_usd": 0.024451, "duration": "00:42:49", "latency_s": 44.11, "person": "Sanaz Yashar", "title": "Boardroom Club — AI Summit: Sanaz Yashar", "transcript_chars": 44409, "url": "https://podcasters.spotify.com/pod/sh…`
   - run: `[{"description": "RemOps blog by Jules Gross (Aug 21 2025)", "duration": null, "media_url": "https://www.zafran.io/resources/beyond-the-hype-remediation-operations-that-delivers-results-yi2h5", "transcribed": false}]`
@@ -57,9 +48,6 @@ account **zafran** · keys 66 · exact 13 · partial 13 · field_only 31 · miss
 - **core.company_about** (zaf-122) — field_only
   - key: `Describes itself as "the first AI-native end-to-end Threat Exposure Management platform" and promotes "Agentic Exposure Management" covering asset inventory, vulnerability detection, risk assessment, and autonomous reme…`
   - run: `Zafran's agentic platform proves what attackers can exploit in your environment, then mobilizes your existing defenses to stop them.`
-- **account.total_funding** (zaf-124) — field_only
-  - key: `{"amount_usd": 130000000, "semantics": "reported total funding as-of 2025-12-02"}`
-  - run: `{"amount_usd": 130000000, "as_of": "2025-12-02", "note": "Cisco and Amex strategic cheques undisclosed; CTech estimated post-Cisco >$140M — NOT FOUND as company figure", "semantics": "company_reported"}`
 - **account.recent_funding** (zaf-125) — field_only
   - key: `Series C $60M led by Menlo Ventures (Dec 2, 2025); subsequent strategic investments/extensions from Amex Ventures and Cisco Investments announced in 2026`
   - run: `{"amount_semantics": "not disclosed by company", "amount_usd": null, "date": "2026-07-22", "investor": "Cisco Investments", "round": "strategic investment"}`

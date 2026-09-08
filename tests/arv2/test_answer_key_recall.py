@@ -12,6 +12,8 @@ from uuid import UUID
 
 from clue_api.arv2.answer_key_recall import (
     KeyClaim,
+    as_number,
+    leaf_values,
     match_claims,
     normalise_value,
     probook_keys,
@@ -66,6 +68,38 @@ def test_normalise_value_folds_case_urls_and_shape() -> None:
     assert normalise_value("  Zafran   Security,  Inc. ") == "zafran security inc."
     assert normalise_value("https://www.zafran.io/platform") == "zafran.io platform"
     assert normalise_value({"b": 2, "a": "New York"}) == "a new york b 2"
+
+
+def test_leaf_values_drops_key_names_and_keeps_every_scalar() -> None:
+    assert leaf_values({"b": 2, "a": "New York"}) == ["New York", 2]
+    assert leaf_values([{"x": [1, "two"]}, None]) == [1, "two", None]
+    assert leaf_values("plain") == ["plain"]
+
+
+def test_a_structured_value_is_graded_by_its_leaves_not_its_key_names() -> None:
+    """The R2 baseline's clearest false miss: the same $40M, filed under different key names."""
+    key_value = {"amount_usd": 40000000.0, "estimate_kind": "reported"}
+    run_value = {
+        "amount_usd": 40000000,
+        "as_of": "June 23, 2026",
+        "semantics": "reported_total_after_round",
+    }
+    assert values_agree(key_value, run_value) == "exact"
+
+
+def test_half_the_leaves_found_is_partial_and_a_wrong_number_is_still_no() -> None:
+    key_value = {"round": "Series C", "amount_usd": 60000000}
+    assert values_agree(key_value, {"round": "Series C"}) == "partial"
+    # A scalar key keeps its own rules, and the run's key names never rescue a wrong number.
+    assert values_agree(52, {"count": 36, "semantics": "linkedin_estimate"}) == "no"
+    assert values_agree({"headcount": 52}, {"count": 36}) == "no"
+
+
+def test_a_zero_fraction_number_is_the_same_number() -> None:
+    assert as_number("40000000.0") == as_number(40_000_000) == 40000000.0
+    assert normalise_value(40000000.0) == "40000000"
+    assert normalise_value({"amount_usd": 40000000.0}) == "amount_usd 40000000"
+    assert values_agree(40000000.0, 40_000_000) == "exact"
 
 
 def test_match_claims_grades_each_key_once() -> None:

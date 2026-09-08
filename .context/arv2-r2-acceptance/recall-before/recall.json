@@ -4,7 +4,7 @@
       "account": "probook",
       "by_section": {
         "account": {
-          "hits": 5,
+          "hits": 7,
           "keys": 9
         },
         "account.resonance": {
@@ -12,12 +12,12 @@
           "keys": 2
         },
         "core": {
-          "hits": 6,
+          "hits": 5,
           "keys": 13
         }
       },
-      "exact": 5,
-      "field_only": 10,
+      "exact": 9,
+      "field_only": 9,
       "keys": 24,
       "matches": [
         {
@@ -142,7 +142,7 @@
             "round": "Series A"
           },
           "source_row_id": null,
-          "verdict": "partial"
+          "verdict": "exact"
         },
         {
           "alternatives": [],
@@ -158,7 +158,7 @@
             "semantics": "reported_total_after_round"
           },
           "source_row_id": null,
-          "verdict": "field_only"
+          "verdict": "exact"
         },
         {
           "alternatives": [],
@@ -196,21 +196,10 @@
             "raw": "New York, NY",
             "region": "NY"
           },
-          "run_claim_id": "0f73a66c-59cb-4048-9920-62501530a483",
-          "run_value": {
-            "city": "New York",
-            "continent": "North America",
-            "country": "United States",
-            "position": {
-              "lat": 40.748295,
-              "lng": -73.98556
-            },
-            "postal_code": "10022",
-            "raw_address": "New York, New York, United States, North America",
-            "state": "New York"
-          },
+          "run_claim_id": "6e566250-7146-41fe-aa73-db48292648ed",
+          "run_value": "New York, New York, United States",
           "source_row_id": null,
-          "verdict": "partial"
+          "verdict": "field_only"
         },
         {
           "alternatives": [],
@@ -248,7 +237,7 @@
             "round": "Series A"
           },
           "source_row_id": null,
-          "verdict": "partial"
+          "verdict": "exact"
         },
         {
           "alternatives": [],
@@ -264,7 +253,7 @@
             "semantics": "reported_total_after_round"
           },
           "source_row_id": null,
-          "verdict": "field_only"
+          "verdict": "exact"
         },
         {
           "alternatives": [],
@@ -364,14 +353,14 @@
         }
       ],
       "missing": 3,
-      "partial": 6,
-      "recall": 0.4583
+      "partial": 3,
+      "recall": 0.5
     },
     {
       "account": "zafran",
       "by_section": {
         "account": {
-          "hits": 9,
+          "hits": 13,
           "keys": 26
         },
         "account.resonance": {
@@ -383,8 +372,8 @@
           "keys": 29
         }
       },
-      "exact": 13,
-      "field_only": 31,
+      "exact": 16,
+      "field_only": 27,
       "keys": 66,
       "matches": [
         {
@@ -518,16 +507,19 @@
             "lng": -73.98556,
             "raw": "New York, New York, United States, North America"
           },
-          "run_claim_id": "63858b69-e8b4-44c4-8c18-62d2a0603825",
+          "run_claim_id": "696dfb0c-0676-4c69-a56c-d2575be71c70",
           "run_value": {
-            "city": "New York",
+            "city": "New York, New York",
+            "continent": "North America",
             "country": "United States",
-            "note": "press dateline; Tel Aviv R&D/branch; NYC street address NOT FOUND",
-            "raw": "New York, New York",
-            "region": "New York"
+            "position": {
+              "lat": 40.748295,
+              "lng": -73.98556
+            },
+            "raw_address": "New York, New York, United States, North America"
           },
           "source_row_id": "zaf-014",
-          "verdict": "partial"
+          "verdict": "exact"
         },
         {
           "alternatives": [],
@@ -570,7 +562,7 @@
             "semantics": "company_reported"
           },
           "source_row_id": "zaf-017",
-          "verdict": "field_only"
+          "verdict": "partial"
         },
         {
           "alternatives": [],
@@ -1323,20 +1315,66 @@
             "published_last_30_days": 9,
             "published_last_7_days": 4
           },
-          "run_claim_id": "fca1cab6-0077-4df4-94c7-37d9c3ff82d9",
-          "run_value": {
-            "longest_open_gtm_days": 87,
-            "marketing_open": [
-              "Senior Manager, ABM & Integrated Campaigns",
-              "Sr Technical Marketing Manager",
-              "Business Development Representative",
-              "Senior Manager, Field & Event Marketing"
-            ],
-            "note": "Ashby board zafran-security; count from this job's read_ats_board",
-            "open_reqs_live_2026-09-08": 26
-          },
+          "run_claim_id": "598aeb97-8c9b-4759-8ed4-88ad05690a13",
+          "run_value": [
+            {
+              "days_open_at_snapshot": 83,
+              "department": "Marketing",
+              "publish_date": "2026-06-17",
+              "title": "Senior Manager, ABM & Integrated Campaigns",
+              "url": "https://jobs.ashbyhq.com/zafran-security/c879de63-c999-47cc-99a3-e35cf9ba7cdf"
+            },
+            {
+              "department": "Marketing",
+              "publish_date": "2026-08-19",
+              "title": "BDR",
+              "url": "https://jobs.ashbyhq.com/zafran-security/9b7a9e8e-56ac-4358-b312-848dbdfe7e13"
+            },
+            {
+              "department": "Marketing",
+              "publish_date": "2026-09-03",
+              "title": "Senior Manager, Field & Event Marketing",
+              "url": "https://jobs.ashbyhq.com/zafran-security/7dcfdfc4-1cf7-4e41-8b8b-a8a89fbf8e2d"
+            },
+            {
+              "department": "Partnerships/Alliances",
+              "publish_date": "2026-09-01",
+              "title": "Director of Alliances",
+              "url": "https://jobs.ashbyhq.com/zafran-security/b7b67d8b-b559-4cb8-bc1c-080f268c4c17"
+            },
+            {
+              "department": "Marketing",
+              "publish_date": "2026-06-17",
+              "title": "Sr Technical Marketing Manager",
+              "url": "https://jobs.ashbyhq.com/zafran-security/2441fd5c-2d63-4f17-a6ee-a7aad50bd2e7"
+            },
+            {
+              "days_open_at_snapshot": 87,
+              "department": "Sales",
+              "publish_date": "2026-06-13",
+              "title": "Regional Sales Manager (multiple)"
+            },
+            {
+              "department": "Sales",
+              "publish_date": "2026-09-01",
+              "title": "Director of Sales Enterprise",
+              "url": "https://jobs.ashbyhq.com/zafran-security"
+            },
+            {
+              "department": "Sales Engineering",
+              "publish_date": "2026-09-02",
+              "title": "Cyber Security Analyst Sales Engineering",
+              "url": "https://jobs.ashbyhq.com/zafran-security"
+            },
+            {
+              "department": "Engineering/AI",
+              "publish_date": "2026-09-07",
+              "title": "AI Team Lead",
+              "url": "https://jobs.ashbyhq.com/zafran-security/2441fd5c-2d63-4f17-a6ee-a7aad50bd2e7"
+            }
+          ],
           "source_row_id": "zaf-088",
-          "verdict": "field_only"
+          "verdict": "partial"
         },
         {
           "alternatives": [],
@@ -1478,14 +1516,40 @@
               "role": "CISO, Netskope"
             }
           ],
-          "run_claim_id": "a7798a3f-97ca-4508-a95d-771e945f6035",
-          "run_value": {
-            "assets": "30,000+",
-            "name": "Lumen Technologies",
-            "role": "Brett Wentworth, Vice President & Deputy Chief Security Officer"
-          },
+          "run_claim_id": "26b347f5-4eec-4481-bf1e-13af52f9e822",
+          "run_value": [
+            {
+              "evidence_quote": "Lumen is a global telecommunications provider",
+              "name": "Lumen",
+              "testimonial_author": "Brett Wentworth, Vice President & Deputy Chief Security Officer, Lumen Technologies"
+            },
+            {
+              "name": "Kraft Heinz",
+              "testimonial_author": "Ricardo Lafosse CISO, Kraft Heinz"
+            },
+            {
+              "name": "Chipotle",
+              "testimonial_author": "Dave Estlick CISO, Chipotle"
+            },
+            {
+              "name": "Netskope",
+              "testimonial_author": "James Robinson CISO, Netskope"
+            },
+            {
+              "name": "Ashland",
+              "testimonial_author": "Robert Schuetter CISO, Ashland"
+            },
+            {
+              "name": "Sallie Mae",
+              "testimonial_author": "Steve Lodin, Vice President of InfoSec at Sallie Mae"
+            },
+            {
+              "name": "CISO Fortune 25 Healthcare Enterprise",
+              "testimonial_author": "unnamed"
+            }
+          ],
           "source_row_id": "zaf-093",
-          "verdict": "field_only"
+          "verdict": "partial"
         },
         {
           "alternatives": [],
@@ -1608,7 +1672,7 @@
             "semantics": "company_reported"
           },
           "source_row_id": "zaf-124",
-          "verdict": "field_only"
+          "verdict": "partial"
         },
         {
           "alternatives": [],
@@ -1864,12 +1928,10 @@
             "status": "REFUTED",
             "what": "Cisco acquisition rumor (July 2026) — acquisition claim"
           },
-          "run_claim_id": "ae0e963e-db46-49bc-91a1-7958ecd22e58",
+          "run_claim_id": "42fab71d-443c-41b2-9222-6f73036f5fa1",
           "run_value": {
-            "by": "CEO Sanaz Yashar / company",
-            "implication": "Spend scrutiny is high after a public sale rumor; champion needs a cost-per-account number.",
-            "status": "DENIED",
-            "what": "Cisco acquisition rumor (July 2026)"
+            "status": "refuted",
+            "what": "Cisco acquisition rumour"
           },
           "source_row_id": "zaf-169",
           "verdict": "partial"
@@ -1906,7 +1968,7 @@
             "what": "Co-founder / CPO Snir Havdala departure to NVIDIA"
           },
           "source_row_id": "zaf-171",
-          "verdict": "partial"
+          "verdict": "exact"
         },
         {
           "alternatives": [],
@@ -1974,12 +2036,12 @@
             "de-risk_90_percent_critical": "company platform/jobs claim"
           },
           "source_row_id": "zaf-174",
-          "verdict": "partial"
+          "verdict": "exact"
         }
       ],
       "missing": 9,
-      "partial": 13,
-      "recall": 0.3939
+      "partial": 14,
+      "recall": 0.4545
     }
   ],
   "run_id": "a0021ecf-8396-5f41-b4aa-eb8de755839a",
