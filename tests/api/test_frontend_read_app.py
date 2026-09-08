@@ -112,7 +112,15 @@ def test_the_flag_mounts_the_probe_router() -> None:
     enabled = _settings(frontend_read_enabled=True)
     assert _probe_paths(enabled) == {("GET", f"{FRONTEND_READ_PREFIX}/health")}
     # The scoped router is where Tasks 2-4 register; Task 2 added the accounts list.
-    assert ("GET", f"{FRONTEND_READ_PREFIX}/accounts") in _scoped_paths(enabled)
+    scoped = _scoped_paths(enabled)
+    assert ("GET", f"{FRONTEND_READ_PREFIX}/accounts") in scoped
+    # ARV2 O5 — the brand-context Knowledge reads.
+    assert ("GET", f"{FRONTEND_READ_PREFIX}/brand-context/knowledge") in scoped
+    assert (
+        "GET",
+        f"{FRONTEND_READ_PREFIX}/brand-context/knowledge/documents/{{document_id}}",
+    ) in scoped
+    assert ("GET", f"{FRONTEND_READ_PREFIX}/brand-context/onboarding/current") in scoped
 
 
 def test_flag_off_keeps_routes_absent_but_returns_a_correlatable_error() -> None:

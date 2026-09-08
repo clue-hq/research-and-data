@@ -31,6 +31,15 @@ from clue_api.frontend_read.app import (
     frontend_read_workspace_resolver,
     install_frontend_read_surface,
 )
+from clue_api.frontend_read.brand_knowledge import (
+    KnowledgeDocumentDetailWire,
+    KnowledgeTreeWire,
+    OnboardingStatusWire,
+    read_knowledge_document,
+    read_knowledge_tree,
+    read_onboarding_status,
+    resolve_knowledge_brand,
+)
 from clue_api.frontend_read.committee import latest_project_run_context
 from clue_api.frontend_read.prose import (
     ACCOUNT_SUMMARY_FIELD,
@@ -53,6 +62,9 @@ __all__ = [
     "ACCOUNT_SUMMARY_FIELD",
     "CONTACT_OVERVIEW_FIELD",
     "InvalidCursorError",
+    "KnowledgeDocumentDetailWire",
+    "KnowledgeTreeWire",
+    "OnboardingStatusWire",
     "ProseRead",
     "ProseState",
     "WorkspaceDep",
@@ -63,5 +75,9 @@ __all__ = [
     "latest_project_run_context",
     "list_accounts",
     "read_account_detail",
+    "read_knowledge_document",
+    "read_knowledge_tree",
+    "read_onboarding_status",
     "read_prose",
+    "resolve_knowledge_brand",
 ]
