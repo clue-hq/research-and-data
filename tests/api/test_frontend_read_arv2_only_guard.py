@@ -37,14 +37,16 @@ _FORBIDDEN: tuple[tuple[str, str], ...] = (
 )
 
 #: The one exception, and why it is not a legacy read: ``provider_call_ledger`` carries the ARV2
-#: job id in a column named ``entity_research_job_id``. It is ARV2's own row under an inherited
-#: column name, so the *name* matches the pattern while the read does not.
+#: job id in a column named ``entity_research_job_id`` (``provider_ledger.py``, and the spend sum
+#: in ``account_research_store.py``). It is ARV2's own row under an inherited column name, so the
+#: *name* matches the pattern while the read does not.
 _ALLOWED_SUBSTRINGS = ("entity_research_job_id",)
 
-#: ``answer_key_loader`` seeds the M8D lane's terminal rows as a database fixture. Those are
-#: writes for another lane's acceptance walk, not reads on the ARV2 path, and deleting them is
-#: that lane's call rather than this rule's.
-_ALLOWED_FILES = ("answer_key_loader.py",)
+#: **No file is allowed.** ``answer_key_loader.py`` was the last exception — it seeded the M8D
+#: lane's terminal run/job/coverage rows as a database fixture. D4-b task 6 deleted those writes:
+#: the answer key now writes one ``arv2_research_run`` and one ``arv2_research_job``, like every
+#: other ARV2 run, so the rule holds with no allowlist at all.
+_ALLOWED_FILES: tuple[str, ...] = ()
 
 
 def _is_prose(line: str) -> bool:

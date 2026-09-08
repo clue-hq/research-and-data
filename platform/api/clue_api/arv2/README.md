@@ -310,7 +310,7 @@ pipe-joined-key split all live there, and `ANSWER_KEY_NAMESPACE` is the uuid5 na
 deterministic id in the load hangs off. `answer_key_loader.py` writes them: workspace → brand →
 product → project, the pack loaders, four account entities and twelve contacts, the project run
 (no Stage-0 pins), two `run_lineage` rows, three transcript artifacts, every draft through
-`LenientClaimWriter`, then the terminal research rows and the activity feed.
+`LenientClaimWriter`, then the ARV2 research run and job and the activity feed.
 `scripts/load_arv2_answer_key.py` is the thin argparse wrapper:
 
 ```
@@ -323,7 +323,9 @@ uv run python scripts/load_arv2_answer_key.py \
 `--repair-emails` loads nothing: it supersedes the already-loaded `core.work_email` claims that
 still hold a bare address string with the `{address, status, checked_at}` value D4-b's registry
 declares, taking the verdict from the answer key's own AI Ark `verification` block, and is
-idempotent — a second pass finds no bare strings.) **The load is one-shot per database**: it is keyed on a deterministic run id, and a second run raises
+idempotent — a second pass finds no bare strings. `--repair-research-rows` loads nothing either: it
+writes the `arv2_research_run` + `arv2_research_job` pair a fresh load now writes, for a database
+loaded back when D1 wrote the old lane's terminal rows instead.) **The load is one-shot per database**: it is keyed on a deterministic run id, and a second run raises
 `AlreadyLoaded` rather than duplicating rows. A database that already carries it must be reset, not
 re-loaded.
 
@@ -332,11 +334,21 @@ re-loaded.
 - **R2's `write_claims` goes through `LenientClaimWriter`.** The structuring pass does not build
   `Claim` objects of its own and does not call `insert_claim` directly; the gate is the lane's only
   write path, so the stamping and the markers are uniform whatever produced the fact.
-- **The loader's terminal rows are the shape R2's finalization must produce.** The
-  `entity_research_run` / `entity_research_job` / `entity_research_account_coverage` triple (plus
-  the `entity_research_account_fleet` row the committee read resolves the run through) is what the
-  accounts screens read a finished account through. R2's real finalization writes the same rows
-  with the same relationships; the loader is the worked example, not a special case.
+- **The loader writes ARV2 rows, and only ARV2 rows.** Founder ruling 2026-09-09: *ARV2's own
+  rows are the only truth; nothing about the old research lane matters.* So the answer key ends in
+  one `arv2_research_run` and one `arv2_research_job` for Zafran — created, begun and finished
+  through `account_research_store` exactly as R2's driver does it, pinned to the project's brand
+  and project run, to a stand-in ICP artifact the loader stores (`icp_key = answer-key-standin`:
+  the 2026-09-02 run predates the ICP gate, so there is no confirmed document it was launched
+  against), to the `arv2-account/v1` profile ref and sha, and finalized `completed` with
+  `{"claims_written": …, "source": "answer-key"}`. The other three accounts get **no** job: "never
+  researched" is a fact about a missing row, and `arv2_research_status_for` reads it that way. The
+  legacy `entity_research_run` / `entity_research_job` / `entity_research_account_coverage` /
+  `entity_research_account_fleet` writes D1 shipped are **deleted** — nothing reads those tables on
+  the ARV2 path (`tests/api/test_frontend_read_arv2_only_guard.py` now passes with no allowlist),
+  and the Phase-6 PR drops them. A database loaded before this change keeps its dead legacy rows
+  and gains the ARV2 pair through `scripts/load_arv2_answer_key.py --repair-research-rows`, which
+  is idempotent on the deterministic run and job ids.
 - **R3's person mapper writes `core.work_email` as the verdict object, never a bare address.** The
   registered value is `{"address", "status", "checked_at"?}` with `status` in
   `verified_smtp | catch_all_valid | invalid | unknown | unverified` (D4-b decision 6): the address

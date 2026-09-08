@@ -16,10 +16,12 @@ from clue_api.arv2.answer_key import (
     ZAFRAN_RUN_ID,
 )
 from clue_api.arv2.answer_key_loader import (
+    ARV2_STANDIN_ICP_KEY,
     EMAIL_REPAIR_MARKER,
     AlreadyLoaded,
     load_answer_key,
     repair_email_claims,
+    repair_research_rows,
 )
 from clue_config import Settings
 from clue_storage.fs import FsStorage
@@ -146,26 +148,79 @@ def test_load_writes_every_row_and_the_screen_prerequisites(tmp_path: Path) -> N
                 )
             ).scalar_one()
             assert lineage == 2
-            job = (
-                await conn.execute(
-                    text(
-                        "SELECT state, finalization_outcome FROM entity_research_job "
-                        "WHERE workspace_id = :ws"
-                    ),
-                    {"ws": ws},
+            # The ARV2 rows the accounts screens read a researched account through (D4-b task 6):
+            # one run and one job, ARV2's own, driven to ``completed`` through the store.
+            run = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT run_id::text, project_id, brand_id, project_run_id::text, "
+                            " icp_key, icp_version, product_selection_version, effort, "
+                            " committee_cap, requested_by_user_id, status, "
+                            " finished_at IS NOT NULL AS finished, icp_artifact_key "
+                            "FROM arv2_research_run WHERE workspace_id = :ws"
+                        ),
+                        {"ws": ws},
+                    )
                 )
-            ).one()
-            assert tuple(job) == ("terminal", "completed")
-            members = (
-                await conn.execute(
-                    text(
-                        "SELECT cardinality(committee_member_ids), committee_status "
-                        "FROM entity_research_account_coverage WHERE workspace_id = :ws"
-                    ),
-                    {"ws": ws},
+                .mappings()
+                .one()
+            )
+            assert run["run_id"] == report.research.run_id
+            assert run["project_id"] == ZAFRAN_MANIFEST.project_id
+            assert run["project_run_id"] == str(ZAFRAN_MANIFEST.project_run_id)
+            assert (run["icp_key"], run["icp_version"]) == (ARV2_STANDIN_ICP_KEY, 1)
+            assert (run["effort"], run["committee_cap"]) == ("full", 5)
+            assert run["product_selection_version"] == 1
+            assert (run["status"], run["finished"]) == ("completed", True)
+            # The ICP pin resolves to bytes that were actually stored, not to a bare key.
+            assert (
+                (tmp_path / run["icp_artifact_key"])
+                .read_text(encoding="utf-8")
+                .startswith("# ARV2 answer key — stand-in ICP")
+            )
+            jobs = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT job_id::text, account_entity_id::text, status, "
+                            " finished_at IS NOT NULL AS finished, finalization_json "
+                            "FROM arv2_research_job WHERE workspace_id = :ws"
+                        ),
+                        {"ws": ws},
+                    )
                 )
-            ).one()
-            assert tuple(members) == (5, "complete")
+                .mappings()
+                .all()
+            )
+            # Exactly one: the other three accounts were only ever named by the run, and an
+            # invented ``not_started`` job would say they had been launched.
+            assert len(jobs) == 1
+            job = jobs[0]
+            assert job["job_id"] == report.research.job_id
+            assert job["account_entity_id"] == report.accounts["zafran.io"]
+            assert (job["status"], job["finished"]) == ("completed", True)
+            assert job["finalization_json"] == {
+                "claims_written": ZAFRAN_CLAIMS,
+                "source": "answer-key",
+            }
+            assert report.research.runs_created == 1
+            assert report.research.jobs_created == 1
+            assert report.research.status == "completed"
+            # …and nothing at all in the old lane's tables (founder ruling 2026-09-09).
+            for table in (
+                "entity_research_run",
+                "entity_research_account_fleet",
+                "entity_research_job",
+                "entity_research_account_coverage",
+            ):
+                legacy = (
+                    await conn.execute(
+                        text(f"SELECT count(*) FROM {table} WHERE workspace_id = :ws"),  # noqa: S608
+                        {"ws": ws},
+                    )
+                ).scalar_one()
+                assert legacy == 0, table
             events = (
                 (
                     await conn.execute(
@@ -356,5 +411,82 @@ def test_repair_gives_a_bare_work_email_claim_the_providers_verdict() -> None:
                 conn, context_root=REPO / ".context", settings=_settings()
             )
             assert again == type(again)(found=0, repaired=0, skipped=[])
+
+    run_async(_run())
+
+
+# -- the D4-b research-row repair -----------------------------------------------------------------
+
+
+def test_repair_writes_the_research_rows_once_on_an_already_loaded_database(tmp_path: Path) -> None:
+    """``--repair-research-rows`` gives a pre-D4-b database the ARV2 pair, and only once.
+
+    Written against whatever this database holds: on a loaded one it repairs the real rows, and on
+    an empty one it loads the answer key first so there is something to repair. Either way the
+    assertions are the same — one run, one job, ``completed``, and a second pass that creates
+    nothing — which is exactly what idempotency on a deterministic id means.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            loaded = (
+                await conn.execute(
+                    text("SELECT 1 FROM claim WHERE run_id = :run_id LIMIT 1"),
+                    {"run_id": ZAFRAN_RUN_ID},
+                )
+            ).first()
+            if loaded is None:
+                await load_answer_key(
+                    conn,
+                    storage=FsStorage(tmp_path),
+                    context_root=REPO / ".context",
+                    settings=_settings(),
+                )
+                # A fresh load already wrote them, so the repair must find nothing to do.
+                expected_created = 0
+            else:
+                await conn.execute(
+                    text("DELETE FROM arv2_research_job WHERE workspace_id = :ws"),
+                    {"ws": ZAFRAN_MANIFEST.workspace_id},
+                )
+                await conn.execute(
+                    text("DELETE FROM arv2_research_run WHERE workspace_id = :ws"),
+                    {"ws": ZAFRAN_MANIFEST.workspace_id},
+                )
+                expected_created = 1
+
+            first = await repair_research_rows(conn, storage=FsStorage(tmp_path))
+            assert (first.runs_created, first.jobs_created) == (
+                expected_created,
+                expected_created,
+            )
+            assert first.status == "completed"
+            assert first.claims_written > 0
+
+            second = await repair_research_rows(conn, storage=FsStorage(tmp_path))
+            assert (second.runs_created, second.jobs_created) == (0, 0)
+            assert second.status == "completed"
+
+            rows = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM arv2_research_job j JOIN arv2_research_run r "
+                        "USING (run_id) WHERE j.workspace_id = :ws AND j.status = 'completed' "
+                        "AND r.status = 'completed'"
+                    ),
+                    {"ws": ZAFRAN_MANIFEST.workspace_id},
+                )
+            ).scalar_one()
+            assert rows == 1
+            # The repair touches no legacy row: whatever the old loader left is exactly as it was.
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM entity_research_job WHERE workspace_id = :ws "
+                        "AND state <> 'terminal'"
+                    ),
+                    {"ws": ZAFRAN_MANIFEST.workspace_id},
+                )
+            ).scalar_one() == 0
 
     run_async(_run())
