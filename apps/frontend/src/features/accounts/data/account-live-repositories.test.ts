@@ -165,12 +165,12 @@ test("E1 pages through nextCursor at limit=200 and concatenates in server order"
   assert.deepEqual(response.meta, { total: 3, nextCursor: null });
   assert.equal(calls.length, 2);
   assert.equal(calls[0]!.path, "/accounts");
-  assert.equal(calls[0]!.searchParams.contract, "v1");
+  // The surface serves one contract, so no selector is sent (removed 2026-09-09).
+  assert.equal(calls[0]!.searchParams.contract, undefined);
   assert.equal(calls[0]!.searchParams.limit, ACCOUNTS_PAGE_LIMIT);
   assert.equal(ACCOUNTS_PAGE_LIMIT, 200);
   assert.equal(calls[0]!.searchParams.cursor, undefined);
   assert.equal(calls[1]!.searchParams.cursor, "cursor-2");
-  assert.equal(calls[1]!.searchParams.contract, "v1");
 });
 
 test("E1 stops at the page cap and returns what it has", async () => {
@@ -216,7 +216,7 @@ test("E1 propagates a transport failure instead of degrading to an empty list", 
 
 // --- E2 / E3: account detail and workspace ----------------------------------------------------
 
-test("E2 parses .data and asks for contract v1", async () => {
+test("E2 parses .data", async () => {
   const { read, calls } = recordingRead([{ data: ACCOUNT_DETAIL }]);
 
   const account = await createHttpAccountDetailsRepository(read).get(
@@ -225,11 +225,10 @@ test("E2 parses .data and asks for contract v1", async () => {
 
   assert.equal(account?.name, "Zafran Security");
   assert.equal(calls[0]!.path, "/accounts/account%201");
-  assert.equal(calls[0]!.searchParams.contract, "v1");
   assert.equal(calls[0]!.recordNotFoundAllowed, true);
 });
 
-test("E3 parses .data, asks for contract v1, and 404s to null like E2", async () => {
+test("E3 parses .data and 404s to null like E2", async () => {
   const { read, calls } = recordingRead([{ data: ACCOUNT_WORKSPACE }]);
 
   const workspace = await createHttpAccountWorkspaceRepository(read).get(
@@ -238,7 +237,6 @@ test("E3 parses .data, asks for contract v1, and 404s to null like E2", async ()
 
   assert.equal(workspace?.accountId, "account-1");
   assert.equal(calls[0]!.path, "/accounts/account-1/workspace");
-  assert.equal(calls[0]!.searchParams.contract, "v1");
   assert.equal(calls[0]!.recordNotFoundAllowed, true);
 
   const missingRead = recordingRead([RECORD_NOT_FOUND]);
@@ -279,10 +277,9 @@ test("E4 parses data and ignores the envelope's meta.total", async () => {
 
   assert.deepEqual(contacts?.map((contact) => contact.name), ["Nick Fisher"]);
   assert.equal(calls[0]!.path, "/accounts/account-1/contacts");
-  assert.equal(calls[0]!.searchParams.contract, "v1");
 });
 
-test("E5 parses .data and asks for contract v1", async () => {
+test("E5 parses .data", async () => {
   const { read, calls } = recordingRead([{ data: CONTACT_DETAIL }]);
 
   const contact = await createHttpAccountContactsRepository(read).get(
@@ -292,7 +289,6 @@ test("E5 parses .data and asks for contract v1", async () => {
 
   assert.equal(contact?.name, "Nick Fisher");
   assert.equal(calls[0]!.path, "/accounts/account-1/contacts/contact%201");
-  assert.equal(calls[0]!.searchParams.contract, "v1");
   assert.equal(calls[0]!.recordNotFoundAllowed, true);
 });
 

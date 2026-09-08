@@ -88,7 +88,7 @@ async def _get(
     workspace_id: str = _WS,
     contract: str | None = None,
 ) -> httpx.Response:
-    """One workspace request. ``contract=None`` and ``"v1"`` must serve the same body."""
+    """One workspace request. The ``contract`` parameter is inert and only proven so here."""
     async with _client(_app(conn)) as client:
         return await client.get(
             f"{_BASE}/{account_id}/workspace",
@@ -400,14 +400,15 @@ def test_the_workspace_client_cannot_be_opened_as_a_target_account() -> None:
     run_async(scenario())
 
 
-# --- the contract parameter & the flag ---------------------------------------------------------
+# --- the retired contract parameter & the flag -------------------------------------------------
 
 
-def test_the_route_serves_contract_v1_with_or_without_the_parameter() -> None:
-    """E3 is new, so there is no FI-2 payload to keep beside it: both modes are contract v1.
+def test_a_contract_parameter_is_ignored_whatever_it_says() -> None:
+    """One contract, so the selector is inert (it was deleted on 2026-09-09).
 
-    ``?contract=v2`` is still the same enveloped 422 it is everywhere else on this surface — a
-    typo'd value that quietly served *something* is exactly what the parameter exists to prevent.
+    It is *ignored* rather than refused on purpose: the frontend adapters sent ``?contract=v1``
+    until the same change removed them, and 422ing a request this route can answer perfectly well
+    would have made the two halves of one PR undeployable apart.
     """
 
     async def scenario() -> None:
@@ -415,15 +416,10 @@ def test_the_route_serves_contract_v1_with_or_without_the_parameter() -> None:
             fixture = await _build(conn)
             default = await _get(conn, fixture.zafran)
             pinned = await _get(conn, fixture.zafran, contract="v1")
-            refused = await _get(conn, fixture.zafran, contract="v2")
+            stale = await _get(conn, fixture.zafran, contract="v2")
 
-            assert default.status_code == 200
-            assert pinned.status_code == 200
-            assert default.json() == pinned.json()
-            assert refused.status_code == 422
-            error = refused.json()["error"]
-            assert error["code"] == "VALIDATION_ERROR"
-            assert error["requestId"] == refused.headers["X-Request-Id"]
+            assert default.status_code == pinned.status_code == stale.status_code == 200
+            assert default.json() == pinned.json() == stale.json()
 
     run_async(scenario())
 

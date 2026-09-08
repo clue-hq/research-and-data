@@ -102,7 +102,7 @@ export const ACCOUNTS_PAGE_LIMIT = 200;
 export const ACCOUNTS_PAGE_CAP = 25;
 
 /**
- * The live accounts list: `GET /frontend/v1/accounts?contract=v1&limit=200`.
+ * The live accounts list: `GET /frontend/v1/accounts?limit=200`.
  *
  * The table keeps the design build's browser-side search, filter, sort and
  * pagination (D4 ruling a), so this read returns the WHOLE list: it follows
@@ -128,7 +128,6 @@ export function createHttpAccountsRepository(
         const body = AccountsResponseSchema.parse(
           await read("/accounts", {
             searchParams: {
-              contract: "v1",
               limit: ACCOUNTS_PAGE_LIMIT,
               cursor,
               projectId: query.projectId,

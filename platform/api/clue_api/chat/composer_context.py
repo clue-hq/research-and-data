@@ -1,9 +1,10 @@
 """Real composer capabilities for Home and project conversations (repair slice R8).
 
-This module is the narrow join between Lane C's workspace-scoped account/contact reads and
-Lane D's durable turn-submission seam. It owns no account or contact state: catalogs come from
-the published frontend-read functions, and validation resolves the typed object ids through the
-identity store plus the governed contact-profile reader.
+This module is the narrow join between the workspace-scoped account/contact reads and Lane D's
+durable turn-submission seam. It owns no account or contact state: the account catalog is the
+accounts table's own page scan, the contact catalog and the contact addressability rule are D2's
+committee (the contacts under an account that hold at least one live claim, which is exactly the
+set the contacts table lists), and versions come from the identity store.
 """
 
 from __future__ import annotations
@@ -17,15 +18,10 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import DomainObjectRef
+from clue_api.arv2.display.gather import SubjectRef, committee_members
 from clue_api.client_context_binding import workspace_client_entity_id
 from clue_api.design_turn_targets import DesignTurnTargetError, resolve_scene_targets
-from clue_api.frontend_read.account_detail import AccountNotFound
-from clue_api.frontend_read.accounts_list import list_accounts
-from clue_api.frontend_read.contacts import (
-    ContactNotFound,
-    read_account_contacts,
-    read_contact_profile,
-)
+from clue_api.frontend_read.accounts_list import read_spine_page
 from clue_core import EntityId
 from clue_research.identity import get_account, get_contact
 from clue_storage import StorageBackend
@@ -74,45 +70,61 @@ class ComposerContextEntity:
     version: int | None = None
 
 
+async def _contact_subject(
+    conn: AsyncConnection, *, workspace_id: str, contact: Any
+) -> SubjectRef | None:
+    """The contact as the screens show them, or ``None`` when nothing addresses them.
+
+    The rule is D2's committee — the contacts under this account that hold at least one live
+    claim — which is exactly the set the contacts table lists and this picker offers. A contact row
+    the research has written nothing about is not referenceable: the card it would compile has a
+    name in it and nothing else.
+    """
+
+    members = await committee_members(
+        conn, workspace_id=workspace_id, account_id=str(contact.account_entity_id)
+    )
+    return next((member for member in members if member.id == str(contact.id)), None)
+
+
 async def list_composer_context_entities(
     conn: AsyncConnection,
     *,
     workspace_id: str,
 ) -> tuple[ComposerContextEntity, ...]:
-    """Return a bounded real account/contact catalog using Lane C's governed reads."""
+    """Return a bounded real account/contact catalog: the workspace's newest accounts, each with
+    the contacts its research has actually written about."""
 
-    accounts = await list_accounts(
+    _total, rows, _has_more = await read_spine_page(
         conn,
         workspace_id=workspace_id,
+        project_id=None,
         limit=_MAX_CONTEXT_ACCOUNTS,
+        cursor=None,
+        page_number=None,
     )
     result: list[ComposerContextEntity] = []
-    for account in accounts.data:
+    for account_id, canonical_name, primary_domain, _created_at, _updated_at in rows:
+        name = str(canonical_name)
         result.append(
             ComposerContextEntity(
                 object_type="account",
-                object_id=str(account.id),
-                label=account.name,
-                secondary_label=account.domain or "Account",
+                object_id=str(account_id),
+                label=name,
+                secondary_label=primary_domain or "Account",
             )
         )
-        try:
-            contacts = await read_account_contacts(
-                conn,
-                workspace_id=workspace_id,
-                account_id=account.id,
-            )
-        except AccountNotFound:  # pragma: no cover - the account page and read share one txn
-            continue
-        for contact in contacts.data:
-            if contact.name is None:
+        for member in await committee_members(
+            conn, workspace_id=workspace_id, account_id=str(account_id)
+        ):
+            if not member.name:
                 continue
             result.append(
                 ComposerContextEntity(
                     object_type="contact",
-                    object_id=str(contact.id),
-                    label=contact.name,
-                    secondary_label=contact.title or account.name,
+                    object_id=member.id,
+                    label=member.name,
+                    secondary_label=member.title or name,
                 )
             )
     return tuple(result)
@@ -381,18 +393,11 @@ async def validated_context_refs(
                 "CONTEXT_REF_STALE",
                 "a contact context reference no longer names the current revision",
             )
-        try:
-            await read_contact_profile(
-                conn,
-                workspace_id=workspace_id,
-                account_id=UUID(str(contact.account_entity_id)),
-                contact_id=UUID(str(contact.id)),
-            )
-        except (AccountNotFound, ContactNotFound) as exc:
+        if await _contact_subject(conn, workspace_id=workspace_id, contact=contact) is None:
             raise ContextReferenceError(
                 "CONTEXT_REF_NOT_FOUND",
                 "a contact context reference is not available in this workspace",
-            ) from exc
+            )
         contact_parents.append(contact.account_entity_id)
 
     if selected_accounts and any(parent not in selected_accounts for parent in contact_parents):
@@ -411,9 +416,9 @@ async def prepare_composer_context_entities(
 ) -> tuple[ComposerContextEntity, ...]:
     """Validate and hydrate an exact draft set without relying on the bounded mention catalog.
 
-    The returned labels are the same display-approved Account/Contact values used by the live
-    FI-2 reads. Canonical versions are resolved here and revalidated again when the message is
-    submitted; this preparation is draft hydration, never durable authorization.
+    The returned labels are the same values the live Account/Contact reads serve. Canonical
+    versions are resolved here and revalidated again when the message is submitted; this
+    preparation is draft hydration, never durable authorization.
     """
 
     validated = await validated_context_refs(
@@ -452,18 +457,18 @@ async def prepare_composer_context_entities(
                 "CONTEXT_REF_NOT_FOUND",
                 "a contact context reference is not available in this workspace",
             )
-        profile = await read_contact_profile(
-            conn,
-            workspace_id=workspace_id,
-            account_id=UUID(str(contact.account_entity_id)),
-            contact_id=UUID(str(contact.id)),
-        )
+        subject = await _contact_subject(conn, workspace_id=workspace_id, contact=contact)
+        if subject is None:  # pragma: no cover - validation above owns this invariant
+            raise ContextReferenceError(
+                "CONTEXT_REF_NOT_FOUND",
+                "a contact context reference is not available in this workspace",
+            )
         prepared.append(
             ComposerContextEntity(
                 object_type="contact",
                 object_id=str(contact.id),
-                label=profile.name or "Unnamed contact",
-                secondary_label=profile.title or profile.account_name,
+                label=subject.name or "Unnamed contact",
+                secondary_label=subject.title or subject.account_name,
                 version=contact.canonical_version,
             )
         )
@@ -484,9 +489,7 @@ async def design_asset_ref_presentations(
     """
 
     asset_ids = tuple(
-        dict.fromkeys(
-            str(ref.object_id) for ref in refs if ref.object_type == "design_asset"
-        )
+        dict.fromkeys(str(ref.object_id) for ref in refs if ref.object_type == "design_asset")
     )
     if not asset_ids:
         return {}

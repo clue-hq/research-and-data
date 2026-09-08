@@ -26,6 +26,14 @@ one design source of truth (the dummy frontend, lifted screen by screen).
 
 ## 2. Principles that govern every task (non-negotiable)
 
+0. **ARV2's own rows are the only truth; the old research lane is deleted, never bridged.**
+   (Founder ruling, 2026-09-09.) No read, no write and no schema on the ARV2 path may reach for an
+   `entity_research_*`, `research_view_*`, `account_run` or `icp_spec` row — not as a fallback, not
+   as a compatibility shim, not "until the ARV2 writer lands". If ARV2 has no row for something, the
+   honest answer is the empty one. Enforced by `tests/api/test_frontend_read_arv2_only_guard.py`
+   (empty allowlist since D4-b) and `tests/arv2/test_import_guard.py`; the lane's own tables and
+   code are inventoried for deletion in `docs/specs/ARV2-PHASE6-LEGACY-DELETION-INVENTORY.md`.
+
 1. **A claim needs a quote and a URL or it is not written.** Empty is a correct output; fabrication
    is the only failure. Conflicts between sources are recorded, never smoothed.
 2. **Exactly two gates exist, plus one floor — and no mechanical blocker ever stops information from
@@ -401,6 +409,35 @@ featured-contact hard-code is gone (`profileAction`); lint/build/tests green (11
 | D4 — **DONE 2026-09-09** (branch `track-d4`; the feature, the eight routes, the accounts layout shell, the favicon proxy and the design-system package all lifted from `84f8ee7`; the sixteen §6 client-side derivations removed; the contract-v1 Zod is now the feature's own `model/*.ts` **and** the parity oracle's source; five adapters on `fetchRead` + the BFF with **`?contract=v1`** — that parameter stays until the backend FI-2 deletion PR; fixtures behind `CLUE_ACCOUNTS_FIXTURE_MODE=true` with **no** fallback; the kept FI-2 behaviours = bulk add-to-project / send-to-chat, the single-contact email lookup, the typed recovery screen; create is a local non-optimistic draft until `POST /frontend/v1/accounts` exists; **no backend code changed**. 12 routes walked live against the real store — see `_memory/2026-09-09-arv2-d4-accounts-relift.md` for the 24-item drift list, which is D5's input) | Re-lift the dummy's accounts feature from `live-backend-v1` into `apps/frontend` — the feature folder, the accounts layout shell, the `/api/source-favicon` route, and the design-system token changes; adapters → `/frontend/v1`; no new components | Shashank via agent; Aryan merges | With `CLUE_API_BASE_URL` set, Zafran pages render from the real backend; fixtures still demo offline |
 | D5 | Acceptance: the three Zafran spec pages vs the live pages, section by section, with the dummy's fidelity tests as the mechanical check; the four remaining contact pages generated lazily on first open | Both | Founder walk-through signed; drift list empty |
 
+**Track D — D4-b DONE 2026-09-09** (branch `track-d4b`, seven tasks, commits `ef273a666`,
+`f06c5a3f6`, `14fd701f3`+`6e58459ad`, `18b092422`, `f96f99530`+`c424b7827`+`182080915`,
+`ceb82f841`). D4 left the screens reading the old research lane through the FI-2 payloads; D4-b made
+every read ARV2-native and deleted the old surface:
+
+- **Research status** is one statement over `arv2_research_job` (`arv2_research_status_for`) — per
+  account, not per project; the status string is served verbatim, `refreshing` = a non-terminal job
+  newer than a completed one. The `entity_research_job` aggregation is gone.
+- **The committee** is the account's contacts holding ≥1 live claim, persona-ranked then by name
+  then by id, with **no coverage-row branch**; "why they matter" serves a researched rationale
+  verbatim and otherwise `"{title} · {persona label}"`.
+- **Persona is display text on the wire** (`"Economic buyer"`), everywhere including the contact
+  refs inside stored display blocks (a one-shot rewrote 7 blocks / 26 personas, idempotent);
+  `revenueLabel`, `revenueBand` and `fundingLabel` read the registry objects instead of printing
+  `10m_50m` or `amount_max: 25000000` at a marketer.
+- **`core.work_email` is an object** carrying the provider's verdict (`{address, status,
+  checked_at?}`, migration `7332ac974920`), so a stored address can be graded; the four loaded
+  Zafran rows were repaired in place, provenance preserved.
+- **One contract.** The FI-2 readers, models, SQL and the `?contract=` selector are deleted
+  (−7,087 lines over 39 files); E6 went with them; `/frontend/v1` serves ARV2 v1 only. The guard
+  `tests/api/test_frontend_read_arv2_only_guard.py` keeps it that way.
+- **The D1 answer-key loader writes ARV2 rows only** — one `arv2_research_run` + one
+  `arv2_research_job` through `account_research_store`; its four legacy INSERTs are gone and the
+  guard's file allowlist is now empty.
+
+The old lane's own tables and modules are inventoried, not deleted, in
+**`docs/specs/ARV2-PHASE6-LEGACY-DELETION-INVENTORY.md`** — that document is the Phase-6 PR's plan
+input. D5's input is unchanged.
+
 **Track D roadmap — the CSS re-sync job (founder ruling 2026-09-09, 2a).** D4 merged tokens
 *additively*: the design build's `packages/design-system` package replaced ours, and the 48
 variables only the old token set defined were extracted once into
@@ -453,6 +490,12 @@ onboarding rebuild ships.
 One dedicated stub-and-delete PR, only after **both** D5 and the R2/R3 exit gates pass: the Sumble
 stack, the old research lane and its settlement layer, the Stage-0 scrapers, the judgment gates,
 the unused waterfall consumers. The memory subsystem stays on disk until a product decision.
+
+**The inventory is written (2026-09-09, D4-b Task 7): `docs/specs/ARV2-PHASE6-LEGACY-DELETION-INVENTORY.md`.**
+83 old-lane tables (with row counts, creating migration and every code reader/writer), the ~38 kLOC
+of modules with their importers and flags, an eight-step stub-then-delete order with the blast
+radius and gate per step, and an explicit survive list. Nothing has been deleted; the document is
+the next PR's plan input.
 
 ## 10. Operating model (how a non-technical co-founder and coding agents execute this safely)
 

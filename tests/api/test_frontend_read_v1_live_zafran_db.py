@@ -1,4 +1,4 @@
-"""ARV2 D3, the closing walk — the five contract-v1 payloads over the *real* Zafran data.
+"""The closing walk — the five contract-v1 payloads over the *real* Zafran data.
 
 Every other D3 suite proves one endpoint against a fixture it seeded itself: precise, and blind to
 the one question that matters at the end of the track — does the read surface serve the account the
@@ -19,9 +19,9 @@ Three properties make it safe to keep in the ordinary suite rather than behind a
   row behind even though it only ever issues ``SELECT``s.
 
 Both halves of every payload are checked: the pydantic model of contract v1 *and* the frontend's
-own vendored Zod, through ``tests/api/contract_v1/oracle.py``. And the same five requests are made
-**without** ``?contract=v1`` to prove the D3 ruling — the FI-2 payloads are still served untouched,
-except on ``/workspace``, which is a new endpoint and serves v1 in both modes.
+own vendored Zod, through ``tests/api/contract_v1/oracle.py``. The same five requests are also made
+**without** ``?contract=v1``, which since 2026-09-09 must serve the identical body: the selector is
+gone and there is only one contract to serve.
 
 The five v1 payloads are dumped to ``.artifacts/d3-zafran/`` (git-ignored) as the track's record;
 set ``CLUE_D3_DUMP=0`` to skip the write.
@@ -51,6 +51,7 @@ from clue_api.frontend_read.contract_v1 import (
     AccountV1,
     AccountWorkspaceV1,
 )
+from clue_api.frontend_read.v1_shared import RESEARCH_STATUS_LABELS
 from clue_api.projections_app import create_projections_app
 from clue_config import load_settings
 from tests.api.contract_v1.oracle import zod_validate
@@ -100,11 +101,22 @@ _CONTACT_SECTION_ORDER = (
 #: The buying committee D1 recorded for Zafran. Order is not asserted (the payload sorts by
 #: persona rank, which the E4 assertions cover); membership is.
 _COMMITTEE = {"Vari Kaur", "Nick Fisher", "Sanaz Yashar", "Ben Seri", "Tom Anthony"}
+#: The four addresses AI Ark exported and verified over SMTP, plus the one person it found none
+#: for. The answer key holds no fifth address, so a fifth would be an invention, not a finding.
+_COMMITTEE_EMAILS = {
+    "Vari Kaur": "vari@zafran.io",
+    "Nick Fisher": "nick@zafran.io",
+    "Sanaz Yashar": "sanaz@zafran.io",
+    "Tom Anthony": "tom@zafran.io",
+    "Ben Seri": None,
+}
 
 #: The three other accounts the answer-key workspace carries. None was researched.
 _UNRESEARCHED = {"Cogent Security", "Harmonic Security", "UPTIQ, Inc."}
 
-_PERSONAS = {"economic_buyer", "champion", "technical_evaluator", "user", "blocker"}
+#: The personas as the wire serves them: display text, never the vocabulary value (D4-b
+#: decision 5). The vocabulary itself still orders the table — see the ``ranks`` assertion.
+_PERSONAS = {"Economic buyer", "Champion", "Technical evaluator", "User", "Blocker"}
 
 
 # --- harness ----------------------------------------------------------------------------------
@@ -241,6 +253,22 @@ def _non_empty_sections(block: dict[str, Any]) -> list[str]:
     ]
 
 
+def _block_personas(block: dict[str, Any]) -> set[str]:
+    """Every persona stored inside a generated block — the chips and the item subjects.
+
+    These are written into ``display_block.body_json`` at generation time and served verbatim, so
+    they are what ``scripts/rewrite_display_persona_labels.py`` repaired on this database.
+    """
+    found: set[str] = set()
+    for section in block["sections"]:
+        for item in section["items"]:
+            for ref in [*item.get("contactRefs", []), item.get("subject")]:
+                persona = (ref or {}).get("persona")
+                if persona is not None:
+                    found.add(persona)
+    return found
+
+
 def _evidence_ids(payload: dict[str, Any]) -> set[str]:
     return {row["claimId"] for row in payload["researchEvidence"]}
 
@@ -262,7 +290,7 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
             nick_id = await _contact(conn, account_id, name=_NICK)
 
             # --- E1: the accounts list ------------------------------------------------------
-            response = await _get(conn, _BASE, contract="v1", limit=200)
+            response = await _get(conn, _BASE, limit=200)
             assert response.status_code == 200, response.text
             accounts = response.json()
             _dump("accounts", accounts)
@@ -273,10 +301,21 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
 
             zafran_row = rows["Zafran Security"]
             assert zafran_row["id"] == str(account_id)
+            # The status is ARV2's own ``arv2_research_job`` row (D4-b task 1), which the D1
+            # loader now writes for Zafran (task 6) — so the walk is back to naming the state.
             assert zafran_row["researchStatus"] == "completed"
             assert zafran_row["researchStatusLabel"] == "Researched"
+            assert (
+                zafran_row["researchStatusLabel"]
+                == RESEARCH_STATUS_LABELS[zafran_row["researchStatus"]]
+            )
             assert zafran_row["websiteUrl"] == "https://zafran.io"
+            # The revenue column reads its `core.revenue_band` claim as words. The answer key's
+            # only stored band is `"10m_50m"`, which the table used to print verbatim at a
+            # marketer (D4-b controller ruling 2).
+            assert zafran_row["revenueBand"] == "$10M–50M"
             for name in _UNRESEARCHED:
+                assert rows[name]["revenueBand"] == "Unknown", name
                 assert rows[name]["researchStatus"] == "not_started", name
             # No `account.scoring.fit` claim exists anywhere in the answer key, so no row may
             # invent a band or a zero (ruling R7): the pair is null together, everywhere.
@@ -287,7 +326,7 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
                 zod_validate(row, "AccountSchema")
 
             # --- E2: the account detail -----------------------------------------------------
-            response = await _get(conn, f"{_BASE}/{account_id}", contract="v1")
+            response = await _get(conn, f"{_BASE}/{account_id}")
             assert response.status_code == 200, response.text
             detail_body = response.json()
             _dump("detail", detail_body)
@@ -300,11 +339,23 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
             assert what_they_do["key"] == "what-they-do"
             assert what_they_do["intro"], "the what-they-do section is served as an intro"
             assert len(_non_empty_sections(overview)) >= 5, _non_empty_sections(overview)
+            # The stored blocks speak display text too, because the one-shot rewrote the rows the
+            # D2 lane wrote before the ruling. A vocabulary value here means either a block was
+            # regenerated by an un-fixed runner or the one-shot has not been run on this checkout.
+            assert _block_personas(overview) <= _PERSONAS, _block_personas(overview)
 
             committee = detail["buyingCommittee"]
             assert len(committee) == 5
             assert {member["name"] for member in committee} == _COMMITTEE
             assert {member["persona"] for member in committee} <= _PERSONAS
+            # D4-b task 4: the four people AI Ark exported an SMTP-verified address for carry it
+            # on the card; Ben Seri, whom the run never found an address for, carries null. The
+            # claim id travels either way for everyone who *has* a work-email claim.
+            assert {member["name"]: member["email"] for member in committee} == _COMMITTEE_EMAILS
+            assert all(
+                (member["emailClaimId"] is not None) is (member["email"] is not None)
+                for member in committee
+            ), [(m["name"], m["email"], m["emailClaimId"]) for m in committee]
 
             covered = _evidence_ids(detail)
             assert covered, "the detail cites claims, so it must serve their evidence"
@@ -316,13 +367,24 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
             assert detail["activity"], "the answer-key run is itself activity"
             assert {row["actor"]["type"] for row in detail["activity"]} == {"clue"}
             assert detail["headcountLabel"]
-            assert detail["revenueLabel"]
             assert detail["locationsLabel"]
+            # The two labels D4-b taught to read their registry *objects* instead of rendering
+            # them. Before the fix these served the pipeline's own dump —
+            # "amount_max: 25000000; amount_min: 10000000; as_of: 2026-08-22; …" — at a marketer.
+            # The values are the answer key's: `core.annual_revenue` is a provider band, and
+            # `account.recent_funding` is the provider's list of rounds (whose objects carry no
+            # currency of their own, hence the bare "60M" beside the total's "$130.5M").
+            assert detail["revenueLabel"] == "$10M–25M"
+            assert detail["fundingLabel"].startswith("Series C")
+            # The round object carries no `currency`; its sibling total says USD, and the two are
+            # the same account's funding in the same provider record — so the round borrows it
+            # (D4-b controller ruling 1) rather than printing a bare "60M" beside "$130.5M".
+            assert detail["fundingLabel"] == "Series C · $60M · $130.5M"
             AccountDetailV1.model_validate(detail)
             zod_validate(detail, "AccountDetailSchema")
 
             # --- E3: the account workspace --------------------------------------------------
-            response = await _get(conn, f"{_BASE}/{account_id}/workspace", contract="v1")
+            response = await _get(conn, f"{_BASE}/{account_id}/workspace")
             assert response.status_code == 200, response.text
             workspace_body = response.json()
             _dump("workspace", workspace_body)
@@ -339,11 +401,12 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
             assert workspace["artifacts"] == []
             assert workspace["insights"] == []
             assert not _missing(_cited_claim_ids(insights), _evidence_ids(workspace))
+            assert _block_personas(insights) <= _PERSONAS, _block_personas(insights)
             AccountWorkspaceV1.model_validate(workspace)
             zod_validate(workspace, "AccountWorkspaceSchema")
 
             # --- E4: the contacts list ------------------------------------------------------
-            response = await _get(conn, f"{_BASE}/{account_id}/contacts", contract="v1")
+            response = await _get(conn, f"{_BASE}/{account_id}/contacts")
             assert response.status_code == 200, response.text
             contacts_body = response.json()
             _dump("contacts", contacts_body)
@@ -353,34 +416,36 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
             assert contacts_body["meta"]["total"] == 5
             assert {row["name"] for row in contacts} == _COMMITTEE
             nick = next(row for row in contacts if row["id"] == str(nick_id))
-            assert nick["persona"] == "economic_buyer"
+            # Display text on the wire; the tone still keys on the vocabulary value behind it.
+            assert nick["persona"] == "Economic buyer"
             assert nick["personaTone"] == "olive"
-            # The walk's one finding, pinned rather than papered over. Decision 13 (source map
-            # §3.5/§3.6) reads the email chip off a `core.work_email` claim whose `value_json` is
-            # the provider's `{address, status}` pair — the shape `AiArkEmailExport` insists on,
-            # because "an address flattened away from its status/domainType pair is a claim nobody
-            # can grade". No writer produces that shape yet: D1's answer key and FI-2's own
-            # email-lookup writer both store the bare address string. So a real contact who *has*
-            # an address is served `lookup`, which is the fail-closed direction (the screen offers
-            # a lookup instead of showing an ungraded address as verified) but is not the screen
-            # the ARV2 lane is aiming at. Recorded in the D3 close-out note as a writer gap, not a
-            # reader change: flipping it is a product ruling about showing unverified addresses.
-            assert nick["emailStatus"] == "lookup"
-            assert nick.get("emailLabel") is None
+            # D3's one finding, closed by D4-b task 4. The chip reads a `core.work_email` claim
+            # whose value is the provider's `{address, status, checked_at}` — the shape
+            # `AiArkEmailExport` insists on, because "an address flattened away from its
+            # status/domainType pair is a claim nobody can grade". D1 stored the bare address, so
+            # every real contact read `lookup`; the registry now declares the object, the loader
+            # and the lookup writer produce it, and `--repair-emails` gave the loaded rows their
+            # AI Ark verdict. The date is the provider's own check, not the day we wrote the row.
+            assert nick["emailStatus"] == "available"
+            assert nick["emailLabel"] == "nick@zafran.io"
+            with_addresses = {row["name"] for row in contacts if row["emailStatus"] == "available"}
+            assert with_addresses == set(_COMMITTEE_EMAILS) - {"Ben Seri"}
+            # ``emailLabel`` is omitted, not null, when there is nothing to show (contract v1).
+            assert {row["name"]: row.get("emailLabel") for row in contacts} == _COMMITTEE_EMAILS
 
-            from clue_api.frontend_read.v1_shared import PERSONA_RANK
+            from clue_api.frontend_read.v1_shared import PERSONA_LABELS, PERSONA_RANK
 
-            ranks = [
-                (PERSONA_RANK.index(row["persona"]) if row["persona"] in PERSONA_RANK else 99)
-                for row in contacts
-            ]
+            # The order is still the *vocabulary's* order — the rows now carry the label, so the
+            # rank is looked up through it. That the two maps agree is the point.
+            _rank_of = {PERSONA_LABELS[key]: index for index, key in enumerate(PERSONA_RANK)}
+            ranks = [_rank_of.get(row["persona"], 99) for row in contacts]
             assert ranks == sorted(ranks), [(r["name"], r["persona"]) for r in contacts]
             for row in contacts:
                 AccountContactSummaryV1.model_validate(row)
                 zod_validate(row, "AccountContactSummarySchema")
 
             # --- E5: the contact page -------------------------------------------------------
-            response = await _get(conn, f"{_BASE}/{account_id}/contacts/{nick_id}", contract="v1")
+            response = await _get(conn, f"{_BASE}/{account_id}/contacts/{nick_id}")
             assert response.status_code == 200, response.text
             contact_body = response.json()
             _dump("contact-nick-fisher", contact_body)
@@ -389,6 +454,7 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
             page = contact["contactDisplay"]
             assert page["page"] == "contact"
             assert _keys(page) == _CONTACT_SECTION_ORDER
+            assert _block_personas(page) <= _PERSONAS, _block_personas(page)
             openers = next(s for s in page["sections"] if s["key"] == "openers")
             assert openers["items"]
             for item in openers["items"]:
@@ -396,6 +462,9 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
                 assert item["sendLine"]["text"]
             assert contact["tenureLabel"]
             assert contact["emailClaimId"]
+            # The date on the chip is AI Ark's own SMTP check (2026-08-31), not the day D1 wrote
+            # the claim (2026-09-02) — the reader shows when the mailbox answered.
+            assert contact["emailVerifiedAt"] == "2026-08-31"
             assert contact["linkedinLabel"] == "nicholastfisher"
             contact_covered = _evidence_ids(contact)
             assert not _missing(_cited_claim_ids(page), contact_covered)
@@ -406,8 +475,8 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
     run_async(scenario())
 
 
-def test_without_the_parameter_the_same_five_requests_still_serve_the_fi_2_shapes() -> None:
-    """The D3 ruling, proven on the real data: v1 is opt-in, and E3 is v1 either way."""
+def test_without_the_parameter_the_same_five_requests_serve_the_same_bodies() -> None:
+    """One contract: ``?contract=`` selects nothing, so the parameter cannot change a payload."""
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -415,28 +484,16 @@ def test_without_the_parameter_the_same_five_requests_still_serve_the_fi_2_shape
             account_id = await _zafran(conn)
             nick_id = await _contact(conn, account_id, name=_NICK)
 
-            accounts = (await _get(conn, _BASE, limit=200)).json()
-            row = next(item for item in accounts["data"] if item["id"] == str(account_id))
-            assert "scores" in row
-            assert "researchStatusLabel" not in row
-
-            # The FI-2 detail and profile are served unenveloped; only the two list endpoints
-            # carry `{data, meta}`. That asymmetry is FI-2's, and D3 left it exactly as it was.
-            detail = (await _get(conn, f"{_BASE}/{account_id}")).json()
-            assert "neutralFacts" in detail
-            assert "overviewDisplay" not in detail
-
-            contacts = (await _get(conn, f"{_BASE}/{account_id}/contacts")).json()["data"]
-            assert contacts, "the FI-2 contacts reader serves the same committee"
-            assert "roleOnCommittee" in contacts[0]
-
-            profile = (await _get(conn, f"{_BASE}/{account_id}/contacts/{nick_id}")).json()
-            assert "professionalFacts" in profile
-
-            # E3 is a new endpoint: no FI-2 shape exists beside it, so it serves v1 in both modes.
-            bare = (await _get(conn, f"{_BASE}/{account_id}/workspace")).json()
-            pinned = (await _get(conn, f"{_BASE}/{account_id}/workspace", contract="v1")).json()
-            assert bare == pinned
-            assert "insightsDisplay" in bare["data"]
+            for path, params in (
+                (_BASE, {"limit": 200}),
+                (f"{_BASE}/{account_id}", {}),
+                (f"{_BASE}/{account_id}/workspace", {}),
+                (f"{_BASE}/{account_id}/contacts", {}),
+                (f"{_BASE}/{account_id}/contacts/{nick_id}", {}),
+            ):
+                bare = await _get(conn, path, **params)
+                pinned = await _get(conn, path, **params, contract="v1")
+                assert bare.status_code == pinned.status_code == 200, path
+                assert bare.json() == pinned.json(), path
 
     run_async(scenario())

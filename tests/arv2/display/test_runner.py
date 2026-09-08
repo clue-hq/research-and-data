@@ -43,7 +43,9 @@ SUBJECT = SubjectRef(
     account_id=ACCOUNT,
     account_name="Zafran Security",
     account_domain="zafran.io",
-    persona="Champion",
+    # The vocabulary value, because that is what ``gather.committee_members`` reads out of the
+    # ``contact.persona`` claim — the runner is where it becomes the word a screen prints.
+    persona="champion",
     title="VP Marketing",
 )
 DEV_RAO = SubjectRef(
@@ -53,7 +55,7 @@ DEV_RAO = SubjectRef(
     account_id=ACCOUNT,
     account_name="Zafran Security",
     account_domain="zafran.io",
-    persona="Blocker",
+    persona="blocker",
 )
 ACCOUNT_SUBJECT = SubjectRef(
     kind="account",
@@ -396,6 +398,9 @@ def test_contact_refs_resolve_case_insensitively_and_unknown_names_are_dropped()
         ],
         section,
     )
+    # The personas are written into ``body_json`` as display text: this payload is stored and
+    # served verbatim, so a raw ``champion`` here would be a raw ``champion`` on the screen
+    # forever (D4-b decision 5).
     assert draft.items[0]["contactRefs"] == [
         {
             "accountId": ACCOUNT,

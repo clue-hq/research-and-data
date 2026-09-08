@@ -310,7 +310,7 @@ pipe-joined-key split all live there, and `ANSWER_KEY_NAMESPACE` is the uuid5 na
 deterministic id in the load hangs off. `answer_key_loader.py` writes them: workspace → brand →
 product → project, the pack loaders, four account entities and twelve contacts, the project run
 (no Stage-0 pins), two `run_lineage` rows, three transcript artifacts, every draft through
-`LenientClaimWriter`, then the terminal research rows and the activity feed.
+`LenientClaimWriter`, then the ARV2 research run and job and the activity feed.
 `scripts/load_arv2_answer_key.py` is the thin argparse wrapper:
 
 ```
@@ -319,21 +319,45 @@ uv run python scripts/load_arv2_answer_key.py \
 ```
 
 (`--dry-run` runs the whole load in one transaction, prints the report and rolls back;
-`--context-root` defaults to `.context`, `--storage-root` to `.artifacts/answer-key`.) **The load
-is one-shot per database**: it is keyed on a deterministic run id, and a second run raises
+`--context-root` defaults to `.context`, `--storage-root` to `.artifacts/answer-key`.
+`--repair-emails` loads nothing: it supersedes the already-loaded `core.work_email` claims that
+still hold a bare address string with the `{address, status, checked_at}` value D4-b's registry
+declares, taking the verdict from the answer key's own AI Ark `verification` block, and is
+idempotent — a second pass finds no bare strings. `--repair-research-rows` loads nothing either: it
+writes the `arv2_research_run` + `arv2_research_job` pair a fresh load now writes, for a database
+loaded back when D1 wrote the old lane's terminal rows instead.) **The load is one-shot per database**: it is keyed on a deterministic run id, and a second run raises
 `AlreadyLoaded` rather than duplicating rows. A database that already carries it must be reset, not
 re-loaded.
 
-**Two constraints this places on R2:**
+**Three constraints this places on R2 and R3:**
 
 - **R2's `write_claims` goes through `LenientClaimWriter`.** The structuring pass does not build
   `Claim` objects of its own and does not call `insert_claim` directly; the gate is the lane's only
   write path, so the stamping and the markers are uniform whatever produced the fact.
-- **The loader's terminal rows are the shape R2's finalization must produce.** The
-  `entity_research_run` / `entity_research_job` / `entity_research_account_coverage` triple (plus
-  the `entity_research_account_fleet` row the committee read resolves the run through) is what the
-  accounts screens read a finished account through. R2's real finalization writes the same rows
-  with the same relationships; the loader is the worked example, not a special case.
+- **The loader writes ARV2 rows, and only ARV2 rows.** Founder ruling 2026-09-09: *ARV2's own
+  rows are the only truth; nothing about the old research lane matters.* So the answer key ends in
+  one `arv2_research_run` and one `arv2_research_job` for Zafran — created, begun and finished
+  through `account_research_store` exactly as R2's driver does it, pinned to the project's brand
+  and project run, to a stand-in ICP artifact the loader stores (`icp_key = answer-key-standin`:
+  the 2026-09-02 run predates the ICP gate, so there is no confirmed document it was launched
+  against), to the `arv2-account/v1` profile ref and sha, and finalized `completed` with
+  `{"claims_written": …, "source": "answer-key"}`. The other three accounts get **no** job: "never
+  researched" is a fact about a missing row, and `arv2_research_status_for` reads it that way. The
+  legacy `entity_research_run` / `entity_research_job` / `entity_research_account_coverage` /
+  `entity_research_account_fleet` writes D1 shipped are **deleted** — nothing reads those tables on
+  the ARV2 path (`tests/api/test_frontend_read_arv2_only_guard.py` now passes with no allowlist),
+  and the Phase-6 PR drops them. A database loaded before this change keeps its dead legacy rows
+  and gains the ARV2 pair through `scripts/load_arv2_answer_key.py --repair-research-rows`, which
+  is idempotent on the deterministic run and job ids.
+- **R3's person mapper writes `core.work_email` as the verdict object, never a bare address.** The
+  registered value is `{"address", "status", "checked_at"?}` with `status` in
+  `verified_smtp | catch_all_valid | invalid | unknown | unverified` (D4-b decision 6): the address
+  with the provider grading that makes it usable, which is exactly the pair `AiArkEmailExport`
+  keeps whole. The email chip serves an address only for the first two verdicts, so an R3 person
+  claim that flattens the address away from its verdict reads as *look this up* on every screen.
+  `answer_key.work_email_value(address, verification)` is the one mapping — the AI Ark
+  `verification` block in, the claim value out — and it is what R3's own AI Ark email export should
+  call rather than re-deriving the grading.
 
 ## D2 — the display module (`clue_api/arv2/display/`)
 
@@ -475,11 +499,13 @@ The five endpoints (all under `/frontend/v1`, all workspace-scoped by `X-Workspa
 | E4 | `GET /accounts/{id}/contacts` | `AccountContactsResponseV1` — the committee rows |
 | E5 | `GET /accounts/{id}/contacts/{contactId}` | `AccountContactDetailResponseV1` — the contact page, incl. `contactDisplay` |
 
-**Contract v1 is selected per request with `?contract=v1`** (the D3 ruling). Without the parameter
-E1/E2/E4/E5 serve the FI-2 payloads byte-for-byte — untouched by D3, tests included — and an
-unrecognised value (`?contract=v2`) is an enveloped 422 on every route. E3 is a new endpoint with
-no FI-2 shape beside it, so it serves v1 in both modes. D4 re-points the frontend adapters and
-deletes the FI-2 branches and the parameter together.
+**One contract (D4-b, 2026-09-09).** `/frontend/v1` serves contract v1 and nothing else. The FI-2
+readers, their wire models, their SQL and the modules that existed only for them are deleted; the
+`?contract=` selector is gone and a request that still sends one is **ignored**, not 422'd. The v1
+readers took the plain names (`list_accounts`, `read_account_detail`, `read_account_contacts`,
+`read_contact_profile`). `frontend_read.app` no longer defines `ContractMode` / `contract_mode` /
+`ContractDep`. *(Historical: D3 selected v1 per request with `?contract=v1`; without it E1/E2/E4/E5
+served FI-2 payloads and `?contract=v2` was an enveloped 422. D4-b removed all of it.)*
 
 The modules, under `frontend_read/`:
 
@@ -489,7 +515,9 @@ The modules, under `frontend_read/`:
 | `v1_shared.py` | Everything two or more endpoints compute: `arv2_display_allowed` (the D3 display predicate), the five label maps, the fit/band/label helpers, `email_facts`, tenure/education/LinkedIn/time labels, owners, custom fields, `last_modified_for`, `activity_for`, and `research_evidence_for`. |
 | `display_pages.py` | The one seam onto D2. `DisplayPages.page(...)` composes a page from live blocks, degrades to an empty block rather than raising, and schedules stale-section regeneration in the background (never awaited by the request); `generate=False` is the authorisation-read mode the evidence routes use. It also owns `committee` / `buying_committee` / `rail_contacts` over one claims read. |
 | `account_workspace.py` | E3, end to end. |
-| `accounts_list.py` / `account_detail.py` / `contacts.py` | The `?contract=v1` branches beside their untouched FI-2 readers. |
+| `accounts_list.py` / `account_detail.py` / `contacts.py` | The E1 / E2 / E4+E5 readers — one contract, no branch. `accounts_list` also exports the public `read_spine_page` (the chat composer's mention catalog shares the one account scan). |
+| `evidence_stream.py` | E7's artifact streaming — the three functions the deleted `evidence.py` still owed it. |
+| `project_run_context.py` | `latest_project_run_context` only, for the agent turn wiring over the platform `project_run` table. (What was `committee.py` — its governed-committee reader resolved members through the old lane and returned nobody on ARV2 rows.) |
 
 **The display module is consumed only through its published functions** — `ensure_page`,
 `live_blocks`, `compose_display_block`, `stale_sections`, `insight_summary`, `evidence_for_ids`,
@@ -498,20 +526,44 @@ No endpoint reaches into `display_block` rows, prompts, the runner or the floor:
 something the display module does not expose, the new function is D2's to add, not D3's to inline.
 
 **D4 (2026-09-09) re-pointed the frontend at `?contract=v1` and changed nothing here.** The
-`apps/frontend` accounts feature was re-lifted from the design build and its five repositories now
-read E1–E5 through the authenticated BFF with `contract=v1` on every request — E1 walking
-`meta.nextCursor` at `limit=200` because the table pages in the browser. **No backend behaviour
-changed**: the only edits under `platform/` are two prose pointers — this file's module table and
-`contract_v1.py`'s docstring — that now name `apps/frontend/src/features/accounts/model/` instead of
-the retired vendored Zod copy. Both contracts are therefore still served. **The next backend PR is the FI-2 deletion**: drop the
-FI-2 readers in `accounts_list.py` / `account_detail.py` / `contacts.py` (with
-`AccountDetail`/`neutralFacts`/`projectSections`), `app.contract_mode` / `ContractDep` and the
-`contract` parameter itself, and the FI-2 route tests with them — after which `?contract=v1` comes
-off the adapters too. Two v1 reader fixes ride with it (both recorded at D3 and confirmed by the D4
-walk): `revenueLabel` / `fundingLabel` must read the registry objects' own keys the way
-`employeeBand` and `locationsLabel` do — today the rail prints
-`"amount_max: 25000000; amount_min: 10000000; …"` — and `AccountContactDetailV1.linkedinUrl` should
-become nullable so the site-root fallback can go away.
+`apps/frontend` accounts feature was re-lifted from the design build and its five repositories read
+E1–E5 through the authenticated BFF — E1 walking `meta.nextCursor` at `limit=200` because the table
+pages in the browser. No backend behaviour changed at D4.
+
+**D4-b (2026-09-09) made every read ARV2-native and deleted the FI-2 surface.** Seven tasks on
+`track-d4b`. What the read surface now does, and the constraints it puts on Track R:
+
+1. **Research status** comes from `arv2_research_job` (`v1_shared.arv2_research_status_for`): the
+   account's latest job by `(created_at, job_id)` within the workspace, `status` served verbatim
+   (R2's `JobStatus` and the wire's `ResearchStatus` are the same five strings — a test pins the
+   vocabularies equal), `refreshing` = a non-terminal job newer than a completed one, `not_started`
+   when there is no job. It is **per account, not per project**.
+2. **The committee** is `arv2/display/gather.committee_members`: the account's contacts with ≥1 live
+   claim under the workspace scope, merged losers excluded, ordered `(persona_rank, name, id)`. No
+   coverage row is consulted anywhere. **R3 constraint:** when the committee agent lands it replaces
+   this rule *in this one function*, and it must write its own committee rows — it may not resurrect
+   `entity_research_account_coverage`.
+3. **Persona is display text on the wire** (`persona_display`), including in the `contactRefs[]` the
+   display runner writes into `display_block.body_json`. `persona_label` / `persona_rank` /
+   `PERSONA_TONES` still read the vocabulary value. **R3 constraint:** write the vocabulary value to
+   the claim; the read surface does the labelling.
+4. **`core.work_email` is an object** — `{address, status, checked_at?}`, `status` in
+   `verified_smtp | catch_all_valid | invalid | unknown | unverified` (migration `7332ac974920`).
+   `emailStatus` is `available` only for the first two verdicts; a bare string reads `lookup`.
+   **R3 constraint:** the person mapper writes the object, never a bare address, and calls
+   `answer_key.work_email_value(address, verification)` rather than re-deriving the grading.
+5. **The loader writes ARV2 rows only.** `answer_key_loader` creates one `arv2_research_run` + one
+   `arv2_research_job` through `account_research_store` (`create_run` → `create_job` → `begin_job` →
+   `finish_job`); its four `entity_research_*` INSERTs are deleted. `--repair-research-rows` and
+   `--repair-emails` bring an already-loaded database up to the same state, both idempotent.
+6. **The guard.** `tests/api/test_frontend_read_arv2_only_guard.py` greps `clue_api/{arv2,frontend_read}`
+   for `entity_research_`, `account_run`, `research_view`, `read_governed_committee`,
+   `ContactEligibilityResolver` and bare `display_allowed`. Its **file allowlist is empty**. The one
+   substring allowance is `entity_research_job_id`, a real ARV2 column on `provider_call_ledger`
+   that holds an `arv2_research_job.job_id`.
+7. Still owed, recorded so it is not rediscovered: `AccountContactDetailV1.linkedinUrl` should
+   become nullable so the site-root fallback can go, and `POST /frontend/v1/accounts` does not exist
+   (the frontend's create is a local non-optimistic draft).
 
 ## Notes recorded at R1 integration (2026-09-07)
 

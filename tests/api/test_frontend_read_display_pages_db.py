@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -25,17 +26,33 @@ from pydantic import SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.display.personas import PERSONA_RANK, persona_label
 from clue_api.arv2.display.recipes import recipes_for
 from clue_api.arv2.display.runner import LunaSectionRunner
 from clue_api.arv2.errors import ProviderHalted
 from clue_api.frontend_read.display_pages import (
+    DEFAULT_WHY_THEY_MATTER,
+    DERIVED_ROLE_MARKER,
+    DERIVED_ROLE_RATIONALE_PHRASE,
+    ROLE_KEY,
     DisplayPages,
+    _why_they_matter,
     buying_committee,
     committee,
     rail_contacts,
 )
 from clue_config import Secrets, Settings
-from clue_core import EntityType, ExtractionMethod
+from clue_core import (
+    Claim,
+    EntityType,
+    ExtractionMethod,
+    IdentityBinding,
+    ResearchMode,
+    ReuseScope,
+    UseClass,
+    new_entity_id,
+    new_run_id,
+)
 from clue_research.compliance import WorkspacePolicy
 from tests.arv2.display._seed import Seeded, seed_display_fixture, write_claim
 
@@ -456,7 +473,8 @@ def test_the_buying_committee_is_persona_ordered_and_reads_through_the_display_p
             nick = rows[0]
             assert nick.name == "Nick Fisher"
             assert nick.title == "VP of Marketing"
-            assert nick.persona == "economic_buyer"
+            # Display text on the wire (D4-b decision 5), never the vocabulary value.
+            assert nick.persona == "Economic buyer"
             assert nick.email == "nick@zafran.io"
             assert nick.email_claim_id == seeded.claims["nick_email"]
             assert nick.why_they_matter == "Owns the marketing budget"
@@ -465,7 +483,7 @@ def test_the_buying_committee_is_persona_ordered_and_reads_through_the_display_p
             # Vari has a persona and a LinkedIn URL, and nothing else: the required strings take
             # their documented placeholders rather than an invented title or reason.
             vari = rows[1]
-            assert vari.persona == "champion"
+            assert vari.persona == "Champion"
             assert vari.title == "—"
             assert vari.why_they_matter == "Committee member"
             assert vari.email is None and vari.email_claim_id is None
@@ -475,7 +493,7 @@ def test_the_buying_committee_is_persona_ordered_and_reads_through_the_display_p
             )
             assert [chip.id for chip in chips] == [str(seeded.nick), str(seeded.vari)]
             assert [chip.title for chip in chips] == ["VP of Marketing", None]
-            assert [chip.persona for chip in chips] == ["economic_buyer", "champion"]
+            assert [chip.persona for chip in chips] == ["Economic buyer", "Champion"]
             assert [chip.email_verified for chip in chips] == [True, False]
             assert all(chip.has_detail for chip in chips)
 
@@ -508,3 +526,101 @@ def test_an_account_with_no_contacts_has_an_empty_committee() -> None:
             )
 
     run_async(_run())
+
+
+# -- (f) why a member matters --------------------------------------------------------------------
+#
+# Pure functions over one claim, so they need no database — but they live here, beside the builder
+# that calls them, because the string they produce is a committee-card decision.
+
+
+def _role_claim(**overrides: object) -> Claim:
+    """One ``contact.role_on_committee`` claim, shaped as the lenient writer stores it."""
+    base: dict[str, object] = {
+        "entity_id": new_entity_id(),
+        "entity_type": EntityType.CONTACT,
+        "field_key": ROLE_KEY,
+        "value_json": {"role": "economic_buyer", "rationale": "Owns the marketing budget."},
+        "source_url": "https://zafran.io/team",
+        "source_tier": 1,
+        "extraction_method": ExtractionMethod.API,
+        "confidence": 0.9,
+        "run_id": new_run_id(),
+        "research_mode": ResearchMode.CONTACT_PROFILING,
+        "reuse_scope": ReuseScope.TENANT_PRIVATE,
+        "workspace_id": WORKSPACE,
+        "identity_binding": IdentityBinding.STRONG,
+        "use_class": UseClass.PROFESSIONAL_PUBLIC,
+    }
+    base.update(overrides)
+    return Claim(**base)  # type: ignore[arg-type]
+
+
+def test_persona_label_names_the_vocabulary_and_nothing_else() -> None:
+    assert [persona_label(persona) for persona in PERSONA_RANK] == [
+        "Economic buyer",
+        "Champion",
+        "Technical evaluator",
+        "User",
+        "Blocker",
+    ]
+    assert persona_label(None) is None
+    assert persona_label("procurement_gatekeeper") is None
+
+
+def test_a_researched_rationale_is_served_verbatim() -> None:
+    """The sentence a human wrote (or a model was made to justify) is the reason, unedited."""
+    claim = _role_claim()
+    assert (
+        _why_they_matter(claim, title="VP of Marketing", persona="economic_buyer")
+        == "Owns the marketing budget."
+    )
+
+
+def test_a_persona_derived_role_is_not_a_reason_and_reads_as_title_and_persona() -> None:
+    """D4-b decision 4. The D1 loader derives a role for a person the run gave only a persona, and
+    marks the row twice. Either mark is enough, because serving that sentence would put a reason on
+    the card that is really just the persona chip beside it, spelled out."""
+    marked = _role_claim(
+        value_json={"role": "economic_buyer", "rationale": "VP of Marketing — something", "x": 1},
+        write_markers={DERIVED_ROLE_MARKER: "row-17"},
+    )
+    phrased = _role_claim(
+        value_json={
+            "role": "economic_buyer",
+            "rationale": f"VP of Marketing — {DERIVED_ROLE_RATIONALE_PHRASE} recorded by AI Ark",
+        }
+    )
+    for claim in (marked, phrased):
+        assert (
+            _why_they_matter(claim, title="VP of Marketing", persona="economic_buyer")
+            == "VP of Marketing · Economic buyer"
+        )
+        # With no title there is nothing honest to say beyond membership itself.
+        assert (
+            _why_they_matter(claim, title=None, persona="economic_buyer") == DEFAULT_WHY_THEY_MATTER
+        )
+        # Nor with a persona the vocabulary does not name.
+        assert (
+            _why_they_matter(claim, title="VP of Marketing", persona="kingmaker")
+            == DEFAULT_WHY_THEY_MATTER
+        )
+
+
+def test_no_role_claim_and_an_empty_rationale_take_the_same_placeholder_path() -> None:
+    empty = _role_claim(value_json={"role": "champion", "rationale": "   "})
+    for claim in (None, empty):
+        assert _why_they_matter(claim, title="Head of RevOps", persona="champion") == (
+            "Head of RevOps · Champion"
+        )
+        assert _why_they_matter(claim, title=None, persona=None) == DEFAULT_WHY_THEY_MATTER
+
+
+def test_the_derived_role_markers_are_the_ones_the_loader_actually_writes() -> None:
+    """The read surface states the loader's two marks itself rather than importing a seed loader;
+    this is the drift guard that keeps the two statements the same statement."""
+    from clue_api.arv2 import answer_key_loader
+
+    assert DERIVED_ROLE_RATIONALE_PHRASE in answer_key_loader._DERIVED_ROLE_RATIONALE
+    source = Path(answer_key_loader.__file__).read_text(encoding="utf-8")
+    assert f'"{DERIVED_ROLE_MARKER}": persona.source_row_id' in source

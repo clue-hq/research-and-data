@@ -26,10 +26,6 @@ export const fixtureAccountWorkspaceRepository: AccountWorkspaceRepository = {
 /**
  * The live account workspace: `GET /frontend/v1/accounts/{id}/workspace` → `{data}`.
  *
- * This route has only ever served contract v1, but `?contract=v1` is sent all
- * the same: the parameter is validated on every route of the surface, so
- * sending it keeps one request shape across the five reads and makes a typo'd
- * value fail here exactly as it would anywhere else.
  */
 export function createHttpAccountWorkspaceRepository(
   read: typeof fetchRead = fetchRead,
@@ -38,7 +34,7 @@ export function createHttpAccountWorkspaceRepository(
     async get(accountId) {
       const body = await read(
         `/accounts/${encodeURIComponent(accountId)}/workspace`,
-        { recordNotFoundAllowed: true, searchParams: { contract: "v1" } },
+        { recordNotFoundAllowed: true },
       );
       if (body === null) return null;
       return AccountWorkspaceResponseSchema.parse(body).data;

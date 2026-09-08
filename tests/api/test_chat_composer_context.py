@@ -7,6 +7,7 @@ from uuid import UUID
 import pytest
 
 from clue_agents import DomainObjectRef
+from clue_api.arv2.display.gather import SubjectRef
 from clue_api.chat import composer_context
 from clue_api.chat.composer_context import (
     ContextReferenceError,
@@ -18,6 +19,24 @@ from clue_core import EntityId
 ACCOUNT_A = EntityId(UUID("00000000-0000-0000-0000-0000000008a1"))
 ACCOUNT_B = EntityId(UUID("00000000-0000-0000-0000-0000000008b1"))
 CONTACT_A = EntityId(UUID("00000000-0000-0000-0000-0000000008c1"))
+
+
+def _member(
+    contact_id: EntityId,
+    *,
+    account_id: EntityId,
+    name: str = "A Person",
+    account_name: str = "An Account",
+) -> SubjectRef:
+    """One row of D2's committee — the addressability rule the composer now applies."""
+    return SubjectRef(
+        kind="contact",
+        id=str(contact_id),
+        name=name,
+        account_id=str(account_id),
+        account_name=account_name,
+        account_domain=None,
+    )
 
 
 def _ref(object_type: str, object_id: EntityId, *, version: int | None = None):
@@ -69,15 +88,16 @@ def test_context_validation_preserves_order_and_checks_contact_parent(
     async def get_contact(_conn: object, entity_id: EntityId):
         return contact if entity_id == CONTACT_A else None
 
-    async def read_contact_profile(*_args: object, **_kwargs: object):
-        return SimpleNamespace()
+    async def committee_members(_conn: object, *, workspace_id: str, account_id: str):
+        del workspace_id
+        return [_member(CONTACT_A, account_id=ACCOUNT_A)] if account_id == str(ACCOUNT_A) else []
 
     async def workspace_client_entity_id(*_args: object, **_kwargs: object):
         return None
 
     monkeypatch.setattr(composer_context, "get_account", get_account)
     monkeypatch.setattr(composer_context, "get_contact", get_contact)
-    monkeypatch.setattr(composer_context, "read_contact_profile", read_contact_profile)
+    monkeypatch.setattr(composer_context, "committee_members", committee_members)
     monkeypatch.setattr(
         composer_context,
         "workspace_client_entity_id",
@@ -317,13 +337,13 @@ def test_context_preparation_hydrates_exact_records_beyond_the_bounded_catalog(
     async def get_contact(_conn: object, _entity_id: EntityId):
         return contact
 
-    async def read_contact_profile(*_args: object, **_kwargs: object):
-        return SimpleNamespace(name=None, title=None, account_name="Exact Account")
+    async def committee_members(_conn: object, **_kwargs: object):
+        return [_member(CONTACT_A, account_id=ACCOUNT_A, name="", account_name="Exact Account")]
 
     monkeypatch.setattr(composer_context, "validated_context_refs", validate)
     monkeypatch.setattr(composer_context, "get_account", get_account)
     monkeypatch.setattr(composer_context, "get_contact", get_contact)
-    monkeypatch.setattr(composer_context, "read_contact_profile", read_contact_profile)
+    monkeypatch.setattr(composer_context, "committee_members", committee_members)
 
     refs = (_ref("contact", CONTACT_A), _ref("account", ACCOUNT_A))
     prepared = asyncio.run(

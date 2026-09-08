@@ -4,11 +4,11 @@ The mapping is pure (:mod:`clue_api.arv2.answer_key`); this module is the side o
 the store. It creates the spine the rows need to exist under (workspace → brand → product →
 project), the account and contact entities every claim keys on, the project run and run lineage the
 project lens reads through, the transcript artifacts the media-quoted claims cite, every claim
-through the lenient write gate, the terminal research run/job/coverage that makes the Zafran
-account read as *researched with a five-person committee*, the activity feed the detail rail
-renders, and — so the research lane has something to launch against — the project's confirmed
-product set (version 1) plus the two stand-in brand-knowledge documents (a confirmed
-``icp-definition`` and its ``audience-persona``) registered the way Track O's ICP gate will.
+through the lenient write gate, the ARV2 research run and job that make the Zafran account read as
+*researched*, the activity feed the detail rail renders, and — so the research lane has something
+to launch against — the project's confirmed product set (version 1) plus the two stand-in
+brand-knowledge documents (a confirmed ``icp-definition`` and its ``audience-persona``) registered
+the way Track O's ICP gate will.
 
 It is deliberately **one-shot per database**: a second load would double every claim, so the first
 thing it does is look for its own run id and refuse. There is no update path — the answer key is a
@@ -21,8 +21,9 @@ import hashlib
 import json
 import uuid
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -30,9 +31,24 @@ import yaml
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.account_research_catalog import (
+    ARV2_ACCOUNT_PROFILE_REF,
+    arv2_account_profile_sha256,
+)
+from clue_api.arv2.account_research_store import (
+    JobStatus,
+    RunRow,
+    begin_job,
+    create_job,
+    create_run,
+    finish_job,
+    read_run,
+    refresh_run_status,
+)
 from clue_api.arv2.answer_key import (
     ANSWER_KEY_NAMESPACE,  # research-run ids share the run ids' uuid5 namespace
     PEOPLE_RUN_ID,
+    WORK_EMAIL_KEY,
     ZAFRAN_ANSWER_KEY,
     ZAFRAN_MANIFEST,
     AnswerKeyManifest,
@@ -107,6 +123,37 @@ _DERIVED_ROLE_RATIONALE = (
 )
 _DERIVED_ROLE_SOURCE_KEY = "ai_ark"
 
+# -- the ARV2 research run and job the answer key stands for --------------------------------------
+
+#: The deterministic ids of the one run and the one job the answer key is. Both hang off the
+#: load's uuid5 namespace, so the repair below writes exactly the rows a fresh load writes.
+ARV2_RESEARCH_RUN_ID = uuid.uuid5(ANSWER_KEY_NAMESPACE, "arv2-research-run:zafran")
+ARV2_RESEARCH_JOB_ID = uuid.uuid5(ANSWER_KEY_NAMESPACE, "arv2-research-job:zafran")
+#: What the run says it was: the effort, the cap and the steer a human would have signed off on.
+ARV2_EFFORT = "full"
+ARV2_COMMITTEE_CAP = 5
+ARV2_DIRECTIVE = "D1 answer key — Zafran (2026-09-02 proof-of-concept run)"
+#: The ICP the run pins. The 2026-09-02 run predates the ICP gate, so there is no confirmed
+#: ``icp-definition`` it was launched against — the run pins a small stand-in document of its own,
+#: named for what it is, rather than borrowing an ICP the run never saw.
+ARV2_STANDIN_ICP_KEY = "answer-key-standin"
+ARV2_STANDIN_ICP_VERSION = 1
+#: The product selection a launch pins. The answer key confirms exactly one product set, version 1.
+ARV2_PRODUCT_SELECTION_VERSION = 1
+_STANDIN_ICP_SOURCE_KEY = "arv2:answer_key:standin_icp"
+#: Fixed bytes — no clock, no ids — so the artifact is content-addressed to the same sha on every
+#: database, and the repair path lands on the same key the load did.
+_STANDIN_ICP_BODY = """# ARV2 answer key — stand-in ICP
+
+The 2026-09-02 Zafran proof-of-concept run was driven by hand, before the ICP gate existed. It
+was not launched against a confirmed `icp-definition` document, so this file stands in for the one
+a real launch pins: it exists so the answer key's research run can record *which ICP it researched
+against* honestly, rather than pointing at a document the run never read.
+
+Audience: the ABM buyers of a security vendor's marketing team — the people the Zafran run went
+looking for. The real thing is authored by Track O's synthesis agent and confirmed by a human.
+"""
+
 
 class AlreadyLoaded(RuntimeError):
     """The answer key is already in this database; loading again would duplicate every claim."""
@@ -128,6 +175,7 @@ class LoadReport:
     artifacts: list[str]  # artifact keys
     product_selection_version: int
     documents: dict[str, str]  # document path -> brand_knowledge_document id
+    research: ResearchRowsReport  # the ARV2 run and job the Zafran account reads as researched
 
 
 async def load_answer_key(
@@ -192,13 +240,13 @@ async def load_answer_key(
     written = [*zafran_written, *people_written]
 
     committee = [contacts[url] for url in _zafran_committee_urls(manifest)]
-    await _research_rows(
+    research = await _research_rows(
         conn,
+        storage=storage,
         manifest=manifest,
-        product_id=product_id,
+        brand_id=brand_id,
         account_id=accounts[ZAFRAN_DOMAIN],
-        written=zafran_written,
-        committee=committee,
+        claims_written=len(zafran_written),
     )
     await _activity(conn, manifest, accounts, facts=len(zafran_written), committee=len(committee))
 
@@ -224,6 +272,7 @@ async def load_answer_key(
         artifacts=sorted(media_keys.values()),
         product_selection_version=selection_version,
         documents=documents,
+        research=research,
     )
 
 
@@ -613,182 +662,223 @@ async def _write_claims(
     return written
 
 
-# -- step 9: the terminal research run, job and coverage -----------------------------------------
+# -- step 9: the ARV2 research run and job -------------------------------------------------------
 
 
 def _sha256_json(payload: Mapping[str, Any]) -> str:
+    """A canonical digest of one JSON payload. ``default=str`` so a uuid in it is hashable."""
     return hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
     ).hexdigest()
+
+
+@dataclass(frozen=True)
+class ResearchRowsReport:
+    """What one pass over the ARV2 run/job rows did — the operator's receipt and the assertions.
+
+    ``runs_created`` / ``jobs_created`` are 0 or 1: the ids are deterministic, so a second pass
+    creates nothing and says so, rather than either failing or quietly writing a second run.
+    """
+
+    run_id: str
+    job_id: str
+    account_entity_id: str
+    claims_written: int
+    runs_created: int
+    jobs_created: int
+    status: str
+
+
+_ZAFRAN_ACCOUNT = text(
+    "SELECT id FROM account_entity WHERE workspace_id = :workspace_id AND primary_domain = :domain"
+)
+_PROJECT_BRAND = text(
+    "SELECT brand_id FROM project WHERE workspace_id = :workspace_id AND project_id = :project_id"
+)
+#: How many facts the Zafran run is standing behind, counted from the store rather than remembered
+#: — so the repair reports the same number on an already-loaded database that the load reports on a
+#: fresh one, and a later supersession (the D4-b email repair) does not inflate it.
+_ZAFRAN_LIVE_CLAIMS = text(
+    "SELECT count(*) FROM claim WHERE workspace_id = :workspace_id AND run_id = :run_id "
+    "AND superseded_by IS NULL"
+)
+
+
+async def _standin_icp(
+    conn: AsyncConnection, storage: FsStorage, manifest: AnswerKeyManifest
+) -> tuple[str, str]:
+    """Store the stand-in ICP the run pins, and return ``(artifact_key, sha256)``.
+
+    Written exactly the way the transcripts are — ``record_artifact`` then ``storage.put`` — so the
+    run's ICP pin resolves to real bytes a reader can fetch, not to a key nothing backs.
+    """
+    data = _STANDIN_ICP_BODY.encode("utf-8")
+    sha = content_address(data)
+    key = artifact_key(manifest.workspace_id, sha)
+    await record_artifact(
+        conn,
+        storage_key=key,
+        workspace_id=manifest.workspace_id,
+        content_sha256=sha,
+        media_type=_TRANSCRIPT_MEDIA_TYPE,
+        size_bytes=len(data),
+        source_key=_STANDIN_ICP_SOURCE_KEY,
+    )
+    await storage.put(key, data, media_type=_TRANSCRIPT_MEDIA_TYPE)
+    return key, sha
 
 
 async def _research_rows(
     conn: AsyncConnection,
     *,
+    storage: FsStorage,
     manifest: AnswerKeyManifest,
-    product_id: str,
+    brand_id: str,
     account_id: EntityId,
-    written: Sequence[tuple[RowDraft, WriteReceipt]],
-    committee: Sequence[EntityId],
-) -> None:
-    """Record the M8D fleet rows that make the account read as researched.
+    claims_written: int,
+) -> ResearchRowsReport:
+    """Record the ARV2 run and job that make the Zafran account read as *researched*.
 
-    A terminal run/job/coverage triple is what every downstream reader asks for: the committee read
-    resolves its members through the run's coverage row, and the fleet control row is how that run
-    is found from the project run at all. They are inserted directly, with ``state='terminal'`` — a
-    real run reaches that state by UPDATE, and the immutability triggers guard exactly those
-    updates, so replaying a finished run through the drivers is neither possible nor the point.
+    Founder ruling 2026-09-09 — **ARV2's own rows are the only truth**. The answer key is one
+    account's finished research, so what it writes is one :func:`create_run` and one
+    :func:`create_job`, driven to ``completed`` through the same store transitions R2's driver
+    uses (``begin_job`` → ``finish_job`` → ``refresh_run_status``). It writes nothing to the old
+    lane's ``entity_research_*`` tables; those are dead data on this path.
+
+    The other three accounts get no job at all. "Never researched" is a fact about a missing row,
+    and inventing a ``not_started`` job for an account nobody launched would say the opposite.
+
+    Idempotent on the deterministic ids: a second pass inserts nothing, drives nothing, and
+    reports the run's stored status.
     """
-    research_run_id = uuid.uuid5(ANSWER_KEY_NAMESPACE, "arv2-answer-key:research-run")
-    selection_id = uuid.uuid5(ANSWER_KEY_NAMESPACE, "arv2-answer-key:selection")
-    job_id = uuid.uuid5(ANSWER_KEY_NAMESPACE, "arv2-answer-key:job:zafran")
-    coverage_id = uuid.uuid5(ANSWER_KEY_NAMESPACE, "arv2-answer-key:coverage:zafran")
-    scope = {
-        "workspace_id": manifest.workspace_id,
-        "project_id": manifest.project_id,
-        "product_id": product_id,
-        "project_run_id": str(manifest.project_run_id),
+    icp_key, icp_sha = await _standin_icp(conn, storage, manifest)
+    profile_sha = arv2_account_profile_sha256()
+    request: dict[str, Any] = {
+        # The answer key itself is the request: the manifest names the workspace, the project, the
+        # run and every subject, and the pins below are what a launch of it would have signed off.
+        "answer_key_manifest": asdict(manifest),
+        "account_entity_id": str(account_id),
+        "icp_artifact_key": icp_key,
+        "icp_artifact_sha256": icp_sha,
+        "icp_key": ARV2_STANDIN_ICP_KEY,
+        "icp_version": ARV2_STANDIN_ICP_VERSION,
+        "product_selection_version": ARV2_PRODUCT_SELECTION_VERSION,
+        "effort": ARV2_EFFORT,
+        "committee_cap": ARV2_COMMITTEE_CAP,
+        "directive_text": ARV2_DIRECTIVE,
+        "profile_ref": ARV2_ACCOUNT_PROFILE_REF,
+        "profile_sha256": profile_sha,
+        "requested_by_user_id": _ORIGIN,
     }
-
-    lifecycle: dict[str, Any] = {
-        "run_id": str(research_run_id),
-        "run_kind": "account_research",
-        "selection": {
-            "selection_id": str(selection_id),
-            "subject_type": "account",
-            **scope,
-            "budget_envelope_ref": _BUDGET_REF,
-            "subjects": [{"subject_entity_id": str(account_id)}],
-        },
-        "origin": _ORIGIN,
-    }
-    await conn.execute(
-        text(
-            """
-            INSERT INTO entity_research_run
-                (research_run_id, run_kind, subject_type, workspace_id, project_id, product_id,
-                 project_run_id, selection_id, lifecycle_json, lifecycle_sha256,
-                 budget_envelope_ref, budget_cap_cents, concurrency_limit, state, terminal_at)
-            VALUES
-                (:research_run_id, 'account_research', 'account', :workspace_id, :project_id,
-                 :product_id, :project_run_id, :selection_id, CAST(:lifecycle AS jsonb), :sha,
-                 :budget_ref, 0, 1, 'terminal', now())
-            """
+    run_created = await create_run(
+        conn,
+        RunRow(
+            run_id=ARV2_RESEARCH_RUN_ID,
+            workspace_id=manifest.workspace_id,
+            project_id=manifest.project_id,
+            brand_id=brand_id,
+            project_run_id=uuid.UUID(str(manifest.project_run_id)),
+            icp_artifact_key=icp_key,
+            icp_artifact_sha256=icp_sha,
+            icp_key=ARV2_STANDIN_ICP_KEY,
+            icp_version=ARV2_STANDIN_ICP_VERSION,
+            product_selection_version=ARV2_PRODUCT_SELECTION_VERSION,
+            effort=ARV2_EFFORT,
+            committee_cap=ARV2_COMMITTEE_CAP,
+            directive_text=ARV2_DIRECTIVE,
+            profile_ref=ARV2_ACCOUNT_PROFILE_REF,
+            profile_sha256=profile_sha,
+            # A free-text column (no ``platform_user`` foreign key), so it names the loader rather
+            # than borrowing a human's id for a run no human launched.
+            requested_by_user_id=_ORIGIN,
+            request_sha256=_sha256_json(request),
         ),
-        {
-            "research_run_id": research_run_id,
-            **scope,
-            "project_run_id": manifest.project_run_id,
-            "selection_id": selection_id,
-            "lifecycle": json.dumps(lifecycle),
-            "sha": _sha256_json(lifecycle),
-            "budget_ref": _BUDGET_REF,
-        },
+    )
+    job_created = await create_job(
+        conn,
+        job_id=ARV2_RESEARCH_JOB_ID,
+        run_id=ARV2_RESEARCH_RUN_ID,
+        workspace_id=manifest.workspace_id,
+        account_entity_id=uuid.UUID(str(account_id)),
+    )
+    if job_created:
+        await begin_job(conn, job_id=ARV2_RESEARCH_JOB_ID)
+        await finish_job(
+            conn,
+            job_id=ARV2_RESEARCH_JOB_ID,
+            status="completed",
+            finalization={"claims_written": claims_written, "source": "answer-key"},
+            # The run was driven by hand off-platform, so there is no model or provider spend to
+            # attribute to it. Zero is the true number, not a placeholder.
+            model_rounds=0,
+            tool_calls=0,
+            cost_usd=Decimal(0),
+            credits=Decimal(0),
+            media_seconds=0,
+        )
+        status: JobStatus | str = await refresh_run_status(conn, run_id=ARV2_RESEARCH_RUN_ID)
+    else:
+        stored = await read_run(conn, run_id=ARV2_RESEARCH_RUN_ID)
+        status = stored.status if stored is not None else "not_started"
+    return ResearchRowsReport(
+        run_id=str(ARV2_RESEARCH_RUN_ID),
+        job_id=str(ARV2_RESEARCH_JOB_ID),
+        account_entity_id=str(account_id),
+        claims_written=claims_written,
+        runs_created=int(run_created),
+        jobs_created=int(job_created),
+        status=str(status),
     )
 
-    # The fleet control row is how ``latest_account_research_run_id`` finds the run from the
-    # project run; without it the committee read never reaches the coverage row below.
-    policy = {"origin": _ORIGIN, "supervision": "none"}
-    await conn.execute(
-        text(
-            """
-            INSERT INTO entity_research_account_fleet
-                (research_run_id, workspace_id, project_id, product_id, project_run_id,
-                 canary_job_ids, supervisor_policy_ref, supervisor_policy_json,
-                 supervisor_policy_sha256, state, created_by, source_operation_id,
-                 source_action_ref, terminal_at)
-            VALUES
-                (:research_run_id, :workspace_id, :project_id, :product_id, :project_run_id,
-                 :canary_job_ids, :policy_ref, CAST(:policy AS jsonb), :policy_sha, 'terminal',
-                 :created_by, :operation_id, :action_ref, now())
-            """
-        ),
-        {
-            "research_run_id": research_run_id,
-            **scope,
-            "project_run_id": manifest.project_run_id,
-            "canary_job_ids": [job_id],
-            "policy_ref": _BUDGET_REF,
-            "policy": json.dumps(policy),
-            "policy_sha": _sha256_json(policy),
-            "created_by": _ORIGIN,
-            "operation_id": uuid.uuid5(ANSWER_KEY_NAMESPACE, "arv2-answer-key:operation"),
-            "action_ref": f"{_ORIGIN}:zafran",
-        },
-    )
 
-    thread_id = "answer-key:zafran"
-    authorization: dict[str, Any] = {
-        "job_id": str(job_id),
-        "research_run_id": str(research_run_id),
-        "subject_type": "account",
-        "subject_entity_id": str(account_id),
-        **scope,
-        "checkpoint_thread_id": thread_id,
-        "selection": dict(scope),
-    }
-    authorization_sha = _sha256_json(authorization)
-    await conn.execute(
-        text(
-            """
-            INSERT INTO entity_research_job
-                (job_id, research_run_id, subject_type, subject_entity_id, parent_account_id,
-                 workspace_id, project_id, product_id, project_run_id, authorization_json,
-                 authorization_sha256, budget_envelope_ref, budget_cap_cents, checkpoint_thread_id,
-                 initial_state_sha256, current_state_sha256, state, finalization_outcome,
-                 finalization_receipt_ref, terminal_at)
-            VALUES
-                (:job_id, :research_run_id, 'account', :subject_entity_id, NULL, :workspace_id,
-                 :project_id, :product_id, :project_run_id, CAST(:authorization AS jsonb), :sha,
-                 :budget_ref, 0, :thread_id, :sha, :sha, 'terminal', 'completed', :receipt_ref,
-                 now())
-            """
-        ),
-        {
-            "job_id": job_id,
-            "research_run_id": research_run_id,
-            "subject_entity_id": account_id,
-            **scope,
-            "project_run_id": manifest.project_run_id,
-            "authorization": json.dumps(authorization),
-            "sha": authorization_sha,
-            "budget_ref": _BUDGET_REF,
-            "thread_id": thread_id,
-            "receipt_ref": f"{thread_id}:completed",
-        },
-    )
+async def repair_research_rows(conn: AsyncConnection, *, storage: FsStorage) -> ResearchRowsReport:
+    """Give an already-loaded database the ARV2 run and job a fresh load now writes.
 
-    account_fields = sorted(
-        {draft.field_key for draft, _ in written if draft.entity_type is EntityType.ACCOUNT}
-    )
-    coverage = {"origin": _ORIGIN, "account_entity_id": str(account_id)}
-    await conn.execute(
-        text(
-            """
-            INSERT INTO entity_research_account_coverage
-                (coverage_id, research_run_id, job_id, workspace_id, account_entity_id,
-                 result_refs, completed_field_keys, unresolved_field_keys, unresolved_reasons,
-                 committee_result_refs, committee_member_ids, committee_status, review_flags,
-                 claim_refs, evidence_refs, coverage_json, coverage_sha256)
-            VALUES
-                (:coverage_id, :research_run_id, :job_id, :workspace_id, :account_id,
-                 :empty, :completed, :empty, :empty, :empty, :member_ids, 'complete', :empty,
-                 :claim_refs, :empty, CAST(:coverage AS jsonb), :sha)
-            """
-        ),
-        {
-            "coverage_id": coverage_id,
-            "research_run_id": research_run_id,
-            "job_id": job_id,
-            "workspace_id": manifest.workspace_id,
-            "account_id": account_id,
-            "empty": [],
-            "completed": account_fields,
-            "member_ids": list(committee),
-            "claim_refs": [f"claim:{receipt.claim_id}" for _, receipt in written],
-            "coverage": json.dumps(coverage),
-            "sha": _sha256_json(coverage),
-        },
+    D1 wrote the old lane's terminal ``entity_research_*`` rows instead; every screen has since
+    moved to ARV2's own rows (D4-b), so a database loaded before this change shows its researched
+    account as *not started*. This writes the missing pair, reading its inputs back out of the
+    database rather than re-deriving them — the spine, the entities and the claims are already
+    there and are not touched.
+
+    It deliberately leaves the legacy rows alone. They are dead data, not something to migrate:
+    nothing reads them any more, and the Phase-6 PR drops the tables outright.
+    """
+    manifest = ZAFRAN_MANIFEST
+    brand_id = (
+        await conn.execute(
+            _PROJECT_BRAND,
+            {"workspace_id": manifest.workspace_id, "project_id": manifest.project_id},
+        )
+    ).scalar_one_or_none()
+    if brand_id is None:
+        raise RuntimeError(
+            f"project {manifest.project_id!r} does not exist in workspace "
+            f"{manifest.workspace_id!r} — this database has no answer key to repair"
+        )
+    account_id = (
+        await conn.execute(
+            _ZAFRAN_ACCOUNT,
+            {"workspace_id": manifest.workspace_id, "domain": ZAFRAN_DOMAIN},
+        )
+    ).scalar_one_or_none()
+    if account_id is None:
+        raise RuntimeError(
+            f"workspace {manifest.workspace_id!r} has no {ZAFRAN_DOMAIN} account — this database "
+            "has no answer key to repair"
+        )
+    claims = (
+        await conn.execute(
+            _ZAFRAN_LIVE_CLAIMS,
+            {"workspace_id": manifest.workspace_id, "run_id": manifest.run_id},
+        )
+    ).scalar_one()
+    return await _research_rows(
+        conn,
+        storage=storage,
+        manifest=manifest,
+        brand_id=str(brand_id),
+        account_id=EntityId(uuid.UUID(str(account_id))),
+        claims_written=int(claims),
     )
 
 
@@ -850,4 +940,133 @@ async def _activity(
         )
 
 
-__all__ = ["AlreadyLoaded", "LoadReport", "load_answer_key"]
+# -- the email repair (ARV2 D4-b task 4) ---------------------------------------------------------
+
+#: The marker a repaired claim carries, so the rewrite is visible in the row itself forever.
+EMAIL_REPAIR_MARKER = "email_repair"
+EMAIL_REPAIR_VERSION = "d4b"
+
+_BARE_EMAIL_CLAIMS = text(
+    """
+    SELECT id, entity_id, write_markers->>'source_row_id' AS source_row_id, value_json
+    FROM claim
+    WHERE workspace_id = :workspace_id
+      AND field_key = :field_key
+      AND superseded_by IS NULL
+      AND jsonb_typeof(value_json) = 'string'
+    ORDER BY collected_at, id
+    """
+)
+
+
+@dataclass(frozen=True)
+class EmailRepairReport:
+    """What one ``--repair-emails`` pass did: the operator's receipt and the test's assertions."""
+
+    found: int  # live ``core.work_email`` claims still holding a bare address string
+    repaired: int
+    skipped: list[dict[str, str]]  # {"claim_id", "reason"} — never silently dropped
+
+
+async def repair_email_claims(
+    conn: AsyncConnection,
+    *,
+    context_root: Path,
+    settings: Settings,
+) -> EmailRepairReport:
+    """Give the loaded answer key's work-email claims the verdict D4-b's value shape demands.
+
+    D1 wrote each address as a bare string, because that is what the field registry declared then.
+    The verdict that grades it was in the answer-key row all along (AI Ark's ``verification``
+    block) and is now part of the value, so those rows can be corrected in place — by supersession,
+    never by an UPDATE: the old row keeps its provenance and gains a forward pointer.
+
+    Idempotent by construction: it looks for live claims whose value is still a JSON *string*, and
+    what it writes is an object. A second pass finds nothing. A claim whose answer-key row cannot
+    be found, or whose row carries no verdict, is left exactly as it is and reported as skipped —
+    the repair invents no verdict.
+    """
+
+    manifest = ZAFRAN_MANIFEST
+    drafts = {
+        draft.source_row_id: draft
+        for draft in map_zafran_rows(
+            _read_json(context_root / ZAFRAN_DIR / "claims_zafran.json")
+        ).drafts
+        if draft.field_key == WORK_EMAIL_KEY
+    }
+    rows = (
+        (
+            await conn.execute(
+                _BARE_EMAIL_CLAIMS,
+                {"workspace_id": manifest.workspace_id, "field_key": WORK_EMAIL_KEY},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    writer = LenientClaimWriter(lenient=settings.claim_write_lenient)
+    repaired = 0
+    skipped: list[dict[str, str]] = []
+    for row in rows:
+        claim_id = str(row["id"])
+        draft = drafts.get(str(row["source_row_id"]))
+        address = row["value_json"]
+        if draft is None:
+            skipped.append({"claim_id": claim_id, "reason": "no_answer_key_row"})
+            continue
+        value = draft.value_json
+        if not isinstance(value, dict) or value.get("address") != address:
+            # Either the answer key has no verdict for this row, or it names a different address
+            # than the database holds. Both mean the two disagree about what happened; the claim
+            # store is append-only and this is a repair, not a re-research.
+            skipped.append({"claim_id": claim_id, "reason": "answer_key_disagrees"})
+            continue
+        receipt = await writer.write(
+            conn,
+            ClaimDraft(
+                # The provenance is the stored row's own: the subject comes from the claim, and
+                # everything else from the draft the loader wrote it from.
+                entity_id=EntityId(uuid.UUID(str(row["entity_id"]))),
+                entity_type=draft.entity_type,
+                field_key=draft.field_key,
+                value_json=value,
+                extraction_method=draft.extraction_method,
+                run_id=manifest.run_id,
+                research_mode=draft.research_mode,
+                workspace_id=manifest.workspace_id,
+                source_url=draft.source_url,
+                source_key=draft.source_key,
+                evidence_span=draft.evidence_span,
+                observed_at=draft.observed_at,
+                confidence=draft.confidence,
+                identity_binding=draft.identity_binding,
+                use_class=draft.use_class,
+                signal_priority=draft.signal_priority,
+                outreach_safe=draft.outreach_safe,
+                field_description=draft.field_description,
+                markers={**draft.markers, EMAIL_REPAIR_MARKER: EMAIL_REPAIR_VERSION},
+            ),
+        )
+        # The second half of ``clue_research.claimstore.supersede_claim``; its first half is the
+        # lenient writer's own insert, which is the ARV2 lane's single write path into the store.
+        await conn.execute(
+            text("UPDATE claim SET superseded_by = :new_id WHERE id = :old_id"),
+            {"new_id": receipt.claim_id, "old_id": row["id"]},
+        )
+        repaired += 1
+    return EmailRepairReport(found=len(rows), repaired=repaired, skipped=skipped)
+
+
+__all__ = [
+    "ARV2_RESEARCH_JOB_ID",
+    "ARV2_RESEARCH_RUN_ID",
+    "EMAIL_REPAIR_MARKER",
+    "AlreadyLoaded",
+    "EmailRepairReport",
+    "LoadReport",
+    "ResearchRowsReport",
+    "load_answer_key",
+    "repair_email_claims",
+    "repair_research_rows",
+]

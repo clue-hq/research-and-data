@@ -186,7 +186,14 @@ def test_durable_matching_results_are_unverified_governed_and_replay_safe() -> N
             ).all()
             assert len(claims) == 2
             assert {str(row[0]) for row in claims} == {EXA_WEBSETS_SOURCE_KEY, PEOPLE_SOURCE_KEY}
-            assert all(str(row[1]) == "dana@northstar.example" for row in claims)
+            # D4-b decision 6: the stored value is the address with the verdict that grades it.
+            # Neither acquisition source probes a mailbox, so both write ``unverified`` — the same
+            # thing ``verification_status`` says one column over, and the reason the chip offers a
+            # lookup rather than presenting these addresses as verified.
+            assert all(
+                row[1] == {"address": "dana@northstar.example", "status": "unverified"}
+                for row in claims
+            )
             governance_rows = [
                 (str(row[2]), str(row[3]), str(row[4]), str(row[5]), str(row[6])) for row in claims
             ]

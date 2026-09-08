@@ -54,11 +54,12 @@ from clue_api.arv2.display.page import (
     default_runner_factory,
     ensure_page,
 )
+from clue_api.arv2.display.personas import persona_display, persona_label
 from clue_api.arv2.display.recipes import Page, SectionRecipe, read_recipes
 from clue_api.arv2.errors import Arv2Error, ProviderHalted, ProviderTransportError
 from clue_api.frontend_read.contract_v1 import AccountContact, BuyingCommitteeMember
-from clue_api.frontend_read.v1_shared import arv2_display_allowed, email_facts, persona_rank
-from clue_api.research_view_governance import safe_public_url
+from clue_api.frontend_read.v1_shared import arv2_display_allowed, email_facts
+from clue_api.url_safety import safe_public_url
 from clue_config import Secrets, Settings
 from clue_core import Claim, EntityId
 from clue_db import ConnFactory
@@ -71,6 +72,8 @@ __all__ = [
     "COMMITTEE_FIELD_KEYS",
     "DEFAULT_PERSONA",
     "DEFAULT_WHY_THEY_MATTER",
+    "DERIVED_ROLE_MARKER",
+    "DERIVED_ROLE_RATIONALE_PHRASE",
     "ROLE_KEY",
     "UNKNOWN_TITLE",
     "WORK_EMAIL_KEY",
@@ -102,6 +105,14 @@ DEFAULT_WHY_THEY_MATTER = "Committee member"
 #: The persona a member carries when the research recorded none. ``user`` is the neutral member of
 #: the vocabulary — it claims no influence the claims do not support.
 DEFAULT_PERSONA = "user"
+
+#: How a ``contact.role_on_committee`` row says its rationale was **derived from the persona**
+#: rather than researched — the D1 answer-key loader's write marker and the phrase it plants in the
+#: rationale itself. Stated here rather than imported because a read surface must not depend on a
+#: seed loader; ``tests/api/test_frontend_read_display_pages_db.py`` pins both against the loader's
+#: own constants, so the two cannot drift apart in silence.
+DERIVED_ROLE_MARKER = "derived_role_from_persona"
+DERIVED_ROLE_RATIONALE_PHRASE = "role derived from the committee persona"
 
 
 @dataclass(frozen=True)
@@ -388,14 +399,14 @@ def _cited(recipes: Sequence[SectionRecipe], blocks: Mapping[str, LiveBlock]) ->
 async def committee(
     conn: AsyncConnection, *, workspace_id: str, account_id: str
 ) -> list[SubjectRef]:
-    """The account's committee in the order the screens show it: persona rank, then name.
+    """The account's committee, in the order the screens show it: persona rank, then name.
 
-    D2's :func:`committee_members` decides *who* is on the committee (the research's own coverage
-    row when there is one); this only decides the order, so a card and a generated page can never
-    disagree about membership.
+    A thin call on purpose. D2's :func:`committee_members` decides both *who* is on the committee
+    (the contacts holding a live claim) and *in what order* — a second sort here is how a card and
+    a generated page start listing one account's committee two different ways. This name stays so
+    the read surface has one committee entry point of its own to import.
     """
-    members = await committee_members(conn, workspace_id=workspace_id, account_id=account_id)
-    return sorted(members, key=lambda member: (persona_rank(member.persona), member.name))
+    return await committee_members(conn, workspace_id=workspace_id, account_id=account_id)
 
 
 async def committee_claims(
@@ -450,20 +461,44 @@ def title_of(claim: Claim | None) -> str | None:
     return value.strip() or None if isinstance(value, str) else None
 
 
-def _why_they_matter(claim: Claim | None) -> str:
-    """The committee role's own rationale, or the documented placeholder.
+def _is_derived_role(claim: Claim) -> bool:
+    """Whether this role claim's rationale was *derived from the persona*, not researched.
 
-    ``contact.role_on_committee`` stores ``{"role": …, "rationale": …}``; the rationale is the
-    sentence a human wrote (or a model was made to justify), and it is the only part of that object
-    that is a reason. An absent one is *not* filled from the persona — "champion" is a label, not
-    an argument.
+    The D1 answer-key loader writes a ``contact.role_on_committee`` row for a person the run gave a
+    persona but no role, and says so twice: a :data:`DERIVED_ROLE_MARKER` write marker, and a
+    rationale that names itself (:data:`DERIVED_ROLE_RATIONALE_PHRASE`). Either is enough. Both are
+    checked because the marker is the durable, machine-readable statement and the phrase survives a
+    row that lost its markers — and the read must not put a sentence on a card that only restates
+    the persona chip sitting next to it.
     """
-    if claim is None:
-        return DEFAULT_WHY_THEY_MATTER
+    if (claim.write_markers or {}).get(DERIVED_ROLE_MARKER) is not None:
+        return True
     value = claim.value_json
     rationale = value.get("rationale") if isinstance(value, dict) else None
-    if isinstance(rationale, str) and rationale.strip():
-        return rationale.strip()
+    return isinstance(rationale, str) and DERIVED_ROLE_RATIONALE_PHRASE in rationale
+
+
+def _why_they_matter(claim: Claim | None, *, title: str | None, persona: str | None) -> str:
+    """The committee role's own rationale, or what is actually known about this person.
+
+    ``contact.role_on_committee`` stores ``{"role": …, "rationale": …}``; a *researched* rationale
+    is the sentence a human wrote (or a model was made to justify), and it is served verbatim — it
+    is the only part of that object that is a reason.
+
+    With no such sentence — no role claim, an empty rationale, or a rationale the loader derived
+    from the persona (decision 4) — the card states what it knows instead of restating the chip
+    beside it: ``"VP of Marketing · Economic buyer"`` when the title is known, and otherwise
+    :data:`DEFAULT_WHY_THEY_MATTER`. A persona outside the vocabulary has no label, so it falls
+    back the same way rather than printing a raw enum value at a marketer.
+    """
+    if claim is not None and not _is_derived_role(claim):
+        value = claim.value_json
+        rationale = value.get("rationale") if isinstance(value, dict) else None
+        if isinstance(rationale, str) and rationale.strip():
+            return rationale.strip()
+    label = persona_label(persona)
+    if title and label:
+        return f"{title} · {label}"
     return DEFAULT_WHY_THEY_MATTER
 
 
@@ -496,17 +531,24 @@ async def buying_committee(
         facts = email_facts(displayable(latest.get((member.id, WORK_EMAIL_KEY)), policy))
         entity = entities.get(EntityId(uuid.UUID(member.id)))
         url = None if entity is None else entity.linkedin_url
+        persona = member.persona or DEFAULT_PERSONA
         served.append(
             BuyingCommitteeMember(
                 contact_id=member.id,
                 name=member.name,
                 title=title or UNKNOWN_TITLE,
-                persona=member.persona or DEFAULT_PERSONA,
+                # Display text on the wire, the vocabulary value everywhere below it: the card
+                # says "Economic buyer", while ``_why_they_matter`` still reasons about
+                # ``economic_buyer`` (D4-b decision 5). ``persona`` is a required non-empty string
+                # here, so :func:`persona_display` never returns ``None`` for a real member.
+                persona=persona_display(persona) or persona,
                 email=facts.label,
                 email_claim_id=facts.claim_id,
                 linkedin_url=url if safe_public_url(url) else None,
                 why_they_matter=_why_they_matter(
-                    displayable(latest.get((member.id, ROLE_KEY)), policy)
+                    displayable(latest.get((member.id, ROLE_KEY)), policy),
+                    title=title,
+                    persona=persona,
                 ),
             )
         )
@@ -533,7 +575,8 @@ async def rail_contacts(
             id=member.id,
             name=member.name,
             title=title_of(displayable(latest.get((member.id, TITLE_KEY)), policy)),
-            persona=member.persona,
+            # As on the committee card: the chip prints words, never the vocabulary value.
+            persona=persona_display(member.persona),
             email_verified=(
                 email_facts(
                     displayable(latest.get((member.id, WORK_EMAIL_KEY)), policy)

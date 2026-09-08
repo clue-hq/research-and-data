@@ -30,8 +30,10 @@ reverse import stays forbidden.
 
 from __future__ import annotations
 
+import re
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any, Literal, cast
@@ -42,6 +44,13 @@ from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.display.evidence import evidence_for_ids
+from clue_api.arv2.display.personas import (
+    PERSONA_LABELS,
+    PERSONA_RANK,
+    persona_display,
+    persona_label,
+    persona_rank,
+)
 from clue_api.arv2.display.render import render_value_text
 from clue_api.frontend_read.contract_v1 import (
     AccountActivity,
@@ -54,7 +63,7 @@ from clue_api.frontend_read.contract_v1 import (
     ResearchEvidence,
     ResearchStatus,
 )
-from clue_api.research_view_governance import safe_public_url
+from clue_api.url_safety import safe_public_url
 from clue_config import Settings
 from clue_core import Claim, EntityId, EntityType, UseClass, decode_jsonb_scalar
 from clue_research.claimstore import WorkspaceScope
@@ -63,6 +72,7 @@ from clue_research.compliance import WorkspacePolicy
 __all__ = [
     "EMPTY_BAND",
     "INFLUENCE_DEFAULTS",
+    "PERSONA_LABELS",
     "PERSONA_RANK",
     "PERSONA_TONES",
     "PROVIDER_LABELS",
@@ -70,6 +80,7 @@ __all__ = [
     "EmailFacts",
     "activity_for",
     "arv2_display_allowed",
+    "arv2_research_status_for",
     "band_for_headcount",
     "contact_last_modified",
     "current_position_start",
@@ -80,6 +91,7 @@ __all__ = [
     "employee_range_label",
     "fit_band",
     "fit_score_100",
+    "format_money",
     "funding_label",
     "headcount_label",
     "industry_labels",
@@ -88,7 +100,11 @@ __all__ = [
     "last_modified_for",
     "linkedin_label",
     "owners_for",
+    "persona_display",
+    "persona_label",
+    "persona_rank",
     "research_evidence_for",
+    "revenue_band_label",
     "revenue_label",
     "socials",
     "tenure",
@@ -171,15 +187,6 @@ INFLUENCE_DEFAULTS: dict[str, Influence] = {
     "blocker": "Medium",
 }
 
-#: Committee ordering. A persona outside this tuple sorts last, then by name.
-PERSONA_RANK: tuple[str, ...] = (
-    "economic_buyer",
-    "champion",
-    "technical_evaluator",
-    "user",
-    "blocker",
-)
-
 #: ``source_key`` → the provider name a person recognises. An unmapped key is served verbatim: a
 #: source we have not named yet is still an honest attribution.
 PROVIDER_LABELS: dict[str, str] = {
@@ -211,14 +218,6 @@ def persona_tone(persona: str | None) -> PersonaTone:
 def persona_influence(persona: str | None) -> Influence:
     """The persona-derived influence default (ruling S8)."""
     return INFLUENCE_DEFAULTS.get(persona or "", _DEFAULT_INFLUENCE)
-
-
-def persona_rank(persona: str | None) -> int:
-    """Sort key for committee ordering; an unknown persona sorts after every known one."""
-    try:
-        return PERSONA_RANK.index(persona or "")
-    except ValueError:
-        return len(PERSONA_RANK)
 
 
 # --- fit ------------------------------------------------------------------------------------------
@@ -342,24 +341,279 @@ def headcount_label(count: int | None, range_: str | None) -> str:
     return band or EMPTY_BAND
 
 
+#: The symbol a currency prints as. A code outside this map is written as a prefix instead
+#: (``"INR 12M"``) — a code a marketer can read beats a symbol we would have to guess at.
+_CURRENCY_SYMBOLS: dict[str, str] = {"USD": "$", "EUR": "€", "GBP": "£"}
+
+#: Compact money units, largest first. One decimal at most: ``$130.5M`` is a figure, ``$130.53M``
+#: is a spreadsheet cell.
+_MONEY_UNITS: tuple[tuple[int, str], ...] = ((1_000_000_000, "B"), (1_000_000, "M"), (1_000, "K"))
+
+#: The range separator on a revenue band — an en dash, not a hyphen.
+_RANGE_DASH = "–"
+
+
+def _number(value: object) -> float | None:
+    """``value`` as a positive number, from an int, a float or a numeric string; else ``None``.
+
+    ``bool`` is excluded explicitly (it is an ``int`` in Python and ``True`` is not one dollar), and
+    so is a non-positive amount: a company with zero or negative revenue is a bad row, not a small
+    company — the same reading :func:`band_for_headcount` gives a headcount below 1.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        number = float(value)
+    elif isinstance(value, str):
+        try:
+            number = float(value.strip().replace(",", ""))
+        except ValueError:
+            return None
+    else:
+        return None
+    return number if number > 0 else None
+
+
+def _compact(amount: float) -> str:
+    """``10000000`` → ``"10M"``; ``130500000`` → ``"130.5M"``; ``900`` → ``"900"``. No symbol."""
+    for size, unit in _MONEY_UNITS:
+        if amount >= size:
+            scaled = round(amount / size, 1)
+            whole = int(scaled)
+            return f"{whole}{unit}" if scaled == whole else f"{scaled}{unit}"
+    whole = int(round(amount))
+    return str(whole)
+
+
+def _symbol(currency: object) -> str:
+    """The prefix ``currency`` prints as: a symbol, a code, or nothing when we were not told.
+
+    An unknown currency yields the **empty** prefix rather than ``"$"``. Defaulting to a dollar
+    sign would turn an amount the provider never denominated into a dollar figure — a small
+    fabrication on a card a marketer quotes in an email — so a bare ``"60M"`` is the honest answer.
+    """
+    code = _text(currency)
+    if code is None:
+        return ""
+    code = code.upper()
+    return _CURRENCY_SYMBOLS.get(code) or f"{code} "
+
+
+def format_money(amount: object, currency: object) -> str | None:
+    """``(130500000, "USD")`` → ``"$130.5M"``; ``(12000000, "INR")`` → ``"INR 12M"``.
+
+    ``None`` for anything that is not a positive number, so a caller can fall through to whatever
+    it holds instead of printing ``"None"`` or the raw object at a marketer.
+    """
+    number = _number(amount)
+    return None if number is None else f"{_symbol(currency)}{_compact(number)}"
+
+
+#: The unit letter a ``core.revenue_band`` token spells, and the letter a screen prints.
+_BAND_UNITS: dict[str, str] = {"k": "K", "m": "M", "b": "B"}
+
+#: One bound of a band token: ``"10m"``, ``"500m"``, ``"1b"``, or a bare number of dollars.
+_BAND_BOUND = re.compile(r"(\d+(?:\.\d+)?)([kmb])?\Z")
+
+
+def _band_bound(token: str) -> str | None:
+    """One side of a band token as a figure — ``"10m"`` → ``"10M"``; ``"250000"`` → ``"250K"``."""
+    match = _BAND_BOUND.match(token)
+    if match is None:
+        return None
+    number, unit = match.group(1), match.group(2)
+    if unit is not None:
+        return f"{number}{_BAND_UNITS[unit]}"
+    parsed = _number(number)
+    return None if parsed is None else _compact(parsed)
+
+
+def revenue_band_label(value: str | None) -> str:
+    """A ``core.revenue_band`` token as the words a screen prints (D4-b controller ruling 2).
+
+    The field is a closed vocabulary of range tokens — ``under_1m``, ``1m_10m``, ``10m_50m``,
+    ``50m_100m``, ``100m_500m``, ``500m_1b``, ``1b_plus`` (``REVENUE_BAND_OPTIONS``) — and the
+    accounts list was serving them verbatim, so a marketer read ``"10m_50m"`` in the revenue
+    column. Three forms are parsed: ``<lo>_<hi>`` → ``"$10M–50M"``, ``<n>_plus`` → ``"$1B+"``,
+    ``under_<n>`` → ``"under $1M"``.
+
+    The ``$`` is not an assumption here the way it would be on a raw amount: the band vocabulary is
+    *defined* in USD (``account_field_derivation._REVENUE_BAND_CEILINGS``, "exclusive, USD"), so the
+    currency is part of what the token means.
+
+    A token this does not recognise is served **as written** — an unregistered band is still the
+    row's own value, and inventing a range for it would be worse than an ugly string. An absent
+    band is :data:`EMPTY_BAND`.
+    """
+    token = _text(value)
+    if token is None:
+        return EMPTY_BAND
+    lowered = token.lower()
+    if lowered.startswith("under_"):
+        bound = _band_bound(lowered.removeprefix("under_"))
+        return f"under ${bound}" if bound else token
+    if lowered.endswith("_plus"):
+        bound = _band_bound(lowered.removesuffix("_plus"))
+        return f"${bound}+" if bound else token
+    low, _, high = lowered.partition("_")
+    if not high:
+        return token
+    low_label, high_label = _band_bound(low), _band_bound(high)
+    if low_label is None or high_label is None:
+        return token
+    return f"${low_label}{_RANGE_DASH}{high_label}"
+
+
 def revenue_label(annual_revenue_json: object, revenue_band: str | None) -> str:
-    """The rendered ``core.annual_revenue`` claim, else the band, else ``"Unknown"``."""
-    rendered = _text(render_value_text("core.annual_revenue", annual_revenue_json))
-    return rendered or _text(revenue_band) or EMPTY_BAND
+    """What the revenue row says, read from the ``core.annual_revenue`` **object** (decision 5).
+
+    The registry stores a provider estimate as ``{"amount_min": …, "amount_max": …, "currency": …,
+    "as_of": …, "estimate_kind": …}``. Rendering that generically put
+    ``"amount_max: 25000000; amount_min: 10000000; as_of: 2026-08-22; …"`` on the account page —
+    a pipeline string, which the founder's D4-b ruling forbids on a screen. So the shape is read:
+
+    * both bounds → ``"$10M–25M"`` — the symbol once, the unit on each side, so a range that
+      crosses a unit still reads (``"$750K–1.2M"``);
+    * one bound → ``"$10M+"`` (a floor) or ``"up to $25M"`` (a ceiling);
+    * a single ``amount`` → :func:`format_money`;
+    * a plain string (the lenient writer does not enforce the value schema) → itself.
+
+    Failing all of that, the ``core.revenue_band`` claim **as a label** (never the raw
+    ``"10m_50m"`` token — see :func:`revenue_band_label`), then ``"Unknown"``. Nothing is invented:
+    an object whose numbers do not parse falls through exactly like a missing claim.
+    """
+    if isinstance(annual_revenue_json, dict):
+        rendered = _revenue_from_object(annual_revenue_json)
+        if rendered is not None:
+            return rendered
+    else:
+        stated = _text(annual_revenue_json)
+        if stated is not None:
+            return stated
+    return revenue_band_label(revenue_band)
+
+
+def _revenue_from_object(value: Mapping[str, Any]) -> str | None:
+    """The band or point estimate inside a ``core.annual_revenue`` object; ``None`` when neither."""
+    symbol = _symbol(value.get("currency"))
+    low = _number(value.get("amount_min"))
+    high = _number(value.get("amount_max"))
+    if low is not None and high is not None:
+        return f"{symbol}{_compact(low)}{_RANGE_DASH}{_compact(high)}"
+    if low is not None:
+        return f"{symbol}{_compact(low)}+"
+    if high is not None:
+        return f"up to {symbol}{_compact(high)}"
+    return format_money(value.get("amount"), value.get("currency"))
+
+
+def _round_name(value: object) -> str | None:
+    """A funding round as a person names it: ``"SERIES_C"`` → ``"Series C"``; ``"Series B"`` stays.
+
+    The provider's own records name the round in the pipeline's shouting form; the registry sketch
+    names it in words. Only the shouting form is rewritten (all upper case, or carrying an
+    underscore) so a rationale-style name — ``"Series C extension"`` — is served exactly as written.
+    """
+    name = _text(value)
+    if name is None:
+        return None
+    if name == name.upper() or "_" in name:
+        return name.replace("_", " ").title()
+    return name
+
+
+def _recent_round(value: object, *, currency: object = None) -> str | None:
+    """The latest funding round as one phrase — ``"Series C · $60M"`` — or ``None``.
+
+    Three shapes reach this, all of them real. The registry sketch is one object
+    (``{"round", "amount", "currency", "date", "investors"}``); the provider's own record (what the
+    answer key stores for Zafran) is a **list** of rounds keyed ``{"type", "raised_amount",
+    "announced_at", "investors"}``, newest first but not guaranteed so — the latest announcement
+    wins, and a list with no dates keeps its own order; a prose value is served as the sentence it
+    is. The round name alone, or the amount alone, is served when only one of them is known.
+
+    ``currency`` is the sibling ``account.total_funding`` object's currency, used only when the
+    round states none of its own — see :func:`funding_label`.
+    """
+    if isinstance(value, list):
+        rounds = [item for item in value if isinstance(item, dict)]
+        if not rounds:
+            return None
+        latest = max(
+            enumerate(rounds),
+            key=lambda pair: (
+                _text(pair[1].get("announced_at")) or _text(pair[1].get("date")) or "",
+                -pair[0],
+            ),
+        )[1]
+        return _recent_round(latest, currency=currency)
+    if isinstance(value, dict):
+        name = _round_name(value.get("round") or value.get("type"))
+        money = _money_of(value, currency=currency)
+        parts = [part for part in (name, money) if part is not None]
+        return " · ".join(parts) if parts else None
+    return _text(value)
+
+
+def _money_of(value: Mapping[str, Any], *, currency: object = None) -> str | None:
+    """The amount inside a funding object, under whichever of its three keys carries it.
+
+    ``amount`` is the registry's key and ``raised_amount`` the provider's; ``amount_usd`` is what
+    the synthesis lane writes, and it states its own currency in its name — so it is the one key
+    that does not consult the object's ``currency``. ``currency`` is the fallback denomination for
+    the first two keys when the object itself names none.
+    """
+    for key in ("amount", "raised_amount"):
+        if value.get(key) is not None:
+            return format_money(value.get(key), value.get("currency") or currency)
+    return format_money(value.get("amount_usd"), "USD")
+
+
+def _total_funding(value: object) -> str | None:
+    """The running total as money — ``{"amount": 130500000, "currency": "USD", …}`` → ``"$130.5M"``.
+
+    A prose value is served as the sentence it is.
+    """
+    return _money_of(value) if isinstance(value, dict) else _text(value)
+
+
+def _stated_currency(total_funding_json: object) -> object:
+    """The currency the ``account.total_funding`` object is denominated in, or ``None``.
+
+    ``amount_usd`` counts: the key states its own denomination, so an object carrying only that one
+    is a USD object.
+    """
+    if not isinstance(total_funding_json, dict):
+        return None
+    stated = _text(total_funding_json.get("currency"))
+    if stated is not None:
+        return stated
+    return "USD" if total_funding_json.get("amount_usd") is not None else None
 
 
 def funding_label(recent_funding_json: object, total_funding_json: object) -> str | None:
-    """``"Series B · $50M"`` from the latest round and the running total; whichever exists.
+    """``"Series C · $60M · $130.5M"`` — the latest round, then the running total.
 
-    The round is read as a *key* of the ``account.recent_funding`` object, not by rendering the
-    whole value: the object also carries an amount and a date, and "Series B; $30M; 2025-11-02 ·
-    $50M" is not a label.
+    Whichever half exists is served alone; ``None`` when neither says anything. Both halves are
+    read out of their registry **objects** rather than rendered generically, for the same reason
+    :func:`revenue_label` is: ``"amount: 130500000; currency: USD; investors: 9; rounds: 4"`` is a
+    pipeline string, not a label.
+
+    **A round with no currency of its own borrows the total's** (D4-b controller ruling 1). The
+    provider's round objects carry ``raised_amount`` and no ``currency`` while the sibling total
+    states one; they are the same account's funding in the same provider record, so reading one
+    denomination off the other is a fact about that record, not a guess — and it is what stops the
+    label reading ``"Series C · 60M · $130.5M"``. When *neither* half names a currency the amounts
+    stay bare, because then there is nothing to read it off.
     """
-    round_name = (
-        _text(recent_funding_json.get("round")) if isinstance(recent_funding_json, dict) else None
-    )
-    total = _text(render_value_text("account.total_funding", total_funding_json))
-    parts = [part for part in (round_name, total) if part]
+    parts = [
+        part
+        for part in (
+            _recent_round(recent_funding_json, currency=_stated_currency(total_funding_json)),
+            _total_funding(total_funding_json),
+        )
+        if part is not None
+    ]
     return " · ".join(parts) if parts else None
 
 
@@ -544,6 +798,9 @@ def time_label(occurred_at: datetime, *, now: datetime) -> str:
 # --- email ----------------------------------------------------------------------------------------
 
 #: The two provider verdicts that mean "this address is usable" (``ai_ark_client.EmailVerdict``).
+#: The other three the registry admits — ``invalid``, ``unknown``, ``unverified`` — all mean the
+#: address is not one the screen may offer, so they read as *look this up*, exactly like no claim
+#: at all. The claim id still travels, because the chip's evidence hover is about the claim.
 _USABLE_EMAIL_STATUSES = frozenset({"verified_smtp", "catch_all_valid"})
 
 #: The one verdict that means a mailbox was actually probed, and so the only one that may stamp a
@@ -572,21 +829,44 @@ def _is_addressable(address: str) -> bool:
     return bool(local) and "." in domain and not domain.startswith(".")
 
 
+def _checked_on(value: Mapping[str, Any], claim: Claim) -> str:
+    """The day the mailbox was probed: the provider's own timestamp, else when we saw the claim.
+
+    ``checked_at`` is the provider's ISO string, kept verbatim at write time; only its date is
+    shown. A value the provider never sent (or sent unparseably) falls back to the claim's own
+    observation time rather than dropping the date — the chip says *verified*, so it owes a day.
+    """
+    checked_at = _text(value.get("checked_at"))
+    if checked_at is not None:
+        with suppress(ValueError):
+            return datetime.fromisoformat(checked_at).date().isoformat()
+    seen = claim.observed_at or claim.collected_at
+    return seen.date().isoformat()
+
+
 def email_facts(work_email_claim: Claim | None) -> EmailFacts:
-    """The email chip's facts from the ``core.work_email`` claim (decision 13)."""
+    """The email chip's facts from the ``core.work_email`` claim (decision 13).
+
+    The value is the ``{address, status, checked_at?}`` object every writer produces since D4-b.
+    A bare address string — every row written before that — is *not* upgraded here: an address with
+    no verdict is an address nobody graded, so it reads as *look this up*, which is the fail-closed
+    direction. ``scripts/load_arv2_answer_key.py --repair-emails`` is how a legacy row gains its
+    verdict; the reader never invents one.
+    """
     if work_email_claim is None:
         return EmailFacts(status="lookup", label=None, verified_at=None, claim_id=None)
     claim_id = str(work_email_claim.id)
     value = work_email_claim.value_json
-    address = _text(value.get("address")) if isinstance(value, dict) else None
-    status = _text(value.get("status")) if isinstance(value, dict) else None
+    if not isinstance(value, dict):
+        return EmailFacts(status="lookup", label=None, verified_at=None, claim_id=claim_id)
+    address = _text(value.get("address"))
+    status = _text(value.get("status"))
     if status not in _USABLE_EMAIL_STATUSES or address is None or not _is_addressable(address):
         return EmailFacts(status="lookup", label=None, verified_at=None, claim_id=claim_id)
-    seen = work_email_claim.observed_at or work_email_claim.collected_at
     return EmailFacts(
         status="available",
         label=address,
-        verified_at=seen.date().isoformat() if status == _SMTP_VERIFIED else None,
+        verified_at=(_checked_on(value, work_email_claim) if status == _SMTP_VERIFIED else None),
         claim_id=claim_id,
     )
 
@@ -874,6 +1154,78 @@ async def activity_for(
             )
         )
     return feed
+
+
+# --- research status ------------------------------------------------------------------------------
+
+#: The latest ARV2 job per account, plus the one extra fact the accounts table shows: is this
+#: account *being re-researched right now*?
+#:
+#: One statement, one table. ``arv2_research_job`` carries its own ``workspace_id`` (and its
+#: composite FK pins that to the account's own), so joining ``arv2_research_run`` would buy a
+#: second table and no extra scoping. The run's ``project_id`` is deliberately not consulted
+#: either: an account's research status is the status of *its* latest job, whichever project
+#: launched it — an account researched under one project is not unresearched when read under
+#: another (D4-b decision 1).
+#:
+#: ``refreshing`` is true when a **non-terminal** job (``not_started``/``in_progress`` — a
+#: ``suspended`` job is halted, not running) is newer than a ``completed`` one for the same
+#: account. The ``(created_at, job_id)`` row comparison is the same total order the ``DISTINCT ON``
+#: sorts by, so "newer" means one thing in both halves of the row.
+_ARV2_RESEARCH_STATUS = text(
+    """
+    SELECT DISTINCT ON (j.account_entity_id)
+        j.account_entity_id,
+        j.status,
+        EXISTS (
+            SELECT 1
+            FROM arv2_research_job live
+            JOIN arv2_research_job done
+              ON done.workspace_id = live.workspace_id
+             AND done.account_entity_id = live.account_entity_id
+             AND done.status = 'completed'
+             AND (done.created_at, done.job_id) < (live.created_at, live.job_id)
+            WHERE live.workspace_id = j.workspace_id
+              AND live.account_entity_id = j.account_entity_id
+              AND live.status IN ('not_started', 'in_progress')
+        ) AS refreshing
+    FROM arv2_research_job j
+    WHERE j.workspace_id = :workspace_id
+      AND j.account_entity_id IN :account_ids
+    ORDER BY j.account_entity_id, j.created_at DESC, j.job_id DESC
+    """
+).bindparams(bindparam("account_ids", expanding=True, type_=PgUUID(as_uuid=True)))
+
+
+async def arv2_research_status_for(
+    conn: AsyncConnection, *, workspace_id: str, account_ids: Sequence[EntityId]
+) -> dict[EntityId, tuple[ResearchStatus, bool]]:
+    """``{account: (status, refreshing)}`` from the R2 rows — ARV2's own truth, nothing else.
+
+    The status is served **verbatim**. ``arv2_research_job.status`` is the seam-1 vocabulary
+    (``not_started``/``in_progress``/``needs_review``/``completed``/``suspended``), which is
+    character-for-character the contract's
+    :data:`~clue_api.frontend_read.contract_v1.ResearchStatus` — so there is no mapping here to
+    drift, and no lifecycle to reinterpret. The two vocabularies are pinned equal by a test rather
+    than by this comment.
+
+    An account with **no** job is simply absent from the result: "never researched" is a fact
+    about a missing row, and the callers spell it ``("not_started", False)`` at the one place they
+    build the row. Returning it here would make an unresearched account indistinguishable from one
+    holding a genuine ``not_started`` job.
+    """
+    if not account_ids:
+        return {}
+    rows = (
+        await conn.execute(
+            _ARV2_RESEARCH_STATUS,
+            {"workspace_id": workspace_id, "account_ids": list(account_ids)},
+        )
+    ).all()
+    return {
+        EntityId(uuid.UUID(str(account_id))): (cast(ResearchStatus, str(status)), bool(refreshing))
+        for account_id, status, refreshing in rows
+    }
 
 
 # --- research evidence ----------------------------------------------------------------------------

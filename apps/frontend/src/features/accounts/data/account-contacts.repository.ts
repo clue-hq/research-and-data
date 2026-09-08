@@ -52,7 +52,7 @@ export const fixtureAccountContactsRepository: AccountContactsRepository = {
 };
 
 /**
- * The live contacts reads, both under `?contract=v1`.
+ * The live contacts reads.
  *
  * E4 `GET /accounts/{id}/contacts` serves `{data, meta: {total}}`; the rows are
  * the whole committee, so `meta.total` is redundant here and is not read (the
@@ -66,7 +66,7 @@ export function createHttpAccountContactsRepository(
     async list(accountId) {
       const body = await read(
         `/accounts/${encodeURIComponent(accountId)}/contacts`,
-        { recordNotFoundAllowed: true, searchParams: { contract: "v1" } },
+        { recordNotFoundAllowed: true },
       );
       if (body === null) return null;
       return AccountContactsResponseSchema.parse(body).data;
@@ -74,7 +74,7 @@ export function createHttpAccountContactsRepository(
     async get(accountId, contactId) {
       const body = await read(
         `/accounts/${encodeURIComponent(accountId)}/contacts/${encodeURIComponent(contactId)}`,
-        { recordNotFoundAllowed: true, searchParams: { contract: "v1" } },
+        { recordNotFoundAllowed: true },
       );
       if (body === null) return null;
       return AccountContactDetailResponseSchema.parse(body).data;

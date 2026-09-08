@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
-from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.url_safety import safe_public_url
 from clue_core import (
     Claim,
     ClaimFlavor,
@@ -57,18 +57,6 @@ from clue_research.narrative import (
 )
 
 _ACTION_NAMESPACE = uuid5(NAMESPACE_URL, "clue-hq:c7:evidence-action:1.0")
-
-
-def safe_public_url(value: str | None) -> bool:
-    if value is None:
-        return False
-    parsed = urlsplit(value)
-    return (
-        parsed.scheme.lower() in {"http", "https"}
-        and bool(parsed.hostname)
-        and parsed.username is None
-        and parsed.password is None
-    )
 
 
 def _action_id(

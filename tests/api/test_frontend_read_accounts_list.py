@@ -1,36 +1,26 @@
-"""FI-2 slice 1, Task 2 — the global-lens accounts list (`GET /frontend/v1/accounts`).
+"""The workspace accounts table (`GET /frontend/v1/accounts`).
 
 Drives the ASGI app in-process via ``httpx.ASGITransport`` on the same event loop as the rollback
 connection (the ``test_projections_app`` idiom), so the endpoint reads exactly the rows the test
 seeded and nothing commits.
 
-The fixture is shaped after the slice-0 canonical one — **two projects over one workspace** — plus
-the two shapes the read layer must not choke on: an account that only one project targets, and a
-membership-less account (a stage-0 seed / legacy import), which is a legitimate, null-heavy row and
-not an error.
-
-Covered, per the plan's ACs: both projects on the two-project account's row; the membership-less
-account renders; ``?projectId=`` returns exactly the membership set (and an unknown project is an
-empty *filter*, not a 404); per-project score attribution (project B's ICP score is never served as
-project A's); zero research → ``not_started`` for every membership project; keyset pagination over
-two pages with no duplicate and no skip, including *within* a ``?projectId=`` filter; and a
-shape-level assertion that no display string reaches the wire.
+Two fixtures. ``_build`` is the slice-0 canonical shape — **two projects over one workspace** —
+plus the two shapes the read layer must not choke on: an account that only one project targets,
+and a membership-less account (a stage-0 seed / legacy import), which is a legitimate, null-heavy
+row and not an error. It carries the page's own rules: the ``?projectId=`` filter, keyset and
+numbered pagination, workspace scoping. ``_build_v1`` is the fully-populated ARV2 account — owner,
+custom fields, industries, socials, bands, an ARV2 research job — and carries the row itself.
 
 Two structural properties get their own behavioural fixtures, because a comment cannot prove them:
 
 * **species-conditional lineage** — a ``project_neutral`` fact written on a run attributed to
   project A still appears on the row served under ``?projectId=B`` (neutral fields come from the
   canonical merge in every lens), while the relative half of the same row stays lineage-bound;
-* **run-level vs per-account status** — one research run with two account jobs, one paused and one
-  terminal, proves the fleet-wide ``suspended`` state cannot mask the finished account's
-  ``needs_review``.
-
-The rest of the research-status mapping (in-progress, the four terminal outcomes, admission-paused
-→ suspended) is exercised against real ``entity_research_job`` rows launched through the production
-R2 entry point.
+* **a fixed statement count per page** — measured across fixtures of different shapes, which is how
+  the N+1 guard proves a per-row lookup has not crept into the composition.
 
 Every read and every count is workspace-scoped: this suite shares a database with suites that
-commit, so an unscoped assertion would fail for reasons unrelated to FI-2.
+commit, so an unscoped assertion would fail for reasons unrelated to this endpoint.
 """
 
 from __future__ import annotations
@@ -39,7 +29,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -47,10 +37,11 @@ from httpx import ASGITransport
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.account_research_store import JobStatus
 from clue_api.arv2.catalog_seed import load_arv2_pack
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
 from clue_api.client_context_binding import bind_workspace_client
-from clue_api.frontend_read import FRONTEND_READ_PREFIX, AccountResearchStatusValue
+from clue_api.frontend_read import FRONTEND_READ_PREFIX
 from clue_api.frontend_read.accounts_list import decode_cursor, encode_cursor
 from clue_api.frontend_read.contract_v1 import AccountsResponseV1, AccountV1
 from clue_api.frontend_read.v1_shared import iso_utc
@@ -86,6 +77,7 @@ from clue_research.membership import ensure_project_account
 from clue_spine import Project
 from tests._workspace import seed_project, seed_workspace
 from tests.api.contract_v1.oracle import zod_validate
+from tests.arv2.account_research_job_helpers import seed_arv2_job
 from tests.db.conftest import run_async
 from tests.fleet.entity_research_r2_helpers import lifecycle_fixture
 from tests.profiling.conftest import conn_session_factory, rollback_conn
@@ -535,48 +527,6 @@ async def _build(conn: AsyncConnection) -> _Fixture:
     )
 
 
-# --- the two-project row --------------------------------------------------------------------
-
-
-def test_the_shared_account_carries_both_projects_and_the_earliest_is_primary() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            response = await _get(conn)
-            assert response.status_code == 200
-            payload = response.json()
-
-            assert payload["meta"]["total"] == 3
-            assert payload["meta"]["nextCursor"] is None
-            rows = _rows(payload)
-            assert set(rows) == {"Acme", "Zephyr", "Seedling"}
-
-            acme = rows["Acme"]
-            assert acme["id"] == str(fixture.acme)
-            assert acme["domain"] == "acme.test"
-            assert acme["employeeCount"] == 1200
-            assert acme["revenueBand"] == "100m_500m"
-            assert acme["logoUrl"] is None
-            assert [project["projectId"] for project in acme["projects"]] == [
-                fixture.project_a.project_id,
-                fixture.project_b.project_id,
-            ]
-            assert [project["addedVia"] for project in acme["projects"]] == [
-                "discovered",
-                "imported",
-            ]
-            # The FI-1 §9 plan-owner addendum: the membership row carries the project's own name,
-            # resolved by a join, so the table can search and sort on it without a second endpoint.
-            assert [project["name"] for project in acme["projects"]] == [
-                "Project A",
-                "Project B",
-            ]
-            # Element 0 of the membership read IS the recorded primary-project policy.
-            assert acme["primaryProjectId"] == fixture.project_a.project_id
-
-    run_async(scenario())
-
-
 def test_project_names_are_one_batched_read_not_one_query_per_membership() -> None:
     """The name join must not reintroduce an N+1 over a 200-row page.
 
@@ -612,26 +562,6 @@ def test_project_names_are_one_batched_read_not_one_query_per_membership() -> No
     run_async(scenario())
 
 
-def test_a_membership_less_account_renders_as_a_null_heavy_row() -> None:
-    """Seeds, the client entity and legacy imports have no membership — they are still accounts."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            await _build(conn)
-            payload = (await _get(conn)).json()
-
-            seedling = _rows(payload)["Seedling"]
-            assert seedling["domain"] is None
-            assert seedling["employeeCount"] is None
-            assert seedling["revenueBand"] is None
-            assert seedling["projects"] == []
-            assert seedling["primaryProjectId"] is None
-            assert seedling["scores"] == []
-            assert seedling["researchStatus"] == []
-
-    run_async(scenario())
-
-
 def test_the_workspace_client_is_not_listed_as_its_own_target_account() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -650,68 +580,6 @@ def test_the_workspace_client_is_not_listed_as_its_own_target_account() -> None:
                 (str(target), "Neuro Practice")
             ]
             assert response.json()["meta"]["total"] == 1
-
-    run_async(scenario())
-
-
-# --- per-project score attribution ----------------------------------------------------------
-
-
-def test_each_projects_score_is_served_attributed_to_that_project_only() -> None:
-    """The relative-field contract: project B's ICP score is never rendered as project A's."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            acme = _rows((await _get(conn)).json())["Acme"]
-
-            by_project = {score["projectId"]: score for score in acme["scores"]}
-            assert set(by_project) == {fixture.project_a.project_id, fixture.project_b.project_id}
-
-            a_score = by_project[fixture.project_a.project_id]
-            assert a_score["fit"] == pytest.approx(0.81)
-            assert a_score["intent"] == pytest.approx(0.40)
-            assert (a_score["icpKey"], a_score["icpVersion"]) == ("alpha", 1)
-
-            b_score = by_project[fixture.project_b.project_id]
-            assert b_score["fit"] == pytest.approx(0.55)
-            # B scored fit and not intent; reporting the missing half as 0 would be a fabrication.
-            assert b_score["intent"] is None
-            assert (b_score["icpKey"], b_score["icpVersion"]) == ("beta", 3)
-
-            assert datetime.fromisoformat(a_score["scoredAt"]).tzinfo is not None
-
-    run_async(scenario())
-
-
-def test_a_score_whose_run_has_no_project_is_not_attributed_to_any() -> None:
-    """An unattributable score is omitted, never smeared across the account's projects."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            orphan_run = new_run_id()
-            await record_run_lineage(
-                conn, run_id=orphan_run, workspace_id=_WS, kind="scoring", project_id=None
-            )
-            await insert_claim(
-                conn,
-                stamp_reuse(
-                    account_claim(
-                        entity_id=fixture.zephyr,
-                        field_key="account.scoring.fit",
-                        value_json={"value": 0.99, "icp_key": "ghost", "icp_version": 9},
-                        source_tier=1,
-                        extraction_method=ExtractionMethod.HUMAN,
-                        confidence=Confidence(1.0),
-                        run_id=orphan_run,
-                        research_mode=ResearchMode.ACCOUNT_PROFILING,
-                    ),
-                    workspace_id=_WS,
-                ),
-            )
-
-            assert _rows((await _get(conn)).json())["Zephyr"]["scores"] == []
 
     run_async(scenario())
 
@@ -756,15 +624,16 @@ def test_a_neutral_fact_written_on_one_projects_run_still_shows_under_another() 
             )
 
             unfiltered = _rows((await _get(conn)).json())["Zephyr"]
-            assert unfiltered["employeeCount"] == 340
+            assert unfiltered["employeeBand"] == "201-500"
 
             under_b = _rows((await _get(conn, projectId=fixture.project_b.project_id)).json())[
                 "Zephyr"
             ]
-            assert under_b["employeeCount"] == 340
+            assert under_b["employeeBand"] == "201-500"
             # And the *relative* half of the same row is still lineage-bound: A's run wrote no
-            # score for Zephyr, so no score is attributed to anyone.
-            assert under_b["scores"] == []
+            # score for Zephyr, so the row carries no fit under either lens.
+            assert under_b["fitScore"] is None
+            assert under_b["overallFit"] is None
 
     run_async(scenario())
 
@@ -796,171 +665,6 @@ def test_another_workspaces_accounts_are_never_served() -> None:
     run_async(scenario())
 
 
-# --- research status --------------------------------------------------------------------------
-
-
-def test_an_account_with_no_research_is_not_started_for_every_project_it_belongs_to() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            acme = _rows((await _get(conn)).json())["Acme"]
-
-            assert acme["researchStatus"] == [
-                {"projectId": fixture.project_a.project_id, "status": "not_started"},
-                {"projectId": fixture.project_b.project_id, "status": "not_started"},
-            ]
-
-    run_async(scenario())
-
-
-def test_research_status_tracks_the_job_lifecycle_per_project() -> None:
-    """A queued job is in progress; a terminal one reports its outcome; and each project's status
-    is independent of the other's."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            await _launch_one(
-                conn,
-                workspace_id=_WS,
-                project_id=fixture.project_a.project_id,
-                account_id=fixture.acme,
-            )
-            b_job = await _launch_one(
-                conn,
-                workspace_id=_WS,
-                project_id=fixture.project_b.project_id,
-                account_id=fixture.acme,
-            )
-            await _finalize_job(conn, b_job, outcome="completed")
-
-            statuses = {
-                entry["projectId"]: entry["status"]
-                for entry in _rows((await _get(conn)).json())["Acme"]["researchStatus"]
-            }
-            assert statuses == {
-                fixture.project_a.project_id: AccountResearchStatusValue.IN_PROGRESS.value,
-                fixture.project_b.project_id: AccountResearchStatusValue.COMPLETED.value,
-            }
-
-    run_async(scenario())
-
-
-@pytest.mark.parametrize(
-    ("outcome", "expected"),
-    [
-        ("needs_review", AccountResearchStatusValue.NEEDS_REVIEW),
-        ("completed", AccountResearchStatusValue.COMPLETED),
-        # No `failed` slot exists: every non-success terminal is "stopped, awaiting a human".
-        ("cancelled", AccountResearchStatusValue.SUSPENDED),
-        ("budget_stopped", AccountResearchStatusValue.SUSPENDED),
-    ],
-)
-def test_a_terminal_outcome_maps_to_the_honest_status(
-    outcome: str, expected: AccountResearchStatusValue
-) -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            job_id = await _launch_one(
-                conn,
-                workspace_id=_WS,
-                project_id=fixture.project_a.project_id,
-                account_id=fixture.acme,
-            )
-            await _finalize_job(conn, job_id, outcome=outcome)
-
-            statuses = {
-                entry["projectId"]: entry["status"]
-                for entry in _rows((await _get(conn)).json())["Acme"]["researchStatus"]
-            }
-            assert statuses[fixture.project_a.project_id] == expected.value
-
-    run_async(scenario())
-
-
-def test_a_paused_admission_reads_as_suspended_not_in_progress() -> None:
-    """FI-1 §5.2's explicit carve-out: a non-terminal job whose admission is paused is not running.
-    This is also the backend's real failure mode — a crash re-queues and pauses, it never fails."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            job_id = await _launch_one(
-                conn,
-                workspace_id=_WS,
-                project_id=fixture.project_a.project_id,
-                account_id=fixture.acme,
-            )
-            await _pause_admission(
-                conn, job_id, workspace_id=_WS, project_id=fixture.project_a.project_id
-            )
-
-            statuses = {
-                entry["projectId"]: entry["status"]
-                for entry in _rows((await _get(conn)).json())["Acme"]["researchStatus"]
-            }
-            assert statuses[fixture.project_a.project_id] == "suspended"
-
-    run_async(scenario())
-
-
-def test_a_run_level_suspension_never_masks_an_accounts_own_terminal_outcome() -> None:
-    """The R6 fleet state is **run-level**: the supervisor suspends the whole fleet when *any* job
-    pauses. One run, two accounts — the paused sibling must not erase the other's finished
-    ``needs_review``, which is the most actionable state the screen shows.
-    """
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            await ensure_project_account(
-                conn,
-                workspace_id=_WS,
-                project_id=fixture.project_a.project_id,
-                account_entity_id=fixture.zephyr,
-                added_via="manual",
-            )
-            launched = await _launch_account_research(
-                conn,
-                workspace_id=_WS,
-                project_id=fixture.project_a.project_id,
-                account_ids=[fixture.acme, fixture.zephyr],
-            )
-            finished, stuck = launched[fixture.acme], launched[fixture.zephyr]
-
-            # Zephyr's job pauses, which drives the shared fleet to `suspended`; Acme's own job has
-            # already finished with an accepted receipt.
-            research_run_id = await _seed_account_fleet(
-                conn,
-                job_id=stuck,
-                workspace_id=_WS,
-                project_id=fixture.project_a.project_id,
-                state="suspended",
-            )
-            await _set_admission(
-                conn, job_id=stuck, research_run_id=research_run_id, admission_state="paused"
-            )
-            await _set_admission(
-                conn, job_id=finished, research_run_id=research_run_id, admission_state="terminal"
-            )
-            await _finalize_job(conn, finished, outcome="needs_review")
-
-            rows = _rows((await _get(conn)).json())
-
-            def status(row: dict[str, Any]) -> str:
-                return next(
-                    entry["status"]
-                    for entry in row["researchStatus"]
-                    if entry["projectId"] == fixture.project_a.project_id
-                )
-
-            assert status(rows["Acme"]) == "needs_review"
-            assert status(rows["Zephyr"]) == "suspended"
-
-    run_async(scenario())
-
-
 # --- pagination --------------------------------------------------------------------------------
 
 
@@ -986,7 +690,14 @@ def test_two_pages_cover_the_workspace_with_no_duplicate_and_no_skip() -> None:
     run_async(scenario())
 
 
-def test_numbered_pages_expose_stable_page_metadata_and_no_cursor() -> None:
+def test_numbered_pages_walk_the_same_order_and_issue_no_cursor() -> None:
+    """A numbered page is the same total order, addressed by offset instead of by keyset.
+
+    The contract's ``meta`` carries ``total`` and ``nextCursor`` only, so a numbered walk is
+    explicitly cursorless: the browser already knows which page it asked for, and minting a cursor
+    beside it would offer two ways to name one position.
+    """
+
     async def scenario() -> None:
         async with rollback_conn() as conn:
             await _build(conn)
@@ -996,15 +707,8 @@ def test_numbered_pages_expose_stable_page_metadata_and_no_cursor() -> None:
 
             assert [row["name"] for row in first["data"]] == ["Seedling", "Zephyr"]
             assert [row["name"] for row in second["data"]] == ["Acme"]
-            assert first["meta"] == {
-                "total": 3,
-                "nextCursor": None,
-                "page": 1,
-                "pageSize": 2,
-                "totalPages": 2,
-            }
-            assert second["meta"]["page"] == 2
-            assert second["meta"]["totalPages"] == 2
+            assert first["meta"] == {"total": 3, "nextCursor": None}
+            assert second["meta"] == {"total": 3, "nextCursor": None}
 
     run_async(scenario())
 
@@ -1097,59 +801,6 @@ def test_the_limit_is_bounded_so_the_workspace_scan_can_never_be_unbounded() -> 
     run_async(scenario())
 
 
-# --- Band-2 wire discipline --------------------------------------------------------------------
-
-
-_ALLOWED_ROW_KEYS = {
-    "id",
-    "name",
-    "domain",
-    "employeeCount",
-    "revenueBand",
-    "logoUrl",
-    "projects",
-    "primaryProjectId",
-    "scores",
-    "researchStatus",
-    "updatedAt",
-}
-
-
-def test_no_display_string_reaches_the_wire() -> None:
-    """Band-2: enums, numbers, ISO timestamps, opaque ids and nulls — never a label the frontend
-    should own. The key set is pinned, so a later `sizeLabel`/`timeLabel` cannot slip in."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            await _build(conn)
-            payload = (await _get(conn)).json()
-
-            assert set(payload) == {"data", "meta"}
-            assert set(payload["meta"]) == {"total", "nextCursor"}
-            for row in payload["data"]:
-                assert set(row) == _ALLOWED_ROW_KEYS
-                assert not any(key.lower().endswith("label") for key in row)
-                for membership in row["projects"]:
-                    assert set(membership) == {"projectId", "name", "addedVia", "addedAt"}
-                    datetime.fromisoformat(membership["addedAt"])
-                for score in row["scores"]:
-                    assert set(score) == {
-                        "projectId",
-                        "fit",
-                        "intent",
-                        "icpKey",
-                        "icpVersion",
-                        "scoredAt",
-                    }
-                for status in row["researchStatus"]:
-                    assert set(status) == {"projectId", "status"}
-                    # A backend-honest vocabulary, not a frontend badge string.
-                    assert status["status"] in set(AccountResearchStatusValue)
-                datetime.fromisoformat(row["updatedAt"])
-
-    run_async(scenario())
-
-
 def test_the_endpoint_still_refuses_a_request_without_a_workspace() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -1178,21 +829,6 @@ def test_the_module_never_scopes_a_claim_read_by_claim_workspace_id() -> None:
     assert "claim.workspace_id" not in source.split('"""', 2)[2]
 
 
-def test_neutral_and_relative_fields_are_read_through_different_paths() -> None:
-    """Species-conditional lineage: the neutral list fields must never be lineage-filtered (they
-    serve from the canonical merge in every lens), and the scoring fields must always be."""
-    from clue_api.frontend_read import accounts_list
-
-    assert accounts_list.LIST_NEUTRAL_FIELD_KEYS == ("core.employee_count", "core.revenue_band")
-    for field_key in accounts_list.LIST_NEUTRAL_FIELD_KEYS:
-        assert field_key not in accounts_list._SCORE_CLAIMS_TEMPLATE
-    assert "run_lineage" in accounts_list._SCORE_CLAIMS_TEMPLATE
-    assert accounts_list.SCORE_FIELD_KEYS == (
-        "account.scoring.fit",
-        "account.scoring.intent",
-    )
-
-
 def test_the_scoring_fields_really_are_project_relative_in_the_registry() -> None:
     """If a future pack edit made these neutral, lineage-filtering them would be wrong — so the
     read layer's species assumption is pinned against the registry, not merely commented."""
@@ -1207,7 +843,7 @@ def test_the_scoring_fields_really_are_project_relative_in_the_registry() -> Non
                 field = await get_field(conn, field_key)
                 assert field is not None
                 assert resolve_research_scope(field) is ResearchScope.PROJECT_RELATIVE
-            for field_key in accounts_list.LIST_NEUTRAL_FIELD_KEYS:
+            for field_key in accounts_list.V1_NEUTRAL_FIELD_KEYS:
                 field = await get_field(conn, field_key)
                 assert field is not None
                 assert resolve_research_scope(field) is ResearchScope.PROJECT_NEUTRAL
@@ -1224,11 +860,11 @@ def test_the_lineage_join_dispatches_on_project_id_never_on_kind() -> None:
     assert "kind" not in accounts_list._SCORE_CLAIMS_TEMPLATE
 
 
-# --- ARV2 D3 E1: the contract-v1 row under ``?contract=v1`` --------------------------------------
+# --- the row itself (ARV2 E1) --------------------------------------------------------------------
 #
-# The D3 ruling: contract v1 is selected per request. Everything above this line is the FI-2
-# contract and must keep passing byte-for-byte — the two halves of this file are the proof that one
-# route serves both until the D4 re-lift retires the FI-2 branch.
+# Everything above is the *page*: which accounts, in what order, under which filter. Everything
+# below is the *row*: what the table shows about one account, over the fully-populated ``_build_v1``
+# fixture.
 
 
 async def _seed_user(
@@ -1415,24 +1051,20 @@ async def _build_v1(conn: AsyncConnection) -> tuple[_Fixture, EntityId]:
         icp_key="beta",
         icp_version=3,
     )
-    job_id = await _launch_one(
-        conn,
-        workspace_id=_WS,
-        project_id=fixture.project_a.project_id,
-        account_id=zafran,
-    )
-    await _finalize_job(conn, job_id, outcome="completed")
+    # The v1 row's research status comes from ARV2's own rows and nothing else (D4-b decision 1),
+    # so the seed is an ``arv2_research_job`` driven through the R2 store — not an M8D job.
+    await seed_arv2_job(conn, project=fixture.project_a, account_id=zafran, status="completed")
     return fixture, zafran
 
 
-def test_the_v1_contract_serves_the_display_row_for_a_fully_populated_account() -> None:
+def test_the_row_is_the_display_row_for_a_fully_populated_account() -> None:
     """Every v1 field on the row, composed from the sources decisions 3–7/15/16 name — and the
     whole body validated twice: by the strict pydantic model and by the frontend's own Zod."""
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
             fixture, zafran = await _build_v1(conn)
-            response = await _get(conn, contract="v1")
+            response = await _get(conn)
             assert response.status_code == 200
             body = response.json()
 
@@ -1449,7 +1081,8 @@ def test_the_v1_contract_serves_the_display_row_for_a_fully_populated_account() 
             assert row["researchIsRefreshing"] is False
             assert row["overallFit"] == "High"
             assert row["fitScore"] == 82
-            assert row["revenueBand"] == "50m_100m"
+            # The label, not the `core.revenue_band` token (D4-b controller ruling 2).
+            assert row["revenueBand"] == "$50M–100M"
             # The provider's own range wins over the band we would compute from the headcount.
             assert row["employeeBand"] == "101-250"
             assert row["locationCount"] == 1
@@ -1500,7 +1133,7 @@ def test_an_unscored_membership_less_account_serves_nulls_and_unknown_bands() ->
     async def scenario() -> None:
         async with rollback_conn() as conn:
             await _build_v1(conn)
-            body = (await _get(conn, contract="v1")).json()
+            body = (await _get(conn)).json()
 
             seedling = _rows(body)["Seedling"]
             assert seedling["overallFit"] is None
@@ -1524,30 +1157,74 @@ def test_an_unscored_membership_less_account_serves_nulls_and_unknown_bands() ->
     run_async(scenario())
 
 
+@pytest.mark.parametrize(
+    ("status", "label"),
+    [
+        ("not_started", "Not started"),
+        ("in_progress", "In progress"),
+        ("needs_review", "Needs review"),
+        ("completed", "Researched"),
+        ("suspended", "Paused"),
+    ],
+)
+def test_the_row_serves_the_latest_arv2_job_status_verbatim(status: str, label: str) -> None:
+    """All five R2 states, unmapped. ``arv2_research_job.status`` IS the wire vocabulary, so the
+    read layer has no lifecycle to reinterpret and nothing to invent."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            await seed_arv2_job(
+                conn,
+                project=fixture.project_a,
+                account_id=fixture.acme,
+                status=cast(JobStatus, status),
+            )
+
+            row = _rows((await _get(conn)).json())["Acme"]
+            assert row["researchStatus"] == status
+            assert row["researchStatusLabel"] == label
+            assert row["researchIsRefreshing"] is False
+
+    run_async(scenario())
+
+
+def test_an_account_with_no_arv2_job_is_not_started_and_not_refreshing() -> None:
+    """The absent row, spelled once at the row rather than invented by the read."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _build(conn)
+            row = _rows((await _get(conn)).json())["Acme"]
+
+            assert row["researchStatus"] == "not_started"
+            assert row["researchStatusLabel"] == "Not started"
+            assert row["researchIsRefreshing"] is False
+
+    run_async(scenario())
+
+
 def test_a_job_launched_after_a_completed_one_marks_the_row_refreshing() -> None:
     """``researchIsRefreshing`` is the honest "researched, and being re-researched right now" —
-    a non-terminal job newer than a terminal ``completed`` one on the primary project."""
+    a non-terminal ARV2 job newer than a ``completed`` one for the same account."""
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
             fixture, zafran = await _build_v1(conn)
-            # The seeded completed job and the new one would share a transaction ``now()``; age the
-            # finished one so "newer" is a fact about the rows, not about uuid ordering.
+            # ``_build_v1``'s completed job and this one would share a transaction ``now()``; ageing
+            # it makes "newer" a fact about the rows, not about uuid ordering.
             await conn.execute(
                 text(
-                    "UPDATE entity_research_job SET created_at = created_at - interval '1 hour' "
-                    "WHERE subject_entity_id = :id"
+                    "UPDATE arv2_research_job SET created_at = created_at - interval '1 hour' "
+                    "WHERE account_entity_id = :id"
                 ),
                 {"id": zafran},
             )
-            await _launch_one(
-                conn,
-                workspace_id=_WS,
-                project_id=fixture.project_a.project_id,
-                account_id=zafran,
+            await seed_arv2_job(
+                conn, project=fixture.project_a, account_id=zafran, status="in_progress"
             )
 
-            row = _rows((await _get(conn, contract="v1")).json())["Zafran"]
+            row = _rows((await _get(conn)).json())["Zafran"]
             assert row["researchIsRefreshing"] is True
             # The latest job is the in-flight one, so the status is what that job says.
             assert row["researchStatus"] == "in_progress"
@@ -1556,48 +1233,63 @@ def test_a_job_launched_after_a_completed_one_marks_the_row_refreshing() -> None
     run_async(scenario())
 
 
-def test_the_same_request_without_the_parameter_still_serves_the_fi2_row() -> None:
-    """The ruling: no FI-2 field is renamed, wrapped or removed while both contracts are served."""
+def test_a_completed_job_newer_than_an_in_flight_one_is_not_refreshing() -> None:
+    """The reverse order: a stale in-flight row older than the result must not light the spinner
+    on an account whose latest job actually finished."""
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
-            await _build_v1(conn)
-            row = _rows((await _get(conn)).json())["Zafran"]
+            fixture = await _build(conn)
+            base = datetime(2026, 8, 2, 12, 0, tzinfo=UTC)
+            await seed_arv2_job(
+                conn,
+                project=fixture.project_a,
+                account_id=fixture.acme,
+                status="in_progress",
+                created_at=base,
+            )
+            await seed_arv2_job(
+                conn,
+                project=fixture.project_a,
+                account_id=fixture.acme,
+                status="completed",
+                created_at=base + timedelta(hours=1),
+            )
 
-            assert "scores" in row
-            assert "researchStatus" in row and isinstance(row["researchStatus"], list)
-            assert "updatedAt" in row
-            assert "overallFit" not in row
-            assert "customFields" not in row
+            row = _rows((await _get(conn)).json())["Acme"]
+            assert row["researchStatus"] == "completed"
+            assert row["researchIsRefreshing"] is False
 
     run_async(scenario())
 
 
-def test_an_unrecognised_contract_is_an_enveloped_422() -> None:
-    """A typo must not quietly serve the other contract."""
+def test_a_job_launched_by_a_non_primary_project_still_shows_on_the_row() -> None:
+    """Research is a fact about the *account*: an ARV2 run pins its project, but the row reports
+    the account's latest job whichever project launched it. Hiding project B's finished research
+    because project A leads the row would report a researched account as never researched."""
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
-            await _build(conn)
-            response = await _get(conn, contract="v2")
+            fixture = await _build(conn)
+            await seed_arv2_job(
+                conn, project=fixture.project_b, account_id=fixture.acme, status="completed"
+            )
 
-            assert response.status_code == 422
-            error = response.json()["error"]
-            assert error["code"] == "VALIDATION_ERROR"
-            assert "contract" in error["message"]
-            assert error["requestId"]
+            row = _rows((await _get(conn)).json())["Acme"]
+            assert row["primaryProjectId"] == fixture.project_a.project_id
+            assert row["researchStatus"] == "completed"
 
     run_async(scenario())
 
 
-def test_the_v1_branch_is_a_constant_number_of_statements_per_page() -> None:
-    """The v1 row composes more sources than the FI-2 one; it must still cost a fixed number of
-    batched reads, not one per membership, owner or custom field."""
+def test_the_row_costs_a_constant_number_of_statements_per_page() -> None:
+    """The row composes many sources; it must still cost a fixed number of batched reads, not one
+    per membership, owner or custom field."""
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
             fixture, zafran = await _build_v1(conn)
-            baseline, _ = await _count_statements(conn, contract="v1")
+            baseline, _ = await _count_statements(conn)
 
             base = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
             for ordinal in range(3):
@@ -1623,7 +1315,7 @@ def test_the_v1_branch_is_a_constant_number_of_statements_per_page() -> None:
                     field_key=f"client.extra_{ordinal}",
                     value=f"value {ordinal}",
                 )
-            widened, payload = await _count_statements(conn, contract="v1")
+            widened, payload = await _count_statements(conn)
 
             rows = _rows(payload)
             assert len(rows["Zafran"]["projects"]) == 5, "the memberships really did grow"

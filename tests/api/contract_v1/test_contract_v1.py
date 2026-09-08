@@ -7,16 +7,16 @@ Three checks, and they are deliberately three rather than one:
    set. A v1 field may not be silently optional on one side: a Zod ``.nullable()`` without a
    default is REQUIRED-but-nullable, so its pydantic twin is ``X | None`` with **no** default.
 2. **Golden payloads.** A hand-built maximal and minimal sample per payload validates with
-   pydantic and — when Node and ``apps/frontend``'s ``zod`` are present — parses through the real Zod
-   schema. This is what catches the serialization rules the field sets cannot see: an absent
+   pydantic and — when Node and ``apps/frontend``'s ``zod`` are present — parses through the real
+   Zod schema. This is what catches the serialization rules the field sets cannot see: an absent
    optional must be *omitted* (a Zod ``.optional()`` that is not ``.nullable()`` rejects ``null``),
    while a required-nullable field must serialize as ``null``.
 3. **Document parity.** The field tables under ``## Contract v1`` in
    ``apps/frontend/docs/api-contracts/accounts.md`` list exactly the fields on the wire.
 
 The Zod half is skipped, naming the missing toolchain, when ``node`` or
-``apps/frontend/node_modules`` is unavailable. See ``README.md`` for the exact incantation and why ``NODE_PATH`` is how ``zod``
-resolves.
+``apps/frontend/node_modules`` is unavailable. See ``README.md`` for the exact incantation and
+why ``NODE_PATH`` is how ``zod`` resolves.
 """
 
 from __future__ import annotations

@@ -6,7 +6,7 @@ import csv
 import hashlib
 import io
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -431,6 +431,37 @@ async def compile_contact_channel_preflight(
         entity_research_job_id=entity_research_job_id,
     )
     return ContactChannelPreflight(request=request, csv_bytes=_csv_bytes(contact.linkedin_url))
+
+
+#: ``core.work_email`` carries the provider's deliverability verdict beside the address (ARV2 D4-b
+#: decision 6); ``core.direct_phone`` is still the bare value. Exa Websets returns an address and
+#: says nothing about whether the mailbox answers, so the verdict it earns here is ``unverified``.
+#: The independent validator that runs after this write is what may later say more.
+EMAIL_FIELD_KEY = "core.work_email"
+UNPROBED_EMAIL_STATUS = "unverified"
+
+
+def _channel_value(field_key: str, value: str) -> JsonValue:
+    """The observed channel value in the shape its field registry declares."""
+
+    if field_key != EMAIL_FIELD_KEY:
+        return value
+    return {"address": value, "status": UNPROBED_EMAIL_STATUS}
+
+
+def _channel_text(value_json: object) -> str | None:
+    """The comparable text of a stored channel claim, in either shape ``core.work_email`` has had.
+
+    A corroborating claim may predate D4-b (a bare address string) or be another writer's verdict
+    object; both corroborate the same address, and a phone claim is always the bare string.
+    """
+
+    if isinstance(value_json, str):
+        return value_json.strip().lower()
+    if isinstance(value_json, Mapping):
+        address = value_json.get("address")
+        return address.strip().lower() if isinstance(address, str) else None
+    return None
 
 
 class ExaContactChannelCoordinator:
@@ -1930,8 +1961,7 @@ class ExaContactChannelCoordinator:
         valid = len(rows) == len(ids) and all(
             row["entity_id"] == operation.request.contact_id
             and str(row["field_key"]) == operation.request.field_key
-            and isinstance(row["value_json"], str)
-            and row["value_json"].strip().lower() == expected
+            and _channel_text(row["value_json"]) == expected
             and row["source_key"] != operation.request.acquisition_source_key
             and row["verification_status"] != "rejected"
             and row["superseded_by"] is None
@@ -2143,7 +2173,7 @@ class ExaContactChannelCoordinator:
             entity_id=operation.request.contact_id,
             entity_type=EntityType.CONTACT,
             field_key=operation.request.field_key,
-            value_json=value,
+            value_json=_channel_value(operation.request.field_key, value),
             source_url=source_url,
             source_key=operation.request.acquisition_source_key,
             artifact_key=artifact_key,

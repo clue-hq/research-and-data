@@ -2,11 +2,8 @@
 
 The insights-and-artifacts half of one account's screen, and the only endpoint that serves the
 generated **insights** page. It is deliberately a *new* route rather than a second contract on an
-existing one: nothing FI-2-era serves this shape, so there is no old payload to keep byte-for-byte
-beside it. It therefore answers contract v1 whether ``?contract=`` is absent or ``v1`` — while
-still declaring :data:`~clue_api.frontend_read.app.ContractDep`, so an unrecognised value
-(``?contract=v2``) is the same enveloped 422 it is everywhere else on this surface rather than
-being quietly ignored on one route.
+existing one: nothing FI-2-era ever served this shape, so there was no old payload to keep
+byte-for-byte beside it.
 
 Four properties are structural rather than incidental:
 
@@ -39,7 +36,7 @@ from clue_api.arv2.display.blocks import insight_summary
 from clue_api.arv2.display.recipes import Page
 from clue_api.client_context_binding import workspace_client_entity_id
 from clue_api.frontend_read.account_detail import AccountNotFound
-from clue_api.frontend_read.app import ContractDep, WorkspaceDep
+from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.contacts import _account_404
 from clue_api.frontend_read.contract_v1 import (
     AccountWorkspaceResponseV1,
@@ -122,12 +119,8 @@ def register_account_workspace_routes(
 
     @router.get("/accounts/{account_id}/workspace")
     async def get_account_workspace(
-        workspace_id: WorkspaceDep, account_id: uuid.UUID, mode: ContractDep
+        workspace_id: WorkspaceDep, account_id: uuid.UUID
     ) -> AccountWorkspaceResponseV1:
-        # ``mode`` is declared but not branched on: this route has only ever served contract v1, so
-        # there is no FI-2 shape to select. It is declared so ``?contract=v2`` is refused here
-        # exactly as it is on every other route of this surface.
-        del mode
         async with conn_factory() as conn:
             try:
                 return await read_account_workspace(

@@ -35,6 +35,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, m
 
 from clue_api.arv2.calls import CallCost, CallResult, CallSpec, ProviderCaller, SpendEstimate
 from clue_api.arv2.display.gather import ClientContext, SectionInput, SubjectRef
+from clue_api.arv2.display.personas import persona_display
 from clue_api.arv2.display.prompts import PROMPT_VERSION, RESPONSE_FORMAT, build_messages
 from clue_api.arv2.display.recipes import SectionRecipe
 from clue_api.arv2.display.render import DisplayClaim, alias_table
@@ -209,6 +210,14 @@ def _people_by_name(people: Sequence[SubjectRef], subject: SubjectRef) -> dict[s
 
 
 def _ref_payload(person: SubjectRef) -> dict[str, object]:
+    """One contact chip as the frontend receives it.
+
+    ``persona`` is written as **display text** (``"Economic buyer"``), not as the vocabulary value:
+    this payload goes straight into ``display_block.body_json`` at generation time and is served
+    from there verbatim, so a raw ``economic_buyer`` stored here is a raw ``economic_buyer`` on the
+    screen forever (D4-b decision 5). Blocks written before that ruling are corrected by
+    ``scripts/rewrite_display_persona_labels.py``.
+    """
     payload: dict[str, object] = {
         "accountId": person.account_id,
         "contactId": person.id,
@@ -216,8 +225,9 @@ def _ref_payload(person: SubjectRef) -> dict[str, object]:
     }
     if person.title is not None:
         payload["title"] = person.title
-    if person.persona is not None:
-        payload["persona"] = person.persona
+    label = persona_display(person.persona)
+    if label is not None:
+        payload["persona"] = label
     return payload
 
 

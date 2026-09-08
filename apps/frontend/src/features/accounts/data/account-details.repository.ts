@@ -26,7 +26,7 @@ export const fixtureAccountDetailsRepository: AccountDetailsRepository = {
 };
 
 /**
- * The live account detail: `GET /frontend/v1/accounts/{id}?contract=v1` → `{data}`.
+ * The live account detail: `GET /frontend/v1/accounts/{id}` → `{data}`.
  *
  * `ACCOUNT_NOT_FOUND` is the one 404 that means "no such account"; `fetchRead`
  * turns it into `null` and every other failure into a `ClueApiError`, so a
@@ -39,7 +39,6 @@ export function createHttpAccountDetailsRepository(
     async get(accountId) {
       const body = await read(`/accounts/${encodeURIComponent(accountId)}`, {
         recordNotFoundAllowed: true,
-        searchParams: { contract: "v1" },
       });
       if (body === null) return null;
       return AccountDetailResponseSchema.parse(body).data;

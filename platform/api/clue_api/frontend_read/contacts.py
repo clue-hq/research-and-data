@@ -1,55 +1,26 @@
-"""FI-2 slice 1, Task 4 — the contacts union under one account.
+"""The contacts under one account: the table and the contact page (contract v1, ARV2 E4/E5).
 
 ``GET /frontend/v1/accounts/{account_id}/contacts`` and
-``GET /frontend/v1/accounts/{account_id}/contacts/{contact_id}``: the buying committee of one
-account, unioned across every project that targets it, served through the governed reader.
+``GET /frontend/v1/accounts/{account_id}/contacts/{contact_id}``, plus the contact evidence stream
+and the single-contact work-email lookup.
 
-**This endpoint owns no eligibility logic.** It composes three existing authorities and translates
-their verdicts to Band-2:
+Both screens are served from the *same* people the account detail's committee card shows:
+:func:`~clue_api.frontend_read.display_pages.committee` (D2's ``committee_members`` — the contacts
+under this account that hold at least one live claim, ordered by persona rank then name) decides
+membership and order once, so a marketer cannot see three contacts on the account and two in the
+table. Nothing below re-derives a display rule — the title, the email chip, the persona tone, the
+influence default and the labels all come from the shared helpers, and every personal claim passes
+:func:`~clue_api.frontend_read.v1_shared.arv2_display_allowed` before it is rendered.
 
-1. **membership** — ``project_account`` says which projects target this account, in the recorded
-   first-add-wins order (element 0 is the primary project);
-2. **committee membership + product/run scoping** —
-   :func:`~clue_api.frontend_read.committee.read_governed_committee`, the shared addressability seam
-   used by Account detail, Contacts list and Contact detail. It owns the latest-run context,
-   governed resolver and display-policy decision once; this module only projects its members;
-3. **display governance** — :func:`~clue_api.research_view_governance.display_allowed`, the *same*
-   predicate C7 statement governance applies, imported rather than copied. A copy would be free to
-   drift from the policy C7 enforces, which is the one thing a second read surface over the same
-   personal data must not do.
+**E4 and E5 have deliberately different addressability rules.** A row's ``profileAction`` is
+``"page"`` only for a committee member the read actually found claims for, while E5 serves any
+contact **under this account** that holds a live claim or a written page section — research writes
+about people the latest committee row does not list, and 404ing them would hide research the
+platform paid for. The two are consistent in the direction that matters: every linked row is
+servable; a servable contact may simply not be listed.
 
-**Two honest absences, and why only one of them is marked.** A field can be missing here for two
-different reasons and the wire distinguishes them:
-
-* the claim exists and is current, but the workspace policy refuses to *display* it (a
-  special-category value, or a use-class this workspace does not show) → the value is **absent**
-  and the slot carries ``restricted: true``. That is C7's ``ResearchAvailability.RESTRICTED``
-  expressed at Band-2: no reason string, no leaked provider or timestamp, just "withheld";
-* the claim is weakly bound, so the merge never promotes it to current truth (``can_be_promoted``)
-  → there is no statement at all, and the field is simply **absent, unmarked**. Marking it
-  ``restricted`` would report a research gap as a policy decision.
-
-Neither path ever fabricates a value, and neither is a crash.
-
-**What is deliberately not on the wire** (FI-1 G1–G4, reconciling the frontend's proposed contact
-shape): no ``avatarUrl`` (G1 — no avatar pipeline exists and inventing one would mean scraping),
-no ``socials`` array (G2 — LinkedIn is a resolved *identity strong key*, an X/Twitter handle is
-not), no email address or email-status capability (G3 — this slice serves no channel data), and no
-evidence URLs (G4 v1 — provenance chips are non-link). ``provider`` is the raw ``claim.source_key``:
-no source display-name surface exists anywhere in the platform, and inventing a label map here
-would be exactly the presentation mapping Band-2 forbids.
-
-**``signals`` counts signal TYPES.** The chip is ``{"typeCount": n}`` — one per signal *field* that
-currently holds a display-eligible statement, never one per item inside a list-valued facet (the
-founder's 2026-08-08 unit ruling, FI-1 §9). The field is named for the unit it carries so a
-frontend reading ``signals.count`` cannot quietly assume "five recent posts" where the backend
-means "one signal type is present"; ``n`` is bounded by ``len(CONTACT_SIGNAL_FIELD_KEYS)``.
-
-**Live-data reality.** ``resolve_account`` reads ``account_run.references_index``, whose only
-production writer sits behind the M8D R1 quarantine, so on live data every committee is empty until
-the R11 DEEP-phase bridge lands. An empty committee is therefore a 200 with an empty list — the
-current production answer, and the correct one either way ("no committee researched yet" is not a
-missing account).
+Every source is read in a fixed number of batched statements: a per-member lookup is what turns a
+four-person table into nine statements, and is what the suite's statement-count guard prevents.
 """
 
 from __future__ import annotations
@@ -60,7 +31,6 @@ from datetime import UTC, date, datetime
 from typing import cast
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from pydantic import JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -74,19 +44,12 @@ from clue_api.arv2.display.gather import (
 from clue_api.arv2.display.recipes import Page
 from clue_api.auth_wiring import principal_from_request
 from clue_api.client_context_binding import workspace_client_entity_id
-from clue_api.contact_eligibility import GovernedCommitteeContact
 from clue_api.frontend_read.account_detail import AccountNotFound
-from clue_api.frontend_read.accounts_list import WireModel
-from clue_api.frontend_read.app import ContractDep, WorkspaceDep
-from clue_api.frontend_read.committee import (
-    current_claims,
-    read_governed_committee,
-)
+from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.contact_email_lookup import (
     ContactEmailLookupService,
     ContactEmailLookupView,
     EmailLookupTarget,
-    latest_contact_email_lookups,
 )
 from clue_api.frontend_read.contract_v1 import (
     AccountContactDetailResponseV1,
@@ -108,14 +71,10 @@ from clue_api.frontend_read.display_pages import (
     displayable,
     title_of,
 )
-from clue_api.frontend_read.evidence import (
-    EvidenceReference,
+from clue_api.frontend_read.evidence_stream import (
     evidence_artifact_response,
-    evidence_reference,
-    live_artifact_claim_ids,
     read_live_artifact,
 )
-from clue_api.frontend_read.prose import CONTACT_OVERVIEW_FIELD, ProseRead, read_prose
 from clue_api.frontend_read.v1_shared import (
     Influence,
     contact_last_modified,
@@ -125,166 +84,25 @@ from clue_api.frontend_read.v1_shared import (
     iso_utc,
     linkedin_label,
     location_label,
+    persona_display,
     persona_influence,
     persona_tone,
     research_evidence_for,
     tenure,
 )
-from clue_api.research_view_governance import display_allowed, safe_public_url
-from clue_core import (
-    CONTACT_PROFESSIONAL_FIELD_KEYS,
-    Claim,
-    ClaimId,
-    ContactEntity,
-    EntityId,
-    EntityType,
-    Persona,
-    reference_time,
-)
+from clue_api.url_safety import safe_public_url
+from clue_core import Claim, ClaimId, ContactEntity, EntityId, EntityType
 from clue_db import ConnFactory
-from clue_research.claimstore import (
-    FieldFilters,
-    FieldRegistryScope,
-    WorkspaceScope,
-    active_merge_policy,
-    claims_by_ids,
-    claims_for_entities,
-    list_effective_fields,
-    merge_claims,
-)
+from clue_research.claimstore import WorkspaceScope, claims_by_ids, claims_for_entities
 from clue_research.compliance import WorkspacePolicy, load_workspace_policy
 from clue_research.identity import get_account, get_contact, get_contacts, surviving_id
-from clue_research.membership import memberships_for_accounts
-from clue_research.profiling.committee import CURRENT_LOCATION, CURRENT_TITLE
-from clue_research.profiling.fields import (
-    FACET_ALMA_MATER,
-    FACET_CAREER_HISTORY,
-    FACET_PUBLIC_APPEARANCES,
-)
+from clue_research.profiling.committee import CURRENT_LOCATION
+from clue_research.profiling.fields import FACET_ALMA_MATER, FACET_CAREER_HISTORY
 from clue_storage import StorageBackend
-
-#: ``contact.facet.recent_post`` is registered in ``claimstore.CORE_PACK`` (the two proof rows of
-#: the facet field-class live there, not in the M8 facet pack) and has no exported constant, so the
-#: key is named here; ``contact.facet.public_appearances`` does, and is imported.
-FACET_RECENT_POST = "contact.facet.recent_post"
-
-#: The facet families the row's ``signals`` chip counts (FI-1 G7) — the signal **types**, and the
-#: ceiling on ``signals.typeCount``. This is a **display selection** over registered facet fields,
-#: not a registry attribute — no field declares "I am a signal" — so it is enumerated here, at the
-#: one place that renders it, rather than pretending to be derived.
-#: Widening it is a one-tuple change; ``tests/api/test_frontend_read_contacts.py`` asserts both keys
-#: still resolve to registered ``contact.facet.*`` fields, so a pack rename fails loudly instead of
-#: silently counting zero forever.
-CONTACT_SIGNAL_FIELD_KEYS: tuple[str, ...] = (FACET_RECENT_POST, FACET_PUBLIC_APPEARANCES)
 
 
 class ContactNotFound(LookupError):
-    """No governed committee member with that id exists under this account."""
-
-
-# --- the wire vocabulary ----------------------------------------------------------------------
-
-
-class RoleOnCommittee(WireModel):
-    """The member's committee role and how confident the inference is.
-
-    ``value`` is a :class:`~clue_core.Persona` value: the governed resolver refuses a member whose
-    role and persona disagree, so the two are the same closed 4-value vocabulary, served raw.
-    ``confidence`` is the role claim's own inference confidence (clamped by the M8.3 plausibility
-    gate), ``null`` when the claim carries none — never a fabricated 1.0. ``reasoning`` is the
-    agent-authored rationale from that same governed role claim, not a read-layer reconstruction.
-    """
-
-    value: str
-    confidence: float | None = None
-    reasoning: str | None = None
-
-
-class ContactSignals(WireModel):
-    """How many signal **types** this member currently has a display-eligible statement for.
-
-    ``typeCount``, not ``count``, because that is literally what it measures and the founder's
-    2026-08-08 ruling fixed the unit: one display-eligible *field* counts once, whatever its value
-    holds. A list-valued facet with five public appearances therefore contributes **1**, not 5 —
-    ``5`` would need a per-item unit the ruling did not adopt. The ceiling is
-    ``len(CONTACT_SIGNAL_FIELD_KEYS)``.
-
-    A *statement* is the current value of a signal field — the same unit C7 governs — so the count
-    is bounded by :data:`CONTACT_SIGNAL_FIELD_KEYS`, not by claim history. Counting superseded
-    claims would report how often we looked, not how much we know; counting display-denied ones
-    would leak the existence of exactly the data the policy withholds.
-    """
-
-    type_count: int
-
-
-class GovernedFact(WireModel):
-    """One professional field's current value — or its withheld slot.
-
-    When ``restricted`` is true the value is absent and so are ``observedAt``/``provider``: the
-    caller learns that a policy withheld something, and nothing more.
-    """
-
-    field_key: str
-    claim_id: str | None = None
-    value: JsonValue | None = None
-    observed_at: datetime | None = None
-    provider: str | None = None
-    restricted: bool = False
-
-
-class ContactRow(WireModel):
-    """One governed committee member, as the contacts table renders them."""
-
-    id: uuid.UUID
-    name: str | None = None
-    title: str | None = None
-    # The scalar counterpart of :class:`GovernedFact`'s ``restricted``: ``title`` has no object slot
-    # to carry a marker, so absence alone could not distinguish "withheld" from "unknown". A
-    # deviation from the task plan's row sketch, recorded here because Task 5 copies the *as-built*
-    # shape into the frontend contract.
-    title_restricted: bool = False
-    persona: Persona
-    role_on_committee: RoleOnCommittee
-    # The resolved identity strong key from ``contact_entity`` — not a claim, and the only social
-    # link on the wire (G2). It is protected by the member's governed *existence*, not by a column
-    # write: DSAR erasure tombstones the claims (role/persona included), and a member without a
-    # current strongly-bound role/persona claim never comes back from the resolver, so this row is
-    # never built for them. The column itself is NOT nulled by erasure (only ``verified_email`` is)
-    # — the identity spine survives so a re-encounter still resolves rather than re-creating the
-    # person the platform was asked to stop holding data about.
-    linkedin_url: str | None = None
-    project_ids: tuple[str, ...] = ()
-    signals: ContactSignals
-    # Durable provider-observed email acquisition. ``None`` means the user has never requested a
-    # lookup; addresses remain separate from canonical ``verified_email``.
-    email_lookup: ContactEmailLookupView | None = None
-
-
-class ContactProfile(ContactRow):
-    """One member's full profile: the row, plus account identity, facts and provenance."""
-
-    account_id: uuid.UUID
-    account_name: str
-    overview: ProseRead
-    professional_facts: tuple[GovernedFact, ...] = ()
-    evidence: tuple[EvidenceReference, ...] = ()
-    # Set when the requested contact id was a merged loser: the body is the survivor's.
-    redirected_from: uuid.UUID | None = None
-
-
-class ContactListMeta(WireModel):
-    """``total`` is the whole committee: this list is not paginated (a committee is bounded by
-    construction — four personas over one account — so a cursor would be ceremony)."""
-
-    total: int
-
-
-class ContactListResponse(WireModel):
-    """``{data, meta}`` — the same envelope the accounts list serves."""
-
-    data: tuple[ContactRow, ...]
-    meta: ContactListMeta
+    """No servable contact with that id exists under this account in this workspace."""
 
 
 # --- composition ------------------------------------------------------------------------------
@@ -305,281 +123,6 @@ async def _resolve_account(
         raise AccountNotFound(str(account_id))
     return canonical, account.canonical_name
 
-
-def _role_on_committee(member: GovernedCommitteeContact) -> RoleOnCommittee:
-    """Project the role claim's judgment without inventing confidence or reasoning."""
-
-    role = next(
-        (item.claim for item in member.claims if item.claim.id == member.role_claim_id), None
-    )
-    value = role.value_json if role is not None else None
-    confidence = value.get("confidence") if isinstance(value, dict) else None
-    rationale = value.get("rationale") if isinstance(value, dict) else None
-    # ``bool`` is an ``int`` in Python; a boolean confidence would be a schema violation, and
-    # rendering it as 1.0/0.0 would invent a number the inference never produced.
-    role_confidence = (
-        float(confidence)
-        if isinstance(confidence, int | float) and not isinstance(confidence, bool)
-        else None
-    )
-    role_reasoning = rationale.strip() if isinstance(rationale, str) and rationale.strip() else None
-    return RoleOnCommittee(
-        value=member.role_on_committee,
-        confidence=role_confidence,
-        reasoning=role_reasoning,
-    )
-
-
-def _professional_facts(
-    claims: dict[str, Claim], policy: WorkspacePolicy
-) -> tuple[GovernedFact, ...]:
-    """The governed professional fields this member holds, in their registered order.
-
-    Registered order (``CONTACT_PROFESSIONAL_FIELD_KEYS``) rather than alphabetical: the tuple is
-    frozen in ``core`` and reads title → function → level → team → location → relationship, which is
-    the fields' own declared order, not a display decision taken here.
-    """
-    facts: list[GovernedFact] = []
-    for field_key in CONTACT_PROFESSIONAL_FIELD_KEYS:
-        claim = claims.get(field_key)
-        if claim is None:
-            continue
-        if not display_allowed(claim, policy):
-            facts.append(GovernedFact(field_key=field_key, restricted=True))
-            continue
-        facts.append(
-            GovernedFact(
-                field_key=field_key,
-                claim_id=str(claim.id),
-                value=claim.value_json,
-                observed_at=reference_time(claim),
-                provider=claim.source_key,
-            )
-        )
-    return tuple(facts)
-
-
-def _signal_type_count(claims: dict[str, Claim], policy: WorkspacePolicy) -> int:
-    """How many of the signal *fields* currently hold a display-eligible statement (one each)."""
-    return sum(
-        1
-        for field_key in CONTACT_SIGNAL_FIELD_KEYS
-        if (claim := claims.get(field_key)) is not None and display_allowed(claim, policy)
-    )
-
-
-async def _evidence(
-    conn: AsyncConnection,
-    *,
-    claims: dict[str, Claim],
-    policy: WorkspacePolicy,
-    workspace_id: str,
-) -> tuple[EvidenceReference, ...]:
-    """One evidence record per displayed current claim, never per provider bucket.
-
-    Mapping the item to ``claim_id`` + ``field_key`` is what lets a reviewer tell which statement
-    the span supports.  A policy-withheld claim contributes no record at all, so neither its value
-    nor its provider, timestamp, URL, span, confidence, or retained-artifact existence leaks.
-    """
-
-    displayed = tuple(claim for claim in claims.values() if display_allowed(claim, policy))
-    if not displayed:
-        return ()
-    artifact_claim_ids = await live_artifact_claim_ids(
-        conn, claims=displayed, workspace_id=workspace_id
-    )
-    definitions = {
-        str(item.field_def.field_key): item.field_def
-        for item in await list_effective_fields(
-            conn,
-            scope=FieldRegistryScope.for_workspace(workspace_id),
-            filters=FieldFilters(active=None),
-            include_retired=True,
-        )
-    }
-    now = datetime.now(UTC)
-    merge_policy = active_merge_policy()
-    references: list[EvidenceReference] = []
-    for claim in sorted(displayed, key=lambda item: (str(item.field_key), str(item.id))):
-        definition = definitions.get(str(claim.field_key))
-        current = merge_claims(
-            (claim,),
-            None if definition is None else definition.freshness_ttl,
-            merge_policy,
-            now,
-        )
-        references.append(
-            evidence_reference(
-                claim,
-                freshness=None if current is None else current.freshness_state,
-                artifact_available=str(claim.id) in artifact_claim_ids,
-            )
-        )
-    return tuple(references)
-
-
-def _build_row(
-    member: GovernedCommitteeContact,
-    *,
-    entity: ContactEntity | None,
-    project_ids: Sequence[str],
-    claims: dict[str, Claim],
-    policy: WorkspacePolicy,
-    email_lookup: ContactEmailLookupView | None = None,
-) -> ContactRow:
-    """The list row — and, via ``model_dump``, the shared half of the profile, so the two shapes
-    cannot drift into disagreeing about the same member."""
-    title_claim = claims.get(CURRENT_TITLE)
-    shown = title_claim is not None and display_allowed(title_claim, policy)
-    # ``contact.current_title`` is a registered ``str`` field. A non-string value would be a
-    # registry violation, and rendering ``str(...)`` of whatever arrived would fabricate a title —
-    # so it serves as unknown rather than as a stringified object.
-    title = title_claim.value_json if shown and title_claim is not None else None
-    return ContactRow(
-        id=uuid.UUID(str(member.contact_entity_id)),
-        name=None if entity is None else entity.full_name,
-        title=title if isinstance(title, str) else None,
-        title_restricted=title_claim is not None and not shown,
-        persona=member.persona,
-        role_on_committee=_role_on_committee(member),
-        linkedin_url=None if entity is None else entity.linkedin_url,
-        project_ids=tuple(project_ids),
-        signals=ContactSignals(type_count=_signal_type_count(claims, policy)),
-        email_lookup=email_lookup,
-    )
-
-
-# --- the read models --------------------------------------------------------------------------
-
-
-async def read_account_contacts(
-    conn: AsyncConnection,
-    *,
-    workspace_id: str,
-    account_id: uuid.UUID,
-) -> ContactListResponse:
-    """The governed committee union for one account (empty when nothing has been researched)."""
-    canonical, _name = await _resolve_account(
-        conn, workspace_id=workspace_id, account_id=account_id
-    )
-    memberships = (
-        await memberships_for_accounts(
-            conn, workspace_id=workspace_id, account_ids=[uuid.UUID(str(canonical))]
-        )
-    ).get(uuid.UUID(str(canonical)), ())
-    union, policy = await read_governed_committee(
-        conn,
-        account_id=canonical,
-        workspace_id=workspace_id,
-        memberships=memberships,
-    )
-    entities = await get_contacts(conn, tuple(union.members))
-    email_lookups = await latest_contact_email_lookups(
-        conn,
-        workspace_id=workspace_id,
-        contact_ids=tuple(uuid.UUID(str(item)) for item in union.members),
-    )
-
-    rows = [
-        _build_row(
-            member,
-            entity=entities.get(contact_id),
-            project_ids=union.project_ids[contact_id],
-            claims=current_claims(member),
-            policy=policy,
-            email_lookup=email_lookups.get(uuid.UUID(str(contact_id))),
-        )
-        for contact_id, member in union.members.items()
-    ]
-    rows.sort(key=lambda row: (row.persona.value, str(row.id)))
-    return ContactListResponse(data=tuple(rows), meta=ContactListMeta(total=len(rows)))
-
-
-async def read_contact_profile(
-    conn: AsyncConnection,
-    *,
-    workspace_id: str,
-    account_id: uuid.UUID,
-    contact_id: uuid.UUID,
-) -> ContactProfile:
-    """One member's profile, or :class:`ContactNotFound`.
-
-    The URL is account-scoped, so committee membership *of this account* is the addressability rule:
-    a contact row that exists but sits on no committee here is a 404, exactly like an unknown id.
-    A merged **contact** follows ``surviving_id`` and is served with ``redirected_from`` set; a
-    merged *account* in the URL is followed silently (``redirected_from`` stays ``None``), so a
-    client correcting a stale account link must compare ``account_id`` with the id it asked for.
-    """
-    canonical_account, account_name = await _resolve_account(
-        conn, workspace_id=workspace_id, account_id=account_id
-    )
-    canonical_contact = await surviving_id(conn, EntityId(contact_id), EntityType.CONTACT)
-    memberships = (
-        await memberships_for_accounts(
-            conn, workspace_id=workspace_id, account_ids=[uuid.UUID(str(canonical_account))]
-        )
-    ).get(uuid.UUID(str(canonical_account)), ())
-    union, policy = await read_governed_committee(
-        conn,
-        account_id=canonical_account,
-        workspace_id=workspace_id,
-        memberships=memberships,
-    )
-    member = union.members.get(canonical_contact)
-    if member is None:
-        raise ContactNotFound(str(contact_id))
-
-    claims = current_claims(member)
-    overview = await read_prose(
-        conn,
-        entity_id=canonical_contact,
-        field_key=CONTACT_OVERVIEW_FIELD,
-        scope=WorkspaceScope.for_workspace(workspace_id),
-        display_allowed=lambda claim: display_allowed(claim, policy),
-    )
-    row = _build_row(
-        member,
-        entity=(await get_contacts(conn, (canonical_contact,))).get(canonical_contact),
-        project_ids=union.project_ids[canonical_contact],
-        claims=claims,
-        policy=policy,
-        email_lookup=(
-            await latest_contact_email_lookups(
-                conn,
-                workspace_id=workspace_id,
-                contact_ids=(uuid.UUID(str(canonical_contact)),),
-            )
-        ).get(uuid.UUID(str(canonical_contact))),
-    )
-    return ContactProfile(
-        **row.model_dump(),
-        account_id=uuid.UUID(str(canonical_account)),
-        account_name=account_name,
-        overview=overview,
-        professional_facts=_professional_facts(claims, policy),
-        evidence=await _evidence(
-            conn,
-            claims=claims,
-            policy=policy,
-            workspace_id=workspace_id,
-        ),
-        redirected_from=None if canonical_contact == EntityId(contact_id) else contact_id,
-    )
-
-
-# --- contract v1 (ARV2 D3, E4/E5) --------------------------------------------------------------
-#
-# The ARV2 contacts table and contact page, served from the *same* people the account detail's
-# committee card shows: :func:`~clue_api.frontend_read.display_pages.committee` decides membership
-# and order (persona rank, then name) once, so a marketer cannot see three contacts on the account
-# and two in the table. Nothing below re-derives a display rule — the title, the email chip, the
-# persona tone, the influence default and the labels all come from the shared helpers.
-#
-# **E4 and E5 have deliberately different addressability rules.** A row's ``profileAction`` is
-# ``"page"`` only for a committee member the read actually found claims for, while E5 serves any
-# contact **under this account** that holds a live claim or a written page section — the answer
-# key's non-committee people have real pages. The two are consistent in the direction that matters:
-# every linked row is servable; a servable contact may simply not be listed.
 
 #: The page the contact detail serves. Named so the reader and the evidence route cannot drift.
 CONTACT_PAGE: Page = "contact"
@@ -679,7 +222,10 @@ def _summary_row(
         id=contact_id,
         name=name,
         title=title_of(displayable(latest.get(TITLE_KEY), policy)),
-        persona=persona,
+        # The wire gets display text; the tone and the influence default keep reading the
+        # vocabulary value beside it (D4-b decision 5). ``persona`` is required non-empty, and
+        # :func:`_persona_of` never returns an empty string, so the fallback is unreachable.
+        persona=persona_display(persona) or persona,
         persona_tone=persona_tone(persona),
         influence=_influence(displayable(latest.get(ROLE_KEY), policy), persona),
         email_status=facts.status,
@@ -689,7 +235,7 @@ def _summary_row(
     )
 
 
-async def read_account_contacts_v1(
+async def read_account_contacts(
     conn: AsyncConnection,
     *,
     workspace_id: str,
@@ -866,7 +412,9 @@ def _reports(
                 contact_id=member.id,
                 name=member.name or member.id,
                 title=title_of(displayable(latest.get((member.id, TITLE_KEY)), policy)),
-                persona=_persona_of(displayable(latest.get((member.id, PERSONA_KEY)), policy)),
+                persona=persona_display(
+                    _persona_of(displayable(latest.get((member.id, PERSONA_KEY)), policy))
+                ),
             )
         )
     return tuple(refs)
@@ -880,7 +428,7 @@ def _same_entity(left: str, right: str) -> bool:
         return False
 
 
-async def read_contact_profile_v1(
+async def read_contact_profile(
     conn: AsyncConnection,
     *,
     workspace_id: str,
@@ -1056,38 +604,50 @@ def _evidence_404() -> HTTPException:
     )
 
 
-async def _v1_page_cites(
+async def _served_claim_ids(
     conn: AsyncConnection,
     *,
     workspace_id: str,
-    account_id: EntityId,
-    contact_id: uuid.UUID,
-    claim_id: uuid.UUID,
+    contact_id: EntityId,
     display: DisplayPages,
-) -> bool:
-    """Whether the v1 contact page for this person, under this account, cites ``claim_id``.
+) -> frozenset[str]:
+    """Every claim id this person's contact page actually serves evidence for.
 
-    ``generate=False`` is load-bearing: this asks only what the **stored** blocks cite, so a GET
-    that authorises can neither write a section nor schedule a rewrite (and is safe to retry).
+    The same union :func:`read_contact_profile` composes into ``researchEvidence``: what the page
+    cites, plus the two chips that find their evidence by claim id (ruling R5). Composing it here
+    rather than calling the reader is what keeps this an authorisation check — ``generate=False``
+    is load-bearing, so a GET that authorises can neither write a section nor schedule a rewrite,
+    and is safe to retry.
     """
-    survivor = await surviving_id(conn, EntityId(contact_id), EntityType.CONTACT)
-    try:
-        subject = await resolve_subject(
-            conn, workspace_id=workspace_id, kind="contact", subject_id=str(survivor)
-        )
-    except SubjectNotFound:
-        return False
-    if not _same_entity(subject.account_id, str(account_id)):
-        return False
     page = await display.page(
         conn,
         workspace_id=workspace_id,
         subject_kind="contact",
-        subject_id=str(survivor),
+        subject_id=str(contact_id),
         page=CONTACT_PAGE,
         generate=False,
     )
-    return str(claim_id) in page.cited_claim_ids
+    served = set(page.cited_claim_ids)
+    policy = await load_workspace_policy(conn, workspace_id=workspace_id)
+    latest = _latest(
+        _by_field(
+            await claims_for_entities(
+                conn,
+                [contact_id],
+                [WORK_EMAIL_KEY, CURRENT_LOCATION],
+                scope=WorkspaceScope.for_workspace(workspace_id),
+            )
+        )
+    )
+    email_claim_id = email_facts(displayable(latest.get(WORK_EMAIL_KEY), policy)).claim_id
+    if email_claim_id is not None:
+        served.add(email_claim_id)
+    location_claim = displayable(latest.get(CURRENT_LOCATION), policy)
+    # The reader only serves the location chip's claim id when the value actually renders a label,
+    # so an unrenderable location authorises nothing here either.
+    if location_claim is not None and location_label(location_claim.value_json) is not None:
+        served.add(str(location_claim.id))
+    return frozenset(served)
 
 
 def register_contact_routes(
@@ -1099,12 +659,12 @@ def register_contact_routes(
     allow_local_mutations: bool = False,
     display: DisplayPages,
 ) -> None:
-    """Register the two account-scoped contact routes on the `/frontend/v1` router.
+    """Register the account-scoped contact routes on the `/frontend/v1` router.
 
-    Two routes, two contracts each (the D3 ruling): ``?contract=v1`` selects the ARV2 contacts
-    table and contact page, its absence keeps the FI-2 payloads byte-for-byte. ``display`` is the
-    D3 display seam the composition root shares across every endpoint that serves a generated page
-    — one instance, so two screens looking at the same person schedule one rewrite between them.
+    ``display`` is the D3 display seam the composition root shares across every endpoint that
+    serves a generated page — one instance, so two screens looking at the same person schedule one
+    rewrite between them. A ``?contract=`` query parameter is accepted and ignored: it selected
+    between the FI-2 and v1 payloads until the FI-2 half was deleted (2026-09-09).
     """
 
     def _contact_404() -> HTTPException:
@@ -1118,16 +678,10 @@ def register_contact_routes(
 
     @router.get("/accounts/{account_id}/contacts")
     async def list_account_contacts(
-        workspace_id: WorkspaceDep, account_id: uuid.UUID, mode: ContractDep
-    ) -> ContactListResponse | AccountContactsResponseV1:
+        workspace_id: WorkspaceDep, account_id: uuid.UUID
+    ) -> AccountContactsResponseV1:
         async with conn_factory() as conn:
             try:
-                if mode == "v1":
-                    return await read_account_contacts_v1(
-                        conn,
-                        workspace_id=workspace_id,
-                        account_id=account_id,
-                    )
                 return await read_account_contacts(
                     conn,
                     workspace_id=workspace_id,
@@ -1141,24 +695,16 @@ def register_contact_routes(
         workspace_id: WorkspaceDep,
         account_id: uuid.UUID,
         contact_id: uuid.UUID,
-        mode: ContractDep,
-    ) -> ContactProfile | AccountContactDetailResponseV1:
+    ) -> AccountContactDetailResponseV1:
         async with conn_factory() as conn:
             try:
-                if mode == "v1":
-                    return await read_contact_profile_v1(
-                        conn,
-                        workspace_id=workspace_id,
-                        account_id=account_id,
-                        contact_id=contact_id,
-                        display=display,
-                        now=datetime.now(UTC),
-                    )
                 return await read_contact_profile(
                     conn,
                     workspace_id=workspace_id,
                     account_id=account_id,
                     contact_id=contact_id,
+                    display=display,
+                    now=datetime.now(UTC),
                 )
             except AccountNotFound as exc:
                 raise _account_404() from exc
@@ -1172,17 +718,7 @@ def register_contact_routes(
         contact_id: uuid.UUID,
         claim_id: uuid.UUID,
     ) -> Response:
-        """Stream evidence only while a current Contact read actually exposes it.
-
-        "A current Contact read" is the **union** of both contracts while both are served: the
-        FI-2 profile's own ``evidence`` rows, and the claim ids the v1 contact page cites. The two
-        expose genuinely different sets — the FI-2 profile is committee-only and names no account
-        claim, while a contact section legitimately speaks about the person's account — so
-        authorising against one of them alone would make a citation chip the ARV2 page renders open
-        onto a 404. The v1 half is consulted only after the FI-2 half declines, so an FI-2-only
-        deployment pays nothing for it, and it is consulted with ``generate=False``: an
-        authorisation check must never be a spend path, nor schedule one.
-        """
+        """Stream evidence only when this person's own contact page actually serves it."""
 
         if evidence_storage is None:
             raise HTTPException(
@@ -1199,31 +735,19 @@ def register_contact_routes(
                 )
             except AccountNotFound as exc:
                 raise _evidence_404() from exc
+            survivor = await surviving_id(conn, EntityId(contact_id), EntityType.CONTACT)
             try:
-                profile: ContactProfile | None = await read_contact_profile(
-                    conn,
-                    workspace_id=workspace_id,
-                    account_id=account_id,
-                    contact_id=contact_id,
+                subject = await resolve_subject(
+                    conn, workspace_id=workspace_id, kind="contact", subject_id=str(survivor)
                 )
-            except ContactNotFound:
-                # Not on this account's committee — the FI-2 profile is a 404 for them, but the v1
-                # page below may still exist and cite this claim (the E5 addressability ruling).
-                profile = None
-            authorized = profile is not None and any(
-                reference.claim_id == str(claim_id) and reference.protected_artifact_available
-                for reference in profile.evidence
+            except SubjectNotFound as exc:
+                raise _evidence_404() from exc
+            if not _same_entity(subject.account_id, str(canonical_account)):
+                raise _evidence_404()
+            served = await _served_claim_ids(
+                conn, workspace_id=workspace_id, contact_id=survivor, display=display
             )
-            if not authorized:
-                authorized = await _v1_page_cites(
-                    conn,
-                    workspace_id=workspace_id,
-                    account_id=canonical_account,
-                    contact_id=contact_id,
-                    claim_id=claim_id,
-                    display=display,
-                )
-            if not authorized:
+            if str(claim_id) not in served:
                 raise _evidence_404()
             typed_claim_id = ClaimId(claim_id)
             resolved = await claims_by_ids(
@@ -1262,26 +786,28 @@ def register_contact_routes(
     async def _lookup_target(
         *, workspace_id: str, account_id: uuid.UUID, contact_id: uuid.UUID
     ) -> EmailLookupTarget:
+        """Resolve the lookup subject, refusing anyone the contacts table does not list.
+
+        The addressability rule is D2's committee — the contacts under this account that hold a
+        live claim, which is exactly the set :func:`read_account_contacts` serves. A lookup is
+        started from a row of that table, so a subject that is not on it is a 404 rather than a
+        provider call the screen could never show the result of.
+        """
         async with conn_factory() as conn:
             try:
-                profile = await read_contact_profile(
-                    conn,
-                    workspace_id=workspace_id,
-                    account_id=account_id,
-                    contact_id=contact_id,
+                canonical_account, _account_name = await _resolve_account(
+                    conn, workspace_id=workspace_id, account_id=account_id
                 )
             except AccountNotFound as exc:
                 raise _account_404() from exc
-            except ContactNotFound as exc:
-                raise HTTPException(
-                    status_code=404,
-                    detail={
-                        "code": "CONTACT_NOT_FOUND",
-                        "message": "no such contact on this account's committee",
-                    },
-                ) from exc
-            account = await get_account(conn, EntityId(profile.account_id))
-            contact = await get_contact(conn, EntityId(profile.id))
+            canonical_contact = await surviving_id(conn, EntityId(contact_id), EntityType.CONTACT)
+            members = await committee(
+                conn, workspace_id=workspace_id, account_id=str(canonical_account)
+            )
+            if not any(_same_entity(member.id, str(canonical_contact)) for member in members):
+                raise _contact_404()
+            account = await get_account(conn, canonical_account)
+            contact = await get_contact(conn, canonical_contact)
         if account is None or contact is None or not contact.full_name or not contact.linkedin_url:
             raise HTTPException(
                 status_code=422,

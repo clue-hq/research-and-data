@@ -16,12 +16,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import Any, get_args
 
 import pytest
-from sqlalchemy import bindparam, text
+from sqlalchemy import bindparam, event, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.account_research_store import JobStatus
 from clue_api.arv2.catalog_seed import load_arv2_pack
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
 from clue_api.frontend_read.contract_v1 import (
@@ -30,6 +31,7 @@ from clue_api.frontend_read.contract_v1 import (
     AccountSocial,
     ClueActor,
     PersonActor,
+    ResearchStatus,
 )
 from clue_api.frontend_read.v1_shared import (
     EMPTY_BAND,
@@ -40,6 +42,7 @@ from clue_api.frontend_read.v1_shared import (
     RESEARCH_STATUS_LABELS,
     activity_for,
     arv2_display_allowed,
+    arv2_research_status_for,
     band_for_headcount,
     contact_last_modified,
     current_position_start,
@@ -48,13 +51,16 @@ from clue_api.frontend_read.v1_shared import (
     email_facts,
     fit_band,
     fit_score_100,
+    format_money,
     funding_label,
     headcount_label,
     industry_labels,
     last_modified_for,
     linkedin_label,
     owners_for,
+    persona_display,
     research_evidence_for,
+    revenue_band_label,
     revenue_label,
     socials,
     tenure,
@@ -77,8 +83,11 @@ from clue_core import (
 )
 from clue_research.claimstore.packs import load_core_pack
 from clue_research.compliance import WorkspacePolicy
+from clue_research.discovery_scoring.discovery import REVENUE_BAND_OPTIONS
 from clue_research.identity import insert_account_entity, insert_contact_entity
-from tests._workspace import seed_workspace
+from clue_spine import Project
+from tests._workspace import seed_project, seed_workspace
+from tests.arv2.account_research_job_helpers import seed_arv2_job
 from tests.db.conftest import run_async
 from tests.profiling.conftest import rollback_conn
 
@@ -185,6 +194,18 @@ def test_a_contact_claim_with_no_use_class_is_treated_as_professional_public() -
 # --- the label maps ---------------------------------------------------------------------------
 
 
+def test_the_arv2_job_statuses_are_the_wire_statuses_verbatim() -> None:
+    """Why :func:`arv2_research_status_for` may serve ``arv2_research_job.status`` unmapped.
+
+    The R2 store's ``JobStatus`` is the code's source of truth for that column (the migration's
+    CHECK mirrors it); ``ResearchStatus`` is the contract's. They are the same five strings, so the
+    read layer has no lifecycle to reinterpret — and if either side ever grows a sixth state, this
+    is where it is noticed, rather than in a payload that fails Zod at the browser.
+    """
+    assert set(get_args(JobStatus)) == set(get_args(ResearchStatus))
+    assert set(get_args(JobStatus)) == set(RESEARCH_STATUS_LABELS)
+
+
 def test_the_research_status_labels_cover_the_five_states() -> None:
     assert RESEARCH_STATUS_LABELS == {
         "not_started": "Not started",
@@ -271,11 +292,61 @@ def test_headcount_label_serves_whichever_half_exists() -> None:
     assert headcount_label(None, None) == "Unknown"
 
 
-def test_revenue_label_prefers_the_rendered_claim_then_the_band() -> None:
+def test_format_money_is_compact_with_at_most_one_decimal() -> None:
+    assert format_money(10_000_000, "USD") == "$10M"
+    assert format_money(130_500_000, "USD") == "$130.5M"
+    assert format_money(1_200_000_000, "USD") == "$1.2B"
+    assert format_money(750_000, "USD") == "$750K"
+    assert format_money(900, "USD") == "$900"
+    # A numeric string is a number: the lenient writer does not enforce the value schema.
+    assert format_money("60000000", "USD") == "$60M"
+
+
+def test_format_money_names_the_currency_it_was_given_and_nothing_else() -> None:
+    assert format_money(12_000_000, "EUR") == "€12M"
+    assert format_money(12_000_000, "GBP") == "£12M"
+    # A code with no symbol we can vouch for is written out, not guessed at.
+    assert format_money(12_000_000, "INR") == "INR 12M"
+    # And an amount nobody denominated gets NO symbol: defaulting to "$" would turn an
+    # undenominated figure into a dollar figure on a card a marketer quotes.
+    assert format_money(60_000_000, None) == "60M"
+
+
+def test_format_money_refuses_everything_that_is_not_a_positive_number() -> None:
+    assert format_money(None, "USD") is None
+    assert format_money("private", "USD") is None
+    assert format_money({"amount": 5}, "USD") is None
+    assert format_money(0, "USD") is None
+    assert format_money(-5_000_000, "USD") is None
+    # ``True`` is an ``int`` in Python; it is not one dollar.
+    assert format_money(True, "USD") is None
+
+
+def test_revenue_label_reads_the_registry_object_never_renders_it() -> None:
+    # The exact ``core.annual_revenue`` value the D1 answer key stores for Zafran Security.
+    zafran = {
+        "amount_min": 10_000_000,
+        "amount_max": 25_000_000,
+        "currency": "USD",
+        "as_of": "2026-08-22",
+        "estimate_kind": "provider_estimate",
+    }
+    assert revenue_label(zafran, "10m_50m") == "$10M–25M"
+    # The symbol once, the unit on each side — so a range that crosses a unit still reads.
+    assert revenue_label({"amount_min": 750_000, "amount_max": 1_200_000}, None) == "750K–1.2M"
+    assert revenue_label({"amount_min": 10_000_000, "currency": "USD"}, None) == "$10M+"
+    assert revenue_label({"amount_max": 25_000_000, "currency": "USD"}, None) == "up to $25M"
+    assert revenue_label({"amount": 30_000_000, "currency": "USD"}, None) == "$30M"
+
+
+def test_revenue_label_falls_through_to_the_band_then_unknown() -> None:
     assert revenue_label("$30M ARR", None) == "$30M ARR"
     assert revenue_label(None, "$10M-$50M") == "$10M-$50M"
     assert revenue_label(None, None) == "Unknown"
     assert revenue_label("", "$10M-$50M") == "$10M-$50M"
+    # An object whose numbers do not parse falls through exactly like a missing claim.
+    assert revenue_label({"estimate_kind": "provider_estimate"}, "$10M-$50M") == "$10M-$50M"
+    assert revenue_label({"amount": "undisclosed"}, None) == "Unknown"
 
 
 def test_funding_label_joins_the_round_and_the_total() -> None:
@@ -283,8 +354,126 @@ def test_funding_label_joins_the_round_and_the_total() -> None:
     assert funding_label({"round": "Series B"}, None) == "Series B"
     assert funding_label(None, "$50M") == "$50M"
     assert funding_label(None, None) is None
+    # ``"$30M"`` is not a number, so the round says nothing and the label is empty.
     assert funding_label({"amount": "$30M"}, None) is None
-    assert funding_label("Series B", None) is None
+    # A prose value is the sentence it is — the synthesis lane writes these.
+    assert funding_label("Series B closed in 2024", None) == "Series B closed in 2024"
+
+
+def test_funding_label_reads_the_registry_objects_never_renders_them() -> None:
+    recent = {
+        "round": "Series C",
+        "amount": 60_000_000,
+        "currency": "USD",
+        "date": "2025-12-02",
+        "investors": ["Menlo Ventures"],
+    }
+    total = {"amount": 130_500_000, "currency": "USD", "rounds": 4, "investors": 9}
+    assert funding_label(recent, None) == "Series C · $60M"
+    assert funding_label(None, total) == "$130.5M"
+    assert funding_label(recent, total) == "Series C · $60M · $130.5M"
+    # The synthesis lane's own shape names its currency in its key — on either half.
+    assert funding_label(None, {"amount_usd": 130_000_000, "semantics": "reported"}) == "$130M"
+    assert funding_label({"round": "Series C", "amount_usd": 60_000_000}, None) == "Series C · $60M"
+
+
+#: The shape the answer key actually stores for Zafran: a list, keyed the provider's way —
+#: ``type``/``raised_amount``/``announced_at`` rather than the registry sketch's
+#: ``round``/``amount``/``date``, and no ``currency`` on any round.
+_ZAFRAN_ROUNDS = [
+    {"type": "SERIES_B", "announced_at": "2024-09-08", "raised_amount": 40_000_000},
+    {"type": "SERIES_C", "announced_at": "2025-12-02", "raised_amount": 60_000_000},
+    {"type": "SEED_ROUND", "announced_at": "2024-03-28", "raised_amount": 5_500_000},
+]
+
+
+def test_funding_label_takes_the_latest_round_from_the_providers_list() -> None:
+    assert funding_label(_ZAFRAN_ROUNDS, None) == "Series C · 60M"
+    # A list that states no dates keeps its own order rather than inventing one.
+    assert funding_label([{"type": "SERIES_A"}, {"type": "SEED_ROUND"}], None) == "Series A"
+    assert funding_label([], None) is None
+    # A round already named in words is served exactly as written, never re-title-cased.
+    assert funding_label([{"round": "Series C extension"}], None) == "Series C extension"
+
+
+def test_a_round_with_no_currency_borrows_the_totals() -> None:
+    """Same account, same provider record: the total's denomination *is* the round's.
+
+    The provider's rounds carry an amount and no currency while the sibling total carries both, so
+    reading one off the other is a fact about that record rather than a guess — and it is what
+    stops the label reading "Series C · 60M · $130.5M".
+    """
+    total = {"amount": 130_500_000, "currency": "USD", "rounds": 4, "investors": 9}
+    assert funding_label(_ZAFRAN_ROUNDS, total) == "Series C · $60M · $130.5M"
+    # ``amount_usd`` names its own denomination, so a total carrying only that one lends USD too.
+    assert funding_label(_ZAFRAN_ROUNDS, {"amount_usd": 130_000_000}) == "Series C · $60M · $130M"
+    # A euro total lends euros.
+    assert (
+        funding_label(
+            [{"type": "SERIES_C", "raised_amount": 60_000_000}],
+            {"amount": 130_500_000, "currency": "EUR"},
+        )
+        == "Series C · €60M · €130.5M"
+    )
+    # The round's own currency always wins over the total's.
+    assert (
+        funding_label(
+            [{"type": "SERIES_C", "raised_amount": 60_000_000, "currency": "GBP"}],
+            {"amount": 130_500_000, "currency": "USD"},
+        )
+        == "Series C · £60M · $130.5M"
+    )
+    # And when NEITHER half names one there is nothing to read it off, so the amount stays bare.
+    assert funding_label(_ZAFRAN_ROUNDS, {"amount": 130_500_000}) == "Series C · 60M · 130.5M"
+    assert (
+        funding_label(_ZAFRAN_ROUNDS, "reported over $130M")
+        == "Series C · 60M · reported over $130M"
+    )
+
+
+def test_every_registered_revenue_band_is_served_as_words() -> None:
+    """The closed vocabulary, member by member — and no member may reach a screen as its token.
+
+    ``REVENUE_BAND_OPTIONS`` is imported rather than retyped so that adding a band to the registry
+    without teaching this parser about it fails here instead of printing ``"2b_5b"`` at a marketer.
+    """
+    assert revenue_band_label("under_1m") == "under $1M"
+    assert revenue_band_label("1m_10m") == "$1M–10M"
+    assert revenue_band_label("10m_50m") == "$10M–50M"
+    assert revenue_band_label("50m_100m") == "$50M–100M"
+    assert revenue_band_label("100m_500m") == "$100M–500M"
+    assert revenue_band_label("500m_1b") == "$500M–1B"
+    assert revenue_band_label("1b_plus") == "$1B+"
+    for band in REVENUE_BAND_OPTIONS:
+        assert revenue_band_label(band) != band, band
+
+
+def test_revenue_band_label_never_invents_a_range_it_cannot_read() -> None:
+    # An unregistered token is still the row's own value: served as written, not guessed at.
+    assert revenue_band_label("mid_market") == "mid_market"
+    assert revenue_band_label("enterprise") == "enterprise"
+    assert revenue_band_label("10m_") == "10m_"
+    assert revenue_band_label(None) == "Unknown"
+    assert revenue_band_label("  ") == "Unknown"
+    # Bare dollar bounds and a thousands unit are read too.
+    assert revenue_band_label("250k_1m") == "$250K–1M"
+    assert revenue_band_label("under_500000") == "under $500K"
+
+
+def test_revenue_label_falls_back_to_the_band_as_a_label_not_a_token() -> None:
+    assert revenue_label(None, "10m_50m") == "$10M–50M"
+    assert revenue_label({"estimate_kind": "provider_estimate"}, "1b_plus") == "$1B+"
+
+
+def test_persona_display_serves_words_and_is_idempotent() -> None:
+    assert persona_display("economic_buyer") == "Economic buyer"
+    assert persona_display("technical_evaluator") == "Technical evaluator"
+    # A value outside the vocabulary is still served — spelled, not invented.
+    assert persona_display("weird_value") == "Weird value"
+    # Its own output maps to itself: this is what makes the one-shot rewrite safe to run twice.
+    assert persona_display("Economic buyer") == "Economic buyer"
+    assert persona_display(None) is None
+    assert persona_display("  ") is None
 
 
 def test_website_url_and_label_come_from_the_primary_domain() -> None:
@@ -405,6 +594,47 @@ def test_a_catch_all_address_is_available_but_never_stamped_verified() -> None:
     assert facts.status == "available"
     assert facts.label == "nick@zafran.io"
     assert facts.verified_at is None
+
+
+def test_the_verification_date_is_the_providers_check_not_the_write() -> None:
+    """D4-b decision 6: ``checked_at`` is when the mailbox answered, not when we wrote the row."""
+    claim = _contact_claim(
+        field_key="core.work_email",
+        value_json={
+            "address": "nick@zafran.io",
+            "status": "verified_smtp",
+            "checked_at": "2026-08-31T07:52:05.000725",
+        },
+        observed_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
+    )
+    assert email_facts(claim).verified_at == "2026-08-31"
+
+    unparseable = _contact_claim(
+        field_key="core.work_email",
+        value_json={"address": "nick@zafran.io", "status": "verified_smtp", "checked_at": "soon"},
+        observed_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
+    )
+    assert email_facts(unparseable).verified_at == "2026-09-02"
+
+
+def test_every_unusable_verdict_reads_as_lookup_and_keeps_its_claim_id() -> None:
+    """The three graded-not-usable verdicts, plus the shape that predates the verdict entirely."""
+    for status in ("invalid", "unknown", "unverified"):
+        claim = _contact_claim(
+            field_key="core.work_email",
+            value_json={"address": "nick@zafran.io", "status": status},
+        )
+        facts = email_facts(claim)
+        assert facts.status == "lookup", status
+        assert facts.label is None and facts.verified_at is None, status
+        assert facts.claim_id == str(claim.id), status
+
+    # A bare address string is every row written before D4-b: an address nobody graded, so the
+    # screen offers a lookup rather than showing it as verified. The reader never upgrades it.
+    legacy = _contact_claim(field_key="core.work_email", value_json="nick@zafran.io")
+    assert email_facts(legacy).status == "lookup"
+    assert email_facts(legacy).label is None
+    assert email_facts(legacy).claim_id == str(legacy.id)
 
 
 def test_a_malformed_or_missing_address_degrades_to_lookup() -> None:
@@ -994,5 +1224,181 @@ def test_research_evidence_maps_the_provider_and_drops_an_unsafe_source_url() ->
             assert by_id[unsafe].source_url is None
             assert [ref.claim_id for ref in refs] == sorted(by_id)
             assert await research_evidence_for(conn, workspace_id=ws, claim_ids=[]) == []
+
+    run_async(scenario())
+
+
+# --- research status ------------------------------------------------------------------------------
+
+
+async def _researched(
+    conn: AsyncConnection, workspace_id: str = _WS
+) -> tuple[Project, dict[str, EntityId]]:
+    """A project and five accounts, one per R2 job status, plus one that was never researched."""
+    await _base(conn, workspace_id)
+    project = await seed_project(conn, workspace_id, name="Research project")
+    accounts = {
+        name: await insert_account_entity(
+            conn, canonical_name=name, primary_domain=f"{name}.test", workspace_id=workspace_id
+        )
+        for name in ("queued", "running", "flagged", "done", "paused", "untouched")
+    }
+    planted: tuple[tuple[str, JobStatus], ...] = (
+        ("queued", "not_started"),
+        ("running", "in_progress"),
+        ("flagged", "needs_review"),
+        ("done", "completed"),
+        ("paused", "suspended"),
+    )
+    for name, status in planted:
+        await seed_arv2_job(conn, project=project, account_id=accounts[name], status=status)
+    return project, accounts
+
+
+@pytest_db
+def test_every_arv2_job_status_is_served_verbatim_and_no_job_is_absent() -> None:
+    """The five states come back unmapped, and an account with no job does not appear at all —
+    the callers spell "never researched" once, at the row."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            _project, accounts = await _researched(conn)
+
+            served = await arv2_research_status_for(
+                conn, workspace_id=_WS, account_ids=list(accounts.values())
+            )
+
+            assert served[accounts["queued"]] == ("not_started", False)
+            assert served[accounts["running"]] == ("in_progress", False)
+            assert served[accounts["flagged"]] == ("needs_review", False)
+            assert served[accounts["done"]] == ("completed", False)
+            assert served[accounts["paused"]] == ("suspended", False)
+            assert accounts["untouched"] not in served
+
+    run_async(scenario())
+
+
+@pytest_db
+def test_a_job_newer_than_a_completed_one_is_a_refresh() -> None:
+    """``refreshing`` is "researched, and being re-researched right now": a non-terminal job newer
+    than a ``completed`` one. The status itself is the newer job's."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _base(conn)
+            project = await seed_project(conn, _WS, name="Research project")
+            account = await insert_account_entity(
+                conn, canonical_name="Zafran", primary_domain="zafran.io", workspace_id=_WS
+            )
+            await seed_arv2_job(
+                conn,
+                project=project,
+                account_id=account,
+                status="completed",
+                created_at=_NOW - timedelta(hours=1),
+            )
+            await seed_arv2_job(
+                conn, project=project, account_id=account, status="in_progress", created_at=_NOW
+            )
+
+            served = await arv2_research_status_for(conn, workspace_id=_WS, account_ids=[account])
+            assert served[account] == ("in_progress", True)
+
+    run_async(scenario())
+
+
+@pytest_db
+def test_a_completed_job_after_an_older_in_flight_one_is_not_a_refresh() -> None:
+    """The reverse order: the finished job is the latest, so the account is researched and still,
+    not refreshing. A stale in-flight row older than the result must not light the spinner."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _base(conn)
+            project = await seed_project(conn, _WS, name="Research project")
+            account = await insert_account_entity(
+                conn, canonical_name="Zafran", primary_domain="zafran.io", workspace_id=_WS
+            )
+            await seed_arv2_job(
+                conn,
+                project=project,
+                account_id=account,
+                status="in_progress",
+                created_at=_NOW - timedelta(hours=1),
+            )
+            await seed_arv2_job(
+                conn, project=project, account_id=account, status="completed", created_at=_NOW
+            )
+
+            served = await arv2_research_status_for(conn, workspace_id=_WS, account_ids=[account])
+            assert served[account] == ("completed", False)
+
+    run_async(scenario())
+
+
+@pytest_db
+def test_another_workspaces_job_is_never_served() -> None:
+    """The job row carries its own ``workspace_id`` and the read is scoped by it — which is why the
+    helper needs no join to ``arv2_research_run`` to stay tenant-safe.
+
+    This is the *only* place the cross-tenant case can be put: ``arv2_research_job``'s composite FK
+    pins ``(account_entity_id, workspace_id)`` to ``account_entity``, so another workspace's job is
+    necessarily another workspace's account — which the endpoints' own page scan never lists.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _base(conn)
+            await _base(conn, _OTHER_WS)
+            project = await seed_project(conn, _OTHER_WS, name="Their project")
+            theirs = await insert_account_entity(
+                conn, canonical_name="Theirs", primary_domain="theirs.test", workspace_id=_OTHER_WS
+            )
+            await seed_arv2_job(conn, project=project, account_id=theirs, status="completed")
+
+            assert (
+                await arv2_research_status_for(conn, workspace_id=_WS, account_ids=[theirs]) == {}
+            )
+            assert await arv2_research_status_for(
+                conn, workspace_id=_OTHER_WS, account_ids=[theirs]
+            ) == {theirs: ("completed", False)}
+
+    run_async(scenario())
+
+
+@pytest_db
+def test_the_whole_page_costs_exactly_one_statement() -> None:
+    """N accounts, one read. A per-row lookup here would be an N+1 over a 200-row page, which is
+    the defect the endpoints' own statement-count guards exist to catch."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            _project, accounts = await _researched(conn)
+            statements = 0
+
+            def count(*_args: object) -> None:
+                nonlocal statements
+                statements += 1
+
+            event.listen(conn.sync_connection, "before_cursor_execute", count)
+            try:
+                served = await arv2_research_status_for(
+                    conn, workspace_id=_WS, account_ids=list(accounts.values())
+                )
+            finally:
+                event.remove(conn.sync_connection, "before_cursor_execute", count)
+
+            assert len(served) == 5, "the six accounts really were read"
+            assert statements == 1
+
+    run_async(scenario())
+
+
+@pytest_db
+def test_an_empty_page_reads_nothing_at_all() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _base(conn)
+            assert await arv2_research_status_for(conn, workspace_id=_WS, account_ids=[]) == {}
 
     run_async(scenario())

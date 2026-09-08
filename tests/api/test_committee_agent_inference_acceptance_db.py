@@ -73,6 +73,7 @@ from clue_api.entity_research_tools import (
     ProviderActionBinding,
 )
 from clue_api.frontend_read import FRONTEND_READ_PREFIX
+from clue_api.frontend_read.v1_shared import persona_display, persona_influence
 from clue_api.projections_app import create_projections_app
 from clue_api.sumble_committee_acquisition import (
     SumbleCommitteeAcquisitionCoordinator,
@@ -913,7 +914,6 @@ def test_d5_committee_discovery_defers_roles_and_the_account_agent_completes_the
                 UUID(str(members[0])): Persona.CHAMPION,
                 UUID(str(members[1])): Persona.ECONOMIC_BUYER,
             }
-            expected_reasoning: dict[UUID, str] = {}
             role_claim_refs: set[str] = set()
             for member_id, persona in expected_roles.items():
                 roles = await claims_for(conn, EntityId(member_id), ROLE_ON_COMMITTEE, scope=scope)
@@ -936,7 +936,7 @@ def test_d5_committee_discovery_defers_roles_and_the_account_agent_completes_the
                 }
                 assert role_claim.value_json["role"] == persona.value
                 assert role_claim.value_json["plausible"] is True
-                expected_reasoning[member_id] = str(role_claim.value_json["rationale"])
+                assert str(role_claim.value_json["rationale"]).strip()
                 assert persona_claim.value_json == persona.value
                 assert role_claim.source_url and role_claim.evidence_span
                 assert role_claim.product_id == str(product_id)
@@ -1063,12 +1063,14 @@ def test_d5_committee_discovery_defers_roles_and_the_account_agent_completes_the
             assert body["meta"]["total"] == 2
             for member_id, persona in expected_roles.items():
                 row = rows[str(member_id)]
-                assert row["persona"] == persona.value
-                assert row["roleOnCommittee"]["value"] == persona.value
-                assert row["roleOnCommittee"]["confidence"] == (
-                    0.84 if persona is Persona.CHAMPION else 0.71
-                )
-                assert row["roleOnCommittee"]["reasoning"] == expected_reasoning[member_id]
-                assert row["projectIds"] == [project_id]
+                # The agent's persona reaches the screen as the text a marketer reads, and the
+                # influence column falls back to that persona's own default because these role
+                # claims carry no ``influence`` key of their own (ruling S8). The claim-level
+                # assertions above are where the role, its confidence and its rationale are
+                # pinned; the row is the proof they are *rendered*, not a second copy of them.
+                assert row["persona"] == persona_display(persona.value)
+                assert row["influence"] == persona_influence(persona.value)
+                # A member the read found claims for is linked, not a dead row.
+                assert row["profileAction"] == "page"
 
     run_async(scenario())

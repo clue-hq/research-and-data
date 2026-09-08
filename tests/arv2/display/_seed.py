@@ -1,4 +1,4 @@
-"""The one seeded workspace the D2 display DB tests share: Zafran, three people, their claims.
+"""The one seeded workspace the D2 display DB tests share: Zafran, its people, their claims.
 
 Factored out of ``test_gather_db.py`` when the page test needed the same rows (D2 T6). One seed,
 one set of ids: an assertion about what a page says and an assertion about what the filter kept
@@ -8,13 +8,15 @@ with a world the other no longer lives in.
 Everything is written through the lenient claim writer, so the rows are the rows production
 writes — including the deliberately awkward ones (an unsafe twin of a safe hobby, a
 special-category fact, a ``contact.*`` field mis-keyed onto the account).
+
+Five people sit under two accounts, and only two of them are Zafran's committee: Nick and Vari
+hold claims, ``silent`` holds none, ``merged`` holds claims but was merged away, and ``outsider``
+holds claims under a *different* account. The three negatives are seeded here rather than in one
+test because every suite reading this fixture should be reading the same account boundary.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
-import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,7 +36,7 @@ from clue_core import (
     new_run_id,
 )
 from clue_research.claimstore.packs import load_core_pack
-from clue_research.identity import insert_account_entity, insert_contact_entity
+from clue_research.identity import insert_account_entity, insert_contact_entity, mark_merged
 from clue_research.profiling.committee.fields import load_committee_pack
 from clue_research.profiling.fields import load_deep_profiling_pack
 from tests._workspace import seed_workspace
@@ -52,6 +54,11 @@ class Seeded:
     nick: EntityId
     vari: EntityId
     silent: EntityId
+    #: Under this account and holding claims, but merged away — not a person any more.
+    merged: EntityId
+    #: A second account in the same workspace, and the researched contact under it.
+    other_account: EntityId
+    outsider: EntityId
     claims: dict[str, str]  # label -> claim id
 
 
@@ -115,6 +122,25 @@ async def seed_display_fixture(conn: AsyncConnection, *, workspace_id: str = WOR
         account_entity_id=account,
         full_name="Nobody Withoutclaims",
         linkedin_url="https://www.linkedin.com/in/nobodywithoutclaims",
+    )
+    # A merged loser under the same account: it holds claims, and it is still not a committee
+    # member — the survivor is the person, and listing both would put one human on the page twice.
+    merged = await insert_contact_entity(
+        conn,
+        account_entity_id=account,
+        full_name="Aaron Duplicate",
+        linkedin_url="https://www.linkedin.com/in/aaronduplicate",
+    )
+    # A second account in the same workspace, with a researched contact of its own. Zafran's
+    # committee must not reach across the account boundary to collect them.
+    other_account = await insert_account_entity(
+        conn, canonical_name="Probook", primary_domain="probook.example", workspace_id=ws
+    )
+    outsider = await insert_contact_entity(
+        conn,
+        account_entity_id=other_account,
+        full_name="Aaron Elsewhere",
+        linkedin_url="https://www.linkedin.com/in/aaronelsewhere",
     )
 
     claims: dict[str, str] = {}
@@ -247,115 +273,23 @@ async def seed_display_fixture(conn: AsyncConnection, *, workspace_id: str = WOR
     # the filter must still route it by entity, so it can never be shown as somebody's persona.
     await account_claim("misfiled_persona", "contact.persona", "blocker", signal_priority=2)
 
+    # The two people the committee rule must leave out even though both hold live claims.
+    await contact_claim(
+        "merged_title", merged, "contact.current_title", "VP of Marketing", signal_priority=1
+    )
+    await contact_claim(
+        "outsider_title", outsider, "contact.current_title", "Head of Sales", signal_priority=1
+    )
+    await mark_merged(conn, EntityType.CONTACT, merged, nick)
+
     return Seeded(
-        workspace_id=ws, account=account, nick=nick, vari=vari, silent=silent, claims=claims
-    )
-
-
-async def seed_coverage(conn: AsyncConnection, seeded: Seeded, members: list[EntityId]) -> None:
-    """The M8D fleet triple a finished account-research run leaves behind, with ``members``.
-
-    Inserted directly (the drivers are not this task's subject); the run/job rows exist only
-    because the coverage row's FKs demand them, and the two scope CHECKs demand that their JSON
-    repeats their own columns.
-    """
-    scope = {
-        "workspace_id": seeded.workspace_id,
-        "project_id": "prj_g",
-        "product_id": "prd_g",
-        "project_run_id": str(uuid.uuid4()),
-    }
-    run_id, job_id, selection_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-    thread_id = "display-gather:zafran"
-    lifecycle: dict[str, Any] = {
-        "run_id": str(run_id),
-        "run_kind": "account_research",
-        "selection": {
-            "selection_id": str(selection_id),
-            "subject_type": "account",
-            "budget_envelope_ref": "display-gather",
-            **scope,
-        },
-    }
-    authorization: dict[str, Any] = {
-        "job_id": str(job_id),
-        "research_run_id": str(run_id),
-        "subject_type": "account",
-        "subject_entity_id": str(seeded.account),
-        "checkpoint_thread_id": thread_id,
-        "selection": dict(scope),
-        **scope,
-    }
-
-    def _sha(payload: dict[str, Any]) -> str:
-        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
-
-    await conn.execute(
-        text(
-            """
-            INSERT INTO entity_research_run
-                (research_run_id, run_kind, subject_type, workspace_id, project_id, product_id,
-                 project_run_id, selection_id, lifecycle_json, lifecycle_sha256,
-                 budget_envelope_ref, budget_cap_cents, concurrency_limit, state)
-            VALUES (:run_id, 'account_research', 'account', :workspace_id, :project_id,
-                    :product_id, CAST(:project_run_id AS uuid), :selection_id,
-                    CAST(:lifecycle AS jsonb), :sha, 'display-gather', 0, 1, 'queued')
-            """
-        ),
-        {
-            "run_id": run_id,
-            "selection_id": selection_id,
-            "lifecycle": json.dumps(lifecycle),
-            "sha": _sha(lifecycle),
-            **scope,
-        },
-    )
-    await conn.execute(
-        text(
-            """
-            INSERT INTO entity_research_job
-                (job_id, research_run_id, subject_type, subject_entity_id, workspace_id,
-                 project_id, product_id, project_run_id, authorization_json, authorization_sha256,
-                 budget_envelope_ref, budget_cap_cents, checkpoint_thread_id,
-                 initial_state_sha256, current_state_sha256, state)
-            VALUES (:job_id, :run_id, 'account', :account, :workspace_id, :project_id,
-                    :product_id, CAST(:project_run_id AS uuid), CAST(:authorization AS jsonb),
-                    :sha, 'display-gather', 0, :thread_id, :sha, :sha, 'queued')
-            """
-        ),
-        {
-            "job_id": job_id,
-            "run_id": run_id,
-            "account": seeded.account,
-            "authorization": json.dumps(authorization),
-            "sha": _sha(authorization),
-            "thread_id": thread_id,
-            **scope,
-        },
-    )
-    coverage = {"origin": "display-gather"}
-    await conn.execute(
-        text(
-            """
-            INSERT INTO entity_research_account_coverage
-                (coverage_id, research_run_id, job_id, workspace_id, account_entity_id,
-                 result_refs, completed_field_keys, unresolved_field_keys, unresolved_reasons,
-                 committee_result_refs, committee_member_ids, committee_status, review_flags,
-                 claim_refs, evidence_refs, coverage_json, coverage_sha256)
-            VALUES (:coverage_id, :run_id, :job_id, :workspace_id, :account, :empty, :empty,
-                    :empty, :empty, :empty, :members, 'complete', :empty, :empty, :empty,
-                    CAST(:coverage AS jsonb), :sha)
-            """
-        ),
-        {
-            "coverage_id": uuid.uuid4(),
-            "run_id": run_id,
-            "job_id": job_id,
-            "workspace_id": seeded.workspace_id,
-            "account": seeded.account,
-            "empty": [],
-            "members": members,
-            "coverage": json.dumps(coverage),
-            "sha": _sha(coverage),
-        },
+        workspace_id=ws,
+        account=account,
+        nick=nick,
+        vari=vari,
+        silent=silent,
+        merged=merged,
+        other_account=other_account,
+        outsider=outsider,
+        claims=claims,
     )

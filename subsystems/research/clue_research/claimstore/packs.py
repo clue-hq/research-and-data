@@ -131,6 +131,34 @@ def _seed(
     )
 
 
+#: The ``core.work_email`` verdict vocabulary (ARV2 D4-b decision 6). The first two come from the
+#: provider's own grading (``clue_api.arv2.ai_ark_client.EmailVerdict``): ``verified_smtp`` is a
+#: mailbox that answered, ``catch_all_valid`` a domain that accepts everything. ``invalid`` and
+#: ``unknown`` are the graded failures; ``unverified`` is the honest "nobody probed this address"
+#: an acquisition source with no deliverability check (Exa Websets, Sumble) writes.
+WORK_EMAIL_STATUSES: tuple[str, ...] = (
+    "verified_smtp",
+    "catch_all_valid",
+    "invalid",
+    "unknown",
+    "unverified",
+)
+
+#: An address flattened away from its verdict is a claim nobody can grade, so the two travel
+#: together. ``checked_at`` is the provider's own check timestamp, verbatim; it is **omitted**
+#: rather than written null when the provider gave none — the registry validator has no union type,
+#: and every reader asks with ``.get("checked_at")`` either way.
+WORK_EMAIL_VALUE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["address", "status"],
+    "properties": {
+        "address": {"type": "string"},
+        "status": {"type": "string", "enum": list(WORK_EMAIL_STATUSES)},
+        "checked_at": {"type": "string"},
+    },
+}
+
+
 # ~90-day default freshness; signal/personal fields refresh faster (substrate §6).
 CORE_PACK: tuple[SeedField, ...] = (
     _seed(
@@ -318,16 +346,18 @@ CORE_PACK: tuple[SeedField, ...] = (
     ),
     _seed(
         "core.work_email",
-        "str",
+        "object",
         PassKind.DEEP,
         tier_plan=("exa_websets",),
         freshness_ttl=timedelta(days=30),
         gate="selected-contact-channel",
         reuse_scope=ReuseScope.TENANT_PRIVATE,
-        value_schema={"type": "string"},
+        value_schema=WORK_EMAIL_VALUE_SCHEMA,
         description=(
-            "Selected contact's observed work email. It is delivery data until independent "
-            "corroboration, reachability, use permission, and optional identity promotion pass."
+            "Selected contact's observed work email: the address with the provider's "
+            "deliverability verdict and the moment it was checked. It is delivery data until "
+            "independent corroboration, reachability, use permission, and optional identity "
+            "promotion pass."
         ),
     ),
     _seed(
