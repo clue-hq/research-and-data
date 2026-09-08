@@ -182,3 +182,6 @@ Merged into `integration/design-improvement` (merge commits f5d506196 ladder, a3
 
 ## Live proof addendum (2026-09-09)
 Run eef4a3fd on Insight Health (merged code, worker restarted): PASSED — see `.context/arv2-onboarding-live-proof-2026-09-09/SUMMARY.md`. Split: ICPs registered at 457 s (was 14–17 min), three persona steps in parallel 457→734 s, run completed in 734 s, 15 evidence calls all under persona executions. Ladder: 21 entries → 18 alias_reused, 1 created (genuinely new page, model high), 2 unresolved_ambiguous (pre-existing ™ duplicate pairs from older runs; O6 gate to merge), products 27→28, one $0.0019 reconcile call. Follow-up (O4): the ICP turn still spends ~110 s reading product files one call at a time; ask for batched reads.
+
+## Follow-up landed (2026-09-09)
+`icp-synthesis@v3` adds one sentence: read every named product file in a single turn (batched read_file calls), not one per turn. Profile `onboarding-synthesis@v3` pins it (v2 retired); registry digest re-pinned to `8f2dd5ae030adcfa604a5702f1af85e7d526008aa4b0257be14eb29e2fb4a659`. Merged into integration/design-improvement; semarang worker restarted. Unproven live until the next Insight Health run — expect the ICP turn to drop from ~300 s toward ~180 s.
