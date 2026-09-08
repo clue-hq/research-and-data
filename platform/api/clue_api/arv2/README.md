@@ -403,6 +403,46 @@ back (the calls still happen and are still paid for). Only JSON goes to stdout.
   column; a fact that is mis-flagged safe is displayed safely-by-contract and wrongly-in-fact. The
   fix for a wrong page is a better claim, never a better prompt.
 
+## D3 — where the read surface lives
+
+Master plan §6 and `docs/specs/ARV2-DATA-SOURCE-MAP.md` §1/§3. D3 is **not in this package** and
+never will be: the five screens are HTTP read endpoints, so they live with the rest of the
+workspace-scoped read surface under `platform/api/clue_api/frontend_read/`. This pointer exists so
+a reader who arrives at the lane looking for "the ARV2 screens" is sent one directory over instead
+of concluding they were never built.
+
+The five endpoints (all under `/frontend/v1`, all workspace-scoped by `X-Workspace-Id`):
+
+| | Route | Payload |
+|---|---|---|
+| E1 | `GET /accounts` | `AccountsResponseV1` — the accounts table |
+| E2 | `GET /accounts/{id}` | `AccountDetailResponseV1` — the detail/preview, incl. `overviewDisplay` |
+| E3 | `GET /accounts/{id}/workspace` | `AccountWorkspaceResponseV1` — `insightsDisplay`, `insightSummary`, `artifacts` |
+| E4 | `GET /accounts/{id}/contacts` | `AccountContactsResponseV1` — the committee rows |
+| E5 | `GET /accounts/{id}/contacts/{contactId}` | `AccountContactDetailResponseV1` — the contact page, incl. `contactDisplay` |
+
+**Contract v1 is selected per request with `?contract=v1`** (the D3 ruling). Without the parameter
+E1/E2/E4/E5 serve the FI-2 payloads byte-for-byte — untouched by D3, tests included — and an
+unrecognised value (`?contract=v2`) is an enveloped 422 on every route. E3 is a new endpoint with
+no FI-2 shape beside it, so it serves v1 in both modes. D4 re-points the frontend adapters and
+deletes the FI-2 branches and the parameter together.
+
+The modules, under `frontend_read/`:
+
+| Module | What it owns |
+|---|---|
+| `contract_v1.py` | The five pydantic payload models and their shared sub-types (`ResearchEvidence`, `ResearchDisplayBlock`, `BuyingCommitteeMember`, `AccountActivity`, …), plus `V1_PAYLOADS` — the mapping the parity suite iterates against the vendored Zod in `tests/api/contract_v1/zod/`. |
+| `v1_shared.py` | Everything two or more endpoints compute: `arv2_display_allowed` (the D3 display predicate), the five label maps, the fit/band/label helpers, `email_facts`, tenure/education/LinkedIn/time labels, owners, custom fields, `last_modified_for`, `activity_for`, and `research_evidence_for`. |
+| `display_pages.py` | The one seam onto D2. `DisplayPages.page(...)` composes a page from live blocks, degrades to an empty block rather than raising, and schedules stale-section regeneration in the background (never awaited by the request); `generate=False` is the authorisation-read mode the evidence routes use. It also owns `committee` / `buying_committee` / `rail_contacts` over one claims read. |
+| `account_workspace.py` | E3, end to end. |
+| `accounts_list.py` / `account_detail.py` / `contacts.py` | The `?contract=v1` branches beside their untouched FI-2 readers. |
+
+**The display module is consumed only through its published functions** — `ensure_page`,
+`live_blocks`, `compose_display_block`, `stale_sections`, `insight_summary`, `evidence_for_ids`,
+`committee_members` (with `resolve_subject`) and `read_recipes`, plus the pure `render_value_text`.
+No endpoint reaches into `display_block` rows, prompts, the runner or the floor: if a screen needs
+something the display module does not expose, the new function is D2's to add, not D3's to inline.
+
 ## Notes recorded at R1 integration (2026-09-07)
 
 - **The one native call.** `gemini_media_client.transcribe_long` is the only ARV2 call that bypasses

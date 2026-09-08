@@ -275,6 +275,19 @@ Not on the wire by design: `field_key`, `use_class`, `source_type`; generic fiel
 only for `customFields`. The Next.js `/api/source-favicon` route and the accounts layout shell are
 frontend-owned and travel with the re-lift.
 
+**As built (D3, 2026-09-08) — contract v1 is executable.** The five payloads above are no
+longer prose: they are pydantic models in `platform/api/clue_api/frontend_read/contract_v1.py`
+(strict, alias-serialised, required-nullable vs absent-optional mirrored field for field) checked
+against the frontend's **own** Zod, vendored under `tests/api/contract_v1/zod/` and run for real
+through the dummy's `zod` package by `tests/api/contract_v1/oracle.py` — so "the payload matches the
+contract" is a test, not a reading. They are served under **`?contract=v1`** beside the untouched
+FI-2 payloads (source map §1); D4 re-points the adapters and deletes the FI-2 branches and the
+parameter together. The §8 D0-a amendments are **staged in the vendored copy**, marked `// D3
+ruling`, and are what D4 lifts back into `apps/frontend`. D3 made exactly two contract additions of
+its own: `BuyingCommitteeMember.linkedinUrl` is **nullable** (a member resolved from a coverage row
+may have no LinkedIn URL), and E4's envelope carries **`meta.total`** so the screen's contact count
+is served rather than inferred from a page (additive — the dummy's envelope Zod is not strict).
+
 ## 7. The display layer
 
 - **Page grammar:** each page is a fixed template of H1 sections (product vocabulary).

@@ -65,6 +65,26 @@ requests `limit=200` and paginates client-side only if `meta.total > 200`. Serve
 sort are not built in v1 (master plan §6; the dummy's `AccountsQuery` keys `search`, `sort`,
 `overallFit`, `researchStatus` are not sent).
 
+**As built (D3, 2026-09-08).** Contract v1 is **selected per request with `?contract=v1`**,
+not by reshaping the FI-2 payloads in place. Without the parameter E1/E2/E4/E5 serve their FI-2
+bodies byte-for-byte — the `apps/frontend` adapters, models and the FI-2 route tests are untouched
+by D3 — and `?contract=v2` (any unrecognised value) is an enveloped 422 on every route of the
+surface. E3 is new, so no FI-2 shape exists beside it and it answers v1 in **both** modes. The "D3
+change" column above therefore describes what the *v1 branch* serves, not a mutation of the old
+one; the FI-2 fields listed there as "stay on the wire until D4" are simply still on their own
+payload. D4 re-points the adapters to `?contract=v1` and then deletes the FI-2 branches and the
+parameter together. Cost if this was the wrong call: one query parameter to remove at D4.
+
+There are **no FI-2 field renames** in D3. An earlier plan draft had E1/E2 rename
+`researchStatus[]` → `projectResearchStatus` and `projects[]` → `projectMemberships` across the
+backend and 33 frontend usages; the per-request ruling above voided that work, so those names do
+not change anywhere and no `apps/frontend` file was edited for them.
+
+**Envelopes, as built.** E1 `{data, meta{total, nextCursor}}`; E2/E3/E5 `{data}`; E4
+`{data, meta{total}}` — `meta.total` is a D3 addition to the dummy's `AccountContactsResponse`
+(additive; the dummy's envelope Zod is not strict). The **FI-2** detail and contact profile remain
+unenveloped, which is why the two contracts cannot be told apart by envelope alone.
+
 ---
 
 ## 2. The tables
@@ -150,6 +170,34 @@ keys → scores (`_SCORE_CLAIMS_TEMPLATE`, filtered to the primary project) → 
 names → research jobs (`_RESEARCH_JOBS`) → owners (`SELECT user_id, display_name FROM platform_user
 WHERE user_id IN :ids`) → `MAX(collected_at)` per entity.
 
+**As built (D3, 2026-09-08).**
+
+- **`fitScore` / `overallFit` = the primary project's latest `account.scoring.fit`.** An account
+  can hold several fit claims (one per project, several per project when scored under more than one
+  ICP). The row has one fit column and the primary project is the row's lens, so only that
+  project's scores are candidates and the most recently scored wins. No primary project, or none
+  scored under it → both fields are `null` **together**, never `0` and never a band borrowed from
+  another project (`accounts_list._primary_project_fit`).
+- **`researchIsRefreshing`** is true only for "researched, *and* being re-researched right now": a
+  non-terminal `entity_research_job` for this `(account, project)` exists **and** a terminal
+  `completed` job precedes it in the same `(created_at, job_id)` order the status `DISTINCT ON`
+  uses. A first-ever run in flight is `in_progress`, not refreshing.
+- **`lastModifiedAt` = `GREATEST` of three sources** in one statement: `account_entity.updated_at`,
+  `MAX(claim.collected_at)` over the account's live claims, and `MAX(display_block.generated_at)`
+  over its live blocks. A regenerated page therefore moves the account's "Updated" stamp, which is
+  what the screen means by it (`v1_shared.last_modified_for`).
+- **`employeeBand` and `locationsLabel` read the registry objects' own keys, never the object.**
+  `core.employee_range` is `{label, min, max}` → `label`; `core.hq_location` is `{raw, city,
+  region, country}` → `raw` (the source's own words), falling back to the joined normalized parts.
+  Rendering the whole object would put `"city: Tel Aviv; country: Israel; raw: Tel Aviv, Israel"`
+  on a table cell. `employeeBand` falls back to our own bucketing of `core.employee_count`, then to
+  `"Unknown"`. **Not yet done the same way:** `revenueLabel` and `fundingLabel` on E2 still render
+  whole objects — the Zafran walk serves `"amount_max: 25000000; amount_min: 10000000; as_of:
+  2026-08-22; currency: USD; estimate_kind: provider_estimate"` — recorded as a D4 follow-up.
+- **`customFields` order is `field_key`**, ascending, per account: the client pack's variables have
+  no declared display order, and `field_key` is the one stable order that does not move under the
+  user between two reads.
+
 ### 3.2 Account detail, right rail "Core" — `/accounts/{id}` and the preview drawer (E2)
 
 Everything in §3.1 is repeated on the detail object, plus:
@@ -184,6 +232,16 @@ Everything in §3.1 is repeated on the detail object, plus:
 | buying committee table | `buyingCommittee[]` | members = `entity_research_account_coverage.committee_member_ids` of the **latest** coverage row for the account (`ORDER BY created_at DESC, coverage_id DESC LIMIT 1`), each resolved through `contact_entity` (survivor). Per member: `contactId = contact_entity.id`; `name = contact_entity.full_name`; `title = claim[contact.current_title]`; `persona = claim[contact.persona].value_json`; `email = claim[core.work_email].value_json.address`, `emailClaimId = that claim's id` (both `null` when absent); `linkedinUrl = contact_entity.linkedin_url`; `whyTheyMatter = claim[contact.role_on_committee].value_json.rationale` | avatar without `src` (`research-content.tsx:963`) — presentation, unchanged |
 | evidence for every chip | `researchEvidence[]` | §3.9, for the union of claim ids cited by `overviewDisplay` + `buyingCommittee[].emailClaimId` | — |
 
+**As built (D3, 2026-09-08).** `buyingCommittee[]` is not a second implementation of the
+coverage query: it is D2's `committee_members` behind `display_pages.committee()` — the latest
+coverage row's `committee_member_ids` when one exists, **else every contact under the account with
+≥1 live claim** (D2 decision 5), so an account researched before coverage rows existed still shows
+its people. Two contract points follow from real data: `linkedinUrl` is **nullable** on
+`BuyingCommitteeMember` (D3 ruling — a member resolved from a coverage row may have no LinkedIn
+URL, and the dummy renders the link only when present), and a member with no title/rationale claim
+is served the placeholders `"—"` and `"Committee member"` rather than being dropped, because the
+committee is the research's answer about who matters and an unnamed role does not unmake it.
+
 ### 3.4 Insights tab — `/accounts/{id}/insights` (E3)
 
 | Element | Wire field | Source and rule | Replaces |
@@ -215,6 +273,25 @@ Rows = the committee members of §3.3 (same coverage query), ordered by persona 
 | open action | `profileAction` | `"page"` when the contact has ≥1 live claim or ≥1 display block; else `"none"`. `"preview"` is not served in v1 (the dummy's featured-contact drawer is a fixture behaviour, `contacts/page.tsx:26-28`) | — |
 | lookup button | — | the dummy's `LookupEmailButton` is a `setTimeout` stub (`use-email-lookup-controller.ts:20-25`). Production wires it to the existing `POST .../contacts/{id}/email-lookup` + poll (`contacts.py:711, 740`) in D4 | — |
 
+**As built (D3, 2026-09-08).** The E4 row set **is** the coverage committee of §3.3, resolved
+through the same `display_pages.committee()` seam and one claims read — not a second query. Two
+details are worth pinning: `influence` falls back to the persona default table above whenever the
+`contact.role_on_committee` claim does not carry one (served, never derived in the browser), and
+`profileAction` is `"page"` for a contact with ≥1 live claim **or** a stored display section, else
+`"none"` — `"preview"` is never served in v1. The E4 row's `title` is served `null` when no title
+claim exists (ruling S7); the `"—"` placeholder belongs to E2's committee card only.
+
+**Finding (the Zafran walk, 2026-09-08).** The email rule above reads `value_json.status` /
+`value_json.address`, the provider pair `AiArkEmailExport` insists on ("an address flattened away
+from its status/domainType pair is a claim nobody can grade"). **No writer produces that shape
+yet** — D1's answer-key loader and FI-2's own email-lookup writer both store the bare address
+string, and `core.work_email` is registered `value_type = str`. So every real contact today serves
+`emailStatus: "lookup"` even when an address is stored, and `buyingCommittee[].email` is `null`
+while `emailClaimId` is set. That is the fail-closed direction (the screen offers a lookup rather
+than presenting an ungraded address as verified), and the reader is left as specified: making a
+bare string "available" is a product ruling about showing unverified addresses, and the real fix is
+a writer that keeps the provider verdict.
+
 ### 3.6 Contact profile — `/accounts/{id}/contacts/{contactId}` (E5)
 
 The row of §3.5, plus:
@@ -237,6 +314,20 @@ The row of §3.5, plus:
 | the contact page | `contactDisplay` | as §3.3 with `subject_kind='contact'`, `page='contact'`; generated lazily on first request (§4) | `ResearchStack` strips self-references by **name equality** (`research-content.tsx:745-751`) — replaced by `contactId` equality in the re-lift |
 | legacy prose / evidence | `overviewParagraphs[]`, `evidence[]` | `[]` (contract change, ruling S5: relax the ≥1 minimum) | — |
 | evidence | `researchEvidence[]` | §3.9 for the claim ids cited by `contactDisplay` + `locationClaimId` + `emailClaimId` | — |
+
+**As built (D3, 2026-09-08).**
+
+- **Addressability (D3 ruling).** E5 serves any contact that is **under this account** and has
+  **≥1 live claim or a stored display section** — not only the coverage committee. A contact the
+  research found and wrote facts about is a page the marketer may open; a contact row with nothing
+  behind it is still a 404. Page *generation* is attempted only when claims exist, so an off-
+  committee contact can never cause a spend on an empty page.
+- **`linkedinUrl` has no null branch.** The dummy declares it a required `HttpUrl`, so a contact
+  with no safe LinkedIn URL is served the **site root** `https://www.linkedin.com/` with
+  `linkedinLabel: "LinkedIn"` — never a guessed profile path. Making the field nullable (as
+  `BuyingCommitteeMember.linkedinUrl` now is) is a D4 follow-up.
+- **`lastModifiedAt` is the contact's own** `MAX(claim.collected_at)` over its live claims (ruling
+  R8), never the account's stamp.
 
 ### 3.7 Artifacts tab — `/accounts/{id}/artifacts` (E3 `artifacts[]`)
 
@@ -313,6 +404,15 @@ that stamp. Identity risk is handled upstream: name-scoped lookups only, same-na
 every deep-research system prompt, `contact.facet.excluded_lookalike` records rejected candidates,
 speaker identity verified before a media quote.
 
+**As built (D3, 2026-09-08).** `ResearchEvidence` is composed once, in
+`v1_shared.research_evidence_for`, over D2's `evidence_for_ids` (live claims only — a DSAR
+tombstone is a supersession, so serving superseded evidence would re-surface erased text). The read
+surface adds exactly two things to D2's rows: `sourceUrl` passes through
+`research_view_governance.safe_public_url` before it is served, and `provider` is the label map
+above. Every timestamp on the v1 wire is `iso_utc` — UTC with a trailing `Z` — because Zod 4's
+`datetime()` rejects `+00:00`; that applies to `verifiedAt`/`publishedAt` here and to
+`createdAt`/`lastModifiedAt`/`activity[].occurredAt` everywhere else.
+
 ---
 
 ## 4. The display-block path (how `overviewDisplay`, `insightsDisplay`, `contactDisplay` are produced)
@@ -352,6 +452,25 @@ unverified tier-4 under a verifying posture), then near-duplicate folding within
 rest of §4 is implemented as written: lookup in `blocks.live_blocks`, the recipe-scoped staleness
 check in `blocks.stale_sections`, the per-section call and floor in `runner.py` / `floor.py`, and
 the parallel page in `page.ensure_page`.
+
+**As built (D3, 2026-09-08).** The read surface reaches §4 only through
+`frontend_read/display_pages.py::DisplayPages`:
+
+- **Generation on read happens only with the flag *and* a key.**
+  `CLUE_ARV2_DISPLAY_GENERATE_ON_READ` (default `true`) off, **or** no OpenRouter secret, composes
+  the seam with no runner, and `page()` is then a pure projection over stored blocks — which is why
+  the flag alone is not a spend switch. `DisplayPages` never raises at construction.
+- **Composition degrades, it never fails the request.** Any provider or transport error inside
+  `ensure_page` is caught and the page is composed from whatever live blocks exist — an all-empty
+  block is still a block, and the frontend renders the page grammar from it. A degraded read still
+  schedules the background repair.
+- **Stale is served, then repaired behind the request.** `page()` calls
+  `ensure_page(regenerate_stale=False)`, composes the live rows, and — when `stale_sections`
+  reports any — schedules regeneration as a background task **keyed per page** (deduped, its own
+  connection, never awaited by the request), which is master plan §7's policy.
+- **The evidence routes authorise with `generate=False`.** E7 and its contact variant check a
+  requested `claimId` against what a *current* read exposes; that check must never write or spend,
+  so `page(..., generate=False)` skips `ensure_page` **and** the stale scheduling.
 
 ---
 

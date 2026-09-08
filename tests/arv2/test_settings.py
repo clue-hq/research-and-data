@@ -37,6 +37,9 @@ ARV2_SETTING_DEFAULTS: dict[str, object] = {
         "AI-native ABM: account and committee research, personalised content, "
         "brand-aligned artifacts, scaled per account"
     ),
+    "arv2_display_generate_on_read": True,
+    "arv2_fit_high_threshold": 0.70,
+    "arv2_fit_medium_threshold": 0.40,
 }
 
 ARV2_SECRET_FIELDS = ("ai_ark_api_key", "gemini_api_key")

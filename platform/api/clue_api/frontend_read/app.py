@@ -40,10 +40,10 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from http import HTTPStatus
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.exception_handlers import (
     http_exception_handler as default_http_exception_handler,
 )
@@ -55,7 +55,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from clue_config import Settings
+from clue_config import Secrets, Settings
 from clue_db import ConnFactory
 from clue_obs import get_logger
 from clue_storage import StorageBackend
@@ -138,6 +138,36 @@ def frontend_read_workspace_resolver(
 WorkspaceDep = Annotated[str, Depends(frontend_read_workspace_resolver)]
 
 
+#: Which wire contract a request asks for. ``"fi2"`` is today's payload set (the shapes this
+#: package has served since FI-2); ``"v1"`` is the ARV2 D3 contract in
+#: ``clue_api.frontend_read.contract_v1``.
+ContractMode = Literal["fi2", "v1"]
+
+
+def contract_mode(contract: Annotated[str | None, Query()] = None) -> ContractMode:
+    """The wire contract a request asks for: FI-2 when ``?contract=`` is absent, v1 on ``v1``.
+
+    Per-request selection is the D3 ruling: the two contracts are served side by side from one
+    route so that no FI-2 field is renamed, wrapped or removed while the frontend adapters are
+    re-pointed (D4), after which the FI-2 branch and this parameter both go away. An unrecognised
+    value is refused rather than silently treated as FI-2 — a typo'd ``?contract=v2`` that quietly
+    served the old shapes is exactly the failure this parameter exists to make impossible.
+    """
+
+    if contract is None:
+        return "fi2"
+    if contract == "v1":
+        return "v1"
+    raise HTTPException(
+        status_code=422,
+        detail={"code": "VALIDATION_ERROR", "message": "contract must be 'v1' when given"},
+    )
+
+
+#: How an endpoint receives the selected contract.
+ContractDep = Annotated[ContractMode, Depends(contract_mode)]
+
+
 def request_id(request: Request) -> str:
     """The request's id — the middleware's value, or one generated on first read.
 
@@ -203,12 +233,20 @@ def build_frontend_read_router(
     conn_factory: ConnFactory,
     evidence_storage: StorageBackend | None = None,
     contact_email_lookup: Any | None = None,
+    secrets: Secrets | None = None,
 ) -> APIRouter:
     """Build the workspace-scoped `/frontend/v1` router — **empty** unless the flag is on.
 
     Every slice-1 endpoint (Tasks 2–4) registers here and inherits the workspace dependency, so
     tenant scoping cannot be forgotten route-by-route. ``conn_factory`` is the connection seam those
     readers bind to.
+
+    ``secrets`` reaches exactly one place: the D3 display seam. **One**
+    :class:`~clue_api.frontend_read.display_pages.DisplayPages` is built here and shared by every
+    endpoint that serves a generated page, because its in-flight regeneration table has to be
+    shared — two instances would schedule two rewrites of the same page. Without a key (or with
+    generation switched off) the seam is a pure projection, so a router built without ``secrets``
+    behaves exactly as it did before this argument existed.
     """
 
     router = APIRouter(
@@ -222,15 +260,18 @@ def build_frontend_read_router(
     # one, so a top-level import would be circular.
     from clue_api.frontend_read.account_activity import register_account_activity_routes
     from clue_api.frontend_read.account_detail import register_account_detail_routes
+    from clue_api.frontend_read.account_workspace import register_account_workspace_routes
     from clue_api.frontend_read.accounts_list import register_accounts_list_routes
     from clue_api.frontend_read.brand_knowledge import register_brand_knowledge_routes
     from clue_api.frontend_read.bulk_actions import register_bulk_action_routes
     from clue_api.frontend_read.contacts import register_contact_routes
+    from clue_api.frontend_read.display_pages import DisplayPages
 
     allow_local_mutations = (
         settings.projections_auth_mode == "local_header" and not settings.auth_enabled
     )
-    register_accounts_list_routes(router, conn_factory=conn_factory)
+    display = DisplayPages(settings=settings, secrets=secrets, conn_factory=conn_factory)
+    register_accounts_list_routes(router, conn_factory=conn_factory, settings=settings)
     # Static ``/accounts/bulk-*`` paths must be registered before the Account/Contact UUID routes,
     # otherwise Starlette would match a capability segment as ``{account_id}`` and return a 422.
     register_bulk_action_routes(
@@ -242,14 +283,23 @@ def build_frontend_read_router(
     )
     register_account_activity_routes(router, conn_factory=conn_factory)
     register_account_detail_routes(
-        router, conn_factory=conn_factory, evidence_storage=evidence_storage
+        router,
+        conn_factory=conn_factory,
+        settings=settings,
+        display=display,
+        evidence_storage=evidence_storage,
     )
+    # After the detail routes, deliberately: Starlette would match the literal ``/workspace``
+    # segment ahead of ``/accounts/{account_id}/evidence/{claim_id}`` whatever the order, but the
+    # registration order is the one place a reader can see which path wins, so it is kept explicit.
+    register_account_workspace_routes(router, conn_factory=conn_factory, display=display)
     register_contact_routes(
         router,
         conn_factory=conn_factory,
         evidence_storage=evidence_storage,
         contact_email_lookup=contact_email_lookup,
         allow_local_mutations=allow_local_mutations,
+        display=display,
     )
     register_brand_knowledge_routes(router, conn_factory=conn_factory, storage=evidence_storage)
     return router
@@ -285,6 +335,7 @@ def install_frontend_read_surface(
     conn_factory: ConnFactory,
     evidence_storage: StorageBackend | None = None,
     contact_email_lookup: Any | None = None,
+    secrets: Secrets | None = None,
 ) -> None:
     """Mount enabled routers and always own errors under the reserved frontend-read prefix.
 
@@ -302,6 +353,7 @@ def install_frontend_read_surface(
                 conn_factory=conn_factory,
                 evidence_storage=evidence_storage,
                 contact_email_lookup=contact_email_lookup,
+                secrets=secrets,
             )
         )
 
