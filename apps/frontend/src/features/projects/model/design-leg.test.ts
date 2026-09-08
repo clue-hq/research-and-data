@@ -66,7 +66,7 @@ test("opening and reopening both say the thread now talks to Design", () => {
 test("the honest wait copy carries no percentage and no ETA", () => {
   assert.equal(
     DESIGN_GENERATION_WAIT_NOTICE,
-    "Website generation often takes 5–15 minutes.",
+    "Design generation can take several minutes.",
   );
   assert.equal(/%|\bETA\b|\bat \d/.test(DESIGN_GENERATION_WAIT_NOTICE), false);
 });

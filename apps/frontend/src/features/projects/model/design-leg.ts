@@ -57,14 +57,14 @@ export const DESIGN_CHECKPOINT_EVENT_TYPE = "design.checkpoint";
 export const DESIGN_OP_BATCH_EVENT_TYPE = "design.op_batch";
 
 /**
- * The honest wait sentence (founder requirement 4, verbatim).
+ * The shared wait sentence for ad and website design sessions.
  *
  * Generation is minutes long and its duration is genuinely unknown, so the
- * surface states the range it has actually observed and stops there. A
+ * surface states that clearly without claiming a duration for every format. A
  * percentage or an ETA would be invented, and requirement 5 forbids both.
  */
 export const DESIGN_GENERATION_WAIT_NOTICE =
-  "Website generation often takes 5–15 minutes.";
+  "Design generation can take several minutes.";
 
 const LEG_CLOSED_NOTICES: Readonly<Record<string, string>> = {
   locked: "Design session closed — the page is locked in.",
