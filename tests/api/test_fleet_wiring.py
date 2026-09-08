@@ -35,6 +35,7 @@ from clue_api.fleet_wiring import (
     tier_priority_from_rubric,
 )
 from clue_config import Secrets, Settings
+from clue_config.gateway import GatewayConfig
 from clue_core import (
     PhaseContext,
     PhaseHandler,
@@ -345,6 +346,56 @@ def test_the_flag_without_an_exa_key_composes_no_handler_rather_than_refusing_to
         )
         is None
     )
+
+
+def test_the_catalog_reconciler_is_composed_per_run_only_with_a_model_credential(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """O3's identity ladder: the model stage is composed as a **factory of one reconciler per
+    run**, because its provider caller writes under that run's own folder.
+
+    Same posture as the Exa key one level up, one step softer: a missing OpenRouter key (or the
+    flag off) still composes the handler — the sync then runs its deterministic rungs alone, which
+    is what it did before the stage existed — but it says so once, at composition.
+    """
+    from clue_api.arv2.onboarding_reconcile import OpenRouterCatalogReconciler
+
+    monkeypatch.delenv("CLUE_OPENROUTER_API_KEY", raising=False)
+    secrets = Secrets(_env_file=None, exa_api_key=SecretStr("exa-test"))  # type: ignore[call-arg]
+    assert secrets.openrouter_api_key is None
+    settings = _settings(
+        onboarding_v2_enabled=True,
+        onboarding_catalog_reconcile_enabled=True,
+        arv2_raw_root=str(tmp_path / "raw"),
+    )
+
+    keyless = _build_onboarding_handler(settings, secrets, storage=FsStorage(tmp_path))
+    assert keyless is not None, "no model key never costs the lane its handler"
+    assert keyless._reconciler_factory is None
+
+    keyed = Secrets(  # type: ignore[call-arg]
+        _env_file=None,
+        exa_api_key=SecretStr("exa-test"),
+        openrouter_api_key=SecretStr("or-test"),
+    )
+    composed = _build_onboarding_handler(settings, keyed, storage=FsStorage(tmp_path))
+    assert composed is not None and composed._reconciler_factory is not None
+    run_id = uuid4()
+    reconciler = composed._reconciler_factory(run_id)
+    assert isinstance(reconciler, OpenRouterCatalogReconciler)
+    assert reconciler._model == settings.onboarding_reconcile_model
+    assert reconciler._base_url == GatewayConfig().base_url
+
+    off = _build_onboarding_handler(
+        _settings(
+            onboarding_v2_enabled=True,
+            onboarding_catalog_reconcile_enabled=False,
+            arv2_raw_root=str(tmp_path / "raw"),
+        ),
+        keyed,
+        storage=FsStorage(tmp_path),
+    )
+    assert off is not None and off._reconciler_factory is None
 
 
 def test_the_synthesis_seam_hands_o4_outcomes_to_the_o3_handler(tmp_path: Path) -> None:

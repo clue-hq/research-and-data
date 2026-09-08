@@ -300,7 +300,8 @@ def product_catalog_output_schema() -> dict[str, Any]:
                         "name": {
                             "type": "string",
                             "description": (
-                                "Official product name exactly as the company writes it."
+                                "The offering's name exactly as its official_url page writes "
+                                "it, keeping that page's spelling, spacing and capitalisation."
                             ),
                         },
                         "short_description": {
@@ -340,8 +341,10 @@ def product_catalog_output_schema() -> dict[str, Any]:
                         "official_url": {
                             "type": "string",
                             "description": (
-                                "Canonical page for this offering on the company's own domain. "
-                                "Omit if none exists."
+                                "The page on the company's own domain where this offering is "
+                                "presented; a page may present several offerings. Not the "
+                                "homepage, a pricing page or a blog post. Omit only if no such "
+                                "page exists."
                             ),
                         },
                     },

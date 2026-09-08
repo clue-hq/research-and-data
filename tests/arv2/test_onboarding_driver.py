@@ -22,6 +22,7 @@ from clue_agents.contracts import ArtifactRef
 from clue_api.arv2.calls import CallCost
 from clue_api.arv2.exa_client import ExaAgentRun, ExaDeepResult
 from clue_api.arv2.onboarding_driver import (
+    LINEUP_SYSTEM_PROMPT,
     OnboardingRunWorkHandler,
     SynthesisOutcome,
     _merge_lineups,
@@ -285,6 +286,7 @@ def _handler(
     synthesis: Any = None,
     links: Any = None,
     known_products: Any = None,
+    reconciler_factory: Any = None,
     settings_overrides: dict[str, Any] | None = None,
 ) -> OnboardingRunWorkHandler:
     settings = Settings(_env_file=None, **(settings_overrides or {}))
@@ -299,6 +301,7 @@ def _handler(
         store=store,
         synchronize_catalog=links or _no_products,
         known_products=known_products or _no_known_products,
+        reconciler_factory=reconciler_factory,
     )
 
 
@@ -555,3 +558,110 @@ def test_an_unreadable_product_list_degrades_to_the_bare_question_instead_of_fai
     assert result.outcome == "completed"
     assert exa.queries == ["Exhaustive list of products of insighthealth.ai"] * 2
     assert not [event for event in store.events if event[0] == "fail_run"]
+
+
+def test_the_lineup_asks_for_the_offerings_own_page_and_the_pages_own_spelling() -> None:
+    """The system prompt is the only place the page rule can live: the schema is the catalog
+    contract's and the query carries the re-run hint. Both halves are pinned — ask for the page
+    the offering is presented on, and omit rather than cite the homepage — because a homepage
+    ``official_url`` on every entry is evidence the model stage would read as "all one product"."""
+    assert "official_url as the page on the company's own domain" in LINEUP_SYSTEM_PROMPT
+    assert "a page may present several offerings" in LINEUP_SYSTEM_PROMPT
+    assert "keeping the page's own spelling, spacing and capitalisation" in LINEUP_SYSTEM_PROMPT
+    assert (
+        "omit official_url rather than citing the homepage or a listing page"
+        in LINEUP_SYSTEM_PROMPT
+    )
+
+
+def test_the_lineup_carries_each_entrys_official_url_into_the_catalog_products() -> None:
+    """The model stage's evidence is the page: an entry that names one must arrive at the
+    synchronizer carrying it, and an entry that (rightly) omits it must arrive with ``None``
+    rather than a placeholder the reconciler would read as a page."""
+    exa = FakeExa(
+        {
+            "overview": _agent(OVERVIEW),
+            "reviews": _agent(REVIEWS),
+            "product_research": _agent(PRODUCT),
+        },
+        _deep(
+            [
+                {
+                    "name": "Ambient",
+                    "short_description": "Scribe.",
+                    "offering_kind": "product",
+                    "official_url": "https://www.insighthealth.ai/ambient",
+                },
+                {"name": "Nowhere", "short_description": "No page.", "offering_kind": "product"},
+                {
+                    "name": "Wrong type",
+                    "short_description": "A number.",
+                    "offering_kind": "product",
+                    "official_url": 17,
+                },
+            ]
+        ),
+    )
+    seen: dict[str, Any] = {}
+
+    async def fake_sync(conn: Any, **kw: Any) -> tuple[ProductLink, ...]:
+        del conn
+        seen["products"] = kw["products"]
+        return ()
+
+    asyncio.run(_handler(exa, FakeStore(), links=fake_sync).handle(_context(uuid4())))
+
+    assert [entry.official_url for entry in seen["products"]] == [
+        "https://www.insighthealth.ai/ambient",
+        None,
+        None,
+    ]
+
+
+def test_the_catalog_sync_gets_a_reconciler_built_for_this_run() -> None:
+    """One reconciler per run, because its ``ProviderCaller`` writes under the run's own folder
+    (``arv2_raw_root/onboarding/<run_id>/catalog-reconcile/``) — so the factory takes the run id
+    rather than the handler holding one caller for every run it ever drives."""
+    exa = FakeExa({"overview": _agent(OVERVIEW), "reviews": _agent(REVIEWS)}, _deep([]))
+    seen: dict[str, Any] = {}
+    built: list[Any] = []
+
+    class Reconciler:
+        async def reconcile(self, **kw: Any) -> tuple[Any, ...]:
+            del kw
+            return ()
+
+    def factory(run_id: Any) -> Reconciler:
+        built.append(run_id)
+        return Reconciler()
+
+    async def fake_sync(conn: Any, **kw: Any) -> tuple[ProductLink, ...]:
+        del conn
+        seen["reconciler"] = kw["reconciler"]
+        return ()
+
+    exa.deep_answer = _deep([{"name": "Ambient", "short_description": "Scribe."}])
+    run_id = uuid4()
+    handler = _handler(exa, FakeStore(), links=fake_sync, reconciler_factory=factory)
+
+    asyncio.run(handler.handle(_context(run_id)))
+
+    assert built == [run_id]
+    assert isinstance(seen["reconciler"], Reconciler)
+
+
+def test_without_a_composed_reconciler_the_sync_runs_its_deterministic_rungs_alone() -> None:
+    """A worker with the flag off (or no OpenRouter key) still syncs: ``reconciler=None`` is the
+    ladder without its model stage, which is exactly what it did before the stage existed."""
+    exa = FakeExa({"overview": _agent(OVERVIEW), "reviews": _agent(REVIEWS)}, _deep([]))
+    seen: dict[str, Any] = {}
+
+    async def fake_sync(conn: Any, **kw: Any) -> tuple[ProductLink, ...]:
+        del conn
+        seen["reconciler"] = kw["reconciler"]
+        return ()
+
+    exa.deep_answer = _deep([{"name": "Ambient", "short_description": "Scribe."}])
+    asyncio.run(_handler(exa, FakeStore(), links=fake_sync).handle(_context(uuid4())))
+
+    assert seen["reconciler"] is None

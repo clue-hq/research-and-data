@@ -295,6 +295,17 @@ def test_the_product_catalog_schema_matches_the_contract() -> None:
         "service",
     ]
     assert item["properties"]["lifecycle"]["enum"] == ["active", "beta", "sunset", "unknown"]
+    # The identity ladder reads ``official_url`` as evidence and ``name`` as the page's own
+    # spelling, so §3's two descriptions are the request's half of that contract (2026-09-09).
+    assert item["properties"]["name"]["description"] == (
+        "The offering's name exactly as its official_url page writes it, keeping that page's "
+        "spelling, spacing and capitalisation."
+    )
+    assert item["properties"]["official_url"]["description"] == (
+        "The page on the company's own domain where this offering is presented; a page may "
+        "present several offerings. Not the homepage, a pricing page or a blog post. Omit only "
+        "if no such page exists."
+    )
     flat = json.dumps(schema)
     for citation_field in ("citation", "grounding", "source_url", "quote"):
         assert citation_field not in flat, "§3: citation fields must not appear in the schema"

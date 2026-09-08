@@ -48,6 +48,7 @@ from clue_api.arv2.onboarding_documents import (
 )
 from clue_api.arv2.onboarding_lineage import CatalogProduct, ProductLink
 from clue_api.arv2.onboarding_lineage import synchronize_catalog as default_synchronize
+from clue_api.arv2.onboarding_reconcile import CatalogReconciler
 from clue_api.arv2.onboarding_requests import (
     COMPANY_OVERVIEW_SYSTEM_PROMPT,
     CUSTOMER_REVIEWS_SYSTEM_PROMPT,
@@ -92,10 +93,23 @@ ONBOARDING_DEDUP_PREFIX = "onboarding-run:"
 #: The one prompt that is the driver's own rather than a request template's: the lineup is two
 #: passes of the SAME question (own domain, then the open web), so the instruction lives with the
 #: step that runs both.
+#:
+#: The two page sentences (added 2026-09-09, validated in the Exa playground 2026-09-08) are what
+#: the catalog identity ladder runs on. ``official_url`` is the model stage's evidence, so it has
+#: to be the page the offering is actually presented on — and a homepage or listing URL repeated
+#: across every entry would read as "these are all one offering", which is why omitting it is
+#: named as the better answer. The name sentence asks for the page's own spelling because the
+#: ladder's second rung matches spellings; a model paraphrase of a name is a near-miss that mints
+#: a duplicate row. "A page may present several offerings" is deliberate: a shared page is
+#: evidence, never a rule that two offerings on one page must be one product.
 LINEUP_SYSTEM_PROMPT = (
     "Prefer pages on the company's own domain; list every distinct product page; keep "
     "integrations and partner programs separate from standalone products; never invent an "
-    "offering; when unsure of a field, omit it."
+    "offering; when unsure of a field, omit it. For each offering, give official_url as the page "
+    "on the company's own domain where that offering is presented (a page may present several "
+    "offerings), and give name exactly as that page writes it for the offering, keeping the "
+    "page's own spelling, spacing and capitalisation. If an offering has no page of its own on "
+    "the company's domain, omit official_url rather than citing the homepage or a listing page."
 )
 
 #: The re-run hint. The lineup is asked the same question on every run, so on run two it re-derives
@@ -282,6 +296,7 @@ class OnboardingRunWorkHandler:
         store: Any = default_store,
         synchronize_catalog: Callable[..., Any] = default_synchronize,
         known_products: Callable[[AsyncConnection, str], Awaitable[Sequence[str]]] | None = None,
+        reconciler_factory: Callable[[UUID], CatalogReconciler] | None = None,
     ) -> None:
         self._settings = settings
         self._conn_factory = conn_factory
@@ -297,6 +312,12 @@ class OnboardingRunWorkHandler:
         # Same reason as the store and the synchronizer: the offline driver tests must never reach
         # a database, and the lineup's re-run hint is a read.
         self._known_products = known_products or _default_known_products
+        # A factory, not a reconciler: the model stage spends through a ``ProviderCaller`` whose
+        # raw records and ledger live under THIS run's folder (the one-caller-per-step law), so
+        # the run id has to reach it. ``None`` is a composed lane without the model stage — the
+        # ladder then stops after its deterministic rungs, which is what it did before the stage
+        # existed.
+        self._reconciler_factory = reconciler_factory
         # The driver holds at most ONE connection at a time. Its row writes are small, ordered
         # facts about one run and the parallelism that matters is the provider calls (which run
         # off both the loop and this lock), so serializing them costs nothing — and it lets a
@@ -628,6 +649,12 @@ class OnboardingRunWorkHandler:
                 name=entry["name"],
                 short_description=entry["short_description"],
                 aliases=tuple(entry.get("aliases") or ()),
+                # The mapper copies whatever the provider sent, so a non-string here is a provider
+                # answer that ignored the schema. It becomes ``None``: the model stage reads a
+                # page as evidence, and a number or an object is not one.
+                official_url=(
+                    entry["official_url"] if isinstance(entry.get("official_url"), str) else None
+                ),
             )
             for entry in document.front_matter["products"]
         )
@@ -678,12 +705,22 @@ class OnboardingRunWorkHandler:
                 phase="fast",
             )
             try:
+                # Inside the try with the sync itself: building one is cheap and cannot spend
+                # (the provider caller is built lazily, per call), but if it ever did raise, the
+                # failure law says this step lands ``failed`` with its reason — not that the run
+                # dies in ``handle``'s containment.
+                reconciler = (
+                    self._reconciler_factory(scope.run_id)
+                    if self._reconciler_factory is not None
+                    else None
+                )
                 links = await self._sync(
                     conn,
                     workspace_id=scope.workspace_id,
                     brand_id=scope.brand_id,
                     document_id=document_id,
                     products=products,
+                    reconciler=reconciler,
                 )
             except Exception as error:
                 await self._store.finish_step(
