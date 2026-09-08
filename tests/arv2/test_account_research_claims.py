@@ -22,6 +22,7 @@ from clue_api.arv2.account_research_claims import (
     fit_verdict_claims,
     media_index_claim,
     negative_claims,
+    revenue_band_bucket,
     structured_claims,
     unconfirmed_candidates,
 )
@@ -121,10 +122,20 @@ def test_ai_ark_company_maps_only_registered_keys_at_their_real_raw_paths() -> N
         linkedin="https://www.linkedin.com/company/zafran",
         industry="Computer & Network Security",
         employee_count=180,
-        revenue="$10M-$25M",
+        revenue="10000000-25000000",
         technologies=("HubSpot",),
         location={"country": "US", "city": "New York"},
-        raw={},
+        raw={
+            "financial": {
+                "revenue": {
+                    "annual": {
+                        "start": 10_000_000,
+                        "end": 25_000_000,
+                        "amount": "10000000-25000000",
+                    }
+                }
+            }
+        },
         cost=None,
     )
 
@@ -141,7 +152,11 @@ def test_ai_ark_company_maps_only_registered_keys_at_their_real_raw_paths() -> N
     # The path is read off ``company_from_record``, not invented: the record nests the count
     # under ``summary.staff.total``, which is what a replay has to look at.
     assert drafts["core.employee_count"].markers["json_path"] == "summary.staff.total"
-    assert drafts["core.revenue_band"].markers["json_path"] == "financial.revenue.annual.amount"
+    # ``core.revenue_band`` is an enum field, so the provider's numeric range is translated into
+    # a registered bucket in code; the string it came from stays on the claim as a marker.
+    assert drafts["core.revenue_band"].value_json == "10m_50m"
+    assert drafts["core.revenue_band"].markers["json_path"] == "financial.revenue.annual"
+    assert drafts["core.revenue_band"].markers["provider_value"] == "10000000-25000000"
     assert drafts["core.hq_location"].markers["json_path"] == "location.headquarter"
     assert all(
         d.extraction_method is ExtractionMethod.API
@@ -165,6 +180,58 @@ def test_ai_ark_company_omits_the_fields_the_record_did_not_carry() -> None:
         raw={},
     )
     assert ai_ark_company_claims(company, SCOPE) == []
+
+
+def test_a_revenue_range_that_straddles_two_buckets_is_not_claimed_at_all() -> None:
+    """The other four fields still land: one untranslatable field is not a failed record."""
+    company = AiArkCompany(
+        name="Zafran Security",
+        domain="zafran.io",
+        linkedin="https://www.linkedin.com/company/zafran",
+        industry="Computer & Network Security",
+        employee_count=180,
+        revenue="25000000-75000000",
+        technologies=(),
+        location={"country": "US"},
+        raw={"financial": {"revenue": {"annual": {"start": 25_000_000, "end": 75_000_000}}}},
+    )
+
+    keys = {d.field_key for d in ai_ark_company_claims(company, SCOPE)}
+
+    assert "core.revenue_band" not in keys, "10m_50m and 50m_100m: there is no honest single answer"
+    assert len(keys) == 4
+
+
+def test_the_revenue_band_is_parsed_from_the_amount_string_when_the_record_omits_the_pair() -> None:
+    company = AiArkCompany(
+        name="Probook",
+        domain="probook.ai",
+        linkedin=None,
+        industry=None,
+        employee_count=None,
+        revenue="1000000-5000000",
+        technologies=(),
+        location=None,
+        raw={"financial": {"revenue": {"annual": {"amount": "1000000-5000000"}}}},
+    )
+
+    [draft] = ai_ark_company_claims(company, SCOPE)
+
+    assert draft.field_key == "core.revenue_band" and draft.value_json == "1m_10m"
+
+
+def test_revenue_band_buckets_are_half_open_and_refuse_to_guess() -> None:
+    assert revenue_band_bucket(10_000_000, 25_000_000) == "10m_50m"
+    assert revenue_band_bucket(9_999_999, 9_999_999) == "1m_10m"
+    assert revenue_band_bucket(10_000_000, 10_000_000) == "10m_50m"
+    assert revenue_band_bucket(0, 999_999) == "under_1m"
+    assert revenue_band_bucket(2_000_000_000, 5_000_000_000) == "1b_plus"
+    assert revenue_band_bucket(999_999_999, 1_000_000_000) is None  # straddles 500m_1b / 1b_plus
+    assert revenue_band_bucket(25_000_000, 75_000_000) is None  # straddles two buckets
+    assert revenue_band_bucket(None, 25_000_000) is None
+    assert revenue_band_bucket(10_000_000, None) is None
+    assert revenue_band_bucket(None, None) is None
+    assert revenue_band_bucket(25_000_000, 10_000_000) is None  # inverted: a malformed range
 
 
 def test_negatives_are_reputation_risk_claims_born_unsafe_priority_two() -> None:

@@ -222,11 +222,18 @@ class FakeAiArk:
             linkedin="https://www.linkedin.com/company/probook",
             industry="Software",
             employee_count=42,
-            revenue="$1M-$5M",
+            revenue="1000000-5000000",
             technologies=("HubSpot",),
             location={"country": "US"},
             raw={
                 "financial": {
+                    "revenue": {
+                        "annual": {
+                            "start": 1_000_000,
+                            "end": 5_000_000,
+                            "amount": "1000000-5000000",
+                        }
+                    },
                     "funding": {
                         "type": "SERIES_A",
                         "total_amount": 12_000_000,
@@ -238,7 +245,7 @@ class FakeAiArk:
                                 "investors": ["Sequoia Capital"],
                             }
                         ],
-                    }
+                    },
                 }
             },
             cost=_cost(provider="ai_ark", operation="v1/companies"),

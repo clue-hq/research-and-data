@@ -29,7 +29,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Literal
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, JsonValue
@@ -55,6 +55,7 @@ __all__ = [
     "fit_verdict_claims",
     "media_index_claim",
     "negative_claims",
+    "revenue_band_bucket",
     "structured_claims",
     "unconfirmed_candidates",
 ]
@@ -217,9 +218,99 @@ _AI_ARK_COMPANY_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("linkedin", "core.company_linkedin_url", "link.linkedin"),
     ("industry", "core.industry", "summary.industry"),
     ("employee_count", "core.employee_count", "summary.staff.total"),
-    ("revenue", "core.revenue_band", "financial.revenue.annual.amount"),
     ("location", "core.hq_location", "location.headquarter"),
 )
+
+#: ``core.revenue_band`` is an **enum** field (``packs.py``:
+#: ``under_1m|1m_10m|10m_50m|50m_100m|100m_500m|500m_1b|1b_plus``), and AI Ark answers a numeric
+#: band (``financial.revenue.annual`` = ``start``/``end`` ints plus an ``amount`` string like
+#: ``"10000000-25000000"``). Writing the provider's string straight through would store a value
+#: that passes as a string and means nothing to the field — every such claim would land
+#: ``schema_valid=False``. The translation is therefore done here, in code, and it refuses to
+#: guess: a band that does not sit inside exactly one bucket is not claimed at all.
+#:
+#: Upper bound of each bucket, exclusive, in ascending order. ``1b_plus`` is everything above.
+_REVENUE_BUCKETS: tuple[tuple[int, str], ...] = (
+    (1_000_000, "under_1m"),
+    (10_000_000, "1m_10m"),
+    (50_000_000, "10m_50m"),
+    (100_000_000, "50m_100m"),
+    (500_000_000, "100m_500m"),
+    (1_000_000_000, "500m_1b"),
+)
+_TOP_REVENUE_BUCKET = "1b_plus"
+
+
+def _bucket_of(amount: int) -> str:
+    """The bucket one exact figure falls in. Each bound is exclusive: 10_000_000 is ``10m_50m``."""
+    for ceiling, name in _REVENUE_BUCKETS:
+        if amount < ceiling:
+            return name
+    return _TOP_REVENUE_BUCKET
+
+
+def revenue_band_bucket(start: int | None, end: int | None) -> str | None:
+    """The registered band a provider's revenue range means, or ``None`` when it means no one band.
+
+    A provider band and a registered band are two different vocabularies, and only some provider
+    bands have an answer in ours: ``10M–25M`` is unambiguously ``10m_50m``, while ``25M–75M``
+    spans ``10m_50m`` and ``50m_100m`` and there is no honest way to pick one. ``None`` is that
+    answer, and the caller writes no claim — an empty field is a correct output, a rounded one is
+    a fabricated fact about how big a company is.
+    """
+    if start is None or end is None or start < 0 or end < start:
+        return None
+    low, high = _bucket_of(start), _bucket_of(end)
+    return low if low == high else None
+
+
+def _revenue_bounds(
+    annual: Mapping[str, Any] | None, amount: str | None
+) -> tuple[int | None, int | None]:
+    """The band's two ends: the record's own ints when it carries them, else the ``amount`` string.
+
+    The string is the fallback rather than the source because ``start``/``end`` are already typed
+    and the string is a rendering of them; parsing is only for a record that omits the pair.
+    """
+    if annual is not None:
+        start, end = annual.get("start"), annual.get("end")
+        if isinstance(start, int) and isinstance(end, int) and not isinstance(start, bool):
+            return start, end
+    parts = [part.strip() for part in (amount or "").split("-")]
+    if all(part.isdigit() for part in parts) and len(parts) in (1, 2):
+        numbers = [int(part) for part in parts]
+        return numbers[0], numbers[-1]
+    return None, None
+
+
+def _revenue_band_draft(company: AiArkCompany, scope: JobScope) -> ClaimDraft | None:
+    """The ``core.revenue_band`` claim for one company record, when the record names one band."""
+    raw = company.raw if isinstance(company.raw, Mapping) else {}
+    financial = raw.get("financial")
+    revenue = financial.get("revenue") if isinstance(financial, Mapping) else None
+    annual = revenue.get("annual") if isinstance(revenue, Mapping) else None
+    bucket = revenue_band_bucket(
+        *_revenue_bounds(annual if isinstance(annual, Mapping) else None, company.revenue)
+    )
+    if bucket is None:
+        return None
+    return _draft(
+        scope,
+        field_key="core.revenue_band",
+        value=bucket,
+        method=ExtractionMethod.API,
+        source_url=None,
+        evidence_span=None,
+        priority=2,
+        outreach_safe=True,
+        confidence=0.9,
+        source_key="ai_ark:company",
+        markers={
+            "json_path": "financial.revenue.annual",
+            "provider_record": "ai_ark",
+            "provider_value": company.revenue,
+        },
+    )
 
 
 def ai_ark_company_claims(company: AiArkCompany, scope: JobScope) -> list[ClaimDraft]:
@@ -229,6 +320,10 @@ def ai_ark_company_claims(company: AiArkCompany, scope: JobScope) -> list[ClaimD
     as ``source_url`` would manufacture provenance. The claim cites the record instead: the
     ``json_path`` of the value plus ``provider_record='ai_ark'``, which is what a replay actually
     needs. The lenient writer marks the missing URL, and the display layer renders the provider.
+
+    Four fields go straight through; ``core.revenue_band`` is translated into the registered enum
+    by :func:`revenue_band_bucket`, and is simply absent when the provider's range does not sit
+    inside exactly one bucket.
     """
     drafts: list[ClaimDraft] = []
     for attribute, field_key, json_path in _AI_ARK_COMPANY_FIELDS:
@@ -251,6 +346,9 @@ def ai_ark_company_claims(company: AiArkCompany, scope: JobScope) -> list[ClaimD
                 markers={"json_path": json_path, "provider_record": "ai_ark"},
             )
         )
+    band = _revenue_band_draft(company, scope)
+    if band is not None:
+        drafts.append(band)
     return drafts
 
 
@@ -495,7 +593,3 @@ def committee_candidate_claims(
             )
         )
     return drafts
-
-
-#: The two subject kinds ``structure_material`` knows about. R2 admits only the first.
-SubjectKind = Literal["account", "person"]
