@@ -179,3 +179,6 @@ Confirmed present at `6ed8a4642` before any lane commit:
 
 ## Merge addendum (2026-09-09)
 Merged into `integration/design-improvement` (merge commits f5d506196 ladder, a3e8a1355 split; one hand-resolved conflict in `tests/arv2/test_onboarding_driver.py` — both lanes had appended tests, both sets kept, 22 pass). Alembic join `850fcace722a` (be9f4984729a + ae4a5dfb3943), up/down/up smoked on `clue_o4_split`; `clue_semarang` upgraded to the join. `.env` gained the two reconcile keys. Live proofs (both plans' Task 6) still owed, founder-triggered; the fleet worker on this box must be restarted (reproduce `.env`, never pkill) before either.
+
+## Live proof addendum (2026-09-09)
+Run eef4a3fd on Insight Health (merged code, worker restarted): PASSED — see `.context/arv2-onboarding-live-proof-2026-09-09/SUMMARY.md`. Split: ICPs registered at 457 s (was 14–17 min), three persona steps in parallel 457→734 s, run completed in 734 s, 15 evidence calls all under persona executions. Ladder: 21 entries → 18 alias_reused, 1 created (genuinely new page, model high), 2 unresolved_ambiguous (pre-existing ™ duplicate pairs from older runs; O6 gate to merge), products 27→28, one $0.0019 reconcile call. Follow-up (O4): the ICP turn still spends ~110 s reading product files one call at a time; ask for batched reads.
