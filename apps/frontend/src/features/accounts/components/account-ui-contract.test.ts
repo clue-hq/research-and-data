@@ -321,5 +321,10 @@ test("§6.15 no featured-contact scan; the drawer opens on row click", () => {
 test("§6.16 the email lookup is the real start-and-poll, not a timer", () => {
   assert.doesNotMatch(emailLookupController, /window\.setTimeout\(\(\) => setState/);
   assert.match(emailLookupController, /startContactEmailLookup\(accountId, contactId\)/);
-  assert.match(emailLookupController, /pollContactEmailLookup\(/);
+  // The poll run lives in the repository (bounded, injectable); the hook drives it.
+  assert.match(emailLookupController, /followContactEmailLookup\(/);
+  assert.match(
+    source("../data/contact-email-lookup.repository.ts"),
+    /await poll\(accountId, contactId, lookupId\)/,
+  );
 });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  pollContactEmailLookup,
+  followContactEmailLookup,
   startContactEmailLookup,
 } from "../../data/contact-email-lookup.repository";
 import { ClueApiError } from "../../data/clue-api-error";
@@ -15,17 +15,14 @@ import {
 /** The design build's control contract, widened by the states the backend has. */
 export type EmailLookupState = EmailLookupControlState;
 
-/** How long the browser waits before asking the backend again. */
-const POLL_DELAY_MS = 3_000;
-
 /**
  * The real single-contact email lookup: start, then poll until terminal.
  *
- * `POST …/email-lookup` opens the lookup and `POST …/email-lookup/{id}/poll`
- * advances it; the browser polls only while the served lookup says `pending`,
- * and every other state ends it. Nothing is invented on failure — the honest
- * outcome is what the control shows, and an expired session leaves for sign-in
- * instead of rendering as a lookup error.
+ * `POST …/email-lookup` opens the lookup and `followContactEmailLookup` drives
+ * `POST …/email-lookup/{id}/poll` while the served lookup says `pending`, up to
+ * a fixed ceiling. Nothing is invented on failure — the honest outcome is what
+ * the control shows, and an expired session leaves for sign-in instead of
+ * rendering as a lookup error.
  */
 export function useEmailLookupController({
   accountId,
@@ -40,48 +37,37 @@ export function useEmailLookupController({
     kind: "ready",
     lookup: initialLookup,
   });
-  const timeout = useRef<number | null>(null);
+  const requesting = useRef(false);
 
-  const clearPoll = useCallback(() => {
-    if (timeout.current !== null) {
-      window.clearTimeout(timeout.current);
-      timeout.current = null;
-    }
-  }, []);
+  // Only the lookup's identity starts a poll run; the run itself owns every
+  // phase it produces, so a poll result must not re-enter this effect.
+  const pendingLookupId = isEmailLookupPending(phase.lookup)
+    ? (phase.lookup?.lookupId ?? null)
+    : null;
 
   useEffect(() => {
-    const lookup = phase.lookup;
-    if (!isEmailLookupPending(lookup) || !lookup) return clearPoll;
-    clearPoll();
-    timeout.current = window.setTimeout(async () => {
-      try {
-        setPhase({
-          kind: "ready",
-          lookup: await pollContactEmailLookup(
-            accountId,
-            contactId,
-            lookup.lookupId,
-          ),
-        });
-      } catch (error) {
-        if (error instanceof ClueApiError && error.status === 401) {
-          window.location.assign("/sign-in?reason=session_expired");
-          return;
-        }
-        setPhase({
-          kind: "error",
-          lookup,
-          message: "Email enrichment is temporarily unavailable",
-        });
+    if (!pendingLookupId) return;
+    let cancelled = false;
+    void followContactEmailLookup(
+      { accountId, contactId, lookupId: pendingLookupId },
+      (next) => {
+        if (!cancelled) setPhase(next);
+      },
+      { cancelled: () => cancelled },
+    ).then((outcome) => {
+      if (outcome === "session_expired" && !cancelled) {
+        window.location.assign("/sign-in?reason=session_expired");
       }
-    }, POLL_DELAY_MS);
-    return clearPoll;
-  }, [accountId, clearPoll, contactId, phase.lookup]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId, contactId, pendingLookupId]);
 
   const lookup = useCallback(async () => {
-    if (phase.kind === "requesting") return;
-    clearPoll();
-    setPhase({ kind: "requesting", lookup: phase.lookup });
+    if (requesting.current) return;
+    requesting.current = true;
+    setPhase((current) => ({ kind: "requesting", lookup: current.lookup }));
     try {
       setPhase({
         kind: "ready",
@@ -92,16 +78,18 @@ export function useEmailLookupController({
         window.location.assign("/sign-in?reason=session_expired");
         return;
       }
-      setPhase({
+      setPhase((current) => ({
         kind: "error",
-        lookup: phase.lookup,
+        lookup: current.lookup,
         message:
           error instanceof ClueApiError && error.status === 503
             ? "Email enrichment unavailable"
             : "Email lookup failed",
-      });
+      }));
+    } finally {
+      requesting.current = false;
     }
-  }, [accountId, clearPoll, contactId, phase]);
+  }, [accountId, contactId]);
 
   const presentation = presentEmailLookup(phase);
 

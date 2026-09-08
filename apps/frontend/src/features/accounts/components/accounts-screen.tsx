@@ -20,13 +20,16 @@ export function AccountsScreen({
   bulkCapabilities: AccountBulkCapabilities;
 }) {
   const controller = useAccountsScreenController(accounts, bulkCapabilities);
-  const selectedCount = controller.selectedAccountIds.size;
+  // What the bar counts and the actions submit is the selection still on screen:
+  // a row hidden by the current search/filter keeps its checkbox but is not
+  // acted on (the selection itself survives — searching is not deselecting).
+  const selectedCount = controller.visibleSelectedAccountIds.size;
   const overAddToProjectLimit =
     selectedCount > controller.bulkCapabilities.addToProject.maxItems;
   const overAddToChatLimit =
     selectedCount > controller.bulkCapabilities.addToChat.maxItems;
   const addToChat = useAddToChatController({
-    contextRefs: [...controller.selectedAccountIds].map((accountId) => ({
+    contextRefs: [...controller.visibleSelectedAccountIds].map((accountId) => ({
       objectId: accountId,
       objectType: "account" as const,
       version: null,

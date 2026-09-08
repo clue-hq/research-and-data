@@ -23,7 +23,6 @@ import {
   createDefaultAccountFilterRules,
   filterAccounts,
   sortAccounts,
-  type AccountFilterRule,
 } from "../model/account-query";
 
 export function useAccountsScreenController(
@@ -38,10 +37,10 @@ export function useAccountsScreenController(
   const initialColumnDefinitions = createAccountColumnDefinitions(
     initialAccounts,
   );
-  const [search, setSearchState] = useState("");
+  const [search, setSearch] = useState("");
   const [accountRows, setAccountRows] = useState<AccountRow[]>(initialAccounts);
-  const [filters, setFiltersState] = useState(createDefaultAccountFilterRules);
-  const [sort, setSortState] = useState<AccountSort>("default");
+  const [filters, setFilters] = useState(createDefaultAccountFilterRules);
+  const [sort, setSort] = useState<AccountSort>("default");
   const [density, setDensity] =
     useState<AccountTableDensity>("spacious");
   const [columnOrder, setColumnOrder] = useState(
@@ -119,26 +118,32 @@ export function useAccountsScreenController(
     [accountRows],
   );
 
+  /**
+   * The selection a bulk action can actually act on.
+   *
+   * Searching, filtering or sorting does NOT clear the selection (that is the
+   * design build's behaviour, and a filter is not a deselection): a row hidden
+   * by the current view keeps its checkbox and comes back with it. It is simply
+   * not counted while it is out of view, so nothing is ever submitted that the
+   * operator cannot see.
+   */
+  const visibleSelectedAccountIds = useMemo(
+    () =>
+      new Set(
+        visibleAccounts
+          .filter(
+            (account) =>
+              selectedAccountIds.has(account.id) &&
+              selectableAccountIds.has(account.id),
+          )
+          .map((account) => account.id),
+      ),
+    [selectableAccountIds, selectedAccountIds, visibleAccounts],
+  );
+
   function clearSelection() {
     setSelectedAccountIds(new Set());
     bulkAttemptKey.current = null;
-  }
-
-  // Changing what the table shows clears the selection: an action must never
-  // submit a row the operator can no longer see.
-  function setSearch(value: string) {
-    clearSelection();
-    setSearchState(value);
-  }
-
-  function setFilters(value: AccountFilterRule[]) {
-    clearSelection();
-    setFiltersState(value);
-  }
-
-  function setSort(value: AccountSort) {
-    clearSelection();
-    setSortState(value);
   }
 
   function setSelectedProjectId(value: string) {
@@ -147,10 +152,16 @@ export function useAccountsScreenController(
   }
 
   async function executeAddToProject() {
-    if (!selectedProjectId || selectedAccountIds.size === 0 || isBulkSubmitting) {
+    if (
+      !selectedProjectId ||
+      visibleSelectedAccountIds.size === 0 ||
+      isBulkSubmitting
+    ) {
       return;
     }
-    if (selectedAccountIds.size > bulkCapabilities.addToProject.maxItems) return;
+    if (visibleSelectedAccountIds.size > bulkCapabilities.addToProject.maxItems) {
+      return;
+    }
     const project = bulkCapabilities.projects.find(
       (option) => option.id === selectedProjectId,
     );
@@ -162,7 +173,7 @@ export function useAccountsScreenController(
     setBulkNotice(null);
     try {
       const outcome = await submitAddToProject({
-        accountIds: [...selectedAccountIds],
+        accountIds: [...visibleSelectedAccountIds],
         idempotencyKey,
         project,
         rows: accountRows,
@@ -252,7 +263,6 @@ export function useAccountsScreenController(
       createLocalAccount(name, websiteUrl, workspaceOwner),
       ...current,
     ]);
-    clearSelection();
   }
 
   function toggleAccount(accountId: string) {
@@ -323,6 +333,7 @@ export function useAccountsScreenController(
     toggleAllVisibleAccounts,
     toggleColumn,
     visibleAccounts,
+    visibleSelectedAccountIds,
     visibleColumns,
   };
 }

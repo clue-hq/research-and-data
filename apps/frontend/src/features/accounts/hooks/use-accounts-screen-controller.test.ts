@@ -17,6 +17,11 @@ import {
 } from "../model/contact-email-lookup";
 import { createLocalAccount, isLocalDraftAccount } from "../model/create-account";
 import { addSelectedAccountsToProject } from "../data/bulk-actions.repository";
+import {
+  EMAIL_LOOKUP_POLL_LIMIT,
+  EMAIL_LOOKUP_TIMEOUT_MESSAGE,
+  followContactEmailLookup,
+} from "../data/contact-email-lookup.repository";
 import { ClueApiError } from "../data/clue-api-error";
 
 // The frontend test runner is `node:test` under tsx: there is no DOM and no
@@ -84,6 +89,41 @@ function response(
 // ---------------------------------------------------------------------------
 // Selection
 // ---------------------------------------------------------------------------
+
+test("searching, filtering and sorting never clear the selection (design build)", () => {
+  // The pre-lift apps controller cleared the selection on every view change.
+  // The design build does not: a filter is not a deselection.
+  assert.doesNotMatch(controller, /function setSearch\(/);
+  assert.doesNotMatch(controller, /function setFilters\(/);
+  assert.doesNotMatch(controller, /function setSort\(/);
+  assert.match(controller, /const \[search, setSearch\] = useState/);
+  assert.match(controller, /const \[filters, setFilters\] = useState/);
+  assert.match(controller, /const \[sort, setSort\] = useState/);
+
+  // Selection is cleared in exactly two places: the explicit control, and a
+  // successful add-to-project. The declaration plus that one call site is the
+  // whole of `clearSelection` in the controller — creating an account, paging,
+  // searching and filtering all leave it alone.
+  assert.equal(controller.match(/clearSelection\(\)/g)?.length, 2);
+  assert.match(controller, /function clearSelection\(\)/);
+  assert.match(
+    controller,
+    /setAccountRows\(outcome\.rows\);\s*\n\s*setBulkNotice\(outcome\.notice\);\s*\n\s*clearSelection\(\);/,
+  );
+  assert.match(screen, /onClick=\{controller\.clearSelection\}/);
+
+  // A row the current view hides keeps its checkbox but is not acted on.
+  assert.match(controller, /visibleSelectedAccountIds/);
+  assert.match(
+    controller,
+    /accountIds: \[\.\.\.visibleSelectedAccountIds\]/,
+  );
+  assert.match(screen, /controller\.visibleSelectedAccountIds\.size/);
+  assert.match(
+    screen,
+    /selectedAccountIds=\{controller\.selectedAccountIds\}/,
+  );
+});
 
 test("row selection is the controller's own state and a local draft is never in it", () => {
   assert.match(controller, /selectedAccountIds/);
@@ -347,7 +387,7 @@ const available: ContactEmailLookup = {
 
 test("the lookup controller starts, then polls until the lookup is terminal", () => {
   assert.match(lookupController, /startContactEmailLookup/);
-  assert.match(lookupController, /pollContactEmailLookup/);
+  assert.match(lookupController, /followContactEmailLookup/);
   assert.match(lookupController, /isEmailLookupPending/);
   assert.doesNotMatch(lookupController, /setTimeout\(\(\) => setState\("complete"\)/);
 
@@ -356,6 +396,97 @@ test("the lookup controller starts, then polls until the lookup is terminal", ()
     assert.equal(isEmailLookupPending({ ...pending, state }), false);
   }
   assert.equal(isEmailLookupPending(null), false);
+});
+
+test("a lookup that never settles stops at the ceiling and says so", async () => {
+  const polls: string[] = [];
+  const phases: string[] = [];
+  const outcome = await followContactEmailLookup(
+    { accountId: "account-1", contactId: "contact-1", lookupId: "lookup-1" },
+    (phase) => phases.push(phase.kind === "error" ? phase.message : phase.kind),
+    {
+      // A poll that stays pending forever, and no real waiting.
+      poll: async (_accountId, _contactId, lookupId) => {
+        polls.push(lookupId);
+        return pending;
+      },
+      wait: async () => {},
+    },
+  );
+
+  assert.equal(EMAIL_LOOKUP_POLL_LIMIT, 40);
+  assert.equal(polls.length, EMAIL_LOOKUP_POLL_LIMIT);
+  assert.ok(polls.every((lookupId) => lookupId === "lookup-1"));
+  assert.equal(outcome, "exhausted");
+  assert.equal(phases.at(-1), EMAIL_LOOKUP_TIMEOUT_MESSAGE);
+  assert.equal(
+    EMAIL_LOOKUP_TIMEOUT_MESSAGE,
+    "Email lookup is taking longer than expected — try again later",
+  );
+  // The design build's control keeps showing its error state for it.
+  assert.equal(
+    presentEmailLookup({
+      kind: "error",
+      lookup: pending,
+      message: EMAIL_LOOKUP_TIMEOUT_MESSAGE,
+    }).state,
+    "error",
+  );
+});
+
+test("a lookup that settles stops polling immediately", async () => {
+  let calls = 0;
+  const outcome = await followContactEmailLookup(
+    { accountId: "account-1", contactId: "contact-1", lookupId: "lookup-1" },
+    () => {},
+    {
+      poll: async () => {
+        calls += 1;
+        return available;
+      },
+      wait: async () => {},
+    },
+  );
+
+  assert.equal(calls, 1);
+  assert.equal(outcome, "settled");
+});
+
+test("an unmounted row stops polling and a 401 is reported, not rendered", async () => {
+  let calls = 0;
+  let live = true;
+  const cancelledOutcome = await followContactEmailLookup(
+    { accountId: "account-1", contactId: "contact-1", lookupId: "lookup-1" },
+    () => {},
+    {
+      cancelled: () => !live,
+      poll: async () => {
+        calls += 1;
+        live = false;
+        return pending;
+      },
+      wait: async () => {},
+    },
+  );
+  assert.equal(calls, 1);
+  assert.equal(cancelledOutcome, "cancelled");
+
+  const expired = await followContactEmailLookup(
+    { accountId: "account-1", contactId: "contact-1", lookupId: "lookup-1" },
+    () => assert.fail("an expired session is not a lookup phase"),
+    {
+      poll: async () => {
+        throw new ClueApiError("private upstream message", {
+          code: "AUTHENTICATION_REQUIRED",
+          requestId: "request-4",
+          status: 401,
+        });
+      },
+      wait: async () => {},
+    },
+  );
+  assert.equal(expired, "session_expired");
+  assert.match(lookupController, /session_expired/);
 });
 
 test("a resolved lookup puts the address on the row as an available email", () => {

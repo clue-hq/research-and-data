@@ -116,15 +116,18 @@ export function presentEmailLookup(
 ): EmailLookupPresentation {
   const lookup = phase.lookup;
 
-  if (phase.kind === "requesting" || isEmailLookupPending(lookup)) {
-    return { actionable: false, label: "Looking up…", state: "loading" };
-  }
+  // The error phase is checked first: a run that stopped (a transport failure,
+  // or the poll ceiling) leaves the last served lookup still saying `pending`,
+  // and showing "Looking up…" for it would be a lie.
   if (phase.kind === "error") {
     return {
       actionable: lookup?.retryable === true,
       label: lookup?.retryable ? "Try again" : phase.message,
       state: "error",
     };
+  }
+  if (phase.kind === "requesting" || isEmailLookupPending(lookup)) {
+    return { actionable: false, label: "Looking up…", state: "loading" };
   }
   if (lookup?.state === "available") {
     return {
