@@ -459,7 +459,10 @@ def test_the_model_stage_merges_only_high_confidence_and_flags_the_rest() -> Non
                 "model_unsure",
             ]
             assert [r["reconcile_confidence"] for r in rows] == ["high", "high", "medium"]
-            # the next run resolves the alias at stage 3 without the model
+            # The next run replays both model-decided bindings at rung 2, without the model: a
+            # lineage row IS the durable decision, whichever rung made it (controller ruling
+            # 2026-09-09). The merge lands on the row it merged onto; the unsure mint lands on
+            # the row it minted.
             reconciler2 = ScriptedReconciler([])
             doc2 = await _second_document(conn, ws, brand_id)
             again = await synchronize_catalog(
@@ -467,11 +470,15 @@ def test_the_model_stage_merges_only_high_confidence_and_flags_the_rest() -> Non
                 workspace_id=ws,
                 brand_id=brand_id,
                 document_id=doc2,
-                products=entries[:1],
+                products=[entries[0], entries[2]],
                 reconciler=reconciler2,
             )
-            assert again[0].resolution_state == "alias_reused" and reconciler2.calls == []
+            assert reconciler2.calls == []
+            assert again[0].resolution_state == "lineage_reused"
             assert again[0].product_id == referrals.product_id
+            assert again[0].reconcile_confidence is None and again[0].reconcile_reason is None
+            assert again[1].resolution_state == "lineage_reused"
+            assert again[1].product_id == links[2].product_id
 
     run_async(scenario())
 

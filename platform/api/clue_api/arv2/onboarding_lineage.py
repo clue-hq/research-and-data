@@ -5,8 +5,8 @@ DOCUMENT rather than a Client-KB claim (standing rule, catalog contract §10), a
 fourth rung. Per entry, in order:
 
 1. a lineage row already written for this ``(document, ordinal)`` — mirrored verbatim;
-2. a prior *deterministically* resolved lineage row with this entry's fingerprint —
-   ``lineage_reused``;
+2. a prior lineage row that bound this exact fingerprint to a product — ``lineage_reused``,
+   whichever rung made that binding (a durable decision is replayed, never re-derived);
 3. the entry's spelling key against the names and aliases on file — one hit ``alias_reused``
    (writing the observed spelling back as an alias), several hits ``unresolved_ambiguous``;
 4. everything left over, in ONE batched model reconciliation after the loop — a ``high``-confidence
@@ -44,14 +44,6 @@ if TYPE_CHECKING:  # pragma: no cover — types only
 __all__ = ["CatalogProduct", "ProductLink", "normalize_identity", "synchronize_catalog"]
 
 POLICY_VERSION = "onboarding-catalog-sync-v1"
-
-#: The states whose ``(fingerprint → product)`` binding rung 2 will replay. A model-decided row is
-#: deliberately NOT among them: the model's judgement is advisory and gets re-derived each run,
-#: while the DURABLE record of a model merge is the alias it wrote back — so the same entry lands
-#: on the same product again through the deterministic rung 3, honestly labelled ``alias_reused``
-#: rather than inheriting a confidence no rung actually re-established. (``model_unsure`` must not
-#: be replayed as a confident reuse for the same reason, one rung stronger.)
-_REPLAYABLE_STATES = ("created", "alias_reused", "lineage_reused")
 
 
 @dataclass(frozen=True)
@@ -175,13 +167,21 @@ async def _assert_document_scope(
 async def _prior_product_id(
     conn: AsyncConnection, *, workspace_id: str, brand_id: str, fingerprint: str
 ) -> str | None:
-    states = ", ".join(f"'{state}'" for state in _REPLAYABLE_STATES)
+    """The product a prior lineage row bound this exact fingerprint to, whichever rung decided it.
+
+    Replay is unconditional on state (controller ruling 2026-09-09): a lineage row IS the durable
+    decision, and a high-confidence model merge was applied automatically by design while a
+    ``model_unsure`` row bound its entry to the row it minted. Re-deriving either through the
+    spelling rung is not guaranteed to reach the same answer — a second product carrying the same
+    alias would turn the entry ``unresolved_ambiguous`` — so the binding is replayed, not redone,
+    and the identical entry never reaches the model a second time.
+    """
     return (
         await conn.execute(
             text(
                 "SELECT product_id FROM onboarding_product_lineage WHERE workspace_id = :ws "
                 "AND brand_id = :brand AND entry_fingerprint_sha256 = :fp "
-                f"AND product_id IS NOT NULL AND resolution_state IN ({states}) "
+                "AND product_id IS NOT NULL "
                 "ORDER BY synchronized_at DESC LIMIT 1"
             ),
             {"ws": workspace_id, "brand": brand_id, "fp": fingerprint},
