@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2 import account_research_store as store
@@ -389,3 +390,187 @@ def test_an_annotation_records_why_and_the_tally_is_keyed_by_verdict_and_reason(
         "fetch_failed/page_unreachable": 1,
         f"EXACT/{store.UNRECORDED_REASON}": 1,
     }
+
+
+def test_a_person_job_carries_its_subject_contact_and_its_own_profile_pin() -> None:
+    """R3: a job names *what* it researches. A person job pins the contact and its own profile."""
+
+    async def scenario():  # type: ignore[no-untyped-def]
+        async with rollback_conn() as conn:
+            run, (account, _other) = await _seed(conn)
+            assert await store.create_run(conn, run) is True
+
+            contact, job_id = uuid4(), uuid4()
+            assert (
+                await store.create_job(
+                    conn,
+                    job_id=job_id,
+                    run_id=run.run_id,
+                    workspace_id=run.workspace_id,
+                    account_entity_id=account,
+                    subject_type="person",
+                    subject_entity_id=contact,
+                    profile_sha256=SHA,
+                )
+                is True
+            )
+
+            # Every reader maps the three new columns, not just the one the writer touched.
+            read = await store.read_job(conn, job_id=job_id)
+            assert read is not None
+            assert read.subject_type == "person"
+            assert read.subject_entity_id == contact
+            assert read.profile_sha256 == SHA
+            assert read.account_entity_id == account
+
+            begun = await store.begin_job(conn, job_id=job_id)
+            assert begun is not None
+            assert begun.subject_type == "person" and begun.subject_entity_id == contact
+            assert begun.profile_sha256 == SHA
+
+            listed = {job.job_id: job for job in await store.list_jobs(conn, run_id=run.run_id)}
+            assert listed[job_id].subject_type == "person"
+            assert listed[job_id].subject_entity_id == contact
+            assert listed[job_id].profile_sha256 == SHA
+
+    run_async(scenario())
+
+
+def test_one_account_subject_per_run_but_many_person_subjects_under_it() -> None:
+    """The uniqueness moved to the *subject*: one account row, one row per committee member."""
+
+    async def scenario():  # type: ignore[no-untyped-def]
+        async with rollback_conn() as conn:
+            run, (account, _other) = await _seed(conn)
+            assert await store.create_run(conn, run) is True
+
+            account_job = uuid4()
+            assert (
+                await store.create_job(
+                    conn,
+                    job_id=account_job,
+                    run_id=run.run_id,
+                    workspace_id=run.workspace_id,
+                    account_entity_id=account,
+                )
+                is True
+            )
+            # The default subject is the account itself: no contact, no per-job pin.
+            queued = await store.read_job(conn, job_id=account_job)
+            assert queued is not None
+            assert queued.subject_type == "account"
+            assert queued.subject_entity_id is None
+            assert queued.profile_sha256 is None
+
+            # A second account subject in the same run is still refused (unchanged from R2).
+            assert (
+                await store.create_job(
+                    conn,
+                    job_id=uuid4(),
+                    run_id=run.run_id,
+                    workspace_id=run.workspace_id,
+                    account_entity_id=account,
+                )
+                is False
+            )
+
+            # Two committee members of that same account each get their own job.
+            for contact in (uuid4(), uuid4()):
+                assert (
+                    await store.create_job(
+                        conn,
+                        job_id=uuid4(),
+                        run_id=run.run_id,
+                        workspace_id=run.workspace_id,
+                        account_entity_id=account,
+                        subject_type="person",
+                        subject_entity_id=contact,
+                        profile_sha256=SHA,
+                    )
+                    is True
+                )
+            jobs = await store.list_jobs(conn, run_id=run.run_id)
+            assert len(jobs) == 3
+            assert sum(1 for job in jobs if job.subject_type == "person") == 2
+
+            # …and re-queuing one of them is refused by the same subject uniqueness.
+            repeated = uuid4()
+            assert (
+                await store.create_job(
+                    conn,
+                    job_id=uuid4(),
+                    run_id=run.run_id,
+                    workspace_id=run.workspace_id,
+                    account_entity_id=account,
+                    subject_type="person",
+                    subject_entity_id=repeated,
+                    profile_sha256=SHA,
+                )
+                is True
+            )
+            assert (
+                await store.create_job(
+                    conn,
+                    job_id=uuid4(),
+                    run_id=run.run_id,
+                    workspace_id=run.workspace_id,
+                    account_entity_id=account,
+                    subject_type="person",
+                    subject_entity_id=repeated,
+                    profile_sha256=SHA,
+                )
+                is False
+            )
+
+    run_async(scenario())
+
+
+def test_a_subject_without_its_entity_is_unrepresentable() -> None:
+    """The CHECK is biconditional: a person job names a contact, an account job names none."""
+
+    async def scenario():  # type: ignore[no-untyped-def]
+        async with rollback_conn() as conn:
+            run, (account, _other) = await _seed(conn)
+            assert await store.create_run(conn, run) is True
+
+            with pytest.raises(IntegrityError):
+                async with conn.begin_nested():
+                    await store.create_job(
+                        conn,
+                        job_id=uuid4(),
+                        run_id=run.run_id,
+                        workspace_id=run.workspace_id,
+                        account_entity_id=account,
+                        subject_type="person",
+                        subject_entity_id=None,
+                    )
+
+            with pytest.raises(IntegrityError):
+                async with conn.begin_nested():
+                    await store.create_job(
+                        conn,
+                        job_id=uuid4(),
+                        run_id=run.run_id,
+                        workspace_id=run.workspace_id,
+                        account_entity_id=account,
+                        subject_type="account",
+                        subject_entity_id=uuid4(),
+                    )
+
+            with pytest.raises(IntegrityError):
+                async with conn.begin_nested():
+                    await conn.execute(
+                        text(
+                            "INSERT INTO arv2_research_job "
+                            "(job_id, run_id, workspace_id, account_entity_id, subject_type) "
+                            "VALUES (:job_id, :run_id, :ws, :account, 'committee')"
+                        ),
+                        {
+                            "job_id": uuid4(),
+                            "run_id": run.run_id,
+                            "ws": run.workspace_id,
+                            "account": account,
+                        },
+                    )
+
+    run_async(scenario())

@@ -350,6 +350,13 @@ class Settings(BaseSettings):
     # Env: ``CLUE_ARV2_ACCOUNT_MEDIA_MAX_ENCLOSURE_MB``.
     arv2_account_media_max_enclosure_mb: int = Field(default=200, ge=1)
 
+    # --- ARV2 R3 person agent (master plan §9 R3) ---------------------------------------------
+    # Media items ONE person job may read (podcast episodes, conference talks, YouTube
+    # appearances). A person is a much smaller media surface than an account, and each item costs
+    # a transcription; 0 disables media for person jobs entirely.
+    # Env: ``CLUE_ARV2_PERSON_MEDIA_MAX_ITEMS``.
+    arv2_person_media_max_items: int = Field(default=3, ge=0)
+
     # --- ARV2 onboarding lane (Track O; ARV2-ONBOARDING-PLAN.md §10) --------------------------
     # Routes ``POST /onboarding`` to the new fleet driver (O3). Ships dark until O7 acceptance;
     # ``self_serve_provisioning_enabled`` (the old recon) stays false regardless.

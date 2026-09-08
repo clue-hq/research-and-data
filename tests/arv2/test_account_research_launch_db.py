@@ -308,6 +308,10 @@ def test_launch_creates_run_jobs_lineage_and_enqueues_one_task_per_job(tmp_path:
             }
             assert {job.job_id for job in jobs} == set(receipt.job_ids)
             assert all(job.status == "not_started" for job in jobs)
+            # R3: the launch queues account subjects, each carrying its own copy of the run's pin.
+            assert all(job.subject_type == "account" for job in jobs)
+            assert all(job.subject_entity_id is None for job in jobs)
+            assert all(job.profile_sha256 == arv2_account_profile_sha256() for job in jobs)
 
             lineage = (
                 (

@@ -31,6 +31,7 @@ ARV2_SETTING_DEFAULTS: dict[str, object] = {
     "arv2_account_max_parallel_jobs": 4,
     "arv2_account_provider_concurrency": 4,
     "arv2_account_media_max_enclosure_mb": 200,
+    "arv2_person_media_max_items": 3,
     "claim_write_lenient": True,
     "evidence_verbatim_check": "off",
     "unevidenced_row_purge_enabled": False,

@@ -6,9 +6,10 @@ and a run's status is *derived* from its jobs rather than set by whoever finishe
 "in progress" while any account still has work, "needs review" when one of them ended flagged, and
 "completed" only when every job did.
 
-One job per account (the migration's ruling): an account that fails takes only itself down. So the
-run row is a launch record — what the request was pinned to — and the jobs are the moving parts.
-Nothing here calls a provider or an agent.
+One job per *subject* (the migrations' ruling): an account, and since R3 (``60e51eba0123``) each
+committee member of it, so a subject that fails takes only itself down. The run row is a launch
+record — what the request was pinned to — and the jobs are the moving parts. Nothing here calls a
+provider or an agent.
 """
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ __all__ = [
     "JobRow",
     "JobSpend",
     "JobStatus",
+    "JobSubject",
     "RunRow",
     "TerminalJob",
     "begin_job",
@@ -55,6 +57,9 @@ __all__ = [
 
 #: The seam-1 states, shared by runs and jobs so a reader learns one vocabulary.
 JobStatus = Literal["not_started", "in_progress", "needs_review", "completed", "suspended"]
+
+#: What a job researches: the account (R2) or one of its committee members (R3).
+JobSubject = Literal["account", "person"]
 
 #: The two statuses a job can *finish* on. ``suspended`` is a pause, not a terminal.
 TerminalJob = Literal["completed", "needs_review"]
@@ -135,12 +140,22 @@ class RunRow:
 
 @dataclass(frozen=True)
 class JobRow:
-    """One account inside a run. ``finalization`` is the decoded ``finalization_json`` payload."""
+    """One research subject inside a run. ``finalization`` decodes ``finalization_json``.
+
+    ``subject_type`` says *what* the job researches: the account itself (R2), or one committee
+    member of it (R3, with ``subject_entity_id`` naming the contact). ``account_entity_id`` is the
+    account either way, so a person job stays scoped and joined like its account sibling.
+    ``profile_sha256`` is the profile *this* job was pinned to — a person job is queued later than
+    the launch, so replay reads the job's own copy rather than the run's.
+    """
 
     job_id: UUID
     run_id: UUID
     workspace_id: str
     account_entity_id: UUID
+    subject_type: JobSubject
+    subject_entity_id: UUID | None
+    profile_sha256: str | None
     status: JobStatus
     attempt: int
     started_at: datetime | None
@@ -224,17 +239,29 @@ async def create_job(
     run_id: UUID,
     workspace_id: str,
     account_entity_id: UUID,
+    subject_type: JobSubject = "account",
+    subject_entity_id: UUID | None = None,
+    profile_sha256: str | None = None,
 ) -> bool:
-    """Queue one account. Returns whether the row was inserted.
+    """Queue one subject — the account itself, or one of its committee members. Returns whether
+    the row was inserted.
 
-    ``arv2_research_job_once`` is unique on ``(run_id, account_entity_id)``, so re-queuing an
-    account in the same run is refused there too — this conflict clause makes both spellings of
-    "already queued" the same quiet ``False`` rather than one no-op and one IntegrityError.
+    ``arv2_research_job_subject_once`` is unique on ``(run_id, subject_type,
+    COALESCE(subject_entity_id, account_entity_id))``, so re-queuing the same subject in the same
+    run is refused there too — this conflict clause makes both spellings of "already queued" the
+    same quiet ``False`` rather than one no-op and one IntegrityError. A *different* subject is
+    never a conflict: the second committee member of an already-queued account inserts.
+
+    A ``person`` subject must name its contact and an ``account`` subject must not; that pair is
+    the migration's ``arv2_research_job_subject`` CHECK, so a caller that gets it wrong raises
+    rather than storing a job nobody can interpret.
     """
     result = await conn.execute(
         text(
-            "INSERT INTO arv2_research_job (job_id, run_id, workspace_id, account_entity_id) "
-            "VALUES (:job_id, :run_id, :workspace_id, :account_entity_id) "
+            "INSERT INTO arv2_research_job (job_id, run_id, workspace_id, account_entity_id, "
+            " subject_type, subject_entity_id, profile_sha256) "
+            "VALUES (:job_id, :run_id, :workspace_id, :account_entity_id, :subject_type, "
+            " :subject_entity_id, :profile_sha256) "
             "ON CONFLICT DO NOTHING"
         ),
         {
@@ -242,6 +269,9 @@ async def create_job(
             "run_id": run_id,
             "workspace_id": workspace_id,
             "account_entity_id": account_entity_id,
+            "subject_type": subject_type,
+            "subject_entity_id": subject_entity_id,
+            "profile_sha256": profile_sha256,
         },
     )
     return result.rowcount == 1
@@ -617,6 +647,9 @@ def _job(row: RowMapping) -> JobRow:
         run_id=row["run_id"],
         workspace_id=row["workspace_id"],
         account_entity_id=row["account_entity_id"],
+        subject_type=row["subject_type"],
+        subject_entity_id=row["subject_entity_id"],
+        profile_sha256=row["profile_sha256"],
         status=row["status"],
         attempt=row["attempt"],
         started_at=row["started_at"],

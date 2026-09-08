@@ -302,6 +302,11 @@ async def launch_arv2_account_research(
             run_id=run_id,
             workspace_id=request.workspace_id,
             account_entity_id=account_id,
+            # The launch queues account subjects only; committee members are queued later, by the
+            # committee step, once this job has resolved them. The job carries its own copy of the
+            # profile pin so replay never has to infer it from the run.
+            subject_type="account",
+            profile_sha256=profile_sha256,
         )
 
     log.info(
