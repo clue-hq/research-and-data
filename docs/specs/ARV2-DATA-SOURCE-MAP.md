@@ -150,7 +150,7 @@ the derivation that the served field replaces (file:line in `clue-frontend` @ `8
 | spinner | `researchIsRefreshing` | `true` when a **later** `entity_research_job` for this account is non-terminal while an earlier one is terminal `completed` (a re-run); else `false` | — |
 | overall fit | `overallFit` | `claim[account.scoring.fit]` attributed to the primary project via `run_lineage`; band from `value_json.value` (0–1): `≥ 0.70 → High`, `≥ 0.40 → Medium`, else `Low`; `null` when no claim. **Thresholds are ruling S3** | `createLocalAccount` invents `"Medium"` (`create-account.ts:15`) |
 | fit score | `fitScore` | `round(100 × claim[account.scoring.fit].value_json.value)`; `null` when no claim | `createLocalAccount` invents `0` (`create-account.ts:7`) |
-| revenue | `revenueBand` | `claim[core.revenue_band].value_json` (string); `"Unknown"` when absent | — |
+| revenue | `revenueBand` | `claim[core.revenue_band].value_json` served through `v1_shared.revenue_band_label` — `10m_50m` → `"$10M–50M"`, `1b_plus` → `"$1B+"`, `under_1m` → `"under $1M"`; an unparseable token passes through as written; `"Unknown"` when absent. **As built (D4-b, 2026-09-09)** — the raw token used to reach the screen | — |
 | headcount | `employeeBand` | `claim[core.employee_range].value_json` (string, e.g. `"51-200"`); when absent but `claim[core.employee_count]` exists, the band computed by one backend function `band_for_headcount(n)`; `"Unknown"` when neither | — |
 | locations | `locationCount`, `locationsLabel` | `locationsLabel = claim[core.hq_location].value_json` (string); `locationCount = 1` when that claim exists else `0`. Additional office locations are not modelled in v1 | table falls back to the count when the label is absent (`accounts-table.tsx:342`) — kept, but the backend always serves the label when it serves a count ≥ 1 |
 | owner | `owner` | `account_entity.owner_user_id → platform_user.display_name`; `{id: user_id, name: display_name}`; `null` when unassigned. **No `avatarUrl`** (no avatar store) | viewer substituted for the owner (`account-owner.ts:16`) — **removed** (ruling R6) |
@@ -237,9 +237,12 @@ rather than rendering them generically: `core.annual_revenue`'s `{amount_min, am
 currency}` becomes `"$10M–25M"` (one bound → `"$10M+"` / `"up to $25M"`; an `amount` → one figure),
 and `fundingLabel` joins the latest funding round to the running total — `"Series C · $60M ·
 $130.5M"` — reading the provider's list shape (`[{type, raised_amount, announced_at}, …]`, latest
-announcement wins) as well as the registry sketch's single object. An amount the source did not
-denominate gets **no** currency symbol (`"60M"`): defaulting to `$` would turn an undenominated
-figure into a dollar figure. `buyingCommittee[].persona` (and every other `persona` on the wire) is
+announcement wins) as well as the registry sketch's single object. A round that states no currency
+**borrows the sibling `account.total_funding` object's** (controller ruling 1): same account, same
+provider record, so the denomination is read off that record rather than guessed. When neither half
+names one the amounts stay bare (`"60M"`) — defaulting to `$` with nothing to read it off would
+turn an undenominated figure into a dollar figure. The band fall-through goes through
+`revenue_band_label` too, so `revenueLabel` can never print `"10m_50m"` either. `buyingCommittee[].persona` (and every other `persona` on the wire) is
 served as **display text** — `"Economic buyer"`, never `economic_buyer`; the vocabulary value still
 drives `personaTone`, `influence` and the committee ordering behind it.
 

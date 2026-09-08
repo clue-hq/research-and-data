@@ -30,6 +30,7 @@ reverse import stays forbidden.
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -102,6 +103,7 @@ __all__ = [
     "persona_label",
     "persona_rank",
     "research_evidence_for",
+    "revenue_band_label",
     "revenue_label",
     "socials",
     "tenure",
@@ -406,6 +408,61 @@ def format_money(amount: object, currency: object) -> str | None:
     return None if number is None else f"{_symbol(currency)}{_compact(number)}"
 
 
+#: The unit letter a ``core.revenue_band`` token spells, and the letter a screen prints.
+_BAND_UNITS: dict[str, str] = {"k": "K", "m": "M", "b": "B"}
+
+#: One bound of a band token: ``"10m"``, ``"500m"``, ``"1b"``, or a bare number of dollars.
+_BAND_BOUND = re.compile(r"(\d+(?:\.\d+)?)([kmb])?\Z")
+
+
+def _band_bound(token: str) -> str | None:
+    """One side of a band token as a figure — ``"10m"`` → ``"10M"``; ``"250000"`` → ``"250K"``."""
+    match = _BAND_BOUND.match(token)
+    if match is None:
+        return None
+    number, unit = match.group(1), match.group(2)
+    if unit is not None:
+        return f"{number}{_BAND_UNITS[unit]}"
+    parsed = _number(number)
+    return None if parsed is None else _compact(parsed)
+
+
+def revenue_band_label(value: str | None) -> str:
+    """A ``core.revenue_band`` token as the words a screen prints (D4-b controller ruling 2).
+
+    The field is a closed vocabulary of range tokens — ``under_1m``, ``1m_10m``, ``10m_50m``,
+    ``50m_100m``, ``100m_500m``, ``500m_1b``, ``1b_plus`` (``REVENUE_BAND_OPTIONS``) — and the
+    accounts list was serving them verbatim, so a marketer read ``"10m_50m"`` in the revenue
+    column. Three forms are parsed: ``<lo>_<hi>`` → ``"$10M–50M"``, ``<n>_plus`` → ``"$1B+"``,
+    ``under_<n>`` → ``"under $1M"``.
+
+    The ``$`` is not an assumption here the way it would be on a raw amount: the band vocabulary is
+    *defined* in USD (``account_field_derivation._REVENUE_BAND_CEILINGS``, "exclusive, USD"), so the
+    currency is part of what the token means.
+
+    A token this does not recognise is served **as written** — an unregistered band is still the
+    row's own value, and inventing a range for it would be worse than an ugly string. An absent
+    band is :data:`EMPTY_BAND`.
+    """
+    token = _text(value)
+    if token is None:
+        return EMPTY_BAND
+    lowered = token.lower()
+    if lowered.startswith("under_"):
+        bound = _band_bound(lowered.removeprefix("under_"))
+        return f"under ${bound}" if bound else token
+    if lowered.endswith("_plus"):
+        bound = _band_bound(lowered.removesuffix("_plus"))
+        return f"${bound}+" if bound else token
+    low, _, high = lowered.partition("_")
+    if not high:
+        return token
+    low_label, high_label = _band_bound(low), _band_bound(high)
+    if low_label is None or high_label is None:
+        return token
+    return f"${low_label}{_RANGE_DASH}{high_label}"
+
+
 def revenue_label(annual_revenue_json: object, revenue_band: str | None) -> str:
     """What the revenue row says, read from the ``core.annual_revenue`` **object** (decision 5).
 
@@ -420,7 +477,8 @@ def revenue_label(annual_revenue_json: object, revenue_band: str | None) -> str:
     * a single ``amount`` → :func:`format_money`;
     * a plain string (the lenient writer does not enforce the value schema) → itself.
 
-    Failing all of that, the ``core.revenue_band`` claim, then ``"Unknown"``. Nothing is invented:
+    Failing all of that, the ``core.revenue_band`` claim **as a label** (never the raw
+    ``"10m_50m"`` token — see :func:`revenue_band_label`), then ``"Unknown"``. Nothing is invented:
     an object whose numbers do not parse falls through exactly like a missing claim.
     """
     if isinstance(annual_revenue_json, dict):
@@ -431,7 +489,7 @@ def revenue_label(annual_revenue_json: object, revenue_band: str | None) -> str:
         stated = _text(annual_revenue_json)
         if stated is not None:
             return stated
-    return _text(revenue_band) or EMPTY_BAND
+    return revenue_band_label(revenue_band)
 
 
 def _revenue_from_object(value: Mapping[str, Any]) -> str | None:
@@ -463,7 +521,7 @@ def _round_name(value: object) -> str | None:
     return name
 
 
-def _recent_round(value: object) -> str | None:
+def _recent_round(value: object, *, currency: object = None) -> str | None:
     """The latest funding round as one phrase — ``"Series C · $60M"`` — or ``None``.
 
     Three shapes reach this, all of them real. The registry sketch is one object
@@ -472,6 +530,9 @@ def _recent_round(value: object) -> str | None:
     "announced_at", "investors"}``, newest first but not guaranteed so — the latest announcement
     wins, and a list with no dates keeps its own order; a prose value is served as the sentence it
     is. The round name alone, or the amount alone, is served when only one of them is known.
+
+    ``currency`` is the sibling ``account.total_funding`` object's currency, used only when the
+    round states none of its own — see :func:`funding_label`.
     """
     if isinstance(value, list):
         rounds = [item for item in value if isinstance(item, dict)]
@@ -484,25 +545,26 @@ def _recent_round(value: object) -> str | None:
                 -pair[0],
             ),
         )[1]
-        return _recent_round(latest)
+        return _recent_round(latest, currency=currency)
     if isinstance(value, dict):
         name = _round_name(value.get("round") or value.get("type"))
-        money = _money_of(value)
+        money = _money_of(value, currency=currency)
         parts = [part for part in (name, money) if part is not None]
         return " · ".join(parts) if parts else None
     return _text(value)
 
 
-def _money_of(value: Mapping[str, Any]) -> str | None:
+def _money_of(value: Mapping[str, Any], *, currency: object = None) -> str | None:
     """The amount inside a funding object, under whichever of its three keys carries it.
 
     ``amount`` is the registry's key and ``raised_amount`` the provider's; ``amount_usd`` is what
     the synthesis lane writes, and it states its own currency in its name — so it is the one key
-    that does not consult the object's ``currency``.
+    that does not consult the object's ``currency``. ``currency`` is the fallback denomination for
+    the first two keys when the object itself names none.
     """
     for key in ("amount", "raised_amount"):
         if value.get(key) is not None:
-            return format_money(value.get(key), value.get("currency"))
+            return format_money(value.get(key), value.get("currency") or currency)
     return format_money(value.get("amount_usd"), "USD")
 
 
@@ -514,6 +576,20 @@ def _total_funding(value: object) -> str | None:
     return _money_of(value) if isinstance(value, dict) else _text(value)
 
 
+def _stated_currency(total_funding_json: object) -> object:
+    """The currency the ``account.total_funding`` object is denominated in, or ``None``.
+
+    ``amount_usd`` counts: the key states its own denomination, so an object carrying only that one
+    is a USD object.
+    """
+    if not isinstance(total_funding_json, dict):
+        return None
+    stated = _text(total_funding_json.get("currency"))
+    if stated is not None:
+        return stated
+    return "USD" if total_funding_json.get("amount_usd") is not None else None
+
+
 def funding_label(recent_funding_json: object, total_funding_json: object) -> str | None:
     """``"Series C · $60M · $130.5M"`` — the latest round, then the running total.
 
@@ -521,10 +597,20 @@ def funding_label(recent_funding_json: object, total_funding_json: object) -> st
     read out of their registry **objects** rather than rendered generically, for the same reason
     :func:`revenue_label` is: ``"amount: 130500000; currency: USD; investors: 9; rounds: 4"`` is a
     pipeline string, not a label.
+
+    **A round with no currency of its own borrows the total's** (D4-b controller ruling 1). The
+    provider's round objects carry ``raised_amount`` and no ``currency`` while the sibling total
+    states one; they are the same account's funding in the same provider record, so reading one
+    denomination off the other is a fact about that record, not a guess — and it is what stops the
+    label reading ``"Series C · 60M · $130.5M"``. When *neither* half names a currency the amounts
+    stay bare, because then there is nothing to read it off.
     """
     parts = [
         part
-        for part in (_recent_round(recent_funding_json), _total_funding(total_funding_json))
+        for part in (
+            _recent_round(recent_funding_json, currency=_stated_currency(total_funding_json)),
+            _total_funding(total_funding_json),
+        )
         if part is not None
     ]
     return " · ".join(parts) if parts else None

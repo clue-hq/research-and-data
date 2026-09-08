@@ -60,6 +60,7 @@ from clue_api.frontend_read.v1_shared import (
     owners_for,
     persona_display,
     research_evidence_for,
+    revenue_band_label,
     revenue_label,
     socials,
     tenure,
@@ -82,6 +83,7 @@ from clue_core import (
 )
 from clue_research.claimstore.packs import load_core_pack
 from clue_research.compliance import WorkspacePolicy
+from clue_research.discovery_scoring.discovery import REVENUE_BAND_OPTIONS
 from clue_research.identity import insert_account_entity, insert_contact_entity
 from clue_spine import Project
 from tests._workspace import seed_project, seed_workspace
@@ -375,24 +377,92 @@ def test_funding_label_reads_the_registry_objects_never_renders_them() -> None:
     assert funding_label({"round": "Series C", "amount_usd": 60_000_000}, None) == "Series C · $60M"
 
 
-def test_funding_label_takes_the_latest_round_from_the_providers_list() -> None:
-    """The shape the answer key actually stores for Zafran: a list, keyed the provider's way.
+#: The shape the answer key actually stores for Zafran: a list, keyed the provider's way —
+#: ``type``/``raised_amount``/``announced_at`` rather than the registry sketch's
+#: ``round``/``amount``/``date``, and no ``currency`` on any round.
+_ZAFRAN_ROUNDS = [
+    {"type": "SERIES_B", "announced_at": "2024-09-08", "raised_amount": 40_000_000},
+    {"type": "SERIES_C", "announced_at": "2025-12-02", "raised_amount": 60_000_000},
+    {"type": "SEED_ROUND", "announced_at": "2024-03-28", "raised_amount": 5_500_000},
+]
 
-    ``type``/``raised_amount``/``announced_at`` rather than the registry sketch's
-    ``round``/``amount``/``date``, and the rounds carry no currency of their own — so the label is
-    honest about the unit and silent about the denomination.
-    """
-    rounds = [
-        {"type": "SERIES_B", "announced_at": "2024-09-08", "raised_amount": 40_000_000},
-        {"type": "SERIES_C", "announced_at": "2025-12-02", "raised_amount": 60_000_000},
-        {"type": "SEED_ROUND", "announced_at": "2024-03-28", "raised_amount": 5_500_000},
-    ]
-    assert funding_label(rounds, None) == "Series C · 60M"
+
+def test_funding_label_takes_the_latest_round_from_the_providers_list() -> None:
+    assert funding_label(_ZAFRAN_ROUNDS, None) == "Series C · 60M"
     # A list that states no dates keeps its own order rather than inventing one.
     assert funding_label([{"type": "SERIES_A"}, {"type": "SEED_ROUND"}], None) == "Series A"
     assert funding_label([], None) is None
     # A round already named in words is served exactly as written, never re-title-cased.
     assert funding_label([{"round": "Series C extension"}], None) == "Series C extension"
+
+
+def test_a_round_with_no_currency_borrows_the_totals() -> None:
+    """Same account, same provider record: the total's denomination *is* the round's.
+
+    The provider's rounds carry an amount and no currency while the sibling total carries both, so
+    reading one off the other is a fact about that record rather than a guess — and it is what
+    stops the label reading "Series C · 60M · $130.5M".
+    """
+    total = {"amount": 130_500_000, "currency": "USD", "rounds": 4, "investors": 9}
+    assert funding_label(_ZAFRAN_ROUNDS, total) == "Series C · $60M · $130.5M"
+    # ``amount_usd`` names its own denomination, so a total carrying only that one lends USD too.
+    assert funding_label(_ZAFRAN_ROUNDS, {"amount_usd": 130_000_000}) == "Series C · $60M · $130M"
+    # A euro total lends euros.
+    assert (
+        funding_label(
+            [{"type": "SERIES_C", "raised_amount": 60_000_000}],
+            {"amount": 130_500_000, "currency": "EUR"},
+        )
+        == "Series C · €60M · €130.5M"
+    )
+    # The round's own currency always wins over the total's.
+    assert (
+        funding_label(
+            [{"type": "SERIES_C", "raised_amount": 60_000_000, "currency": "GBP"}],
+            {"amount": 130_500_000, "currency": "USD"},
+        )
+        == "Series C · £60M · $130.5M"
+    )
+    # And when NEITHER half names one there is nothing to read it off, so the amount stays bare.
+    assert funding_label(_ZAFRAN_ROUNDS, {"amount": 130_500_000}) == "Series C · 60M · 130.5M"
+    assert (
+        funding_label(_ZAFRAN_ROUNDS, "reported over $130M")
+        == "Series C · 60M · reported over $130M"
+    )
+
+
+def test_every_registered_revenue_band_is_served_as_words() -> None:
+    """The closed vocabulary, member by member — and no member may reach a screen as its token.
+
+    ``REVENUE_BAND_OPTIONS`` is imported rather than retyped so that adding a band to the registry
+    without teaching this parser about it fails here instead of printing ``"2b_5b"`` at a marketer.
+    """
+    assert revenue_band_label("under_1m") == "under $1M"
+    assert revenue_band_label("1m_10m") == "$1M–10M"
+    assert revenue_band_label("10m_50m") == "$10M–50M"
+    assert revenue_band_label("50m_100m") == "$50M–100M"
+    assert revenue_band_label("100m_500m") == "$100M–500M"
+    assert revenue_band_label("500m_1b") == "$500M–1B"
+    assert revenue_band_label("1b_plus") == "$1B+"
+    for band in REVENUE_BAND_OPTIONS:
+        assert revenue_band_label(band) != band, band
+
+
+def test_revenue_band_label_never_invents_a_range_it_cannot_read() -> None:
+    # An unregistered token is still the row's own value: served as written, not guessed at.
+    assert revenue_band_label("mid_market") == "mid_market"
+    assert revenue_band_label("enterprise") == "enterprise"
+    assert revenue_band_label("10m_") == "10m_"
+    assert revenue_band_label(None) == "Unknown"
+    assert revenue_band_label("  ") == "Unknown"
+    # Bare dollar bounds and a thousands unit are read too.
+    assert revenue_band_label("250k_1m") == "$250K–1M"
+    assert revenue_band_label("under_500000") == "under $500K"
+
+
+def test_revenue_label_falls_back_to_the_band_as_a_label_not_a_token() -> None:
+    assert revenue_label(None, "10m_50m") == "$10M–50M"
+    assert revenue_label({"estimate_kind": "provider_estimate"}, "1b_plus") == "$1B+"
 
 
 def test_persona_display_serves_words_and_is_idempotent() -> None:

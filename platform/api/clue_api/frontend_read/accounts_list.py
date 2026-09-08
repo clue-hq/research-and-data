@@ -66,7 +66,6 @@ from clue_api.frontend_read.contract_v1 import (
     AccountV1,
 )
 from clue_api.frontend_read.v1_shared import (
-    EMPTY_BAND,
     RESEARCH_STATUS_LABELS,
     arv2_research_status_for,
     custom_fields_for,
@@ -78,6 +77,7 @@ from clue_api.frontend_read.v1_shared import (
     last_modified_for,
     location_label,
     owners_for,
+    revenue_band_label,
     socials,
     website_url,
 )
@@ -971,7 +971,9 @@ async def list_accounts_v1(
                 research_is_refreshing=refreshing,
                 overall_fit=fit_band(fit, settings=settings),
                 fit_score=fit_score_100(fit),
-                revenue_band=revenue_band or EMPTY_BAND,
+                # The label, not the token: ``core.revenue_band`` stores ``"10m_50m"`` and the
+                # revenue column was printing it verbatim at a marketer (D4-b controller ruling 2).
+                revenue_band=revenue_band_label(revenue_band),
                 employee_band=employee_band(
                     as_int(neutral_value(entity_id, "core.employee_count")),
                     neutral_value(entity_id, "core.employee_range"),

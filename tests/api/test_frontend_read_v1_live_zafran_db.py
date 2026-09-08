@@ -303,7 +303,12 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
                 == RESEARCH_STATUS_LABELS[zafran_row["researchStatus"]]
             )
             assert zafran_row["websiteUrl"] == "https://zafran.io"
+            # The revenue column reads its `core.revenue_band` claim as words. The answer key's
+            # only stored band is `"10m_50m"`, which the table used to print verbatim at a
+            # marketer (D4-b controller ruling 2).
+            assert zafran_row["revenueBand"] == "$10M–50M"
             for name in _UNRESEARCHED:
+                assert rows[name]["revenueBand"] == "Unknown", name
                 assert rows[name]["researchStatus"] == "not_started", name
             # No `account.scoring.fit` claim exists anywhere in the answer key, so no row may
             # invent a band or a zero (ruling R7): the pair is null together, everywhere.
@@ -356,7 +361,10 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
             # currency of their own, hence the bare "60M" beside the total's "$130.5M").
             assert detail["revenueLabel"] == "$10M–25M"
             assert detail["fundingLabel"].startswith("Series C")
-            assert detail["fundingLabel"] == "Series C · 60M · $130.5M"
+            # The round object carries no `currency`; its sibling total says USD, and the two are
+            # the same account's funding in the same provider record — so the round borrows it
+            # (D4-b controller ruling 1) rather than printing a bare "60M" beside "$130.5M".
+            assert detail["fundingLabel"] == "Series C · $60M · $130.5M"
             AccountDetailV1.model_validate(detail)
             zod_validate(detail, "AccountDetailSchema")
 

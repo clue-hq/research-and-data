@@ -1447,7 +1447,8 @@ def test_the_v1_contract_serves_the_display_row_for_a_fully_populated_account() 
             assert row["researchIsRefreshing"] is False
             assert row["overallFit"] == "High"
             assert row["fitScore"] == 82
-            assert row["revenueBand"] == "50m_100m"
+            # The label, not the `core.revenue_band` token (D4-b controller ruling 2).
+            assert row["revenueBand"] == "$50M–100M"
             # The provider's own range wins over the band we would compute from the headcount.
             assert row["employeeBand"] == "101-250"
             assert row["locationCount"] == 1

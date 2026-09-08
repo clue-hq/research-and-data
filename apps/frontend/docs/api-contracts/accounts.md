@@ -310,7 +310,7 @@ id, name, avatarUrl?}), action?, occurredAt?, isSample? }`.
 | `researchIsRefreshing` | bool | optional (default `false`) | a re-research run is in flight over an already-researched account |
 | `overallFit` | `High` \| `Medium` \| `Low` \| null | required (nullable) | `null` until scored (R7) |
 | `fitScore` | int 0–100 \| null | required (nullable) | `null` until scored; never `0` for unknown |
-| `revenueBand` | string | required | the `core.revenue_band` claim |
+| `revenueBand` | string | required | served wording for the `core.revenue_band` claim — `"$10M–50M"`, `"$1B+"`, `"under $1M"`; `"Unknown"` when absent |
 | `employeeBand` | string | required | the `core.employee_count` claim, banded |
 | `locationCount` | int ≥ 0 | required | distinct known locations |
 | `locationsLabel` | string | optional | served wording for the locations cell |
@@ -349,9 +349,9 @@ labels where the list serves bands, and drops the list-only membership fields.
 | `industryLabels` | string[] | optional (default `[]`) | relaxed from `.min(1)` (S5) |
 | `headcountLabel` | string | required | the rail's headcount wording |
 | `locationsLabel` | string | required | the rail's locations wording |
-| `revenueLabel` | string | required | served wording read from the `core.annual_revenue` object — `"$10M–25M"`, `"$10M+"`, `"up to $25M"`; else the band; else `"Unknown"` |
+| `revenueLabel` | string | required | served wording read from the `core.annual_revenue` object — `"$10M–25M"`, `"$10M+"`, `"up to $25M"`; else the band as a label (as E1's `revenueBand`); else `"Unknown"` |
 | `foundedLabel` | string | optional | omitted when the founding year is unknown |
-| `fundingLabel` | string | optional | served wording — the latest round joined to the running total, `"Series C · $60M · $130.5M"`; omitted when funding is unknown |
+| `fundingLabel` | string | optional | served wording — the latest round joined to the running total, `"Series C · $60M · $130.5M"` (a round with no currency of its own borrows the total's); omitted when funding is unknown |
 | `fitScore` | int 0–100 \| null | required (nullable) | `null` until scored |
 | `fitScoreLabel` | string | optional | served wording for the score |
 | `createdAt` | ISO-8601 datetime | required | `account_entity.created_at` |
@@ -1047,13 +1047,15 @@ carry their full `projects` array.
 - **`employeeBand: "100-200"` becomes `employeeCount: 1200`, an integer.** The
   backend holds a headcount claim, not a band; banding is a display decision the
   frontend owns.
-- **`revenueBand` keeps its name but changes value space.** It now carries the
+- **`revenueBand` keeps its name but changes value space.** ~~It now carries the
   backend claim vocabulary (for example `100m_500m`), not the proposed
-  `"$1 - $10M"` display string, and it is **not** a guaranteed closed enum — the
-  value is whatever the field's writer produced. Same key with a different
-  vocabulary is exactly the mismatch a Zod `z.string()` will accept and a label
-  map will silently mis-render, so treat it as an opaque token and render through
-  a lookup with a fallback.
+  `"$1 - $10M"` display string.~~ **[SUPERSEDED 2026-09-09 by the D4-b controller
+  ruling]** the backend now serves the **label**, not the token — `10m_50m`
+  becomes `"$10M–50M"`, `1b_plus` becomes `"$1B+"`, `under_1m` becomes
+  `"under $1M"`, and `"Unknown"` when no claim exists. It is still not a closed
+  enum (a token the backend cannot parse is passed through as written), so render
+  it as an opaque display string; do **not** build a client-side label map, which
+  is exactly the drift this ruling removes.
 - **`scores[]` is a list keyed by `(projectId, icpKey, icpVersion)`, on both the
   list row and the detail section** — one project can score an account under
   several ICPs and versions, so a single `fitScore` would require guessing a
