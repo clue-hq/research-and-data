@@ -17,3 +17,20 @@
 - Project URL: https://linear.app/deeppresence/project/editable-ad-quality-control-test-170a09e4cc95. Full mapping is in the ticket pack; ignored creation/read-back receipts are `.local-setup/linear-ad-control-{receipt,verification}.json`.
 - Verified all issue fields/dependencies and both complete document contents via MCP, allowing only Markdown normalization. Browser confirmed team, dates, milestone counts 2/5/2/1, both documents and all ten tickets. Project issue tab kept as deliverable.
 - Closing: Linear planning setup is complete; no creative generation or product implementation started. Continue with PE-1 ownership/input freeze and PE-2 per-run isolation before matched concurrent tests. Preserve the existing checkout and local-only commit policy.
+
+## Execution started
+
+- User requested immediate live tests, GPT-6 extra agents and clearer sequencing. Three GPT-6 Astra/xhigh read-only audits covered dispatch, original references and creative policy/browser capabilities.
+- First batch is two current-engine reference/no-reference pairs, not mixed A–D: hospitality awareness and guest-message product demonstration. This isolates reference-input value before implementing candidate policy isolation. No active code/config changes or worker restarts during the batch.
+- Created four Design handoffs through normal authenticated Clue UI in a new Conduit-owned local project. Uploaded the matching original references through the real Design attachment control. Submitted four actual Design turns at 2026-09-08T05:51:29Z; completion remains unverified at this entry.
+- Ignored `.local-setup/ad-control/` contains original-image/source manifests, dispatch audit, creative review, runtime readiness and baseline code/model/resource hashes. Eight supplied files contain seven unique images; four additional authentic website source images and an SVG logo were recovered without modifying bytes.
+- Linear project and PE-1/PE-7 are In Progress. PE-7 initial input comparison precedes candidate dependencies; PE-10 explicitly excludes Head-of-ABM implementation. The new plain-language execution guide explains the actual sequence.
+- Verified Head-of-ABM brief ownership and open-leg handoff. Design director/author own creative direction, copy and scene construction. User assigns Head-of-ABM implementation to separate Fable work.
+- Candidate restrictions found: rigid square skeleton; website-specific background/shadow rules in kit; incorrect blanket white-on-brand contrast; source UI misclassification. Platform editor has fit modes but no manual focal-position control. These are identified gaps, not claimed fixes.
+# Live baseline and repair checkpoint — 2026-09-07 evening
+
+- Four current-policy creative cases finished through authenticated UI/Fleet after three cold-start materialization failures were retried on warm resources. Calls 40/56/60/49; inner duration about 9–17 minutes. No generated artwork or independent reviewer calls. Exact run/asset receipts and previews are ignored under `.local-setup/ad-control/results/`.
+- Confirmed source UI/logo remain separate and native text/button edits, logo move/resize and crop persist after reload. PNG UI reported exported, but download artifact path is not yet verified. Reopening the artifact after reload is required.
+- PE-11 resource lock patch now being applied and tested by sole implementation agent; PE-12 terminal editor-lock patch ready in ignored scratch. Preserve unrelated planning changes when committing.
+- PE-14 deterministic font replay bug: same-token retokenize handling drops explicit font-size tokens during operations replay, so saved brand-bound text renders smaller than runtime final despite numeric inspector values. Read-only proof in ignored token-roundtrip report. Repair before candidate quality verdict.
+- Candidate will use one frozen configuration in a later batch; no mixed per-run configuration experiment is needed for that comparison. Head-of-ABM remains read-only; its separate Fable work must not be changed here.

@@ -4,6 +4,8 @@
 
 **Goal:** run a reproducible four-treatment comparison and deliver modern ads whose required copy, logos, buttons and artwork placement remain editable.
 
+**Execution update, September 7:** Start with two matched current-engine reference/no-reference pairs before implementing mixed C/D treatments. See [the plain-language execution guide](2026-09-07-ad-control-execution.md). Task 2 remains required before mixed candidate/reviewer dispatch, not before this initial input comparison. Head-of-ABM implementation and skill changes are outside this project; Task 8 records the existing handoff and observations for the separate Fable work only.
+
 **Architecture:** preserve the current Head-of-ABM → durable Design handoff → Fleet → scene engine. Introduce a scoped immutable experiment manifest and candidate creative policy, reuse existing image generation and native scene tools, and evaluate both visual quality and real editing behavior. Ordinary turns retain baseline behavior until explicit promotion.
 
 **Tech Stack:** existing Python/FastAPI/deepagents, Postgres/Fleet/Redis, Rust DSL/native helper/WASM, Next.js editor, existing Grok and GPT Image 2 provider adapters. No new hosting or evaluation service.
@@ -22,7 +24,7 @@
 - Preserve exact source assets and claim provenance; no brand-specific production branches or invented customer proof.
 - Maximum four concurrent experiment runs; separate document, chat, run, checkpoint and generated-asset lineage for every run.
 - Freeze code, model, prompt/tool and input hashes before launch. Never change process-global policy while a comparison is running.
-- No new harvesting, image generation or product-code execution has occurred during this planning step.
+- The planning checkpoint contained no generation results. Execution status and evidence are recorded separately; never infer completion from this checklist.
 - External project/ticket creation should use Linear MCP as requested; browser is for read-back, unless the user authorizes a fallback.
 
 ## Task 1: Freeze experiment ownership, inputs and Fleet evidence
@@ -124,7 +126,7 @@
 - [ ] Test the selected candidate on a different concept and another available brand. If no second real brand exists, explicitly limit the claim to mechanical fixture coverage.
 - [ ] Recompose a selected creative into square, portrait and landscape; check copy fit, subject crops, logos and CTA per format. Add a story safe-area case if that placement is in scope.
 - [ ] Verify no-ad-history behavior remains useful and honest rather than assuming missing LinkedIn ads are rare.
-- [ ] Coordinate the Head-of-ABM brief-handoff improvement with Fable. Preserve objective, audience, product, exact user copy, offer/CTA, channel/format requests, asset roles and sourced refs. Use a new catalog resource/profile version and explicit pin promotion only when this seam needs change; do not overwrite published resources.
+- [ ] Document Head-of-ABM handoff ownership and any observed brief gaps for the separate Fable work. Do not change its prompts, skills or profile pins in this project.
 - [ ] Run required checks on changed surfaces. Engine changes require full Rust workspace → release helper → WASM handshake → agent suite → API suite. Use a fresh disposable test database/storage pair to avoid the diagnosed stale public-asset candidate-limit failure; do not weaken that test.
 - [ ] Verify final editor behavior and record what passed, what failed, cost/latency and the selected next step. Mark tickets Done only with evidence; leave unresolved work open.
 - [ ] Close the control project only when its hard editability gates and agreed comparison evidence are complete. Keep website work separate and production deployment explicit.
