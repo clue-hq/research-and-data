@@ -40,24 +40,6 @@ class ModelPrice(BaseModel):
         return prompt + completion
 
 
-#: The deployment's price sheet: what a model costs when the provider did not meter the call
-#: itself. Cents per 1,000 tokens, converted from OpenRouter's published per-token USD rates.
-#:
-#: It is the *fallback*, not the truth: with ``openrouter_usage_include`` on, OpenRouter reports
-#: the credits every call actually spent and the gateway prefers that number. This sheet answers
-#: the streaming path (where the provider's ``cost`` key is not carried back) and any provider
-#: that does not meter. A model absent from it costs ``0`` and is reported as *unpriced* — the
-#: gateway reports a measured cost, a listed rate, or an honest blank, and never invents one.
-DEFAULT_MODEL_PRICES: dict[str, ModelPrice] = {
-    # openrouter.ai/api/v1/models, read 2026-09-08: prompt $0.000002/token,
-    # completion $0.000006/token — i.e. $2.00 and $6.00 per million tokens.
-    "x-ai/grok-4.6": ModelPrice(
-        prompt_cents_per_1k=Decimal("0.2"),
-        completion_cents_per_1k=Decimal("0.6"),
-    ),
-}
-
-
 class ReasoningRequest(BaseModel):
     """What the agent model asks the provider to do with its reasoning, as policy data.
 
@@ -119,10 +101,11 @@ class GatewayConfig(BaseModel):
     # credits the call actually cost.
     #
     # ``usage.include`` defaults ON since the ARV2 R2-close (2026-09-08). It was OFF, so no call
-    # site ever asked OpenRouter to meter, and the only cost the gateway could report was the one
-    # it computed from the local price sheet below — which is why the R2 live run booked
-    # ``cost_cents = 0`` for all twenty-nine of its Grok rounds. A metered number from the
-    # provider beats a number we derive, so we ask for it.
+    # site ever asked OpenRouter to meter and the R2 live run booked ``cost_cents = 0`` for all
+    # twenty-nine of its Grok rounds. Founder ruling, 2026-09-08: a model's cost comes from
+    # OpenRouter and from nowhere else — either this accounting block, or (when a path does not
+    # carry it back) OpenRouter's ``/generation`` endpoint. We do not maintain a price table of
+    # our own; ``prices`` below survives only for the roles that already populate it.
     openrouter_provider_sort: Literal["price", "throughput", "latency"] | None = None
     openrouter_usage_include: bool = True
     timeout_s: float = Field(default=30.0, gt=0)
@@ -130,11 +113,16 @@ class GatewayConfig(BaseModel):
     # Force the deterministic stub (no live call). The factory ALSO stubs when no key is present.
     stub: bool = False
     # Per-model pricing (model id -> rates). Missing model -> cost 0 (measured-or-zero).
+    # PRE-EXISTING MECHANISM, NOT A DEFAULT: nothing in this repo populates it, and per the
+    # founder ruling of 2026-09-08 nothing new may — a governed agent call's cost is OpenRouter's
+    # number (``usage.cost``, else the ``/generation`` lookup), never one we derive from rates we
+    # would have to keep current. A model that happens to be listed here by a deployment still
+    # reports its computed cost, labelled ``estimate`` so it can never be mistaken for a meter.
     # NOTE: like every config sub-tree, the gateway block is overlaid by *whole-subtree replace*
     # (ConfigOverlay semantics) — an overlay that swaps only ``judge_model`` must re-supply
     # ``prices`` too, or the inherited price table is dropped and costs read as 0. Carry the full
     # GatewayConfig (ids + prices) in any overlay that overrides the gateway.
-    prices: dict[str, ModelPrice] = Field(default_factory=lambda: dict(DEFAULT_MODEL_PRICES))
+    prices: dict[str, ModelPrice] = Field(default_factory=dict)
     # What a governed *agent* model call asks the provider to do with its reasoning. ``None`` (the
     # default) means "ask for nothing" and is byte-for-byte today's behaviour: the provider builder
     # keeps its own per-model baseline (GPT-5.6's governed ``effort: none``). A value overrides that

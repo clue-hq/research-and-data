@@ -8,7 +8,7 @@ import re
 import time
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 from decimal import Decimal, InvalidOperation
-from typing import Any, cast
+from typing import Any, Protocol, cast, runtime_checkable
 
 import httpx
 from langchain_core.callbacks import (
@@ -35,6 +35,7 @@ from clue_gateway.metadata import (
     CostSource,
 )
 from clue_gateway.tracing import record_model_call
+from clue_obs import get_logger
 from clue_obs.otel import ATTR_AGENT_ROLE, ATTR_MODEL, SPAN_LLM_GATEWAY_CALL, traced_step
 
 __all__ = [
@@ -42,12 +43,16 @@ __all__ = [
     "COST_CENTS_KEY",
     "COST_SOURCE_KEY",
     "CostSource",
+    "GenerationCostLookup",
     "GovernedAgentChatModel",
     "OpenRouterAgentModelProvider",
+    "OpenRouterGenerationCost",
     "provider_compatible_tool_schema",
     "transient_upstream_failure",
     "unsupported_schema_pattern",
 ]
+
+log = get_logger("clue_gateway.agent_model")
 
 # The OpenAI/OpenRouter Responses JSON-schema subset rejects lookaround and backreferences; a
 # single offending tool schema fails the whole request (all tools are sent together) with
@@ -196,6 +201,167 @@ def _transient_retry_backoff_s(error: Exception, attempt: int) -> float | None:
     return _TRANSIENT_BACKOFF_S[attempt - 1]
 
 
+# --- OpenRouter's own meter for a completed generation ----------------------------------------
+#
+# Founder ruling, 2026-09-08: a governed model call's cost is OpenRouter's number and nobody
+# else's. ``usage.include`` puts it on the response, but only the chat-completions path carries
+# the provider's extra ``cost`` key back through ``langchain_openai`` — the streaming and Responses
+# paths keep a fixed key set and drop it. Rather than fall back to rates we would have to keep
+# current, those paths ask OpenRouter what the generation cost.
+#
+# The lookup is deliberately small and deliberately unimportant: it is bounded, it retries once on
+# an upstream fault, and it NEVER raises or delays a completed call for long. A failure is an
+# honest ``unpriced`` plus a log line naming the generation, which is enough for a later
+# reconciliation pass to fetch the number the meter still holds.
+
+#: Where OpenRouter publishes a finished generation's true cost.
+_GENERATION_PATH = "/generation"
+#: The ceiling on one lookup. Small on purpose: the call it prices has already been paid for, and
+#: the caller is holding a fleet lease.
+_COST_LOOKUP_TIMEOUT_S = 5.0
+#: One retry, and only for an upstream fault. A 404 means the meter has not caught up (or never
+#: will) and re-asking immediately would not change that.
+_COST_LOOKUP_ATTEMPTS = 2
+#: Ids LangChain mints for its own runs. They are not generation ids and must never be looked up.
+_LANGCHAIN_ID_PREFIXES = ("lc_run", "run-")
+
+
+@runtime_checkable
+class GenerationCostLookup(Protocol):
+    """Asks the provider what one finished generation cost, in cents. ``None`` = it would not say.
+
+    A protocol rather than a concrete type so a caller can inject a recorded double (and so the
+    governed model stays testable without a network), and so a provider that meters differently
+    can be substituted without touching the model wrapper.
+    """
+
+    def cost_cents(self, generation_id: str) -> Decimal | None: ...
+
+    async def acost_cents(self, generation_id: str) -> Decimal | None: ...
+
+
+class OpenRouterGenerationCost:
+    """``GET {base_url}/generation?id=…`` → ``data.total_cost`` (USD) as cents.
+
+    Bounded and silent by construction: one short request, one retry on 5xx, every failure
+    swallowed into ``None`` after a ``gateway.cost_lookup_failed`` log that names the generation.
+    Pricing a call must never be able to fail the call.
+    """
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        api_key: SecretStr,
+        timeout_s: float = _COST_LOOKUP_TIMEOUT_S,
+        http_client: Any | None = None,
+        http_async_client: Any | None = None,
+    ) -> None:
+        self._url = f"{base_url.rstrip('/')}{_GENERATION_PATH}"
+        self._api_key = api_key
+        self._timeout_s = min(timeout_s, _COST_LOOKUP_TIMEOUT_S)
+        self._http_client = http_client
+        self._http_async_client = http_async_client
+
+    def cost_cents(self, generation_id: str) -> Decimal | None:
+        for attempt in range(1, _COST_LOOKUP_ATTEMPTS + 1):
+            try:
+                if self._http_client is not None:
+                    response = self._http_client.get(
+                        self._url, params={"id": generation_id}, headers=self._headers()
+                    )
+                else:
+                    response = httpx.get(
+                        self._url,
+                        params={"id": generation_id},
+                        headers=self._headers(),
+                        timeout=self._timeout_s,
+                    )
+            except Exception as error:  # noqa: BLE001 - pricing never fails the call it prices
+                return self._gave_up(generation_id, reason=repr(error))
+            retry = self._retry_or_result(response, generation_id, attempt=attempt)
+            if retry is not _RETRY:
+                return cast("Decimal | None", retry)
+        return None  # pragma: no cover - the loop returns on its last attempt
+
+    async def acost_cents(self, generation_id: str) -> Decimal | None:
+        for attempt in range(1, _COST_LOOKUP_ATTEMPTS + 1):
+            try:
+                if self._http_async_client is not None:
+                    response = await self._http_async_client.get(
+                        self._url, params={"id": generation_id}, headers=self._headers()
+                    )
+                else:
+                    async with httpx.AsyncClient(timeout=self._timeout_s) as client:
+                        response = await client.get(
+                            self._url, params={"id": generation_id}, headers=self._headers()
+                        )
+            except Exception as error:  # noqa: BLE001 - pricing never fails the call it prices
+                return self._gave_up(generation_id, reason=repr(error))
+            retry = self._retry_or_result(response, generation_id, attempt=attempt)
+            if retry is not _RETRY:
+                return cast("Decimal | None", retry)
+        return None  # pragma: no cover - the loop returns on its last attempt
+
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._api_key.get_secret_value()}"}
+
+    def _retry_or_result(
+        self, response: Any, generation_id: str, *, attempt: int
+    ) -> Decimal | None | object:
+        """One attempt's verdict: a cost, an honest ``None``, or the ``_RETRY`` sentinel."""
+        status = int(getattr(response, "status_code", 0))
+        if status >= 500 and attempt < _COST_LOOKUP_ATTEMPTS:
+            return _RETRY
+        if status != 200:
+            return self._gave_up(generation_id, reason=f"http_{status}")
+        try:
+            payload = response.json()
+        except Exception as error:  # noqa: BLE001 - a malformed body is a failed lookup
+            return self._gave_up(generation_id, reason=repr(error))
+        total = (payload or {}).get("data", {}).get("total_cost")
+        if total is None or isinstance(total, bool) or not isinstance(total, int | float | str):
+            return self._gave_up(generation_id, reason="no_total_cost")
+        try:
+            return Decimal(str(total)) * 100
+        except InvalidOperation:
+            return self._gave_up(generation_id, reason="unparseable_total_cost")
+
+    @staticmethod
+    def _gave_up(generation_id: str, *, reason: str) -> None:
+        # The generation id is logged on purpose: OpenRouter keeps the number, so a later
+        # reconciliation can fetch what this call could not.
+        log.warning("gateway.cost_lookup_failed", generation_id=generation_id, reason=reason)
+        return None
+
+
+#: Sentinel distinguishing "attempt again" from a real ``None`` verdict.
+_RETRY: object = object()
+
+
+def _generation_id(message: BaseMessage | None, payload: Mapping[str, Any] | None) -> str | None:
+    """The provider's id for this generation (``chatcmpl-…`` / ``gen-…``), or ``None``.
+
+    Read from the same two places the served model is read from — the result's ``llm_output`` and
+    the message's ``response_metadata`` — and, failing both, from the message id, which
+    ``langchain_openai`` sets from the response on some paths. An id LangChain minted for its own
+    run is explicitly refused: looking one of those up would be asking OpenRouter about a call it
+    has never heard of.
+    """
+    candidates = [
+        (payload or {}).get("id"),
+        (message.response_metadata if message is not None else {}).get("id"),
+        getattr(message, "id", None),
+    ]
+    for candidate in candidates:
+        if not isinstance(candidate, str):
+            continue
+        cleaned = candidate.strip()
+        if cleaned and not cleaned.startswith(_LANGCHAIN_ID_PREFIXES):
+            return cleaned
+    return None
+
+
 class GovernedAgentChatModel(BaseChatModel):
     """Provider model(s) wrapped with fallback, bounded transient retry, usage/cost metadata,
     tracing, and tool binding.
@@ -215,6 +381,11 @@ class GovernedAgentChatModel(BaseChatModel):
     # attribution mechanism — LangChain callbacks and usage records are per-instance).
     # None = an unlabelled platform model; nothing changes for existing call sites.
     attribution_role: str | None = None
+    # OpenRouter's meter for a generation whose response did not carry its own cost (the streaming
+    # and Responses paths). ``None`` = do not ask — every such call reports ``unpriced`` unless the
+    # deployment happens to list the model in ``GatewayConfig.prices``. The provider injects the
+    # real one; a hand-built model (tests, doubles) gets the honest silence.
+    cost_lookup: GenerationCostLookup | None = None
 
     @model_validator(mode="after")
     def _validate_candidates(self) -> GovernedAgentChatModel:
@@ -274,8 +445,11 @@ class GovernedAgentChatModel(BaseChatModel):
                 **kwargs,
             )
             message = result.generations[0].message
-            usage, served, cost, _source = self._annotate(
+            usage, served, cost, source = self._annotate(
                 message, served_model=served_model, usage_payload=result.llm_output
+            )
+            cost, _source = self._priced(
+                message, served=served, cost=cost, source=source, usage_payload=result.llm_output
             )
             record_model_call(
                 span=span,
@@ -309,8 +483,11 @@ class GovernedAgentChatModel(BaseChatModel):
                 **kwargs,
             )
             message = result.generations[0].message
-            usage, served, cost, _source = self._annotate(
+            usage, served, cost, source = self._annotate(
                 message, served_model=served_model, usage_payload=result.llm_output
+            )
+            cost, _source = await self._apriced(
+                message, served=served, cost=cost, source=source, usage_payload=result.llm_output
             )
             record_model_call(
                 span=span,
@@ -351,7 +528,9 @@ class GovernedAgentChatModel(BaseChatModel):
                         usage_message = chunk.message
                         self._annotate(chunk.message)
                 yield chunk
-            usage, served, cost, _source = self._usage_and_cost(usage_message or last_message)
+            final = usage_message or last_message
+            usage, served, cost, source = self._usage_and_cost(final)
+            cost, _source = self._priced(final, served=served, cost=cost, source=source)
             record_model_call(
                 span=span,
                 call_kind="agent_stream",
@@ -390,7 +569,9 @@ class GovernedAgentChatModel(BaseChatModel):
                         usage_message = chunk.message
                         self._annotate(chunk.message)
                 yield chunk
-            usage, served, cost, _source = self._usage_and_cost(usage_message or last_message)
+            final = usage_message or last_message
+            usage, served, cost, source = self._usage_and_cost(final)
+            cost, _source = await self._apriced(final, served=served, cost=cost, source=source)
             record_model_call(
                 span=span,
                 call_kind="agent_stream",
@@ -562,6 +743,19 @@ class GovernedAgentChatModel(BaseChatModel):
         usage, served, cost, source = self._usage_and_cost(
             message, served_model=served_model, usage_payload=usage_payload
         )
+        self._stamp(message, served=served, cost=cost, source=source)
+        return usage, served, cost, source
+
+    def _stamp(
+        self,
+        message: AIMessage | AIMessageChunk | BaseMessage,
+        *,
+        served: str,
+        cost: Decimal,
+        source: CostSource,
+    ) -> None:
+        """Write this call's attribution onto the message. Idempotent — re-stamping after the
+        generation lookup replaces the cost and its label, and nothing else."""
         message.response_metadata = {
             **message.response_metadata,
             _REQUESTED_MODEL_KEY: self.requested_model,
@@ -570,7 +764,61 @@ class GovernedAgentChatModel(BaseChatModel):
             _COST_SOURCE_KEY: source,
             **({_ROLE_KEY: self.attribution_role} if self.attribution_role else {}),
         }
-        return usage, served, cost, source
+
+    def _needs_lookup(
+        self, source: CostSource, message: BaseMessage | None, payload: Mapping[str, Any] | None
+    ) -> str | None:
+        """The generation id to ask about, or ``None`` when nothing should be asked.
+
+        Lazy by construction: a response that already carried its own cost is never looked up, and
+        neither is one for which there is no lookup or no provider id to ask about.
+        """
+        if source == "metered" or self.cost_lookup is None or message is None:
+            return None
+        return _generation_id(message, payload)
+
+    def _priced(
+        self,
+        message: AIMessage | AIMessageChunk | BaseMessage | None,
+        *,
+        served: str,
+        cost: Decimal,
+        source: CostSource,
+        usage_payload: Mapping[str, Any] | None = None,
+    ) -> tuple[Decimal, CostSource]:
+        """``cost``/``source`` after asking OpenRouter, when the response did not say (sync)."""
+        generation_id = self._needs_lookup(source, message, usage_payload)
+        if generation_id is None or self.cost_lookup is None:
+            return cost, source
+        looked_up = self.cost_lookup.cost_cents(generation_id)
+        if looked_up is None:
+            # The meter would not answer: keep whatever the price table said (``estimate``) or the
+            # honest ``unpriced`` zero. Never a number we made up to fill the hole.
+            return cost, source
+        if message is not None:
+            self._stamp(message, served=served, cost=looked_up, source="metered")
+        return looked_up, "metered"
+
+    async def _apriced(
+        self,
+        message: AIMessage | AIMessageChunk | BaseMessage | None,
+        *,
+        served: str,
+        cost: Decimal,
+        source: CostSource,
+        usage_payload: Mapping[str, Any] | None = None,
+    ) -> tuple[Decimal, CostSource]:
+        """The async twin of :meth:`_priced` — the lookup is a network hop, so it is awaited
+        rather than blocking the loop the agent graph is running on."""
+        generation_id = self._needs_lookup(source, message, usage_payload)
+        if generation_id is None or self.cost_lookup is None:
+            return cost, source
+        looked_up = await self.cost_lookup.acost_cents(generation_id)
+        if looked_up is None:
+            return cost, source
+        if message is not None:
+            self._stamp(message, served=served, cost=looked_up, source="metered")
+        return looked_up, "metered"
 
     def _usage_and_cost(
         self,
@@ -684,6 +932,14 @@ class OpenRouterAgentModelProvider:
             requested_model=model_id,
             gateway_config=self._config,
             attribution_role=role,
+            # The meter for the paths that do not carry a cost back. Built here because this is
+            # where the key and the HTTP clients live; the model itself holds no credential.
+            cost_lookup=OpenRouterGenerationCost(
+                base_url=self._config.base_url,
+                api_key=self._api_key,
+                http_client=self._http_client,
+                http_async_client=self._http_async_client,
+            ),
         )
 
     def supports_image_input(self, model_id: str) -> bool | None:
