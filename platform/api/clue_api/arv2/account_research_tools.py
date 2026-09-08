@@ -1262,8 +1262,19 @@ async def _fetch_for_audit(
     return text
 
 
-def _fill_icp_gates(admitted: tuple[str, ...], verdicts: list[dict[str, Any]]) -> tuple[str, ...]:
-    """Key the verdicts to the pinned ICP's hard gates, and fill the gates nobody assessed.
+@dataclass(frozen=True)
+class _KeyedVerdicts:
+    """The finalization's verdicts once they are keyed to the ICP: one per gate, and what moved."""
+
+    verdicts: list[dict[str, Any]]
+    filled: tuple[str, ...]
+    duplicates: tuple[str, ...]
+
+
+def _key_verdicts_to_icp_gates(
+    admitted: tuple[str, ...], verdicts: list[dict[str, Any]]
+) -> _KeyedVerdicts:
+    """One verdict per ICP gate: unknown labels refused, second answers dropped, silence filled.
 
     A run whose model invents its own gate labels produces a receipt no reviewer can compare with
     the next account's, so a label the ICP does not name is refused rather than recorded. The
@@ -1271,35 +1282,51 @@ def _fill_icp_gates(admitted: tuple[str, ...], verdicts: list[dict[str, Any]]) -
     assessed", because "we did not look" and "we looked and could not tell" are different answers
     and silence reads as the second one.
 
-    An ICP with no hard gates keys to nothing, so every label it admits stays as the model wrote it.
+    A **second** verdict for a gate already answered is dropped, never refused: it is noise rather
+    than a falsehood, the first answer is the one the agent reasoned to, and refusing the whole
+    call would throw away a finalization (summary, committee, gaps) over a repeated line. The
+    dropped labels are reported back so the model can see what happened.
+
+    An ICP with no hard gates keys to nothing, so every label it admits stays as the model wrote it
+    — the one-verdict-per-gate rule still holds, there is simply no list to check it against.
     """
-    if not admitted:
-        return ()
-    stated = [str(verdict.get("gate") or "") for verdict in verdicts]
-    unknown = sorted(set(stated) - set(admitted))
-    if unknown:
-        raise RefusalError(
-            "invalid_arguments",
-            f"fit verdicts are keyed to this ICP's hard gates; {unknown} name no gate of it. "
-            f"The admitted gate keys are {list(admitted)}",
-        )
-    missing = tuple(key for key in admitted if key not in stated)
-    verdicts.extend(
+    if admitted:
+        unknown = sorted({str(verdict.get("gate") or "") for verdict in verdicts} - set(admitted))
+        if unknown:
+            raise RefusalError(
+                "invalid_arguments",
+                f"fit verdicts are keyed to this ICP's hard gates; {unknown} name no gate of it. "
+                f"The admitted gate keys are {list(admitted)}",
+            )
+    kept: list[dict[str, Any]] = []
+    answered: list[str] = []
+    duplicates: list[str] = []
+    for verdict in verdicts:
+        gate = str(verdict.get("gate") or "")
+        if gate in answered:
+            duplicates.append(gate)
+            continue
+        answered.append(gate)
+        kept.append(verdict)
+    missing = tuple(key for key in admitted if key not in answered)
+    kept.extend(
         {"gate": key, "verdict": "unclear", "rationale": "not assessed", "claim_ids": []}
         for key in missing
     )
-    return missing
+    return _KeyedVerdicts(kept, missing, tuple(dict.fromkeys(duplicates)))
 
 
 async def _finalize_research(runtime: ToolRuntime, args: FinalizeResearchArgs) -> dict[str, Any]:
     if runtime.finalization is not None:
         raise RefusalError("finalization_already_proposed", "this job is already finalized")
 
-    verdicts = [verdict.model_dump() for verdict in args.fit_verdicts]
-    filled = _fill_icp_gates(runtime.scope.icp_gate_keys, verdicts)
+    keyed = _key_verdicts_to_icp_gates(
+        runtime.scope.icp_gate_keys, [verdict.model_dump() for verdict in args.fit_verdicts]
+    )
+    verdicts = keyed.verdicts
     candidates = [candidate.model_dump() for candidate in args.committee_candidates]
     drafts = [
-        *fit_verdict_claims(verdicts, runtime.scope, filled_by_tool=filled),
+        *fit_verdict_claims(verdicts, runtime.scope, filled_by_tool=keyed.filled),
         *committee_candidate_claims(candidates, runtime.scope),
     ]
     receipts = await runtime.write(drafts)
@@ -1314,6 +1341,8 @@ async def _finalize_research(runtime: ToolRuntime, args: FinalizeResearchArgs) -
         "accepted": True,
         "claim_ids": [str(receipt.claim_id) for receipt in receipts],
         "dropped_candidates": dropped,
+        # The gates you answered twice: the first answer stands, the repeats were dropped.
+        "duplicate_gates": list(keyed.duplicates),
     }
 
 

@@ -739,7 +739,9 @@ def test_the_system_prompt_carries_the_pinned_resources_and_the_job_context(
     job = _job_row(run)
     store = FakeStore(run, job)
     _patch_reads(
-        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+        monkeypatch,
+        account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai"),
+        icp_body=GATED_ICP_BODY,
     )
     seen: dict[str, Any] = {}
 
@@ -757,6 +759,9 @@ def test_the_system_prompt_carries_the_pinned_resources_and_the_job_context(
     assert "VP Marketing." in prompt, "the persona document reaches the model"
     assert "core.industry" in prompt, "the field catalog menu reaches the model"
     assert "focus on hiring signals" in prompt, "the launch directive reaches the model"
+    assert '"icp_gate_keys": ["series-a-saas", "us-hq"]' in prompt, (
+        "the gates the verdicts are keyed to reach the model, so it never guesses a label"
+    )
     assert json.loads(json.dumps(store.named("read_account_catalog"))) == [{}]
 
 

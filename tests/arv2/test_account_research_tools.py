@@ -1470,6 +1470,34 @@ def test_an_icp_gate_the_agent_did_not_assess_is_filled_unclear_by_the_tool() ->
     assert filled[0].markers == {"filled_by_tool": True}, "the claim says who wrote the verdict"
 
 
+def test_a_second_verdict_for_one_gate_is_dropped_and_reported_never_refused() -> None:
+    """A duplicate is noise, not a lie: the first answer stands and the call still lands."""
+    gated = replace(SCOPE, icp_gate_keys=("stage", "geography"))
+    runtime, _, writer, _ = _runtime(gated)
+
+    accepted = _call(
+        runtime,
+        "finalize_research",
+        **{
+            **_finalize_args(),
+            "fit_verdicts": [
+                {"gate": "stage", "verdict": "pass", "rationale": "Series A announced"},
+                {"gate": "stage", "verdict": "fail", "rationale": "on second thoughts"},
+                {"gate": "geography", "verdict": "pass", "rationale": "NYC HQ"},
+            ],
+        },
+    )
+
+    assert accepted["accepted"] is True
+    assert accepted["duplicate_gates"] == ["stage"]
+    assert runtime.finalization is not None
+    verdicts = runtime.finalization["fit_verdicts"]
+    assert [verdict["gate"] for verdict in verdicts] == ["stage", "geography"]
+    assert verdicts[0]["verdict"] == "pass", "the first answer for a gate is the one kept"
+    written = [d for d in writer.drafts if d.field_key == "account.icp_fit_verdict"]
+    assert len(written) == 2, "one claim per gate, whatever the model sent"
+
+
 def test_a_transient_tool_error_is_not_remembered_so_the_identical_retry_runs_again() -> None:
     """``tool_error`` is the socket failing, not a judgement: it must not foreclose the retry."""
     runtime, clients, _, _ = _runtime()

@@ -465,6 +465,7 @@ class Arv2AccountResearchWorkHandler:
             directive_text=run.directive_text,
             effort=run.effort,
             committee_cap=run.committee_cap,
+            icp_gate_keys=icp_gate_keys,
             stop_policy={
                 "max_model_rounds": self._settings.arv2_account_max_model_rounds,
                 "max_tool_calls_per_round": (self._settings.arv2_account_max_tool_calls_per_round),

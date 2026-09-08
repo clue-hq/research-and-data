@@ -120,9 +120,14 @@ class AccountContext:
     effort: str
     committee_cap: int
     stop_policy: dict[str, int]
+    #: The keys of the pinned ICP's ``hard_gates`` — the gates ``finalize_research`` keys its fit
+    #: verdicts to. They are named in the head rather than left to be re-derived from the ICP
+    #: document, because a label the agent invents is refused at finalization, which is the most
+    #: expensive place in the job to learn the rule.
+    icp_gate_keys: tuple[str, ...] = ()
 
     def block(self) -> str:
-        """The context block: one JSON head, then the four read-only context documents."""
+        """The context block: one JSON head, the gate rule, then the four context documents."""
         head: dict[str, object] = {
             "account": {
                 "name": self.account_name,
@@ -137,10 +142,13 @@ class AccountContext:
                 "committee_cap": self.committee_cap,
             },
             "stop_policy": self.stop_policy,
+            "icp_gate_keys": list(self.icp_gate_keys),
         }
         return "\n\n".join(
             [
                 json.dumps(head, sort_keys=True),
+                "`finalize_research.fit_verdicts` carries exactly one verdict per key in "
+                "`icp_gate_keys`.",
                 "## context/icp.md\n" + self.icp_markdown.rstrip(),
                 "## context/persona.md\n" + self.persona_markdown.rstrip(),
                 "## context/catalog.md\n" + self.catalog_menu.rstrip(),

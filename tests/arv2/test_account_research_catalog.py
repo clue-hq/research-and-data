@@ -81,6 +81,7 @@ def test_system_prompt_stacks_profile_prompt_skills_and_the_context_block() -> N
         workspace_id="ws",
         today=datetime.date(2026, 9, 8),
         icp_markdown="# ICP\nhard_gates: []",
+        icp_gate_keys=("series-a-saas", "us-hq"),
         persona_markdown="personas: []",
         catalog_menu="- account.named_customers",
         already_established="- HQ: New York",
@@ -103,5 +104,9 @@ def test_system_prompt_stacks_profile_prompt_skills_and_the_context_block() -> N
         "# ICP",
         "- account.named_customers",
         "2026-09-08",
+        # The gates the finalization's verdicts are keyed to: the model is told the keys rather
+        # than left to invent labels the tool would then refuse.
+        '"icp_gate_keys": ["series-a-saas", "us-hq"]',
+        "exactly one verdict per key in `icp_gate_keys`",
     ):
         assert marker in prompt

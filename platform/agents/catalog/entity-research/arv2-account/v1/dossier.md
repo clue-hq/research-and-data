@@ -84,8 +84,9 @@ version: v1
 ICP's `hard_gates` — not a label of your own. A gate the ICP does not name is refused
 `invalid_arguments` and the refusal lists the keys it does name; an unassessed gate is recorded
 `unclear` with the rationale "not assessed" by the tool, so the receipt says plainly what was
-checked and what was not. A `fail` needs cited contrary evidence (`claim_ids`); a `fail` with none is
-recorded `unclear`.
+checked and what was not. A second verdict for a gate you already answered is dropped (the first
+answer stands) and reported back as `duplicate_gates` — never a refusal of the whole call. A `fail`
+needs cited contrary evidence (`claim_ids`); a `fail` with none is recorded `unclear`.
 
 ## Committee
 

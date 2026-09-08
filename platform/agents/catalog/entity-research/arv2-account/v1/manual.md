@@ -60,7 +60,7 @@ The base code before the colon is the row key and decides the reaction.
 | `structure_material(subject_kind, subject_name, subject_domain_or_company, linkedin_url, sources[{url, kind, text, title}], notes, mode, already_known)` | `StructuringClient.structure_account` | Prose to typed claims against the code-validated catalog; unknown keys become proposed fields; `mode` is `broad` or the narrow `intent_sweep` |
 | `write_claims(claims[...])` | `LenientClaimWriter` | **The one gate.** Bulk; born unverified; the sensitivity floor runs after |
 | `verify_links(claim_ids)` | `ExaClient.contents` + `text.substring_verdict` | The fabrication audit: EXACT / PARTIAL / NOT_FOUND per cited quote, written as an annotation |
-| `finalize_research(summary, fit_verdicts, gaps, committee_candidates)` | coverage + finalization receipt | Honest-empty is a valid outcome. One verdict per ICP gate, keyed by the gate's `key`: a gate the ICP does not name is refused `invalid_arguments` naming the keys it does, and a gate you did not assess is filled `unclear` / "not assessed" by the tool |
+| `finalize_research(summary, fit_verdicts, gaps, committee_candidates)` | coverage + finalization receipt | Honest-empty is a valid outcome. One verdict per ICP gate, keyed by the gate's `key`: a gate the ICP does not name is refused `invalid_arguments` naming the keys it does, and a gate you did not assess is filled `unclear` / "not assessed" by the tool; a repeated gate keeps your first answer and comes back in `duplicate_gates` |
 
 Notes that decide calls, not style:
 
