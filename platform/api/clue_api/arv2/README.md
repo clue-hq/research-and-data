@@ -643,10 +643,11 @@ provider` — plus one optional **`notes`** string. An old-shape call is refused
   `source_kind_block` (which is what the audit later reads to say `second_hand_from_report`).
 - **A model-produced batch writes one draft at a time.** `ToolRuntime.write_each` opens one
   transaction per draft, so one bad draft is a row in the result's
-  `write_failures: [{field_key, error}]` rather than an exception that takes the batch down.
-  `negatives_written` counts what actually landed, and `dropped_rows` reports what a mode cap cut.
-  The code-built batches (ATS board, provider record, finalization) still write as one transaction,
-  because those drafts stand or fall together.
+  `write_failures: [{field_key, error}]` rather than an exception that takes the batch down. Both
+  model-produced batches use it — `structure_material`'s extraction and `write_claims`, which is
+  the larger of the two (cap fifty). `negatives_written` counts what actually landed, and
+  `dropped_rows` reports what a mode cap cut. The code-built batches (ATS board, provider record,
+  finalization) still write as one transaction, because those drafts stand or fall together.
 - **Proposed keys are normalised.** `normalise_proposed_key` folds spaces/dashes/slashes to `_`,
   drops anything outside `[a-z0-9_.]`, rewrites `core_x` → `core.x`, prefixes a namespace-less key
   with the subject, and — if the result still fails `is_valid_field_key` — falls back to
@@ -752,9 +753,13 @@ say why", never a reason.
 `finalize_research`'s `fit_verdicts` are keyed to the pinned ICP's `hard_gates[].key`, read from
 the ICP front matter at launch and carried on `JobScope.icp_gate_keys`:
 
-- a verdict naming a gate the ICP does not have is refused `invalid_arguments`, and the refusal
-  names both the offending labels and the admitted keys — nothing is written and the job is not
-  finalized, so a corrected retry is possible;
+- a label is matched case-folded and stripped of surrounding whitespace, and the accepted verdict
+  is rewritten to the ICP's own spelling of the key, so `"Geography"` and `"stage "` are the gates
+  the ICP named rather than new ones (folding a near-miss costs nothing; refusing it costs the run
+  the only call that produces a finalized ending);
+- a verdict naming a gate the ICP does not have *after* that folding is refused
+  `invalid_arguments`, and the refusal names both the offending labels and the admitted keys —
+  nothing is written and the job is not finalized, so a corrected retry is possible;
 - an admitted gate the model did not assess is filled by the tool as
   `{verdict: "unclear", rationale: "not assessed"}`, and the claim carries the marker
   `filled_by_tool`;

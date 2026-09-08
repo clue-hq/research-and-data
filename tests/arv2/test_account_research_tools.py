@@ -791,6 +791,30 @@ def test_write_claims_caps_at_fifty_and_marks_the_rest_refused() -> None:
     assert len(writer.drafts) == 50, "nothing beyond the ceiling was written"
 
 
+def test_write_claims_writes_each_claim_alone_so_one_bad_value_costs_only_itself() -> None:
+    """A model-produced batch of fifty must not lose forty-nine claims to one unwritable value."""
+    runtime, _, writer, conn_factory = _runtime()
+    writer.raise_on = {"account.gtm_tooling_stack"}
+    claims = [_claim_input(0), _claim_input(1), _claim_input(2)]
+    claims[1]["field_key"] = "account.gtm_tooling_stack"
+
+    result = _call(runtime, "write_claims", claims=claims)
+
+    assert "code" not in result, "one refused value is a reported failure, never a tool_error"
+    assert len(result["written"]) == 2
+    assert result["write_failures"] == [
+        {
+            "field_key": "account.gtm_tooling_stack",
+            "error": "cannot write account.gtm_tooling_stack",
+        }
+    ]
+    assert [draft.field_key for draft in writer.drafts] == [
+        "account.named_customers",
+        "account.named_customers",
+    ], "the two writable claims landed"
+    assert conn_factory.opened == 3, "one transaction per claim"
+
+
 def test_write_claims_forces_the_two_never_outreach_safe_fields() -> None:
     runtime, _, writer, _ = _runtime()
 
@@ -1496,6 +1520,61 @@ def test_a_second_verdict_for_one_gate_is_dropped_and_reported_never_refused() -
     assert verdicts[0]["verdict"] == "pass", "the first answer for a gate is the one kept"
     written = [d for d in writer.drafts if d.field_key == "account.icp_fit_verdict"]
     assert len(written) == 2, "one claim per gate, whatever the model sent"
+
+
+def test_a_gate_label_differing_only_in_case_is_the_gate_the_icp_named() -> None:
+    """Folding a near-miss label costs nothing; refusing it costs the run its only finalization."""
+    gated = replace(SCOPE, icp_gate_keys=("stage", "geography"))
+    runtime, _, writer, _ = _runtime(gated)
+
+    accepted = _call(
+        runtime,
+        "finalize_research",
+        **{
+            **_finalize_args(),
+            "fit_verdicts": [
+                {"gate": "Geography", "verdict": "pass", "rationale": "NYC HQ", "claim_ids": []}
+            ],
+        },
+    )
+
+    assert accepted["accepted"] is True
+    assert runtime.finalization is not None
+    verdicts = runtime.finalization["fit_verdicts"]
+    assert [verdict["gate"] for verdict in verdicts] == ["geography", "stage"]
+    assert verdicts[0]["verdict"] == "pass", "the model's answer was kept, only its key rewritten"
+    geography = [
+        draft
+        for draft in writer.drafts
+        if draft.field_key == "account.icp_fit_verdict" and draft.value_json["gate"] == "geography"
+    ]
+    assert len(geography) == 1, "the claim carries the ICP's spelling of the key"
+    assert geography[0].markers == {}, "an answered gate is not marked filled_by_tool"
+
+
+def test_a_gate_label_with_trailing_whitespace_is_the_gate_the_icp_named() -> None:
+    gated = replace(SCOPE, icp_gate_keys=("stage", "geography"))
+    runtime, _, writer, _ = _runtime(gated)
+
+    accepted = _call(
+        runtime,
+        "finalize_research",
+        **{
+            **_finalize_args(),
+            "fit_verdicts": [
+                {"gate": "stage ", "verdict": "pass", "rationale": "Series A", "claim_ids": []}
+            ],
+        },
+    )
+
+    assert accepted["accepted"] is True
+    assert runtime.finalization is not None
+    assert [v["gate"] for v in runtime.finalization["fit_verdicts"]] == ["stage", "geography"]
+    assert [
+        draft.value_json["gate"]
+        for draft in writer.drafts
+        if draft.field_key == "account.icp_fit_verdict"
+    ] == ["stage", "geography"]
 
 
 def test_a_transient_tool_error_is_not_remembered_so_the_identical_retry_runs_again() -> None:

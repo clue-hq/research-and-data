@@ -1136,11 +1136,22 @@ async def _write_claims(runtime: ToolRuntime, args: WriteClaimsArgs) -> dict[str
             f"({len(unconfirmed)} claim(s) in this call have none)",
         )
     drafts = agent_claims(args.claims, runtime.scope, catalog=runtime.catalog)
-    receipts = await runtime.write(drafts)
+    # One transaction per draft. This is the largest model-produced batch in the toolbelt (cap
+    # fifty), so a single value the store will not take must cost its own claim and nothing else —
+    # never forty-nine good claims, and never a whole-batch ``tool_error`` the model retries
+    # identically. ``write_each`` returns one result per draft, in order.
+    results = await runtime.write_each(drafts)
     return {
         "written": [
-            _receipt_json(receipt, draft) for receipt, draft in zip(receipts, drafts, strict=True)
-        ]
+            _receipt_json(result, draft)
+            for result, draft in zip(results, drafts, strict=True)
+            if isinstance(result, WriteReceipt)
+        ],
+        "write_failures": [
+            {"field_key": result.field_key, "error": result.error}
+            for result in results
+            if isinstance(result, WriteFailure)
+        ],
     }
 
 
@@ -1271,6 +1282,11 @@ class _KeyedVerdicts:
     duplicates: tuple[str, ...]
 
 
+def _fold_gate_key(label: str) -> str:
+    """The form two gate labels are compared in: case-folded, outer whitespace gone."""
+    return label.strip().casefold()
+
+
 def _key_verdicts_to_icp_gates(
     admitted: tuple[str, ...], verdicts: list[dict[str, Any]]
 ) -> _KeyedVerdicts:
@@ -1282,6 +1298,12 @@ def _key_verdicts_to_icp_gates(
     assessed", because "we did not look" and "we looked and could not tell" are different answers
     and silence reads as the second one.
 
+    The match folds case and surrounding whitespace first, and the accepted verdict is rewritten to
+    the ICP's own spelling of the key. ``"Geography"`` and ``"stage "`` are the gate the ICP named,
+    not new gates, and the failure here is asymmetric: folding a near-miss label costs nothing,
+    refusing it costs the run its only path to a finalized ending. A label that still resolves to
+    no gate after folding is refused exactly as before.
+
     A **second** verdict for a gate already answered is dropped, never refused: it is noise rather
     than a falsehood, the first answer is the one the agent reasoned to, and refusing the whole
     call would throw away a finalization (summary, committee, gaps) over a repeated line. The
@@ -1291,13 +1313,24 @@ def _key_verdicts_to_icp_gates(
     — the one-verdict-per-gate rule still holds, there is simply no list to check it against.
     """
     if admitted:
-        unknown = sorted({str(verdict.get("gate") or "") for verdict in verdicts} - set(admitted))
+        by_fold = {_fold_gate_key(key): key for key in admitted}
+        unknown = sorted(
+            {
+                str(verdict.get("gate") or "")
+                for verdict in verdicts
+                if _fold_gate_key(str(verdict.get("gate") or "")) not in by_fold
+            }
+        )
         if unknown:
             raise RefusalError(
                 "invalid_arguments",
                 f"fit verdicts are keyed to this ICP's hard gates; {unknown} name no gate of it. "
                 f"The admitted gate keys are {list(admitted)}",
             )
+        verdicts = [
+            {**verdict, "gate": by_fold[_fold_gate_key(str(verdict.get("gate") or ""))]}
+            for verdict in verdicts
+        ]
     kept: list[dict[str, Any]] = []
     answered: list[str] = []
     duplicates: list[str] = []
@@ -1510,8 +1543,9 @@ def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             name="write_claims",
             description=(
                 "Write up to fifty claims yourself, each with a verbatim quote and the URL it came "
-                "from. Everything is stored; a missing URL, an unknown key or a schema miss is "
-                "recorded as a marker rather than refused."
+                "from. A missing URL, an unknown key or a schema miss is recorded as a marker "
+                "rather than refused; each claim is written on its own, so a value the store will "
+                "not take comes back in write_failures and the rest of the batch is still stored."
             ),
             model=WriteClaimsArgs,
             body=_write_claims,

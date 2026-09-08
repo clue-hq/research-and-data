@@ -58,9 +58,9 @@ The base code before the colon is the row key and decides the reaction.
 | `read_media_feeds(person_name, person_role, feed_url, youtube_url, episode_title_contains, episode_number)` | `media_feeds_client` + `gemini_media_client` | Podcast / YouTube appearances by named leaders; transcripts, verified quotes |
 | `research_deep(charter, probes, same_name_exclusions, num_results)` | `ExaClient.deep_reasoning` (max 2 attempts, silent-fail guard) | The one dossier call: charter + probes in the query, lock + rules in the system prompt, a report schema |
 | `structure_material(subject_kind, subject_name, subject_domain_or_company, linkedin_url, sources[{url, kind, text, title}], notes, mode, already_known)` | `StructuringClient.structure_account` | Prose to typed claims against the code-validated catalog; unknown keys become proposed fields; `mode` is `broad` or the narrow `intent_sweep` |
-| `write_claims(claims[...])` | `LenientClaimWriter` | **The one gate.** Bulk; born unverified; the sensitivity floor runs after |
+| `write_claims(claims[...])` | `LenientClaimWriter` | **The one gate.** Bulk; born unverified; the sensitivity floor runs after; each claim is written on its own, so one unwritable value is reported in `write_failures` and the rest still land |
 | `verify_links(claim_ids)` | `ExaClient.contents` + `text.substring_verdict` | The fabrication audit: EXACT / PARTIAL / NOT_FOUND per cited quote, written as an annotation |
-| `finalize_research(summary, fit_verdicts, gaps, committee_candidates)` | coverage + finalization receipt | Honest-empty is a valid outcome. One verdict per ICP gate, keyed by the gate's `key`: a gate the ICP does not name is refused `invalid_arguments` naming the keys it does, and a gate you did not assess is filled `unclear` / "not assessed" by the tool; a repeated gate keeps your first answer and comes back in `duplicate_gates` |
+| `finalize_research(summary, fit_verdicts, gaps, committee_candidates)` | coverage + finalization receipt | Honest-empty is a valid outcome. One verdict per ICP gate, keyed by the gate's `key` (case and stray spaces are folded to the ICP's own spelling): a gate the ICP still does not name is refused `invalid_arguments` naming the keys it does, and a gate you did not assess is filled `unclear` / "not assessed" by the tool; a repeated gate keeps your first answer and comes back in `duplicate_gates` |
 
 Notes that decide calls, not style:
 
@@ -76,7 +76,9 @@ Notes that decide calls, not style:
   rest of the batch still landed, so re-write only what is named there).
 - `write_claims` takes at most fifty claims in one call, and a named `account.committee_candidate`
   needs a `confirmed_by` URL. `account.reputation_risk` and `account.icp_fit_verdict` are always
-  written `outreach_safe = false`.
+  written `outreach_safe = false`. Like `structure_material`, its result carries `write_failures`
+  (`field_key` + `error` for any claim the store refused); every other claim in the call landed, so
+  re-write only what is named there.
 - `research_deep` returns a thin report rather than refusing it; `deep_thin_response` fires only
   when the report text is empty.
 - Deliberately absent: any contact-depth tool (that is R3), email export (a separate governed
