@@ -398,8 +398,22 @@ featured-contact hard-code is gone (`profileAction`); lint/build/tests green (11
 | D1 | The §4 migration; the **claim loader** — a governed one-off writer that turns the Zafran and person research outputs into real claims through `insert_claim` (register the new fields first, unify `use_class`, stamp priority + `outreach_safe`, write run lineage, snapshot media transcripts, dedupe one-fact-one-flag) | Aryan (agent-built, founder-reviewed) | 174 + 119 rows in the store, catalog-valid, lineage-pinned; single alembic head; `make db-smoke` green |
 | D2 | Section recipes seeded; the Luna section runner with the §7 checks; the evidence resolver; `display_block` persistence with the §7 generation policy | Agent under Aryan's review; Shashank owns recipes and prompts | Zafran overview, insights and Nick Fisher pages generated from the store; checks 0 leaks / 0 non-verbatim / 0 off-recipe |
 | D3 | The five §6 payloads on `/frontend/v1`, including `researchEvidence`, the three DisplayBlocks with `segments`, `buyingCommittee`, actor-based `activity`, account-scoped `artifacts` | Aryan | Payloads validate against the dummy's Zod models (`live-backend-v1` @ `84f8ee7`) byte-for-byte |
-| D4 | Re-lift the dummy's accounts feature from `live-backend-v1` into `apps/frontend` — the feature folder, the accounts layout shell, the `/api/source-favicon` route, and the design-system token changes; adapters → `/frontend/v1`; no new components | Shashank via agent; Aryan merges | With `CLUE_API_BASE_URL` set, Zafran pages render from the real backend; fixtures still demo offline |
+| D4 — **DONE 2026-09-09** (branch `track-d4`; the feature, the eight routes, the accounts layout shell, the favicon proxy and the design-system package all lifted from `84f8ee7`; the sixteen §6 client-side derivations removed; the contract-v1 Zod is now the feature's own `model/*.ts` **and** the parity oracle's source; five adapters on `fetchRead` + the BFF with **`?contract=v1`** — that parameter stays until the backend FI-2 deletion PR; fixtures behind `CLUE_ACCOUNTS_FIXTURE_MODE=true` with **no** fallback; the kept FI-2 behaviours = bulk add-to-project / send-to-chat, the single-contact email lookup, the typed recovery screen; create is a local non-optimistic draft until `POST /frontend/v1/accounts` exists; **no backend code changed**. 12 routes walked live against the real store — see `_memory/2026-09-09-arv2-d4-accounts-relift.md` for the 24-item drift list, which is D5's input) | Re-lift the dummy's accounts feature from `live-backend-v1` into `apps/frontend` — the feature folder, the accounts layout shell, the `/api/source-favicon` route, and the design-system token changes; adapters → `/frontend/v1`; no new components | Shashank via agent; Aryan merges | With `CLUE_API_BASE_URL` set, Zafran pages render from the real backend; fixtures still demo offline |
 | D5 | Acceptance: the three Zafran spec pages vs the live pages, section by section, with the dummy's fidelity tests as the mechanical check; the four remaining contact pages generated lazily on first open | Both | Founder walk-through signed; drift list empty |
+
+**Track D roadmap — the CSS re-sync job (founder ruling 2026-09-09, 2a).** D4 merged tokens
+*additively*: the design build's `packages/design-system` package replaced ours, and the 48
+variables only the old token set defined were extracted once into
+`packages/design-system/generated/legacy-compat.css` so the not-yet-re-synced features keep
+rendering. The re-sync is its own later job, unowned and unscheduled: bring **every** feature's CSS,
+the application shell and the shared `Button` across from the design build (D4 added only the
+`transparent` variant and the `md` size to `Button`, additively, so the lifted toolbar could render);
+then **delete `legacy-compat.css` and its one-shot extractor**
+(`packages/design-system/scripts/extract-legacy-compat.mjs`) and the shrink-only allowlist in
+`src/design-system-tokens.test.ts`. It also owns the hard-coded placeholder person in
+`apps/frontend/src/components/shell/app-sidebar.tsx:119` (`Aakash Shrivastava`), which the shell
+prints on every accounts page while the accounts feature itself resolves the profile correctly from
+the protected session.
 
 ### Track R — the research lane (in parallel; writes the same claim rows the loader wrote)
 | Stage | What | Exit gate |

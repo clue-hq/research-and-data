@@ -113,15 +113,25 @@ not raw hex values or Figma extraction JSON.
 
 Generated files are deterministic and are not hand-edited.
 
-The package keeps two deliberately separate inputs:
+The package has one resolved generator input: `source/production`. It records
+both the production Clue product source and the published Clue Design System
+source, together with explicit conflict-resolution rules. A sync replaces this
+resolved snapshot; it never appends another override layer.
 
-- `source/figma` is an immutable mirror used for provenance and future diffs;
-- `source/product` is the verified frontend contract for approved Dev Mode
-  values, including temporary reconciliations when a Figma library and its
-  consuming product screens resolve different values.
+Product UI consumes canonical semantic and typography tokens directly. The
+`--clue-ds-product-*` namespace is limited to application geometry, motion, and
+component contracts that do not exist as published Figma variables.
 
-Product UI consumes `--clue-ds-product-*` variables. A mismatch is documented
-in the product source instead of silently rewriting the raw Figma mirror.
+`generated/legacy-compat.css` is the one temporary exception. It holds the
+variables only the pre-D4 token set defined, so the features that have not been
+re-synced yet keep rendering; it is data, not a generator layer, and
+`design-system:build` neither reads nor writes it. It is imported once, in
+`src/app/layout.tsx`, immediately after `tokens.css`, and it may only shrink.
+The CSS re-sync job deletes it together with its one-shot extractor
+(`packages/design-system/scripts/extract-legacy-compat.mjs`). Every
+`var(--clue-…)` referenced under `src/` must resolve in `tokens.css`,
+`legacy-compat.css` or `globals.css` — `src/design-system-tokens.test.ts`
+enforces that.
 
 ## Component rule
 
