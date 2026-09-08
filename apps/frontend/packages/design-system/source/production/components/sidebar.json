@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "component": "Sidebar",
+  "source": {
+    "fileKey": "NcLl2r0dzVDN28xAQCwvM1",
+    "fileName": "Clue",
+    "pageId": "1735:72278",
+    "pageName": "side-bar",
+    "capturedAt": "2026-08-18",
+    "method": "Figma Plugin API inspection",
+    "nodes": {
+      "sidebar": "1735:72309",
+      "navigationItem": "1735:72279",
+      "projectItem": "1735:72462"
+    }
+  },
+  "canonical": {
+    "sidebarVariantCount": 2,
+    "navigationStates": ["resting", "hover", "selected", "header"],
+    "projectKinds": ["project", "chat"],
+    "projectStates": ["resting", "hover", "pressed"],
+    "conversationStatuses": ["idle", "running", "needs-input"]
+  },
+  "tokens": [
+    { "name": "component/sidebar/inner-width", "unit": "px", "value": 224 },
+    { "name": "component/sidebar/logo-width", "unit": "px", "value": 69 },
+    { "name": "component/sidebar/logo-height", "unit": "px", "value": 17 },
+    { "name": "component/sidebar/group-gap", "unit": "px", "value": 12 },
+    { "name": "component/sidebar/project-row-height", "unit": "px", "value": 34 },
+    { "name": "component/sidebar/navigation-radius", "unit": "px", "value": 4 },
+    { "name": "component/sidebar/chat-radius", "unit": "px", "value": 8 },
+    { "name": "component/sidebar/icon-size", "unit": "px", "value": 16 },
+    { "name": "component/sidebar/action-size", "unit": "px", "value": 16 },
+    { "name": "component/sidebar/action-icon-size", "unit": "px", "value": 12 },
+    { "name": "component/sidebar/chat-inset", "unit": "px", "value": 32 }
+  ]
+}

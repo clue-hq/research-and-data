@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import { AccountContactsScreen } from "@/features/accounts/components/account-contacts-screen";
 import { getAccountContacts } from "@/features/accounts/data/account-contacts.repository";
 import { getAccountDetails } from "@/features/accounts/data/account-details.repository";
-import { readContactBulkCapabilities } from "@/features/accounts/data/bulk-capabilities.repository";
 
 export const metadata: Metadata = {
   title: "Account contacts",
@@ -15,21 +14,16 @@ export default async function AccountContactsPage({
   params,
 }: PageProps<"/accounts/[accountId]/contacts">) {
   const { accountId } = await params;
-  const [account, contacts, bulkCapabilities] = await Promise.all([
+  const [account, contacts] = await Promise.all([
     getAccountDetails(accountId),
     getAccountContacts(accountId),
-    readContactBulkCapabilities(accountId),
   ]);
+  // `contacts` is `null` only when the account itself is unknown (E4 answers
+  // ACCOUNT_NOT_FOUND); an account with no committee is an empty list.
+  if (!account || contacts === null) notFound();
 
-  if (!account) notFound();
-
-  // No profile is fetched here: each row links to the contact's own route, and
-  // that route fetches the profile for the id in its params.
-  return (
-    <AccountContactsScreen
-      account={account}
-      bulkCapabilities={bulkCapabilities}
-      contacts={contacts}
-    />
-  );
+  // No contact is "featured": the drawer opens on a row click and loads that
+  // row's detail then (source map §6). The page used to scan the list for the
+  // first previewable row and prefetch its whole detail payload.
+  return <AccountContactsScreen account={account} contacts={contacts} />;
 }

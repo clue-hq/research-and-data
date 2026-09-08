@@ -1,0 +1,90 @@
+.scope {
+  height: 100%;
+  --account-motion-fast: var(--clue-ds-product-motion-duration-fast);
+  --account-motion-panel: var(--clue-ds-product-motion-duration-standard);
+  --account-motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.workspaceBody {
+  container-type: inline-size;
+  --account-rail-width: clamp(360px, 38.06cqw, 548px);
+}
+
+/* Text does not slide or scale when navigating. The stable shell stays opaque. */
+@keyframes pageEntry { from { opacity: 0.65; } to { opacity: 1; } }
+.pageEntry { animation: pageEntry 120ms ease-out; }
+
+/* Slot changes only on an explicit rail toggle. Its fixed-width inner surface
+   avoids rewrapping every property while the slot reveals or clips it. */
+.railSlot {
+  flex: 0 0 var(--account-rail-width);
+  min-width: 0;
+  overflow: clip;
+  transition: flex-basis var(--account-motion-panel) var(--account-motion-ease),
+    visibility var(--account-motion-panel) allow-discrete;
+}
+.railSlot .railContent { width: var(--account-rail-width); }
+.railContent {
+  transition: opacity var(--account-motion-fast) ease-out,
+    transform var(--account-motion-panel) var(--account-motion-ease);
+}
+.railSlot[data-visible="false"] { flex-basis: 0; visibility: hidden; }
+.railSlot[data-visible="false"] .railContent { opacity: 0; transform: translateX(12px); }
+.railBackdrop { display: none; }
+
+@media (max-width: 1279px) {
+  .railSlot[data-visible="auto"] { flex-basis: 0; visibility: hidden; }
+}
+@media (max-width: 1023px) {
+  .workspaceBody { --account-rail-width: min(410px, calc(100vw - 32px)); }
+  .railSlot {
+    bottom: 0; position: absolute; right: 0; top: 0;
+    width: var(--account-rail-width); z-index: 30;
+    box-shadow: -8px 0 24px rgb(0 24 62 / 8%);
+    transition: opacity var(--account-motion-panel) ease-out,
+      transform var(--account-motion-panel) var(--account-motion-ease),
+      visibility var(--account-motion-panel) allow-discrete;
+  }
+  .railSlot[data-visible="false"], .railSlot[data-visible="auto"] {
+    opacity: 0; transform: translateX(16px); pointer-events: none;
+  }
+  .railBackdrop {
+    background: rgb(17 24 39 / 10%); display: block; inset: 0; position: absolute; z-index: 20;
+    transition: opacity var(--account-motion-fast) ease-out,
+      visibility var(--account-motion-fast) allow-discrete;
+  }
+  .railBackdrop:not([data-visible="true"]) { visibility: hidden; opacity: 0; pointer-events: none; }
+}
+
+@keyframes drawerEntry {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes drawerExit {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(16px); }
+}
+.drawer { animation: drawerEntry 180ms var(--account-motion-ease, ease-out) both; }
+.drawer[data-closing="true"] { animation: drawerExit 120ms ease-in both; pointer-events: none; }
+
+/* Older browsers keep native, instant disclosures; supported browsers animate
+   intrinsic block size rather than guessing a max-height and clipping text. */
+@supports (interpolate-size: allow-keywords) {
+  .scope details { interpolate-size: allow-keywords; }
+  .scope details::details-content {
+    block-size: 0;
+    overflow: clip;
+    opacity: 0;
+    transition: block-size 180ms var(--account-motion-ease),
+      opacity 140ms ease-out, content-visibility 180ms allow-discrete;
+  }
+  .scope details[open]::details-content { block-size: auto; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scope *, .scope *::before, .scope *::after, .scope details::details-content {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

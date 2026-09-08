@@ -47,8 +47,9 @@ sections below wherever they differ. Its presentation truth is the dummy fronten
 `docs/specs/ARV2-MASTER-PLAN.md` §6 and the D0 rulings, and *where each value is read from* —
 endpoint, SQL, table column or claim `field_key` — is `docs/specs/ARV2-DATA-SOURCE-MAP.md`.
 
-The contract is **executable**, not prose. The Zod schemas are vendored with their amendments at
-`tests/api/contract_v1/zod/`, the pydantic wire models are
+The contract is **executable**, not prose. The Zod schemas — with their amendments marked in place —
+are this app's own accounts models at `apps/frontend/src/features/accounts/model/` (vendored under
+`tests/api/contract_v1/zod/` at D3, moved here by the D4 re-lift), the pydantic wire models are
 `platform/api/clue_api/frontend_read/contract_v1.py`, and
 `tests/api/contract_v1/test_contract_v1.py` proves the three agree: the field sets match, a golden
 payload of each shape parses through the real Zod, and **the field tables in this section list
@@ -86,9 +87,118 @@ rather than a silent fall back to FI-2. Timestamps are UTC and `Z`-suffixed (`20
 because `z.string().datetime()` accepts an offset only with `{ offset: true }`, which these schemas
 do not set.
 
+### D4 as built (2026-09-09)
+
+The accounts feature in `apps/frontend` **is** the design build's (`clue-frontend`
+`integration/live-backend-v1` @ `84f8ee7`), re-lifted file for file and re-pointed at these routes.
+What follows is what shipped: the adapters, the fixture flag, the FI-2 behaviours the founder kept
+and the ones that went, and the three rendering rules the wire leaves to the client.
+
+#### Adapters
+
+The five repositories in `src/features/accounts/data/` are the only code that talks to these
+routes. Each one goes through `fetchRead` — the authenticated server request on a Server Component,
+the same-origin `/api/clue/frontend/v1/…` BFF in the browser — and each one sends `?contract=v1` on
+every request, including `/workspace`, which has only ever served v1 (the parameter is validated on
+every route of the surface, so sending it everywhere keeps one request shape and makes a typo'd
+value fail identically).
+
+| Repository | Request |
+| --- | --- |
+| `accounts.repository.ts` | `GET /accounts?contract=v1&limit=200[&cursor=…][&projectId=…]` |
+| `account-details.repository.ts` | `GET /accounts/{id}?contract=v1` |
+| `account-workspace.repository.ts` | `GET /accounts/{id}/workspace?contract=v1` |
+| `account-contacts.repository.ts` (list) | `GET /accounts/{id}/contacts?contract=v1` |
+| `account-contacts.repository.ts` (detail) | `GET /accounts/{id}/contacts/{contactId}?contract=v1` |
+
+**The list read returns the whole list.** The accounts table keeps the design build's browser-side
+search, filter, sort and pagination, so `getAccounts()` follows `meta.nextCursor` at `limit=200`
+(E1's `MAX_LIMIT`) and concatenates each page's `data` in server order. It stops after **25 pages —
+5,000 rows** — and returns what it has; beyond that size the honest fix is server-side paging on the
+screen, not a longer walk in the adapter. The returned `meta` is `{ total: <the server's own total>,
+nextCursor: null }`: the count is the backend's, and there is nothing left for the caller to page.
+`projectId` is the one query knob the backend owns and is forwarded; `search`, `sort`, `overallFit`,
+`researchStatus`, `limit` and `cursor` are browser-side concerns and are deliberately **not** sent,
+because E1 has no parameter for them and a silently-ignored parameter is worse than none.
+
+**Record 404s are `null`, everything else throws.** `ACCOUNT_NOT_FOUND` and `CONTACT_NOT_FOUND`
+resolve to `null` on E2, E3, E4 and E5 (on E4 that means "no such account" — an account with no
+committee is `[]`). E1 never 404s. Every other failure — a wrong mount, a disabled read surface, an
+auth or transport error — is a `ClueApiError`, which the page turns into a typed recovery screen via
+`accounts-read-result.ts`. There is no retry against a second transport and no partial answer.
+
+**Fixtures are an explicit opt-in, never a fallback.** `CLUE_ACCOUNTS_FIXTURE_MODE=true` — the exact
+string, read in exactly one module, `data/repository-mode.ts` — selects the design build's fixture
+repositories for local work. Any other value (including unset) selects the live adapters, and a live
+read that fails **fails**: it never falls back to fixture data. No file in the feature reads
+`CLUE_API_BASE_URL`; both rules are guarded by static tests in
+`data/account-live-repositories.test.ts`.
+
+#### The FI-2 behaviours that were kept
+
+Three pieces of the FI-2 accounts screen outlived the re-lift (founder ruling 2026-09-09), ported
+onto the design build's own components — no new component file, no Tailwind restyle:
+
+- **Bulk actions with exactly two options.** The selection bar carries a project select with **Add
+  to project** (`POST /frontend/v1/accounts/bulk-actions/add-to-project`, still the FI-2 route and
+  still an idempotency-keyed submit) and **Send to chat** (the project chat transport, unchanged),
+  plus Clear. The notice is the server's own counts (`"1 added · 1 already in project"`), never a
+  client-side tally, and only accepted subjects are reflected onto the rows. Capabilities come from
+  `readAccountBulkCapabilities()`; in fixture mode it returns the DISABLED constants without a
+  backend call. A local draft row is never selectable. **The selection survives search, filter and
+  sort** — it is cleared only by a successful add-to-project or the explicit Clear control.
+- **The single-contact email lookup.** `startContactEmailLookup` then poll (3s) until
+  `resolved`/`failed`, **capped at 40 polls (~2 minutes)**, after which the control states an honest
+  timeout rather than polling forever. On `resolved` with exactly one address the row's `emailLabel`
+  is set locally and its `emailStatus` becomes `"available"`; a conflicting multi-address result
+  narrows to nothing and says "Multiple emails found". `emailLookup` is not a contract-v1 field, so
+  this update is local to the loaded rows.
+- **The typed recovery screen.** `accounts-read-result.ts` classifies transport failures and the
+  accounts **layout** renders `accounts-recovery-screen.tsx` in place of the shell; detail,
+  workspace and contact pages keep `notFound()` on a `null` record and let anything else surface.
+
+#### The FI-2 behaviours that were dropped
+
+- **The bulk email lookup** is gone entirely — `lookupContactEmails`, `readContactBulkCapabilities`,
+  `ContactBulkCapabilities`, the contact-side bulk UI, and `BulkActionResponse.items[].emailLookup`
+  in the frontend model. The backend still serves its bulk email route; nothing in the frontend
+  calls it. A grep guard in `hooks/use-accounts-screen-controller.test.ts` keeps it out.
+- **The Band-2 views** — `account-facts`, `evidence-list`, `table-pagination`, `account-avatar` and
+  their models/formatters (`formatting.ts`, `prose.ts`, `evidence.ts`) — are deleted, not ported.
+  The contract serves the labels those views used to derive.
+
+#### Create is local and non-optimistic
+
+There is **no write endpoint for account creation** on this surface yet. "New account" produces a
+draft row entirely in the browser: `fitScore: null`, `overallFit: null`, bands `"Unknown"`,
+`locationCount: 0`, empty `industryLabels` / `socials` / `projects` / `customFields`,
+`primaryProjectId: null`, `researchStatus: "not_started"`, `logoPath: null`, and the `websiteUrl`
+that was typed. Nothing is invented — no `fitScore: 0`, no `"Medium"` band. The row is marked
+`isLocalDraft: true` on a **UI-only** type (`AccountSchema` does not carry the field and parsing
+drops it), renders a text-only "Not saved yet", cannot be selected for a server action, and
+disappears on reload. `POST /frontend/v1/accounts` is a recorded follow-up.
+
+#### Three client-side rendering rules
+
+- **The committee slot.** Contract v1 serves a `buying-committee` section inside `overviewDisplay`
+  whose generated items restate the committee. The frontend renders the `buyingCommittee[]` **table**
+  in that slot and drops the section's items; when a block omits the section, the split falls back to
+  `how-to-approach` so the table stays where the design put it. (Whether the recipe should stop
+  emitting that section is a D5 question.)
+- **E4 `title: null` renders "—" client-side** (ruling S7). The dash is a presentation choice, not a
+  wire value — the `"—"` placeholder exists on the wire only on E2's committee card.
+- **`BuyingCommitteeMember.linkedinUrl` is nullable**; the link renders only when present.
+
+#### Still owed on the backend
+
+The FI-2 branches on E1/E2/E4/E5 and the `contract` query parameter itself are **still live** — D4
+changed no backend code. Deleting them (the FI-2 readers, `AccountDetail`/`neutralFacts`/
+`projectSections`, `app.contract_mode`/`ContractDep`, and the FI-2 route tests) is a **follow-up
+backend PR**, at which point `?contract=v1` disappears from the adapters too.
+
 ### D0 amendments (rulings)
 
-The vendored Zod differs from `84f8ee7` in exactly these places, each marked in the file with a
+The models differ from `84f8ee7` in exactly these places, each marked in the file with a
 `// D0 ruling Rn/Sn` or `// D3 ruling` comment. `account-workspace.ts` is byte-identical.
 
 | Ruling | Change | Why |

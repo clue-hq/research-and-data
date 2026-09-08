@@ -1,71 +1,71 @@
 .uiRegular {
-  font-family: var(--clue-ds-product-typography-ui-regular-font-family);
-  font-size: var(--clue-ds-product-typography-ui-regular-font-size);
-  font-weight: var(--clue-ds-product-typography-ui-regular-font-weight);
-  line-height: var(--clue-ds-product-typography-ui-regular-line-height);
+  font-family: var(--clue-ds-typography-text-sm-font-family);
+  font-size: var(--clue-ds-typography-text-sm-font-size);
+  font-weight: var(--clue-ds-typography-text-sm-font-weight);
+  line-height: var(--clue-ds-typography-text-sm-line-height);
 }
 
 .uiMedium {
-  font-family: var(--clue-ds-product-typography-ui-medium-font-family);
-  font-size: var(--clue-ds-product-typography-ui-medium-font-size);
-  font-weight: var(--clue-ds-product-typography-ui-medium-font-weight);
-  line-height: var(--clue-ds-product-typography-ui-medium-line-height);
+  font-family: var(--clue-ds-typography-text-sm-medium-font-family);
+  font-size: var(--clue-ds-typography-text-sm-medium-font-size);
+  font-weight: var(--clue-ds-typography-text-sm-medium-font-weight);
+  line-height: var(--clue-ds-typography-text-sm-medium-line-height);
 }
 
 .pageTitle {
-  font-family: var(--clue-ds-product-typography-page-title-font-family);
-  font-size: var(--clue-ds-product-typography-page-title-font-size);
-  font-weight: var(--clue-ds-product-typography-page-title-font-weight);
-  line-height: var(--clue-ds-product-typography-page-title-line-height);
+  font-family: var(--clue-ds-typography-tittle-sm-font-family);
+  font-size: var(--clue-ds-typography-tittle-sm-font-size);
+  font-weight: var(--clue-ds-typography-tittle-sm-font-weight);
+  line-height: var(--clue-ds-typography-tittle-sm-line-height);
 }
 
 .actionMedium {
-  font-family: var(--clue-ds-product-typography-action-medium-font-family);
-  font-size: var(--clue-ds-product-typography-action-medium-font-size);
-  font-weight: var(--clue-ds-product-typography-action-medium-font-weight);
-  line-height: var(--clue-ds-product-typography-action-medium-line-height);
+  font-family: var(--clue-ds-typography-text-sm-medium-font-family);
+  font-size: var(--clue-ds-typography-text-sm-medium-font-size);
+  font-weight: var(--clue-ds-typography-text-sm-medium-font-weight);
+  line-height: var(--clue-ds-typography-text-sm-medium-line-height);
 }
 
 .fieldLabel {
-  font-family: var(--clue-ds-product-typography-field-label-font-family);
-  font-size: var(--clue-ds-product-typography-field-label-font-size);
-  font-weight: var(--clue-ds-product-typography-field-label-font-weight);
-  line-height: var(--clue-ds-product-typography-field-label-line-height);
+  font-family: var(--clue-ds-typography-text-default-font-family);
+  font-size: var(--clue-ds-typography-text-default-font-size);
+  font-weight: var(--clue-ds-typography-text-default-font-weight);
+  line-height: var(--clue-ds-typography-text-default-line-height);
 }
 
 .sectionHeading {
-  font-family: var(--clue-ds-product-typography-section-heading-font-family);
-  font-size: var(--clue-ds-product-typography-section-heading-font-size);
-  font-weight: var(--clue-ds-product-typography-section-heading-font-weight);
-  line-height: var(--clue-ds-product-typography-section-heading-line-height);
+  font-family: var(--clue-ds-typography-text-sm-medium-font-family);
+  font-size: var(--clue-ds-typography-text-sm-medium-font-size);
+  font-weight: var(--clue-ds-typography-text-sm-medium-font-weight);
+  line-height: var(--clue-ds-typography-text-sm-medium-line-height);
 }
 
 .pillMedium {
-  font-family: var(--clue-ds-product-typography-pill-medium-font-family);
-  font-size: var(--clue-ds-product-typography-pill-medium-font-size);
-  font-weight: var(--clue-ds-product-typography-pill-medium-font-weight);
-  line-height: var(--clue-ds-product-typography-pill-medium-line-height);
+  font-family: var(--clue-ds-typography-text-sm-medium-font-family);
+  font-size: var(--clue-ds-typography-text-sm-medium-font-size);
+  font-weight: var(--clue-ds-typography-text-sm-medium-font-weight);
+  line-height: var(--clue-ds-typography-text-sm-medium-line-height);
 }
 
 .detailTitle {
-  font-family: var(--clue-ds-product-typography-detail-title-font-family);
-  font-size: var(--clue-ds-product-typography-detail-title-font-size);
-  font-weight: var(--clue-ds-product-typography-detail-title-font-weight);
-  line-height: var(--clue-ds-product-typography-detail-title-line-height);
+  font-family: var(--clue-ds-typography-tittle-default-font-family);
+  font-size: var(--clue-ds-typography-tittle-default-font-size);
+  font-weight: var(--clue-ds-typography-tittle-default-font-weight);
+  line-height: var(--clue-ds-typography-tittle-default-line-height);
 }
 
 .bodyCopy {
-  font-family: var(--clue-ds-product-typography-body-copy-font-family);
-  font-size: var(--clue-ds-product-typography-body-copy-font-size);
-  font-weight: var(--clue-ds-product-typography-body-copy-font-weight);
-  line-height: var(--clue-ds-product-typography-body-copy-line-height);
+  font-family: var(--clue-ds-typography-text-default-font-family);
+  font-size: var(--clue-ds-typography-text-default-font-size);
+  font-weight: var(--clue-ds-typography-text-default-font-weight);
+  line-height: var(--clue-ds-typography-text-lg-line-height);
 }
 
 .fieldValue {
-  font-family: var(--clue-ds-product-typography-field-value-font-family);
-  font-size: var(--clue-ds-product-typography-field-value-font-size);
-  font-weight: var(--clue-ds-product-typography-field-value-font-weight);
-  line-height: var(--clue-ds-product-typography-field-value-line-height);
+  font-family: var(--clue-ds-typography-text-default-medium-font-family);
+  font-size: var(--clue-ds-typography-text-default-medium-font-size);
+  font-weight: var(--clue-ds-typography-text-default-medium-font-weight);
+  line-height: var(--clue-ds-typography-text-default-medium-line-height);
 }
 
 .densityTransition {
@@ -76,12 +76,12 @@
 @keyframes popoverEnter {
   from {
     opacity: 0;
-    transform: translateY(-3px) scale(0.99);
+    transform: translateY(-2px);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 
