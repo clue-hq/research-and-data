@@ -1131,6 +1131,30 @@ def test_research_deep_refuses_only_when_the_report_is_empty() -> None:
     assert _call(runtime, "research_deep", charter=CHARTER)["code"] == "deep_thin_response"
 
 
+def test_research_deep_clips_the_already_established_block_and_says_where_the_rest_is() -> None:
+    lines = "\n".join(f"- account.field_{i}: {'x' * 90} (https://s.test/{i})" for i in range(200))
+    scope = replace(SCOPE, already_established=lines)
+    runtime, clients, _, _ = _runtime(scope)
+
+    _call(runtime, "research_deep", charter=CHARTER)
+
+    query = clients.exa_client.deep_calls[-1]["query"]
+    established = query.split("ALREADY ESTABLISHED", 1)[1]
+    assert len(established) <= 6000 + 200, "whole lines up to the cap, plus the omission note"
+    assert "lines omitted" in established
+    assert 'read_account_state(section="already_established")' in established
+    assert "- account.field_0:" in established and "- account.field_199:" not in established
+
+
+def test_research_deep_passes_a_short_established_block_through_untouched() -> None:
+    runtime, clients, _, _ = _runtime()
+    _call(runtime, "research_deep", charter=CHARTER)
+    query = clients.exa_client.deep_calls[-1]["query"]
+    assert query.endswith(
+        "ALREADY ESTABLISHED (do not re-derive; find what is NOT here)\nFounded 2021."
+    )
+
+
 # -- read_media_feeds -----------------------------------------------------------------------------
 
 

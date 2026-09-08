@@ -36,13 +36,23 @@ from clue_api.arv2.account_research_driver import (
     Arv2AccountResearchWorkHandler,
     arv2_account_work_id,
     build_arv2_account_research_handler,
+    format_established,
 )
 from clue_api.arv2.account_research_store import JobRow, JobSpend, RunRow
 from clue_api.arv2.claim_writer import ClaimDraft, WriteReceipt
 from clue_api.arv2.provider_ledger import ledger_id_for
 from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
 from clue_config import Secrets, Settings
-from clue_core import ClaimId
+from clue_core import (
+    Claim,
+    ClaimId,
+    EntityId,
+    EntityType,
+    ExtractionMethod,
+    ResearchMode,
+    ReuseScope,
+    RunId,
+)
 from clue_fleet import FleetTaskKind
 from clue_fleet.lease import LeaseGeneration
 from clue_fleet.work_worker import WorkContext
@@ -934,3 +944,49 @@ def test_the_model_rounds_are_drained_onto_the_ledger_before_the_job_spend_is_re
         "cached_prompt_tokens": 0,
         "cost_source": "metered",
     }
+
+
+# -- the "already established" block ---------------------------------------------------------------
+
+
+def _established_claim(
+    field_key: str,
+    *,
+    value: Any,
+    url: str | None,
+    source_key: str | None = None,
+) -> Claim:
+    """A live claim shaped the way ``claims_for`` hands them to ``_already_established``."""
+    return Claim(
+        entity_id=EntityId(uuid4()),
+        entity_type=EntityType.ACCOUNT,
+        field_key=field_key,
+        value_json=value,
+        source_tier=4,
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        run_id=RunId(uuid4()),
+        research_mode=ResearchMode.ACCOUNT_PROFILING,
+        confidence=0.6,
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
+        workspace_id=WORKSPACE,
+        source_url=url,
+        evidence_span="Probook was founded in 2022.",
+        source_key=source_key,
+    )
+
+
+def test_format_established_writes_compact_json_values_capped_per_line() -> None:
+    long_list = [{"title": f"Role {i}", "url": f"https://jobs.test/{i}"} for i in range(40)]
+    claims = [
+        _established_claim("account.open_requisitions", value=long_list, url="https://jobs.test"),
+        _established_claim("core.founded_year", value=2022, url=None, source_key="ai_ark:company"),
+    ]
+    text = format_established(claims)
+    lines = text.split("\n")
+    assert len(lines) == 2
+    assert lines[0].startswith('- account.open_requisitions: [{"title": "Role 0"')
+    assert lines[0].endswith("… (https://jobs.test)")
+    assert len(lines[0]) <= 240 + len("- account.open_requisitions: ") + len(
+        "… (https://jobs.test)"
+    )
+    assert lines[1] == "- core.founded_year: 2022 (ai_ark:company)"

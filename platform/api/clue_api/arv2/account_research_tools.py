@@ -163,6 +163,33 @@ _TRANSCRIPT_EXCERPT_CHARS = 4000
 #: The page text a link audit reads. Long enough that a quote late in a long page is still found.
 _VERIFY_TEXT_MAX_CHARS = 20000
 
+#: Characters of the "already established" block one deep call carries. The block tells Exa what
+#: not to re-derive; past a few thousand characters it is the query, and the re-run's Zafran call
+#: spent its budget re-reading an AI Ark record instead of researching (34k-char query vs 2.9k).
+_DEEP_ESTABLISHED_MAX_CHARS = 6000
+
+
+def _clip_lines(block: str, max_chars: int) -> str:
+    """Whole lines from the top of ``block`` up to ``max_chars``, then one line saying how many
+    were left out and where they are. A block within the cap is returned unchanged."""
+    if len(block) <= max_chars:
+        return block
+    kept: list[str] = []
+    used = 0
+    lines = block.split("\n")
+    for line in lines:
+        if used + len(line) + 1 > max_chars:
+            break
+        kept.append(line)
+        used += len(line) + 1
+    omitted = len(lines) - len(kept)
+    kept.append(
+        f'… ({omitted} lines omitted; read_account_state(section="already_established") '
+        "has them all)"
+    )
+    return "\n".join(kept)
+
+
 #: Constitution §2, as the deep call's system prompt. Same-name contamination is the single
 #: recurring failure of this work, so the lock is stated to the provider in its own words rather
 #: than left implicit in the query.
@@ -1027,7 +1054,7 @@ async def _research_deep(runtime: ToolRuntime, args: ResearchDeepArgs) -> dict[s
         query_parts.append("SPECIAL PROBES\n" + "\n".join(f"- {probe}" for probe in args.probes))
     query_parts.append(
         "ALREADY ESTABLISHED (do not re-derive; find what is NOT here)\n"
-        + (scope.already_established or "(nothing yet)")
+        + _clip_lines(scope.already_established or "(nothing yet)", _DEEP_ESTABLISHED_MAX_CHARS)
     )
     query = "\n\n".join(query_parts)
 

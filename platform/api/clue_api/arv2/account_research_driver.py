@@ -27,6 +27,7 @@ the first tool write would wait on a lock the driver is still holding.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
@@ -109,6 +110,31 @@ ARV2_ACCOUNT_MODEL_ENV = "ARV2_ACCOUNT_AGENT_MODEL"
 #: re-researching what is already recorded; past a page of it, it stops being read and starts
 #: being context budget.
 _ESTABLISHED_LINE_CAP = 60
+
+#: Characters of one claim's value the established block shows. The re-run's Zafran deep query
+#: was 34k characters because a single AI Ark record or requisition list rode in whole; a line
+#: exists to tell the agent *that* a field is known and roughly what it says, not to be the value.
+_ESTABLISHED_VALUE_CHARS = 240
+
+
+def format_established(claims: Sequence[Claim]) -> str:
+    """The "already established" block: one compact line per live claim, newest first.
+
+    Values are compact JSON (not Python ``repr``), cut at :data:`_ESTABLISHED_VALUE_CHARS` with
+    an ellipsis; the source is the URL, else the source key. The full value is one
+    ``read_account_state`` call away, and that is where a model that needs it should look.
+    """
+    lines: list[str] = []
+    for claim in claims[:_ESTABLISHED_LINE_CAP]:
+        value = json.dumps(
+            claim.value_json, ensure_ascii=False, default=str, separators=(", ", ": ")
+        )
+        if len(value) > _ESTABLISHED_VALUE_CHARS:
+            value = value[:_ESTABLISHED_VALUE_CHARS] + "…"
+        source = claim.source_url or claim.source_key or "no source"
+        lines.append(f"- {claim.field_key}: {value} ({source})")
+    return "\n".join(lines)
+
 
 #: What the model is asked to do. The *how* is the profile, the prompt and the three skills; this
 #: is only the job.
@@ -540,12 +566,7 @@ class Arv2AccountResearchWorkHandler:
             EntityId(job.account_entity_id),
             scope=WorkspaceScope.for_workspace(run.workspace_id),
         )
-        lines = [
-            f"- {claim.field_key}: {claim.value_json} "
-            f"({claim.source_url or claim.source_key or 'no source'})"
-            for claim in claims[:_ESTABLISHED_LINE_CAP]
-        ]
-        return "\n".join(lines)
+        return format_established(claims)
 
     # -- the receipt -------------------------------------------------------------------------
 
