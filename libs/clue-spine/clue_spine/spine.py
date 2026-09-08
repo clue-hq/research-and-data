@@ -16,6 +16,7 @@ factories below (prefixed uuid4 hex, the ``clue_core.new_*_id`` factory pattern 
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Sequence
 from typing import Any, Literal
 from uuid import UUID, uuid4
@@ -220,6 +221,57 @@ async def get_product(conn: AsyncConnection, product_id: str) -> Product | None:
     )
     row = result.mappings().first()
     return _row_to_product(dict(row)) if row is not None else None
+
+
+#: Trademark/service-mark/copyright marks a company decorates its own product names with. They are
+#: stripped BEFORE NFKC, which would otherwise expand ``™`` into the letters ``tm`` and make
+#: ``Aura™`` fold to ``auratm`` — a different identity from ``Aura``.
+_MARK_TABLE = str.maketrans("", "", "™®©℠")
+
+
+def _alias_fold(value: str) -> str:
+    """A comparison key for a product spelling: mark-free, case-free, spacing- and punctuation-free.
+
+    Deliberately mirrors the onboarding lane's ``normalize_identity`` (it cannot be imported: that
+    lives in ``clue_api``, which sits ABOVE the spine). Whitespace and punctuation are not identity
+    — "Front Desk" and "FrontDesk" are one spelling — so the alphanumerics are joined with nothing.
+    """
+    folded = unicodedata.normalize("NFKC", value.translate(_MARK_TABLE)).casefold()
+    return "".join(ch for ch in folded if ch.isalnum())
+
+
+async def add_product_aliases(
+    conn: AsyncConnection, *, product_id: str, workspace_id: str, aliases: Sequence[str]
+) -> Product:
+    """Append observed spellings to a product's aliases and return the refreshed row.
+
+    Never renames, never reorders, never drops an alias: the only edit is an append. A spelling is
+    added only when its folded form matches neither the name nor an alias already recorded (marks,
+    case, spacing and punctuation ignored) — an alias that folds onto the name buys no new match
+    and would only grow the row. Raises :class:`ValueError` when the product is not in this
+    workspace, so a caller can never write across the tenancy boundary.
+    """
+    product = await get_product(conn, product_id)
+    if product is None or product.workspace_id != workspace_id:
+        raise ValueError("product is not in this workspace")
+    seen = {_alias_fold(product.name)} | {_alias_fold(a) for a in product.aliases}
+    merged = list(product.aliases)
+    for alias in aliases:
+        folded = _alias_fold(alias)
+        if alias.strip() and folded and folded not in seen:
+            merged.append(alias.strip())
+            seen.add(folded)
+    if merged != list(product.aliases):
+        await conn.execute(
+            text(
+                "UPDATE product SET aliases = CAST(:aliases AS jsonb) "
+                "WHERE product_id = :id AND workspace_id = :ws"
+            ),
+            {"aliases": serialize_value_json(merged), "id": product_id, "ws": workspace_id},
+        )
+    refreshed = await get_product(conn, product_id)
+    assert refreshed is not None  # it was read a moment ago in this same transaction
+    return refreshed
 
 
 async def list_products(conn: AsyncConnection, brand_id: str) -> list[Product]:
