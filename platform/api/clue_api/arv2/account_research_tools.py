@@ -251,6 +251,11 @@ class ToolRuntime:
         #: Envelopes for tool calls the per-round ceiling dropped; the driver (Task 5) delivers
         #: them as the round's results.
         self.pending_refusals: list[ToolMessage] = []
+        #: The agent's own model rounds, buffered here and drained onto ``provider_call_ledger``
+        #: by the driver at settlement. A provider hop drains inside its own hop; a model call
+        #: happens on the loop's thread with no connection of its own, and the loop must not open
+        #: one per round — so the rounds ride here until the job settles.
+        self.model_ledger = BufferedLedger()
 
         self._refusals: dict[str, str] = {}
         self._semaphores: dict[str, asyncio.Semaphore] = {}

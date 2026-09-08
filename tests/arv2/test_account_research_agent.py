@@ -14,6 +14,7 @@ import json
 from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
@@ -285,3 +286,105 @@ def test_model_error_is_reported_not_raised() -> None:
     assert outcome.error is not None and "RuntimeError" in outcome.error
     assert "hung up" in outcome.error
     assert outcome.tool_calls == 1
+
+
+# --- the agent's own model spend (R2-close task 2) ---------------------------------------------
+#
+# Every provider hop the tools make already lands on ``provider_call_ledger``. The model calls the
+# loop itself makes are spend too, and until this they were invisible: the job's ``cost_usd`` was
+# the tools' number alone.
+
+
+def _metered_message(tool_calls: list[dict[str, Any]] | None = None) -> AIMessage:
+    """An assistant turn stamped the way the governed gateway stamps one."""
+    return AIMessage(
+        content="" if tool_calls else "I stop here.",
+        tool_calls=tool_calls or [],
+        usage_metadata={"input_tokens": 100, "output_tokens": 20, "total_tokens": 120},
+        response_metadata={
+            "clue_cost_cents": "0.5",
+            "clue_cost_source": "metered",
+            "clue_answering_model": "x-ai/grok-4.6",
+            "model_name": "x-ai/grok-4.6",
+        },
+    )
+
+
+def test_every_model_round_lands_one_ledger_row_with_its_cost_and_tokens() -> None:
+    runtime = _runtime()
+    rounds = {"n": 0}
+
+    def respond(messages: list[BaseMessage]) -> AIMessage:
+        rounds["n"] += 1
+        if rounds["n"] == 1:
+            return _metered_message([_call("read_account_state", 1)])
+        return _metered_message()
+
+    outcome = _run(_drive(_ScriptedModel(respond), [_counting_tool(runtime)], runtime))
+
+    rows = runtime.model_ledger.drain()
+    assert len(rows) == outcome.model_rounds == 2
+    first = rows[0]
+    assert first.row_id == f"model:{SCOPE.job_id}:1"
+    assert first.phase == "result"
+    assert first.provider == "openrouter"
+    assert first.operation == "agent_completion"
+    assert first.label == "round-1"
+    assert first.outcome == "ok"
+    assert first.http_status == 200
+    assert first.attempts == 1
+    assert first.latency_ms is not None and first.latency_ms >= 0
+    assert first.recorded_at == datetime(2026, 9, 8, tzinfo=UTC)
+    assert first.cost_usd == Decimal("0.005")
+    assert first.extras["model"] == "x-ai/grok-4.6"
+    assert first.extras["prompt_tokens"] == 100
+    assert first.extras["completion_tokens"] == 20
+    assert first.extras["cached_prompt_tokens"] == 0
+    assert first.extras["cost_source"] == "metered"
+    assert [row.row_id for row in rows] == [
+        f"model:{SCOPE.job_id}:1",
+        f"model:{SCOPE.job_id}:2",
+    ]
+    # The receipt's summary is derived from the same rows.
+    assert outcome.model_spend.calls == 2
+    assert outcome.model_spend.usd == Decimal("0.010")
+    assert outcome.model_spend.prompt_tokens == 200
+    assert outcome.model_spend.completion_tokens == 40
+    assert outcome.model_spend.cost_source == "metered"
+
+
+def test_an_unpriced_model_call_records_no_money_rather_than_a_zero_it_invented() -> None:
+    runtime = _runtime()
+
+    def respond(messages: list[BaseMessage]) -> AIMessage:
+        return AIMessage(
+            content="nothing to do",
+            usage_metadata={"input_tokens": 7, "output_tokens": 1, "total_tokens": 8},
+            response_metadata={"clue_cost_cents": "0", "clue_cost_source": "unpriced"},
+        )
+
+    outcome = _run(_drive(_ScriptedModel(respond), [_counting_tool(runtime)], runtime))
+
+    (row,) = runtime.model_ledger.drain()
+    assert row.cost_usd is None, "an unpriced call is blank, never a fabricated zero"
+    assert row.extras["cost_source"] == "unpriced"
+    assert outcome.model_spend.cost_source == "unpriced"
+    assert outcome.model_spend.usd == Decimal(0)
+
+
+def test_a_model_call_that_raises_lands_a_transport_error_row_and_still_reports_model_error() -> (
+    None
+):
+    runtime = _runtime()
+
+    def respond(messages: list[BaseMessage]) -> AIMessage:
+        raise RuntimeError("the provider hung up")
+
+    outcome = _run(_drive(_ScriptedModel(respond), [_counting_tool(runtime)], runtime))
+
+    assert outcome.reason == "model_error"
+    (row,) = runtime.model_ledger.drain()
+    assert row.outcome == "transport_error"
+    assert row.error_code == "RuntimeError"
+    assert row.cost_usd is None
+    assert row.http_status is None

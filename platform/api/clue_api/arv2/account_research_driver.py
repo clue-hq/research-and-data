@@ -63,7 +63,12 @@ from clue_api.arv2.claim_writer import LenientClaimWriter
 from clue_api.arv2.exa_client import ExaClient
 from clue_api.arv2.gemini_media_client import GeminiMediaClient, MediaBudget
 from clue_api.arv2.knowledge_frontmatter import document_identity, parse_front_matter
-from clue_api.arv2.provider_ledger import ArtifactSink
+from clue_api.arv2.provider_ledger import (
+    ArtifactSink,
+    BufferedRawSink,
+    LedgerStamp,
+    drain_provider_calls,
+)
 from clue_api.arv2.sinks import LedgerSink
 from clue_api.arv2.structuring_client import FieldCatalog, StructuringClient, catalog_menu_text
 from clue_config import GatewayConfig, Secrets, Settings
@@ -535,6 +540,23 @@ class Arv2AccountResearchWorkHandler:
         """Land the job's terminal row: the receipt, the ledger's spend, one activity event."""
         claims = await runtime.job_claims()
         async with self._connection() as conn:
+            # The loop's model rounds, onto the same ledger the tools' hops use, BEFORE the spend
+            # is read — ``job_spend`` sums every ``result`` row, so the job's ``cost_usd`` is the
+            # whole number only if the rounds are already there. No raw sink has anything to
+            # drain: a model request and its answer are deliberately not captured, because the
+            # prompt carries this job's entire context and the ledger is not where that belongs.
+            await drain_provider_calls(
+                conn,
+                raw=BufferedRawSink(),
+                ledger=runtime.model_ledger,
+                artifacts=self._artifacts,
+                stamp=LedgerStamp(
+                    workspace_id=runtime.scope.workspace_id,
+                    project_id=runtime.scope.project_id,
+                    project_run_id=str(runtime.scope.project_run_id),
+                    job_id=runtime.scope.job_id,
+                ),
+            )
             spend = await self._store.job_spend(conn, job_id=composition.job.job_id)
             link_audit = await self._store.job_link_audit(conn, job_id=composition.job.job_id)
             finalization = _receipt(
@@ -656,6 +678,7 @@ def _receipt(
         "profile_sha256": bundle.profile.sha256,
         "manifest_sha256": bundle.manifest_sha256(),
         "model_id": model_id,
+        "model_spend": outcome.model_spend.as_receipt(),
         "error": outcome.error,
     }
 

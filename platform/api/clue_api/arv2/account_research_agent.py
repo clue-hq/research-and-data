@@ -24,9 +24,12 @@ the job row belongs to the driver, not here.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
-from dataclasses import dataclass
+import time
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
+from uuid import uuid4
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
@@ -42,11 +45,20 @@ from langchain_core.tools import StructuredTool
 
 from clue_api.arv2.account_research_refusals import refusal_json
 from clue_api.arv2.account_research_tools import ToolRuntime
+from clue_api.arv2.sinks import LedgerRow
 from clue_obs import get_logger
 
 log = get_logger("clue_api.arv2.account_research_agent")
 
-__all__ = ["AgentOutcome", "AgentStopReason", "run_account_agent"]
+__all__ = ["AgentOutcome", "AgentStopReason", "ModelSpend", "run_account_agent"]
+
+#: The three keys the governed gateway stamps on every answer it annotates
+#: (``clue_gateway.agent_model``). They are read rather than imported because they are that
+#: module's private constants; the coupling is to the wire shape of a LangChain message, which is
+#: what crosses the seam, not to the gateway's internals.
+_COST_CENTS_KEY = "clue_cost_cents"
+_COST_SOURCE_KEY = "clue_cost_source"
+_ANSWERING_MODEL_KEY = "clue_answering_model"
 
 #: How long the loop waits for provider hops that were still in flight when a cap fired. They are
 #: shielded from cancellation precisely so their ledger rows land, so this is the bound on
@@ -61,6 +73,33 @@ AgentStopReason = Literal["finalized", "round_cap", "runtime_cap", "model_error"
 
 
 @dataclass(frozen=True)
+class ModelSpend:
+    """What the loop's own model calls cost, summed from the rows it wrote to the ledger.
+
+    ``cost_source`` is the honesty label carried up from the gateway: ``metered`` when OpenRouter
+    reported the credits it charged, ``estimate`` when our price sheet answered, ``unpriced`` when
+    neither could, and ``mixed`` when one job's rounds were not all answered the same way.
+    """
+
+    calls: int = 0
+    usd: Decimal = Decimal(0)
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cached_prompt_tokens: int = 0
+    cost_source: str = "unpriced"
+
+    def as_receipt(self) -> dict[str, Any]:
+        return {
+            "usd": str(self.usd),
+            "calls": self.calls,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "cached_prompt_tokens": self.cached_prompt_tokens,
+            "cost_source": self.cost_source,
+        }
+
+
+@dataclass(frozen=True)
 class AgentOutcome:
     """How one account job's loop ended, and what it spent getting there.
 
@@ -72,18 +111,151 @@ class AgentOutcome:
     model_rounds: int
     tool_calls: int
     error: str | None
+    model_spend: ModelSpend = field(default_factory=ModelSpend)
 
 
-class _RoundCounter(AgentMiddleware[Any, Any, Any]):
-    """Counts the model calls that actually happened, for the job row and the receipt."""
+class _ModelUsageRecorder(AgentMiddleware[Any, Any, Any]):
+    """Counts the model calls that happened, and writes each one onto the job's cost ledger.
 
-    def __init__(self) -> None:
+    The tools' provider hops have been money-truth since R1; the loop's own rounds were not, so a
+    job that spent twenty-nine Grok completions settled with ``cost_usd = 0``. A round is a
+    provider call like any other: it becomes one ``result`` row under ``operation`` =
+    ``agent_completion``, and ``job_spend`` — which already sums every ``result`` row — picks it
+    up with no change.
+
+    An unpriced round records ``cost_usd = NULL`` rather than ``0``: the ledger says "nobody
+    measured this", never "this was free". A round that raises records a ``transport_error`` row
+    and re-raises, so the loop's existing ``model_error`` ending is unchanged.
+    """
+
+    def __init__(self, runtime: ToolRuntime) -> None:
         super().__init__()
+        self._runtime = runtime
         self.count = 0
+        self._spend = ModelSpend()
 
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
         self.count += 1
-        return await handler(request)
+        round_number = self.count
+        started = time.perf_counter()
+        try:
+            response = await handler(request)
+        except Exception as error:
+            self._record(
+                round_number,
+                started=started,
+                message=None,
+                error_code=type(error).__name__,
+            )
+            raise
+        self._record(round_number, started=started, message=_answer(response), error_code=None)
+        return response
+
+    @property
+    def spend(self) -> ModelSpend:
+        """Every round this recorder wrote, summed — whether or not the rows have been drained."""
+        return self._spend
+
+    def _record(
+        self,
+        round_number: int,
+        *,
+        started: float,
+        message: AIMessage | None,
+        error_code: str | None,
+    ) -> None:
+        metadata: Mapping[str, Any] = message.response_metadata if message is not None else {}
+        usage: Mapping[str, Any] = (message.usage_metadata or {}) if message is not None else {}
+        cents = _cost_cents(metadata) if message is not None else None
+        details: Mapping[str, Any] = usage.get("input_token_details") or {}
+        prompt_tokens = int(usage.get("input_tokens") or 0)
+        completion_tokens = int(usage.get("output_tokens") or 0)
+        cached_tokens = int(details.get("cache_read") or 0)
+        source = str(metadata.get(_COST_SOURCE_KEY) or "unpriced")
+        extras: dict[str, object] = (
+            {}
+            if message is None
+            else {
+                "model": str(
+                    metadata.get(_ANSWERING_MODEL_KEY) or metadata.get("model_name") or ""
+                ),
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "cached_prompt_tokens": cached_tokens,
+                "cost_source": source,
+            }
+        )
+        row = LedgerRow(
+            # Deterministic in the job and the round, so the drain — which runs inside the
+            # driver's settlement transaction and may be retried after a rollback — lands one row
+            # per round however many times it runs (``ledger_id_for`` + ``ON CONFLICT DO
+            # NOTHING``). KNOWN LIMIT: a job that is suspended and re-driven starts counting
+            # rounds at one again, so its second attempt's early rounds collide with the first
+            # attempt's and are dropped rather than added. That undercounts a re-driven job's
+            # model spend; the R1 hop rows, which mint a uuid4 per row, do not have this shape.
+            row_id=f"model:{self._runtime.scope.job_id}:{round_number}",
+            call_id=str(uuid4()),
+            phase="result",
+            provider="openrouter",
+            operation="agent_completion",
+            label=f"round-{round_number}",
+            recorded_at=self._runtime.now(),
+            http_status=None if error_code is not None else 200,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            attempts=1,
+            cost_usd=None if cents is None else cents / 100,
+            outcome="transport_error" if error_code is not None else "ok",
+            error_code=error_code,
+            extras=extras,
+        )
+        self._runtime.model_ledger.record(row)
+        # A job whose rounds were not all priced the same way says ``mixed`` rather than picking
+        # one of the two labels and quietly misdescribing the other rounds.
+        previous = self._spend
+        self._spend = ModelSpend(
+            calls=previous.calls + 1,
+            usd=previous.usd + (row.cost_usd or Decimal(0)),
+            prompt_tokens=previous.prompt_tokens + prompt_tokens,
+            completion_tokens=previous.completion_tokens + completion_tokens,
+            cached_prompt_tokens=previous.cached_prompt_tokens + cached_tokens,
+            cost_source=(
+                source if previous.calls == 0 or previous.cost_source == source else "mixed"
+            ),
+        )
+
+
+def _answer(response: Any) -> AIMessage | None:
+    """The assistant turn inside whatever the middleware handler returned.
+
+    ``awrap_model_call``'s handler answers with a ``ModelResponse`` whose ``result`` is the
+    model's messages, but the contract also admits a bare ``AIMessage`` and an extended response,
+    so all three shapes are read rather than assumed.
+    """
+    if isinstance(response, AIMessage):
+        return response
+    inner = getattr(response, "model_response", response)
+    for message in getattr(inner, "result", ()) or ():
+        if isinstance(message, AIMessage):
+            return message
+    return None
+
+
+def _cost_cents(metadata: Any) -> Decimal | None:
+    """The gateway's stamped cost for one answer, or ``None`` when it could not price the model.
+
+    The gateway stamps the cents as a string so the ``Decimal`` survives a JSON round trip; an
+    ``unpriced`` answer carries a zero that means "no rate", and that must not become a measured
+    zero on the ledger.
+    """
+    if str(metadata.get(_COST_SOURCE_KEY) or "unpriced") == "unpriced":
+        return None
+    raw = metadata.get(_COST_CENTS_KEY)
+    if raw is None:
+        return None
+    try:
+        return Decimal(str(raw))
+    except InvalidOperation:
+        return None
 
 
 class _RoundShapeMiddleware(AgentMiddleware[Any, Any, Any]):
@@ -165,7 +337,7 @@ async def run_account_agent(
     was asked for", which is what the receipt and the reviewer need to know.
     """
 
-    rounds = _RoundCounter()
+    rounds = _ModelUsageRecorder(runtime)
     agent = create_agent(
         model=model,
         tools=list(tools),
@@ -195,12 +367,12 @@ async def run_account_agent(
             model_rounds=rounds.count,
             tool_calls=runtime.tool_calls,
         )
-        return AgentOutcome("runtime_cap", rounds.count, runtime.tool_calls, None)
+        return AgentOutcome("runtime_cap", rounds.count, runtime.tool_calls, None, rounds.spend)
     except Exception as error:  # noqa: BLE001 — the graph's failures are outcomes, never raises
         await runtime.wait_for_inflight(timeout_s=_INFLIGHT_DRAIN_S)
         log.exception("arv2.account_agent_failed", model_rounds=rounds.count)
         detail = f"{type(error).__name__}: {error}"[:_ERROR_CHARS]
-        return AgentOutcome("model_error", rounds.count, runtime.tool_calls, detail)
+        return AgentOutcome("model_error", rounds.count, runtime.tool_calls, detail, rounds.spend)
     if runtime.finalization is not None:
-        return AgentOutcome("finalized", rounds.count, runtime.tool_calls, None)
-    return AgentOutcome("round_cap", rounds.count, runtime.tool_calls, None)
+        return AgentOutcome("finalized", rounds.count, runtime.tool_calls, None, rounds.spend)
+    return AgentOutcome("round_cap", rounds.count, runtime.tool_calls, None, rounds.spend)

@@ -7,8 +7,8 @@ import os
 import re
 import time
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
-from decimal import Decimal
-from typing import Any, cast
+from decimal import Decimal, InvalidOperation
+from typing import Any, Literal, cast
 
 import httpx
 from langchain_core.callbacks import (
@@ -81,7 +81,13 @@ def _without_unsupported_patterns(node: Any) -> Any:
 _REQUESTED_MODEL_KEY = "clue_requested_model"
 _ANSWERING_MODEL_KEY = "clue_answering_model"
 _COST_CENTS_KEY = "clue_cost_cents"
+#: Which of the three cost authorities answered: ``metered`` (the provider reported what the call
+#: cost), ``estimate`` (our own price sheet, from the served model's listed rates), or ``unpriced``
+#: (the model is on no sheet — the cost is a blank, not a zero anyone measured).
+_COST_SOURCE_KEY = "clue_cost_source"
 _ROLE_KEY = "clue_role"
+
+CostSource = Literal["metered", "estimate", "unpriced"]
 
 
 def _catalog_input_modalities(model_entry: dict[str, Any]) -> list[str] | None:
@@ -256,7 +262,9 @@ class GovernedAgentChatModel(BaseChatModel):
                 **kwargs,
             )
             message = result.generations[0].message
-            usage, served, cost = self._annotate(message, served_model=served_model)
+            usage, served, cost, _source = self._annotate(
+                message, served_model=served_model, usage_payload=result.llm_output
+            )
             record_model_call(
                 span=span,
                 call_kind="agent_completion",
@@ -289,7 +297,9 @@ class GovernedAgentChatModel(BaseChatModel):
                 **kwargs,
             )
             message = result.generations[0].message
-            usage, served, cost = self._annotate(message, served_model=served_model)
+            usage, served, cost, _source = self._annotate(
+                message, served_model=served_model, usage_payload=result.llm_output
+            )
             record_model_call(
                 span=span,
                 call_kind="agent_completion",
@@ -329,7 +339,7 @@ class GovernedAgentChatModel(BaseChatModel):
                         usage_message = chunk.message
                         self._annotate(chunk.message)
                 yield chunk
-            usage, served, cost = self._usage_and_cost(usage_message or last_message)
+            usage, served, cost, _source = self._usage_and_cost(usage_message or last_message)
             record_model_call(
                 span=span,
                 call_kind="agent_stream",
@@ -368,7 +378,7 @@ class GovernedAgentChatModel(BaseChatModel):
                         usage_message = chunk.message
                         self._annotate(chunk.message)
                 yield chunk
-            usage, served, cost = self._usage_and_cost(usage_message or last_message)
+            usage, served, cost, _source = self._usage_and_cost(usage_message or last_message)
             record_model_call(
                 span=span,
                 call_kind="agent_stream",
@@ -535,23 +545,35 @@ class GovernedAgentChatModel(BaseChatModel):
         message: AIMessage | AIMessageChunk | BaseMessage,
         *,
         served_model: str | None = None,
-    ) -> tuple[TokenUsage, str, Decimal]:
-        usage, served, cost = self._usage_and_cost(message, served_model=served_model)
+        usage_payload: Mapping[str, Any] | None = None,
+    ) -> tuple[TokenUsage, str, Decimal, CostSource]:
+        usage, served, cost, source = self._usage_and_cost(
+            message, served_model=served_model, usage_payload=usage_payload
+        )
         message.response_metadata = {
             **message.response_metadata,
             _REQUESTED_MODEL_KEY: self.requested_model,
             _ANSWERING_MODEL_KEY: served,
             _COST_CENTS_KEY: str(cost),
+            _COST_SOURCE_KEY: source,
             **({_ROLE_KEY: self.attribution_role} if self.attribution_role else {}),
         }
-        return usage, served, cost
+        return usage, served, cost, source
 
     def _usage_and_cost(
         self,
         message: AIMessage | AIMessageChunk | BaseMessage | None,
         *,
         served_model: str | None = None,
-    ) -> tuple[TokenUsage, str, Decimal]:
+        usage_payload: Mapping[str, Any] | None = None,
+    ) -> tuple[TokenUsage, str, Decimal, CostSource]:
+        """This call's tokens, the model that served it, what it cost, and who says so.
+
+        ``usage_payload`` is the provider's own usage block as ``langchain_openai`` hands it back
+        (``ChatResult.llm_output``). With ``usage.include`` asked for, OpenRouter puts the credits
+        the call actually spent in ``token_usage["cost"]`` there, and a metered number always beats
+        one we derive from a price sheet.
+        """
         metadata = message.response_metadata if message is not None else {}
         served = str(
             served_model
@@ -575,7 +597,13 @@ class GovernedAgentChatModel(BaseChatModel):
             completion_tokens=output_tokens,
             cached_prompt_tokens=cached_tokens,
         )
-        return usage, served, self.gateway_config.cost_cents(served, usage)
+        reported = _reported_cost_cents(usage_payload, metadata)
+        if reported is not None:
+            return usage, served, reported, "metered"
+        if served in self.gateway_config.prices:
+            return usage, served, self.gateway_config.cost_cents(served, usage), "estimate"
+        # No meter and no listed rate: zero, said out loud as a blank rather than as a measurement.
+        return usage, served, Decimal(0), "unpriced"
 
 
 class OpenRouterAgentModelProvider:
@@ -805,6 +833,31 @@ def _reasoning_request(
 def _served_model_from_result(result: ChatResult, *, fallback: str) -> str:
     output = result.llm_output or {}
     return str(output.get("model_name") or output.get("model") or fallback)
+
+
+def _reported_cost_cents(*sources: Mapping[str, Any] | None) -> Decimal | None:
+    """The provider's own cost for this call, in cents, or ``None`` when it did not report one.
+
+    OpenRouter answers ``usage.include`` with ``usage.cost`` in USD credits. ``langchain_openai``
+    carries that block through verbatim on the chat-completions path as
+    ``llm_output["token_usage"]``; the streaming path drops the extra keys, which is why the price
+    sheet remains the fallback rather than being retired. The value is read through ``str`` so it
+    stays exact ``Decimal`` arithmetic even when the JSON parser handed us a float.
+    """
+    for source in sources:
+        if not source:
+            continue
+        token_usage = source.get("token_usage")
+        if not isinstance(token_usage, Mapping):
+            continue
+        cost = token_usage.get("cost")
+        if cost is None or isinstance(cost, bool) or not isinstance(cost, int | float | str):
+            continue
+        try:
+            return Decimal(str(cost)) * 100
+        except InvalidOperation:
+            continue
+    return None
 
 
 def _normalize_tool_choice(

@@ -811,3 +811,67 @@ def test_the_builder_composes_the_lane_when_everything_is_configured(
     # artifact write path nor its own gateway client.
     assert handler._artifacts is artifacts  # noqa: SLF001 — the injection is the assertion
     assert handler._models is models  # noqa: SLF001
+
+
+# --- the agent's own model spend (R2-close task 2) ---------------------------------------------
+
+
+def _metered_finalizing_model() -> _ScriptedModel:
+    """The finalizing model, stamped the way the governed gateway stamps a real answer."""
+
+    base = _finalizes_at_once()
+
+    def respond(messages: list[BaseMessage]) -> AIMessage:
+        message = base._respond(messages)
+        return AIMessage(
+            content=message.content,
+            tool_calls=message.tool_calls,
+            usage_metadata={"input_tokens": 1_000, "output_tokens": 200, "total_tokens": 1_200},
+            response_metadata={
+                "clue_cost_cents": "0.5",
+                "clue_cost_source": "metered",
+                "clue_answering_model": "x-ai/grok-4.6",
+            },
+        )
+
+    return _ScriptedModel(respond)
+
+
+def test_the_model_rounds_are_drained_onto_the_ledger_before_the_job_spend_is_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, job)
+    _patch_reads(
+        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+    )
+    handler, conn_factory, _, _ = _handler(store, model=_metered_finalizing_model())
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "completed"
+    ledger_rows = [
+        params
+        for statement, params in conn_factory.conn.statements
+        if "provider_call_ledger" in statement
+    ]
+    assert len(ledger_rows) == 1, "one model round, one ledger row"
+    landed = ledger_rows[0]
+    assert landed["provider"] == "openrouter"
+    assert landed["operation"] == "agent_completion"
+    assert landed["phase"] == "result"
+    assert landed["outcome"] == "ok"
+    assert landed["cost_usd"] == Decimal("0.005")
+    assert landed["job_id"] == job.job_id
+    assert json.loads(str(landed["extras_json"]))["prompt_tokens"] == 1_000
+
+    receipt = store.named("finish_job")[0]["finalization"]
+    assert receipt["model_spend"] == {
+        "usd": "0.005",
+        "calls": 1,
+        "prompt_tokens": 1_000,
+        "completion_tokens": 200,
+        "cached_prompt_tokens": 0,
+        "cost_source": "metered",
+    }

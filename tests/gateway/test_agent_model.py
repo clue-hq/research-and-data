@@ -20,7 +20,7 @@ from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResu
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from openai import APIStatusError
 from openai.types.responses import ResponseError
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, SecretStr, ValidationError
 
 from clue_config.gateway import GatewayConfig, ModelPrice
 from clue_gateway import OpenRouterAgentModelProvider
@@ -588,8 +588,11 @@ def _p32_provider(config: GatewayConfig, respond: Any) -> OpenRouterAgentModelPr
 def test_openrouter_extra_body_carries_provider_sort_and_usage_accounting() -> None:
     """The OpenRouter economics knobs are config, not code: `provider.sort` pins one
     replica (the design runtime's ~95% cached-prefill invariant) and `usage.include`
-    asks for the accounting block. Default config sends NEITHER — existing call sites
-    keep their exact wire shape."""
+    asks for the accounting block — including the credits the call actually cost.
+
+    `provider.sort` still defaults off, so a call site that never asked for one replica
+    ordering keeps its exact wire shape. `usage.include` defaults ON since the R2-close:
+    a metered cost is the only cost that is not a guess, so every call asks for one."""
     seen_payloads: list[dict[str, Any]] = []
 
     def respond(request: httpx.Request) -> httpx.Response:
@@ -617,6 +620,12 @@ def test_openrouter_extra_body_carries_provider_sort_and_usage_accounting() -> N
     )
     plain.invoke("hi")
     assert "provider" not in seen_payloads[-1]
+    assert seen_payloads[-1]["usage"] == {"include": True}
+
+    opted_out = _p32_provider(GatewayConfig(openrouter_usage_include=False), respond).build(
+        model_id="probe/model", timeout_s=10, max_retries=0, max_output_tokens=64, temperature=0
+    )
+    opted_out.invoke("hi")
     assert "usage" not in seen_payloads[-1] or seen_payloads[-1]["usage"] is None
 
 
@@ -664,7 +673,7 @@ def test_cached_prompt_tokens_survive_into_usage() -> None:
         model_id="probe/model", timeout_s=10, max_retries=0, max_output_tokens=64, temperature=0
     )
     response = model.invoke("hi")
-    usage, _served, _cost = model._usage_and_cost(response)
+    usage, _served, _cost, _source = model._usage_and_cost(response)
     assert usage.prompt_tokens == 40
     assert usage.cached_prompt_tokens == 33
 
@@ -897,3 +906,111 @@ def test_the_retry_bound_and_backoff_stay_small_enough_for_a_leased_agent_turn()
     assert agent_model._MAX_TRANSIENT_ATTEMPTS == 3
     assert len(agent_model._TRANSIENT_BACKOFF_S) == agent_model._MAX_TRANSIENT_ATTEMPTS - 1
     assert sum(agent_model._TRANSIENT_BACKOFF_S) <= 5.0
+
+
+# --- OpenRouter's own metered cost (R2-close task 2) -------------------------------------------
+#
+# ``usage.include`` makes OpenRouter answer with a ``usage`` block carrying the credits the call
+# actually cost. ``langchain_openai``'s chat-completions path hands that block back verbatim as
+# ``ChatResult.llm_output["token_usage"]``, so the governed wrapper prefers it over the local
+# price sheet and says which of the two it used.
+
+
+class _UsageChatModel(BaseChatModel):
+    """An inner model shaped like ``langchain_openai``'s chat-completions result.
+
+    ``llm_output["token_usage"]`` is the provider's raw usage block — including OpenRouter's
+    ``cost`` key when usage accounting was asked for.
+    """
+
+    _usage: dict[str, Any] = PrivateAttr()
+
+    def __init__(self, usage: dict[str, Any]) -> None:
+        super().__init__()
+        self._usage = usage
+
+    @property
+    def _llm_type(self) -> str:
+        return "c6-usage-test-model"
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del messages, stop, run_manager, kwargs
+        message = AIMessage(
+            content="answered",
+            usage_metadata={
+                "input_tokens": int(self._usage.get("prompt_tokens", 0)),
+                "output_tokens": int(self._usage.get("completion_tokens", 0)),
+                "total_tokens": int(self._usage.get("total_tokens", 0)),
+            },
+        )
+        return ChatResult(
+            generations=[ChatGeneration(message=message)],
+            llm_output={"token_usage": dict(self._usage), "model_name": "x-ai/grok-4.6"},
+        )
+
+
+_GROK_PRICES = {
+    "x-ai/grok-4.6": ModelPrice(
+        prompt_cents_per_1k=Decimal("0.2"), completion_cents_per_1k=Decimal("0.6")
+    )
+}
+
+
+def _governed(usage: dict[str, Any], *, prices: dict[str, ModelPrice]) -> GovernedAgentChatModel:
+    return GovernedAgentChatModel(
+        models=(_UsageChatModel(usage),),
+        model_ids=("x-ai/grok-4.6",),
+        requested_model="x-ai/grok-4.6",
+        gateway_config=GatewayConfig(prices=prices),
+    )
+
+
+def test_openrouter_reported_cost_is_preferred_over_the_price_sheet_and_labelled_metered() -> None:
+    model = _governed(
+        {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120, "cost": 0.0123},
+        prices=_GROK_PRICES,
+    )
+
+    response = model.invoke("What did that cost?")
+
+    # $0.0123 is 1.23 cents — the provider's number, not the sheet's 0.032.
+    assert Decimal(response.response_metadata["clue_cost_cents"]) == Decimal("1.23")
+    assert response.response_metadata["clue_cost_source"] == "metered"
+
+
+def test_without_a_reported_cost_the_price_sheet_answers_and_says_so() -> None:
+    model = _governed(
+        {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120},
+        prices=_GROK_PRICES,
+    )
+
+    response = model.invoke("What did that cost?")
+
+    # 100 prompt tokens at 0.2c/1k plus 20 completion tokens at 0.6c/1k.
+    assert Decimal(response.response_metadata["clue_cost_cents"]) == Decimal("0.032")
+    assert response.response_metadata["clue_cost_source"] == "estimate"
+
+
+def test_a_model_absent_from_the_price_sheet_reports_zero_as_unpriced_never_as_measured() -> None:
+    model = _governed({"prompt_tokens": 100, "completion_tokens": 20}, prices={})
+
+    response = model.invoke("What did that cost?")
+
+    assert Decimal(response.response_metadata["clue_cost_cents"]) == Decimal(0)
+    assert response.response_metadata["clue_cost_source"] == "unpriced"
+
+
+def test_usage_accounting_is_asked_for_by_default_and_grok_is_on_the_price_sheet() -> None:
+    """The R2 live run logged zero for every model call: OpenRouter was never asked to meter, and
+    the served model was not on the sheet, so neither source of truth could answer."""
+
+    config = GatewayConfig()
+
+    assert config.openrouter_usage_include is True
+    assert "x-ai/grok-4.6" in config.prices
