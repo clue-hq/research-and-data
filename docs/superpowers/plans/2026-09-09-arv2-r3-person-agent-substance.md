@@ -1,6 +1,24 @@
-# ARV2 R3 — the committee step and the person agent's content, substance for founder review (2026-09-09, rev 1)
+# ARV2 R3 — the committee step and the person agent's content, substance for founder review (2026-09-09, rev 2)
 
-**Status: DRAFT FOR REVIEW — nothing here is a catalog file yet.** Per the skill-authoring rule, the
+**Status: SUBSTANCE APPROVED 2026-09-09 (every §7 item ruled; see §7) — nothing here is a catalog file
+yet; the R3 plan writes the files verbatim from this document.**
+
+**Rev 2 (2026-09-09) — the founder's rulings on §7, and the dummy-frontend walk.** (1) Self-announced
+new-job and relocation posts may be hooks; wedding and baby posts are biography only, `outreach_safe=false`.
+(2) **No new field for the unique insight** — the live contact page (walked at
+`/accounts/zafran-security/contacts/nick-fisher` and read in the frontend's own code) has no insight slot;
+personal facts reach the page only as items the display composes from the section recipes' allowed
+fields. The narrow follow-up therefore writes the fact it finds into the **existing** facet field it
+actually is (a hobby, a publication, a talk, a quote) at **priority 1**, with a store-only write marker
+`unique_insight: true` for grading. Nothing changes in the frontend. (3) `committee_cap` default 5. (4)
+Media on by default, at most **3 items per person**, as the setting `CLUE_ARV2_PERSON_MEDIA_MAX_ITEMS`
+(default 3, in `.env.example`). (5) Cost estimate accepted; no cap change. (6) `reports_to` only from ATS
+reporting lines and the person's own statements. (7) Recall script extended to the ten answer-key people,
+measured on the first live ten-person run. Also in rev 2: §3.1–§3.3 carry no references to documents
+outside the agent's own catalog and context (skill text names only tools and things the agent can see;
+provenance sits in founder-only notes), and §0 lists the exact fields the two live pages read.
+
+Per the skill-authoring rule, the
 substance of every agent-facing file is put in front of the founder and discussed before any
 `platform/agents/catalog/entity-research/arv2-person/v1/` file is written. Once approved, an Opus
 implementer writes the files verbatim from this document, the reviewer (Fable) checks them against it,
@@ -46,12 +64,28 @@ buffered sinks, the halt latch, per-provider semaphores, refusal memory, `write_
   The profile is sha-pinned as the launch authorization; the person launch records its digest.
 - **Compliance pass in code**, after structuring, before the claims are readable (§5). The prompt states
   the floor too, but the code decides.
-- **Field catalog.** The `contact.*` professional layer (title, headline, job function, level, location,
-  `reports_to`, `x_url`, badges, network statistics) and the `contact.facet.*` personal layer (`hooks`,
-  `openers`, `voice_quote`, `self_summary`, `hobby`, `other_roles`, `conference_talk`, `recent_award`,
-  `certifications`, `stated_skills`, `education_highschool`, `best_channel`, `excluded_lookalike`,
-  `recent_post`). Every facet row carries a `use_class_hint` and a shorter TTL already; the R2
-  follow-ups make each field's shape visible to the agent at write time.
+- **Field catalog — exactly what the two live pages read (rev 2, from the frontend walk).** The person
+  agent's catalog is the union of the fields the contact page's deterministic slots and the two pages'
+  section recipes consume; nothing else is written, and no new field is registered.
+  *Deterministic slots on the contact page:* `contact.current_title` (Title), `contact.persona` and
+  `contact.role_on_committee` (persona chip, influence, "why they matter" rationale), `core.work_email`
+  (Email — the export claim is written **here**, not to a new field), `contact.linkedin_url`,
+  `contact.network_statistics` (followers) and `contact.member_badges` (creator badge),
+  `contact.current_location`, `contact.facet.best_channel`, `contact.facet.alma_mater` (Education),
+  `contact.facet.career_history` (tenure: earliest start at the current employer), `contact.reports_to`
+  (direct reports), `contact.headline`, `contact.x_url`.
+  *Facets the section recipes compose into items:* `contact.facet.hobby`, `voice_quote` (with
+  `media_url` + `media_timestamp` in the value so the Sources row shows the timestamp), `recent_post`,
+  `publications`, `career_history`, `hooks`, `openers`, `stated_interests`, `communication_style`,
+  `conference_talk`, `public_appearances`, `certifications`, `self_summary`; plus the R2 account fields
+  the contact recipes also read (requisitions, tooling, pain, outcomes, ABM maturity).
+  *Registered but not read by any page* (still written when found, for the answer key and the store):
+  `other_roles`, `recent_award`, `stated_skills`, `education_highschool`, `excluded_lookalike`.
+  Note: `alma_mater`, `career_history`, `publications`, `public_appearances`, `stated_interests` and
+  `communication_style` are registered by the older profiling pack, not the ARV2 pack; the R3 plan names
+  them in the person catalog explicitly so the agent can write them. Every facet row carries a
+  `use_class_hint` and a shorter TTL already; the R2 follow-ups make each field's shape visible to the
+  agent at write time.
 
 ## 1. The committee step (before any person agent runs)
 
@@ -67,8 +101,9 @@ subject:
    every member (ruling). The provider record's deterministic fields (title, headline, location, badges,
    network statistics, employment history) are mapped **in code** to `contact.*` claims, the way the AI
    Ark company record is mapped to `core.*` today, each citing the record's JSON path. Email is a
-   `contact.email` claim with `use_class=professional-public`, `identity_binding=strong`, and the export
-   call as its source. No email is ever synthesised; an export that returns nothing is an honest empty.
+   `core.work_email` claim (the field the contact page's Email slot reads) with
+   `use_class=professional-public`, `identity_binding=strong`, and the export call as its source. No
+   email is ever synthesised; an export that returns nothing is an honest empty.
 3. **The contact entity is created here** (`insert_contact_entity`, workspace-scoped, keyed to the
    account), with the employment history kept as the lock. A vacant seat creates no contact and no job.
 4. **Fan-out.** For every confirmed member up to `committee_cap`, one person job is created and enqueued
@@ -103,8 +138,9 @@ deltas, each from a PoC rule the ten-person run needed:
    arts are background. A national-origin or migration story the person told **first-person** may be
    recorded as biography, tagged `[ORIGIN - NOT AN OUTREACH HOOK]`, and is born `outreach_safe=false`.
 6. **Family milestones only when self-announced** — their own wedding, relocation, new-job or new-baby
-   post — and never searched for or inferred from any other source. (See §7 open question 1 on whether a
-   self-announced milestone may be an opener.)
+   post — and never searched for or inferred from any other source. A self-announced **new job or
+   relocation** may be a hook. A **wedding or a baby** is biography only: recorded, born
+   `outreach_safe=false`, never in a hook or an opener (founder ruling 2026-09-09).
 7. **Do not write "likely", "probably", "appears to" in place of evidence.** NOT FOUND, with the channels
    checked, is the answer.
 
@@ -143,7 +179,8 @@ document outside the agent's own catalog and context.
    heading "ALREADY-KNOWN SOURCES — read these FIRST", then the probes. A long preamble before the
    charter can make the call answer only part of it. If the report comes back thin, the tool retries
    once on its own; you do not.
-5. **Media, where it exists.** Media is on by default, bounded per person. For a YouTube appearance,
+5. **Media, where it exists.** Media is on by default, at most three items per person (the operator can
+   change the number in the environment; the tool refuses `media_cap_reached` past it). For a YouTube appearance,
    `read_media_feeds` reads the indexed transcript first and only transcribes audio when there is no
    indexed text. Give every other place the same appearance may load from as `alternate_urls`. A quote
    from a transcript is usable only when the speaker is verified as this person; a media item named
@@ -167,12 +204,18 @@ run. The narrow `unique_insight` call took the hit rate from 3/10 to 10/10 at $0
 follow-ups slice (`2026-09-09-arv2-r2-followups.md`) supplies the compacted established block and the
 media `alternate_urls` the ladder relies on.
 
-### 3.2 The person charter — ten sections (the two PoC charters merged)
+### 3.2 The person charter — ten sections
 
-`step8` (professional, eight sections) and `p3_deep` (personal, eight sections) overlap on identity,
-career, education, writing/talks, how they buy, hooks and openers; they differ in that `step8` has *what
-they own today* and `p3_deep` has *life outside work*, *voice*, *unique insight*, *what we could not
-find* and the *same-name log*. Merged:
+The charter is the list of what the deep call must find about the person, in numbered sections it must
+answer in order, writing "NOT FOUND" for anything it cannot evidence. It is skill text: it names no
+document outside the agent's context.
+
+*Provenance, for the founder — not part of the skill text:* the ten sections merge the two
+proof-of-concept person charters in `.context/arv2-clue-sample-v3/step8_person_deep.py` (professional,
+eight sections) and `.context/arv2-person-depth/p3_deep.py` (personal, eight sections). They overlap on
+identity, career, education, writing and talks, how they buy, hooks and openers; the first adds *what
+they own today*, the second adds *life outside work*, *voice*, *unique insight*, *what we could not
+find* and the *same-name log*.
 
 1. **Identity confirmation and same-name log** — the primary sources tying this exact person to this
    company and title, with dates; every same-name person encountered, the URL, and how they were ruled
@@ -208,12 +251,20 @@ The compliance charter and sensitivity floor sit in the deep call's **system pro
 ### 3.3 The narrow follow-up, and structuring
 
 - `unique_insight(subject)` — one structuring-client call with the person's material and the single
-  question. It writes to a registered field of its own, proposed as `contact.facet.unique_insight`
-  (string, `use_class_hint=personal-public-non-sensitive`, TTL 75d): a new pack row shipped with its
-  data migration (the R2-close lesson: a pack-row change always ships with its migration). See §7
-  question 2 for the alternative of folding it into `self_summary`.
-- `voice_quote` carries `media_url` and `timestamp` as first-class sub-fields (PoC §5d); the registered
-  object already has the shape — the structuring prompt must ask for the timestamp explicitly.
+  question: the one thing about this person a generic enrichment tool would never surface. **It
+  registers no field.** The fact it finds is written to the existing facet field it actually is — a
+  `hobby`, a `publication`, a `conference_talk`, an `other_roles` seat, a `voice_quote` — at
+  **priority 1**, so the display ranks it first when it composes the openers, and with the write marker
+  `unique_insight: true`, which lives on the claim row in the store only (the read surface never serves
+  markers; the frontend does not change). The recall measurement and the receipt read that marker to say
+  whether the insight was found. If nothing distinctive exists, the receipt records "thin public
+  footprint" with the channels checked and no claim is written. (Founder ruling 2026-09-09, from the
+  dummy-frontend walk: the live contact page composes personal facts into openers and angles from the
+  section recipes' allowed fields and has no insight slot; a `unique_insight` field would be stored and
+  never shown.)
+- `voice_quote` carries `media_url` and `media_timestamp` inside its value; the registered object already
+  has the shape, the display's Sources row shows the timestamp when the value carries it, and the
+  structuring prompt must ask for the timestamp explicitly.
 - `hooks` and `openers` stay list fields; every opener names its hook and the hook names its quote — the
   structuring pass writes them together, and an opener whose hook has no quote is dropped, never written.
 
@@ -259,33 +310,31 @@ Refusal codes the person driver adds or changes (reaction in the agent's terms):
 | `email_export_empty` | The provider export returned no email | Record no email; the member is still researched |
 | `speaker_unverified` (existing) | Transcript speaker is not the subject | Quote nothing from it; record the item unattributed |
 | `insight_not_found` | `unique_insight` found nothing beyond a standard profile | Record "thin public footprint" with channels checked; move on |
+| `media_cap_reached` | This person already has the configured number of media items (default 3) | Media for this person is complete; do not call `read_media_feeds` again for them |
 | `person_not_admitted` | `structure_material(subject_kind="person")` for a subject with no contact entity | Confirm the member first (`lookup_person`); a vacant seat is not a person |
 
 The tool table gains `lookup_person`, `unique_insight`, and the `alternate_urls` argument on media.
 
-## 7. What still needs the founder's word before the files are written
+## 7. Founder rulings (2026-09-09) — all seven items closed
 
-1. **Self-announced family milestones as openers.** The charter allows recording a person's own wedding
-   / new-baby / relocation post as biography. May an opener use one (e.g. congratulations on a new
-   role, yes; on a baby, probably not)? Recommendation: **new-job and relocation posts may be hooks;
-   wedding and baby posts are biography only, `outreach_safe=false`.**
-2. **`contact.facet.unique_insight` as a new registered field** (with its migration) vs. folding the
-   insight into `self_summary`. Recommendation: **its own field** — the display treats it as the
-   headline of the contact page, and the PoC scored depth on it.
-3. **Default `committee_cap`** for the fan-out. R2's launches used 5; the PoC committees were 3–6.
-   Recommendation: **5**, human-adjustable per launch.
-4. **Media on by default — bound it.** Ruling is on by default; proposal: at most **two media items per
-   person** and the existing per-job media-seconds ceiling; more on demand.
-5. **Cost to expect per person, honestly.** PoC provider spend was $0.07–0.10 (trimmed sweep + deep +
-   structuring + media where present) plus ~0.5 AI Ark credit per lookup and the email-export credit
-   (to measure on the first live person). The **model spend** the R2 re-run revealed (~7¢ per round) will
-   dominate: a person agent at 6–10 rounds is **$0.40–0.70 of model spend**, so ≈ $0.50–0.80 per person
-   all-in before AI Ark credits. Ten people ≈ $6–8 + ~7 credits. Say now if that changes the cap.
-6. **The `reports_to` field** — derive from ATS reporting lines and the person's own statements only
-   (never inferred from titles). Confirm that is the rule.
-7. **Answer-key measurement** — extend `scripts/arv2_answer_key_recall.py` to the ten people
-   (`contact.*` / `contact.facet.*` keys, same leaf-value grading). Recommendation: yes, in the R3 plan,
-   measured on the first live ten-person run, which is also where the R2 follow-ups get measured.
+1. **Self-announced family milestones.** RULED: new-job and relocation posts may be hooks; wedding and
+   baby posts are biography only, `outreach_safe=false`, never in a hook or an opener. (§2 item 6.)
+2. **Unique insight.** RULED from the dummy-frontend walk: **no new field**. The narrow follow-up writes the
+   fact into the existing facet it is, at priority 1, with the store-only marker `unique_insight: true`.
+   `self_summary` stays the person's own words. Nothing changes in the frontend. (§3.3.)
+3. **Default `committee_cap`.** RULED: 5, human-adjustable per launch.
+4. **Media bound.** RULED: on by default, at most **3 items per person**, as the setting
+   `CLUE_ARV2_PERSON_MEDIA_MAX_ITEMS` (default 3, mirrored in `.env.example`), beside the existing
+   per-job media-seconds ceiling. The tool refuses `media_cap_reached` past it. (§3.1 rung 5, §6.)
+5. **Cost.** RULED: the estimate (≈ $0.50–0.80 per person all-in before AI Ark credits, model spend
+   dominating; ten people ≈ $6–8 + ~7 credits) is accepted and changes no cap. The email-export credit is
+   measured on the first live person.
+6. **`reports_to`.** RULED: derived only from ATS reporting lines and the person's own statements, never
+   inferred from titles.
+7. **Answer-key measurement.** Accepted as recommended (the founder closed the list without objection):
+   `scripts/arv2_answer_key_recall.py` is extended to the ten people (`contact.*` / `contact.facet.*`
+   keys, leaf-value grading, insight presence read from the `unique_insight` marker), measured on the
+   first live ten-person run, which is also where the R2 follow-ups are measured.
 
 ## 8. What R3 does not do
 
