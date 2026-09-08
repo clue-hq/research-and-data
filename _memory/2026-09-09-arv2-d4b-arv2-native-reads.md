@@ -288,3 +288,27 @@ resolution). Net: 72 Tier-B drop + 83 Tier-A = 155 tables in ONE reversible migr
 folded into step 6; the couplings table in §1.2 lists the Tier-C readers (`claimstore/merge.py`,
 `compliance/dsar.py`, `review/*`, `narrative/support.py`, `observability_wiring.py`) the plan
 must edit before the drop. Next: write the Phase-6 deletion plan from the inventory.
+
+## Rebase onto the moved base + the post-rebase gate (2026-09-09, before the PR)
+
+`integration/design-improvement` had gained 60 commits (R2 close-out, O3/O4, the Alembic join
+`0622104be021`) since D4 merged. Rebased the 13 D4-b commits onto it (`track-d4b-pre-rebase` keeps
+the old tip). Two conflicts: the loader's import list (both `WORK_EMAIL_KEY` and the base's new
+`ZAFRAN_ANSWER_KEY` are needed) and one appended line each in `_memory/README.md`. Two Alembic heads
+after the rebase → empty join `63294c3ce019` (`7332ac974920` + `0622104be021`); one head.
+
+Gate on the rebased tree: db-smoke up→down→up on a clean throwaway (`clue_d4b_gate`, 442 steps,
+exit 0); frontend `design-system:build` + `lint` + `build` exit 0; `lint-imports` 26/0; mypy 2
+errors, both base-only files (`ad_assets.py:149` baseline, `arv2/account_research_claims.py:962`
+from the R2 close-out); ruff 9/9 all base-only files; Zafran walk 2 passed on the loaded DB (now at
+`63294c3ce019`). Per-directory pytest on the clean throwaway (`--timeout=120`, live + the
+real-model synthesis test excluded, real keys unset): arv2 699/0, claimstore 136/1, db 38/0
+(the loaded-DB downgrade reds do not exist on a clean DB), agents 211/0, integration 47/10, api
+1,796/36. **Clean-DB A/B against the base tip** (`/tmp/d4b-base-wt` @ `59b69292f`, DB
+`clue_d4b_base`): api 36 vs 36 — 35 identical, base-only = the deleted bulk-email test, HEAD-only
+(once) = `test_lane_d2_turn_submission_db.py::test_detached_research_work_does_not_block_a_new_chat_turn`,
+a `MultipleResultsFound` inside `clue_fleet/queue.py::claim_next_task` over committed leftovers
+from the r9/pilot legacy tests; passes alone and as a whole file ×3 on the same DB → order-dependent
+flake in untouched code, recorded as a fleet-owner follow-up (claim SQL shape). integration+claimstore
+21 vs 11: the 10 gone are `test_fi2_slice1_read_layer.py`, deleted here. **Zero HEAD-only
+deterministic failures.**
