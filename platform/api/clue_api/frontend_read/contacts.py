@@ -780,9 +780,19 @@ def _linkedin(entity: ContactEntity | None) -> tuple[str, str]:
 
 
 def _followers(claim: Claim | None) -> int | None:
-    """``contact.network_statistics.followers`` when it is a non-negative integer."""
+    """The follower count when it is a non-negative integer, from either shape the store holds.
+
+    The registry sketch is ``{"followers": n}``; the provider's own record (what the answer key
+    actually stores, found by the Zafran walk) nests it as ``{"network": {"followers_count": n}}``.
+    Both are read; anything else — a string, a bool, a negative — is served as unknown.
+    """
     value = None if claim is None else claim.value_json
-    followers = value.get("followers") if isinstance(value, dict) else None
+    if not isinstance(value, dict):
+        return None
+    followers = value.get("followers")
+    if followers is None:
+        network = value.get("network")
+        followers = network.get("followers_count") if isinstance(network, dict) else None
     if isinstance(followers, bool) or not isinstance(followers, int) or followers < 0:
         return None
     return followers
@@ -801,6 +811,11 @@ def _creator_badge(claim: Claim | None) -> bool | None:
         return _CREATOR_BADGE in value.casefold()
     if isinstance(value, list):
         return any(isinstance(badge, str) and _CREATOR_BADGE in badge.casefold() for badge in value)
+    if isinstance(value, dict):
+        # The provider's own record (the answer key's shape, found by the Zafran walk): one flag
+        # per badge — ``{"creator": true, "premium": true, "hiring": false, …}``.
+        flag = value.get(_CREATOR_BADGE)
+        return flag if isinstance(flag, bool) else None
     return None
 
 

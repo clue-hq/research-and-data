@@ -1912,3 +1912,31 @@ def test_the_v1_evidence_route_authorises_a_claim_the_contact_page_cites() -> No
             assert cited in page.cited_claim_ids
 
     run_async(scenario())
+
+
+# --- the provider's own shapes for the rail (D3 close-out finding from the Zafran walk) ---------
+
+
+def test_followers_and_creator_badge_read_the_providers_record_shapes() -> None:
+    """The answer key stores AI Ark's own records: followers nested under ``network`` and the
+    badges as one flag per badge, not the registry sketches (``{"followers": n}``, a list)."""
+    from types import SimpleNamespace
+
+    from clue_api.frontend_read.contacts import _creator_badge, _followers
+
+    def claim(value: object) -> Any:
+        return SimpleNamespace(value_json=value)
+
+    assert _followers(claim({"followers": 6808})) == 6808
+    assert (
+        _followers(claim({"network": {"followers_count": 6808, "connections_count": 4776}})) == 6808
+    )
+    assert _followers(claim({"network": {"followers_count": "6808"}})) is None
+    assert _followers(claim({"followers": -1})) is None
+    assert _followers(None) is None
+
+    assert _creator_badge(claim(["creator"])) is True
+    assert _creator_badge(claim({"creator": True, "premium": True, "hiring": False})) is True
+    assert _creator_badge(claim({"creator": False, "premium": True})) is False
+    assert _creator_badge(claim({"premium": True})) is None
+    assert _creator_badge(None) is None

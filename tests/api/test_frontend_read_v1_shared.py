@@ -349,6 +349,19 @@ def test_education_label_renders_an_object_or_a_bare_string() -> None:
     assert education_label(None) is None
 
 
+def test_education_label_reads_the_providers_list_shapes() -> None:
+    """The answer key stores ``alma_mater`` as the provider's list (D3 close-out finding)."""
+    strings = ["MBA at Columbia Business School (2011 - 2013)", "BA at Somewhere (2005 - 2009)"]
+    assert education_label(strings) == "MBA at Columbia Business School (2011 - 2013)"
+    objects = [
+        {"school": "Columbia Business School", "degree": "MBA", "field": None},
+        {"school": "Somewhere", "degree": "BA"},
+    ]
+    assert education_label(objects) == "Columbia Business School, MBA"
+    assert education_label([None, {}, {"school": "Later"}]) == "Later"
+    assert education_label([]) is None
+
+
 def test_linkedin_label_is_the_last_path_segment() -> None:
     assert linkedin_label("https://www.linkedin.com/in/nicholastfisher") == "nicholastfisher"
     assert linkedin_label("https://www.linkedin.com/in/nicholastfisher/") == "nicholastfisher"

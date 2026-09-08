@@ -479,12 +479,26 @@ def current_position_start(career_history_json: object) -> date | None:
 
 
 def education_label(alma_mater_json: object) -> str | None:
-    """``"Columbia, MBA"`` from the object form, the string itself from the string form."""
+    """``"Columbia Business School, MBA"`` from the object form, the string itself from the string
+    form, and the **first entry** of a list — which is what the answer key actually holds.
+
+    The Zafran walk (D3 close-out) found ``contact.facet.alma_mater`` stored as the provider's list:
+    either strings (``["MBA at Columbia Business School (2011 - 2013)", …]``) or objects keyed
+    ``school``/``degree`` rather than the registry's ``institution``. The rail has one education
+    row, so the first (most recent, as the provider orders them) entry is served; both key
+    spellings are read so neither the registered shape nor the provider's is silently blank.
+    """
+    if isinstance(alma_mater_json, list):
+        for entry in alma_mater_json:
+            label = education_label(entry)
+            if label is not None:
+                return label
+        return None
     if isinstance(alma_mater_json, dict):
         parts = [
             part
             for part in (
-                _text(alma_mater_json.get("institution")),
+                _text(alma_mater_json.get("institution")) or _text(alma_mater_json.get("school")),
                 _text(alma_mater_json.get("degree")),
             )
             if part
