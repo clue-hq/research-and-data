@@ -18,7 +18,7 @@ Four live runs on one workspace grew the product rows 19 → 28 through name dri
 
 - **Standing rule (catalog contract §10):** no Client-KB version, readiness decision or Stage-0 pin anywhere on this path.
 - **Import guard:** `clue_api.arv2` imports only `clue_*` libs and `clue_research.claimstore`; the reconciler lives in `clue_api/arv2/onboarding_reconcile.py` and uses the lane's own OpenRouter request builders (`clue_api/arv2/openrouter.py`) through `ProviderCaller` — never `clue_gateway` and never a provider SDK.
-- **Money:** every reconciler call is one `ProviderCaller.call` with a `SpendEstimate`, a raw record and a ledger row (R1 law 1); one call per onboarding run, batched; the estimate is `Decimal("0.01")`. No live test in the suite; the live proof is Task 8 (founder-triggered).
+- **Money:** every reconciler call is one `ProviderCaller.call` with a `SpendEstimate`, a raw record and a ledger row (R1 law 1); one call per onboarding run, batched; the estimate is `Decimal("0.01")`. No live test in the suite; the live proof is Task 6 (founder-triggered).
 - **Fingerprints are frozen.** `_fingerprint` hashes `name`, `short_description`, `aliases`, `POLICY_VERSION` — do NOT add `official_url` to it; existing lineage rows must keep replaying.
 - **Automatic merge only** for: fingerprint replay, exact spelling key, and model decisions with `confidence == "high"`. Medium/low "same" decisions CREATE the row and record `model_unsure` with the suggested product and reason. Never rename, merge or archive a product row.
 - **Alias write-back never renames:** `add_product_aliases` appends to `product.aliases`, deduplicated by the spelling key, never touches `name`.
