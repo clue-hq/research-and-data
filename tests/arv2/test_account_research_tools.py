@@ -111,6 +111,17 @@ CATALOG = FieldCatalog(
         FieldSpec("account.named_customers", "Customers the company names.", {"type": "array"}),
         FieldSpec("account.gtm_tooling_stack", "GTM tools present and absent."),
         FieldSpec("core.industry", "Industry."),
+        # Registered with its real schema (``packs.py``): the HQ is translated into this shape and
+        # checked against it before a claim exists, so a menu without it writes no HQ claim.
+        FieldSpec(
+            "core.hq_location",
+            "Headquarters.",
+            {
+                "type": "object",
+                "required": ["raw"],
+                "properties": {"raw": {"type": "string"}, "city": {"type": "string"}},
+            },
+        ),
     )
 )
 
@@ -225,7 +236,7 @@ class FakeAiArk:
             employee_count=42,
             revenue="1000000-5000000",
             technologies=("HubSpot",),
-            location={"country": "US"},
+            location={"country": "US", "raw_address": "New York, New York, United States"},
             raw={
                 "financial": {
                     "revenue": {

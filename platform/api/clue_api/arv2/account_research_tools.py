@@ -780,9 +780,11 @@ async def _lookup_company(runtime: ToolRuntime, args: LookupCompanyArgs) -> dict
             "hq_location": dict(company.location) if company.location else None,
         },
         "technologies": list(company.technologies),
-        # ``financial.funding`` is the record's own funding block (rounds, investors, totals). It is
-        # returned as context rather than written: no registered field carries it yet, and the
-        # agent quotes it into a claim only with the evidence it finds elsewhere.
+        # ``financial.funding`` is the record's own funding block. The two *amounts* it states are
+        # claimed in code (``account.total_funding`` / ``account.recent_funding``); the rest —
+        # investors, round dates, round count — has no registered home, so the whole block is still
+        # returned as context and the agent quotes it into a claim with the evidence it finds
+        # elsewhere.
         "funding": funding if isinstance(funding, Mapping) else None,
         "claim_ids": [str(receipt.claim_id) for receipt in receipts],
         "cost": _cost_json(company.cost),

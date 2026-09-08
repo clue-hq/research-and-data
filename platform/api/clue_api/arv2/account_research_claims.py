@@ -257,7 +257,6 @@ _AI_ARK_COMPANY_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("linkedin", "core.company_linkedin_url", "link.linkedin"),
     ("industry", "core.industry", "summary.industry"),
     ("employee_count", "core.employee_count", "summary.staff.total"),
-    ("location", "core.hq_location", "location.headquarter"),
 )
 
 #: Everything **else** the company record carries that a registered ``core.*`` field can hold, as
@@ -283,6 +282,21 @@ _AI_ARK_WIDE_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("core.company_twitter_url", ("link", "twitter")),
     ("core.company_email", ("contact", "email")),
 )
+
+#: The provider states funding amounts as plain integers with no currency field. **Ruling
+#: 2026-09-08: they are USD** — the inventory's ``total_amount`` of 130500000 is the $130.5M every
+#: press source reports for the same company, and the answer keys carry the same figures under
+#: ``amount_usd``. The assumption is not silent: every funding claim records it as a marker, so a
+#: non-US record that ever contradicts it is findable by query rather than by re-reading this code.
+CURRENCY_ASSUMED_MARKER = "currency_assumed"
+ASSUMED_CURRENCY = "USD"
+
+#: What ``account.total_funding.estimate_kind`` is for an AI Ark total. The registered enum is
+#: ``reported | provider_estimate | third_party_estimate``, i.e. the axis is *reported vs modelled*,
+#: not *who said it*. A funding total is the sum of disclosed rounds — the provider compiles it, it
+#: does not estimate it (unlike its revenue *band*, which is why that one stays unmapped) — so the
+#: honest value is ``reported``, and ``provider_record='ai_ark'`` on the claim says who compiled it.
+_FUNDING_ESTIMATE_KIND = "reported"
 
 
 def _dig(value: object, *path: str) -> object:
@@ -310,6 +324,69 @@ def _provider_value(raw: object) -> JsonValue | None:
         items: list[JsonValue] = [item for item in raw if isinstance(item, str) and item.strip()]
         return items or None
     return None
+
+
+def _hq_location(location: Mapping[str, Any] | None) -> JsonValue | None:
+    """``location.headquarter`` as the registered ``core.hq_location`` shape.
+
+    The provider answers ``continent/country/city/raw_address/position``; the registry requires
+    ``raw`` and knows ``city``/``region``/``country``/``country_code``. Writing the provider's own
+    object straight through is what made every AI Ark HQ claim land ``schema_valid=false`` on both
+    live accounts — the value was right and its shape was foreign. ``raw`` is the provider's
+    ``raw_address``, which is the whole point of that key: the source's own unparsed string.
+
+    No ``raw_address`` means no claim: ``raw`` is the required key, and a location the provider
+    never spelled out is not a location this field can hold.
+    """
+    raw_address = _dig(location, "raw_address")
+    if not isinstance(raw_address, str) or not raw_address.strip():
+        return None
+    return _without_nones(
+        {
+            "raw": raw_address,
+            "city": _dig(location, "city"),
+            "country": _dig(location, "country"),
+        },
+        keep=("raw",),
+    )
+
+
+def _total_funding(funding: Mapping[str, Any] | None) -> JsonValue | None:
+    """``financial.funding.total_amount`` as the registered ``{amount_usd, estimate_kind}``."""
+    total = _dig(funding, "total_amount")
+    if not isinstance(total, int) or isinstance(total, bool):
+        return None
+    return {"amount_usd": total, "estimate_kind": _FUNDING_ESTIMATE_KIND}
+
+
+def _recent_round(funding: Mapping[str, Any] | None) -> tuple[JsonValue, int] | None:
+    """The most recent funding round as ``{amount_usd, round}``, with the index it sits at.
+
+    "Most recent" is decided by ``announced_at`` rather than by position, because the record's own
+    ordering is the provider's and nothing promises it. The index travels back so the claim cites
+    the round it actually read, not a guessed ``rounds[0]``.
+
+    Only that round is considered: if the newest round did not disclose an amount, the answer is
+    "the most recent round's amount is not in this record", never an older round's figure wearing a
+    newer date.
+    """
+    rounds = _dig(funding, "rounds")
+    if not isinstance(rounds, list):
+        return None
+    dated = [(index, item) for index, item in enumerate(rounds) if isinstance(item, Mapping)]
+    if not dated:
+        return None
+    index, newest = max(
+        dated, key=lambda pair: (str(_dig(pair[1], "announced_at") or ""), -pair[0])
+    )
+    amount = _dig(newest, "raised_amount")
+    if not isinstance(amount, int) or isinstance(amount, bool):
+        return None
+    kind = _dig(newest, "type")
+    return _without_nones(
+        {"amount_usd": amount, "round": kind if isinstance(kind, str) else None},
+        keep=("amount_usd",),
+    ), index
 
 
 def _employee_range(raw: Mapping[str, Any]) -> JsonValue | None:
@@ -438,7 +515,12 @@ def _revenue_band_draft(company: AiArkCompany, scope: JobScope) -> ClaimDraft | 
 
 
 def _ai_ark_draft(
-    scope: JobScope, *, field_key: str, value: JsonValue, json_path: str
+    scope: JobScope,
+    *,
+    field_key: str,
+    value: JsonValue,
+    json_path: str,
+    extra_markers: Mapping[str, JsonValue] = {},
 ) -> ClaimDraft:
     """One AI Ark company claim: tier-1, provider-cited, never URL-cited."""
     return _draft(
@@ -452,7 +534,7 @@ def _ai_ark_draft(
         outreach_safe=True,
         confidence=0.9,
         source_key="ai_ark:company",
-        markers={"json_path": json_path, "provider_record": "ai_ark"},
+        markers={"json_path": json_path, "provider_record": "ai_ark", **extra_markers},
     )
 
 
@@ -468,18 +550,21 @@ def ai_ark_company_claims(
 
     Three groups, in one order:
 
-    * the four mapped attributes and ``core.revenue_band`` — unchanged, and deliberately not
+    * the three mapped attributes and ``core.revenue_band`` — unchanged, and deliberately not
       schema-gated: they are the shipped mapping, and the band is already the one honest
       translation of a provider vocabulary into a registered one (:func:`revenue_band_bucket`);
-    * the widened table (:data:`_AI_ARK_WIDE_FIELDS`) plus the two derived values —
-      ``core.employee_range`` from the staff band and the two technology fields;
+    * everything **translated** into the shape its field declares — the widened table
+      (:data:`_AI_ARK_WIDE_FIELDS`), the HQ, the staff band, the technologies, and the two funding
+      amounts (USD by ruling, recorded as an assumption on every one of those claims);
     * nothing else. ``financial.revenue.annual`` in particular has **no** honest home in
       ``core.annual_revenue``, which requires one amount, a currency, an as-of date and an
-      estimate kind, where the record answers a range and names no currency at all.
+      estimate kind, where the record answers a *range* and names no currency at all. Funding is
+      different in exactly the way that matters: it is one disclosed amount, not a band.
 
-    Every widened value is checked against the field's own registered ``value_schema`` before a
+    Every translated value is checked against the field's own registered ``value_schema`` before a
     draft exists. A value that does not fit is logged and not claimed, because a claim that lands
-    ``schema_valid=false`` is a fact the display layer cannot show and the audit has to explain.
+    ``schema_valid=false`` is a fact the display layer cannot show and the audit has to explain —
+    which is precisely what the old straight-through HQ mapping produced on both live accounts.
     """
     drafts: list[ClaimDraft] = []
     for attribute, field_key, json_path in _AI_ARK_COMPANY_FIELDS:
@@ -498,22 +583,42 @@ def ai_ark_company_claims(
         drafts.append(band)
 
     raw = company.raw if isinstance(company.raw, Mapping) else {}
-    widened: list[tuple[str, JsonValue | None, str]] = [
-        (field_key, _provider_value(_dig(raw, *path)), ".".join(path))
+    funding = _dig(raw, "financial", "funding")
+    money: Mapping[str, JsonValue] = {CURRENCY_ASSUMED_MARKER: ASSUMED_CURRENCY}
+    widened: list[tuple[str, JsonValue | None, str, Mapping[str, JsonValue]]] = [
+        (field_key, _provider_value(_dig(raw, *path)), ".".join(path), {})
         for field_key, path in _AI_ARK_WIDE_FIELDS
     ]
-    widened.append(("core.employee_range", _employee_range(raw), "summary.staff.range"))
+    widened.append(("core.hq_location", _hq_location(company.location), "location.headquarter", {}))
+    widened.append(("core.employee_range", _employee_range(raw), "summary.staff.range", {}))
     widened.append(
-        ("core.primary_tech_stack", list(company.technologies) or None, "technologies[].name")
+        ("core.primary_tech_stack", list(company.technologies) or None, "technologies[].name", {})
     )
-    widened.append(("core.tech_stack_categorised", _categorised_technologies(raw), "technologies"))
-    for field_key, value, json_path in widened:
-        if value is None:
+    widened.append(
+        ("core.tech_stack_categorised", _categorised_technologies(raw), "technologies", {})
+    )
+    widened.append(
+        (
+            "account.total_funding",
+            _total_funding(funding if isinstance(funding, Mapping) else None),
+            "financial.funding.total_amount",
+            money,
+        )
+    )
+    recent = _recent_round(funding if isinstance(funding, Mapping) else None)
+    if recent is not None:
+        value_json, index = recent
+        widened.append(
+            ("account.recent_funding", value_json, f"financial.funding.rounds[{index}]", money)
+        )
+
+    for field_key, widened_value, json_path, extra_markers in widened:
+        if widened_value is None:
             continue
         spec = catalog.spec(field_key)
         if spec is None:
             continue  # not registered in this deployment: not a field, so not a claim
-        if check_value_schema(value, spec.value_schema) is False:
+        if check_value_schema(widened_value, spec.value_schema) is False:
             log.info(
                 "arv2.ai_ark_value_does_not_fit_its_field",
                 field_key=field_key,
@@ -521,7 +626,15 @@ def ai_ark_company_claims(
                 account_domain=scope.account_domain,
             )
             continue
-        drafts.append(_ai_ark_draft(scope, field_key=field_key, value=value, json_path=json_path))
+        drafts.append(
+            _ai_ark_draft(
+                scope,
+                field_key=field_key,
+                value=widened_value,
+                json_path=json_path,
+                extra_markers=extra_markers,
+            )
+        )
     return drafts
 
 

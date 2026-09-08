@@ -96,7 +96,41 @@ CATALOG = FieldCatalog(
         FieldSpec(
             "core.hq_location",
             "Headquarters.",
-            {"type": "object", "required": ["raw"], "properties": {"raw": _STR}},
+            {
+                "type": "object",
+                "required": ["raw"],
+                "properties": {
+                    "raw": _STR,
+                    "city": _STR,
+                    "region": _STR,
+                    "country": _STR,
+                    "country_code": _STR,
+                },
+            },
+        ),
+        FieldSpec(
+            "account.recent_funding",
+            "Most recent funding round.",
+            {
+                "type": "object",
+                "required": ["amount_usd"],
+                "properties": {"amount_usd": {"type": "number"}, "round": _STR},
+            },
+        ),
+        FieldSpec(
+            "account.total_funding",
+            "Total funding in USD with explicit estimate semantics.",
+            {
+                "type": "object",
+                "required": ["amount_usd", "estimate_kind"],
+                "properties": {
+                    "amount_usd": {"type": "number"},
+                    "estimate_kind": {
+                        "type": "string",
+                        "enum": ["reported", "provider_estimate", "third_party_estimate"],
+                    },
+                },
+            },
         ),
         FieldSpec(
             "core.annual_revenue",
@@ -193,7 +227,12 @@ def test_ai_ark_company_maps_only_registered_keys_at_their_real_raw_paths() -> N
         employee_count=180,
         revenue="10000000-25000000",
         technologies=("HubSpot",),
-        location={"country": "US", "city": "New York"},
+        location={
+            "continent": "North America",
+            "country": "US",
+            "city": "New York",
+            "raw_address": "New York, New York, United States",
+        },
         raw={
             "financial": {
                 "revenue": {
@@ -227,6 +266,13 @@ def test_ai_ark_company_maps_only_registered_keys_at_their_real_raw_paths() -> N
     assert drafts["core.revenue_band"].value_json == "10m_50m"
     assert drafts["core.revenue_band"].markers["json_path"] == "financial.revenue.annual"
     assert drafts["core.revenue_band"].markers["provider_value"] == "10000000-25000000"
+    # The provider's own object is translated into the shape the registry declares: ``raw`` is its
+    # ``raw_address``, and its ``continent``/``position`` have no registered home.
+    assert drafts["core.hq_location"].value_json == {
+        "raw": "New York, New York, United States",
+        "city": "New York",
+        "country": "US",
+    }
     assert drafts["core.hq_location"].markers["json_path"] == "location.headquarter"
     assert all(
         d.extraction_method is ExtractionMethod.API
@@ -253,7 +299,7 @@ def test_ai_ark_company_omits_the_fields_the_record_did_not_carry() -> None:
 
 
 def test_a_revenue_range_that_straddles_two_buckets_is_not_claimed_at_all() -> None:
-    """The other four fields still land: one untranslatable field is not a failed record."""
+    """The other fields still land: one untranslatable field is not a failed record."""
     company = AiArkCompany(
         name="Zafran Security",
         domain="zafran.io",
@@ -269,7 +315,8 @@ def test_a_revenue_range_that_straddles_two_buckets_is_not_claimed_at_all() -> N
     keys = {d.field_key for d in ai_ark_company_claims(company, SCOPE, catalog=CATALOG)}
 
     assert "core.revenue_band" not in keys, "10m_50m and 50m_100m: there is no honest single answer"
-    assert len(keys) == 4
+    # linkedin, industry and headcount; the HQ names no ``raw_address``, so it is not claimed.
+    assert len(keys) == 3
 
 
 def test_the_revenue_band_is_parsed_from_the_amount_string_when_the_record_omits_the_pair() -> None:
@@ -625,7 +672,7 @@ def test_an_ai_ark_object_value_drops_the_keys_the_provider_answered_null() -> N
         employee_count=None,
         revenue=None,
         technologies=(),
-        location={"country": "US", "city": None, "region": None},
+        location={"country": "US", "city": None, "raw_address": "US"},
         raw={},
     )
 
@@ -633,7 +680,7 @@ def test_an_ai_ark_object_value_drops_the_keys_the_provider_answered_null() -> N
     draft = drafts["core.hq_location"]
 
     assert draft.field_key == "core.hq_location"
-    assert draft.value_json == {"country": "US"}
+    assert draft.value_json == {"raw": "US", "country": "US"}
     assert _nulls(draft.value_json) == []
 
 
@@ -668,7 +715,29 @@ def _zafran_record() -> AiArkCompany:
         "financial": {
             "revenue": {
                 "annual": {"start": 10_000_000, "end": 25_000_000, "amount": "10000000-25000000"}
-            }
+            },
+            "funding": {
+                "type": "SERIES_C",
+                "total_amount": 130_500_000,
+                "last_amount": 60_000_000,
+                "num_investor": 9,
+                "num_funding_rounds": 4,
+                "date": "2025-12-02",
+                "rounds": [
+                    {
+                        "announced_at": "2025-12-02",
+                        "raised_amount": 60_000_000,
+                        "type": "SERIES_C",
+                        "investors": ["Menlo Ventures", "Sequoia Capital"],
+                    },
+                    {
+                        "announced_at": "2024-05-14",
+                        "raised_amount": 30_000_000,
+                        "type": "SERIES_B",
+                        "investors": ["Cyberstarts"],
+                    },
+                ],
+            },
         },
         "location": {
             "headquarter": {
@@ -754,6 +823,99 @@ def test_the_provider_revenue_range_is_never_forced_into_the_registered_revenue_
 
     assert "core.annual_revenue" not in keys
     assert "core.revenue_band" in keys
+
+
+def test_the_hq_is_translated_into_the_registered_shape_rather_than_written_through() -> None:
+    """The old mapping wrote the provider's own ``continent/city/raw_address/position`` object into
+    a field whose schema requires ``raw``: right value, foreign shape, ``schema_valid=false`` on
+    both live accounts."""
+    drafts = {
+        d.field_key: d for d in ai_ark_company_claims(_zafran_record(), SCOPE, catalog=CATALOG)
+    }
+
+    assert drafts["core.hq_location"].value_json == {
+        "raw": "New York, New York, United States, North America",
+        "city": "New York, New York",
+        "country": "United States",
+    }
+    assert drafts["core.hq_location"].markers["json_path"] == "location.headquarter"
+
+
+def test_a_headquarter_with_no_raw_address_is_not_claimed_at_all() -> None:
+    """``raw`` is the required key: a location the provider never spelled out is not a location
+    this field can hold, and half a location is not better than none."""
+    company = _zafran_record()
+    without_raw = {key: value for key, value in company.location.items() if key != "raw_address"}
+
+    keys = {
+        d.field_key
+        for d in ai_ark_company_claims(
+            AiArkCompany(**{**company.__dict__, "location": without_raw}), SCOPE, catalog=CATALOG
+        )
+    }
+
+    assert "core.hq_location" not in keys
+    assert "core.legal_name" in keys, "one unmappable value is not a failed record"
+
+
+def test_the_funding_amounts_are_claimed_in_usd_with_the_assumption_recorded() -> None:
+    """Founder ruling 2026-09-08: the provider's funding integers are USD. The assumption is on
+    every claim as a marker, so a record that ever contradicts it is a query, not an archaeology."""
+    drafts = {
+        d.field_key: d for d in ai_ark_company_claims(_zafran_record(), SCOPE, catalog=CATALOG)
+    }
+
+    total = drafts["account.total_funding"]
+    assert total.value_json == {"amount_usd": 130_500_000, "estimate_kind": "reported"}
+    assert total.markers["json_path"] == "financial.funding.total_amount"
+    assert total.markers["currency_assumed"] == "USD"
+
+    recent = drafts["account.recent_funding"]
+    assert recent.value_json == {"amount_usd": 60_000_000, "round": "SERIES_C"}
+    assert recent.markers["json_path"] == "financial.funding.rounds[0]"
+    assert recent.markers["currency_assumed"] == "USD"
+    assert recent.markers["provider_record"] == "ai_ark"
+    assert recent.extraction_method is ExtractionMethod.API and recent.source_url is None
+
+
+def test_the_recent_round_is_the_newest_by_date_not_the_first_in_the_record() -> None:
+    company = _zafran_record()
+    reordered = dict(company.raw)
+    funding = dict(reordered["financial"]["funding"])
+    funding["rounds"] = list(reversed(funding["rounds"]))  # oldest first, as some records arrive
+    reordered["financial"] = {**reordered["financial"], "funding": funding}
+
+    drafts = {
+        d.field_key: d
+        for d in ai_ark_company_claims(
+            AiArkCompany(**{**company.__dict__, "raw": reordered}), SCOPE, catalog=CATALOG
+        )
+    }
+
+    assert drafts["account.recent_funding"].value_json["amount_usd"] == 60_000_000
+    assert drafts["account.recent_funding"].markers["json_path"] == "financial.funding.rounds[1]"
+
+
+def test_a_record_with_no_funding_amounts_writes_no_funding_claim() -> None:
+    """An undisclosed round is a real answer: the amount is absent, so the claim is absent —
+    never an older round's figure wearing the newest round's date."""
+    company = _zafran_record()
+    undisclosed = dict(company.raw)
+    undisclosed["financial"] = {
+        "funding": {
+            "num_funding_rounds": 1,
+            "rounds": [{"announced_at": "2026-07-22", "type": "STRATEGIC"}],
+        }
+    }
+
+    keys = {
+        d.field_key
+        for d in ai_ark_company_claims(
+            AiArkCompany(**{**company.__dict__, "raw": undisclosed}), SCOPE, catalog=CATALOG
+        )
+    }
+
+    assert not keys & {"account.total_funding", "account.recent_funding"}
 
 
 def test_a_widened_value_that_does_not_fit_its_registered_schema_is_not_claimed() -> None:
