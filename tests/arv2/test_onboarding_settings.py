@@ -21,6 +21,8 @@ ONBOARDING_SETTING_DEFAULTS: dict[str, object] = {
     "onboarding_reviews_phase": "fast",
     "onboarding_max_parallel_runs": 6,
     "onboarding_persona_evidence_enabled": True,
+    "onboarding_catalog_reconcile_enabled": True,
+    "onboarding_reconcile_model": "openai/gpt-5-mini",
 }
 
 #: Documented in the agent-model block today; read by the registry once the role exists (O4).

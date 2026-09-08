@@ -31,6 +31,10 @@ class CatalogProduct:
     name: str
     short_description: str
     aliases: tuple[str, ...] = ()
+    #: The entry's own product page, when the catalog document names one. Evidence for the model
+    #: stage of the identity ladder; deliberately NOT part of :func:`_fingerprint`, whose payload is
+    #: frozen so an unchanged re-run still recognises the lineage it wrote last time.
+    official_url: str | None = None
 
 
 @dataclass(frozen=True)

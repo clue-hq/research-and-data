@@ -373,6 +373,14 @@ class Settings(BaseSettings):
     # The governed ``exa_search_evidence@1`` tool the synthesis agent may call once per persona
     # role (ruling O-D6: on). Env: ``CLUE_ONBOARDING_PERSONA_EVIDENCE_ENABLED``.
     onboarding_persona_evidence_enabled: bool = True
+    # Catalog identity ladder (O3 follow-up, founder ruling 2026-09-08): after the fingerprint and
+    # exact-spelling stages, one batched model call per run decides "same offering or new" for the
+    # leftovers, with each entry's official page as evidence; automatic merge only at high
+    # confidence. Env: ``CLUE_ONBOARDING_CATALOG_RECONCILE_ENABLED``.
+    onboarding_catalog_reconcile_enabled: bool = True
+    # OpenRouter model for that call (validated 2026-09-08 on gpt-5-mini and grok-4.6; the small
+    # one is faster and a fraction of a cent). Env: ``CLUE_ONBOARDING_RECONCILE_MODEL``.
+    onboarding_reconcile_model: str = "openai/gpt-5-mini"
 
     # --- ARV2 lenient write gate and annotation checks (D1; master plan §2 items 2 and 6, §4) ---
     # The claim write gate stores instead of refusing: an unregistered key becomes a proposed field,
