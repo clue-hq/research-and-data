@@ -151,3 +151,14 @@ directory, is the close's exit gate. Nothing in tasks 1–6 has been exercised l
 - Exa claims-mode experiment kit for the founder's Playground run: `.context/arv2-exa-experiment/`
   (exact R2 deep-call bodies recovered from the ledger's request records, split into system prompt / query /
   schema files, plus a claims-mode output schema and `run.sh`). Not run by me.
+
+## Exa claims-mode experiment — DONE by API (2026-09-08, 4 calls, $0.10)
+- Founder's Playground runs were a third mode (free JSON sections, highlights not text): no per-assertion URL,
+  NOT FOUND discipline collapsed, prompt framing echoed. `.context/arv2-exa-experiment/playground/evaluation.md`.
+- Designed experiment (same bodies, only `outputSchema` differs): claims mode gives 17/20 rows vs ~60 cited
+  assertions in report mode; quotes 94–95% verbatim in Exa's own retrieved text (report 56–86%) but values are
+  paragraphs only half covered by their quote, one factual error (Zafran leadership titles swapped), zero
+  NOT FOUND rows, half the sources. **Verdict: keep report mode**; optional prompt-only tweak ("quote first,
+  one assertion per sentence"); claims mode only for narrow probes. `evaluation-claims-mode.md`.
+- Ops: the Exa key env var is `CLUE_EXA_API_KEY` (an unset `EXA_API_KEY` makes Exa answer 402 x402
+  pay-per-call, not an auth error). `run.sh` fixed.
