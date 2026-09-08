@@ -203,3 +203,30 @@ Test files: `tests/api/test_frontend_read_brand_knowledge.py` (new, 5 tests);
 **NOT run — Task 7 is founder-triggered** (the frontend on its own port against the semarang API,
 walked by the founder against a real onboarding run). Nothing on this branch has been exercised
 against live data; the O5 gates above are offline plus the throwaway DB only.
+
+## Addendum — live acceptance walk (2026-09-08, founder-triggered)
+Stack from this checkout: platform API `uvicorn clue_api.projections_main:app` on **127.0.0.1:8070**
+(`CLUE_FRONTEND_READ_ENABLED=true`; `http://localhost:3040` added to `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES`),
+frontend `npm run dev -- -p 3040` with `apps/frontend/.env.local` → `CLUE_API_BASE_URL=http://127.0.0.1:8070`,
+`CLUE_APP_ORIGIN=http://localhost:3040`, `LUMEN_API_BASE_URL` pointed at a dead port (no design API:
+the Design folder is honestly absent). Logs `/private/tmp/semarang-{api,frontend}.log`. Both left running.
+- **Sign-in:** the Clerk dev user (`aryan+clerk_test_design@example.com`) has no row in `clue_semarang`;
+  the old `/auth/v1/provision` path answered 404, so the Clerk subject (`user_3IKQ…`) was linked to the
+  seeded owner `usr_aryan_onboarding` of `ws-insight-health-o3` via `link_auth_identity(provider_key="clerk")`.
+  `/select-workspace` then offered that workspace.
+- **Read surface (exit gate 1):** `/brand-context?section=knowledge` rendered Company / Product /
+  Audience / Proof from the real store — 1 + 28 + 6 + 1 documents, ICPs `proposed`, personas `ready`,
+  markdown rendered, **no Edit control anywhere**. Evidence: `.context/arv2-onboarding-o5-acceptance/`
+  (screenshots, served tree JSON before/after, API log excerpt, 971 lines).
+- **Progressive fill (exit gate 2):** run 4 `54246e39…` started from the page's own session
+  (`POST /api/clue/onboarding` → 202), page reloaded once so the server render saw a live run; the hook
+  then made **220 status polls** and the page **re-read the tree 30 times** — once per landed step plus the
+  terminal refresh — over the 17-minute run (`completed`, $2.57, synthesis completed). Every path went to
+  its next version (audience v2), counts level because the paths already existed.
+- **Findings for other owners:** (1) the sidebar's Projects list shows the O4 system project
+  "Onboarding · Insight Health brand" — the O4 ruling said O5/O6 keep it out of the sidebar; that list is
+  the projects surface (O6/project-list owner), not this lane's. (2) the document title is the body's
+  first H1, so the page shows the heading twice (title bar + article) — cosmetic; switch `title` to the
+  file name if it grates. (3) the refresh hook arms only when the server render sees a live run: a tab
+  opened before a run starts does not start polling until reloaded (by design; note for O6's "start
+  onboarding" affordance to navigate/refresh after POST).
