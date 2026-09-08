@@ -3,7 +3,11 @@
 import Image from "next/image";
 import Link from "next/link";
 import { DesignIcon } from "@/components/ui/design-icon";
-import type { Account, ResearchStatus } from "../model/account";
+import type { Account } from "../model/account";
+import {
+  UNASSIGNED_OWNER_LABEL,
+  resolveAccountOwner,
+} from "../model/account-owner";
 import {
   coreAccountColumnDefinitions,
   defaultAccountColumnWidths,
@@ -79,13 +83,6 @@ const headerBorder =
 const pinnedHeaderBorder =
   "border-[0.5px] border-[var(--clue-border-table)]";
 
-const researchStatusLabels: Record<ResearchStatus, string> = {
-  not_started: "Not started",
-  in_progress: "In progress...",
-  fully_enriched: "Fully enriched",
-  failed: "Failed",
-};
-
 const accountDateFormatter = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
   timeZone: "UTC",
@@ -100,6 +97,9 @@ const industryBadgeTones = [
 function formatAccountDate(value?: string) {
   return value ? accountDateFormatter.format(new Date(value)) : "—";
 }
+
+/** The account glyph the header shows when no logo asset exists (ruling S2). */
+const ACCOUNT_GLYPH_PATH = "/icons/building.svg";
 
 function formatWebsiteLabel(value: string) {
   return new URL(value).hostname.replace(/^www\./, "");
@@ -181,7 +181,7 @@ function ResearchBadge({ account }: { account: Account }) {
 
   return (
     <TableBadge icon={showSpinner ? <DesignIcon name="spinner" size={12} /> : null}>
-      {account.researchStatusLabel ?? researchStatusLabels[account.researchStatus]}
+      {account.researchStatusLabel ?? account.researchStatus}
     </TableBadge>
   );
 }
@@ -268,7 +268,7 @@ function AccountRow({
                   aria-hidden="true"
                   className="size-3 shrink-0 object-contain"
                   height={12}
-                  src={account.logoPath}
+                  src={account.logoPath ?? ACCOUNT_GLYPH_PATH}
                   width={12}
                 />
                 <span className={`${readability.uiMedium} truncate`}>
@@ -284,20 +284,22 @@ function AccountRow({
 
         let content: React.ReactNode = null;
         switch (definition.key) {
-          case "owner":
-            content = account.owner ? (
+          case "owner": {
+            const owner = resolveAccountOwner(account);
+            content = owner ? (
               <span className="flex min-w-0 items-center gap-2">
                 <ContactAvatar
-                  name={account.owner.name}
+                  name={owner.name}
                   size={22}
-                  src={account.owner.avatarUrl}
+                  src={owner.avatarUrl}
                 />
-                <span className="truncate" title={account.owner.name}>{account.owner.name}</span>
+                <span className="truncate" title={owner.name}>{owner.name}</span>
               </span>
             ) : (
-              <span className="text-[var(--clue-content-disabled)]">—</span>
+              <span className="text-[var(--clue-content-disabled)]">{UNASSIGNED_OWNER_LABEL}</span>
             );
             break;
+          }
           case "industry":
             content = account.industryLabels.length ? (
               <div className="flex min-w-0 items-center gap-1.5" title={account.industryLabels.join(", ")}>
@@ -319,10 +321,12 @@ function AccountRow({
             content = <ResearchBadge account={account} />;
             break;
           case "fit":
-            content = (
+            content = account.overallFit ? (
               <TableBadge tone={components.badgePositive}>
                 {account.overallFit}
               </TableBadge>
+            ) : (
+              <span className="text-[var(--clue-content-disabled)]">—</span>
             );
             break;
           case "score":
@@ -342,7 +346,7 @@ function AccountRow({
             content = account.locationsLabel ?? account.locationCount;
             break;
           case "website":
-            content = (
+            content = account.websiteUrl ? (
               <a
                 className="truncate underline decoration-[var(--clue-content-subtle)] underline-offset-2"
                 href={account.websiteUrl}
@@ -352,6 +356,8 @@ function AccountRow({
               >
                 {formatWebsiteLabel(account.websiteUrl)}
               </a>
+            ) : (
+              <span className="text-[var(--clue-content-disabled)]">—</span>
             );
             break;
           case "linkedin":
@@ -391,8 +397,13 @@ function AccountRow({
                 <span className="text-[var(--clue-content-disabled)]">—</span>
               );
             } else if (variable.presentation === "score") {
-              content = (
-                <FitScoreIndicator score={Number(variable.value) || 0} />
+              // The backend always serves a numeric string for a score field;
+              // anything else is printed as served rather than read as zero.
+              const score = Number(variable.value);
+              content = Number.isFinite(score) ? (
+                <FitScoreIndicator score={score} />
+              ) : (
+                variable.value
               );
             } else if (variable.presentation === "badge") {
               content = (

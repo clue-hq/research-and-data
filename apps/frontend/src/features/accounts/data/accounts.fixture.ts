@@ -1,4 +1,5 @@
 import type { Account } from "../model/account";
+import { FIXTURE_RESEARCH_STATUS_LABELS } from "../model/research-status-labels";
 import { accountProjectFixtures } from "./account-projects.fixture";
 import { zafranAccountDetailFixture as zafran } from "./zafran/account";
 
@@ -32,7 +33,7 @@ const commonAccountFields = {
   ] as Account["customFields"],
 } as const;
 
-export const accountFixtures: Account[] = [
+const accountRows: Account[] = [
   {
     ...commonAccountFields,
     id: zafran.id,
@@ -72,7 +73,7 @@ export const accountFixtures: Account[] = [
     name: "OpenAI",
     logoPath: "/logos/openai.svg",
     websiteUrl: "https://openai.com",
-    researchStatus: "fully_enriched",
+    researchStatus: "completed",
     researchIsRefreshing: true,
     primaryProjectId: accountProjectFixtures.revenueCampaign.id,
     projects: [
@@ -138,7 +139,7 @@ export const accountFixtures: Account[] = [
     name: "Hugging Face",
     logoPath: "/logos/hugging-face.svg",
     websiteUrl: "https://huggingface.co",
-    researchStatus: "fully_enriched",
+    researchStatus: "completed",
     primaryProjectId: accountProjectFixtures.conference2026.id,
     projects: [accountProjectFixtures.conference2026],
   },
@@ -148,7 +149,7 @@ export const accountFixtures: Account[] = [
     name: "Scale AI",
     logoPath: "/logos/scale-ai.png",
     websiteUrl: "https://scale.com",
-    researchStatus: "fully_enriched",
+    researchStatus: "completed",
     primaryProjectId: accountProjectFixtures.revenueCampaign.id,
     projects: [accountProjectFixtures.revenueCampaign],
   },
@@ -158,7 +159,7 @@ export const accountFixtures: Account[] = [
     name: "Airtable",
     logoPath: "/logos/airtable.svg",
     websiteUrl: "https://airtable.com",
-    researchStatus: "fully_enriched",
+    researchStatus: "completed",
     primaryProjectId: accountProjectFixtures.conference2026.id,
     projects: [accountProjectFixtures.conference2026],
   },
@@ -168,7 +169,7 @@ export const accountFixtures: Account[] = [
     name: "Snowflake",
     logoPath: "/logos/snowflake.svg",
     websiteUrl: "https://www.snowflake.com",
-    researchStatus: "fully_enriched",
+    researchStatus: "completed",
     primaryProjectId: accountProjectFixtures.conference2026.id,
     projects: [accountProjectFixtures.conference2026],
   },
@@ -178,7 +179,7 @@ export const accountFixtures: Account[] = [
     name: "Antigravity",
     logoPath: "/logos/antigravity.svg",
     websiteUrl: "https://antigravity.dev",
-    researchStatus: "fully_enriched",
+    researchStatus: "completed",
     primaryProjectId: accountProjectFixtures.customReports.id,
     projects: [accountProjectFixtures.customReports],
   },
@@ -188,7 +189,7 @@ export const accountFixtures: Account[] = [
     name: "Google DeepMind",
     logoPath: "/logos/google-deepmind.svg",
     websiteUrl: "https://deepmind.google",
-    researchStatus: "fully_enriched",
+    researchStatus: "completed",
     primaryProjectId: accountProjectFixtures.revenueCampaign.id,
     projects: [accountProjectFixtures.revenueCampaign],
   },
@@ -198,7 +199,7 @@ export const accountFixtures: Account[] = [
     name: "Midjourney",
     logoPath: "/logos/midjourney.svg",
     websiteUrl: "https://www.midjourney.com",
-    researchStatus: "fully_enriched",
+    researchStatus: "completed",
     primaryProjectId: accountProjectFixtures.customReports.id,
     projects: [accountProjectFixtures.customReports],
   },
@@ -216,3 +217,14 @@ export const accountFixtures: Account[] = [
     ],
   },
 ];
+
+/**
+ * The fixture list, with the status wording the backend would serve stamped on
+ * every row — the screens read `researchStatusLabel`, never a client-side map.
+ */
+export const accountFixtures: Account[] = accountRows.map((account) => ({
+  ...account,
+  researchStatusLabel:
+    account.researchStatusLabel ??
+    FIXTURE_RESEARCH_STATUS_LABELS[account.researchStatus],
+}));

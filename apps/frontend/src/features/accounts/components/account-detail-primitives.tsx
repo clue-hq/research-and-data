@@ -31,13 +31,10 @@ import components from "./account-components.module.css";
 import { ContactAvatar } from "./contact-avatar";
 import { FitScoreIndicator } from "./fit-score-indicator";
 import { useAccountOwner } from "../hooks/use-account-owner";
+import { UNASSIGNED_OWNER_LABEL } from "../model/account-owner";
 
-const researchStatusLabels: Record<AccountDetail["researchStatus"], string> = {
-  not_started: "Not started",
-  in_progress: "In progress...",
-  fully_enriched: "Fully enriched",
-  failed: "Failed",
-};
+/** The account glyph shown when the account has no logo asset (ruling S2). */
+const ACCOUNT_GLYPH_PATH = "/icons/building.svg";
 
 const industryBadgeTones = [
   components.badgeToneOrange,
@@ -60,7 +57,8 @@ export function FitBadge({
   neutral = false,
 }: {
   compact?: boolean;
-  fit: string;
+  /** `null` is an unscored account, not a band: it prints an em dash. */
+  fit: string | null;
   neutral?: boolean;
 }) {
   const high = fit === "High" && !neutral;
@@ -73,7 +71,7 @@ export function FitBadge({
           : components.badgeNeutral
       } ${compact ? "min-h-[26px]" : ""}`}
     >
-      {fit}
+      {fit ?? "—"}
     </span>
   );
 }
@@ -88,7 +86,7 @@ export function AccountIdentity({ account }: { account: AccountDetail }) {
           className="size-9 object-contain"
           height={36}
           priority
-          src={account.logoPath}
+          src={account.logoPath ?? ACCOUNT_GLYPH_PATH}
           width={36}
         />
       </div>
@@ -190,8 +188,8 @@ export function AccountDetailsList({
         />
       }
     >
-      {field.presentation === "score" ? (
-        <FitScoreIndicator score={Number(field.value) || 0} />
+      {field.presentation === "score" && Number.isFinite(Number(field.value)) ? (
+        <FitScoreIndicator score={Number(field.value)} />
       ) : field.presentation === "badge" ? (
         <FitBadge fit={field.value} neutral={field.value !== "High"} />
       ) : (
@@ -210,14 +208,18 @@ export function AccountDetailsList({
           {account.name}
         </DetailsRow>
         <DetailsRow icon={UserRound} label="Owner">
-            <span className="flex min-w-0 items-center gap-2">
-              <ContactAvatar
-                name={owner.name}
-                size={22}
-                src={owner.avatarUrl}
-              />
-              <span className="min-w-0 truncate" title={owner.name}>{owner.name}</span>
-            </span>
+            {owner ? (
+              <span className="flex min-w-0 items-center gap-2">
+                <ContactAvatar
+                  name={owner.name}
+                  size={22}
+                  src={owner.avatarUrl}
+                />
+                <span className="min-w-0 truncate" title={owner.name}>{owner.name}</span>
+              </span>
+            ) : (
+              <span className="text-[var(--clue-content-disabled)]">{UNASSIGNED_OWNER_LABEL}</span>
+            )}
         </DetailsRow>
         <DetailsRow icon={BriefcaseBusiness} label="Industry">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -239,22 +241,23 @@ export function AccountDetailsList({
         </DetailsRow>
         <DetailsRow icon={BadgeCheck} label="Research status">
           <FitBadge
-            fit={
-              account.researchStatusLabel ??
-              researchStatusLabels[account.researchStatus]
-            }
+            fit={account.researchStatusLabel ?? account.researchStatus}
             neutral
           />
         </DetailsRow>
         <DetailsRow icon={Earth} label="Website">
-          <a
-            className="underline decoration-[var(--clue-content-subtle)] underline-offset-2"
-            href={account.websiteUrl}
-            rel="noreferrer"
-            target="_blank"
-          >
-            {account.websiteLabel}
-          </a>
+          {account.websiteUrl ? (
+            <a
+              className="underline decoration-[var(--clue-content-subtle)] underline-offset-2"
+              href={account.websiteUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {account.websiteLabel}
+            </a>
+          ) : (
+            <span className="text-[var(--clue-content-disabled)]">{account.websiteLabel}</span>
+          )}
         </DetailsRow>
         <DetailsRow icon={Gauge} label="Overall buying fit">
           <FitBadge fit={account.overallFit} />

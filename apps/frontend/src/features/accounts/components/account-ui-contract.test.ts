@@ -186,3 +186,138 @@ test("contact profile reuses the refreshed account detail icon and badge languag
   assert.doesNotMatch(contactProfile, /AccountFlowIcon/);
   assert.doesNotMatch(contactProfile, /\/logos\/(linkedin|x)\.svg/);
 });
+
+// ---------------------------------------------------------------------------
+// The D4 derivation guard (source map §6).
+//
+// Contract v1 serves every value these screens used to invent in the browser.
+// Each assertion below pins one line of `docs/specs/ARV2-DATA-SOURCE-MAP.md` §6:
+// the derivation is gone from the source, and the served field is read instead.
+// They are source greps for the same reason the tests above are: the derivations
+// live in render paths that a unit test cannot reach without a DOM.
+// ---------------------------------------------------------------------------
+
+function source(path: string) {
+  return readFileSync(new URL(path, import.meta.url), "utf8");
+}
+
+const accountOwnerModel = source("../model/account-owner.ts");
+const accountsScreenController = source("../hooks/use-accounts-screen-controller.ts");
+const createAccountModel = source("../model/create-account.ts");
+const researchContent = source("./research-content.tsx");
+const researchOverviewBody = source("./account-research-overview.tsx");
+const workspacePresentation = source("../model/account-workspace-presentation.ts");
+const workspaceShell = source("./account-workspace-shell.tsx");
+const contactFullScreen = source("./contact-full-screen.tsx");
+const researchPresentation = source("../model/research-presentation.ts");
+const accountsTable = source("./accounts-table.tsx");
+const filterPanel = source("./accounts-filter-panel.tsx");
+const contactsRoute = source(
+  "../../../app/(protected)/accounts/[accountId]/contacts/page.tsx",
+);
+const emailLookupController = source(
+  "../contacts/hooks/use-email-lookup-controller.ts",
+);
+
+test("§6.1 the owner never falls back to the current viewer", () => {
+  assert.doesNotMatch(accountOwnerModel, /workspaceUser/);
+  assert.match(accountOwnerModel, /UNASSIGNED_OWNER_LABEL = "Unassigned"/);
+  assert.doesNotMatch(
+    accountsScreenController,
+    /resolveAccountOwner\(account, workspaceOwner\)/,
+  );
+  assert.match(accountDetails, /UNASSIGNED_OWNER_LABEL/);
+  assert.match(accountsTable, /UNASSIGNED_OWNER_LABEL/);
+});
+
+test("§6.2 a new account invents neither a score nor a fit band", () => {
+  assert.doesNotMatch(createAccountModel, /fitScore: 0/);
+  assert.doesNotMatch(createAccountModel, /overallFit: "Medium"/);
+  assert.match(createAccountModel, /fitScore: null/);
+  assert.match(createAccountModel, /overallFit: null/);
+  assert.match(createAccountModel, /logoPath: null/);
+  assert.match(createAccountModel, /researchStatusLabel: "Not started"/);
+});
+
+test("§6.3 the overall fit is the served band, never parsed out of an h1", () => {
+  assert.doesNotMatch(researchContent, /section\.h1\.match/);
+  assert.match(researchContent, /overallFit\?: Account\["overallFit"\]/);
+  assert.match(researchOverviewBody, /overallFit=\{account\.overallFit\}/);
+});
+
+test("§6.4 section headings are served bare; counts are items.length", () => {
+  assert.doesNotMatch(researchContent, /splitSectionLabel/);
+  assert.doesNotMatch(researchContent, /section\.h1\.replace/);
+  assert.match(researchPresentation, /section\.items\.length/);
+});
+
+test("§6.5 the insight summary renders the served strings unrewritten", () => {
+  assert.doesNotMatch(workspacePresentation, /reported in research/);
+  assert.doesNotMatch(workspacePresentation, /supplied insights/);
+  assert.doesNotMatch(workspacePresentation, /\.replace\(/);
+});
+
+test("§6.6 tenure is the served label, never the browser clock", () => {
+  assert.doesNotMatch(contactProfile, /formatTenure/);
+  assert.doesNotMatch(contactProfile, /new Date\(\)/);
+  assert.match(contactProfile, /\{contact\.tenureLabel\}/);
+});
+
+test("§6.7 the contact header stamps the contact's own lastModifiedAt", () => {
+  assert.match(workspaceShell, /lastModifiedAt = account\.lastModifiedAt/);
+  assert.match(contactFullScreen, /lastModifiedAt=\{contact\.lastModifiedAt\}/);
+});
+
+test("§6.8 the email chip resolves its evidence by claim id", () => {
+  assert.doesNotMatch(contactProfile, /includes\(contact\.emailLabel/);
+  assert.match(contactProfile, /evidence\.claimId === contact\.emailClaimId/);
+});
+
+test("§6.9 the activity actor is served, never inferred from a text prefix", () => {
+  assert.doesNotMatch(workspacePresentation, /legacyClue/);
+  assert.doesNotMatch(workspacePresentation, /\^Clue/);
+});
+
+test("§6.10 no claim-id prefix is admitted to Sources", () => {
+  assert.doesNotMatch(researchPresentation, /register-/);
+  assert.doesNotMatch(researchPresentation, /includeRegister/);
+  assert.doesNotMatch(researchContent, /includeRegister/);
+});
+
+test("§6.11 the favicon proxy runs on sourceDomain alone", () => {
+  assert.doesNotMatch(researchContent, /if \(evidence\.faviconUrl\)/);
+  assert.match(
+    researchContent,
+    /if \(evidence\.sourceDomain\) \{/,
+  );
+});
+
+test("§6.12 self-references are stripped by contact id, never by name", () => {
+  assert.doesNotMatch(researchContent, /contact\.name !== name/);
+  assert.doesNotMatch(researchContent, /subject\?\.name === name/);
+  assert.match(researchContent, /contact\.contactId !== contactId/);
+});
+
+test("§6.13 a score custom field is never coerced to zero", () => {
+  assert.doesNotMatch(accountsTable, /Number\([^)]*\) \|\| 0/);
+  assert.doesNotMatch(accountDetails, /Number\([^)]*\) \|\| 0/);
+});
+
+test("§6.14 the three research-status relabel maps are gone", () => {
+  for (const file of [accountsTable, filterPanel, accountDetails]) {
+    assert.doesNotMatch(file, /fully_enriched/);
+    assert.doesNotMatch(file, /researchStatusLabels/);
+  }
+  assert.match(accountsTable, /researchStatusLabel \?\? account\.researchStatus/);
+  assert.match(accountDetails, /researchStatusLabel \?\? account\.researchStatus/);
+  assert.match(filterPanel, /researchStatusOptions/);
+});
+
+test("§6.15 no featured-contact scan; the drawer opens on row click", () => {
+  assert.doesNotMatch(contactsRoute, /profileAction === "preview"/);
+  assert.doesNotMatch(contactsRoute, /featuredContact/);
+});
+
+test("§6.16 the email-lookup stub is marked for its Task-5 replacement", () => {
+  assert.match(emailLookupController, /D4 Task 5/);
+});

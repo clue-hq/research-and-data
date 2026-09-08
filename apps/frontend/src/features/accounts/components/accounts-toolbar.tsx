@@ -19,7 +19,10 @@ import type {
 import readability from "./account-readability.module.css";
 import components from "./account-components.module.css";
 import { AccountColumnIcon } from "./account-column-icon";
-import { AccountsFilterPanel } from "./accounts-filter-panel";
+import {
+  AccountsFilterPanel,
+  type AccountFilterOption,
+} from "./accounts-filter-panel";
 import { TableDensitySelector } from "./table-density-selector";
 
 interface AccountsToolbarProps {
@@ -39,6 +42,7 @@ interface AccountsToolbarProps {
   onSearchChange: (value: string) => void;
   onSortChange: (value: AccountSort) => void;
   projects: AccountProject[];
+  researchStatusOptions: AccountFilterOption[];
   search: string;
   sort: AccountSort;
   visibleColumns: AccountColumnVisibility;
@@ -444,6 +448,7 @@ export function AccountsToolbar({
   onSearchChange,
   onSortChange,
   projects,
+  researchStatusOptions,
   search,
   sort,
   visibleColumns,
@@ -524,6 +529,7 @@ export function AccountsToolbar({
               filters={filters}
               onFiltersChange={onFiltersChange}
               projects={projects}
+              researchStatusOptions={researchStatusOptions}
             />
           ) : null}
         </div>

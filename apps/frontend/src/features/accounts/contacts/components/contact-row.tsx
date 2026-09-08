@@ -42,7 +42,7 @@ export function ContactRow({
   contact: AccountContactSummary;
   density: AccountTableDensity;
   gridTemplateColumns: string;
-  onPreview?: () => void;
+  onPreview?: () => void | Promise<void>;
 }) {
   const nameCellClassName =
     "sticky left-14 z-20 flex min-w-0 items-center gap-2 overflow-hidden border-r-[0.5px] border-[var(--clue-border-table)] bg-[var(--clue-background-neutral)] px-4 text-left outline-none group-hover:bg-[var(--clue-background-page)] focus-visible:shadow-[inset_0_0_0_2px_var(--clue-ds-color-components-button-focus-ring)]";
@@ -94,7 +94,12 @@ export function ContactRow({
         <div className={nameCellClassName}>{nameCell}</div>
       )}
       <div className="flex items-center border-r-[0.5px] border-[var(--clue-border-table)] px-4">
-        <span className="truncate">{contact.title}</span>
+        {/* Ruling S7: no title claim is an em dash, never an invented title. */}
+        <span className="truncate">
+          {contact.title ?? (
+            <span className="text-[var(--clue-content-disabled)]">—</span>
+          )}
+        </span>
       </div>
       <div className="flex items-center border-r-[0.5px] border-[var(--clue-border-table)] px-4">
         <span

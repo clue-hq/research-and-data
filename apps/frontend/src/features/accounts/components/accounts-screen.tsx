@@ -29,6 +29,7 @@ export function AccountsScreen({
           onSearchChange={controller.setSearch}
           onSortChange={controller.setSort}
           projects={controller.projectOptions}
+          researchStatusOptions={controller.researchStatusOptions}
           search={controller.search}
           sort={controller.sort}
           visibleColumns={controller.visibleColumns}

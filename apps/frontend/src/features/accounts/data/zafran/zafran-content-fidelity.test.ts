@@ -66,7 +66,7 @@ test("Account Overview exposes the complete supplied narrative and sections", ()
     [0, 7, 3, 5, 3],
   );
 
-  const intro = section(overview, "what-zafran-does").intro!;
+  const intro = section(overview, "what-they-do").intro!;
   assert.match(
     intro[0]!.text,
     /works out which vulnerabilities an attacker could actually exploit, and drives the fix through tools already in place: Jira, ServiceNow and the existing security controls/,

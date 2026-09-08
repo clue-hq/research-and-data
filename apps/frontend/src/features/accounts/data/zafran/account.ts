@@ -61,7 +61,7 @@ const zafranSpecContent = buildZafranSpecContent({
   evidence: zafranResearchEvidence,
 });
 const whatZafranDoes = zafranSpecContent.overviewDisplay.sections.find(
-  (section) => section.key === "what-zafran-does",
+  (section) => section.key === "what-they-do",
 )!;
 
 export const zafranAccountDetailFixture: AccountDetail = {
@@ -71,7 +71,7 @@ export const zafranAccountDetailFixture: AccountDetail = {
   logoPath: "/logos/zafran.svg",
   websiteUrl: websiteLinks[0]![2]!,
   websiteLabel: websiteLinks[0]![1]!,
-  researchStatus: "fully_enriched",
+  researchStatus: "completed",
   researchStatusLabel: core["Research status"],
   industryLabels: core.Industry!.split(" · "),
   headcountLabel: core.Headcount!,

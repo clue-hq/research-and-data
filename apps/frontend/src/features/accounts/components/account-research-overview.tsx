@@ -55,6 +55,7 @@ export function AccountResearchBody({ account }: { account: AccountDetail }) {
           accountId={account.id}
           contacts={contacts}
           evidence={account.researchEvidence}
+          overallFit={account.overallFit}
           sections={sectionsBeforeCommittee}
         />
       ) : null}
@@ -67,6 +68,7 @@ export function AccountResearchBody({ account }: { account: AccountDetail }) {
           accountId={account.id}
           contacts={contacts}
           evidence={account.researchEvidence}
+          overallFit={account.overallFit}
           sections={sectionsAfterCommittee}
         />
       ) : null}

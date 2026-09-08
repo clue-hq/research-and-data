@@ -50,14 +50,29 @@ export function useAccountsScreenController(initialAccounts: Account[]) {
         account.name.toLocaleLowerCase().includes(normalizedSearch),
     );
     return sortAccounts(filterAccounts(searched, filters), sort).map((account) => ({
-      ...account, owner: resolveAccountOwner(account, workspaceOwner),
+      ...account, owner: resolveAccountOwner(account),
     }));
-  }, [accountRows, filters, search, sort, workspaceOwner]);
+  }, [accountRows, filters, search, sort]);
 
   const columnDefinitions = useMemo(
     () => createAccountColumnDefinitions(accountRows),
     [accountRows],
   );
+
+  // The research-status filter's vocabulary is the served `researchStatusLabel`
+  // of the rows in hand — the browser keeps no status label map (source map §6).
+  const researchStatusOptions = useMemo(() => {
+    const options = new Map<string, { label: string; value: string }>();
+    for (const account of accountRows) {
+      options.set(account.researchStatus, {
+        label: account.researchStatusLabel ?? account.researchStatus,
+        value: account.researchStatus,
+      });
+    }
+    return [...options.values()].sort((first, second) =>
+      first.label.localeCompare(second.label),
+    );
+  }, [accountRows]);
 
   const projectOptions = useMemo(() => {
     const projects = new Map<string, Account["projects"][number]>();
@@ -178,6 +193,7 @@ export function useAccountsScreenController(initialAccounts: Account[]) {
     search,
     selectedAccountIds,
     projectOptions,
+    researchStatusOptions,
     setFilters,
     setColumnWidth,
     setDensity,

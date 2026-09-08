@@ -5,6 +5,8 @@ import {
   type AccountsReadResult,
 } from "./accounts-read-result";
 import type { AccountsQuery } from "./accounts.repository";
+import { getAccountContact } from "./account-contacts.repository";
+import type { AccountContactDetail } from "../model/account-contact";
 
 /**
  * Fetches one more slice of the Accounts table.
@@ -23,4 +25,19 @@ export async function loadAccountsPage(
   query: AccountsQuery,
 ): Promise<AccountsReadResult> {
   return readAccountsResult(query);
+}
+
+/**
+ * Loads one contact's detail for the contacts-table preview drawer.
+ *
+ * Same seam, same reason as `loadAccountsPage`: the repositories read
+ * server-only configuration, so the browser cannot call them. The drawer opens
+ * on a row click and asks for that row's contact — there is no featured contact
+ * chosen ahead of time (source map §6).
+ */
+export async function loadAccountContact(
+  accountId: string,
+  contactId: string,
+): Promise<AccountContactDetail | null> {
+  return getAccountContact(accountId, contactId);
 }

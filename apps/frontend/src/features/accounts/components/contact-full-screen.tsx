@@ -19,6 +19,7 @@ export function ContactFullScreen({
       account={account}
       activeTab="contacts"
       copyLinkLabel="Copy contact link"
+      lastModifiedAt={contact.lastModifiedAt}
       showDetailsToggle={false}
     >
       <div className={`${motion.pageEntry} clue-scrollbar-hidden h-full min-h-0 overflow-y-auto`}>

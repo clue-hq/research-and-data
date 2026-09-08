@@ -27,6 +27,7 @@ import type {
   ResearchSection,
   ResearchSentence,
 } from "../model/research-display";
+import type { Account } from "../model/account";
 import { ContactAvatar } from "./contact-avatar";
 import { FitBadge } from "./account-detail-primitives";
 import { presentResearchItem } from "./research-item-presentation";
@@ -44,16 +45,17 @@ function evidenceDates(evidence: ResearchEvidence) {
 }
 
 function SourceIcon({ evidence }: { evidence: ResearchEvidence }) {
-  if (evidence.faviconUrl) {
+  // The favicon is resolved from the served domain through this app's own proxy
+  // route; the served `faviconUrl` is not a precondition and is never fetched
+  // directly (contract v1: "the frontend resolves favicons by domain").
+  if (evidence.sourceDomain) {
     return (
-      // The favicon URL belongs to the cited source and is intentionally not
-      // routed through Next Image optimization.
       // eslint-disable-next-line @next/next/no-img-element
       <img
         alt=""
         aria-hidden="true"
         className={styles.sourceFavicon}
-        src={evidence.sourceDomain ? `/api/source-favicon?domain=${encodeURIComponent(evidence.sourceDomain)}` : evidence.faviconUrl}
+        src={`/api/source-favicon?domain=${encodeURIComponent(evidence.sourceDomain)}`}
       />
     );
   }
@@ -548,11 +550,6 @@ function ResearchItemView({
   );
 }
 
-function splitSectionLabel(label: string) {
-  const [title, ...suffix] = label.split(" · ");
-  return { title, count: suffix.join(" · ") };
-}
-
 const sectionPresentation: Record<
   string,
   { tone: string }
@@ -563,7 +560,7 @@ const sectionPresentation: Record<
   "money-and-momentum": {
     tone: styles.toneGreen,
   },
-  "tools-they-use": {
+  "tools-they-already-use": {
     tone: styles.toneCyan,
   },
   "how-they-sell": {
@@ -602,10 +599,9 @@ const fallbackTones = [
 ];
 
 function presentationFor(section: ResearchSection, index: number) {
-  const { title } = splitSectionLabel(section.h1);
   return (
     {
-      label: title,
+      label: section.h1,
       tone:
         sectionPresentation[section.key]?.tone ??
         fallbackTones[index % fallbackTones.length]!,
@@ -627,7 +623,7 @@ function ReadingSection({
       <summary className={styles.sectionToggle}>
         <h2 className={styles.readingHeading} id={`${prefix}-${section.key}-heading`}>
           <DesignIcon name="chevron-down" size={12} className={styles.sectionChevron} />
-          {splitSectionLabel(section.h1).title}
+          {section.h1}
         </h2>
       </summary>
       <div className={styles.sectionContent}>
@@ -649,18 +645,17 @@ function ReadingSection({
 }
 
 function ResearchTools({
-  sections, evidence, evidenceById, prefix, includeRegister = false, summary = [],
+  sections, evidence, evidenceById, prefix, summary = [],
 }: {
   sections: ResearchSection[];
   evidence: ResearchEvidence[];
   evidenceById: Map<string, ResearchEvidence>;
   prefix: string;
-  includeRegister?: boolean;
   summary?: string[];
 }) {
   const [panel, setPanel] = useState<"sources" | "notes" | null>(null);
   const notes = sections.filter((section) => section.restricted);
-  const sources = researchSources(sections, evidence, includeRegister);
+  const sources = researchSources(sections, evidence);
   const noteCount = notes.reduce((total, section) => total + section.items.length, 0);
   const togglePanel = (next: "sources" | "notes") => setPanel((current) => current === next ? null : next);
 
@@ -725,7 +720,7 @@ export function ResearchDocument({
   const evidenceById = useMemo(() => new Map(evidence.map((item) => [item.claimId, item])), [evidence]);
   return (
     <div className={styles.readingDocument}>
-      <ResearchTools evidence={evidence} evidenceById={evidenceById} sections={sections} prefix={prefix} includeRegister summary={summary} />
+      <ResearchTools evidence={evidence} evidenceById={evidenceById} sections={sections} prefix={prefix} summary={summary} />
       {sections.filter((section) => !section.restricted).map((section) => (
         <ReadingSection evidenceById={evidenceById} section={section} prefix={prefix} lastVisit={lastVisit} key={section.key} />
       ))}
@@ -734,10 +729,12 @@ export function ResearchDocument({
 }
 
 export function ResearchStack({
-  evidence, sections, name = "this contact",
+  evidence, sections, contactId, name = "this contact",
 }: {
   evidence: ResearchEvidence[];
   sections: ResearchSection[];
+  /** The contact whose page this is; its own chips are not shown back to it. */
+  contactId?: string;
   name?: string;
 }) {
   const prefix = useId();
@@ -745,8 +742,8 @@ export function ResearchStack({
   const displaySections = sections.map((section) => ({
     ...section,
     items: section.items.map((item) => ({ ...item,
-      contactRefs: item.contactRefs.filter((contact) => contact.name !== name),
-      subject: item.subject?.name === name ? undefined : item.subject,
+      contactRefs: item.contactRefs.filter((contact) => contact.contactId !== contactId),
+      subject: item.subject?.contactId === contactId ? undefined : item.subject,
     })),
   }));
   return (
@@ -763,11 +760,14 @@ export function ResearchOverview({
   accountId,
   contacts = [],
   evidence,
+  overallFit = null,
   sections,
 }: {
   accountId?: string;
   contacts?: ResearchContactReference[];
   evidence: ResearchEvidence[];
+  /** The account's served fit band; `null` until the account is scored. */
+  overallFit?: Account["overallFit"];
   sections: ResearchSection[];
 }) {
   const evidenceById = useMemo(
@@ -784,10 +784,6 @@ export function ResearchOverview({
         const stacked = isWhyNow || section.key === "how-to-approach";
         const Section = stacked ? "details" : "section";
         const Heading = stacked ? "summary" : "div";
-        const overallFit = isFit ? section.h1.match(/\(Overall fit:\s*(.+?)\)/)?.[1] : undefined;
-        const heading = isWhyNow || overallFit
-          ? section.h1.replace(/\s*\(.+$/, "")
-          : section.h1;
         return (
           <Section
             className={`${stacked ? styles.readingSection : styles.overviewStaticSection} ${styles.overviewSection} ${presentation.tone}`}
@@ -796,8 +792,8 @@ export function ResearchOverview({
             <Heading className={stacked ? styles.sectionToggle : undefined}>
               <h2 className={styles.readingHeading}>
                 {stacked ? <DesignIcon name="chevron-down" size={12} className={styles.sectionChevron} /> : null}
-                {heading}
-                {overallFit ? (
+                {section.h1}
+                {isFit ? (
                   <span className={styles.overviewFit}>
                     <span>Overall fit:</span>
                     <FitBadge fit={overallFit} />
@@ -980,21 +976,25 @@ export function BuyingCommitteeTable({
                     ) : (
                       <span className={styles.committeeRole}>Not requested</span>
                     )}
-                    <a
-                      className={styles.committeeLink}
-                      href={member.linkedinUrl}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        alt=""
-                        aria-hidden="true"
-                        className="mr-1 inline-block size-[11px]"
-                        src="/logos/linkedin.svg"
-                      />
-                      LinkedIn
-                    </a>
+                    {/* D3 ruling: a member resolved from a coverage row may have no
+                        LinkedIn URL; the link renders only when one is served. */}
+                    {member.linkedinUrl ? (
+                      <a
+                        className={styles.committeeLink}
+                        href={member.linkedinUrl}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          alt=""
+                          aria-hidden="true"
+                          className="mr-1 inline-block size-[11px]"
+                          src="/logos/linkedin.svg"
+                        />
+                        LinkedIn
+                      </a>
+                    ) : null}
                   </span>
                 </td>
                 <td className={styles.committeeWhy}>{member.whyTheyMatter}</td>

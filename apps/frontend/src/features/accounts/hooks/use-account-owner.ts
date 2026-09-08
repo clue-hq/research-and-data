@@ -12,5 +12,5 @@ export function useAccountWorkspaceOwner() {
 }
 
 export function useAccountOwner(account: { owner?: AccountOwner | null; createdBy?: AccountOwner | null }) {
-  return resolveAccountOwner(account, useAccountWorkspaceOwner());
+  return resolveAccountOwner(account);
 }

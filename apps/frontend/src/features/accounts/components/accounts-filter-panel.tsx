@@ -9,6 +9,8 @@ import { AccountFilterSelect } from "./account-filter-select";
 import readability from "./account-readability.module.css";
 import styles from "./accounts-filter-panel.module.css";
 
+export type AccountFilterOption = { label: string; value: string };
+
 const fieldOptions: Array<{ label: string; value: AccountFilterField }> = [
   { label: "Account name", value: "name" },
   { label: "Project", value: "project" },
@@ -46,6 +48,7 @@ function operatorOptions(field: AccountFilterField) {
 function valueOptions(
   field: AccountFilterField,
   projects: AccountProject[],
+  researchStatusOptions: AccountFilterOption[],
 ) {
   if (field === "project") {
     return projects.map((project) => ({
@@ -54,12 +57,9 @@ function valueOptions(
     }));
   }
   if (field === "researchStatus") {
-    return [
-      { label: "Not started", value: "not_started" },
-      { label: "In progress", value: "in_progress" },
-      { label: "Fully enriched", value: "fully_enriched" },
-      { label: "Failed", value: "failed" },
-    ];
+    // The wording is the backend's `researchStatusLabel`, collected off the rows
+    // the table is showing; the browser owns no status vocabulary.
+    return researchStatusOptions;
   }
   if (field === "overallFit") {
     return ["High", "Medium", "Low"].map((value) => ({
@@ -73,13 +73,15 @@ function valueOptions(
 function RuleValue({
   onChange,
   projects,
+  researchStatusOptions,
   rule,
 }: {
   onChange: (value: string) => void;
   projects: AccountProject[];
+  researchStatusOptions: AccountFilterOption[];
   rule: AccountFilterRule;
 }) {
-  const options = valueOptions(rule.field, projects);
+  const options = valueOptions(rule.field, projects, researchStatusOptions);
   if (options) {
     return (
       <AccountFilterSelect
@@ -111,10 +113,12 @@ export function AccountsFilterPanel({
   filters,
   onFiltersChange,
   projects,
+  researchStatusOptions,
 }: {
   filters: AccountFilterRule[];
   onFiltersChange: (filters: AccountFilterRule[]) => void;
   projects: AccountProject[];
+  researchStatusOptions: AccountFilterOption[];
 }) {
   const controller = useAccountsFilterController(filters, onFiltersChange);
 
@@ -178,6 +182,7 @@ export function AccountsFilterPanel({
               <RuleValue
                 onChange={(value) => controller.updateRule(rule.id, { value })}
                 projects={projects}
+                researchStatusOptions={researchStatusOptions}
                 rule={rule}
               />
             </div>

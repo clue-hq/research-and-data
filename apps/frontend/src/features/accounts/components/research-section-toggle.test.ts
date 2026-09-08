@@ -12,7 +12,8 @@ test("major research headings are independent, initially closed native disclosur
   assert.doesNotMatch(detailsTag, /\bopen\b|\bname=/);
   assert.match(section, /<summary className=\{styles\.sectionToggle\}>/);
   assert.match(section, /<h2 className=\{styles\.readingHeading\}/);
-  assert.match(section, /splitSectionLabel\(section\.h1\)\.title/);
+  // Ruling R9: the served `h1` is the heading; no count suffix is parsed off it.
+  assert.match(section, /\{section\.h1\}/);
   assert.match(section, /section\.items\.map/);
   assert.match(section, /section\.intro\?\.map/);
   assert.doesNotMatch(renderer, /Jump to section|Menu\.Root/);

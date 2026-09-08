@@ -1,4 +1,5 @@
 import type { Account } from "../model/account";
+import { FIXTURE_RESEARCH_STATUS_LABELS } from "../model/research-status-labels";
 
 const previewDefaults = {
   createdAt: "2026-07-31T07:00:00.000Z",
@@ -44,7 +45,10 @@ function previewAccount(
     primaryProjectId: null,
     projects: [],
     websiteUrl: "https://example.com",
-    researchStatus: enriched ? "fully_enriched" : "in_progress",
+    researchStatus: enriched ? "completed" : "in_progress",
+    researchStatusLabel: enriched
+      ? FIXTURE_RESEARCH_STATUS_LABELS.completed
+      : FIXTURE_RESEARCH_STATUS_LABELS.in_progress,
   };
 }
 

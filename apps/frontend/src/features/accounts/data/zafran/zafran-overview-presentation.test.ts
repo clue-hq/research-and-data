@@ -11,7 +11,7 @@ function overviewSection(key: string) {
 }
 
 test("overview evidence follows sentence punctuation", () => {
-  const introduction = overviewSection("what-zafran-does").intro;
+  const introduction = overviewSection("what-they-do").intro;
   assert.ok(introduction);
   assert.equal(
     introduction[0]?.segments?.[0]?.text.endsWith("controls."),

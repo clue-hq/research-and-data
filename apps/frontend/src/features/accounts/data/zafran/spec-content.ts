@@ -28,7 +28,6 @@ type BuildSpecOptions = {
 
 export type ZafranSpecContent = {
   evidence: ResearchEvidence[];
-  declaredInsightCount: number;
   buyingCommittee: BuyingCommitteeMember[];
   contactDisplay: ResearchDisplayBlock;
   insightsDisplay: ResearchDisplayBlock;
@@ -428,7 +427,7 @@ function parseFitSection(body: string, options: BuildSpecOptions) {
   );
   return {
     key: "why-they-fit",
-    h1: "Why they fit (Overall fit: High)",
+    h1: "Why they fit",
     empty: false,
     restricted: false,
     defaultOpen: true,
@@ -458,7 +457,7 @@ function parseNumberedSection(body: string, options: BuildSpecOptions) {
   );
   return {
     key: "why-now",
-    h1: "Why now (top 3 · see all 42 insights →)",
+    h1: "Why now",
     empty: false,
     restricted: false,
     defaultOpen: true,
@@ -506,19 +505,19 @@ function buildInsights(options: BuildSpecOptions): ResearchDisplayBlock {
     sections: [
       parsePrioritySection(
         "buying-signals",
-        "Buying signals · 4",
+        "Buying signals",
         sectionBody("### Buying signals · 4", "### Money & momentum · 3"),
         options,
       ),
       parsePrioritySection(
         "money-and-momentum",
-        "Money & momentum · 3",
+        "Money & momentum",
         sectionBody("### Money & momentum · 3", "### Tools they already use · 3"),
         options,
       ),
       parsePrioritySection(
-        "tools-they-use",
-        "Tools they already use · 3",
+        "tools-they-already-use",
+        "Tools they already use",
         sectionBody(
           "### Tools they already use · 3",
           "### How they sell, and who they win · 3",
@@ -527,7 +526,7 @@ function buildInsights(options: BuildSpecOptions): ResearchDisplayBlock {
       ),
       parsePrioritySection(
         "how-they-sell",
-        "How they sell, and who they win · 3",
+        "How they sell, and who they win",
         sectionBody(
           "### How they sell, and who they win · 3",
           "## Contact insights · 5",
@@ -536,7 +535,7 @@ function buildInsights(options: BuildSpecOptions): ResearchDisplayBlock {
       ),
       parsePrioritySection(
         "contact-insights",
-        "Contact insights · 5",
+        "Contact insights",
         sectionBody(
           "## Contact insights · 5",
           "## 🔒 Context only — never use in outreach",
@@ -545,7 +544,7 @@ function buildInsights(options: BuildSpecOptions): ResearchDisplayBlock {
       ),
       parseBulletSection(
         "context-only",
-        "Context only — never use in outreach",
+        "Context only",
         sectionBody(
           "## 🔒 Context only — never use in outreach",
           "---\n\n## Part 3",
@@ -564,7 +563,7 @@ function buildOverview(options: BuildSpecOptions): ResearchDisplayBlock {
     page: "overview",
     sections: [
       {
-        key: "what-zafran-does",
+        key: "what-they-do",
         h1: "What Zafran does",
         empty: false,
         restricted: false,
@@ -590,7 +589,7 @@ function buildOverview(options: BuildSpecOptions): ResearchDisplayBlock {
       ),
       parseBulletSection(
         "watch-outs",
-        "Watch-outs (never in outreach)",
+        "Watch-outs",
         sectionBody("## 🔒 Watch-outs", "## Right rail"),
         options,
         true,
@@ -675,16 +674,14 @@ export function buildZafranSpecContent(
     ...options.evidence,
     ...Array.from(sourceIndex(options.evidence).values()).flat(),
   ].map((record) => [record.claimId, record])).values()];
-  const declaredInsightCount = Number(researchMetadata[1]);
   return {
     evidence,
-    declaredInsightCount,
     buyingCommittee: buyingCommittee(options),
     insightsDisplay,
     overviewDisplay,
     contactDisplay,
     insightSummary: [
-      count === declaredInsightCount ? `${count} insights` : `${count} supplied insights · ${declaredInsightCount} reported in research`,
+      `${count} insights`,
       `${researchMetadata[2]} people`,
       researchMetadata[3]!.trim(),
     ],

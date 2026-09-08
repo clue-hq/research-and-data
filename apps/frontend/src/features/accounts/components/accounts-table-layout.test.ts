@@ -19,7 +19,8 @@ test("table badges and plain values retain full text while truncating inside cel
   assert.match(table, /function TableBadge\(/);
   assert.match(table, /className="min-w-0 truncate">\{children\}/);
   assert.match(table, /title=\{industry\}/);
-  assert.match(table, /title=\{account\.owner\.name\}/);
+  // The owner is `owner ?? createdBy ?? "Unassigned"` (source map §6).
+  assert.match(table, /title=\{owner\.name\}/);
 });
 
 test("frozen columns release only when the table viewport is too narrow", () => {

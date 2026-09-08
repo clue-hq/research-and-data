@@ -10,10 +10,7 @@ import {
 import { ContactPreview } from "../contacts/components/contact-preview";
 import { ContactRow } from "../contacts/components/contact-row";
 import { useAccountContactsController } from "../contacts/hooks/use-account-contacts-controller";
-import type {
-  AccountContactDetail,
-  AccountContactSummary,
-} from "../model/account-contact";
+import type { AccountContactSummary } from "../model/account-contact";
 import type { AccountDetail } from "../model/account-detail";
 import readability from "./account-readability.module.css";
 import components from "./account-components.module.css";
@@ -63,14 +60,12 @@ function contactTableMinWidth(columnWidths: ContactColumnWidths) {
 export function AccountContactsScreen({
   account,
   contacts,
-  featuredContact,
 }: {
   account: AccountDetail;
   contacts: AccountContactSummary[];
-  featuredContact?: AccountContactDetail;
 }) {
   const [controller, displayControlsRef] =
-    useAccountContactsController(contacts);
+    useAccountContactsController(account.id, contacts);
 
   return (
     <AccountWorkspaceShell account={account} activeTab="contacts">
@@ -184,12 +179,7 @@ export function AccountContactsScreen({
                     controller.columnWidths,
                   )}
                   key={contact.id}
-                  onPreview={
-                    contact.profileAction === "preview" &&
-                    contact.id === featuredContact?.id
-                      ? controller.openPreview
-                      : undefined
-                  }
+                  onPreview={() => controller.openPreview(contact.id)}
                 />
               ))}
             </div>
@@ -206,10 +196,10 @@ export function AccountContactsScreen({
           </section>
         </AccountDetailsRail>
       </div>
-      {controller.previewOpen && featuredContact ? (
+      {controller.previewContact ? (
         <ContactPreview
           accountId={account.id}
-          contact={featuredContact}
+          contact={controller.previewContact}
           onClose={controller.closePreview}
         />
       ) : null}

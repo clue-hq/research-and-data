@@ -1,5 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { AccountContactSummary } from "../../model/account-contact";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { loadAccountContact } from "../../data/accounts.actions";
+import type {
+  AccountContactDetail,
+  AccountContactSummary,
+} from "../../model/account-contact";
 import type { AccountTableDensity } from "../../model/account-table-view";
 import {
   defaultContactColumnWidths,
@@ -7,10 +11,13 @@ import {
 } from "../../model/contact-table-view";
 
 export function useAccountContactsController(
+  accountId: string,
   contacts: AccountContactSummary[],
 ) {
   const [search, setSearch] = useState("");
-  const [previewOpen, setPreviewOpen] = useState(false);
+  // The drawer's contact is whichever row was clicked; nothing is prefetched.
+  const [previewContact, setPreviewContact] =
+    useState<AccountContactDetail | null>(null);
   const [displayOpen, setDisplayOpen] = useState(false);
   const [density, setDensity] =
     useState<AccountTableDensity>("comfortable");
@@ -42,12 +49,19 @@ export function useAccountContactsController(
     };
   }, []);
 
+  const openPreview = useCallback(
+    async (contactId: string) => {
+      setPreviewContact(await loadAccountContact(accountId, contactId));
+    },
+    [accountId],
+  );
+
   const visibleContacts = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return contacts;
 
     return contacts.filter((contact) =>
-      `${contact.name} ${contact.title} ${contact.persona}`
+      `${contact.name} ${contact.title ?? ""} ${contact.persona}`
         .toLowerCase()
         .includes(query),
     );
@@ -69,12 +83,12 @@ export function useAccountContactsController(
 
   return [
     {
-      closePreview: () => setPreviewOpen(false),
+      closePreview: () => setPreviewContact(null),
       columnWidths,
       density,
       displayOpen,
-      openPreview: () => setPreviewOpen(true),
-      previewOpen,
+      openPreview,
+      previewContact,
       resetColumnWidth,
       search,
       setDensity,

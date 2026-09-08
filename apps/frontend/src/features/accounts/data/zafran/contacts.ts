@@ -6,8 +6,11 @@ import type {
 import { zafranContactReferences } from "./account";
 import { zafranResearchEvidence } from "./evidence";
 import { buildZafranSpecContent, fieldText, zafranNickCore as core } from "./spec-content";
-import { formatTenure, researchCountLabel } from "../../model/research-presentation";
-import type { ResearchDisplayBlock } from "../../model/research-display";
+import { researchCountLabel } from "../../model/research-presentation";
+import type {
+  ResearchDisplayBlock,
+  ResearchEvidence,
+} from "../../model/research-display";
 
 function contact(
   id: string,
@@ -31,6 +34,58 @@ function contact(
     socials: ["linkedin"],
     profileAction: "page",
   };
+}
+
+/**
+ * The date the Zafran research ran. The fixture stands in for the backend, so
+ * every label it manufactures is pinned to that date — never to the clock the
+ * page happens to render on.
+ */
+const RESEARCHED_ON = "2026-09-02";
+
+/**
+ * The tenure wording the backend serves as `tenureLabel` (contract v1, ruling
+ * R8). It lives here, in the fixture, because it is the backend's label to
+ * write; the contact page prints `tenureLabel` and computes nothing.
+ */
+export function formatTenure(start: string, asOf: string) {
+  const from = new Date(`${start}T00:00:00Z`);
+  const to = new Date(`${asOf}T00:00:00Z`);
+  const months = Math.max(0, (to.getUTCFullYear() - from.getUTCFullYear()) * 12 + to.getUTCMonth() - from.getUTCMonth() - (to.getUTCDate() < from.getUTCDate() ? 1 : 0));
+  const parts = [Math.floor(months / 12) ? `${Math.floor(months / 12)} year${months >= 24 ? "s" : ""}` : "", months % 12 ? `${months % 12} month${months % 12 === 1 ? "" : "s"}` : ""].filter(Boolean);
+  return `${from.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })} (${parts.join(" ") || "less than a month"})`;
+}
+
+/** The claim id of the work-email record behind a contact's email chip (ruling R5). */
+function emailClaimIdFor(emailLabel: string | undefined) {
+  return emailLabel ? `email-${emailLabel.slice(0, emailLabel.indexOf("@"))}` : null;
+}
+
+/**
+ * The served `lastModifiedAt`: the latest `verifiedAt` among the claims THIS
+ * contact's page cites (ruling R8). Reading the account's whole evidence set
+ * here would reproduce the very defect R8 fixes — a person "updated" whenever
+ * anything on the account was.
+ */
+function latestVerifiedAt(
+  display: ResearchDisplayBlock,
+  records: ResearchEvidence[],
+) {
+  const cited = new Set(
+    display.sections.flatMap((section) => [
+      ...(section.intro ?? []).flatMap((sentence) => sentence.claimIds),
+      ...section.items.flatMap((item) => [
+        ...item.body.flatMap((sentence) => sentence.claimIds),
+        ...(item.sendLine?.claimIds ?? []),
+      ]),
+    ]),
+  );
+  const latest = records
+    .filter((record) => cited.has(record.claimId))
+    .map((record) => record.verifiedAt)
+    .sort()
+    .at(-1);
+  return `${latest ?? RESEARCHED_ON}T00:00:00.000Z`;
 }
 
 const { vari } = zafranContactReferences;
@@ -107,11 +162,12 @@ export const nickFisherFixture: AccountContactDetail = {
   linkedinUrl: core.LinkedIn!.match(/\]\(([^)]+)\)/)![1]!,
   emailLabel: fieldText(core.Email!),
   emailVerifiedAt: "2026-08-31",
+  emailClaimId: emailClaimIdFor(fieldText(core.Email!)),
   locationLabel,
   bestFirstChannelLabel: core["Best first channel"],
   educationLabel: fieldText(core.Education!),
   employmentStartedAt,
-  tenureLabel: formatTenure(employmentStartedAt, new Date().toISOString().slice(0, 10)),
+  tenureLabel: formatTenure(employmentStartedAt, RESEARCHED_ON),
   linkedinFollowers: Number(core.LinkedIn!.match(/([\d,]+) followers/)![1]!.replace(/,/g, "")),
   linkedinCreator: core.LinkedIn!.includes("creator"),
   locationClaimId: "nick-location",
@@ -125,6 +181,10 @@ export const nickFisherFixture: AccountContactDetail = {
     researchExcerpt: locationLabel,
   }],
   contactDisplay: zafranSpecContent.contactDisplay,
+  lastModifiedAt: latestVerifiedAt(
+    zafranSpecContent.contactDisplay,
+    zafranSpecContent.evidence,
+  ),
 };
 
 function compactDetail(
@@ -144,6 +204,9 @@ function compactDetail(
     sections: [
       { key: "why-this-person", h1: "Why this person", empty: personItems.length === 0, defaultOpen: true, restricted: false, items: personItems },
       ...relatedSections,
+      // Ruling R10: "Account context" is fixture-only — it exists so the four
+      // non-Nick pages have the spec's content. Production sections come from
+      // `contactDisplay` alone, and no component switches on this key.
       {
         key: "account-context", h1: "Account context", empty: false, defaultOpen: false, restricted: false,
         items: zafranSpecContent.overviewDisplay.sections.filter((section) => !section.restricted)
@@ -161,11 +224,13 @@ function compactDetail(
     linkedinLabel: linkedinUrl.replace(/^https?:\/\/(www\.)?/, ""),
     linkedinUrl,
     emailLabel,
+    emailClaimId: emailClaimIdFor(emailLabel),
     reports: [],
     overviewParagraphs: personItems.flatMap((item) => item.body.map((sentence) => sentence.text)),
     evidence: [],
     researchEvidence: zafranSpecContent.evidence,
     contactDisplay: display,
+    lastModifiedAt: latestVerifiedAt(display, zafranSpecContent.evidence),
   };
 }
 

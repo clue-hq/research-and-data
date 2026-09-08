@@ -36,10 +36,12 @@ test("the reading surface has neither priority rails nor repeated boxed copy lin
   assert.match(renderer, /!reading && unmentionedContacts\.length/);
 });
 
-test("source access retains all 38 account URLs and only relevant contact URLs", () => {
-  const sources = researchSources(zafranWorkspaceFixture.insightsDisplay!.sections, zafranWorkspaceFixture.researchEvidence, true);
-  assert.equal(sources.length, 38);
-  assert.equal(new Set(sources.map((source) => source.sourceUrl)).size, 38);
+test("source access retains the cited account URLs and only relevant contact URLs", () => {
+  // No `register-` admission any more (source map §6): a source is listed
+  // because the page cites its claim, not because of how its id is spelled.
+  const sources = researchSources(zafranWorkspaceFixture.insightsDisplay!.sections, zafranWorkspaceFixture.researchEvidence);
+  assert.equal(new Set(sources.map((source) => source.sourceUrl)).size, sources.length);
+  assert.ok(sources.length > 0);
   const contactSources = researchSources(nickFisherFixture.contactDisplay!.sections, nickFisherFixture.researchEvidence);
   assert.equal(contactSources.length, 14);
   assert.ok(contactSources.some((source) => source.sourceDomain === "youtube.com"));

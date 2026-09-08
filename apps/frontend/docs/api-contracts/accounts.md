@@ -47,8 +47,9 @@ sections below wherever they differ. Its presentation truth is the dummy fronten
 `docs/specs/ARV2-MASTER-PLAN.md` §6 and the D0 rulings, and *where each value is read from* —
 endpoint, SQL, table column or claim `field_key` — is `docs/specs/ARV2-DATA-SOURCE-MAP.md`.
 
-The contract is **executable**, not prose. The Zod schemas are vendored with their amendments at
-`tests/api/contract_v1/zod/`, the pydantic wire models are
+The contract is **executable**, not prose. The Zod schemas — with their amendments marked in place —
+are this app's own accounts models at `apps/frontend/src/features/accounts/model/` (vendored under
+`tests/api/contract_v1/zod/` at D3, moved here by the D4 re-lift), the pydantic wire models are
 `platform/api/clue_api/frontend_read/contract_v1.py`, and
 `tests/api/contract_v1/test_contract_v1.py` proves the three agree: the field sets match, a golden
 payload of each shape parses through the real Zod, and **the field tables in this section list
@@ -88,7 +89,7 @@ do not set.
 
 ### D0 amendments (rulings)
 
-The vendored Zod differs from `84f8ee7` in exactly these places, each marked in the file with a
+The models differ from `84f8ee7` in exactly these places, each marked in the file with a
 `// D0 ruling Rn/Sn` or `// D3 ruling` comment. `account-workspace.ts` is byte-identical.
 
 | Ruling | Change | Why |

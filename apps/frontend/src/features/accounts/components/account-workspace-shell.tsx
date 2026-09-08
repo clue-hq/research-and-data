@@ -17,6 +17,9 @@ import components from "./account-components.module.css";
 import readability from "./account-readability.module.css";
 import motion from "./account-motion.module.css";
 
+/** The account glyph shown when the account has no logo asset (ruling S2). */
+const ACCOUNT_GLYPH_PATH = "/icons/building.svg";
+
 export type AccountWorkspaceTab =
   | "overview"
   | "contacts"
@@ -103,11 +106,18 @@ function AccountWorkspaceHeader({
   account,
   activeTab,
   copyLinkLabel,
+  lastModifiedAt = account.lastModifiedAt,
   showDetailsToggle,
 }: {
   account: AccountDetail;
   activeTab: AccountWorkspaceTab;
   copyLinkLabel: string;
+  /**
+   * The stamp the "Updated" chip prints. A contact page passes the CONTACT's own
+   * `lastModifiedAt` (ruling R8); it used to show the account's, which said the
+   * person was updated whenever anything on the account was.
+   */
+  lastModifiedAt?: string;
   showDetailsToggle: boolean;
 }) {
   const panel = useContext(WorkspacePanelContext);
@@ -139,7 +149,7 @@ function AccountWorkspaceHeader({
               aria-hidden="true"
               className="size-3"
               height={12}
-              src={account.logoPath}
+              src={account.logoPath ?? ACCOUNT_GLYPH_PATH}
               width={12}
             />
             {account.name}
@@ -178,10 +188,10 @@ function AccountWorkspaceHeader({
       <div className="flex shrink-0 items-center gap-3">
         <time
           className={`${readability.uiRegular} hidden whitespace-nowrap text-[var(--clue-content-subtle)] xl:block`}
-          dateTime={account.lastModifiedAt}
-          title={`Last updated ${formatAccountDate(account.lastModifiedAt)}`}
+          dateTime={lastModifiedAt}
+          title={`Last updated ${formatAccountDate(lastModifiedAt)}`}
         >
-          Updated {formatAccountDate(account.lastModifiedAt)}
+          Updated {formatAccountDate(lastModifiedAt)}
         </time>
         <button
           aria-label={controller.copy.label}
@@ -204,13 +214,15 @@ function AccountWorkspaceHeader({
           </button>
           {controller.menuOpen ? (
             <div className={`${components.popover} absolute top-9 right-0 w-44 p-1`}>
-              <Link
-                className={components.menuRow}
-                href={account.websiteUrl}
-                target="_blank"
-              >
-                Open company website
-              </Link>
+              {account.websiteUrl ? (
+                <Link
+                  className={components.menuRow}
+                  href={account.websiteUrl}
+                  target="_blank"
+                >
+                  Open company website
+                </Link>
+              ) : null}
               <button
                 className={`${components.menuRow} w-full`}
                 onClick={controller.closeMenu}
@@ -243,12 +255,14 @@ export function AccountWorkspaceShell({
   activeTab,
   children,
   copyLinkLabel = "Copy account link",
+  lastModifiedAt,
   showDetailsToggle = true,
 }: {
   account: AccountDetail;
   activeTab: AccountWorkspaceTab;
   children: React.ReactNode;
   copyLinkLabel?: string;
+  lastModifiedAt?: string;
   showDetailsToggle?: boolean;
 }) {
   return (
@@ -257,6 +271,7 @@ export function AccountWorkspaceShell({
             account={account}
             activeTab={activeTab}
             copyLinkLabel={copyLinkLabel}
+            lastModifiedAt={lastModifiedAt}
             showDetailsToggle={showDetailsToggle}
           />
           <div className={`${motion.workspaceBody} relative min-h-0 min-w-0 flex-1 overflow-hidden`}>

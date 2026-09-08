@@ -7,7 +7,8 @@ export const openAiAccountDetailFixture: AccountDetail = {
   logoPath: "/logos/openai-detail.svg",
   websiteUrl: "https://openai.com",
   websiteLabel: "www.openai.com",
-  researchStatus: "fully_enriched",
+  researchStatus: "completed",
+  researchStatusLabel: "Researched",
   owner: {
     id: "aakash-shrivastava",
     name: "Aakash Shrivastava",

@@ -68,6 +68,9 @@ export const deniseDresserFixture: AccountContactDetail = {
     "At OpenAI, her mandate is to help more organizations move from isolated AI experiments to dependable, company-wide deployment. Her responsibilities make her a highly relevant executive stakeholder for platforms that improve enterprise account prioritization, customer intelligence, and coordinated go-to-market execution.",
   ],
   reports: [],
+  // No work-email claim behind this row: the chip cites nothing (ruling R5).
+  emailClaimId: null,
+  lastModifiedAt: "2026-04-08T00:00:00.000Z",
   researchEvidence: [],
   evidence: [
     {

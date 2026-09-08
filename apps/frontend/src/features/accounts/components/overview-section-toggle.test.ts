@@ -41,6 +41,6 @@ test("Watch-outs is omitted from shared overview rendering, not erased from the 
   const sections = zafranAccountDetailFixture.overviewDisplay!.sections;
   assert.equal(sections.find((section) => section.key === "watch-outs")!.items.length, 3);
   assert.deepEqual(sections.filter((section) => section.key !== "watch-outs").map((section) => section.key), [
-    "what-zafran-does", "why-they-fit", "why-now", "how-to-approach",
+    "what-they-do", "why-they-fit", "why-now", "how-to-approach",
   ]);
 });

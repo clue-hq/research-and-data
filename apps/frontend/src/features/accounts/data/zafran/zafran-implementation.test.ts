@@ -5,7 +5,8 @@ import { zafranAccountDetailFixture as account, zafranContactReferences } from "
 import { zafranContactDetails as contacts, nickFisherFixture as nick } from "./contacts";
 import { zafranWorkspaceFixture as workspace } from "./insights";
 import { accountFixtures } from "../accounts.fixture";
-import { formatTenure, isNewResearch } from "../../model/research-presentation";
+import { isNewResearch } from "../../model/research-presentation";
+import { formatTenure } from "./contacts";
 import { filterAccounts } from "../../model/account-query";
 import { buildZafranSpecContent, fieldText, zafranAccountCore, zafranAccountCustom, zafranNickCore } from "./spec-content";
 import { zafranResearchEvidence } from "./evidence";
@@ -33,7 +34,7 @@ test("instruction text never becomes contact research", () => {
 });
 
 test("the same URL resolves to distinct Gong and buying-criteria evidence", () => {
-  const gong = section("tools-they-use").items[2]!;
+  const gong = section("tools-they-already-use").items[2]!;
   const criteria = section("contact-insights").items[1]!;
   const a = evidence.get(gong.body[0]!.claimIds[0]!)!;
   const b = evidence.get(criteria.body[0]!.claimIds[0]!)!;
@@ -99,7 +100,7 @@ test("every committee cell preserves supplied text and reach links without accou
     const cells = line.split("|").map((cell) => cell.trim());
     const member = account.buyingCommittee[index]!;
     assert.deepEqual([member.name, member.title, member.persona, member.whyTheyMatter], [cells[1]!.replace(/^→\s*/, ""), cells[2], cells[3], cells[5]]);
-    assert.ok(cells[4]!.includes(member.linkedinUrl));
+    assert.ok(member.linkedinUrl && cells[4]!.includes(member.linkedinUrl));
     if (member.email) assert.ok(cells[4]!.includes(member.email));
   });
 });
@@ -163,7 +164,7 @@ test("all 34 authored priority blocks preserve every word, number and copy line"
 
 test("every overview paragraph, fit reason, timing item, approach and warning is preserved", () => {
   const boundaries = [
-    ["what-zafran-does", "## What Zafran does", "## Why they fit"],
+    ["what-they-do", "## What Zafran does", "## Why they fit"],
     ["why-they-fit", "## Why they fit", "## Why now"],
     ["why-now", "## Why now", "## Buying committee"],
     ["how-to-approach", "## How to approach", "## 🔒 Watch-outs"],

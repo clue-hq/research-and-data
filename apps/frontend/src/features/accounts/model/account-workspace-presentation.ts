@@ -23,10 +23,16 @@ export function formatAccountDate(value: string) {
   }).format(new Date(value));
 }
 
+/**
+ * Which served summary strings the Insights header strip shows.
+ *
+ * The strings themselves are the backend's ("{n} insights", "{m} people" —
+ * contract v1); nothing here rewrites one. The research date is served in the
+ * same list and is rendered under Sources instead of in the strip, so only the
+ * choice of slot lives here.
+ */
 export function insightHeaderSummary(summary: string[]) {
-  return summary
-    .filter((item) => !/^researched\b/i.test(item))
-    .map((item) => item.replace(/^(\d+) supplied insights · \d+ reported in research$/, "$1 insights"));
+  return summary.filter((item) => !/^researched\b/i.test(item));
 }
 
 export function accountArtifacts(artifacts: AccountArtifact[], accountId: string) {
@@ -56,14 +62,20 @@ export function filterAccountArtifacts(
 
 type Activity = AccountWorkspace["activity"][number];
 
+/**
+ * The actor and phrasing an activity row renders.
+ *
+ * The actor is the served `actor` discriminated union and nothing else: an
+ * event with no actor is unattributed (contract v1), never guessed from the
+ * wording of its text.
+ */
 export function activityPresentation(item: Activity) {
-  const legacyClue = /^Clue\s+/i.test(item.text);
-  const actorType = item.actor?.type ?? (legacyClue ? "clue" : undefined);
+  const actorType = item.actor?.type;
   const actorName = item.actor?.type === "person" ? item.actor.name : actorType === "clue" ? "Clue" : undefined;
   return {
     actorType,
     actorName,
-    action: item.action ?? (legacyClue ? item.text.replace(/^Clue\s+/i, "") : item.text),
+    action: item.action ?? item.text,
   };
 }
 

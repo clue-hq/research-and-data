@@ -128,7 +128,9 @@ test("the account library uses themed filters, accessible previews and a plain a
   assert.match(screen, /No artifacts yet/);
   assert.match(screen, /<AccountActivityFeed items=\{items\}/);
   assert.doesNotMatch(screen, /openai-detail\.svg|Last viewed|account\.owner/);
-  assert.match(shell, /dateTime=\{account\.lastModifiedAt\}/);
+  // Ruling R8: the stamp defaults to the account's, and a contact page passes its own.
+  assert.match(shell, /lastModifiedAt = account\.lastModifiedAt/);
+  assert.match(shell, /dateTime=\{lastModifiedAt\}/);
   assert.match(insights, /insightHeaderSummary\(workspace\.insightSummary\)/);
   assert.match(insights, /summary=\{workspace\.insightSummary\}/);
 });

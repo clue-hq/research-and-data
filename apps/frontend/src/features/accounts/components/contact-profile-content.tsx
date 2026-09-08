@@ -18,7 +18,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { AccountContactDetail } from "../model/account-contact";
-import { formatTenure } from "../model/research-presentation";
 import readability from "./account-readability.module.css";
 import components from "./account-components.module.css";
 import { ContactAvatar } from "./contact-avatar";
@@ -33,6 +32,9 @@ const personaToneClasses = {
   pink: components.badgeTonePink,
   red: components.badgeToneRed,
 } as const;
+
+/** The account glyph shown when the account has no logo asset (ruling S2). */
+const ACCOUNT_GLYPH_PATH = "/icons/building.svg";
 
 function ProfileRow({
   icon,
@@ -88,11 +90,13 @@ export function ContactDetailsList({
 }: {
   contact: AccountContactDetail;
 }) {
-  const emailEvidence = contact.researchEvidence.find(
-    (evidence) =>
-      Boolean(contact.emailLabel) &&
-      (evidence.quote ?? evidence.researchExcerpt)?.includes(contact.emailLabel ?? ""),
-  );
+  // The email chip cites the served work-email claim by id (ruling R5); it used
+  // to hunt for the address inside evidence text, which cited whatever mentioned it.
+  const emailEvidence = contact.emailClaimId
+    ? contact.researchEvidence.find(
+        (evidence) => evidence.claimId === contact.emailClaimId,
+      )
+    : undefined;
   return (
     <div>
       <div className="flex flex-col gap-2">
@@ -112,14 +116,15 @@ export function ContactDetailsList({
               aria-hidden="true"
               className="size-3"
               height={12}
-              src={contact.accountLogoPath}
+              src={contact.accountLogoPath ?? ACCOUNT_GLYPH_PATH}
               width={12}
             />
             {contact.accountName}
           </Link>
         </ProfileRow>
         <ProfileRow icon={BriefcaseBusiness} label={contact.contactDisplay ? "Title" : "Role"}>
-          {contact.title}
+          {/* Ruling S7: no title claim renders an em dash, never a guess. */}
+          {contact.title ?? "—"}
         </ProfileRow>
         <ProfileRow icon={Gauge} label="Influence">
           <span
@@ -214,7 +219,7 @@ export function ContactDetailsList({
             ) : null}
             {contact.tenureLabel ? (
               <ProfileRow icon={CalendarClock} label={`At ${contact.accountName}`}>
-                {contact.employmentStartedAt ? formatTenure(contact.employmentStartedAt, new Date().toISOString().slice(0, 10)) : contact.tenureLabel}
+                {contact.tenureLabel}
               </ProfileRow>
             ) : null}
             {contact.reports.length > 0 ? (
@@ -263,6 +268,7 @@ export function ContactProfileContent({
       {researchSections ? (
         <section className="mt-10 pb-12" aria-label="Contact research">
           <ResearchStack
+            contactId={contact.id}
             evidence={contact.researchEvidence}
             sections={researchSections}
             name={contact.name}
