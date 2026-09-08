@@ -4,9 +4,8 @@ Three jobs, all of them reads:
 
 * :func:`resolve_subject` / :func:`client_context` turn ids into the two small objects the prompt's
   page header carries — the person or account being written about, and the client reading.
-* :func:`committee_members` expands an account into the people an account page speaks about: the
-  latest research coverage row's committee when there is one, and otherwise every contact under
-  the account that the store actually holds a claim for.
+* :func:`committee_members` expands an account into the people an account page speaks about: every
+  contact under the account that the store actually holds a live claim for, in persona-rank order.
 * :func:`gather_section_inputs` is the filter. It reads the subject's live claims **once** and
   hands each section exactly the rows its recipe allows, with three exclusions applied and
   counted: special-category values never enter any section; ``outreach_safe=false`` rows enter
@@ -24,9 +23,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from sqlalchemy import bindparam, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.display.personas import persona_rank
 from clue_api.arv2.display.recipes import SectionRecipe
 from clue_api.arv2.display.render import DisplayClaim, dedupe_near_duplicates, display_claim
 from clue_api.arv2.errors import Arv2Error
@@ -255,33 +255,12 @@ async def client_context(
 # -- the committee ------------------------------------------------------------------------------
 
 
-_COVERAGE_SQL = text(
-    """
-    SELECT committee_member_ids
-    FROM entity_research_account_coverage
-    WHERE workspace_id = :workspace_id AND account_entity_id = :account_id
-    ORDER BY created_at DESC, coverage_id DESC
-    LIMIT 1
-    """
-)
-
-_MEMBERS_BY_ID_SQL = text(
-    """
-    SELECT contact.id AS contact_id,
-           contact.full_name,
-           account.id AS account_id,
-           account.canonical_name,
-           account.primary_domain
-    FROM contact_entity contact
-    JOIN account_entity account ON account.id = contact.account_entity_id
-    WHERE contact.id IN :contact_ids AND contact.workspace_id = :workspace_id
-    """
-).bindparams(bindparam("contact_ids", expanding=True))
-
-#: No coverage row yet — every contact under the account the store actually holds a claim for. A
-#: contact with no claims has nothing to say on a page, so it is not a committee member here.
-_MEMBERS_WITH_CLAIMS_SQL = text(
-    """
+#: Every live contact under the account that the store actually holds a claim for. The claim
+#: predicate is the workspace scope's own (public-footprint ∪ this workspace's private), never
+#: ``claim.workspace_id`` alone — inside the subquery its unqualified column names bind to
+#: ``claim``, which is the table the rule is about. A contact with no claims has nothing to say on
+#: a page, and a merged loser is not a person: both are excluded.
+_MEMBERS_TEMPLATE = """
     SELECT contact.id AS contact_id,
            contact.full_name,
            account.id AS account_id,
@@ -291,13 +270,14 @@ _MEMBERS_WITH_CLAIMS_SQL = text(
     JOIN account_entity account ON account.id = contact.account_entity_id
     WHERE contact.account_entity_id = :account_id
       AND contact.workspace_id = :workspace_id
+      AND contact.merged_into IS NULL
       AND EXISTS (
           SELECT 1 FROM claim
-          WHERE claim.entity_id = contact.id AND claim.superseded_by IS NULL
+          WHERE claim.entity_id = contact.id
+            AND claim.superseded_by IS NULL
+            AND {scope_sql}
       )
-    ORDER BY contact.full_name, contact.id
-    """
-)
+"""
 
 
 async def committee_members(
@@ -305,31 +285,26 @@ async def committee_members(
 ) -> list[SubjectRef]:
     """The people an account page speaks about, each with their persona and title.
 
-    The latest ``entity_research_account_coverage`` row is authoritative when one exists — that is
-    the committee the research finalized, in the order it recorded. Before any research run has
-    published coverage, the honest answer is the contacts the store holds claims for.
+    **The ARV2 committee, in one place.** The rule is the contacts under this account that hold at
+    least one live claim, ordered by persona rank and then by name (founder ruling 2026-09-09:
+    ARV2's own rows are the only truth, and the old research lane's coverage table is not one of
+    them). The ordering lives here rather than at the read surface so the generated page and the
+    committee card can never disagree about who is on the committee *or* in what order.
+
+    R3 will give the committee rows of its own. When it does, this function is the single place
+    that changes.
     """
     account = _as_uuid(account_id, kind="account")
-    params: dict[str, object] = {"workspace_id": workspace_id, "account_id": account}
-    coverage = (await conn.execute(_COVERAGE_SQL, params)).scalar_one_or_none()
-
-    rows: list[dict[str, object]]
-    if coverage:
-        member_ids = [uuid.UUID(str(member)) for member in coverage]
-        found = {
-            str(row["contact_id"]): dict(row)
-            for row in (
-                await conn.execute(
-                    _MEMBERS_BY_ID_SQL,
-                    {"workspace_id": workspace_id, "contact_ids": member_ids},
-                )
-            ).mappings()
-        }
-        rows = [found[str(member)] for member in member_ids if str(member) in found]
-    else:
-        rows = [
-            dict(row) for row in (await conn.execute(_MEMBERS_WITH_CLAIMS_SQL, params)).mappings()
-        ]
+    scope_sql, scope_params = WorkspaceScope.for_workspace(workspace_id).predicate()
+    rows = [
+        dict(row)
+        for row in (
+            await conn.execute(
+                text(_MEMBERS_TEMPLATE.format(scope_sql=scope_sql)),
+                {"workspace_id": workspace_id, "account_id": account, **scope_params},
+            )
+        ).mappings()
+    ]
 
     contact_ids = [EntityId(uuid.UUID(str(row["contact_id"]))) for row in rows]
     facts = await _committee_facts(conn, contact_ids, workspace_id=workspace_id)
@@ -351,6 +326,9 @@ async def committee_members(
                 title=title,
             )
         )
+    # Persona rank, then name — and then the id, so two namesakes on one committee still come back
+    # in the same order on every read rather than in whatever order the planner returned them.
+    members.sort(key=lambda member: (persona_rank(member.persona), member.name, member.id))
     return members
 
 

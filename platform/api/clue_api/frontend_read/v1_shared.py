@@ -42,6 +42,12 @@ from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.display.evidence import evidence_for_ids
+from clue_api.arv2.display.personas import (
+    PERSONA_LABELS,
+    PERSONA_RANK,
+    persona_label,
+    persona_rank,
+)
 from clue_api.arv2.display.render import render_value_text
 from clue_api.frontend_read.contract_v1 import (
     AccountActivity,
@@ -63,6 +69,7 @@ from clue_research.compliance import WorkspacePolicy
 __all__ = [
     "EMPTY_BAND",
     "INFLUENCE_DEFAULTS",
+    "PERSONA_LABELS",
     "PERSONA_RANK",
     "PERSONA_TONES",
     "PROVIDER_LABELS",
@@ -89,6 +96,8 @@ __all__ = [
     "last_modified_for",
     "linkedin_label",
     "owners_for",
+    "persona_label",
+    "persona_rank",
     "research_evidence_for",
     "revenue_label",
     "socials",
@@ -172,15 +181,6 @@ INFLUENCE_DEFAULTS: dict[str, Influence] = {
     "blocker": "Medium",
 }
 
-#: Committee ordering. A persona outside this tuple sorts last, then by name.
-PERSONA_RANK: tuple[str, ...] = (
-    "economic_buyer",
-    "champion",
-    "technical_evaluator",
-    "user",
-    "blocker",
-)
-
 #: ``source_key`` → the provider name a person recognises. An unmapped key is served verbatim: a
 #: source we have not named yet is still an honest attribution.
 PROVIDER_LABELS: dict[str, str] = {
@@ -212,14 +212,6 @@ def persona_tone(persona: str | None) -> PersonaTone:
 def persona_influence(persona: str | None) -> Influence:
     """The persona-derived influence default (ruling S8)."""
     return INFLUENCE_DEFAULTS.get(persona or "", _DEFAULT_INFLUENCE)
-
-
-def persona_rank(persona: str | None) -> int:
-    """Sort key for committee ordering; an unknown persona sorts after every known one."""
-    try:
-        return PERSONA_RANK.index(persona or "")
-    except ValueError:
-        return len(PERSONA_RANK)
 
 
 # --- fit ------------------------------------------------------------------------------------------

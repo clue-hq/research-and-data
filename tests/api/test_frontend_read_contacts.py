@@ -28,8 +28,6 @@ therefore the *production* case today, and the populated ones are the post-R11 c
 
 from __future__ import annotations
 
-import hashlib
-import json
 import uuid
 from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, date, datetime, timedelta
@@ -112,7 +110,6 @@ from tests.api.test_frontend_read_account_detail import (  # noqa: PLC2701
 )
 from tests.api.test_frontend_read_account_detail import (  # noqa: PLC2701
     _build_v1,
-    _launch_research_job,
     _lenient_claim,
     _V1Fixture,
 )
@@ -1308,10 +1305,9 @@ def test_the_display_gate_is_the_shared_c7_predicate() -> None:
 # extended with the ARV2 contact this contract is actually about — a fully-researched person
 # carrying every rail fact E5 renders — plus:
 #
-# * a **coverage row**, so the committee is the research's own list rather than "every contact with
-#   a claim". Without it the fallback would put every seeded person on the committee and the
-#   non-committee-but-addressable case (the E5 ruling) could not exist;
-# * a person the coverage row leaves out who still holds claims (served on E5, absent from E4);
+# * a person who holds one claim and nothing else — no persona, no committee role — so the table's
+#   placeholders and its persona-rank ordering are both proved against a real row rather than an
+#   invented one;
 # * a person with no claims at all (the honest 404);
 # * one stored ``contact/openers`` section, written by hand through D2's own ``insert_block`` so
 #   the read surface is proven to compose what is stored rather than to write anything.
@@ -1335,7 +1331,7 @@ class _V1Contacts:
         self.ravi = v1.ravi
         #: The fully-researched ARV2 contact E5 is about.
         self.nick = nick
-        #: Under the account, holding claims, absent from the coverage committee.
+        #: Under the account, holding one claim, and carrying no committee facts at all.
         self.priya = priya
         #: Under the account, no claims and no page.
         self.blank = blank
@@ -1347,50 +1343,6 @@ class _V1Contacts:
 
 #: The current position the career history records — the tenure the header is computed from.
 _V1_POSITION_START = date(2024, 4, 1)
-
-
-async def _seed_coverage(
-    conn: AsyncConnection,
-    *,
-    account_id: EntityId,
-    project_id: str,
-    members: Sequence[EntityId],
-) -> None:
-    """One finalized ``entity_research_account_coverage`` row naming this account's committee.
-
-    The coverage row is what makes committee membership the *research's* answer rather than "every
-    contact the store holds a claim for", which is the fallback ``committee_members`` uses before
-    any run has published one. The run and job rows are the FK anchors it hangs off, launched
-    through the same production entry point the detail suite uses.
-    """
-    launch = await _launch_research_job(conn, project_id=project_id, account_id=account_id)
-    coverage = {"origin": "frontend-read-contacts-v1"}
-    body = json.dumps(coverage, sort_keys=True)
-    await conn.execute(
-        text(
-            """
-            INSERT INTO entity_research_account_coverage
-                (coverage_id, research_run_id, job_id, workspace_id, account_entity_id,
-                 result_refs, completed_field_keys, unresolved_field_keys, unresolved_reasons,
-                 committee_result_refs, committee_member_ids, committee_status, review_flags,
-                 claim_refs, evidence_refs, coverage_json, coverage_sha256)
-            VALUES (:coverage_id, :run_id, :job_id, :workspace_id, :account, :empty, :empty,
-                    :empty, :empty, :empty, :members, 'complete', :empty, :empty, :empty,
-                    CAST(:coverage AS jsonb), :sha)
-            """
-        ),
-        {
-            "coverage_id": uuid.uuid4(),
-            "run_id": launch["research_run_id"],
-            "job_id": launch["job_id"],
-            "workspace_id": _V1_WS,
-            "account": account_id,
-            "empty": [],
-            "members": [uuid.UUID(str(member)) for member in members],
-            "coverage": body,
-            "sha": hashlib.sha256(body.encode()).hexdigest(),
-        },
-    )
 
 
 async def _seed_openers_block(
@@ -1573,8 +1525,8 @@ async def _build_v1_contacts(conn: AsyncConnection) -> _V1Contacts:
         source_url="https://zafran.io/team",
     )
 
-    # Under the account, researched, and left off the coverage committee — the E5 ruling's case.
-    # No LinkedIn URL either, which is the second thing this person proves.
+    # Under the account, researched, and carrying no persona or committee role — the placeholder
+    # case. No LinkedIn URL either, which is the second thing this person proves.
     priya = await insert_contact_entity(
         conn,
         account_entity_id=v1.zafran,
@@ -1600,12 +1552,6 @@ async def _build_v1_contacts(conn: AsyncConnection) -> _V1Contacts:
         status=AccountStatus.ACTIVE,
     )
 
-    await _seed_coverage(
-        conn,
-        account_id=v1.zafran,
-        project_id=v1.base.project_a.project_id,
-        members=(v1.dana, nick, v1.ravi),
-    )
     await _seed_openers_block(conn, contact_id=nick, cited=signals)
     return _V1Contacts(
         v1=v1,
@@ -1649,9 +1595,15 @@ async def _profile_v1(
         )
 
 
-def test_the_v1_contacts_table_is_the_coverage_committee_in_screen_order() -> None:
+def test_the_v1_contacts_table_is_the_researched_committee_in_screen_order() -> None:
     """E4: every field of the row, from the sources decisions 2/12/13 name — and the order the
-    screens show, which is the account detail's committee order, not insertion order."""
+    screens show, which is the account detail's committee order, not insertion order.
+
+    The committee is ARV2's own answer (founder ruling 2026-09-09): the contacts under this
+    account that hold a live claim. So the person with no claims at all is absent, and the person
+    with one title claim and no committee facts is present — being unresearched, not being left
+    off somebody's list, is what keeps a name out of this table.
+    """
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -1662,14 +1614,16 @@ def test_the_v1_contacts_table_is_the_coverage_committee_in_screen_order() -> No
 
             assert set(body) == {"data", "meta"}
             AccountContactsResponseV1.model_validate(body)
-            assert body["meta"]["total"] == 3
-            # Persona rank first (economic_buyer, then champion), then name — and the two people
-            # the coverage row leaves out are absent from the table entirely.
+            assert body["meta"]["total"] == 4
+            # Persona rank first (economic_buyer, then champion, then the personaless member),
+            # then name — never insertion order. Blank Person holds no claims and is absent.
             assert [row["name"] for row in body["data"]] == [
                 "Dana Katz",
                 "Nick Fisher",
                 "Ravi Mehta",
+                "Priya Raman",
             ]
+            assert str(fixture.blank) not in {row["id"] for row in body["data"]}
 
             nick = next(row for row in body["data"] if row["id"] == str(fixture.nick))
             assert nick["title"] == "VP of Marketing"
@@ -1769,16 +1723,17 @@ def test_the_v1_contact_page_serves_every_rail_fact_the_display_and_its_evidence
     run_async(scenario())
 
 
-def test_a_researched_contact_off_the_coverage_committee_still_has_a_page() -> None:
-    """The E5 addressability ruling: a contact **under this account** holding a live claim has a
-    page whether or not the latest coverage row listed them — and a contact with no safe LinkedIn
-    URL is served with the site root rather than a fabricated profile link or a 404."""
+def test_a_researched_contact_with_no_committee_facts_is_listed_and_has_a_page() -> None:
+    """The E5 addressability ruling: a contact **under this account** holding a live claim is on
+    the committee and has a page, even when the research recorded no persona and no role for them
+    — and a contact with no safe LinkedIn URL is served with the site root rather than a
+    fabricated profile link or a 404."""
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
             fixture = await _build_v1_contacts(conn)
             listed = {row["id"] for row in (await _list_v1(conn, fixture.zafran)).json()["data"]}
-            assert str(fixture.priya) not in listed
+            assert str(fixture.priya) in listed
 
             response = await _profile_v1(conn, fixture.zafran, fixture.priya)
             assert response.status_code == 200

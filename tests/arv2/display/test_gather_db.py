@@ -22,7 +22,9 @@ from clue_api.arv2.display.gather import (
 )
 from clue_api.arv2.display.recipes import read_recipes
 from clue_config import Settings
-from tests.arv2.display._seed import seed_coverage, seed_display_fixture
+from clue_core import EntityType
+from clue_research.identity import insert_contact_entity
+from tests.arv2.display._seed import seed_display_fixture, write_claim
 
 # The claim-store harness lives in a sibling test package; a fixture is only visible to a module
 # that imports it, so re-export both (``require_claimstore_db`` depends on ``migrated_db``).
@@ -90,15 +92,26 @@ def test_resolve_subject_reads_the_person_their_persona_and_their_account() -> N
     run_async(_run())
 
 
-def test_committee_members_without_a_coverage_row_are_the_contacts_that_have_claims() -> None:
+def test_the_committee_is_the_accounts_contacts_that_hold_a_live_claim() -> None:
+    """The ARV2 committee rule (founder ruling 2026-09-09), and the three people it leaves out.
+
+    ARV2's own rows are the only truth here: there is no coverage table to consult and no research
+    lane to ask. A person is on the committee when they are a live contact **under this account**
+    holding at least one live claim — so the contact with no claims, the merged loser and the
+    researched contact of a *different* account are all absent, however plausible each looks.
+    """
+
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             seeded = await seed_display_fixture(conn)
             members = await committee_members(
                 conn, workspace_id=seeded.workspace_id, account_id=str(seeded.account)
             )
-            assert {member.id for member in members} == {str(seeded.nick), str(seeded.vari)}
-            assert str(seeded.silent) not in {member.id for member in members}
+            ids = {member.id for member in members}
+            assert ids == {str(seeded.nick), str(seeded.vari)}
+            assert str(seeded.silent) not in ids, "no claims, nothing to say on a page"
+            assert str(seeded.merged) not in ids, "a merged loser is not a second person"
+            assert str(seeded.outsider) not in ids, "another account's committee is not this one"
             by_id = {member.id: member for member in members}
             assert by_id[str(seeded.nick)].persona == "economic_buyer"
             assert by_id[str(seeded.nick)].title == "VP of Marketing"
@@ -108,19 +121,41 @@ def test_committee_members_without_a_coverage_row_are_the_contacts_that_have_cla
     run_async(_run())
 
 
-def test_the_latest_coverage_row_is_the_committee_even_when_a_member_has_no_claims() -> None:
+def test_the_committee_is_ordered_by_persona_rank_and_then_by_name() -> None:
+    """The order lives here, not at the read surface, so a card and a page cannot disagree.
+
+    Both halves of the key are exercised against a seed where they *fight*: the second economic
+    buyer's name sorts last and she still leads, and the plain user's name sorts first and he
+    still trails every ranked persona.
+    """
+
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             seeded = await seed_display_fixture(conn)
-            await seed_coverage(conn, seeded, [seeded.vari, seeded.silent])
+            for name, persona in (("Zoe Buyer", "economic_buyer"), ("Aaron User", "user")):
+                person = await insert_contact_entity(
+                    conn, account_entity_id=seeded.account, full_name=name
+                )
+                await write_claim(
+                    conn,
+                    seeded.claims,
+                    label=f"persona_{name}",
+                    workspace_id=seeded.workspace_id,
+                    entity_id=person,
+                    entity_type=EntityType.CONTACT,
+                    field_key="contact.persona",
+                    value_json=persona,
+                    signal_priority=2,
+                )
             members = await committee_members(
                 conn, workspace_id=seeded.workspace_id, account_id=str(seeded.account)
             )
-            # The research finalized this committee: its order is kept, a member the store holds
-            # no claim for is still a member, and Nick — who has claims — is not one.
-            assert [member.id for member in members] == [str(seeded.vari), str(seeded.silent)]
-            assert members[0].persona == "champion"
-            assert members[1].persona is None
+            assert [member.name for member in members] == [
+                "Nick Fisher",  # economic_buyer, by name
+                "Zoe Buyer",  # economic_buyer, by name
+                "Vari Bindra",  # champion
+                "Aaron User",  # user, last despite the first name alphabetically
+            ]
 
     run_async(_run())
 
