@@ -134,9 +134,11 @@ be.
 
 Two things keep a re-run from re-minting products it already has. The synchronizer's comparison key
 (`normalize_identity`) strips the `™®©℠` marks *before* NFKC (which would otherwise turn `™` into
-the letters `tm`), folds case, keeps every word (no stoplist — a one-company heuristic would silently merge distinct products elsewhere), And on a re-run the lineup *query* — never the system prompt or the schema, which the
-catalog contract fixes — names the brand's products already on file through the `known_products`
-seam, so the model reuses an existing spelling instead of inventing a near-miss of it.
+the letters `tm`), folds case, and keeps every word — no stoplist, because a one-company heuristic
+would silently merge distinct products elsewhere (founder ruling 2026-09-08). And on a re-run the
+lineup *query* — never the system prompt or the schema, which the catalog contract fixes — names
+the brand's products already on file through the `known_products` seam, so the model reuses an
+existing spelling instead of inventing a near-miss of it.
 
 ### The catalog identity ladder
 

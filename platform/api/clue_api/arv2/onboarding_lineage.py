@@ -75,10 +75,9 @@ class ProductLink:
 #: ``Aura™`` normalize to ``auratm`` — a different identity from ``Aura``.
 _MARKS = str.maketrans("", "", "™®©℠")
 
-#: Tokens that say nothing about WHICH product this is. Four live runs on one workspace grew the
-#: product rows from 19 to 28 because the lineup called the same offering "AI Front Desk" once and
-#: "AI FrontDesk Agent" the next time. Dropping them is a comparison aid only — a normalized hit
-#: still has to survive the resolution ladder, and nothing here renames or merges anything.
+#: The alphanumeric runs :func:`normalize_identity` joins into a spelling key — nothing else is
+#: identity. Every word is kept; there is no stoplist of "generic" tokens (founder ruling
+#: 2026-09-08).
 _TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
 
 
