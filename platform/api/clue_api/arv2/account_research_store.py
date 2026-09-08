@@ -24,11 +24,14 @@ from uuid import UUID
 from sqlalchemy import RowMapping, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.onboarding_store import DocumentRow
+from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
 from clue_core import decode_jsonb
 
 __all__ = [
     "UNSPECIFIED_FAILURE",
     "JobRow",
+    "JobSpend",
     "JobStatus",
     "RunRow",
     "TerminalJob",
@@ -36,8 +39,12 @@ __all__ = [
     "create_job",
     "create_run",
     "finish_job",
+    "job_link_audit",
+    "job_spend",
     "list_jobs",
+    "read_account_catalog",
     "read_job",
+    "read_persona_documents",
     "read_run",
     "record_annotations",
     "refresh_run_status",
@@ -54,6 +61,10 @@ TerminalJob = Literal["completed", "needs_review"]
 #: so "flagged with no code" is not a row the database will take; an honest placeholder beats an
 #: IntegrityError on the one path that exists to surface a problem to a human.
 UNSPECIFIED_FAILURE = "unspecified"
+
+#: The document statuses a reader may serve, mirroring ``onboarding_store``'s own list: a
+#: ``running``/``failed``/``superseded`` document is not something a job may research against.
+SERVED_DOCUMENT_STATUSES: tuple[str, ...] = ("ready", "proposed", "confirmed")
 
 _RUN_COLUMNS = (
     "run_id, workspace_id, project_id, brand_id, project_run_id, icp_artifact_key, "
@@ -137,6 +148,15 @@ class JobRow:
     failure_message: str | None
     model_rounds: int
     tool_calls: int
+    cost_usd: Decimal
+    credits: Decimal
+    media_seconds: int
+
+
+@dataclass(frozen=True)
+class JobSpend:
+    """One job's settled spend, summed from ``provider_call_ledger``."""
+
     cost_usd: Decimal
     credits: Decimal
     media_seconds: int
@@ -373,6 +393,144 @@ async def record_annotations(
         params,
     )
     return len(params)
+
+
+async def job_spend(conn: AsyncConnection, *, job_id: UUID) -> JobSpend:
+    """What one job actually spent, summed from the ledger rather than from a running total.
+
+    Only ``phase = 'result'`` rows count: an ``estimate`` row is what a call *might* cost, and
+    adding the two together would bill every call twice. The ledger is the money truth, so a job's
+    ``cost_usd``/``credits``/``media_seconds`` are derived from it at the end rather than
+    accumulated by whoever remembered to.
+    """
+    row = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT COALESCE(SUM(cost_usd), 0) AS cost_usd, "
+                    " COALESCE(SUM(credits), 0) AS credits, "
+                    " COALESCE(SUM(media_seconds), 0) AS media_seconds "
+                    "FROM provider_call_ledger "
+                    "WHERE entity_research_job_id = :job_id AND phase = 'result'"
+                ),
+                {"job_id": job_id},
+            )
+        )
+        .mappings()
+        .one()
+    )
+    return JobSpend(
+        cost_usd=Decimal(row["cost_usd"]),
+        credits=Decimal(row["credits"]),
+        media_seconds=int(row["media_seconds"]),
+    )
+
+
+async def job_link_audit(conn: AsyncConnection, *, job_id: UUID) -> dict[str, int]:
+    """The link-audit tally for one job: verdict → how many claims got it.
+
+    Read back rather than remembered, so a receipt reports what is actually recorded beside the
+    claims — including a re-run audit's second pass — instead of what one tool call returned.
+    """
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT verdict, COUNT(*) AS n FROM arv2_claim_annotation "
+                    "WHERE job_id = :job_id AND kind = 'link_audit' GROUP BY verdict"
+                ),
+                {"job_id": job_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return {str(row["verdict"]): int(row["n"]) for row in rows}
+
+
+async def read_account_catalog(conn: AsyncConnection) -> FieldCatalog:
+    """The account-side field menu one job may write against: every registered ``account.*`` and
+    ``core.*`` field, exactly as the registry holds it.
+
+    The catalog is read from the registry rather than enumerated in code, because "open by
+    registration, not enumeration" is the whole point of the field registry: a pack that adds a
+    field is a row, and this menu grows with it without a code change.
+    """
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT field_key, description, value_schema FROM field_definition "
+                    "WHERE active AND (field_key LIKE 'account.%' OR field_key LIKE 'core.%') "
+                    "ORDER BY field_key"
+                )
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return FieldCatalog(
+        account=tuple(
+            FieldSpec(
+                key=str(row["field_key"]),
+                description=str(row["description"] or ""),
+                value_schema=_schema(row["value_schema"]),
+            )
+            for row in rows
+        )
+    )
+
+
+async def read_persona_documents(
+    conn: AsyncConnection, *, workspace_id: str, brand_id: str
+) -> tuple[DocumentRow, ...]:
+    """The brand's served ``audience-persona`` documents, newest first.
+
+    It returns *candidates* rather than the one document a run wants, because a persona document
+    names its ICP in its front matter, not in a column — the caller reads the bodies and keeps the
+    one whose ``icp_key`` matches the run's pin. Filtering here would mean guessing the ICP from
+    the path, which is exactly the kind of guess this lane refuses to make.
+    """
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT document_id, folder, path, kind, version, status, artifact_key, "
+                    " artifact_sha256 FROM brand_knowledge_document "
+                    "WHERE workspace_id = :workspace_id AND brand_id = :brand_id "
+                    " AND kind = 'audience-persona' AND status = ANY(:served) "
+                    " AND artifact_key IS NOT NULL "
+                    "ORDER BY version DESC, created_at DESC"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "brand_id": brand_id,
+                    "served": list(SERVED_DOCUMENT_STATUSES),
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(
+        DocumentRow(
+            document_id=row["document_id"],
+            folder=row["folder"],
+            path=row["path"],
+            kind=row["kind"],
+            version=row["version"],
+            status=row["status"],
+            artifact_key=row["artifact_key"],
+            artifact_sha256=row["artifact_sha256"],
+        )
+        for row in rows
+    )
+
+
+def _schema(raw: Any) -> Mapping[str, Any] | None:
+    """A ``value_schema`` column as a mapping, or ``None`` when the field declares none."""
+    decoded = decode_jsonb(raw)
+    return decoded if isinstance(decoded, Mapping) else None
 
 
 def _dump_json(payload: Mapping[str, Any]) -> str:

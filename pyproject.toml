@@ -351,6 +351,12 @@ forbidden_modules = ["openai"]
 ignore_imports = [
     "clue_api.run_composition -> clue_gateway",
     "clue_api.agent_model_wiring -> clue_gateway",
+    # The ARV2 R2 account-research lane composes its own fleet handler (master plan §9 R2), and
+    # the lane's own import guard (tests/arv2/test_import_guard.py) forbids it from reaching
+    # ``clue_api.agent_model_wiring`` — so this is the third and last composition edge that has
+    # to build the sanctioned OpenRouter egress itself. Same shape as the two above: the model id
+    # is an env value, the policy is a ``GatewayConfig``, and no ARV2 module touches the vendor SDK.
+    "clue_api.arv2.account_research_driver -> clue_gateway",
 ]
 
 # Rule 2b — libs are subsystem-agnostic: no lib may import the research subsystem (or api).
