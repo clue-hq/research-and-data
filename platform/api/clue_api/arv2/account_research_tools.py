@@ -86,6 +86,7 @@ from clue_api.arv2.media_feeds_client import (
     download_enclosure,
     fetch_feed,
     find_episode,
+    is_youtube,
     reject_native_video,
     youtube_metadata,
     youtube_words,
@@ -610,6 +611,11 @@ class ReadMediaFeedsArgs(_Args):
     person_role: str = ""
     feed_url: HttpUrl | None = None
     youtube_url: HttpUrl | None = None
+    #: More places the same appearance may load from — the podcast's other feed host, the
+    #: YouTube upload of the episode — tried in order only when the source before it would not
+    #: load. Each is a feed or a watch URL, told apart by host. Two runs produced no media because
+    #: one 429 and one dead feed were each the only URL the call carried.
+    alternate_urls: list[HttpUrl] = Field(default_factory=list, max_length=4)
     episode_title_contains: str | None = None
     episode_number: int | None = None
 
@@ -881,11 +887,14 @@ class _MediaItem:
 
 
 def _podcast_hop(
-    runtime: ToolRuntime, args: ReadMediaFeedsArgs
+    runtime: ToolRuntime, args: ReadMediaFeedsArgs, feed_url: str
 ) -> Callable[[ProviderCaller], _MediaItem]:
-    """The whole podcast chain as one synchronous hop: feed → episode → audio → words → quotes."""
+    """The whole podcast chain as one synchronous hop: feed → episode → audio → words → quotes.
+
+    The feed to read is passed in, not taken off ``args``: one call may carry several candidate
+    sources and the caller decides which one this hop is for.
+    """
     scope = runtime.scope
-    feed_url = str(args.feed_url)
     max_bytes = runtime.settings.arv2_account_media_max_enclosure_mb * 1024 * 1024
     destination_root = Path(runtime.settings.arv2_raw_root) / "media" / str(scope.job_id)
 
@@ -963,10 +972,13 @@ def _podcast_hop(
 
 
 def _youtube_hop(
-    runtime: ToolRuntime, args: ReadMediaFeedsArgs
+    runtime: ToolRuntime, args: ReadMediaFeedsArgs, watch_url: str
 ) -> Callable[[ProviderCaller], _MediaItem]:
-    """The words path: metadata plus an indexed copy of the page. Nothing is transcribed."""
-    watch_url = str(args.youtube_url)
+    """The words path: metadata plus an indexed copy of the page. Nothing is transcribed.
+
+    The watch page is passed in for the same reason the feed is: the caller owns the candidate
+    order, the hop owns one URL.
+    """
 
     def hop(caller: ProviderCaller) -> _MediaItem:
         reject_native_video(watch_url)
@@ -998,18 +1010,37 @@ def _youtube_hop(
 
 
 async def _read_media_feeds(runtime: ToolRuntime, args: ReadMediaFeedsArgs) -> dict[str, Any]:
-    podcast_first = args.feed_url is not None
-    hop = _podcast_hop(runtime, args) if podcast_first else _youtube_hop(runtime, args)
-    try:
-        item = await runtime.call_provider("media", hop)
-    except MediaCeilingExceeded as ceiling:
-        raise RefusalError("media_ceiling_reached", str(ceiling)) from ceiling
-    except EnclosureTooLarge as oversized:
-        raise RefusalError("enclosure_too_large", str(oversized)) from oversized
-    except UnsupportedMediaHost as walled:
-        raise RefusalError("native_video_rejected", str(walled)) from walled
-    except (MediaFetchError, RawParseError) as unreachable:
-        raise RefusalError("feed_not_found", str(unreachable)) from unreachable
+    # The primary first (feed before watch page when both are given: a transcript beats indexed
+    # page words), then the alternates in the order the model gave them. A source that will not
+    # LOAD hands over to the next; a source that loaded and answered (no matching episode, over
+    # the ceiling, a walled host) is the answer, and is not second-guessed by trying another URL.
+    candidates = [str(url) for url in (args.feed_url, args.youtube_url) if url is not None]
+    candidates.extend(str(url) for url in args.alternate_urls)
+    attempts: list[dict[str, str]] = []
+    item: _MediaItem | None = None
+    for url in candidates:
+        hop = (
+            _youtube_hop(runtime, args, url)
+            if is_youtube(url)
+            else _podcast_hop(runtime, args, url)
+        )
+        try:
+            item = await runtime.call_provider("media", hop)
+            break
+        except MediaCeilingExceeded as ceiling:
+            raise RefusalError("media_ceiling_reached", str(ceiling)) from ceiling
+        except EnclosureTooLarge as oversized:
+            raise RefusalError("enclosure_too_large", str(oversized)) from oversized
+        except UnsupportedMediaHost as walled:
+            raise RefusalError("native_video_rejected", str(walled)) from walled
+        except (MediaFetchError, RawParseError) as unreachable:
+            attempts.append({"url": url, "error": str(unreachable)})
+    if item is None:
+        raise RefusalError(
+            "feed_not_found",
+            "no source loaded: "
+            + "; ".join(f"{attempt['url']} ({attempt['error']})" for attempt in attempts),
+        )
 
     await runtime.write(
         [
@@ -1043,6 +1074,8 @@ async def _read_media_feeds(runtime: ToolRuntime, args: ReadMediaFeedsArgs) -> d
         "quotes": [{"text": q["text"], "timestamp": q["timestamp"]} for q in item.quotes],
         "transcript_excerpt": _head(item.transcript_text, _TRANSCRIPT_EXCERPT_CHARS),
         "words": item.words,
+        # The sources that would not load before this one did; empty when the first one answered.
+        "source_attempts": attempts,
         "cost": [_cost_json(cost) for cost in item.costs if cost is not None],
     }
 
@@ -1558,7 +1591,9 @@ def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
                 "Read a named leader's podcast episode (feed_url, by number or title fragment) or "
                 "a YouTube appearance (youtube_url, indexed page words — never a video download). "
                 "A podcast episode is transcribed, the speaker verified, and quotes mined only "
-                "when the speaker is verified."
+                "when the speaker is verified. Give every other place the same appearance may "
+                "load from as alternate_urls (another feed host, the YouTube upload); they are "
+                "tried in order only if the source before them will not load."
             ),
             model=ReadMediaFeedsArgs,
             body=_read_media_feeds,

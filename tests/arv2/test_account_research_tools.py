@@ -60,6 +60,7 @@ from clue_api.arv2.media_feeds_client import (
     AudioFile,
     EnclosureTooLarge,
     Episode,
+    MediaFetchError,
     Podcast,
     YouTubeMeta,
     YouTubeWords,
@@ -1276,6 +1277,86 @@ def test_read_media_feeds_records_the_item_then_refuses_when_the_speaker_is_unve
     assert [d.field_key for d in writer.drafts] == ["account.media_layer_index"]
     assert writer.drafts[0].value_json[0]["speaker_verified"] is False
     assert clients.media_client.quote_calls == [], "nothing is quoted off an unverified speaker"
+
+
+def test_read_media_feeds_falls_through_to_an_alternate_when_the_first_source_will_not_load(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Probook's YouTube page answered 429 and the run had nowhere to try next."""
+    _stub_podcast(monkeypatch, tmp_path)
+    good_feed = "https://pod.test/feed"
+    calls: list[str] = []
+    real_fetch = tools.fetch_feed
+
+    def fetch(url: str, caller: Any) -> Any:
+        calls.append(url)
+        if url == "https://dead.test/feed":
+            raise MediaFetchError(url, 429, None)
+        return real_fetch(url, caller)
+
+    monkeypatch.setattr(tools, "fetch_feed", fetch)
+    runtime, _, writer, _ = _runtime()
+
+    result = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        feed_url="https://dead.test/feed",
+        alternate_urls=[good_feed],
+        episode_number=42,
+    )
+
+    assert "code" not in result, result
+    assert calls == ["https://dead.test/feed", good_feed]
+    assert result["source_attempts"] == [
+        {
+            "url": "https://dead.test/feed",
+            "error": "https://dead.test/feed returned HTTP 429 (raw_ref=None)",
+        }
+    ]
+    assert result["item"]["kind"] == "podcast"
+    assert any(d.field_key == "account.media_layer_index" for d in writer.drafts)
+
+
+def test_read_media_feeds_refuses_feed_not_found_naming_every_url_it_tried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fetch(url: str, caller: Any) -> Any:
+        raise MediaFetchError(url, 404, None)
+
+    monkeypatch.setattr(tools, "fetch_feed", fetch)
+    runtime, _, writer, _ = _runtime()
+
+    refused = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        feed_url="https://a.test/feed",
+        alternate_urls=["https://b.test/feed"],
+    )
+
+    assert refused["code"] == "feed_not_found"
+    # The envelope's free-text field is ``detail`` (``refusal_json``); it must name both URLs.
+    assert "https://a.test/feed" in refused["detail"]
+    assert "https://b.test/feed" in refused["detail"]
+    assert writer.drafts == []
+
+
+def test_read_media_feeds_does_not_fall_through_past_a_feed_that_loaded_but_had_no_episode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A feed that loaded and has no matching episode is an answer, not a load failure."""
+    _stub_podcast(monkeypatch, tmp_path)
+    runtime, _, _, _ = _runtime()
+    refused = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nobody",
+        feed_url="https://pod.test/feed",
+        alternate_urls=["https://never.test/feed"],
+        episode_title_contains="no such episode",
+    )
+    assert refused["code"] == "episode_not_found"
 
 
 def test_read_media_feeds_needs_one_of_the_two_urls() -> None:

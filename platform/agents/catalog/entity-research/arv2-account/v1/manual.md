@@ -30,7 +30,7 @@ The base code before the colon is the row key and decides the reaction.
 | `board_fetch_failed` | The board was found; fetching its postings failed after retries. | Record hiring as an honest gap; do not re-fetch the board. |
 | `page_unavailable` | The page was fetched and came back with no text. | Record the URL as unreadable; try a different known URL, never a search for the same page. |
 | `company_not_found` | The company lookup returned nothing for that domain. | AI Ark has no record for this domain; continue from the web sources. |
-| `feed_not_found` | No podcast RSS or YouTube URL resolved for the named leader. | No podcast or YouTube for this person; media stays empty; move on. |
+| `feed_not_found` | No podcast RSS or YouTube URL resolved for the named leader. | Every URL given failed to load (the message names each with its error). If you have not yet passed alternates — the podcast's other feed host, the YouTube upload of the same episode — call once more with them in alternate_urls; otherwise media stays empty for this person; move on. |
 | `episode_not_found` | The feed loaded, but it holds no episode matching what you named. | The feed has no matching episode; media stays empty for this person. |
 | `media_ceiling_reached` | The enforced media-seconds ceiling would be exceeded by this item. | Skip this item; the reservation was released; do not shorten and retry. |
 | `enclosure_too_large` | The episode's audio enclosure is bigger than the download ceiling. | Skip this item; do not retry with another URL for the same episode. |
@@ -55,7 +55,7 @@ The base code before the colon is the row key and decides the reaction.
 | `search_web(query, num_results, include_domains, start_published_date)` | `ExaClient.search` | Bounded gap searches (≤ 10 results) for a named fact or a named person |
 | `lookup_company(domain)` | `AiArkClient.company_by_domain` | Deterministic firmographics, funding rounds, technologies — every registered field the record carries is claimed in code, JSON path recorded |
 | `lookup_people(name_variants, domain, size)` | `AiArkClient.people_by_name` (name-scoped, STRICT, size ≤ 3) | Identity confirmation of a *named* person at *this* account; never roster discovery |
-| `read_media_feeds(person_name, person_role, feed_url, youtube_url, episode_title_contains, episode_number)` | `media_feeds_client` + `gemini_media_client` | Podcast / YouTube appearances by named leaders; transcripts, verified quotes |
+| `read_media_feeds(person_name, person_role, feed_url, youtube_url, alternate_urls, episode_title_contains, episode_number)` | `media_feeds_client` + `gemini_media_client` | Podcast / YouTube appearances by named leaders; transcripts, verified quotes |
 | `research_deep(charter, probes, same_name_exclusions, num_results)` | `ExaClient.deep_reasoning` (max 2 attempts, silent-fail guard) | The one dossier call: charter + probes in the query, lock + rules in the system prompt, a report schema |
 | `structure_material(subject_kind, subject_name, subject_domain_or_company, linkedin_url, sources[{url, kind, text, title}], notes, mode, already_known)` | `StructuringClient.structure_account` | Prose to typed claims against the code-validated catalog; unknown keys become proposed fields; `mode` is `broad` or the narrow `intent_sweep` |
 | `write_claims(claims[...])` | `LenientClaimWriter` | **The one gate.** Bulk; born unverified; the sensitivity floor runs after; each claim is written on its own, so one unwritable value is reported in `write_failures` and the rest still land |
