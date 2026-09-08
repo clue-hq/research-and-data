@@ -29,6 +29,8 @@
 - Candidate restrictions found: rigid square skeleton; website-specific background/shadow rules in kit; incorrect blanket white-on-brand contrast; source UI misclassification. Platform editor has fit modes but no manual focal-position control. These are identified gaps, not claimed fixes.
 # Live baseline and repair checkpoint — 2026-09-07 evening
 
+- Founder reviewed the outputs and rejected all four as creative failures. Next creative phase narrowed to one strong reference-conditioned case, two actual generated artwork variants plus native editable overlays, quality review before broad expansion. Design did view references, but GPT Image had zero calls; the proposed hybrid image-generation approach is still untested. Do not conflate technical run completion with quality acceptance.
+
 - Four current-policy creative cases finished through authenticated UI/Fleet after three cold-start materialization failures were retried on warm resources. Calls 40/56/60/49; inner duration about 9–17 minutes. No generated artwork or independent reviewer calls. Exact run/asset receipts and previews are ignored under `.local-setup/ad-control/results/`.
 - Confirmed source UI/logo remain separate and native text/button edits, logo move/resize and crop persist after reload. PNG UI reported exported, but download artifact path is not yet verified. Reopening the artifact after reload is required.
 - PE-11 resource lock patch now being applied and tested by sole implementation agent; PE-12 terminal editor-lock patch ready in ignored scratch. Preserve unrelated planning changes when committing.

@@ -36,6 +36,8 @@ These are candidate changes, not completed improvements. Test them in a later fr
 
 ## First results and repairs
 
+**Founder feedback:** all four baseline outputs fail the requested creative standard. Technical completion does not count as creative acceptance. The next step is one strong case with two actual reference-conditioned image-generation variants and native editable overlays, reviewed against the supplied reference before expanding the test matrix. No further baseline-style assembly runs are warranted.
+
 All four selected creative runs completed, after three initial failures were retained and retried against warmed shared resources. Runtime durations were 8m54s, 16m06s, 13m11s and 17m16s, with 40, 56, 60 and 49 model calls respectively. Both reference cases viewed their attached image, but none of the four generated new artwork or invoked an independent reviewer. The references changed composition; they did not reliably ensure brand typography, contrast or high visual quality.
 
 The browser verified native copy/button editing, independent logo movement/resizing, product image crop and saved persistence. A separate font replay defect means the accepted preview's type sizes are lost on the saved editor path. That blocks a quality verdict even when the scene compiles successfully.

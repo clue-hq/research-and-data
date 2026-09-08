@@ -1,6 +1,6 @@
 ---
 name: generative-imagery
-description: Prompt the image model well and use what it gives back — the five-question prompt, brand-coherent prompting from the kit's real palette, the asset types (abstract ground, transparent spot illustration, brand-themed scene, texture, design element), how the turn's references condition the call, placement, and the fallback. Use whenever a design needs imagery the engine cannot draw.
+description: Use whenever a design needs generated imagery, reference-conditioned artwork, or multiple image variants that remain separate from editable copy and branding.
 ---
 
 # Generative imagery
@@ -32,9 +32,10 @@ you want rendered as text, stop — that part is the engine's job.
 
 ## 2. The prompt is the craft
 
-The tool gives back exactly what the prompt deserves. A lazy prompt gets a
-stock-photo cliché. A precise prompt gets an asset that looks
-commissioned. The difference is never the tool. It is always the prompt.
+A precise prompt improves the chance of useful artwork; provider capability,
+reference delivery and output variation also matter. Inspect what came back
+before deciding it fulfills the brief. A successful tool call is not a quality
+verdict.
 
 A strong prompt answers five questions, every time:
 
@@ -74,8 +75,8 @@ already hold, and each one becomes words in the prompt:
 1. **The kit's tokens.** Pull the real hexes from the brand card and name
    them in the prompt. The card's `color_roles` resolve `$surface.page`,
    `$surface.brand`, `$surface.inverse`, and `$text.primary` to actual
-   hexes, and `accent` names the most vivid brand color. An image whose
-   palette is the kit's palette cannot clash with the design it lands in.
+   hexes, and `accent` names the most vivid brand color. The palette anchors brand coherence; local contrast, lightness and visual
+   weight still need inspection in the composed design.
 2. **The brand's existing imagery.** Before generating, look at what the
    brand already uses — the kit's `images` inventory on the brand card,
    and the reference images attached to this turn. `view("asset:<id>")`
@@ -89,10 +90,10 @@ already hold, and each one becomes words in the prompt:
    platform already tells the model the references are STYLE references
    only: match their palette, texture, mood, and edge character, generate
    a new image, do not copy, crop, or edit them. So the prompt's job
-   changes. It no longer describes the style from scratch, and it does
-   not restate in words what the references already show — that is
-   redundant and it fights the pixels. It owns what the references do not
-   decide: the subject, the composition, and where the calm area sits.
+   changes. Record the few observed qualities that matter, then specify the new subject,
+   composition, tonal depth and quiet copy regions. Viewing a reference without
+   calling generation does not produce reference-conditioned artwork. A source
+   logo/UI asset is not sent as a reference merely because you viewed it.
 
 ### Worked example of the coherence test
 
@@ -114,7 +115,11 @@ Each type has a default recipe. Adapt the words, keep the shape.
   design). "Flat illustration of [subject], single-weight black outline,
   minimal fill in [kit hexes], on a fully transparent background, no
   backdrop, no shadow, no text." Pass `transparent_background=True` on
-  the call, and `preserve_transparency=True` when you place it. Used like
+  the call, and `preserve_transparency=True` when you place it. Check the
+  returned alpha: a provider can ignore the transparency request. The current
+  Images API transport requests automatic background, so transparency is not
+  guaranteed. Report an unmet transparent-asset requirement rather than treating
+  an opaque rectangle as a cutout. Used like
   a sticker: a coin stair, a key, a chart motif. It is a placeable
   element, never a ground.
 - **Brand-themed illustration scene** (a panel or band). Same as spot,
@@ -154,6 +159,39 @@ Each type has a default recipe. Adapt the words, keep the shape.
   Name what was wrong in the new prompt: "less pink, calmer center, no
   objects".
 
+## Requested artwork variants
+
+When the brief requires generated artwork and multiple variants, produce that
+number of distinct artwork assets. Existing source screenshots, kit backgrounds
+and native gradients do not substitute for requested new imagery. If the brief
+requests two options, the required output is two real image assets plus a scene
+with independent native overlays, not two flattened finished ads.
+
+Choose useful differences in composition, subject treatment, visual weight or
+camera/crop direction from the brief and observed references. Keep the business
+message and source assets constant. Do not default every brand to an abstract
+wash: a photographic prop, illustration, material or atmospheric field must have
+a clear job in this particular concept.
+
+1. Author the page first. Generate each option with a substantively different
+   prompt and a clear label. An identical request can hit cache; changing only
+   the label is not a new visual direction.
+2. Each prompt reserves the intended native-copy and source-asset regions. Keep
+   the main headline, support, CTA/button, logo and product UI out of the artwork.
+   Source UI/photos and the exact logo remain their own original image layers;
+   generated pixels must not invent testimonials, metrics or product behavior.
+3. View every returned asset and read its mode, model, dimensions and fallback
+   evidence. A placeholder is not a real variant; a cache hit is not a fresh
+   provider call. Check for copied lettering, marks, unintended UI and poor copy
+   contrast. Repair within the run budget or report the requirement as unmet.
+4. Compare the options, keep both registered assets in the scene, and place the
+   stronger one in an independent image node. The unplaced alternative must stay
+   in the scene assets map through save so it can reach the workspace library.
+5. Report the returned asset IDs and labels, the selected option and any failure.
+   Inspect the final composition with its native overlays, not just the artwork.
+   Availability through the editor's Replace image action requires a saved asset;
+   do not claim the user can swap an alternative that was discarded.
+
 ## 6. Placement rules
 
 - A ground places full-bleed with fit cover, focal point set by where
@@ -166,7 +204,8 @@ Each type has a default recipe. Adapt the words, keep the shape.
 
 ## 7. When generation fails
 
-A failed or empty generation never blocks the design. When the model
+A failed or empty generation can leave a useful editable draft, but it does
+not fulfill a brief that requires real generated artwork. When the model
 answers with text and no image, the platform already retried once for
 you, so a fallback means it failed anyway.
 
@@ -176,12 +215,13 @@ The tool tells you it fell back. The call still reports `status: ok`, but
 and must not ship as if it were.
 
 React honestly: use a flat token ground, note the gap in your report, and
-finish the design. A missing image is a smaller flaw than a broken run.
+return the design as an incomplete draft. State which requested artwork
+variants are missing; do not label that experiment successful.
 
 ## 8. Before you place it — the three questions
 
 1. Would this brand's own design team have made this asset?
 2. Is everything the engine should own (text, logo, buttons) OUT of it?
-3. Does the design still read if this image were removed? If no —
-   the image is carrying structure it should not carry. Rebuild the
-   structure in the engine.
+3. Are required copy, branding, buttons and authentic product evidence
+   independently present in their intended layers? Artwork can carry the
+   concept and atmosphere; exact editable content belongs to its own nodes.
