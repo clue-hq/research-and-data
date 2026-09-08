@@ -136,10 +136,12 @@ function accountMatchesRule(account: Account, rule: AccountFilterRule) {
   return normalizedValues.some((value) => value === target);
 }
 
-export function filterAccounts(
-  accounts: Account[],
+// Generic in the row type so a locally created draft keeps its UI-only marker
+// through the filter and the sort (`AccountRow`, model/create-account.ts).
+export function filterAccounts<T extends Account>(
+  accounts: T[],
   rules: AccountFilterRule[],
-) {
+): T[] {
   const activeRules = rules.filter((rule) => rule.value.trim());
   if (!activeRules.length) return accounts;
 
@@ -153,7 +155,10 @@ export function filterAccounts(
   });
 }
 
-export function sortAccounts(accounts: Account[], sort: AccountSort) {
+export function sortAccounts<T extends Account>(
+  accounts: T[],
+  sort: AccountSort,
+): T[] {
   if (sort === "default") return accounts;
 
   return [...accounts].sort((first, second) => {

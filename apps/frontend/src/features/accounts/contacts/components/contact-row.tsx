@@ -1,10 +1,14 @@
+"use client";
+
 import Link from "next/link";
 import { DesignIcon } from "@/components/ui/design-icon";
 import { ContactAvatar } from "../../components/contact-avatar";
 import type { AccountContactSummary } from "../../model/account-contact";
 import type { AccountTableDensity } from "../../model/account-table-view";
+import { applyEmailLookupToContact } from "../../model/contact-email-lookup";
 import readability from "../../components/account-readability.module.css";
 import components from "../../components/account-components.module.css";
+import { useEmailLookupController } from "../hooks/use-email-lookup-controller";
 import { LookupEmailButton } from "./lookup-email-button";
 
 const personaColors = {
@@ -44,6 +48,13 @@ export function ContactRow({
   gridTemplateColumns: string;
   onPreview?: () => void | Promise<void>;
 }) {
+  // The row shows a looked-up address exactly when the backend resolved one;
+  // until then the control does the talking.
+  const emailLookup = useEmailLookupController({
+    accountId,
+    contactId: contact.id,
+  });
+  const shownContact = applyEmailLookupToContact(contact, emailLookup.result);
   const nameCellClassName =
     "sticky left-14 z-20 flex min-w-0 items-center gap-2 overflow-hidden border-r-[0.5px] border-[var(--clue-border-table)] bg-[var(--clue-background-neutral)] px-4 text-left outline-none group-hover:bg-[var(--clue-background-page)] focus-visible:shadow-[inset_0_0_0_2px_var(--clue-ds-color-components-button-focus-ring)]";
   const nameCell = (
@@ -120,15 +131,15 @@ export function ContactRow({
         </span>
       </div>
       <div className="flex min-w-0 items-center border-r-[0.5px] border-[var(--clue-border-table)] px-4 text-[var(--clue-content-subtle)]">
-        {contact.emailLabel ? (
+        {shownContact.emailLabel ? (
           <a
             className="truncate underline decoration-[var(--clue-border-neutral)] underline-offset-2 hover:text-[var(--clue-content-default)]"
-            href={`mailto:${contact.emailLabel}`}
+            href={`mailto:${shownContact.emailLabel}`}
           >
-            {contact.emailLabel}
+            {shownContact.emailLabel}
           </a>
         ) : (
-          <LookupEmailButton />
+          <LookupEmailButton controller={emailLookup} />
         )}
       </div>
       <div className="flex items-center gap-2 px-4">

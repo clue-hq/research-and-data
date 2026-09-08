@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { DesignIcon } from "@/components/ui/design-icon";
 import type { Account } from "../model/account";
+import { isLocalDraftAccount, type AccountRow } from "../model/create-account";
 import {
   UNASSIGNED_OWNER_LABEL,
   resolveAccountOwner,
@@ -186,7 +187,7 @@ function ResearchBadge({ account }: { account: Account }) {
   );
 }
 
-function AccountRow({
+function AccountTableRow({
   account,
   checked,
   columnDefinitions,
@@ -194,15 +195,17 @@ function AccountRow({
   columnWidths,
   density,
   onToggle,
+  selectable,
   visibleColumns,
 }: {
-  account: Account;
+  account: AccountRow;
   checked: boolean;
   columnDefinitions: AccountColumnDefinition[];
   columnOrder: AccountColumnKey[];
   columnWidths: AccountColumnWidths;
   density: AccountTableDensity;
   onToggle: () => void;
+  selectable: boolean;
   visibleColumns: AccountColumnVisibility;
 }) {
   const columnOrderIndex = (column: AccountColumnKey) =>
@@ -233,16 +236,18 @@ function AccountRow({
         role="gridcell"
         style={{ order: 0 }}
       >
-        <AccountCheckbox
-          checked={checked}
-          className={
-            checked
-              ? "opacity-100"
-              : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-          }
-          label={`Select ${account.name}`}
-          onChange={onToggle}
-        />
+        {selectable ? (
+          <AccountCheckbox
+            checked={checked}
+            className={
+              checked
+                ? "opacity-100"
+                : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+            }
+            label={`Select ${account.name}`}
+            onChange={onToggle}
+          />
+        ) : null}
       </div>
 
       {columnDefinitions.map((definition) => {
@@ -274,6 +279,14 @@ function AccountRow({
                 <span className={`${readability.uiMedium} truncate`}>
                   {account.name}
                 </span>
+                {/* Ruling f: a locally created account is a draft, and says so
+                    in words. Nothing about it is optimistic — no badge, no
+                    spinner, no invented score. */}
+                {isLocalDraftAccount(account) ? (
+                  <span className="shrink-0 text-[var(--clue-content-disabled)]">
+                    Not saved yet
+                  </span>
+                ) : null}
                 <span className="ml-auto flex size-5 shrink-0 items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
                   <DesignIcon name="arrow-up-right" size={12} />
                 </span>
@@ -441,7 +454,7 @@ function AccountRow({
 }
 
 interface AccountsTableProps {
-  accounts: Account[];
+  accounts: AccountRow[];
   columnDefinitions?: AccountColumnDefinition[];
   columnOrder: AccountColumnKey[];
   columnWidths?: AccountColumnWidths;
@@ -450,6 +463,8 @@ interface AccountsTableProps {
   onColumnResizeReset: (column: AccountColumnKey) => void;
   onToggleAccount: (accountId: string) => void;
   onToggleAll: () => void;
+  /** Ids a bulk action can name; a local draft is not one of them. */
+  selectableAccountIds?: Set<string>;
   selectedAccountIds: Set<string>;
   visibleColumns?: AccountColumnVisibility;
 }
@@ -464,12 +479,18 @@ export function AccountsTable({
   onColumnResizeReset,
   onToggleAccount,
   onToggleAll,
+  selectableAccountIds,
   selectedAccountIds,
   visibleColumns = defaultAccountColumns,
 }: AccountsTableProps) {
+  const isSelectable = (account: AccountRow) =>
+    selectableAccountIds
+      ? selectableAccountIds.has(account.id)
+      : !isLocalDraftAccount(account);
+  const selectable = accounts.filter(isSelectable);
   const allSelected =
-    accounts.length > 0 &&
-    accounts.every((account) => selectedAccountIds.has(account.id));
+    selectable.length > 0 &&
+    selectable.every((account) => selectedAccountIds.has(account.id));
 
   const columnOrderIndex = (column: AccountColumnKey) =>
     columnOrder.indexOf(column) + 1;
@@ -533,7 +554,7 @@ export function AccountsTable({
 
       {accounts.length > 0 ? (
         accounts.map((account) => (
-          <AccountRow
+          <AccountTableRow
             account={account}
             checked={selectedAccountIds.has(account.id)}
             columnDefinitions={columnDefinitions}
@@ -542,6 +563,7 @@ export function AccountsTable({
             density={density}
             key={account.id}
             onToggle={() => onToggleAccount(account.id)}
+            selectable={isSelectable(account)}
             visibleColumns={visibleColumns}
           />
         ))

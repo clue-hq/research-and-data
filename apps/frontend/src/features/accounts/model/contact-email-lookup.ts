@@ -46,3 +46,105 @@ export const ContactEmailLookupSchema = z.object({
 
 export type EmailLookupState = z.infer<typeof EmailLookupStateSchema>;
 export type ContactEmailLookup = z.infer<typeof ContactEmailLookupSchema>;
+
+/** `pending` is the one non-terminal state: everything else ends the poll. */
+export function isEmailLookupPending(
+  lookup: ContactEmailLookup | null,
+): boolean {
+  return lookup?.state === "pending";
+}
+
+/**
+ * The one address a contact row can show, or `null`.
+ *
+ * A conflict (two sources, two addresses) resolves to `null` on purpose: the
+ * row has a single email slot, and silently showing the first would hide the
+ * disagreement. The control says so in words instead.
+ */
+export function resolvedEmailAddress(
+  lookup: ContactEmailLookup | null,
+): string | null {
+  if (!lookup || lookup.state !== "available" || lookup.emails.length !== 1) {
+    return null;
+  }
+  return lookup.emails[0]?.value ?? null;
+}
+
+/**
+ * Put a resolved address on the contact the row renders.
+ *
+ * The served contact is never mutated and an unresolved lookup changes nothing,
+ * so a row shows a looked-up email exactly when the backend resolved one.
+ */
+export function applyEmailLookupToContact<
+  T extends { emailLabel?: string; emailStatus: "available" | "lookup" },
+>(contact: T, lookup: ContactEmailLookup | null): T {
+  const address = resolvedEmailAddress(lookup);
+  if (!address) return contact;
+  return { ...contact, emailLabel: address, emailStatus: "available" };
+}
+
+/** What the lookup control is doing, as the design build's button reads it. */
+export type EmailLookupControlState =
+  | "idle"
+  | "loading"
+  | "complete"
+  | "empty"
+  | "error";
+
+export type EmailLookupPhase =
+  | { kind: "ready"; lookup: ContactEmailLookup | null }
+  | { kind: "requesting"; lookup: ContactEmailLookup | null }
+  | { kind: "error"; lookup: ContactEmailLookup | null; message: string };
+
+export interface EmailLookupPresentation {
+  /** Whether pressing the control again can do anything. */
+  actionable: boolean;
+  label: string;
+  state: EmailLookupControlState;
+}
+
+/**
+ * Map one lookup phase onto the control's label and state.
+ *
+ * Every backend outcome gets its own honest words: a transport failure shows
+ * the failure, a withheld or empty result says so rather than looking idle, and
+ * only a lookup the backend itself marked retryable offers "Try again".
+ */
+export function presentEmailLookup(
+  phase: EmailLookupPhase,
+): EmailLookupPresentation {
+  const lookup = phase.lookup;
+
+  if (phase.kind === "requesting" || isEmailLookupPending(lookup)) {
+    return { actionable: false, label: "Looking up…", state: "loading" };
+  }
+  if (phase.kind === "error") {
+    return {
+      actionable: lookup?.retryable === true,
+      label: lookup?.retryable ? "Try again" : phase.message,
+      state: "error",
+    };
+  }
+  if (lookup?.state === "available") {
+    return {
+      actionable: false,
+      label: lookup.emails.length > 1 ? "Multiple emails found" : "Email found",
+      state: "complete",
+    };
+  }
+  if (lookup?.state === "not_found") {
+    return { actionable: false, label: "No email found", state: "empty" };
+  }
+  if (lookup?.state === "withheld") {
+    return { actionable: false, label: "Unavailable", state: "empty" };
+  }
+  if (lookup?.state === "unavailable" || lookup?.state === "failed") {
+    return {
+      actionable: lookup.retryable,
+      label: lookup.retryable ? "Try again" : "Lookup failed",
+      state: "error",
+    };
+  }
+  return { actionable: true, label: "Look up", state: "idle" };
+}

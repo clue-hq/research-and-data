@@ -29,3 +29,30 @@
     z-index: auto;
   }
 }
+
+/* The bulk-action bar and its notice sit between the toolbar and the table.
+   Same 0.5px table rule and header inline padding as the toolbar above them,
+   so the three read as one stack. */
+.selectionBar {
+  align-items: center;
+  background: var(--clue-background-hover);
+  border-bottom: 0.5px solid var(--clue-border-table);
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 24px;
+}
+
+.selectionNotice {
+  align-items: center;
+  border-bottom: 0.5px solid var(--clue-border-table);
+  color: var(--clue-content-subtle);
+  display: flex;
+  flex-shrink: 0;
+  gap: 12px;
+  justify-content: space-between;
+  min-height: 36px;
+  padding: 6px 24px;
+}

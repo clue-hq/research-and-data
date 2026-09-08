@@ -1,8 +1,15 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { Account } from "../model/account";
+import { useChatTransport } from "@/features/projects/data/projects-transport";
 import { useAccountWorkspaceOwner } from "./use-account-owner";
 import { resolveAccountOwner } from "../model/account-owner";
-import { createLocalAccount } from "../model/create-account";
+import type { AccountBulkCapabilities } from "../model/bulk-actions";
+import {
+  createLocalAccount,
+  isLocalDraftAccount,
+  type AccountRow,
+} from "../model/create-account";
+import { addSelectedAccountsToProject } from "../data/bulk-actions.repository";
 import {
   createAccountColumnDefinitions,
   createAccountColumnOrder,
@@ -16,17 +23,25 @@ import {
   createDefaultAccountFilterRules,
   filterAccounts,
   sortAccounts,
+  type AccountFilterRule,
 } from "../model/account-query";
 
-export function useAccountsScreenController(initialAccounts: Account[]) {
+export function useAccountsScreenController(
+  initialAccounts: Account[],
+  bulkCapabilities: AccountBulkCapabilities,
+  submitAddToProject: typeof addSelectedAccountsToProject = addSelectedAccountsToProject,
+) {
   const workspaceOwner = useAccountWorkspaceOwner();
+  // The chat handoff exists only against the real backend: in fixture mode the
+  // projects transport has nowhere to prepare a composer draft.
+  const chatHandoffAvailable = useChatTransport().mode === "http";
   const initialColumnDefinitions = createAccountColumnDefinitions(
     initialAccounts,
   );
-  const [search, setSearch] = useState("");
-  const [accountRows, setAccountRows] = useState(initialAccounts);
-  const [filters, setFilters] = useState(createDefaultAccountFilterRules);
-  const [sort, setSort] = useState<AccountSort>("default");
+  const [search, setSearchState] = useState("");
+  const [accountRows, setAccountRows] = useState<AccountRow[]>(initialAccounts);
+  const [filters, setFiltersState] = useState(createDefaultAccountFilterRules);
+  const [sort, setSortState] = useState<AccountSort>("default");
   const [density, setDensity] =
     useState<AccountTableDensity>("spacious");
   const [columnOrder, setColumnOrder] = useState(
@@ -41,6 +56,14 @@ export function useAccountsScreenController(initialAccounts: Account[]) {
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [selectedProjectId, setSelectedProjectIdState] = useState(
+    bulkCapabilities.projects[0]?.id ?? "",
+  );
+  const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
+  const [bulkNotice, setBulkNotice] = useState<string | null>(null);
+  // One idempotency key per attempt at the same selection, so a retry after a
+  // timeout resumes the same operation instead of starting a second one.
+  const bulkAttemptKey = useRef<string | null>(null);
 
   const visibleAccounts = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase();
@@ -83,6 +106,82 @@ export function useAccountsScreenController(initialAccounts: Account[]) {
       first.name.localeCompare(second.name),
     );
   }, [accountRows]);
+
+  // A local draft exists only in this tab, so no server-side bulk action can
+  // name it: it is never selectable.
+  const selectableAccountIds = useMemo(
+    () =>
+      new Set(
+        accountRows
+          .filter((account) => !isLocalDraftAccount(account))
+          .map((account) => account.id),
+      ),
+    [accountRows],
+  );
+
+  function clearSelection() {
+    setSelectedAccountIds(new Set());
+    bulkAttemptKey.current = null;
+  }
+
+  // Changing what the table shows clears the selection: an action must never
+  // submit a row the operator can no longer see.
+  function setSearch(value: string) {
+    clearSelection();
+    setSearchState(value);
+  }
+
+  function setFilters(value: AccountFilterRule[]) {
+    clearSelection();
+    setFiltersState(value);
+  }
+
+  function setSort(value: AccountSort) {
+    clearSelection();
+    setSortState(value);
+  }
+
+  function setSelectedProjectId(value: string) {
+    setSelectedProjectIdState(value);
+    bulkAttemptKey.current = null;
+  }
+
+  async function executeAddToProject() {
+    if (!selectedProjectId || selectedAccountIds.size === 0 || isBulkSubmitting) {
+      return;
+    }
+    if (selectedAccountIds.size > bulkCapabilities.addToProject.maxItems) return;
+    const project = bulkCapabilities.projects.find(
+      (option) => option.id === selectedProjectId,
+    );
+    if (!project) return;
+
+    const idempotencyKey = bulkAttemptKey.current ?? crypto.randomUUID();
+    bulkAttemptKey.current = idempotencyKey;
+    setIsBulkSubmitting(true);
+    setBulkNotice(null);
+    try {
+      const outcome = await submitAddToProject({
+        accountIds: [...selectedAccountIds],
+        idempotencyKey,
+        project,
+        rows: accountRows,
+      });
+      if (outcome.status === "session_expired") {
+        window.location.assign("/sign-in?reason=session_expired");
+        return;
+      }
+      if (outcome.status === "added") {
+        setAccountRows(outcome.rows);
+        setBulkNotice(outcome.notice);
+        clearSelection();
+        return;
+      }
+      setBulkNotice(outcome.notice);
+    } finally {
+      setIsBulkSubmitting(false);
+    }
+  }
 
   function toggleColumn(column: AccountColumnKey) {
     if (column === "company") return;
@@ -153,9 +252,12 @@ export function useAccountsScreenController(initialAccounts: Account[]) {
       createLocalAccount(name, websiteUrl, workspaceOwner),
       ...current,
     ]);
+    clearSelection();
   }
 
   function toggleAccount(accountId: string) {
+    if (!selectableAccountIds.has(accountId)) return;
+    bulkAttemptKey.current = null;
     setSelectedAccountIds((current) => {
       const next = new Set(current);
       if (next.has(accountId)) next.delete(accountId);
@@ -165,13 +267,17 @@ export function useAccountsScreenController(initialAccounts: Account[]) {
   }
 
   function toggleAllVisibleAccounts() {
+    bulkAttemptKey.current = null;
     setSelectedAccountIds((current) => {
       const next = new Set(current);
+      const selectable = visibleAccounts.filter((account) =>
+        selectableAccountIds.has(account.id),
+      );
       const allVisibleSelected =
-        visibleAccounts.length > 0 &&
-        visibleAccounts.every((account) => next.has(account.id));
+        selectable.length > 0 &&
+        selectable.every((account) => next.has(account.id));
 
-      for (const account of visibleAccounts) {
+      for (const account of selectable) {
         if (allVisibleSelected) next.delete(account.id);
         else next.add(account.id);
       }
@@ -181,12 +287,25 @@ export function useAccountsScreenController(initialAccounts: Account[]) {
   }
 
   return {
+    bulkCapabilities,
+    bulkNotice,
+    chatHandoffAvailable,
+    clearBulkNotice: () => setBulkNotice(null),
+    clearSelection,
     createAccount,
     columnDefinitions,
     columnOrder,
     columnWidths,
     density,
+    executeAddToProject,
     filters,
+    isBulkSubmitting,
+    selectableAccountIds,
+    selectedProjectId,
+    selectionEnabled:
+      bulkCapabilities.addToProject.allowed ||
+      (chatHandoffAvailable && bulkCapabilities.addToChat.allowed),
+    setSelectedProjectId,
     moveColumn,
     reorderColumn,
     resetColumnWidth,

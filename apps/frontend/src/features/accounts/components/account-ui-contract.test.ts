@@ -318,6 +318,8 @@ test("§6.15 no featured-contact scan; the drawer opens on row click", () => {
   assert.doesNotMatch(contactsRoute, /featuredContact/);
 });
 
-test("§6.16 the email-lookup stub is marked for its Task-5 replacement", () => {
-  assert.match(emailLookupController, /D4 Task 5/);
+test("§6.16 the email lookup is the real start-and-poll, not a timer", () => {
+  assert.doesNotMatch(emailLookupController, /window\.setTimeout\(\(\) => setState/);
+  assert.match(emailLookupController, /startContactEmailLookup\(accountId, contactId\)/);
+  assert.match(emailLookupController, /pollContactEmailLookup\(/);
 });

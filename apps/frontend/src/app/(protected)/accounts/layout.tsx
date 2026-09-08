@@ -1,6 +1,7 @@
 import { AccountsLayoutShell } from "@/features/accounts/components/accounts-layout-shell";
 import { AccountsRecoveryScreen } from "@/features/accounts/components/accounts-recovery-screen";
 import { readAccountsResult } from "@/features/accounts/data/accounts-read-result";
+import { readAccountBulkCapabilities } from "@/features/accounts/data/bulk-capabilities.repository";
 import { getWorkspaceProfile } from "@/features/accounts/data/workspace-profile.repository";
 import { ProtectedSessionRecoveryScreen } from "@/features/session/components/protected-session-recovery";
 import { getProtectedSessionResult } from "@/features/session/data/session-dal";
@@ -28,9 +29,16 @@ export default async function AccountsLayout({
   if (accounts.status === "recovery") {
     return <AccountsRecoveryScreen recovery={accounts.recovery} />;
   }
+  // The bulk actions are an optional page capability: an unavailable or invalid
+  // capability read hides them rather than failing the page.
+  const bulkCapabilities = await readAccountBulkCapabilities();
 
   return (
-    <AccountsLayoutShell accounts={accounts.response.data} profile={profile}>
+    <AccountsLayoutShell
+      accounts={accounts.response.data}
+      bulkCapabilities={bulkCapabilities}
+      profile={profile}
+    >
       {children}
     </AccountsLayoutShell>
   );
