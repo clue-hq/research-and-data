@@ -75,7 +75,9 @@ from clue_api.arv2.onboarding_driver import (
     SynthesisLauncher,
     SynthesisOutcome,
     build_onboarding_exa_client_factory,
+    build_onboarding_provider_caller,
 )
+from clue_api.arv2.onboarding_reconcile import CatalogReconciler, OpenRouterCatalogReconciler
 from clue_api.arv2_wiring import register_arv2_wiring
 from clue_api.chat.turn_stream import TurnStreamPolicy
 from clue_api.compliance_wiring import register_compliance_wiring
@@ -155,6 +157,7 @@ from clue_api.supervisor_wiring import DeferredSupervisorActions, ToolbeltSuperv
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_api.value_narrative_tools import ValueNarrativeServices
 from clue_config import Secrets, Settings, default_gateway_config, get_config, load_settings
+from clue_config.gateway import GatewayConfig
 from clue_core import ProjectPhase
 from clue_core.gateway import LLMGateway
 from clue_db import ConnFactory, db_lifespan, transaction
@@ -615,7 +618,60 @@ def _build_onboarding_handler(
         exa=exa,
         client_binder=Stage0ClientEntityBinder(),
         synthesis=synthesis,
+        reconciler_factory=_build_catalog_reconciler_factory(settings, secrets),
     )
+
+
+def _build_catalog_reconciler_factory(
+    settings: Settings, secrets: Secrets
+) -> Callable[[UUID], CatalogReconciler] | None:
+    """The catalog identity ladder's model stage, behind the reconcile flag.
+
+    (``CLUE_ONBOARDING_CATALOG_RECONCILE_ENABLED``, model ``CLUE_ONBOARDING_RECONCILE_MODEL``.)
+
+    A **factory of one reconciler per run**, not a reconciler: the call spends through R1's
+    ``ProviderCaller``, whose raw records and ledger belong under that run's own folder
+    (``arv2_raw_root/onboarding/<run_id>/catalog-reconcile/``), so the run id has to reach it.
+
+    Missing credential ≠ missing handler here (unlike the Exa key one level up): without the model
+    stage the ladder still runs its deterministic rungs, which is exactly what it did before the
+    stage existed. So a keyless worker composes normally and says so once, at composition, rather
+    than either refusing to drain onboarding work or failing every run at the reconcile call.
+    """
+    if not settings.onboarding_catalog_reconcile_enabled:
+        # Deliberate, so it is stated rather than warned about — but stated, because "why did this
+        # run mint a near-miss product row?" should be answerable from the boot log alone.
+        log.info(
+            "onboarding.reconciler_not_composed",
+            reason="CLUE_ONBOARDING_CATALOG_RECONCILE_ENABLED is off",
+            detail="the catalog sync runs its deterministic rungs only",
+        )
+        return None
+    key = secrets.openrouter_api_key
+    if key is None or not key.get_secret_value().strip():
+        log.warning(
+            "onboarding.reconciler_not_composed",
+            reason="CLUE_OPENROUTER_API_KEY is not configured",
+            detail=(
+                "CLUE_ONBOARDING_CATALOG_RECONCILE_ENABLED is on but this worker has no model "
+                "credential; the catalog sync runs its deterministic rungs only, so a lineup "
+                "entry no spelling key matches mints a new product row"
+            ),
+        )
+        return None
+    base_url = GatewayConfig().base_url
+
+    def factory(run_id: UUID) -> CatalogReconciler:
+        return OpenRouterCatalogReconciler(
+            caller_factory=lambda: build_onboarding_provider_caller(
+                settings, run_id=run_id, step_label="catalog-reconcile"
+            ),
+            api_key=key,
+            model=settings.onboarding_reconcile_model,
+            base_url=base_url,
+        )
+
+    return factory
 
 
 def _build_arv2_account_research_handler(

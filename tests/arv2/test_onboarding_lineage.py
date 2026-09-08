@@ -8,9 +8,17 @@ to survive the resolution ladder, and nothing normalizes a product into being re
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
 
-from clue_api.arv2.onboarding_lineage import CatalogProduct, _fingerprint, normalize_identity
+from clue_api.arv2.onboarding_lineage import (
+    CatalogProduct,
+    ProductLink,
+    _fingerprint,
+    _should_reconcile,
+    normalize_identity,
+)
 
 SAME = [
     ("Aura AI Scribe", "Aura™ AI Scribe"),
@@ -48,3 +56,19 @@ def test_the_fingerprint_is_over_the_raw_entry_not_the_normalized_one() -> None:
         _fingerprint(plain)
         == "sha256:69cbfa622a1a3ca49f87b5f59ca19d95f489b36aeaaf9e5f7b6d80853e337683"
     )
+
+
+def test_a_product_link_carries_no_reconcile_verdict_unless_a_model_gave_one() -> None:
+    """Every deterministic rung leaves both columns NULL — a NULL says "no model decided this"."""
+    link = ProductLink("prd_x", "MagicFlow", "alias_reused", 1, uuid4())
+    assert (link.reconcile_confidence, link.reconcile_reason) == (None, None)
+
+
+def test_the_model_stage_is_skipped_when_its_answer_is_already_known() -> None:
+    """A first run with one unplaced entry and nothing on file has exactly one possible answer, so
+    the synchronizer does not spend a call to hear it. Everything else with leftovers is asked."""
+    assert _should_reconcile(existing=0, leftovers=0) is False
+    assert _should_reconcile(existing=3, leftovers=0) is False
+    assert _should_reconcile(existing=0, leftovers=1) is False
+    assert _should_reconcile(existing=1, leftovers=1) is True
+    assert _should_reconcile(existing=0, leftovers=2) is True

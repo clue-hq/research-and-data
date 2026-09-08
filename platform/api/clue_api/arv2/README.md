@@ -134,9 +134,37 @@ be.
 
 Two things keep a re-run from re-minting products it already has. The synchronizer's comparison key
 (`normalize_identity`) strips the `™®©℠` marks *before* NFKC (which would otherwise turn `™` into
-the letters `tm`), folds case, keeps every word (no stoplist — a one-company heuristic would silently merge distinct products elsewhere), And on a re-run the lineup *query* — never the system prompt or the schema, which the
-catalog contract fixes — names the brand's products already on file through the `known_products`
-seam, so the model reuses an existing spelling instead of inventing a near-miss of it.
+the letters `tm`), folds case, and keeps every word — no stoplist, because a one-company heuristic
+would silently merge distinct products elsewhere (founder ruling 2026-09-08). And on a re-run the
+lineup *query* — never the system prompt or the schema, which the catalog contract fixes — names
+the brand's products already on file through the `known_products` seam, so the model reuses an
+existing spelling instead of inventing a near-miss of it.
+
+### The catalog identity ladder
+
+Four live re-runs on one workspace grew its product rows from 19 to 28, so `synchronize_catalog`
+resolves each lineup entry down four rungs and stops at the first that answers: the lineage row
+already written for this `(document, ordinal)`; a prior lineage row binding the same entry
+fingerprint (`lineage_reused`, replaying whichever rung made that binding — a model one included);
+the entry's spelling key against the names *and aliases* on file (one hit `alias_reused`, several
+`unresolved_ambiguous`); then **one batched model call per run** over everything left over
+(`onboarding_reconcile.py`), shown each entry's `official_url` and description as evidence.
+
+Only `high`-confidence model matches merge (`model_reused`); anything less mints a row and records
+it `model_unsure` with the model's confidence and reason, for the human gate — a duplicate is
+recoverable, a wrong merge silently retargets a campaign. Every rung-3/rung-4 match writes the
+*observed* spelling back as an alias, so the next run resolves deterministically what this one had
+to reason about. That is also why `LINEUP_SYSTEM_PROMPT` asks Exa for the page each offering is
+presented on and for that page's own spelling of the name, and to omit `official_url` rather than
+cite the homepage: a homepage on every entry is evidence that reads as "all one offering".
+
+The model stage is composed as a **factory of one reconciler per run** —
+`fleet_main._build_catalog_reconciler_factory`, behind `CLUE_ONBOARDING_CATALOG_RECONCILE_ENABLED`
+with `CLUE_ONBOARDING_RECONCILE_MODEL` — because the call spends through a `ProviderCaller` writing
+under that run's own `arv2_raw_root/onboarding/<run_id>/catalog-reconcile/` folder. Unlike the Exa
+key, a missing `CLUE_OPENROUTER_API_KEY` does **not** cost the lane its handler: the run composes
+without a factory, logs `onboarding.reconciler_not_composed` once, and the ladder stops after its
+deterministic rungs — what it did before the stage existed.
 
 ### The step graph
 

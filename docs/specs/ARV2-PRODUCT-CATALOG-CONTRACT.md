@@ -66,7 +66,7 @@ in the schema. The finalized schema has eight properties (two top-level, six on 
         "properties": {
           "name": {
             "type": "string",
-            "description": "Official product name exactly as the company writes it."
+            "description": "The offering's name exactly as its official_url page writes it, keeping that page's spelling, spacing and capitalisation."
           },
           "short_description": {
             "type": "string",
@@ -87,7 +87,7 @@ in the schema. The finalized schema has eight properties (two top-level, six on 
           },
           "official_url": {
             "type": "string",
-            "description": "Canonical page for this offering on the company's own domain. Omit if none exists."
+            "description": "The page on the company's own domain where this offering is presented; a page may present several offerings. Not the homepage, a pricing page or a blog post. Omit only if no such page exists."
           }
         }
       }
@@ -103,7 +103,16 @@ Request discipline (behaviour lives in `systemPrompt`, shape lives in `outputSch
   a first pass has revealed it.
 - `systemPrompt`: prefer pages on the company's own domain; list every distinct product page;
   keep integrations and partner programs separate from standalone products; never invent an
-  offering; when unsure of a field, omit it.
+  offering; when unsure of a field, omit it. **Amended 2026-09-09** (validated in the Exa
+  playground, 2026-09-08), because §5.1's ladder reads the answer as identity evidence: for each
+  offering give `official_url` as the page on the company's own domain where that offering is
+  presented (a page may present several offerings), and give `name` exactly as that page writes it
+  for the offering, keeping the page's own spelling, spacing and capitalisation; if an offering has
+  no page of its own on the company's domain, omit `official_url` rather than citing the homepage
+  or a listing page. The two `description`s above carry the same two rules on the schema side.
+  A shared page is *evidence*, never a rule that two offerings on one page must be one product —
+  and a homepage repeated across every entry is worse than an absent page, because it reads as
+  "all one offering".
 - Two passes, compared: one with `includeDomains` restricted to the client's domain, one open.
   The open pass catches offerings announced only through partners or press.
 - Every raw response is saved before parsing (master plan Appendix A); the cost ledger records
@@ -172,6 +181,43 @@ artifact ref, not against a `client.product_catalog` claim or a Client-KB versio
 - `official_url` is threaded into `OfficialSiteProductTarget` so the later per-product research
   never searches for a page it already knows (Appendix A law).
 
+### 5.1 The catalog identity ladder (added 2026-09-09)
+
+Four live re-runs on one workspace grew that brand's product rows from 19 to 28: the lineup asks
+the same question every run and spells the same offering differently each time ("AI Front Desk",
+then "AI FrontDesk Agent"). The onboarding synchronizer
+(`platform/api/clue_api/arv2/onboarding_lineage.py::synchronize_catalog`) resolves each entry down
+four rungs, in order, and stops at the first that answers:
+
+1. **the same lineage row** — a row already written for this `(document, ordinal)` is mirrored
+   verbatim, so re-driving one document is a no-op;
+2. **a prior lineage binding of the same entry fingerprint** → `lineage_reused`, whichever rung
+   originally made that binding (a durable decision is replayed, never re-derived — including one a
+   model made);
+3. **the entry's spelling key** (`normalize_identity`: `™®©℠` stripped before NFKC, case folded,
+   whitespace and punctuation dropped, **no word ever dropped**) against the names *and aliases* on
+   file — exactly one hit is `alias_reused`, several hits is `unresolved_ambiguous`;
+4. **one batched model reconciliation** after the loop, over everything left over, with each
+   entry's `official_url` and description as evidence.
+
+What merges automatically is deliberately narrow: rungs 1–3 (deterministic) and, on rung 4, only a
+`high`-confidence match → `model_reused`. Anything the model answers with less confidence **mints a
+new product row** and is recorded `model_unsure` with the model's own confidence and reason, for a
+human to look at. Minting a duplicate is recoverable; a wrong merge silently retargets a campaign.
+
+Every match on rung 3 or rung 4 writes the *observed* spelling back as an alias
+(`add_product_aliases`), so the next run's rung 3 resolves deterministically what rung 4 had to
+reason about. Nothing on this path ever renames, merges or archives a product row — the only spine
+writes are `INSERT product` and appending aliases — and there is **no stoplist of "generic" tokens
+anywhere** (founder ruling 2026-09-08: a one-company heuristic would silently merge distinct
+products at another company).
+
+The model stage is composed per run behind `CLUE_ONBOARDING_CATALOG_RECONCILE_ENABLED` (model:
+`CLUE_ONBOARDING_RECONCILE_MODEL`). It never raises and never decides alone: a worker without an
+OpenRouter credential composes the lane anyway, logs `onboarding.reconciler_not_composed` once, and
+runs rungs 1–3 only; a failed or malformed call degrades to "every leftover is a new product at
+`low` confidence", which is what the ladder did before the stage existed.
+
 ## 6. The multi-product ruling (P1) and what it changes
 
 ### 6.1 Rulings
@@ -211,6 +257,23 @@ project_product (
   historical projects.
 - A `selection_version` is minted by the answer route, never by the model.
 
+**`onboarding_product_lineage` — the two model states (migration `be9f4984729a`, 2026-09-09).**
+The table carried the S5 resolution vocabulary verbatim (`created` / `alias_reused` /
+`lineage_reused` / `unresolved_ambiguous`); §5.1's fourth rung adds two more, and both, like every
+resolved state, carry a product:
+
+| `resolution_state` | Meaning |
+|---|---|
+| `model_reused` | the reconciler matched the entry onto an existing product row, at `high` confidence |
+| `model_unsure` | the reconciler minted a row, but said so at less than `high` confidence — flagged for the human gate |
+
+`unresolved_ambiguous` stays the **only** product-less state, so "did this entry get a product?"
+remains one structural question. Two nullable columns record the reconciler's own account of
+itself: `reconcile_confidence` (`high` / `medium` / `low`, CHECKed) and free-text
+`reconcile_reason`. Both are NULL for every deterministically-resolved row — a NULL says "no model
+decided this", which is the honest reading — and both are mirrored onto the `ProductLink` the
+synchronizer returns.
+
 ### 6.3 The gate
 
 New gate kind `product_set_selection` on the existing `agent_gate` substrate. The old
@@ -235,6 +298,9 @@ New gate kind `product_set_selection` on the existing `agent_gate` substrate. Th
   may be opened again on a project that already has a set (P2).
 - The answer route validates membership, inserts the immutable receipt, then writes
   `project_product` rows at `max(selection_version) + 1` in the same transaction.
+- A product whose lineage row is `model_unsure` (§6.2) is a candidate like any other, flagged for
+  the gate: the human is the one who decides whether it is really a distinct offering. How the
+  flag is surfaced in the snapshot and the card is O6's, not fixed here.
 
 ### 6.4 The research lane
 

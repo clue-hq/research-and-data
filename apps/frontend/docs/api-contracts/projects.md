@@ -94,9 +94,13 @@ snapshot) and whose browser transport member is `selected_product_ids[]`. The sn
 `offering_kind`, `family`, `lifecycle`, `official_url` per product and a `current_selection`
 member; the card renders checkboxes grouped by offering kind and "Use these products". The set is
 re-selectable at any time as a new `selection_version`; runs keep the version they pinned. The
-single-product contract below stays for replay of historical gates only. Wire shapes, rendering
-rules, and the durable `project_product` table: `docs/specs/ARV2-PRODUCT-CATALOG-CONTRACT.md`
-§6–§7. This amendment is a pointer; the Zod/schema changes land with that contract's charter.
+single-product contract below stays for replay of historical gates only. A candidate whose
+onboarding lineage row is `model_unsure` — the catalog identity ladder minted it rather than
+merging it onto an existing product, at less than high confidence — is **flagged for the gate**,
+so the human decides whether it is really a distinct offering (how the flag renders is O6's, not
+this pointer's). Wire shapes, rendering rules, and the durable `project_product` table:
+`docs/specs/ARV2-PRODUCT-CATALOG-CONTRACT.md` §5.1, §6–§7. This amendment is a pointer; the
+Zod/schema changes land with that contract's charter.
 
 ### Combined human-gate amendment (2026-08-15)
 
