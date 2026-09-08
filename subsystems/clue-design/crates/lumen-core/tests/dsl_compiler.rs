@@ -3080,6 +3080,89 @@ fn summary_diag<'a>(
         .find(|diag| diag.diagnostic.code == "LUMD0263")
 }
 
+#[test]
+fn reconcile_wraps_existing_child_in_new_containers() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_reconcile_wrap"), "Wrap");
+    let seed = compile_dsl_into_scene(
+        "page p size(200,200,px)\n  artboard fr s(200,200)\n    logo rect s(20,20)\n    caption text \"Brand\" s(80,20)",
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+    let source = "reconcile(artboard)\n  chip fr s(80,80)\n    inset fr s(40,40)\n      logo rect s(20,20)\n  caption text \"Brand\" s(80,20)";
+    let result = compile_dsl_into_scene(source, &mut scene);
+
+    assert_no_dsl_errors(&result.compile_output.diagnostics);
+    assert!(result.operation_error.is_none());
+    assert_eq!(
+        scene.nodes[&NodeId::from("artboard")].children,
+        vec![NodeId::from("chip"), NodeId::from("caption")]
+    );
+    assert_eq!(
+        scene.parent_of(&NodeId::from("logo")),
+        Some(lumen_core::ParentRef::Node(NodeId::from("inset")))
+    );
+    assert_eq!(scene.nodes.len(), 5);
+    let repeat = compile_dsl_into_scene(source, &mut scene);
+    assert_no_dsl_errors(&repeat.compile_output.diagnostics);
+    assert!(repeat.compile_output.operations.is_empty());
+}
+
+#[test]
+fn documented_parent_directive_compiles() {
+    let docs = include_str!(
+        "../../../apps/agent_runtime/knowledge_docs/knowledge/lumen-dsl/directives.md"
+    );
+    let row = docs
+        .lines()
+        .find(|line| line.starts_with("| `parent` |"))
+        .unwrap();
+    let form = row.split('`').nth(3).unwrap();
+    let required = form.split(" [").next().unwrap();
+    let source = format!(
+        "{})",
+        required.replace("(id,", "(logo,").replace("pid", "chip")
+    );
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_parent_docs"), "Parent");
+    let seed = compile_dsl_into_scene(
+        "page p size(200,200,px)\n  artboard fr s(200,200)\n    logo rect s(20,20)\n    chip fr s(40,40)",
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    let result = compile_dsl_into_scene(&source, &mut scene);
+
+    assert_no_dsl_errors(&result.compile_output.diagnostics);
+    assert!(result.operation_error.is_none());
+    assert_eq!(
+        scene.parent_of(&NodeId::from("logo")),
+        Some(lumen_core::ParentRef::Node(NodeId::from("chip")))
+    );
+}
+
+#[test]
+fn reconcile_tracks_sibling_positions_after_each_move_and_insert() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_reconcile_order"), "Order");
+    let seed = compile_dsl_into_scene(
+        "page p size(200,200,px)\n  root fr s(200,200)\n    aa rect s(10,10)\n    bb rect s(10,10)\n    cc rect s(10,10)\n    dd rect s(10,10)",
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    let result = compile_dsl_into_scene(
+        "reconcile(root)\n  aa rect s(10,10)\n  dd rect s(10,10)\n  cc rect s(10,10)\n  new_rect rect s(10,10)\n  bb rect s(10,10)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&result.compile_output.diagnostics);
+    assert!(result.operation_error.is_none());
+    assert_eq!(
+        scene.nodes[&NodeId::from("root")].children,
+        ["aa", "dd", "cc", "new_rect", "bb"]
+            .map(NodeId::from)
+            .to_vec()
+    );
+}
+
 // Test 8 — P3r3's intent in reconcile form: a container `cta` holding an
 // agent-born `cta_text`; a reconcile block that omits `cta_text` and adds an
 // image + caption → remove + 2 inserts, compiles clean, LUMD0263 present.

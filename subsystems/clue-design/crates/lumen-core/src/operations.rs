@@ -280,7 +280,9 @@ impl Scene {
         })
     }
 
-    fn apply_operation_in_place(&mut self, operation: Operation) -> OperationResult<()> {
+    /// Internal mutation for disposable drafts. On error the caller must stop
+    /// and discard the draft; public operation entry points remain atomic.
+    pub(crate) fn apply_operation_in_place(&mut self, operation: Operation) -> OperationResult<()> {
         if self.is_finalized() && !operation.is_finalization() {
             return Err(OperationError::new(
                 "op.finalized_scene",

@@ -5472,6 +5472,11 @@ def diagnostics_from(raw_diagnostics: Any) -> list[DiagnosticSummary]:
     for raw in raw_diagnostics:
         if not isinstance(raw, dict):
             continue
+        # Rust DSL diagnostics wrap the core diagnostic beside its source span;
+        # preflight diagnostics are flat. Preserve both contracts at this seam.
+        nested = raw.get("diagnostic")
+        if isinstance(nested, dict):
+            raw = {**raw, **nested}
         span = raw.get("span") or {}
         subject = raw.get("subject") or {}
         target_page_id = None

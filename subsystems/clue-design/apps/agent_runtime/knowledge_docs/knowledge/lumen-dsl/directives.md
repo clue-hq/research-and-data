@@ -49,7 +49,7 @@ and `replace(<its existing root node>)` with your new single-root subtree.
 | Directive | Form | Use |
 |-----------|------|-----|
 | `delete` | `delete(id [,if_exists] [,hard])` — also `delete(page:id)`, `delete(slot:key)`, `delete(asset:id[,hard])`, `delete(export:name)` | remove a node/page/slot/asset/export profile; `if_exists` downgrades a missing target to info |
-| `parent` | `parent(id, parent:pid [,index:N \| before:anchor \| after:anchor])` | re-home a node |
+| `parent` | `parent(id, pid [,index:N \| before:anchor \| after:anchor])` | re-home a node |
 | `before` / `after` | `before(id, anchor)` · `after(id, anchor)` | reorder siblings |
 | `clone` | `clone(src, new_id, after:anchor [,slots:copy\|detach\|suffix:_x] [,computed:clear\|preserve])` | duplicate a subtree (e.g. another card) without re-authoring it |
 | `replace` | `replace(id [,slots:preserve])` then an indented single-root subtree | swap a node's subtree atomically |
@@ -66,7 +66,13 @@ override(card_b)
 ```
 
 Bad syntax in any of these → `LUMD0207`. Block `replace` requires exactly one
-staged root (`LUMD0914`).
+staged root (`LUMD0914`). Its replacement subtree needs fresh ids throughout,
+including its root: it stages alongside the old subtree before the swap. Use
+`reconcile` when retaining existing ids.
+
+`parent` takes a bare node id as its second argument: `parent(logo_mark,logo_chip)`.
+For a page parent, use `parent(logo_mark,page:page_a4,0)`. The `parent:` prefix is
+a **clone placement** form; it is not valid in the `parent(...)` directive.
 
 ## Reconcile a container — `reconcile(<container_id>)` + subtree
 
