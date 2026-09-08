@@ -53,6 +53,7 @@ The central architecture bet is that verification must be modeled at the claim/d
   `user`), the five leniency flags, the 38-row ARV2 field pack, the `LenientClaimWriter`, and
   the Zafran + ten-person answer key loaded as 294 real claims; four rulings, the plan's
   twelve decisions, the `.env`-sensitive suite caveat, and the D2/D3 follow-ups.
+- `2026-09-07-arv2-r2-prereqs-seam1-probook-icp.md` — R2 prereqs wave 1: Seam 1 ratified (D9 open), Probook seeded, stand-in ICP + persona documents registered by the loader, product set v1, S7 content substance for review; AI Ark people endpoint still 402.
 - `2026-09-07-arv2-r1-step0-and-client-dispatch.md` — ARV2 R1 on track-R: founder rulings (live tests only, native Gemini transcribe exception, keys), Step 0 wrapper/sinks/import guard landed (ee6fe1c94..076f0114a), provider_call_ledger spec, six client worktrees dispatched in parallel.
 - `2026-08-19-live-research-queued-ui-and-fleet-failure.md` — timestamped browser, database, and
   worker evidence for the Insight Health ten-Account approval: why the frontend remains honestly
@@ -514,3 +515,4 @@ The central architecture bet is that verification must be modeled at the claim/d
 - **2026-08-01 — Stage-0 acceptance run PASSED** (`2026-08-01-stage0-acceptance-run.md`): structured-output repair plan + F6/F7/F8 landed; live Terra interview → grounded confirmed ICP; entailment-strictness product finding; Sumble canary is next.
 
 - **2026-08-10 — Part II D8 CLOSED; Part II COMPLETE (D0–D8)** (`2026-08-10-part2-d8-close.md`): outbox consolidation (one DAL owner + `clue_core.run_event` contract-delta), dead liveness net deleted, retention (token sweep ON / design pruner OFF with in-code floors), Part-II gate machine-checked end to end, DSAR **assessed not wired** (`docs/specs/PD-D8-dsar-assessment.md`); founder items: pruner enablement + the standing D2.2/D4 flags.
+- `2026-09-08-arv2-r2-account-agent.md` — R2 BUILT + live acceptance passed (Probook 85 / Zafran 104 claims); rulings, observations and R2-close follow-ups

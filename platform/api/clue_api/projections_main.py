@@ -6,6 +6,7 @@ import uvicorn
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from clue_api.arv2.account_research_launch import DbArv2LaunchService
 from clue_api.arv2_wiring import register_arv2_wiring
 from clue_api.auth_wiring import build_principal_service
 from clue_api.chat import StartupDevPrincipalResolver
@@ -119,9 +120,16 @@ def build_application(
             accounts=stage0_scrape_binder,
             secrets=resolved_secrets,
         )
+    # ARV2 Track R, R2 (seam 1). Composed only behind the lane's own flag; with it off the two
+    # launch/read tools still register and refuse `arv2_account_research_not_composed` before any
+    # spend, so this deployment is byte-identical to pre-R2 for every other surface.
+    arv2_account_launch = (
+        DbArv2LaunchService(resolved, storage) if resolved.arv2_account_research_enabled else None
+    )
     registry = build_toolbelt(
         storage=storage,
         settings=resolved,
+        arv2_account_launch=arv2_account_launch,
         stage0_scrape_binder=stage0_scrape_binder,
         research_view_composer=(research_views.composer if research_views is not None else None),
         research_view_snapshots=(research_views.snapshots if research_views is not None else None),

@@ -123,6 +123,50 @@ ARV2_PACK: tuple[SeedField, ...] = (
         "ABM motion.",
     ),
     _row(
+        "account.committee_candidate",
+        "object",
+        {
+            "type": "object",
+            "required": ["name", "persona"],
+            "properties": {
+                "name": _STR,
+                "title": _STR,
+                "persona": {
+                    "type": "string",
+                    "enum": [
+                        "economic_buyer",
+                        "champion",
+                        "user",
+                        "technical_evaluator",
+                        "blocker",
+                    ],
+                },
+                "linkedin_url": _STR,
+                "confirmed_by": _STR,
+                "vacant_seat": {"type": "boolean"},
+            },
+        },
+        "One buying-committee candidate the account agent confirmed on a non-provider URL: name, "
+        "title, persona from the ICP persona map, LinkedIn URL, what confirmed the identity. A "
+        "vacant seat is recorded with vacant_seat=true and no name (R3 creates the contact).",
+    ),
+    _row(
+        "account.icp_fit_verdict",
+        "object",
+        {
+            "type": "object",
+            "required": ["gate", "verdict"],
+            "properties": {
+                "gate": _STR,
+                "verdict": {"type": "string", "enum": ["pass", "likely", "unclear", "fail"]},
+                "rationale": _STR,
+                "claim_ids": _STR_LIST,
+            },
+        },
+        "The agent's lenient fit verdict for one ICP hard gate, with the claim ids behind it. "
+        "Information for the human; never a reason to stop research. Born outreach_safe=false.",
+    ),
+    _row(
         "core.legal_name",
         "str",
         _STR,

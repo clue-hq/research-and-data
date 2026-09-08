@@ -114,13 +114,17 @@ def test_people_rows_map_completely() -> None:
     assert len(joined) == 6 and all("|" not in d.field_key for d in joined)
 
 
-def test_manifest_names_the_four_accounts_and_twelve_people() -> None:
+def test_manifest_names_the_five_accounts_twelve_people_and_two_documents() -> None:
     assert {a.domain for a in ZAFRAN_MANIFEST.accounts} == {
         "zafran.io",
         "cogent.com",
         "harmonic.security",
         "uptiq.ai",
+        "probook.ai",  # the second fixed answer key — entity only; R2 researches it live
     }
+    assert {d.kind for d in ZAFRAN_MANIFEST.documents} == {"icp-definition", "audience-persona"}
+    assert all(d.path.startswith("audience/") for d in ZAFRAN_MANIFEST.documents)
+    assert ZAFRAN_MANIFEST.icp_key == "clue-abm-buyers"
     # Ten from the person-depth roster plus Tom Anthony and Ben Seri, who appear only in the
     # Zafran committee rows: the loader has to create an entity for every subject either file names.
     assert len(ZAFRAN_MANIFEST.people) == 12 and len(ZAFRAN_MANIFEST.media) == 3

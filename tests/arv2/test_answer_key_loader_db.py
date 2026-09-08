@@ -75,11 +75,44 @@ def test_load_writes_every_row_and_the_screen_prerequisites(tmp_path: Path) -> N
                 "cogent.com",
                 "harmonic.security",
                 "uptiq.ai",
+                "probook.ai",
             }
             assert len(report.contacts) == 12
             assert {s["reason"] for s in report.skips} == {"not_found", "duplicate_persona"}
             assert len(report.artifacts) == 3
             ws = ZAFRAN_MANIFEST.workspace_id
+            # The launch prerequisites (seam 1, master plan §5.1): a confirmed product set to pin
+            # and a confirmed ICP artifact to launch against, plus its persona document.
+            assert report.product_selection_version == 1
+            documents = dict(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT path, status FROM brand_knowledge_document "
+                            "WHERE workspace_id = :ws AND version = 1"
+                        ),
+                        {"ws": ws},
+                    )
+                ).all()
+            )
+            assert documents == {
+                "audience/icp-clue-abm-buyers.md": "confirmed",
+                "audience/persona-clue-abm-buyers.md": "ready",
+            }
+            assert set(report.documents) == set(documents)
+            icp_blob = (
+                await conn.execute(
+                    text(
+                        "SELECT a.storage_key FROM brand_knowledge_document d "
+                        "JOIN artifact a ON a.storage_key = d.artifact_key "
+                        "WHERE d.workspace_id = :ws AND d.kind = 'icp-definition'"
+                    ),
+                    {"ws": ws},
+                )
+            ).scalar_one()
+            rendered = (tmp_path / icp_blob).read_text(encoding="utf-8")
+            assert "confirmed_for_project_id: prj_arv2_answer_key" in rendered
+            assert "product_selection_version: 1" in rendered
             counts = dict(
                 (
                     await conn.execute(
@@ -136,7 +169,7 @@ def test_load_writes_every_row_and_the_screen_prerequisites(tmp_path: Path) -> N
                 .scalars()
                 .all()
             )
-            assert events.count("created") == 4
+            assert events.count("created") == 5  # one per seeded account, Probook included
             assert "updated" in events and "contacts" in events
             unsafe = (
                 await conn.execute(

@@ -294,3 +294,43 @@ def test_nick_fisher_structures_as_one_person_per_call(
     _assert_closed_catalog(output, poc_catalog)
     assert all(claim.priority in {1, 2, 3} for claim in output.claims)
     _assert_metered(output, arv2_raw_root)
+
+
+def test_probook_intent_sweep_parses_and_keeps_only_registered_keys(
+    client: StructuringClient, poc_catalog: FieldCatalog, arv2_raw_root: Path
+) -> None:
+    """The second mode, live, over the same Probook material the broad pass reads.
+
+    What is asserted is the **shape**, not the count: the sweep is deliberately narrow (at most
+    four rows, and an empty answer is the correct answer for material carrying no buying-intent
+    statement), so a yield floor here would fail for the one reason the mode is designed to allow.
+    The comparison worth having — what the sweep finds that the broad pass missed — is the answer
+    key's job in R3, not this gate's.
+    """
+    bundle = (CONTEXT / "arv2-clue-sample-v3" / "account_report.md").read_text(encoding="utf-8")
+
+    output = client.structure_account(
+        AccountSubject(name="Probook", domain="probook.ai"),
+        bundle,
+        poc_catalog,
+        mode="intent_sweep",
+    )
+
+    _report("probook-intent-sweep", output, bundle)
+    print(f"  dropped_rows={output.dropped_rows}")
+    assert output.mode == "intent_sweep"
+    assert len(output.claims) <= 4, "the sweep is capped at four rows, best first"
+    # The cap is enforced in code, so it can no longer be the thing that proves the mode works —
+    # a drifted answer would be silently truncated to four and look identical to a real sweep.
+    # ``dropped_rows`` is where that drift now shows: non-zero means the model answered a sweep
+    # request with a broad answer, which is exactly the defect the two-turn prompt swap fixes.
+    assert output.dropped_rows == 0, (
+        f"the model returned {len(output.claims) + output.dropped_rows} rows for a 4-row sweep: "
+        "the sweep prompt is drifting broad again"
+    )
+    _assert_closed_catalog(output, poc_catalog)
+    assert all(claim.priority in {1, 2, 3} for claim in output.claims)
+    assert all(claim.evidence_span.strip() for claim in output.claims), (
+        "a sweep row with no quote is not a row"
+    )
+    _assert_metered(output, arv2_raw_root)

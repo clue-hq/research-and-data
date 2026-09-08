@@ -16,7 +16,7 @@ ENV_EXAMPLE = REPO / ".env.example"
 
 #: Every ARV2 setting and the default the lane ships with.
 ARV2_SETTING_DEFAULTS: dict[str, object] = {
-    "arv2_account_research_enabled": False,
+    "arv2_account_research_enabled": True,
     "arv2_ai_ark_min_gap_s": 10.5,
     "arv2_structuring_model": "openai/gpt-5-mini",
     "arv2_media_short_model": "google/gemini-3.5-flash-lite",
@@ -25,6 +25,12 @@ ARV2_SETTING_DEFAULTS: dict[str, object] = {
     "arv2_media_seconds_ceiling": 9000,
     "arv2_media_short_max_seconds": 600,
     "arv2_raw_root": ".artifacts/arv2",
+    "arv2_account_max_model_rounds": 100,
+    "arv2_account_max_tool_calls_per_round": 50,
+    "arv2_account_max_runtime_s": 1800,
+    "arv2_account_max_parallel_jobs": 4,
+    "arv2_account_provider_concurrency": 4,
+    "arv2_account_media_max_enclosure_mb": 200,
     "claim_write_lenient": True,
     "evidence_verbatim_check": "off",
     "unevidenced_row_purge_enabled": False,
@@ -66,9 +72,9 @@ def test_every_arv2_setting_has_its_shipped_default(unset_arv2_env: None) -> Non
         assert getattr(settings, field_name) == expected, field_name
 
 
-def test_the_lane_flag_ships_off() -> None:
-    """It flips to True only after the R2 exit gate passes (founder instruction 2026-09-07)."""
-    assert Settings.model_fields["arv2_account_research_enabled"].default is False
+def test_the_lane_flag_ships_on_after_r2() -> None:
+    """Default True since the R2 exit gate passed on 2026-09-08 (founder instruction 2026-09-07)."""
+    assert Settings.model_fields["arv2_account_research_enabled"].default is True
 
 
 def test_the_new_provider_keys_are_optional_secrets(unset_arv2_env: None) -> None:

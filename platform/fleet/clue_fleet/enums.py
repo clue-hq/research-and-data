@@ -42,6 +42,9 @@ class FleetTaskKind(StrEnum):
     * ``ONBOARDING_RUN`` — one ARV2 onboarding run (Track O, O3): the fast recon lane, the catalog
       synchronization, and the background per-product research all drive from this single job, so
       the whole run has exactly one lease and one place to resume from.
+    * ``ARV2_ACCOUNT_RESEARCH`` — one ARV2 account research job (Track R, R2): the agent loop
+      for a single account, so one account has exactly one lease and the rest of the run keeps
+      going when that account fails.
 
     New members are appended, never inserted: the DB enum is grown with ``ALTER TYPE … ADD VALUE``
     (which appends), and the parity test compares the two **in order**. Member order here mirrors
@@ -60,6 +63,8 @@ class FleetTaskKind(StrEnum):
     # ARV2 onboarding (Track O, O3): one job per onboarding run — fast recon, catalog sync,
     # background per-product research. Appended, never inserted (see the class docstring).
     ONBOARDING_RUN = "onboarding_run"
+    # ARV2 R2: one job per account for the account research agent. Appended, never inserted.
+    ARV2_ACCOUNT_RESEARCH = "arv2_account_research"
 
 
 class FleetTaskStatus(StrEnum):

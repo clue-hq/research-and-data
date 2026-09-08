@@ -161,6 +161,22 @@ class MediaSpec:
 
 
 @dataclass(frozen=True)
+class DocumentSpec:
+    """One brand-knowledge document the answer-key workspace carries as a confirmed stand-in.
+
+    Track O's synthesis agent (O4) will author these and a human will confirm them through the ICP
+    gate (O6); until then the research lane needs a confirmed ``icp-definition`` to pin a launch on,
+    so the loader registers these hand-written files the way O6 would — one document row, one
+    content-addressed artifact, status ``confirmed`` — and stamps the spine ids (brand, products,
+    project, selection version) that only exist at load time.
+    """
+
+    path: str  # ``<folder>/<name>.md`` — the same path the brand-context page shows
+    kind: str  # ``icp-definition`` | ``audience-persona``
+    file: str  # the source file under ``.context/arv2-answer-key-knowledge/``
+
+
+@dataclass(frozen=True)
 class AnswerKeyManifest:
     """The workspace, project and subjects the two answer-key files describe."""
 
@@ -175,6 +191,9 @@ class AnswerKeyManifest:
     accounts: tuple[AccountSpec, ...]
     people: tuple[PersonSpec, ...]
     media: tuple[MediaSpec, ...]
+    documents: tuple[DocumentSpec, ...]
+    #: The ICP the project run and the confirmed ICP document both name (master plan §5.2).
+    icp_key: str
 
 
 ZAFRAN_MANIFEST = AnswerKeyManifest(
@@ -191,6 +210,11 @@ ZAFRAN_MANIFEST = AnswerKeyManifest(
         AccountSpec(key="cogent", name="Cogent Security", domain="cogent.com"),
         AccountSpec(key="harmonic", name="Harmonic Security", domain="harmonic.security"),
         AccountSpec(key="uptiq", name="UPTIQ, Inc.", domain="uptiq.ai"),
+        # The second fixed answer key (master plan §10 item 6): researched by the v3 sample run
+        # (``.context/arv2-clue-sample-v3``). Only the entity is seeded — R2 researches it live and
+        # the run's ``claims.json`` is what the result is compared against, so loading those rows
+        # here would pre-empt the very gate they exist to check.
+        AccountSpec(key="probook", name="Probook", domain="probook.ai"),
     ),
     people=(
         PersonSpec(
@@ -300,6 +324,19 @@ ZAFRAN_MANIFEST = AnswerKeyManifest(
             title="Perfect Moscow Mule",
         ),
     ),
+    documents=(
+        DocumentSpec(
+            path="audience/icp-clue-abm-buyers.md",
+            kind="icp-definition",
+            file="icp-clue-abm-buyers.md",
+        ),
+        DocumentSpec(
+            path="audience/persona-clue-abm-buyers.md",
+            kind="audience-persona",
+            file="persona-clue-abm-buyers.md",
+        ),
+    ),
+    icp_key="clue-abm-buyers",
 )
 
 

@@ -12,22 +12,30 @@ unreadable priority means.
 
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
+from pydantic import SecretStr
 
+from clue_api.arv2.calls import ProviderCaller
 from clue_api.arv2.errors import RawParseError
+from clue_api.arv2.sinks import MemoryLedger, MemoryRawSink
 from clue_api.arv2.structuring_client import (
     BUNDLE_BEGIN,
     BUNDLE_END,
     DEFAULT_PRIORITY,
     MODEL_PROPOSED_ORIGIN,
     NEUTRALISED_MARKER,
+    STRUCTURING_SYSTEM_PROMPT,
     UNREGISTERED_KEY_ORIGIN,
     AccountSubject,
     FieldCatalog,
     FieldSpec,
+    PersonSubject,
     StructuredOutput,
+    StructuringClient,
     account_user_prompt,
     catalog_menu_text,
     check_value_schema,
@@ -38,6 +46,7 @@ from clue_api.arv2.structuring_client import (
     person_user_prompt,
     read_structured_reply,
 )
+from clue_api.arv2.transport import HttpResponse, ScriptedTransport
 
 BUNDLE = """=== SOURCE A: the company's own site ===
 Zafran Security raised a $30M Series B led by Sequoia Capital.
@@ -462,7 +471,6 @@ def test_a_hostile_bundle_cannot_close_the_fence_and_speak_as_the_harness() -> N
 
 
 def test_the_person_prompt_is_fenced_the_same_way() -> None:
-    from clue_api.arv2.structuring_client import PersonSubject
 
     prompt = person_user_prompt(
         PersonSubject(name="Nick Fisher", company="Zafran", linkedin_url="https://li.test/nick"),
@@ -482,3 +490,210 @@ def test_neutralising_markers_is_idempotent_and_leaves_ordinary_text_alone() -> 
 
     plain = "Revenue rose 30% -- see the 10-K, section ==2== of the appendix."
     assert neutralise_bundle_markers(plain) == plain
+
+
+# -- the intent sweep: the second mode of the same call ------------------------------------------
+
+
+def _scripted_client(
+    reply: dict[str, object],
+) -> tuple[StructuringClient, ScriptedTransport]:
+    """A client whose one call is answered by a scripted OpenRouter completion.
+
+    ``ScriptedTransport`` is the lane's single permitted double (Global Constraint 3), admitted
+    here for exactly the thing a live provider cannot demonstrate on demand: *which system prompt
+    was sent*. The reply is a shape, not a fabricated model answer — every assertion below is
+    about the request.
+    """
+    body = json.dumps(
+        {"choices": [{"message": {"content": json.dumps(reply)}}], "model": "m"}
+    ).encode()
+    transport = ScriptedTransport([HttpResponse(status=200, body=body)])
+    caller = ProviderCaller(
+        transport=transport,
+        raw_sink=MemoryRawSink(),
+        ledger=MemoryLedger(),
+        now=lambda: datetime(2026, 9, 8, tzinfo=UTC),
+    )
+    client = StructuringClient(
+        caller,
+        api_key=SecretStr("k"),
+        base_url="https://openrouter.ai/api/v1",
+        model="m",
+    )
+    return client, transport
+
+
+def _sent_messages(transport: ScriptedTransport) -> list[dict[str, str]]:
+    body = transport.requests[0].body or b"{}"
+    sent = json.loads(body.decode())
+    return list(sent["messages"])
+
+
+def test_structure_account_intent_sweep_uses_the_sweep_prompt() -> None:
+    client, transport = _scripted_client({"claims": []})
+
+    client.structure_account(
+        AccountSubject("Probook", "probook.ai"),
+        "=== MATERIAL\nwe still build target lists by hand",
+        CATALOG,
+        mode="intent_sweep",
+    )
+
+    system = _sent_messages(transport)[0]["content"]
+    assert "VERBATIM public statements" in system
+    assert "contact.facet.recent_post" not in system  # an account sweep targets account keys
+    assert "account.gtm_tooling_stack" in system
+
+
+def test_structure_account_broad_mode_is_still_the_default_prompt() -> None:
+    client, transport = _scripted_client({"claims": []})
+
+    output = client.structure_account(
+        AccountSubject("Probook", "probook.ai"), "=== MATERIAL\nwords", CATALOG
+    )
+
+    assert _sent_messages(transport)[0]["content"] == STRUCTURING_SYSTEM_PROMPT
+    assert output.mode == "broad"
+
+
+def test_the_sweep_mode_is_recorded_on_the_output_so_a_claim_can_carry_it() -> None:
+    client, _ = _scripted_client(
+        {
+            "claims": [
+                {
+                    "field_key": "account.operational_pain",
+                    "value": "manual target lists",
+                    "evidence_span": "we still build target lists by hand",
+                    "priority": 1,
+                }
+            ]
+        }
+    )
+
+    output = client.structure_account(
+        AccountSubject("Probook", "probook.ai"),
+        "=== MATERIAL\nwe still build target lists by hand",
+        CATALOG,
+        mode="intent_sweep",
+    )
+
+    assert output.mode == "intent_sweep"
+    assert [c.field_key for c in output.claims] == ["account.operational_pain"]
+
+
+def test_the_person_sweep_names_the_person_facet_homes_not_the_account_ones() -> None:
+    client, transport = _scripted_client({"claims": []})
+
+    client.structure_person(
+        PersonSubject(name="Nick Fisher", company="Probook", linkedin_url="https://li.test/nick"),
+        "=== MATERIAL\nhe said the stack is a mess",
+        CATALOG,
+        mode="intent_sweep",
+    )
+
+    system = _sent_messages(transport)[0]["content"]
+    assert "VERBATIM public statements" in system
+    assert "account.gtm_tooling_stack" not in system
+
+
+def test_the_sweep_user_prompt_states_the_sweep_task_and_drops_the_broad_one() -> None:
+    """The mode swaps BOTH turns.
+
+    Measured: with only the system prompt swapped, one live sweep over a 10k-char dossier returned
+    seventeen broad-style rows and the next returned four — the user turn still carried "emit every
+    claim the bundle actually supports", and over a long bundle the last instruction wins often
+    enough that the mode was a coin flip.
+    """
+    prompt = account_user_prompt(
+        AccountSubject("Probook", "probook.ai"), BUNDLE, CATALOG, mode="intent_sweep"
+    )
+
+    assert "SWEEP ONLY" in prompt
+    assert "At most 4 rows" in prompt and "at most 4 rows" in prompt.rpartition(BUNDLE_END)[2]
+    assert "Do not describe the company" in prompt
+    assert "emit every claim the bundle actually supports" not in prompt
+    # What makes an answer readable and attributable is identical in both modes.
+    assert "SUBJECT — ONE account" in prompt
+    assert catalog_menu_text(CATALOG) in prompt
+    assert BUNDLE_BEGIN in prompt and BUNDLE_END in prompt
+
+
+def test_the_broad_user_prompt_is_unchanged_by_the_new_mode() -> None:
+    prompt = account_user_prompt(AccountSubject("Probook", "probook.ai"), BUNDLE, CATALOG)
+    assert "emit every claim the bundle actually supports" in prompt
+    assert "SWEEP ONLY" not in prompt
+
+
+def test_the_person_sweep_prompt_drops_the_six_category_coverage_request() -> None:
+    subject = PersonSubject(name="Nick Fisher", company="Probook", linkedin_url="https://li/nick")
+
+    sweep = person_user_prompt(subject, BUNDLE, CATALOG, mode="intent_sweep")
+    broad = person_user_prompt(subject, BUNDLE, CATALOG)
+
+    assert "SWEEP ONLY" in sweep and "Sweep the whole bundle for all six" not in sweep
+    assert "Sweep the whole bundle for all six" in broad and "SWEEP ONLY" not in broad
+
+
+def _seven_claims() -> dict[str, object]:
+    return {
+        "claims": [
+            {
+                "field_key": "account.operational_pain",
+                "value": f"statement {index}",
+                "evidence_span": f"statement {index}",
+                "priority": 1,
+            }
+            for index in range(7)
+        ],
+        "proposed_fields": [
+            {"suggested_key": "account.pricing_shape", "why": "w", "value": 1, "evidence_span": "x"}
+        ],
+        "negatives_and_risks": [{"what": "a rumour", "status": "UNRESOLVED", "evidence_span": "y"}],
+    }
+
+
+def test_the_sweep_cap_is_enforced_in_code_and_the_surplus_is_counted() -> None:
+    """A model that ignores the cap must not be able to turn a sweep back into a broad pass."""
+    output = read_structured_reply(
+        _seven_claims(), catalog=CATALOG, bundle=BUNDLE, model="m", mode="intent_sweep"
+    )
+
+    assert len(output.claims) == 4 and output.dropped_rows == 3
+    assert [claim.value for claim in output.claims] == [f"statement {index}" for index in range(4)]
+    assert len(output.proposed) == 1 and len(output.negatives) == 1, (
+        "the cap is a rule about the sweep's claims and about nothing else"
+    )
+
+
+def test_the_broad_pass_keeps_every_row_it_was_given() -> None:
+    output = read_structured_reply(_seven_claims(), catalog=CATALOG, bundle=BUNDLE, model="m")
+
+    assert len(output.claims) == 7 and output.dropped_rows == 0
+
+
+def test_a_sweep_within_the_cap_drops_nothing() -> None:
+    reply = _seven_claims()
+    reply["claims"] = list(reply["claims"])[:2]  # type: ignore[arg-type]
+
+    output = read_structured_reply(
+        reply, catalog=CATALOG, bundle=BUNDLE, model="m", mode="intent_sweep"
+    )
+
+    assert len(output.claims) == 2 and output.dropped_rows == 0
+
+
+def test_the_client_sends_the_sweep_user_turn_not_only_the_sweep_system_turn() -> None:
+    client, transport = _scripted_client({"claims": []})
+
+    client.structure_account(
+        AccountSubject("Probook", "probook.ai"),
+        "=== MATERIAL\nwe still build target lists by hand",
+        CATALOG,
+        mode="intent_sweep",
+    )
+
+    system, user = _sent_messages(transport)[0], _sent_messages(transport)[1]
+    assert "VERBATIM public statements" in system["content"]
+    assert "SWEEP ONLY" in user["content"]
+    assert "emit every claim the bundle actually supports" not in user["content"]

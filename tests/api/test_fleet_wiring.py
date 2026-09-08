@@ -289,6 +289,30 @@ def test_onboarding_handler_is_composed_when_given_and_kind_guarded() -> None:
         )
 
 
+def test_arv2_account_research_handler_is_composed_when_given_and_kind_guarded() -> None:
+    # Track R (R2): the account-research drain joins on the same terms as its neighbours —
+    # optional (a deployment without ``arv2_account_research_enabled`` composes no account driver
+    # and nothing enqueues the kind) and kind-guarded at construction rather than at claim time.
+    graph = _CompositionHandler(FleetTaskKind.EXECUTE_GRAPH)
+    handler = _CompositionHandler(FleetTaskKind.ARV2_ACCOUNT_RESEARCH)
+    worker = build_multi_work_worker(
+        _settings(),
+        driver=build_fleet_run_driver(),
+        graph_handler=graph,
+        arv2_account_research_handler=handler,
+        worker_id="shared-worker",
+    )
+    assert worker._handlers[FleetTaskKind.ARV2_ACCOUNT_RESEARCH] is handler
+
+    with pytest.raises(ValueError, match="arv2_account_research_handler must own"):
+        build_multi_work_worker(
+            _settings(),
+            driver=build_fleet_run_driver(),
+            graph_handler=graph,
+            arv2_account_research_handler=_CompositionHandler(FleetTaskKind.ONBOARDING_RUN),
+        )
+
+
 def test_the_onboarding_handler_is_off_unless_the_lane_flag_is_set(tmp_path: Path) -> None:
     """The production gate for Track O: no flag, no handler — and nothing enqueues the kind."""
     secrets = Secrets(_env_file=None, exa_api_key=SecretStr("exa-test"))  # type: ignore[call-arg]

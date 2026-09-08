@@ -5,8 +5,10 @@ the store. It creates the spine the rows need to exist under (workspace → bran
 project), the account and contact entities every claim keys on, the project run and run lineage the
 project lens reads through, the transcript artifacts the media-quoted claims cite, every claim
 through the lenient write gate, the terminal research run/job/coverage that makes the Zafran
-account read as *researched with a five-person committee*, and the activity feed the detail rail
-renders.
+account read as *researched with a five-person committee*, the activity feed the detail rail
+renders, and — so the research lane has something to launch against — the project's confirmed
+product set (version 1) plus the two stand-in brand-knowledge documents (a confirmed
+``icp-definition`` and its ``audience-persona``) registered the way Track O's ICP gate will.
 
 It is deliberately **one-shot per database**: a second load would double every claim, so the first
 thing it does is look for its own run id and refuse. There is no update path — the answer key is a
@@ -24,6 +26,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import yaml
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -38,8 +41,10 @@ from clue_api.arv2.answer_key import (
     map_zafran_rows,
 )
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter, WriteReceipt
+from clue_api.arv2.onboarding_documents import KnowledgeDocument, render_markdown
 from clue_api.arv2_wiring import register_arv2_wiring
 from clue_api.composition import RESEARCH_PACK_LOADERS
+from clue_auth.store import create_platform_user, get_platform_user
 from clue_config import Settings
 from clue_core import (
     AccountStatus,
@@ -56,7 +61,14 @@ from clue_research.claimstore.run_lineage import record_run_lineage
 from clue_research.durable.project_run import ensure_project_run
 from clue_research.identity import insert_account_entity, insert_contact_entity
 from clue_research.membership import ensure_project_account
-from clue_spine import create_brand, create_product, create_project, create_workspace, get_workspace
+from clue_spine import (
+    confirm_project_product_set,
+    create_brand,
+    create_product,
+    create_project,
+    create_workspace,
+    get_workspace,
+)
 from clue_storage.artifacts import record_artifact
 from clue_storage.fs import FsStorage
 from clue_storage.protocol import artifact_key, content_address
@@ -64,12 +76,23 @@ from clue_storage.protocol import artifact_key, content_address
 #: Where the two answer-key files and the Zafran transcripts live, relative to ``context_root``.
 ZAFRAN_DIR = "arv2-one-account-aiark"
 PEOPLE_DIR = "arv2-person-depth"
+#: Where the hand-written stand-in ICP and persona documents live, relative to ``context_root``.
+KNOWLEDGE_DIR = "arv2-answer-key-knowledge"
+
+#: The synthetic human the loader confirms the product set and the ICP as. It is a real
+#: ``platform_user`` row (the product-set table's FK demands one) whose name says what it is.
+ANSWER_KEY_USER_ID = "usr_arv2_answer_key"
+#: ``project_product.gate_id`` is not a foreign key (clue_spine sits below the gate table), so the
+#: loader names the gate it never opened deterministically and honestly: no gate row exists.
+PRODUCT_SET_GATE_ID = uuid.uuid5(ANSWER_KEY_NAMESPACE, "arv2-answer-key:product-set-gate:v1")
 
 #: The one researched account — the other three were only named by the run.
 ZAFRAN_DOMAIN = "zafran.io"
 
 _TRANSCRIPT_MEDIA_TYPE = "text/markdown"
 _TRANSCRIPT_SOURCE_KEY = "arv2:answer_key:transcript"
+_DOCUMENT_SOURCE_KEY = "arv2:answer_key:knowledge_document"
+_ICP_KIND = "icp-definition"
 _ORIGIN = "arv2-answer-key-loader"
 _BUDGET_REF = "answer-key"
 _PERSONA_KEY = "contact.persona"
@@ -103,6 +126,8 @@ class LoadReport:
     markers: dict[str, int]  # marker name -> count
     skips: list[dict[str, str]]  # {"source_row_id", "reason"}
     artifacts: list[str]  # artifact keys
+    product_selection_version: int
+    documents: dict[str, str]  # document path -> brand_knowledge_document id
 
 
 async def load_answer_key(
@@ -123,7 +148,7 @@ async def load_answer_key(
     )
     zafran_drafts = (*zafran.drafts, *_derived_role_drafts(zafran))
 
-    product_id = await _ensure_spine(conn, manifest)
+    brand_id, product_id = await _ensure_spine(conn, manifest)
     await _load_packs(conn)
     accounts, contacts = await _entities(conn, manifest)
     await ensure_project_run(
@@ -131,9 +156,19 @@ async def load_answer_key(
         project_run_id=manifest.project_run_id,
         project_id=manifest.project_id,
         workspace_id=manifest.workspace_id,
-        icp_key="answer-key",
+        icp_key=manifest.icp_key,
         icp_version=1,
         phase=ProjectPhase.DEEP,
+    )
+    selection_version = await _confirm_product_set(conn, manifest, product_id)
+    documents = await _knowledge_documents(
+        conn,
+        storage,
+        context_root,
+        manifest,
+        brand_id=brand_id,
+        product_id=product_id,
+        selection_version=selection_version,
     )
     for run_id, kind in ((manifest.run_id, "entity_research"), (PEOPLE_RUN_ID, "contact_research")):
         await record_run_lineage(
@@ -187,6 +222,8 @@ async def load_answer_key(
             for skip in (*zafran.skips, *people.skips)
         ],
         artifacts=sorted(media_keys.values()),
+        product_selection_version=selection_version,
+        documents=documents,
     )
 
 
@@ -212,8 +249,8 @@ def _read_json(path: Path) -> Any:
 # -- step 2: the spine --------------------------------------------------------------------------
 
 
-async def _ensure_spine(conn: AsyncConnection, manifest: AnswerKeyManifest) -> str:
-    """Create workspace → brand → product → project, and return the product id.
+async def _ensure_spine(conn: AsyncConnection, manifest: AnswerKeyManifest) -> tuple[str, str]:
+    """Create workspace → brand → product → project, and return ``(brand_id, product_id)``.
 
     Only the workspace is get-or-create: it is the row a partially-set-up dev database is most
     likely to already have. Everything below it is created outright, because this loader owns the
@@ -239,7 +276,36 @@ async def _ensure_spine(conn: AsyncConnection, manifest: AnswerKeyManifest) -> s
         project_id=manifest.project_id,
         status="active",
     )
-    return str(product.product_id)
+    return str(brand.brand_id), str(product.product_id)
+
+
+async def _confirm_product_set(
+    conn: AsyncConnection, manifest: AnswerKeyManifest, product_id: str
+) -> int:
+    """Confirm the project's product set as version 1, so a launch has a version to pin.
+
+    Master plan §5.1 / rulings P1–P2: a research run pins ``product_selection_version``; without a
+    confirmed set there is nothing to pin and the R2 launch tool would have to refuse. The spine
+    function wants the confirming human, so the loader's synthetic user is created on first use.
+    """
+    if await get_platform_user(conn, ANSWER_KEY_USER_ID) is None:
+        await create_platform_user(
+            conn, user_id=ANSWER_KEY_USER_ID, display_name="ARV2 answer key (loader)"
+        )
+    confirmed = await confirm_project_product_set(
+        conn,
+        workspace_id=manifest.workspace_id,
+        project_id=manifest.project_id,
+        product_ids=[product_id],
+        gate_id=PRODUCT_SET_GATE_ID,
+        confirmed_by_user_id=ANSWER_KEY_USER_ID,
+    )
+    if confirmed is None:
+        raise RuntimeError(
+            "the answer-key product set could not be confirmed against its own project — the "
+            "spine rows this loader just created do not agree with each other"
+        )
+    return confirmed.selection_version
 
 
 # -- step 3: the field registry -----------------------------------------------------------------
@@ -262,7 +328,7 @@ async def _load_packs(conn: AsyncConnection) -> None:
 async def _entities(
     conn: AsyncConnection, manifest: AnswerKeyManifest
 ) -> tuple[dict[str, EntityId], dict[str, EntityId]]:
-    """Create the four accounts (with project membership) and the twelve people under them."""
+    """Create the five accounts (with project membership) and the twelve people under them."""
     accounts: dict[str, EntityId] = {}
     for spec in manifest.accounts:
         account_id = await insert_account_entity(
@@ -391,6 +457,117 @@ async def _media_artifacts(
         await storage.put(key, data, media_type=_TRANSCRIPT_MEDIA_TYPE)
         keys[spec.media_url] = key
     return keys
+
+
+# -- step 7b: the stand-in brand-knowledge documents ---------------------------------------------
+
+
+def _split_front_matter(markdown: str) -> tuple[dict[str, Any], str]:
+    """``---\n<yaml>\n---\n\n<body>`` → ``(front matter, body)``; a file without one is refused."""
+    if not markdown.startswith("---\n"):
+        raise ValueError("a knowledge document starts with a YAML front-matter block")
+    end = markdown.find("\n---\n", 4)
+    if end < 0:
+        raise ValueError("a knowledge document's front-matter block is never closed")
+    front = yaml.safe_load(markdown[4:end])
+    if not isinstance(front, dict):
+        raise ValueError("a knowledge document's front matter is a mapping")
+    return front, markdown[end + len("\n---\n") :].lstrip("\n")
+
+
+async def _knowledge_documents(
+    conn: AsyncConnection,
+    storage: FsStorage,
+    context_root: Path,
+    manifest: AnswerKeyManifest,
+    *,
+    brand_id: str,
+    product_id: str,
+    selection_version: int,
+) -> dict[str, str]:
+    """Register the stand-in ICP and persona documents; return ``{path: document_id}``.
+
+    This is the shape Track O's ICP gate (O6) will produce for real: one
+    ``brand_knowledge_document`` row per document, its rendered markdown stored as a
+    content-addressed artifact, the ICP row
+    ``confirmed`` with the confirmation-only front-matter fields (`ARV2-ONBOARDING-PLAN.md` §6.1)
+    stamped at confirmation time — here, at load time, because the brand id, product id, project
+    and selection version only exist once the spine has been created. The persona document is
+    ``ready``: it is authored per ICP version, never confirmed. When O3's document helpers land,
+    they own this write and the loader calls them.
+    """
+    confirmed_at = datetime.now(UTC)
+    written: dict[str, str] = {}
+    for spec in manifest.documents:
+        source = (context_root / KNOWLEDGE_DIR / spec.file).read_text(encoding="utf-8")
+        front, body = _split_front_matter(source)
+        if front.get("kind") != spec.kind:
+            raise ValueError(
+                f"{spec.file} declares kind {front.get('kind')!r}, expected {spec.kind!r}"
+            )
+        if front.get("icp_key") != manifest.icp_key:
+            raise ValueError(
+                f"{spec.file} names ICP {front.get('icp_key')!r}, expected {manifest.icp_key!r}"
+            )
+        front["brand_id"] = brand_id
+        if spec.kind == _ICP_KIND:
+            front["product_ids"] = [product_id]
+            front["confirmed_by"] = ANSWER_KEY_USER_ID
+            front["confirmed_at"] = confirmed_at.isoformat()
+            front["confirmed_for_project_id"] = manifest.project_id
+            front["product_selection_version"] = selection_version
+            status = "confirmed"
+        else:
+            status = "ready"
+        folder = spec.path.split("/", 1)[0]
+        rendered = render_markdown(
+            KnowledgeDocument(
+                kind=spec.kind,
+                folder=folder,
+                path=spec.path,
+                front_matter=front,
+                body=body,
+                cost=None,
+            )
+        ).encode("utf-8")
+        sha = content_address(rendered)
+        key = artifact_key(manifest.workspace_id, sha)
+        await record_artifact(
+            conn,
+            storage_key=key,
+            workspace_id=manifest.workspace_id,
+            content_sha256=sha,
+            media_type=_TRANSCRIPT_MEDIA_TYPE,
+            size_bytes=len(rendered),
+            source_key=_DOCUMENT_SOURCE_KEY,
+        )
+        await storage.put(key, rendered, media_type=_TRANSCRIPT_MEDIA_TYPE)
+        document_id = uuid.uuid5(ANSWER_KEY_NAMESPACE, f"arv2-answer-key:document:{spec.path}")
+        await conn.execute(
+            text(
+                """
+                INSERT INTO brand_knowledge_document
+                    (document_id, workspace_id, brand_id, folder, path, kind, version, status,
+                     artifact_key, artifact_sha256)
+                VALUES
+                    (:document_id, :workspace_id, :brand_id, :folder, :path, :kind, 1, :status,
+                     :artifact_key, :artifact_sha256)
+                """
+            ),
+            {
+                "document_id": document_id,
+                "workspace_id": manifest.workspace_id,
+                "brand_id": brand_id,
+                "folder": folder,
+                "path": spec.path,
+                "kind": spec.kind,
+                "status": status,
+                "artifact_key": key,
+                "artifact_sha256": sha,
+            },
+        )
+        written[spec.path] = str(document_id)
+    return written
 
 
 # -- step 8: the claims -------------------------------------------------------------------------
@@ -637,8 +814,9 @@ async def _activity(
 ) -> None:
     """Write the feed the detail rail renders (source map §3.8), all ``clue``-authored.
 
-    Zafran gets the full story — created, researched, committee confirmed. The other three accounts
-    were only ever named by the run, so ``created`` is the only honest event for them.
+    Zafran gets the full story — created, researched, committee confirmed. The other four accounts
+    were only ever named by a run (Probook's research is R2's to do live), so ``created`` is the
+    only honest event for them.
     """
     occurred_at = datetime.now(UTC)
     events: list[tuple[EntityId, str, str, str]] = [

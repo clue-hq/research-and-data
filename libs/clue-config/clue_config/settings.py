@@ -300,11 +300,11 @@ class Settings(BaseSettings):
     entity_research_runtime_enabled: bool = False
 
     # --- ARV2 research lane (R1) ------------------------------------------------------------
-    # Selects the ARV2 fleet handler and launcher at composition (A7). **False until the R2 exit
-    # gate passes, then the default flips to True** (founder instruction 2026-09-07) — the lane
-    # ships dark so a half-built provider set can never claim an account research job.
+    # Selects the ARV2 fleet handler and launcher at composition (A7). Shipped dark through R1;
+    # **default True since the R2 exit gate passed on 2026-09-08** (founder instruction
+    # 2026-09-07: flip once R2 is over). A worker missing a credential still composes no handler.
     # Env: ``CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED``.
-    arv2_account_research_enabled: bool = False
+    arv2_account_research_enabled: bool = True
     # Minimum seconds between AI Ark calls (the proof-of-concept pacing, kept until the paid
     # tier's real rate limit is confirmed). Env: ``CLUE_ARV2_AI_ARK_MIN_GAP_S``.
     arv2_ai_ark_min_gap_s: float = 10.5
@@ -331,6 +331,24 @@ class Settings(BaseSettings):
     # routes raw bodies to the ``artifact`` table and the ledger to ``provider_call_ledger``
     # at A7. Env: ``CLUE_ARV2_RAW_ROOT``.
     arv2_raw_root: str = ".artifacts/arv2"
+
+    # --- ARV2 R2 account agent (master plan §9 R2; founder stop-policy ruling 2026-09-08) ------
+    # Model rounds per account job. A ceiling ends the loop and the driver finalizes with what
+    # was written; it is a safety net, never a budget. Env: ``CLUE_ARV2_ACCOUNT_MAX_MODEL_ROUNDS``.
+    arv2_account_max_model_rounds: int = Field(default=100, ge=1)
+    # Tool calls the model may issue in ONE round; the excess receive a recoverable refusal.
+    # Env: ``CLUE_ARV2_ACCOUNT_MAX_TOOL_CALLS_PER_ROUND``.
+    arv2_account_max_tool_calls_per_round: int = Field(default=50, ge=1)
+    # Wall clock per account job, seconds. Env: ``CLUE_ARV2_ACCOUNT_MAX_RUNTIME_S``.
+    arv2_account_max_runtime_s: int = Field(default=1800, ge=60)
+    # Account jobs one worker drives concurrently. Env: ``CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS``.
+    arv2_account_max_parallel_jobs: int = Field(default=4, ge=1)
+    # Concurrent calls per provider within one job (AI Ark is always 1 — its pacing is per
+    # client). Env: ``CLUE_ARV2_ACCOUNT_PROVIDER_CONCURRENCY``.
+    arv2_account_provider_concurrency: int = Field(default=4, ge=1)
+    # Largest podcast enclosure the media tool downloads, MiB.
+    # Env: ``CLUE_ARV2_ACCOUNT_MEDIA_MAX_ENCLOSURE_MB``.
+    arv2_account_media_max_enclosure_mb: int = Field(default=200, ge=1)
 
     # --- ARV2 onboarding lane (Track O; ARV2-ONBOARDING-PLAN.md §10) --------------------------
     # Routes ``POST /onboarding`` to the new fleet driver (O3). Ships dark until O7 acceptance;
