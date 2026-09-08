@@ -290,6 +290,25 @@ def test_model_error_is_reported_not_raised() -> None:
     assert outcome.tool_calls == 1
 
 
+def test_a_provider_timeout_inside_the_graph_is_a_model_error_not_the_runtime_cap() -> None:
+    """The gateway's own timeout and our runtime cap are the same exception type and opposite
+    endings: one is the provider failing, the other is us stopping. A job whose provider timed out
+    must not be recorded as a job that ran out of time."""
+    runtime = _runtime()
+
+    def time_out(messages: list[BaseMessage]) -> AIMessage:
+        del messages
+        raise TimeoutError("the provider did not answer in 600s")
+
+    model = _ScriptedModel(time_out)
+
+    outcome = _run(_drive(model, [_counting_tool(runtime)], runtime, max_runtime_s=30.0))
+
+    assert outcome.reason == "model_error"
+    assert outcome.error is not None and outcome.error.startswith("TimeoutError: ")
+    assert "did not answer" in outcome.error
+
+
 # --- the agent's own model spend (R2-close task 2) ---------------------------------------------
 #
 # Every provider hop the tools make already lands on ``provider_call_ledger``. The model calls the

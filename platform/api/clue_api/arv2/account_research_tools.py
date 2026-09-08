@@ -1262,14 +1262,44 @@ async def _fetch_for_audit(
     return text
 
 
+def _fill_icp_gates(admitted: tuple[str, ...], verdicts: list[dict[str, Any]]) -> tuple[str, ...]:
+    """Key the verdicts to the pinned ICP's hard gates, and fill the gates nobody assessed.
+
+    A run whose model invents its own gate labels produces a receipt no reviewer can compare with
+    the next account's, so a label the ICP does not name is refused rather than recorded. The
+    inverse — a gate the model simply never mentioned — is filled here as ``unclear`` / "not
+    assessed", because "we did not look" and "we looked and could not tell" are different answers
+    and silence reads as the second one.
+
+    An ICP with no hard gates keys to nothing, so every label it admits stays as the model wrote it.
+    """
+    if not admitted:
+        return ()
+    stated = [str(verdict.get("gate") or "") for verdict in verdicts]
+    unknown = sorted(set(stated) - set(admitted))
+    if unknown:
+        raise RefusalError(
+            "invalid_arguments",
+            f"fit verdicts are keyed to this ICP's hard gates; {unknown} name no gate of it. "
+            f"The admitted gate keys are {list(admitted)}",
+        )
+    missing = tuple(key for key in admitted if key not in stated)
+    verdicts.extend(
+        {"gate": key, "verdict": "unclear", "rationale": "not assessed", "claim_ids": []}
+        for key in missing
+    )
+    return missing
+
+
 async def _finalize_research(runtime: ToolRuntime, args: FinalizeResearchArgs) -> dict[str, Any]:
     if runtime.finalization is not None:
         raise RefusalError("finalization_already_proposed", "this job is already finalized")
 
     verdicts = [verdict.model_dump() for verdict in args.fit_verdicts]
+    filled = _fill_icp_gates(runtime.scope.icp_gate_keys, verdicts)
     candidates = [candidate.model_dump() for candidate in args.committee_candidates]
     drafts = [
-        *fit_verdict_claims(verdicts, runtime.scope),
+        *fit_verdict_claims(verdicts, runtime.scope, filled_by_tool=filled),
         *committee_candidate_claims(candidates, runtime.scope),
     ]
     receipts = await runtime.write(drafts)
@@ -1312,7 +1342,12 @@ def _governed(
             envelope = refusal_json("invalid_arguments", str(invalid)[:500])
         except Exception as error:  # noqa: BLE001 — the failure law: never a raise into the graph
             log.exception("arv2.account_tool_failed", tool=name)
-            envelope = refusal_json(f"tool_error:{type(error).__name__}", str(error)[:500])
+            # Deliberately NOT remembered. The refusal memory exists to stop the model paying twice
+            # for a call the engine has already judged; a ``tool_error`` is no judgement at all —
+            # it is the socket melting, the provider 500ing, a parse blowing up once. Remembering
+            # it forecloses the identical retry that would have worked, and the model's only
+            # remaining moves are to change a correct call or to finalize short.
+            return refusal_json(f"tool_error:{type(error).__name__}", str(error)[:500])
         runtime.remember_refusal(name, args, envelope)
         return envelope
 

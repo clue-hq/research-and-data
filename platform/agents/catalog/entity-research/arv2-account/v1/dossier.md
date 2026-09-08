@@ -78,6 +78,15 @@ version: v1
 12. **The champion's team and vendors** — every other person on the marketing team by name and
     title, and any agency, contractor or vendor they publicly credit.
 
+## The fit verdicts
+
+`finalize_research`'s `fit_verdicts` are one verdict per ICP gate, keyed by the gate's `key` from the
+ICP's `hard_gates` — not a label of your own. A gate the ICP does not name is refused
+`invalid_arguments` and the refusal lists the keys it does name; an unassessed gate is recorded
+`unclear` with the rationale "not assessed" by the tool, so the receipt says plainly what was
+checked and what was not. A `fail` needs cited contrary evidence (`claim_ids`); a `fail` with none is
+recorded `unclear`.
+
 ## Committee
 
 The persona document's `titles[]` are the search keys; identity is confirmed on a non-provider URL

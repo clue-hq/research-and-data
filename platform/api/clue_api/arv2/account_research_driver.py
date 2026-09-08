@@ -422,7 +422,7 @@ class Arv2AccountResearchWorkHandler:
         if account is None:
             raise RuntimeError(f"account row {job.account_entity_id} is missing")
 
-        icp = await self._pinned_icp(conn, run)
+        icp, icp_gate_keys = await self._pinned_icp(conn, run)
         persona = await self._persona(conn, run)
         catalog = await self._store.read_account_catalog(conn)
         established = await self._already_established(conn, job, run)
@@ -450,6 +450,7 @@ class Arv2AccountResearchWorkHandler:
             effort=run.effort,
             committee_cap=run.committee_cap,
             today=today,
+            icp_gate_keys=icp_gate_keys,
         )
         context = AccountContext(
             account_name=scope.account_name,
@@ -479,8 +480,12 @@ class Arv2AccountResearchWorkHandler:
             system_prompt=build_system_prompt(bundle, context),
         )
 
-    async def _pinned_icp(self, conn: AsyncConnection, run: RunRow) -> str:
-        """The ICP body the launch pinned, refused when the bytes are not the pinned ones."""
+    async def _pinned_icp(self, conn: AsyncConnection, run: RunRow) -> tuple[str, tuple[str, ...]]:
+        """The ICP body the launch pinned and its hard-gate keys; refused when the bytes moved.
+
+        The keys travel separately from the markdown because they are not context for the model to
+        read — they are the engine's own list of the gates every fit verdict must key to.
+        """
         record, body = await read_verified_artifact(
             conn,
             self._storage,
@@ -492,7 +497,13 @@ class Arv2AccountResearchWorkHandler:
                 "ICP artifact digest differs from the launch pin — relaunch: "
                 f"stored {record.content_sha256}, run {run.icp_artifact_sha256}"
             )
-        return _document_body(body)
+        raw = body.decode("utf-8")
+        try:
+            front, markdown = parse_front_matter(raw)
+        except ValueError:
+            # A document with no front matter still researches; it simply keys no gates.
+            return raw, ()
+        return markdown, _hard_gate_keys(front)
 
     async def _persona(self, conn: AsyncConnection, run: RunRow) -> str:
         """The newest persona document written for this run's ICP, or an honest empty block."""
@@ -691,14 +702,24 @@ def _receipt(
     }
 
 
-def _document_body(raw: bytes) -> str:
-    """A knowledge document's markdown, with its front matter stripped when it has any."""
-    text_body = raw.decode("utf-8")
-    try:
-        _, body = parse_front_matter(text_body)
-    except ValueError:
-        return text_body
-    return body
+def _hard_gate_keys(front: Mapping[str, Any]) -> tuple[str, ...]:
+    """The keys of the ICP's ``hard_gates``, in the order the document names them.
+
+    The synthesis skill writes ``hard_gates: [{key, rule, test}, …]``. Only the key is read here:
+    the rule and the test are for the model (they are in the ICP body it already holds), while the
+    key is what the finalization's verdicts are keyed to. Anything malformed is skipped rather than
+    fatal — a job must not fail to start over a stray list entry — and an ICP with no gates keys
+    nothing, which the tool reads as "any gate label is admitted".
+    """
+    gates = front.get("hard_gates")
+    if not isinstance(gates, list):
+        return ()
+    keys: list[str] = []
+    for gate in gates:
+        key = gate.get("key") if isinstance(gate, Mapping) else None
+        if isinstance(key, str) and key.strip() and key not in keys:
+            keys.append(key)
+    return tuple(keys)
 
 
 def _clients_for_job(clients: ProviderClients, media_budget: MediaBudget) -> ProviderClients:

@@ -4,6 +4,7 @@ import datetime
 import hashlib
 import json
 import re
+from typing import Any
 
 from clue_api.arv2.account_research_catalog import (
     ARV2_ACCOUNT_PROFILE_REF,
@@ -27,6 +28,21 @@ def test_five_files_exist_and_the_profile_sha_is_the_file_digest() -> None:
         == hashlib.sha256((root / "profile.md").read_bytes()).hexdigest()
     )
     assert ARV2_ACCOUNT_PROFILE_REF == "agent-profile:arv2-account:v1"
+
+
+def test_the_launch_pin_and_the_bundle_agree_on_the_profile_digest(tmp_path: Any) -> None:
+    """One digest computation, so the launch pin can never differ from the digest the driver checks.
+
+    The two were computed independently — the pin over the file's raw bytes, the bundle over the
+    decoded text — so a profile written with CRLF line endings pinned one digest at launch and
+    failed the driver's comparison against the other, refusing every job of that run.
+    """
+    root = tmp_path / "v1"
+    root.mkdir()
+    for name in FILES:
+        (root / name).write_bytes(b"# " + name.encode() + b"\r\nline two\r\n")
+
+    assert arv2_account_profile_sha256(root) == load_account_resources(root).profile.sha256
 
 
 def test_bundle_carries_one_prompt_and_three_skills_with_matching_digests() -> None:

@@ -468,12 +468,14 @@ class MemoryConnFactory:
         yield object()
 
 
-def _runtime() -> tuple[ToolRuntime, FakeClients, FakeWriter, MemoryConnFactory]:
+def _runtime(
+    scope: JobScope = SCOPE,
+) -> tuple[ToolRuntime, FakeClients, FakeWriter, MemoryConnFactory]:
     clients = FakeClients()
     writer = FakeWriter()
     conn_factory = MemoryConnFactory()
     runtime = ToolRuntime(
-        scope=SCOPE,
+        scope=scope,
         settings=Settings(),
         clients=clients,  # type: ignore[arg-type]
         conn_factory=conn_factory,
@@ -1406,6 +1408,80 @@ def test_finalize_writes_the_verdicts_and_the_confirmed_candidates_only() -> Non
     assert runtime.finalization is not None and runtime.finalization["gaps"] == [
         "no funding wire found"
     ]
+
+
+def test_a_verdict_on_a_gate_the_icp_never_named_is_refused_and_names_the_admitted_keys() -> None:
+    """Verdicts are keyed to the ICP's hard gates, so receipts compare across accounts."""
+    gated = replace(SCOPE, icp_gate_keys=("stage", "geography"))
+    runtime, _, writer, _ = _runtime(gated)
+
+    refused = _call(
+        runtime,
+        "finalize_research",
+        **{
+            **_finalize_args(),
+            "fit_verdicts": [{"gate": "vibes", "verdict": "pass", "rationale": "they feel right"}],
+        },
+    )
+
+    assert refused["code"] == "invalid_arguments"
+    assert "vibes" in refused["detail"]
+    assert "stage" in refused["detail"] and "geography" in refused["detail"]
+    assert runtime.finalization is None, "a refused finalization does not close the job"
+    assert writer.drafts == [], "nothing is written for a verdict the ICP cannot key"
+
+
+def test_an_icp_gate_the_agent_did_not_assess_is_filled_unclear_by_the_tool() -> None:
+    gated = replace(SCOPE, icp_gate_keys=("stage", "geography"))
+    runtime, _, writer, _ = _runtime(gated)
+
+    accepted = _call(
+        runtime,
+        "finalize_research",
+        **{
+            **_finalize_args(),
+            "fit_verdicts": [
+                {
+                    "gate": "stage",
+                    "verdict": "pass",
+                    "rationale": "Series A announced",
+                    "claim_ids": ["11111111-1111-1111-1111-111111111111"],
+                }
+            ],
+        },
+    )
+
+    assert accepted["accepted"] is True
+    assert runtime.finalization is not None
+    verdicts = runtime.finalization["fit_verdicts"]
+    assert [verdict["gate"] for verdict in verdicts] == ["stage", "geography"]
+    assert verdicts[1] == {
+        "gate": "geography",
+        "verdict": "unclear",
+        "rationale": "not assessed",
+        "claim_ids": [],
+    }
+    filled = [
+        draft
+        for draft in writer.drafts
+        if draft.field_key == "account.icp_fit_verdict" and draft.value_json["gate"] == "geography"
+    ]
+    assert len(filled) == 1
+    assert filled[0].markers == {"filled_by_tool": True}, "the claim says who wrote the verdict"
+
+
+def test_a_transient_tool_error_is_not_remembered_so_the_identical_retry_runs_again() -> None:
+    """``tool_error`` is the socket failing, not a judgement: it must not foreclose the retry."""
+    runtime, clients, _, _ = _runtime()
+    clients.exa_client.raise_on_contents = RuntimeError("the socket melted")
+
+    first = _call(runtime, "fetch_page", url="https://probook.ai/pricing")
+    clients.exa_client.raise_on_contents = None
+    second = _call(runtime, "fetch_page", url="https://probook.ai/pricing")
+
+    assert first["code"] == "tool_error:RuntimeError"
+    assert "code" not in second, "the identical retry runs rather than replaying the failure"
+    assert len(clients.exa_client.contents_calls) == 2
 
 
 def test_finalize_twice_is_refused_finalization_already_proposed() -> None:

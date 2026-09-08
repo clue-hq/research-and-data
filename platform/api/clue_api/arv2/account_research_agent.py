@@ -314,6 +314,16 @@ class _FinalizeEndsMiddleware(AgentMiddleware[Any, Any, Any]):
         return {"jump_to": "end"} if self._runtime.finalization is not None else None
 
 
+async def _graph_failed(
+    runtime: ToolRuntime, rounds: _ModelUsageRecorder, error: BaseException
+) -> AgentOutcome:
+    """The graph raised: drain the paid-for hops, then report the failure as an outcome."""
+    await runtime.wait_for_inflight(timeout_s=_INFLIGHT_DRAIN_S)
+    log.exception("arv2.account_agent_failed", model_rounds=rounds.count)
+    detail = f"{type(error).__name__}: {error}"[:_ERROR_CHARS]
+    return AgentOutcome("model_error", rounds.count, runtime.tool_calls, detail, rounds.spend)
+
+
 async def run_account_agent(
     *,
     model: BaseChatModel,
@@ -354,12 +364,18 @@ async def run_account_agent(
     # tool wave and the middleware hops around them, plus the entry and exit nodes. Below this the
     # graph would raise GraphRecursionError long before the round cap it is supposed to defer to.
     config = RunnableConfig(recursion_limit=max_model_rounds * (max_tool_calls_per_round + 2) + 4)
+    # The invoke runs as its own task so the two ``TimeoutError``s can be told apart. Our runtime
+    # cap and a provider timeout raised *inside* the graph are the same exception type reaching the
+    # same handler, and they are opposite endings: one is us stopping a job that was still working,
+    # the other is the provider failing to answer. ``wait_for``'s expiry cancels this task, so a
+    # task that finished with an exception of its own is the graph's failure, never the cap.
+    invoke: asyncio.Task[Any] = asyncio.create_task(agent.ainvoke(opening, config=config))
     try:
-        await asyncio.wait_for(
-            agent.ainvoke(opening, config=config),
-            timeout=max_runtime_s,
-        )
+        await asyncio.wait_for(invoke, timeout=max_runtime_s)
     except TimeoutError:
+        failed = invoke.exception() if invoke.done() and not invoke.cancelled() else None
+        if failed is not None:
+            return await _graph_failed(runtime, rounds, failed)
         await runtime.wait_for_inflight(timeout_s=_INFLIGHT_DRAIN_S)
         log.info(
             "arv2.account_agent_runtime_cap",
@@ -368,10 +384,7 @@ async def run_account_agent(
         )
         return AgentOutcome("runtime_cap", rounds.count, runtime.tool_calls, None, rounds.spend)
     except Exception as error:  # noqa: BLE001 — the graph's failures are outcomes, never raises
-        await runtime.wait_for_inflight(timeout_s=_INFLIGHT_DRAIN_S)
-        log.exception("arv2.account_agent_failed", model_rounds=rounds.count)
-        detail = f"{type(error).__name__}: {error}"[:_ERROR_CHARS]
-        return AgentOutcome("model_error", rounds.count, runtime.tool_calls, detail, rounds.spend)
+        return await _graph_failed(runtime, rounds, error)
     if runtime.finalization is not None:
         return AgentOutcome("finalized", rounds.count, runtime.tool_calls, None, rounds.spend)
     return AgentOutcome("round_cap", rounds.count, runtime.tool_calls, None, rounds.spend)

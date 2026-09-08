@@ -481,6 +481,45 @@ def test_launch_refuses_lane_disabled_unknown_account_unconfirmed_icp_and_digest
     run_async(scenario())
 
 
+def test_launch_refuses_an_icp_whose_front_matter_has_no_key_or_no_integer_version(
+    tmp_path: Any,
+) -> None:
+    """A malformed pin is a typed refusal, not a ``KeyError``/``ValueError`` out of the launcher."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            fixture = await _seed(conn, storage)
+            queue = _FakeQueue()
+
+            malformed = {
+                "audience/icp-no-version.md": ICP_BODY.replace("version: 1\n", ""),
+                "audience/icp-word-version.md": ICP_BODY.replace("version: 1", "version: one"),
+                "audience/icp-no-key.md": ICP_BODY.replace(f"icp_key: {ICP_KEY}\n", ""),
+            }
+            for path, body in malformed.items():
+                key, sha = await _seed_icp_document(
+                    conn,
+                    storage,
+                    workspace_id=fixture.workspace_id,
+                    brand_id=fixture.brand_id,
+                    body=body,
+                    path=path,
+                )
+                with pytest.raises(Arv2LaunchRefused) as refused:
+                    await _launch(
+                        conn,
+                        storage,
+                        _request(fixture, icp_artifact_key=key, icp_artifact_sha256=sha),
+                        queue,
+                    )
+                assert refused.value.code == "icp_front_matter_invalid", path
+
+            assert queue.calls == []
+
+    run_async(scenario())
+
+
 def test_launch_needs_only_accounts_icp_ref_and_selection_version(tmp_path: Any) -> None:
     """Standing rule item 5: no ``icp_spec``, no directive row, no Stage-0 pin on the run."""
 

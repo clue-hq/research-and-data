@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_catalog import arv2_account_profile_sha256
 from clue_api.arv2.account_research_launch import (
+    Arv2LaunchRefused,
     Arv2LaunchRequest,
     enqueue_launched_jobs,
     launch_arv2_account_research,
@@ -238,7 +239,14 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
 
 
 def main() -> None:
-    print(json.dumps(asyncio.run(_run(_args())), indent=2, sort_keys=True))
+    # The launch's own refusals are prerequisites the operator has to fix — a malformed ICP front
+    # matter, an unconfirmed document, a digest that moved — so they print as the same one-line
+    # refusal this script's own checks do, rather than as a traceback.
+    try:
+        receipt = asyncio.run(_run(_args()))
+    except Arv2LaunchRefused as refused:
+        raise Refused(f"{refused.code}: {refused}") from refused
+    print(json.dumps(receipt, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":

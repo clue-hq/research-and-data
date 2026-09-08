@@ -38,9 +38,15 @@ def arv2_account_catalog_root(version: str = ARV2_ACCOUNT_CATALOG_VERSION) -> Pa
 
 
 def arv2_account_profile_sha256(root: Path | None = None) -> str:
-    """The digest a launched job records beside :data:`ARV2_ACCOUNT_PROFILE_REF`."""
+    """The digest a launched job records beside :data:`ARV2_ACCOUNT_PROFILE_REF`.
+
+    Deliberately the *same* computation :func:`load_account_resources` makes, not a second one over
+    the same file: the launch pins this value and the driver compares the bundle's against it, so
+    two digest paths (raw bytes here, decoded text there) is a relaunch loop waiting for the first
+    profile written with CRLF line endings.
+    """
     base = root or arv2_account_catalog_root()
-    return hashlib.sha256((base / "profile.md").read_bytes()).hexdigest()
+    return _resource("profile", ARV2_ACCOUNT_PROFILE_REF, base / "profile.md").sha256
 
 
 @dataclass(frozen=True)

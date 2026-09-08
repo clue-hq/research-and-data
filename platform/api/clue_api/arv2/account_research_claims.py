@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal, cast
@@ -121,6 +121,11 @@ class JobScope:
     effort: str
     committee_cap: int
     today: date
+    #: The keys of the pinned ICP's ``hard_gates``, in the order the document names them. Every fit
+    #: verdict is keyed to one of them, so two accounts' receipts are read against the same gates
+    #: rather than against whatever labels each run's model invented. An ICP with no hard gates
+    #: leaves this empty, and then any gate label is admitted — there is nothing to key to.
+    icp_gate_keys: tuple[str, ...] = ()
 
 
 class ClaimInput(BaseModel):
@@ -949,14 +954,24 @@ def agent_claims(
     return drafts
 
 
-def fit_verdict_claims(verdicts: Sequence[Mapping[str, Any]], scope: JobScope) -> list[ClaimDraft]:
+def fit_verdict_claims(
+    verdicts: Sequence[Mapping[str, Any]],
+    scope: JobScope,
+    *,
+    filled_by_tool: Collection[str] = (),
+) -> list[ClaimDraft]:
     """One ``account.icp_fit_verdict`` claim per ICP gate, leniency enforced in code.
 
     Constitution §5: a ``fail`` is admissible only on positive contrary evidence, so a ``fail``
     that cites no claim ids is recorded as ``unclear`` with the reason appended to its rationale.
     The rule therefore holds even in the runs where the model forgets it — which is the whole point
     of writing it here rather than only in the prompt.
+
+    ``filled_by_tool`` names the gates the agent never assessed, which ``finalize_research`` fills
+    as ``unclear``. Their claims carry the ``filled_by_tool`` marker, so a reader can always tell
+    an agent's honest "unclear" from a gate nobody looked at.
     """
+    filled = set(filled_by_tool)
     drafts: list[ClaimDraft] = []
     for verdict in verdicts:
         claim_ids = [str(claim_id) for claim_id in verdict.get("claim_ids") or []]
@@ -965,9 +980,15 @@ def fit_verdict_claims(verdicts: Sequence[Mapping[str, Any]], scope: JobScope) -
         downgraded = stated == "fail" and not claim_ids
         if downgraded:
             stated, rationale = "unclear", f"{rationale}{DOWNGRADE_SUFFIX}"
+        gate = str(verdict.get("gate") or "")
+        markers: dict[str, JsonValue] = {}
+        if downgraded:
+            markers["downgraded_from_fail"] = True
+        if gate in filled:
+            markers["filled_by_tool"] = True
         value: JsonValue = _without_nones(
             {
-                "gate": str(verdict.get("gate") or ""),
+                "gate": gate,
                 "verdict": stated,
                 "rationale": rationale,
                 "claim_ids": list(claim_ids),
@@ -986,7 +1007,7 @@ def fit_verdict_claims(verdicts: Sequence[Mapping[str, Any]], scope: JobScope) -
                 outreach_safe=False,
                 confidence=0.6,
                 source_key="agent",
-                markers={"downgraded_from_fail": True} if downgraded else None,
+                markers=markers or None,
             )
         )
     return drafts

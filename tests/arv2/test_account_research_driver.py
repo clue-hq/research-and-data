@@ -50,6 +50,17 @@ from clue_fleet.work_worker import WorkContext
 WORKSPACE = "ws-r2-driver"
 ICP_SHA = "d" * 64
 ICP_BODY = b"---\nkind: icp-definition\nicp_key: clue-abm-buyers\n---\n\n# ICP\nSeries A SaaS.\n"
+#: The same ICP with the hard gates a real synthesized ICP carries — the keys every fit verdict is
+#: keyed to.
+GATED_ICP_BODY = (
+    b"---\n"
+    b"kind: icp-definition\n"
+    b"icp_key: clue-abm-buyers\n"
+    b"hard_gates:\n"
+    b"  - {key: series-a-saas, rule: Series A or later SaaS, test: funding wire}\n"
+    b"  - {key: us-hq, rule: US headquarters, test: the about page}\n"
+    b"---\n\n# ICP\nSeries A SaaS.\n"
+)
 PERSONA_BODY = (
     b"---\nkind: audience-persona\nicp_key: clue-abm-buyers\n---\n\n# Personas\nVP Marketing.\n"
 )
@@ -310,7 +321,11 @@ class FakeModels:
 
 
 def _patch_reads(
-    monkeypatch: pytest.MonkeyPatch, *, icp_sha: str = ICP_SHA, account: Any | None = None
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    icp_sha: str = ICP_SHA,
+    account: Any | None = None,
+    icp_body: bytes = ICP_BODY,
 ) -> None:
     """Patch the three composition reads the driver makes through other packages."""
 
@@ -324,7 +339,7 @@ def _patch_reads(
         del conn, storage, workspace_id
         if storage_key.endswith("persona"):
             return SimpleNamespace(content_sha256="e" * 64), PERSONA_BODY
-        return SimpleNamespace(content_sha256=icp_sha), ICP_BODY
+        return SimpleNamespace(content_sha256=icp_sha), icp_body
 
     async def fake_claims_for(conn: Any, entity_id: Any, *, scope: Any) -> Sequence[Any]:
         del conn, entity_id, scope
@@ -680,6 +695,34 @@ def test_the_model_error_outcome_lands_needs_review_with_its_reason(
     assert landed["failure_code"] == "model_error"
     assert "RuntimeError" in landed["failure_message"]
     assert landed["finalization"]["reason"] == "model_error"
+
+
+def test_the_icp_hard_gates_key_the_receipt_and_an_unassessed_gate_is_filled_unclear(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The driver reads the pinned ICP's ``hard_gates`` keys and the tool keys the verdicts to them.
+
+    The scripted model answers on ``series-a-saas`` only; ``us-hq`` is the ICP's other gate, so the
+    receipt carries it as ``unclear`` rather than leaving a reviewer to wonder whether the gate was
+    checked and passed or never looked at.
+    """
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, job)
+    _patch_reads(
+        monkeypatch,
+        account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai"),
+        icp_body=GATED_ICP_BODY,
+    )
+    handler, _, writer, _ = _handler(store)
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "completed"
+    verdicts = store.named("finish_job")[0]["finalization"]["fit_verdicts"]
+    assert [verdict["gate"] for verdict in verdicts] == ["series-a-saas", "us-hq"]
+    assert verdicts[1]["verdict"] == "unclear" and verdicts[1]["rationale"] == "not assessed"
+    assert [draft.markers.get("filled_by_tool") for draft in writer.drafts] == [None, True]
 
 
 def test_the_enqueue_constants_are_the_ones_the_launcher_will_use() -> None:

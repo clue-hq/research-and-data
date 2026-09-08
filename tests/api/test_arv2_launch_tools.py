@@ -9,8 +9,11 @@ failure (seam 1 §1.3) instead of a stack trace.
 
 from __future__ import annotations
 
+import importlib.util
 from dataclasses import dataclass, field
 from decimal import Decimal
+from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -249,3 +252,35 @@ def test_the_two_tools_declare_the_effect_and_replay_classes_the_registry_admits
     # requires no Stage-0 pin at all — a pin requirement here would resurrect the old machinery.
     assert launch.pin_requirements == () and read.pin_requirements == ()
     assert launch.descriptor.recipe_safe and read.descriptor.recipe_safe
+
+
+# -- the operator's CLI (R2-close task 5) ---------------------------------------------------------
+
+
+def _cli_module() -> Any:
+    """The launcher script, imported by path — ``scripts/`` is not an importable package."""
+    path = Path(__file__).resolve().parents[2] / "scripts" / "launch_arv2_account_research.py"
+    spec = importlib.util.spec_from_file_location("arv2_launch_cli", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_cli_prints_a_launch_refusal_as_a_refusal_rather_than_a_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An operator whose ICP is malformed reads one line, not a stack trace."""
+    module = _cli_module()
+
+    async def refuse(args: Any) -> dict[str, Any]:
+        del args
+        raise Arv2LaunchRefused("icp_front_matter_invalid", "the ICP names no version")
+
+    monkeypatch.setattr(module, "_args", lambda: object())
+    monkeypatch.setattr(module, "_run", refuse)
+
+    with pytest.raises(SystemExit) as exited:
+        module.main()
+
+    assert str(exited.value) == ("refused: icp_front_matter_invalid: the ICP names no version")
