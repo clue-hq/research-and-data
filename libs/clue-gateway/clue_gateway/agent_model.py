@@ -8,7 +8,7 @@ import re
 import time
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 from decimal import Decimal, InvalidOperation
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 import httpx
 from langchain_core.callbacks import (
@@ -26,10 +26,22 @@ from pydantic import ConfigDict, SecretStr, model_validator
 
 from clue_config.gateway import GatewayConfig
 from clue_core.gateway import TokenUsage
+from clue_gateway.metadata import (
+    ANSWERING_MODEL_KEY,
+    COST_CENTS_KEY,
+    COST_SOURCE_KEY,
+    REQUESTED_MODEL_KEY,
+    ROLE_KEY,
+    CostSource,
+)
 from clue_gateway.tracing import record_model_call
 from clue_obs.otel import ATTR_AGENT_ROLE, ATTR_MODEL, SPAN_LLM_GATEWAY_CALL, traced_step
 
 __all__ = [
+    "ANSWERING_MODEL_KEY",
+    "COST_CENTS_KEY",
+    "COST_SOURCE_KEY",
+    "CostSource",
     "GovernedAgentChatModel",
     "OpenRouterAgentModelProvider",
     "provider_compatible_tool_schema",
@@ -78,16 +90,16 @@ def _without_unsupported_patterns(node: Any) -> Any:
     return node
 
 
-_REQUESTED_MODEL_KEY = "clue_requested_model"
-_ANSWERING_MODEL_KEY = "clue_answering_model"
-_COST_CENTS_KEY = "clue_cost_cents"
-#: Which of the three cost authorities answered: ``metered`` (the provider reported what the call
-#: cost), ``estimate`` (our own price sheet, from the served model's listed rates), or ``unpriced``
-#: (the model is on no sheet — the cost is a blank, not a zero anyone measured).
-_COST_SOURCE_KEY = "clue_cost_source"
-_ROLE_KEY = "clue_role"
-
-CostSource = Literal["metered", "estimate", "unpriced"]
+# The response-metadata keys this module stamps are PUBLIC and live in the dependency-free
+# ``clue_gateway.metadata`` leaf: a caller that only wants to read what a model call cost must be
+# able to import them without reaching the vendor SDK this package exists to contain (Rule 4b).
+# The leading-underscore aliases keep this module's own body — and the tests that reach into it —
+# spelled the way they always were.
+_REQUESTED_MODEL_KEY = REQUESTED_MODEL_KEY
+_ROLE_KEY = ROLE_KEY
+_ANSWERING_MODEL_KEY = ANSWERING_MODEL_KEY
+_COST_CENTS_KEY = COST_CENTS_KEY
+_COST_SOURCE_KEY = COST_SOURCE_KEY
 
 
 def _catalog_input_modalities(model_entry: dict[str, Any]) -> list[str] | None:

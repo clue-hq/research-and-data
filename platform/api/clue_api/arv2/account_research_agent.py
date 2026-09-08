@@ -46,19 +46,12 @@ from langchain_core.tools import StructuredTool
 from clue_api.arv2.account_research_refusals import refusal_json
 from clue_api.arv2.account_research_tools import ToolRuntime
 from clue_api.arv2.sinks import LedgerRow
+from clue_gateway.metadata import ANSWERING_MODEL_KEY, COST_CENTS_KEY, COST_SOURCE_KEY
 from clue_obs import get_logger
 
 log = get_logger("clue_api.arv2.account_research_agent")
 
 __all__ = ["AgentOutcome", "AgentStopReason", "ModelSpend", "run_account_agent"]
-
-#: The three keys the governed gateway stamps on every answer it annotates
-#: (``clue_gateway.agent_model``). They are read rather than imported because they are that
-#: module's private constants; the coupling is to the wire shape of a LangChain message, which is
-#: what crosses the seam, not to the gateway's internals.
-_COST_CENTS_KEY = "clue_cost_cents"
-_COST_SOURCE_KEY = "clue_cost_source"
-_ANSWERING_MODEL_KEY = "clue_answering_model"
 
 #: How long the loop waits for provider hops that were still in flight when a cap fired. They are
 #: shielded from cancellation precisely so their ledger rows land, so this is the bound on
@@ -126,11 +119,17 @@ class _ModelUsageRecorder(AgentMiddleware[Any, Any, Any]):
     An unpriced round records ``cost_usd = NULL`` rather than ``0``: the ledger says "nobody
     measured this", never "this was free". A round that raises records a ``transport_error`` row
     and re-raises, so the loop's existing ``model_error`` ending is unchanged.
+
+    ``attempt`` is the job row's own attempt counter (``begin_job`` increments it on every claim).
+    It is part of the row id so a suspended job that is re-driven — whose round numbering starts
+    at one again — adds its second attempt's rounds to the ledger instead of colliding with the
+    first attempt's and being dropped by the drain's ``ON CONFLICT DO NOTHING``.
     """
 
-    def __init__(self, runtime: ToolRuntime) -> None:
+    def __init__(self, runtime: ToolRuntime, *, attempt: int) -> None:
         super().__init__()
         self._runtime = runtime
+        self._attempt = attempt
         self.count = 0
         self._spend = ModelSpend()
 
@@ -171,14 +170,12 @@ class _ModelUsageRecorder(AgentMiddleware[Any, Any, Any]):
         prompt_tokens = int(usage.get("input_tokens") or 0)
         completion_tokens = int(usage.get("output_tokens") or 0)
         cached_tokens = int(details.get("cache_read") or 0)
-        source = str(metadata.get(_COST_SOURCE_KEY) or "unpriced")
+        source = str(metadata.get(COST_SOURCE_KEY) or "unpriced")
         extras: dict[str, object] = (
             {}
             if message is None
             else {
-                "model": str(
-                    metadata.get(_ANSWERING_MODEL_KEY) or metadata.get("model_name") or ""
-                ),
+                "model": str(metadata.get(ANSWERING_MODEL_KEY) or metadata.get("model_name") or ""),
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
                 "cached_prompt_tokens": cached_tokens,
@@ -186,14 +183,12 @@ class _ModelUsageRecorder(AgentMiddleware[Any, Any, Any]):
             }
         )
         row = LedgerRow(
-            # Deterministic in the job and the round, so the drain — which runs inside the
-            # driver's settlement transaction and may be retried after a rollback — lands one row
-            # per round however many times it runs (``ledger_id_for`` + ``ON CONFLICT DO
-            # NOTHING``). KNOWN LIMIT: a job that is suspended and re-driven starts counting
-            # rounds at one again, so its second attempt's early rounds collide with the first
-            # attempt's and are dropped rather than added. That undercounts a re-driven job's
-            # model spend; the R1 hop rows, which mint a uuid4 per row, do not have this shape.
-            row_id=f"model:{self._runtime.scope.job_id}:{round_number}",
+            # Deterministic in the job, the attempt and the round, so the drain — which runs
+            # inside the driver's settlement transaction and may be retried after a rollback —
+            # lands one row per round however many times it runs (``ledger_id_for`` + ``ON
+            # CONFLICT DO NOTHING``), while a re-driven job's rounds still add to the ledger
+            # rather than collapsing into its first attempt's.
+            row_id=f"model:{self._runtime.scope.job_id}:{self._attempt}:{round_number}",
             call_id=str(uuid4()),
             phase="result",
             provider="openrouter",
@@ -247,9 +242,9 @@ def _cost_cents(metadata: Any) -> Decimal | None:
     ``unpriced`` answer carries a zero that means "no rate", and that must not become a measured
     zero on the ledger.
     """
-    if str(metadata.get(_COST_SOURCE_KEY) or "unpriced") == "unpriced":
+    if str(metadata.get(COST_SOURCE_KEY) or "unpriced") == "unpriced":
         return None
-    raw = metadata.get(_COST_CENTS_KEY)
+    raw = metadata.get(COST_CENTS_KEY)
     if raw is None:
         return None
     try:
@@ -329,15 +324,19 @@ async def run_account_agent(
     max_tool_calls_per_round: int,
     max_runtime_s: float,
     task_instruction: str,
+    attempt: int,
 ) -> AgentOutcome:
     """Run one account job's agent to one of its four endings. Never raises.
 
     A graph that ends with no finalization is reported as ``round_cap`` whether the ceiling fired
     or the model simply stopped calling tools: both are "the job ended without the one decision it
     was asked for", which is what the receipt and the reviewer need to know.
+
+    ``attempt`` is the job row's attempt counter; it only ever reaches the ledger row ids the
+    loop's model rounds write, so a re-driven job's spend adds up instead of colliding.
     """
 
-    rounds = _ModelUsageRecorder(runtime)
+    rounds = _ModelUsageRecorder(runtime, attempt=attempt)
     agent = create_agent(
         model=model,
         tools=list(tools),

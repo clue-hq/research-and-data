@@ -407,6 +407,9 @@ class Arv2AccountResearchWorkHandler:
                 max_tool_calls_per_round=self._settings.arv2_account_max_tool_calls_per_round,
                 max_runtime_s=float(self._settings.arv2_account_max_runtime_s),
                 task_instruction=TASK_INSTRUCTION,
+                # The row's own attempt counter, incremented by ``begin_job`` on every claim: it
+                # keeps a re-driven job's model-spend rows distinct from its first attempt's.
+                attempt=job.attempt,
             )
         return await self._settle(composition, runtime, outcome)
 

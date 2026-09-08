@@ -169,6 +169,7 @@ async def _drive(
     max_model_rounds: int = 4,
     max_tool_calls_per_round: int = 5,
     max_runtime_s: float = 30.0,
+    attempt: int = 1,
 ) -> AgentOutcome:
     return await run_account_agent(
         model=model,
@@ -179,6 +180,7 @@ async def _drive(
         max_tool_calls_per_round=max_tool_calls_per_round,
         max_runtime_s=max_runtime_s,
         task_instruction="Research this account in full.",
+        attempt=attempt,
     )
 
 
@@ -325,7 +327,7 @@ def test_every_model_round_lands_one_ledger_row_with_its_cost_and_tokens() -> No
     rows = runtime.model_ledger.drain()
     assert len(rows) == outcome.model_rounds == 2
     first = rows[0]
-    assert first.row_id == f"model:{SCOPE.job_id}:1"
+    assert first.row_id == f"model:{SCOPE.job_id}:1:1"
     assert first.phase == "result"
     assert first.provider == "openrouter"
     assert first.operation == "agent_completion"
@@ -342,8 +344,8 @@ def test_every_model_round_lands_one_ledger_row_with_its_cost_and_tokens() -> No
     assert first.extras["cached_prompt_tokens"] == 0
     assert first.extras["cost_source"] == "metered"
     assert [row.row_id for row in rows] == [
-        f"model:{SCOPE.job_id}:1",
-        f"model:{SCOPE.job_id}:2",
+        f"model:{SCOPE.job_id}:1:1",
+        f"model:{SCOPE.job_id}:1:2",
     ]
     # The receipt's summary is derived from the same rows.
     assert outcome.model_spend.calls == 2
@@ -388,3 +390,26 @@ def test_a_model_call_that_raises_lands_a_transport_error_row_and_still_reports_
     assert row.error_code == "RuntimeError"
     assert row.cost_usd is None
     assert row.http_status is None
+
+
+def test_a_re_driven_jobs_rounds_do_not_collide_with_its_first_attempts_rows() -> None:
+    """The drain dedups on the row id, so a second attempt numbering its rounds from one again
+    would silently drop them. The job's own attempt counter keeps the two runs disjoint."""
+
+    def rows_for(attempt: int) -> list[str]:
+        runtime = _runtime()
+        _run(
+            _drive(
+                _ScriptedModel(lambda messages: _metered_message()),
+                [_counting_tool(runtime)],
+                runtime,
+                attempt=attempt,
+            )
+        )
+        return [row.row_id for row in runtime.model_ledger.drain()]
+
+    first, second = rows_for(1), rows_for(2)
+
+    assert first == [f"model:{SCOPE.job_id}:1:1"]
+    assert second == [f"model:{SCOPE.job_id}:2:1"]
+    assert not set(first) & set(second)

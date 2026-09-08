@@ -39,6 +39,7 @@ from clue_api.arv2.account_research_driver import (
 )
 from clue_api.arv2.account_research_store import JobRow, JobSpend, RunRow
 from clue_api.arv2.claim_writer import ClaimDraft, WriteReceipt
+from clue_api.arv2.provider_ledger import ledger_id_for
 from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
 from clue_config import Secrets, Settings
 from clue_core import ClaimId
@@ -77,14 +78,14 @@ def _run_row(*, profile_sha256: str | None = None) -> RunRow:
     )
 
 
-def _job_row(run: RunRow) -> JobRow:
+def _job_row(run: RunRow, *, attempt: int = 1) -> JobRow:
     return JobRow(
         job_id=uuid4(),
         run_id=run.run_id,
         workspace_id=run.workspace_id,
         account_entity_id=uuid4(),
         status="in_progress",
-        attempt=1,
+        attempt=attempt,
         started_at=datetime(2026, 9, 8, tzinfo=UTC),
         finished_at=None,
         finalization=None,
@@ -841,7 +842,10 @@ def test_the_model_rounds_are_drained_onto_the_ledger_before_the_job_spend_is_re
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     run = _run_row()
-    job = _job_row(run)
+    # Attempt 2: a job that was suspended once and re-driven. The row id the driver stamps must
+    # carry the row's own attempt, or this run's rounds would collide with the first attempt's and
+    # be dropped by the drain's ON CONFLICT.
+    job = _job_row(run, attempt=2)
     store = FakeStore(run, job)
     _patch_reads(
         monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
@@ -864,6 +868,7 @@ def test_the_model_rounds_are_drained_onto_the_ledger_before_the_job_spend_is_re
     assert landed["outcome"] == "ok"
     assert landed["cost_usd"] == Decimal("0.005")
     assert landed["job_id"] == job.job_id
+    assert landed["ledger_id"] == ledger_id_for(f"model:{job.job_id}:2:1")
     assert json.loads(str(landed["extras_json"]))["prompt_tokens"] == 1_000
 
     receipt = store.named("finish_job")[0]["finalization"]
