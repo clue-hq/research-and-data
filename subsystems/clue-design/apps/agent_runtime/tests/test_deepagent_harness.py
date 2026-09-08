@@ -211,7 +211,7 @@ def test_run_artifacts_land_under_isolated_workspace(tmp_path, monkeypatch):
 
     # Nothing was written OUTSIDE the workspace root: the only top-level entries
     # are the run dir and the materialized trees (+ any asset-store default).
-    allowed = {tools.run_id, ".deepagent", "knowledge_docs", "asset-store"}
+    allowed = {tools.run_id, ".deepagent", ".materialize.lock", "knowledge_docs", "asset-store"}
     assert {child.name for child in ws_root.iterdir()} <= allowed
 
 

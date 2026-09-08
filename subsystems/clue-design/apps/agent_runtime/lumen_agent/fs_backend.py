@@ -53,6 +53,7 @@ from deepagents.backends.protocol import EditResult, WriteResult
 from py_lumen_obs import get_logger
 
 from .critique_fidelity import CRITIQUE_FILENAME, normalize_critique_document
+from .materialize import _LOCK_NAME
 from .paths import normalize_agent_key
 
 logger = get_logger("lumen_agent.fs_backend")
@@ -204,7 +205,17 @@ class AgentWorkspaceBackend(FilesystemBackend):
         logger.debug("critique_reference_fidelity_stamped", key=file_path)
         return rewritten
 
+    def _materialization_lock_write_error(self, key: str) -> str | None:
+        # Middleware permission checks precede our host/legacy alias normalization.
+        # Protect the coordination file here too, after resolving those spellings.
+        normalized = self._normalize_and_map_key(key)
+        if PurePosixPath(normalized).as_posix().lstrip("/") == _LOCK_NAME:
+            return "The workspace materialization lock is a read-only runtime file."
+        return None
+
     def write(self, file_path: str, content: str) -> WriteResult:
+        if error := self._materialization_lock_write_error(file_path):
+            return WriteResult(error=error)
         if self._is_component_projection_key(file_path):
             return WriteResult(error=self._projection_write_message())
         return super().write(file_path, self._normalize_self_audit(file_path, content))
@@ -216,6 +227,8 @@ class AgentWorkspaceBackend(FilesystemBackend):
         new_string: str,
         replace_all: bool = False,
     ) -> EditResult:
+        if error := self._materialization_lock_write_error(file_path):
+            return EditResult(error=error)
         if self._is_component_projection_key(file_path):
             return EditResult(error=self._projection_write_message())
         return super().edit(

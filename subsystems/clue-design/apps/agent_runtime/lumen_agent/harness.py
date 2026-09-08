@@ -235,6 +235,7 @@ def _filesystem_permissions():
         FilesystemPermission(
             operations=["write"],
             paths=[
+                "/.materialize.lock",
                 "/.deepagent/**",
                 "/knowledge_docs/**",
                 "/custom_components",
