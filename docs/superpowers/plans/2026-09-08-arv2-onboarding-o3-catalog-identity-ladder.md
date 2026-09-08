@@ -23,7 +23,7 @@ Four live runs on one workspace grew the product rows 19 → 28 through name dri
 - **Automatic merge only** for: fingerprint replay, exact spelling key, and model decisions with `confidence == "high"`. Medium/low "same" decisions CREATE the row and record `model_unsure` with the suggested product and reason. Never rename, merge or archive a product row.
 - **Alias write-back never renames:** `add_product_aliases` appends to `product.aliases`, deduplicated by the spelling key, never touches `name`.
 - **No stoplist.** `normalize_identity` keeps every word (founder ruling).
-- **Alembic:** hash id off the single head `9f81e5692fea`; reversible; smoke on the throwaway `clue_o4_agent` only (`uv run alembic downgrade 9f81e5692fea && upgrade head` after applying).
+- **Alembic:** hash id off the single head `a3602967bb73` (after the R2 merge, 2026-09-08); reversible; smoke on the throwaway `clue_o4_agent` only (`uv run alembic downgrade a3602967bb73 && upgrade head` after applying).
 - **Tests:** offline suites via `uv run pytest tests/arv2 --ignore-glob='*_live.py'`; DB tests on `clue_o4_agent`; never `make check` or a broad pytest with keys in `.env`.
 - **Commits:** local only, never push; no AI attribution; one commit per task with the message given.
 
@@ -140,7 +140,7 @@ def test_aliases_append_without_duplicates_and_the_name_never_moves() -> None:
 - [ ] **Step 3: Migration**
 
 ```bash
-uv run alembic heads   # 9f81e5692fea
+uv run alembic heads   # a3602967bb73
 uv run alembic revision -m "arv2 onboarding lineage reconcile"
 ```
 
@@ -225,7 +225,7 @@ async def add_product_aliases(
 
 - [ ] **Step 5: Apply, run, smoke, commit**
 
-`uv run alembic upgrade head && uv run alembic downgrade 9f81e5692fea && uv run alembic upgrade head && uv run pytest tests/db/test_arv2_onboarding_lineage_reconcile_migration.py tests/clue_spine/test_product_aliases_db.py tests/db/test_arv2_onboarding_kind_migration.py -v && uv run ruff check libs/clue-spine alembic/versions tests/db tests/clue_spine && uv run mypy libs/clue-spine`
+`uv run alembic upgrade head && uv run alembic downgrade a3602967bb73 && uv run alembic upgrade head && uv run pytest tests/db/test_arv2_onboarding_lineage_reconcile_migration.py tests/clue_spine/test_product_aliases_db.py tests/db/test_arv2_onboarding_kind_migration.py -v && uv run ruff check libs/clue-spine alembic/versions tests/db tests/clue_spine && uv run mypy libs/clue-spine`
 
 ```bash
 git add alembic/versions/*_arv2_onboarding_lineage_reconcile.py libs/clue-spine/clue_spine/spine.py libs/clue-spine/clue_spine/__init__.py tests/db/test_arv2_onboarding_lineage_reconcile_migration.py tests/clue_spine/test_product_aliases_db.py
