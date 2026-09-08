@@ -28,6 +28,7 @@ __all__ = [
     "C6_AGENT_TOOL_AUTHORITY",
     "C6_SURFACE_POLICIES",
     "ACCOUNT_RESEARCH_UNIT_SURFACE",
+    "ONBOARDING_ICP_SURFACE",
     "PROJECT_CONVERSATION_SURFACE",
     "STAGE0_CONVERSATION_TRIAL_SURFACE",
     "c6_roles_for_tool",
@@ -78,11 +79,14 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     AgentRole.REVIEWER: "v5",
     # P3.3 (PD-part3): the composite design deepagent's platform-facing profile.
     AgentRole.DESIGN: "v1",
-    # ARV2 Track O, O4: the onboarding synthesis agent (ARV2-ONBOARDING-PLAN.md §5). One fleet-run
-    # turn per onboarding writes the brand's proposed ICP documents and one audience-persona
-    # document per ICP. Its whole spendable surface is ``exa_search_evidence@1``; it delegates to
-    # nobody. Model per ruling O-D1: ``x-ai/grok-4.6`` at the model's default reasoning effort.
-    AgentRole.ONBOARDING_SYNTHESIS: "v1",
+    # ARV2 Track O, O4: the onboarding synthesis agent (ARV2-ONBOARDING-PLAN.md §5). v2 splits the
+    # one turn into one ICP turn plus one persona turn per ICP: each fleet-run turn takes exactly
+    # one task, the ICP skill reuses the keys of the ICPs already on file, and the persona skill
+    # writes one document for the one ICP it is given. Its whole spendable surface is
+    # ``exa_search_evidence@1`` — withheld on ``onboarding_icp``, where the profiles are written
+    # from the files alone; it delegates to nobody. Model per ruling O-D1: ``x-ai/grok-4.6`` at
+    # the model's default reasoning effort.
+    AgentRole.ONBOARDING_SYNTHESIS: "v2",
 }
 
 
@@ -309,6 +313,13 @@ ACCOUNT_RESEARCH_UNIT_SURFACE = "account_research_unit"
 #: installed tools describe that one authority before the model wakes.
 ONBOARDING_SYNTHESIS_UNIT_SURFACE = "onboarding_synthesis_unit"
 
+#: ARV2 onboarding O4 (synthesis split): the ICP turn of the split synthesis run. It writes the
+#: client's profiles from the brand's own knowledge documents, so it has no honest use for the
+#: evidence tool — and the rule that it must not search is governed by a tool that is not
+#: installed, never by a sentence in the skill. The persona turns keep the full role surface,
+#: where the per-role evidence pass is the point.
+ONBOARDING_ICP_SURFACE = "onboarding_icp"
+
 #: PC-C8 §8: surface restrictions are enforced by tools that are *not installed*, never by prose in
 #: a shared skill or a context card. Each entry narrows one role's effective tool set on one named
 #: surface; the registry refuses a policy that withholds a tool the role's profile does not pin, so
@@ -418,6 +429,22 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
             "launch an exact Account set explicitly commanded and attached by the current human "
             "turn when the pilot budget gate is disabled. You do not capture on their behalf, "
             "fetch external sources, delegate to a specialist, or widen the human's selected set."
+        ),
+    ),
+    # ARV2 O4 (synthesis split): the ICP turn writes the client's profiles from the brand's
+    # knowledge documents alone, so `exa_search_evidence` is withheld rather than merely
+    # discouraged. The role's whole spendable surface is that one tool, so this ceiling makes the
+    # ICP turn structurally unable to spend; the persona turns resolve the unnarrowed role and
+    # keep it, because their per-role evidence pass is what the tool is for.
+    AgentSurfacePolicy(
+        surface=ONBOARDING_ICP_SURFACE,
+        role=AgentRole.ONBOARDING_SYNTHESIS,
+        withheld_tools=frozenset({"exa_search_evidence"}),
+        withheld_reason_code="icp_turn_writes_from_files_only",
+        framing=(
+            "This surface is the ICP turn of onboarding synthesis: you write the client's ideal "
+            "customer profiles from the brand knowledge documents in your context and on disk. "
+            "You do not search external sources; the persona turns do that."
         ),
     ),
 )

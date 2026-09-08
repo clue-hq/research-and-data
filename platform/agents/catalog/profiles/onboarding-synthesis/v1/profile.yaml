@@ -2,7 +2,7 @@ schema_version: "1"
 kind: profile
 name: onboarding-synthesis
 version: v1
-status: active
+status: retired
 # ARV2 Track O, O4 (ARV2-ONBOARDING-PLAN.md §5). One turn per onboarding run; reads the brand's
 # knowledge documents materialized under inputs/brand/knowledge/, writes ICP + persona documents
 # under outputs/audience/. Model per ruling O-D1: grok-4.6 at the model's default reasoning
