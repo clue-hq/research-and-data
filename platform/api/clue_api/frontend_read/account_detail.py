@@ -79,6 +79,7 @@ from clue_api.frontend_read.accounts_list import (
 )
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.committee import read_governed_committee
+from clue_api.frontend_read.display_pages import DisplayPages
 from clue_api.frontend_read.evidence import (
     EvidenceReference,
     evidence_artifact_response,
@@ -679,8 +680,14 @@ def register_account_detail_routes(
     *,
     conn_factory: ConnFactory,
     evidence_storage: StorageBackend | None = None,
+    display: DisplayPages | None = None,
 ) -> None:
-    """Register ``GET /accounts/{account_id}`` on the workspace-scoped `/frontend/v1` router."""
+    """Register ``GET /accounts/{account_id}`` on the workspace-scoped `/frontend/v1` router.
+
+    ``display`` is the D3 display seam the composition root shares across every endpoint that
+    serves a generated page. It is accepted here now and read by the ``?contract=v1`` branch in a
+    later task; the FI-2 branch below never consults it, so today's behaviour is unchanged.
+    """
 
     @router.get("/accounts/{account_id}")
     async def get_account_detail(

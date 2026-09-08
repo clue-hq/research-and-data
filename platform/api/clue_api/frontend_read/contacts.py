@@ -78,6 +78,7 @@ from clue_api.frontend_read.contact_email_lookup import (
     EmailLookupTarget,
     latest_contact_email_lookups,
 )
+from clue_api.frontend_read.display_pages import DisplayPages
 from clue_api.frontend_read.evidence import (
     EvidenceReference,
     evidence_artifact_response,
@@ -535,8 +536,14 @@ def register_contact_routes(
     evidence_storage: StorageBackend | None = None,
     contact_email_lookup: ContactEmailLookupService | None = None,
     allow_local_mutations: bool = False,
+    display: DisplayPages | None = None,
 ) -> None:
-    """Register the two account-scoped contact routes on the `/frontend/v1` router."""
+    """Register the two account-scoped contact routes on the `/frontend/v1` router.
+
+    ``display`` is the D3 display seam the composition root shares across every endpoint that
+    serves a generated page. It is accepted here now and read by the ``?contract=v1`` branch in a
+    later task; the FI-2 branch below never consults it, so today's behaviour is unchanged.
+    """
 
     @router.get("/accounts/{account_id}/contacts")
     async def list_account_contacts(

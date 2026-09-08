@@ -70,7 +70,7 @@ from clue_api.stage0_setup_fleet import DbStage0ReconEnqueuer, Stage0ReconEnqueu
 from clue_api.stream_tokens import consume_stream_token, mint_stream_token
 from clue_api.transactional_account_launch import TransactionalToolInvokerFactory
 from clue_auth import MembershipStateChanged, PrincipalService
-from clue_config import Settings, load_settings
+from clue_config import Secrets, Settings, load_settings
 from clue_core import (
     EntityId,
     EvidenceAccessService,
@@ -836,12 +836,17 @@ def create_projections_app(
     # FI-2 slice 1: the `/frontend/v1` read surface — its own router, error envelope, request id,
     # and the process's CORS policy. Both halves are default-off (flag / empty origins), so an
     # unconfigured deployment is byte-identical to the pre-FI-2 app.
+    # ``Secrets()`` is read ONCE, here, and reaches exactly one consumer: the D3 display seam's
+    # runner (the only thing under `/frontend/v1` that spends money). A deployment with no key —
+    # every test app included — composes a seam that cannot generate, so the read surface stays a
+    # pure projection instead of refusing to start.
     install_frontend_read_surface(
         app,
         settings=resolved,
         conn_factory=conn_factory,
         evidence_storage=ingestion_storage,
         contact_email_lookup=contact_email_lookup,
+        secrets=Secrets(),
     )
     if auth_service is not None:
         # The provision route (workspace-creating write) mounts only behind its default-off

@@ -55,7 +55,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from clue_config import Settings
+from clue_config import Secrets, Settings
 from clue_db import ConnFactory
 from clue_obs import get_logger
 from clue_storage import StorageBackend
@@ -233,12 +233,20 @@ def build_frontend_read_router(
     conn_factory: ConnFactory,
     evidence_storage: StorageBackend | None = None,
     contact_email_lookup: Any | None = None,
+    secrets: Secrets | None = None,
 ) -> APIRouter:
     """Build the workspace-scoped `/frontend/v1` router — **empty** unless the flag is on.
 
     Every slice-1 endpoint (Tasks 2–4) registers here and inherits the workspace dependency, so
     tenant scoping cannot be forgotten route-by-route. ``conn_factory`` is the connection seam those
     readers bind to.
+
+    ``secrets`` reaches exactly one place: the D3 display seam. **One**
+    :class:`~clue_api.frontend_read.display_pages.DisplayPages` is built here and shared by every
+    endpoint that serves a generated page, because its in-flight regeneration table has to be
+    shared — two instances would schedule two rewrites of the same page. Without a key (or with
+    generation switched off) the seam is a pure projection, so a router built without ``secrets``
+    behaves exactly as it did before this argument existed.
     """
 
     router = APIRouter(
@@ -255,10 +263,12 @@ def build_frontend_read_router(
     from clue_api.frontend_read.accounts_list import register_accounts_list_routes
     from clue_api.frontend_read.bulk_actions import register_bulk_action_routes
     from clue_api.frontend_read.contacts import register_contact_routes
+    from clue_api.frontend_read.display_pages import DisplayPages
 
     allow_local_mutations = (
         settings.projections_auth_mode == "local_header" and not settings.auth_enabled
     )
+    display = DisplayPages(settings=settings, secrets=secrets, conn_factory=conn_factory)
     register_accounts_list_routes(router, conn_factory=conn_factory, settings=settings)
     # Static ``/accounts/bulk-*`` paths must be registered before the Account/Contact UUID routes,
     # otherwise Starlette would match a capability segment as ``{account_id}`` and return a 422.
@@ -271,7 +281,7 @@ def build_frontend_read_router(
     )
     register_account_activity_routes(router, conn_factory=conn_factory)
     register_account_detail_routes(
-        router, conn_factory=conn_factory, evidence_storage=evidence_storage
+        router, conn_factory=conn_factory, evidence_storage=evidence_storage, display=display
     )
     register_contact_routes(
         router,
@@ -279,6 +289,7 @@ def build_frontend_read_router(
         evidence_storage=evidence_storage,
         contact_email_lookup=contact_email_lookup,
         allow_local_mutations=allow_local_mutations,
+        display=display,
     )
     return router
 
@@ -313,6 +324,7 @@ def install_frontend_read_surface(
     conn_factory: ConnFactory,
     evidence_storage: StorageBackend | None = None,
     contact_email_lookup: Any | None = None,
+    secrets: Secrets | None = None,
 ) -> None:
     """Mount enabled routers and always own errors under the reserved frontend-read prefix.
 
@@ -330,6 +342,7 @@ def install_frontend_read_surface(
                 conn_factory=conn_factory,
                 evidence_storage=evidence_storage,
                 contact_email_lookup=contact_email_lookup,
+                secrets=secrets,
             )
         )
 

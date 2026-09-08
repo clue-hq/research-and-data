@@ -901,6 +901,9 @@ def test_activity_is_newest_first_with_clue_and_person_actors() -> None:
             assert rows[2].kind == "created"
             assert rows[2].occurred_at is not None
             assert rows[2].occurred_at.startswith("2026-08-30T")
+            # The v1 dialect, not ``isoformat()``'s ``+00:00`` tail: Zod's ``datetime()`` rejects
+            # an offset unless the schema opts in, and the vendored schemas do not.
+            assert rows[2].occurred_at.endswith("Z")
             assert uuid.UUID(rows[0].id)
 
     run_async(scenario())

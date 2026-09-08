@@ -856,7 +856,7 @@ async def activity_for(
                 time_label=time_label(stamp, now=now),
                 actor=actor,
                 action=_text(action),
-                occurred_at=stamp.isoformat(),
+                occurred_at=iso_utc(stamp),
             )
         )
     return feed

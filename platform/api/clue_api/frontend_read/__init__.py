@@ -33,6 +33,7 @@ from clue_api.frontend_read.app import (
     install_frontend_read_surface,
 )
 from clue_api.frontend_read.committee import latest_project_run_context
+from clue_api.frontend_read.display_pages import DisplayPages, PageRead
 from clue_api.frontend_read.prose import (
     ACCOUNT_SUMMARY_FIELD,
     CONTACT_OVERVIEW_FIELD,
@@ -51,9 +52,11 @@ __all__ = [
     "AccountNotFound",
     "AccountProjectSection",
     "AccountResearchStatusValue",
+    "DisplayPages",
     "ACCOUNT_SUMMARY_FIELD",
     "CONTACT_OVERVIEW_FIELD",
     "InvalidCursorError",
+    "PageRead",
     "ProseRead",
     "ProseState",
     "WorkspaceDep",
