@@ -29,6 +29,7 @@ from clue_core import (
     RunId,
     UseClass,
 )
+from clue_research.claimstore.packs import WORK_EMAIL_STATUSES
 
 ANSWER_KEY_NAMESPACE = uuid.UUID("6f1c2a3e-7b4d-4e8f-9a0b-1c2d3e4f5a6b")
 ZAFRAN_RUN_ID = RunId(uuid.uuid5(ANSWER_KEY_NAMESPACE, "arv2-answer-key:zafran:2026-09-02"))
@@ -436,6 +437,44 @@ def _observed(date_text: str | None, default: str) -> datetime:
     return datetime.strptime(default, "%Y-%m-%d").replace(tzinfo=UTC)
 
 
+#: The one field whose value is the provider's graded verdict rather than the raw observation.
+WORK_EMAIL_KEY = "core.work_email"
+#: A provider verdict this lane does not recognise (AI Ark's ``not_found``, a future label, a typo)
+#: is graded ``unknown`` rather than stored as-is: the registry declares a closed vocabulary, and
+#: "the provider checked and did not confirm" is exactly what an unrecognised verdict means.
+_UNRECOGNISED_VERDICT = "unknown"
+#: No ``verification`` block at all means nobody probed the mailbox — not that it failed.
+_UNPROBED = "unverified"
+
+
+def work_email_value(address: JsonValue, verification: Mapping[str, Any] | None) -> JsonValue:
+    """A ``core.work_email`` value: the address with the verdict that grades it (decision 6).
+
+    The answer key kept AI Ark's whole verification block beside the address; the claim keeps the
+    two facts a reader needs from it — the verdict and when the mailbox was checked. ``checked_at``
+    is omitted rather than written null when the provider gave none: the registry's value-schema
+    validator has no union type, and every reader asks with ``.get("checked_at")`` anyway.
+    """
+    if not isinstance(address, str):
+        return address  # a value that is not an address is left exactly as the run recorded it
+    verdict = verification.get("verdict") if verification else None
+    status = str(verdict) if isinstance(verdict, str) else None
+    value: dict[str, JsonValue] = {
+        "address": address,
+        "status": (
+            _UNPROBED
+            if verification is None
+            else status
+            if status in WORK_EMAIL_STATUSES
+            else _UNRECOGNISED_VERDICT
+        ),
+    }
+    checked_at = verification.get("checked_at") if verification else None
+    if isinstance(checked_at, str) and checked_at:
+        value["checked_at"] = checked_at
+    return value
+
+
 def _is_not_found(value: Any) -> bool:
     return isinstance(value, str) and value.startswith(_NOT_FOUND)
 
@@ -546,6 +585,9 @@ def map_zafran_rows(payload: Mapping[str, Any]) -> MappedRows:
             persona_written.add(subject)
         elif raw_key == "contact.role_on_committee" and isinstance(value, str):
             value = {"role": personas.get(subject), "rationale": value}
+        elif raw_key == WORK_EMAIL_KEY:
+            block = row.get("verification")
+            value = work_email_value(value, block if isinstance(block, Mapping) else None)
 
         media_url = row.get("media_url")
         if media_url:
@@ -628,12 +670,18 @@ def map_people_rows(payload: Mapping[str, Any], roster: Sequence[Mapping[str, An
             if joined:
                 markers["pipe_joined_key"] = joined
 
+            # The person-depth run recorded no email at all, but the rule is the field's, not the
+            # file's: an address written here would carry its verdict too — an unprobed one.
+            value: JsonValue = row["value"]
+            if WORK_EMAIL_KEY in keys:
+                value = work_email_value(value, None)
+
             drafts.extend(
                 RowDraft(
                     subject=subject,
                     entity_type=EntityType.CONTACT,
                     field_key=field_key,
-                    value_json=row["value"],
+                    value_json=value,
                     extraction_method=ExtractionMethod.LLM_SYNTHESIS,
                     research_mode=ResearchMode.CONTACT_PROFILING,
                     source_url=row.get("source_url"),

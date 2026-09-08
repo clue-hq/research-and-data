@@ -33,6 +33,7 @@ from __future__ import annotations
 import re
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any, Literal, cast
@@ -797,6 +798,9 @@ def time_label(occurred_at: datetime, *, now: datetime) -> str:
 # --- email ----------------------------------------------------------------------------------------
 
 #: The two provider verdicts that mean "this address is usable" (``ai_ark_client.EmailVerdict``).
+#: The other three the registry admits — ``invalid``, ``unknown``, ``unverified`` — all mean the
+#: address is not one the screen may offer, so they read as *look this up*, exactly like no claim
+#: at all. The claim id still travels, because the chip's evidence hover is about the claim.
 _USABLE_EMAIL_STATUSES = frozenset({"verified_smtp", "catch_all_valid"})
 
 #: The one verdict that means a mailbox was actually probed, and so the only one that may stamp a
@@ -825,21 +829,44 @@ def _is_addressable(address: str) -> bool:
     return bool(local) and "." in domain and not domain.startswith(".")
 
 
+def _checked_on(value: Mapping[str, Any], claim: Claim) -> str:
+    """The day the mailbox was probed: the provider's own timestamp, else when we saw the claim.
+
+    ``checked_at`` is the provider's ISO string, kept verbatim at write time; only its date is
+    shown. A value the provider never sent (or sent unparseably) falls back to the claim's own
+    observation time rather than dropping the date — the chip says *verified*, so it owes a day.
+    """
+    checked_at = _text(value.get("checked_at"))
+    if checked_at is not None:
+        with suppress(ValueError):
+            return datetime.fromisoformat(checked_at).date().isoformat()
+    seen = claim.observed_at or claim.collected_at
+    return seen.date().isoformat()
+
+
 def email_facts(work_email_claim: Claim | None) -> EmailFacts:
-    """The email chip's facts from the ``core.work_email`` claim (decision 13)."""
+    """The email chip's facts from the ``core.work_email`` claim (decision 13).
+
+    The value is the ``{address, status, checked_at?}`` object every writer produces since D4-b.
+    A bare address string — every row written before that — is *not* upgraded here: an address with
+    no verdict is an address nobody graded, so it reads as *look this up*, which is the fail-closed
+    direction. ``scripts/load_arv2_answer_key.py --repair-emails`` is how a legacy row gains its
+    verdict; the reader never invents one.
+    """
     if work_email_claim is None:
         return EmailFacts(status="lookup", label=None, verified_at=None, claim_id=None)
     claim_id = str(work_email_claim.id)
     value = work_email_claim.value_json
-    address = _text(value.get("address")) if isinstance(value, dict) else None
-    status = _text(value.get("status")) if isinstance(value, dict) else None
+    if not isinstance(value, dict):
+        return EmailFacts(status="lookup", label=None, verified_at=None, claim_id=claim_id)
+    address = _text(value.get("address"))
+    status = _text(value.get("status"))
     if status not in _USABLE_EMAIL_STATUSES or address is None or not _is_addressable(address):
         return EmailFacts(status="lookup", label=None, verified_at=None, claim_id=claim_id)
-    seen = work_email_claim.observed_at or work_email_claim.collected_at
     return EmailFacts(
         status="available",
         label=address,
-        verified_at=seen.date().isoformat() if status == _SMTP_VERIFIED else None,
+        verified_at=(_checked_on(value, work_email_claim) if status == _SMTP_VERIFIED else None),
         claim_id=claim_id,
     )
 

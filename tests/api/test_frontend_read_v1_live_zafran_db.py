@@ -102,6 +102,15 @@ _CONTACT_SECTION_ORDER = (
 #: The buying committee D1 recorded for Zafran. Order is not asserted (the payload sorts by
 #: persona rank, which the E4 assertions cover); membership is.
 _COMMITTEE = {"Vari Kaur", "Nick Fisher", "Sanaz Yashar", "Ben Seri", "Tom Anthony"}
+#: The four addresses AI Ark exported and verified over SMTP, plus the one person it found none
+#: for. The answer key holds no fifth address, so a fifth would be an invention, not a finding.
+_COMMITTEE_EMAILS = {
+    "Vari Kaur": "vari@zafran.io",
+    "Nick Fisher": "nick@zafran.io",
+    "Sanaz Yashar": "sanaz@zafran.io",
+    "Tom Anthony": "tom@zafran.io",
+    "Ben Seri": None,
+}
 
 #: The three other accounts the answer-key workspace carries. None was researched.
 _UNRESEARCHED = {"Cogent Security", "Harmonic Security", "UPTIQ, Inc."}
@@ -341,6 +350,14 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
             assert len(committee) == 5
             assert {member["name"] for member in committee} == _COMMITTEE
             assert {member["persona"] for member in committee} <= _PERSONAS
+            # D4-b task 4: the four people AI Ark exported an SMTP-verified address for carry it
+            # on the card; Ben Seri, whom the run never found an address for, carries null. The
+            # claim id travels either way for everyone who *has* a work-email claim.
+            assert {member["name"]: member["email"] for member in committee} == _COMMITTEE_EMAILS
+            assert all(
+                (member["emailClaimId"] is not None) is (member["email"] is not None)
+                for member in committee
+            ), [(m["name"], m["email"], m["emailClaimId"]) for m in committee]
 
             covered = _evidence_ids(detail)
             assert covered, "the detail cites claims, so it must serve their evidence"
@@ -404,18 +421,19 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
             # Display text on the wire; the tone still keys on the vocabulary value behind it.
             assert nick["persona"] == "Economic buyer"
             assert nick["personaTone"] == "olive"
-            # The walk's one finding, pinned rather than papered over. Decision 13 (source map
-            # §3.5/§3.6) reads the email chip off a `core.work_email` claim whose `value_json` is
-            # the provider's `{address, status}` pair — the shape `AiArkEmailExport` insists on,
-            # because "an address flattened away from its status/domainType pair is a claim nobody
-            # can grade". No writer produces that shape yet: D1's answer key and FI-2's own
-            # email-lookup writer both store the bare address string. So a real contact who *has*
-            # an address is served `lookup`, which is the fail-closed direction (the screen offers
-            # a lookup instead of showing an ungraded address as verified) but is not the screen
-            # the ARV2 lane is aiming at. Recorded in the D3 close-out note as a writer gap, not a
-            # reader change: flipping it is a product ruling about showing unverified addresses.
-            assert nick["emailStatus"] == "lookup"
-            assert nick.get("emailLabel") is None
+            # D3's one finding, closed by D4-b task 4. The chip reads a `core.work_email` claim
+            # whose value is the provider's `{address, status, checked_at}` — the shape
+            # `AiArkEmailExport` insists on, because "an address flattened away from its
+            # status/domainType pair is a claim nobody can grade". D1 stored the bare address, so
+            # every real contact read `lookup`; the registry now declares the object, the loader
+            # and the lookup writer produce it, and `--repair-emails` gave the loaded rows their
+            # AI Ark verdict. The date is the provider's own check, not the day we wrote the row.
+            assert nick["emailStatus"] == "available"
+            assert nick["emailLabel"] == "nick@zafran.io"
+            with_addresses = {row["name"] for row in contacts if row["emailStatus"] == "available"}
+            assert with_addresses == set(_COMMITTEE_EMAILS) - {"Ben Seri"}
+            # ``emailLabel`` is omitted, not null, when there is nothing to show (contract v1).
+            assert {row["name"]: row.get("emailLabel") for row in contacts} == _COMMITTEE_EMAILS
 
             from clue_api.frontend_read.v1_shared import PERSONA_LABELS, PERSONA_RANK
 
@@ -446,6 +464,9 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
                 assert item["sendLine"]["text"]
             assert contact["tenureLabel"]
             assert contact["emailClaimId"]
+            # The date on the chip is AI Ark's own SMTP check (2026-08-31), not the day D1 wrote
+            # the claim (2026-09-02) — the reader shows when the mailbox answered.
+            assert contact["emailVerifiedAt"] == "2026-08-31"
             assert contact["linkedinLabel"] == "nicholastfisher"
             contact_covered = _evidence_ids(contact)
             assert not _missing(_cited_claim_ids(page), contact_covered)

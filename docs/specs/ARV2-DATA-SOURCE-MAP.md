@@ -304,16 +304,21 @@ details are worth pinning: `influence` falls back to the persona default table a
 `"none"` — `"preview"` is never served in v1. The E4 row's `title` is served `null` when no title
 claim exists (ruling S7); the `"—"` placeholder belongs to E2's committee card only.
 
-**Finding (the Zafran walk, 2026-09-08).** The email rule above reads `value_json.status` /
-`value_json.address`, the provider pair `AiArkEmailExport` insists on ("an address flattened away
-from its status/domainType pair is a claim nobody can grade"). **No writer produces that shape
-yet** — D1's answer-key loader and FI-2's own email-lookup writer both store the bare address
-string, and `core.work_email` is registered `value_type = str`. So every real contact today serves
-`emailStatus: "lookup"` even when an address is stored, and `buyingCommittee[].email` is `null`
-while `emailClaimId` is set. That is the fail-closed direction (the screen offers a lookup rather
-than presenting an ungraded address as verified), and the reader is left as specified: making a
-bare string "available" is a product ruling about showing unverified addresses, and the real fix is
-a writer that keeps the provider verdict.
+**Finding (the Zafran walk, 2026-09-08) — CLOSED 2026-09-09 by D4-b task 4.** The email rule above
+reads `value_json.status` / `value_json.address`, the provider pair `AiArkEmailExport` insists on
+("an address flattened away from its status/domainType pair is a claim nobody can grade"). At the
+walk **no writer produced that shape** — D1's answer-key loader and FI-2's own email-lookup writer
+both stored the bare address string, and `core.work_email` was registered `value_type = str` — so
+every real contact served `emailStatus: "lookup"` even when an address was stored. The fix was the
+writer's, as recorded: `core.work_email` is now registered an **object**
+(`{"address", "status", "checked_at"?}`, `status` in
+`verified_smtp | catch_all_valid | invalid | unknown | unverified`; migration `7332ac974920`), the
+answer-key mapper carries AI Ark's `verification.verdict` and `checked_at` into it, the FI-2 and C5
+acquisition writers write `unverified` (neither probes a mailbox), and
+`scripts/load_arv2_answer_key.py --repair-emails` superseded the four loaded Zafran rows with their
+verdict. The four committee members with addresses now serve `emailStatus: "available"` and
+`buyingCommittee[].email`; Ben Seri, for whom the run found none, still serves `null`. A bare
+string left anywhere still reads `lookup` — the reader never invents a verdict.
 
 ### 3.6 Contact profile — `/accounts/{id}/contacts/{contactId}` (E5)
 
@@ -325,7 +330,7 @@ The row of §3.5, plus:
 | "Research" row | `recentSignalsLabel` | `"{k} signals"` where `k = COUNT(claim) for the contact with signal_priority ≤ 2 and outreach_safe`; `"No signals yet"` when 0 | — |
 | LinkedIn | `linkedinUrl`, `linkedinLabel` | `contact_entity.linkedin_url`; label = the URL path's last segment (`/in/nicholastfisher` → `nicholastfisher`) computed by the backend | — |
 | X | `xUrl`, `xLabel` | absent in v1 (no field produced) | — |
-| email verified date | `emailVerifiedAt` | `date(claim[core.work_email].observed_at)` when `status = verified_smtp` | — |
+| email verified date | `emailVerifiedAt` | `date(claim[core.work_email].value_json.checked_at)` when `status = verified_smtp`, falling back to `date(observed_at)` when the provider sent no check time | — |
 | location | `locationLabel`, `locationClaimId` | `claim[contact.current_location].value_json` and that claim's id | evidence array scanned twice by id (`contact-profile-content.tsx:178-179`) — fine; the id is served |
 | email evidence chip | (client) | the chip resolves `emailClaimId` → `researchEvidence`; **`emailClaimId` is added to the contact detail** (contract change, ruling R5) | substring search over evidence text (`contact-profile-content.tsx:91-95`) — **removed** |
 | best channel | `bestFirstChannelLabel` | `claim[contact.facet.best_channel].value_json` when the lane writes it (registered as a new field in D1); absent otherwise | — |

@@ -319,12 +319,15 @@ uv run python scripts/load_arv2_answer_key.py \
 ```
 
 (`--dry-run` runs the whole load in one transaction, prints the report and rolls back;
-`--context-root` defaults to `.context`, `--storage-root` to `.artifacts/answer-key`.) **The load
-is one-shot per database**: it is keyed on a deterministic run id, and a second run raises
+`--context-root` defaults to `.context`, `--storage-root` to `.artifacts/answer-key`.
+`--repair-emails` loads nothing: it supersedes the already-loaded `core.work_email` claims that
+still hold a bare address string with the `{address, status, checked_at}` value D4-b's registry
+declares, taking the verdict from the answer key's own AI Ark `verification` block, and is
+idempotent — a second pass finds no bare strings.) **The load is one-shot per database**: it is keyed on a deterministic run id, and a second run raises
 `AlreadyLoaded` rather than duplicating rows. A database that already carries it must be reset, not
 re-loaded.
 
-**Two constraints this places on R2:**
+**Three constraints this places on R2 and R3:**
 
 - **R2's `write_claims` goes through `LenientClaimWriter`.** The structuring pass does not build
   `Claim` objects of its own and does not call `insert_claim` directly; the gate is the lane's only
@@ -334,6 +337,15 @@ re-loaded.
   the `entity_research_account_fleet` row the committee read resolves the run through) is what the
   accounts screens read a finished account through. R2's real finalization writes the same rows
   with the same relationships; the loader is the worked example, not a special case.
+- **R3's person mapper writes `core.work_email` as the verdict object, never a bare address.** The
+  registered value is `{"address", "status", "checked_at"?}` with `status` in
+  `verified_smtp | catch_all_valid | invalid | unknown | unverified` (D4-b decision 6): the address
+  with the provider grading that makes it usable, which is exactly the pair `AiArkEmailExport`
+  keeps whole. The email chip serves an address only for the first two verdicts, so an R3 person
+  claim that flattens the address away from its verdict reads as *look this up* on every screen.
+  `answer_key.work_email_value(address, verification)` is the one mapping — the AI Ark
+  `verification` block in, the claim value out — and it is what R3's own AI Ark email export should
+  call rather than re-deriving the grading.
 
 ## D2 — the display module (`clue_api/arv2/display/`)
 

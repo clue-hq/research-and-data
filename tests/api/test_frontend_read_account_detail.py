@@ -1749,8 +1749,8 @@ def test_the_project_run_context_rule_is_latest_run_wins() -> None:
 #   row. ``committee_members`` supports both, and the fallback is the shape a workspace is
 #   actually in until a fleet run publishes coverage;
 # * **every claim is written through the D1 lenient writer**, not through ``insert_claim``. The
-#   registry declares ``account.total_funding`` an object and ``core.work_email`` a string, while
-#   the providers the ARV2 lane actually reads return ``"$130.5M"`` and ``{address, status}``. The
+#   registry declares ``account.total_funding`` an object, while the provider the ARV2 lane
+#   actually reads returns the string ``"$130.5M"``. The
 #   lenient writer is the lane's own write path and stores exactly that, so the rail labels here
 #   are proven against the shapes production really holds.
 

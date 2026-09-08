@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.answer_key import (
     ANSWER_KEY_NAMESPACE,  # research-run ids share the run ids' uuid5 namespace
     PEOPLE_RUN_ID,
+    WORK_EMAIL_KEY,
     ZAFRAN_ANSWER_KEY,
     ZAFRAN_MANIFEST,
     AnswerKeyManifest,
@@ -850,4 +851,129 @@ async def _activity(
         )
 
 
-__all__ = ["AlreadyLoaded", "LoadReport", "load_answer_key"]
+# -- the email repair (ARV2 D4-b task 4) ---------------------------------------------------------
+
+#: The marker a repaired claim carries, so the rewrite is visible in the row itself forever.
+EMAIL_REPAIR_MARKER = "email_repair"
+EMAIL_REPAIR_VERSION = "d4b"
+
+_BARE_EMAIL_CLAIMS = text(
+    """
+    SELECT id, entity_id, write_markers->>'source_row_id' AS source_row_id, value_json
+    FROM claim
+    WHERE workspace_id = :workspace_id
+      AND field_key = :field_key
+      AND superseded_by IS NULL
+      AND jsonb_typeof(value_json) = 'string'
+    ORDER BY collected_at, id
+    """
+)
+
+
+@dataclass(frozen=True)
+class EmailRepairReport:
+    """What one ``--repair-emails`` pass did: the operator's receipt and the test's assertions."""
+
+    found: int  # live ``core.work_email`` claims still holding a bare address string
+    repaired: int
+    skipped: list[dict[str, str]]  # {"claim_id", "reason"} — never silently dropped
+
+
+async def repair_email_claims(
+    conn: AsyncConnection,
+    *,
+    context_root: Path,
+    settings: Settings,
+) -> EmailRepairReport:
+    """Give the loaded answer key's work-email claims the verdict D4-b's value shape demands.
+
+    D1 wrote each address as a bare string, because that is what the field registry declared then.
+    The verdict that grades it was in the answer-key row all along (AI Ark's ``verification``
+    block) and is now part of the value, so those rows can be corrected in place — by supersession,
+    never by an UPDATE: the old row keeps its provenance and gains a forward pointer.
+
+    Idempotent by construction: it looks for live claims whose value is still a JSON *string*, and
+    what it writes is an object. A second pass finds nothing. A claim whose answer-key row cannot
+    be found, or whose row carries no verdict, is left exactly as it is and reported as skipped —
+    the repair invents no verdict.
+    """
+
+    manifest = ZAFRAN_MANIFEST
+    drafts = {
+        draft.source_row_id: draft
+        for draft in map_zafran_rows(
+            _read_json(context_root / ZAFRAN_DIR / "claims_zafran.json")
+        ).drafts
+        if draft.field_key == WORK_EMAIL_KEY
+    }
+    rows = (
+        (
+            await conn.execute(
+                _BARE_EMAIL_CLAIMS,
+                {"workspace_id": manifest.workspace_id, "field_key": WORK_EMAIL_KEY},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    writer = LenientClaimWriter(lenient=settings.claim_write_lenient)
+    repaired = 0
+    skipped: list[dict[str, str]] = []
+    for row in rows:
+        claim_id = str(row["id"])
+        draft = drafts.get(str(row["source_row_id"]))
+        address = row["value_json"]
+        if draft is None:
+            skipped.append({"claim_id": claim_id, "reason": "no_answer_key_row"})
+            continue
+        value = draft.value_json
+        if not isinstance(value, dict) or value.get("address") != address:
+            # Either the answer key has no verdict for this row, or it names a different address
+            # than the database holds. Both mean the two disagree about what happened; the claim
+            # store is append-only and this is a repair, not a re-research.
+            skipped.append({"claim_id": claim_id, "reason": "answer_key_disagrees"})
+            continue
+        receipt = await writer.write(
+            conn,
+            ClaimDraft(
+                # The provenance is the stored row's own: the subject comes from the claim, and
+                # everything else from the draft the loader wrote it from.
+                entity_id=EntityId(uuid.UUID(str(row["entity_id"]))),
+                entity_type=draft.entity_type,
+                field_key=draft.field_key,
+                value_json=value,
+                extraction_method=draft.extraction_method,
+                run_id=manifest.run_id,
+                research_mode=draft.research_mode,
+                workspace_id=manifest.workspace_id,
+                source_url=draft.source_url,
+                source_key=draft.source_key,
+                evidence_span=draft.evidence_span,
+                observed_at=draft.observed_at,
+                confidence=draft.confidence,
+                identity_binding=draft.identity_binding,
+                use_class=draft.use_class,
+                signal_priority=draft.signal_priority,
+                outreach_safe=draft.outreach_safe,
+                field_description=draft.field_description,
+                markers={**draft.markers, EMAIL_REPAIR_MARKER: EMAIL_REPAIR_VERSION},
+            ),
+        )
+        # The second half of ``clue_research.claimstore.supersede_claim``; its first half is the
+        # lenient writer's own insert, which is the ARV2 lane's single write path into the store.
+        await conn.execute(
+            text("UPDATE claim SET superseded_by = :new_id WHERE id = :old_id"),
+            {"new_id": receipt.claim_id, "old_id": row["id"]},
+        )
+        repaired += 1
+    return EmailRepairReport(found=len(rows), repaired=repaired, skipped=skipped)
+
+
+__all__ = [
+    "EMAIL_REPAIR_MARKER",
+    "AlreadyLoaded",
+    "EmailRepairReport",
+    "LoadReport",
+    "load_answer_key",
+    "repair_email_claims",
+]

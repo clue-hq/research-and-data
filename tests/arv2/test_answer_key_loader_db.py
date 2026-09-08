@@ -9,8 +9,18 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.arv2.answer_key import PEOPLE_RUN_ID, ZAFRAN_MANIFEST, ZAFRAN_RUN_ID
-from clue_api.arv2.answer_key_loader import AlreadyLoaded, load_answer_key
+from clue_api.arv2.answer_key import (
+    PEOPLE_RUN_ID,
+    WORK_EMAIL_KEY,
+    ZAFRAN_MANIFEST,
+    ZAFRAN_RUN_ID,
+)
+from clue_api.arv2.answer_key_loader import (
+    EMAIL_REPAIR_MARKER,
+    AlreadyLoaded,
+    load_answer_key,
+    repair_email_claims,
+)
 from clue_config import Settings
 from clue_storage.fs import FsStorage
 
@@ -246,5 +256,116 @@ def test_committee_read_sees_the_five_members(
             }
             names = {name_by_id[str(member_id)] for member_id in committee.members}
             assert names == {"Nick Fisher", "Sanaz Yashar", "Vari Kaur", "Tom Anthony", "Ben Seri"}
+
+    run_async(_run())
+
+
+# -- the D4-b email repair ------------------------------------------------------------------------
+
+_NICK_EMAIL_ROW = "zaf-084"
+
+
+async def _live_work_email(conn: AsyncConnection, source_row_id: str) -> dict[str, object]:
+    row = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT id, entity_id, value_json, write_markers, source_key, observed_at,
+                           identity_binding::text AS identity_binding, use_class::text AS use_class,
+                           source_tier, signal_priority, outreach_safe
+                    FROM claim
+                    WHERE workspace_id = :workspace_id AND field_key = :field_key
+                      AND superseded_by IS NULL
+                      AND write_markers->>'source_row_id' = :source_row_id
+                    """
+                ),
+                {
+                    "workspace_id": ZAFRAN_MANIFEST.workspace_id,
+                    "field_key": WORK_EMAIL_KEY,
+                    "source_row_id": source_row_id,
+                },
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if row is None:
+        pytest.skip(
+            "this database carries no live core.work_email claim for the answer key's "
+            f"{source_row_id} row; the repair test needs the loaded answer key"
+        )
+    return dict(row)
+
+
+def test_repair_gives_a_bare_work_email_claim_the_providers_verdict() -> None:
+    """D4-b task 4: the D1 rows gain the verdict without losing an atom of their provenance.
+
+    The pre-D4-b shape is planted here rather than assumed, so the test says the same thing on a
+    database that has already been repaired and on one that has not: it supersedes the live claim
+    with the bare address string D1 wrote (``validate_field=False`` — the registry now refuses that
+    shape, which is exactly the point), runs the repair, and reads the result.
+    """
+
+    async def _run() -> None:
+        from clue_core import ClaimId
+        from clue_research.claimstore import WorkspaceScope, claims_by_ids, supersede_claim
+
+        async with rollback_conn(seed_pack=False) as conn:
+            live = await _live_work_email(conn, _NICK_EMAIL_ROW)
+            claim_id = ClaimId(uuid.UUID(str(live["id"])))
+            original = (
+                await claims_by_ids(
+                    conn,
+                    [claim_id],
+                    scope=WorkspaceScope.private_for_workspace(ZAFRAN_MANIFEST.workspace_id),
+                )
+            )[claim_id]
+            address = "nick@zafran.io"
+            legacy = original.model_copy(
+                update={"id": uuid.uuid4(), "value_json": address, "superseded_by": None}
+            )
+            await supersede_claim(conn, original.id, legacy, validate_field=False)
+
+            report = await repair_email_claims(
+                conn, context_root=REPO / ".context", settings=_settings()
+            )
+            # The planted row is always among them; a database that has not had the real repair
+            # run against it yet still carries the other three, and they are repaired too.
+            assert report.found >= 1
+            assert report.repaired == report.found and report.skipped == []
+
+            repaired = await _live_work_email(conn, _NICK_EMAIL_ROW)
+            assert repaired["value_json"] == {
+                "address": address,
+                "status": "verified_smtp",
+                "checked_at": "2026-08-31T07:52:05.000725",
+            }
+            # The provenance is the row's own, and the rewrite is visible in the claim forever.
+            assert repaired["write_markers"][EMAIL_REPAIR_MARKER] == "d4b"
+            assert repaired["write_markers"]["source_row_id"] == _NICK_EMAIL_ROW
+            for column in (
+                "entity_id",
+                "source_key",
+                "observed_at",
+                "identity_binding",
+                "use_class",
+                "source_tier",
+                "signal_priority",
+                "outreach_safe",
+            ):
+                assert repaired[column] == live[column], column
+            superseded = (
+                await conn.execute(
+                    text("SELECT superseded_by FROM claim WHERE id = :id"), {"id": legacy.id}
+                )
+            ).scalar_one()
+            assert str(superseded) == str(repaired["id"])
+
+            # Idempotent: a second pass finds no bare string left to repair.
+            again = await repair_email_claims(
+                conn, context_root=REPO / ".context", settings=_settings()
+            )
+            assert again == type(again)(found=0, repaired=0, skipped=[])
 
     run_async(_run())

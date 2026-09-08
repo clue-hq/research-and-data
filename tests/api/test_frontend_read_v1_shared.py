@@ -596,6 +596,47 @@ def test_a_catch_all_address_is_available_but_never_stamped_verified() -> None:
     assert facts.verified_at is None
 
 
+def test_the_verification_date_is_the_providers_check_not_the_write() -> None:
+    """D4-b decision 6: ``checked_at`` is when the mailbox answered, not when we wrote the row."""
+    claim = _contact_claim(
+        field_key="core.work_email",
+        value_json={
+            "address": "nick@zafran.io",
+            "status": "verified_smtp",
+            "checked_at": "2026-08-31T07:52:05.000725",
+        },
+        observed_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
+    )
+    assert email_facts(claim).verified_at == "2026-08-31"
+
+    unparseable = _contact_claim(
+        field_key="core.work_email",
+        value_json={"address": "nick@zafran.io", "status": "verified_smtp", "checked_at": "soon"},
+        observed_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
+    )
+    assert email_facts(unparseable).verified_at == "2026-09-02"
+
+
+def test_every_unusable_verdict_reads_as_lookup_and_keeps_its_claim_id() -> None:
+    """The three graded-not-usable verdicts, plus the shape that predates the verdict entirely."""
+    for status in ("invalid", "unknown", "unverified"):
+        claim = _contact_claim(
+            field_key="core.work_email",
+            value_json={"address": "nick@zafran.io", "status": status},
+        )
+        facts = email_facts(claim)
+        assert facts.status == "lookup", status
+        assert facts.label is None and facts.verified_at is None, status
+        assert facts.claim_id == str(claim.id), status
+
+    # A bare address string is every row written before D4-b: an address nobody graded, so the
+    # screen offers a lookup rather than showing it as verified. The reader never upgrades it.
+    legacy = _contact_claim(field_key="core.work_email", value_json="nick@zafran.io")
+    assert email_facts(legacy).status == "lookup"
+    assert email_facts(legacy).label is None
+    assert email_facts(legacy).claim_id == str(legacy.id)
+
+
 def test_a_malformed_or_missing_address_degrades_to_lookup() -> None:
     malformed = _contact_claim(
         field_key="core.work_email",

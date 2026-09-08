@@ -7,6 +7,11 @@
 --database-url is required so this command can never fall through to whatever CLUE_DATABASE_URL
 points at (same rule as scripts/backfill_fi2_slice0.py). --dry-run runs the whole load in one
 transaction, prints the report and rolls back.
+
+--repair-emails runs no load at all: it supersedes the already-loaded core.work_email claims that
+still hold a bare address string with the {address, status, checked_at} value ARV2 D4-b's field
+registry declares, taking the verdict from the answer key's own AI Ark verification block. It is
+idempotent — a second run finds no bare strings and repairs nothing.
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from clue_api.arv2.answer_key_loader import load_answer_key
+from clue_api.arv2.answer_key_loader import load_answer_key, repair_email_claims
 from clue_config import Settings
 from clue_db import db_lifespan
 from clue_storage.fs import FsStorage
@@ -42,6 +47,12 @@ def _args() -> argparse.Namespace:
         help="Where the transcript blobs are written (default: .artifacts/answer-key).",
     )
     parser.add_argument(
+        "--repair-emails",
+        action="store_true",
+        help="Do not load. Supersede the loaded work-email claims that still hold a bare address "
+        "string with the verdict-carrying value (idempotent).",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Run the whole load in one transaction, print the report, and roll it back.",
@@ -54,11 +65,19 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         conn = await engine.connect()
         trans = await conn.begin()
         try:
-            report = await load_answer_key(
-                conn,
-                storage=FsStorage(Path(args.storage_root)),
-                context_root=Path(args.context_root),
-                settings=Settings(),
+            report = (
+                await repair_email_claims(
+                    conn,
+                    context_root=Path(args.context_root),
+                    settings=Settings(),
+                )
+                if args.repair_emails
+                else await load_answer_key(
+                    conn,
+                    storage=FsStorage(Path(args.storage_root)),
+                    context_root=Path(args.context_root),
+                    settings=Settings(),
+                )
             )
             if args.dry_run:
                 await trans.rollback()
@@ -69,7 +88,11 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
             raise
         finally:
             await conn.close()
-    return {"dry_run": args.dry_run, **asdict(report)}
+    return {
+        "dry_run": args.dry_run,
+        "mode": "repair_emails" if args.repair_emails else "load",
+        **asdict(report),
+    }
 
 
 def main() -> None:

@@ -8,11 +8,13 @@ from pathlib import Path
 
 from clue_api.arv2.answer_key import (
     PERSONA_MAP,
+    WORK_EMAIL_KEY,
     ZAFRAN_MANIFEST,
     map_people_rows,
     map_zafran_rows,
     priority_for,
     resolve_source_url,
+    work_email_value,
 )
 from clue_core import EntityType, ExtractionMethod, IdentityBinding, Persona, UseClass
 
@@ -129,3 +131,46 @@ def test_manifest_names_the_five_accounts_twelve_people_and_two_documents() -> N
     # Zafran committee rows: the loader has to create an entity for every subject either file names.
     assert len(ZAFRAN_MANIFEST.people) == 12 and len(ZAFRAN_MANIFEST.media) == 3
     assert PERSONA_MAP == {"executive_sponsor": "economic_buyer", "adjacent_buyer": "user"}
+
+
+def test_work_email_carries_the_providers_verdict() -> None:
+    """D4-b decision 6: the address and the grading that makes it usable travel together."""
+    mapped = map_zafran_rows(ZAFRAN)
+    emails = {d.source_row_id: d.value_json for d in mapped.drafts if d.field_key == WORK_EMAIL_KEY}
+    assert set(emails) == {"zaf-083", "zaf-084", "zaf-085", "zaf-086"}
+    assert emails["zaf-084"] == {
+        "address": "nick@zafran.io",
+        "status": "verified_smtp",
+        "checked_at": "2026-08-31T07:52:05.000725",
+    }
+    assert all(
+        isinstance(value, dict) and value["status"] == "verified_smtp" for value in emails.values()
+    )
+
+
+def test_work_email_value_grades_what_the_provider_said_and_nothing_more() -> None:
+    # A verification block the run recorded: verdict and check time, kept verbatim.
+    assert work_email_value(
+        "nick@zafran.io", {"verdict": "catch_all_valid", "checked_at": "2026-08-31T07:52:05"}
+    ) == {
+        "address": "nick@zafran.io",
+        "status": "catch_all_valid",
+        "checked_at": "2026-08-31T07:52:05",
+    }
+    # No block at all: nobody probed the mailbox — which is not the same as a failed probe.
+    assert work_email_value("nick@zafran.io", None) == {
+        "address": "nick@zafran.io",
+        "status": "unverified",
+    }
+    # A verdict outside the registered vocabulary (AI Ark's ``not_found``, a future label) is
+    # graded ``unknown`` rather than stored as-is, and a block with no check time carries none.
+    assert work_email_value("nick@zafran.io", {"verdict": "not_found"}) == {
+        "address": "nick@zafran.io",
+        "status": "unknown",
+    }
+    assert work_email_value("nick@zafran.io", {}) == {
+        "address": "nick@zafran.io",
+        "status": "unknown",
+    }
+    # A value that is not an address is left exactly as the run recorded it.
+    assert work_email_value(None, {"verdict": "verified_smtp"}) is None
