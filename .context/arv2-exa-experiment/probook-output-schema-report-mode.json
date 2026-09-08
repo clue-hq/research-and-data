@@ -1,0 +1,13 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "report": {
+      "description": "The exhaustive cited markdown dossier answering every numbered section of the charter, with a verbatim quote and URL behind every assertion and explicit NOT FOUND markers.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "report"
+  ],
+  "type": "object"
+}

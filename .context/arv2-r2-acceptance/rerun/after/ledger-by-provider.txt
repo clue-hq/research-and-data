@@ -1,0 +1,25 @@
+                 job                  |  provider  |       operation       | count |  usd   | credits | media_s | cost_source 
+--------------------------------------+------------+-----------------------+-------+--------+---------+---------+-------------
+ 691a7d73-bd64-57fa-b250-1da18eaea3f2 | ai_ark     | v1/companies          |     1 | 0.0000 |   0.100 |       0 | metered
+ 691a7d73-bd64-57fa-b250-1da18eaea3f2 | ai_ark     | v1/people             |     5 | 0.0000 |   2.500 |       0 | metered
+ 691a7d73-bd64-57fa-b250-1da18eaea3f2 | ashby      | posting-api/job-board |     1 | 0.0000 |   0.000 |       0 | free
+ 691a7d73-bd64-57fa-b250-1da18eaea3f2 | exa        | contents              |    58 | 0.0580 |   0.000 |       0 | metered
+ 691a7d73-bd64-57fa-b250-1da18eaea3f2 | exa        | deep-reasoning        |     1 | 0.0250 |   0.000 |       0 | metered
+ 691a7d73-bd64-57fa-b250-1da18eaea3f2 | exa        | search                |    10 | 0.0700 |   0.000 |       0 | metered
+ 691a7d73-bd64-57fa-b250-1da18eaea3f2 | live_http  | careers-page          |     2 | 0.0000 |   0.000 |       0 | free
+ 691a7d73-bd64-57fa-b250-1da18eaea3f2 | openrouter | agent_completion      |    13 | 0.9792 |       0 |       0 | metered
+ 691a7d73-bd64-57fa-b250-1da18eaea3f2 | openrouter | chat/completions      |     2 | 0.0100 |   0.000 |       0 | metered
+ 691a7d73-bd64-57fa-b250-1da18eaea3f2 | rss        | feed                  |     1 | 0.0000 |   0.000 |       0 | free
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | ai_ark     | v1/companies          |     1 | 0.0000 |   0.100 |       0 | metered
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | ai_ark     | v1/people             |     5 | 0.0000 |   2.500 |       0 | metered
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | ashby      | posting-api/job-board |     1 | 0.0000 |   0.000 |       0 | free
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | exa        | contents              |    62 | 0.0610 |   0.000 |       0 | metered
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | exa        | deep-reasoning        |     1 | 0.0250 |   0.000 |       0 | metered
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | exa        | search                |     6 | 0.0420 |   0.000 |       0 | metered
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | live_http  | careers-page          |     2 | 0.0000 |   0.000 |       0 | free
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | openrouter | agent_completion      |    15 | 1.0977 |       0 |       0 | metered
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | openrouter | chat/completions      |     2 | 0.0110 |   0.000 |       0 | metered
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | rss        | feed                  |     1 | 0.0000 |   0.000 |       0 | free
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | youtube    | watch                 |     1 | 0.0000 |   0.000 |       0 | free
+(21 rows)
+

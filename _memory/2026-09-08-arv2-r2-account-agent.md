@@ -128,3 +128,26 @@ directory, is the close's exit gate. Nothing in tasks 1–6 has been exercised l
 - Contact selection: every confirmed committee member gets a person agent, up to committee_cap; a human can also launch research for any particular contact on demand.
 - Email export: every member.
 - Media per person: on by default.
+
+## R2 close — Task 7 re-run DONE (2026-09-08 12:05–12:24Z, run `e5c457d3-e38b-5e36-b84f-114a841045cf`)
+- Both jobs completed (Probook 15 rounds / 10m13s / 97 claims; Zafran 13 rounds / 7m46s / 113 claims).
+- Evidence: `.context/arv2-r2-acceptance/rerun/` (`before-after.md` is the write-up; `before/` and `after/`
+  collected with the same `collect.sh`; `recall-after/` from the recall script).
+- Recall: Probook 0.50 → 0.50, Zafran 0.45 → 0.52 (all gains = widened AI Ark mapper; losses = empty media
+  layer this run + agent-shaped objects). Link audit EXACT share 45% → 74% (Probook), 54% → 63% (Zafran);
+  every verdict carries its reason. Schema-invalid 45 → 37, and none of the remaining are the shapes the
+  close fixed — they are the agent's own `write_claims` shapes (string/list into bare-object fields; own keys
+  where the field names required ones; `name: null` on vacant seats; one persona outside the enum).
+  Root cause: the agent never sees `value_schema` at write time. Follow-up, not done.
+- Model spend is on the ledger, all `metered`: ~$1.10 (Probook) / ~$0.98 (Zafran) for the agent's own
+  completions, ~7¢ per round — 8× all provider spend combined. Total per account ≈ $1.2 + 2.6 AI Ark cr.
+  No `gateway.cost_lookup_failed`.
+- Defect found and fixed: the close relaxed `account.committee_candidate`'s schema in place; on a DB that
+  already loaded the R2 pack the fleet worker refused to start (`FieldRedefinitionError`). Data migration
+  `320e975d4c46` (303b1a084) swaps the stored schema exactly; proven by reproducing the refusal one step down.
+  Lesson: a pack-row schema change ALWAYS ships with a data migration; fresh-DB suites cannot see this.
+- Ops notes: this worktree needs its own fleet worker (`uv run python -m clue_api.fleet_main`, stopped after
+  the run); the worker drives one ARV2 job at a time, so N accounts run sequentially.
+- Exa claims-mode experiment kit for the founder's Playground run: `.context/arv2-exa-experiment/`
+  (exact R2 deep-call bodies recovered from the ledger's request records, split into system prompt / query /
+  schema files, plus a claims-mode output schema and `run.sh`). Not run by me.
