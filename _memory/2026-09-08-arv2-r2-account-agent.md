@@ -62,3 +62,21 @@ Review: `.superpowers/sdd/2026-09-08-arv2-r2-account-agent/final-review.md`; fix
   keys stay, so a genuine mismatch still flags `schema_valid=False`).
 - **I3** (context growth over a 100-round loop) is NOT fixed: it is a Task-7 live watch item —
   if a job ends `model_error`, read the worker log for a context-length error first.
+
+## Task 7 live acceptance — 2026-09-08 (founder go) — EXIT GATE MET
+Run `a0021ecf-8396-5f41-b4aa-eb8de755839a` (project_run `0a2f18b6…`), CLI launch, fleet worker from this
+worktree (storage root repointed to `san-salvador/.artifacts`; answer key reloaded first).
+- Probook: completed/finalized, 17 rounds, 64 tool calls, 85 claims (74 with quote+URL, 6 negatives,
+  5 fit verdicts, 14 requisitions, 12 committee candidates), $0.2208 + 3.6 AI Ark cr; link audit
+  EXACT 38 / PARTIAL 6 / NOT_FOUND 26.
+- Zafran: completed/finalized, 12 rounds, 47 calls, 104 claims (95 quoted, 8 negatives, 4 verdicts,
+  27 requisitions, 14 committee), $0.1517 + 3.6 cr; audit 39/21/27.
+- Evidence: `.context/arv2-r2-acceptance/` (receipts, ledger by provider, claims by field, link audit,
+  negatives+verdicts, worker log excerpt, D2 display outputs). D3 not merged → screens checked via the
+  D2 CLI; the frontend screen check is OWED.
+- R2-close follow-ups (observed, not fixed): unnamespaced proposed key loses a whole structuring batch
+  (writer raises inside one txn); fit-verdict gate labels are paraphrased, not the ICP gate keys;
+  45 claims schema_valid=false (objects in scalar core fields; vacant seats); link audit NOT_FOUND
+  ~30-40% (LinkedIn/dynamic pages; separate fetch_failed); **model token spend is not in
+  provider_call_ledger** (gateway logs cost_cents 0 for grok-4.6 agent completions) — money-truth gap;
+  one job per worker at a time; context ~97k tokens by round 13 (no model_error).

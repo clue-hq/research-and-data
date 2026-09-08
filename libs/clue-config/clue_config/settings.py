@@ -300,11 +300,11 @@ class Settings(BaseSettings):
     entity_research_runtime_enabled: bool = False
 
     # --- ARV2 research lane (R1) ------------------------------------------------------------
-    # Selects the ARV2 fleet handler and launcher at composition (A7). **False until the R2 exit
-    # gate passes, then the default flips to True** (founder instruction 2026-09-07) — the lane
-    # ships dark so a half-built provider set can never claim an account research job.
+    # Selects the ARV2 fleet handler and launcher at composition (A7). Shipped dark through R1;
+    # **default True since the R2 exit gate passed on 2026-09-08** (founder instruction
+    # 2026-09-07: flip once R2 is over). A worker missing a credential still composes no handler.
     # Env: ``CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED``.
-    arv2_account_research_enabled: bool = False
+    arv2_account_research_enabled: bool = True
     # Minimum seconds between AI Ark calls (the proof-of-concept pacing, kept until the paid
     # tier's real rate limit is confirmed). Env: ``CLUE_ARV2_AI_ARK_MIN_GAP_S``.
     arv2_ai_ark_min_gap_s: float = 10.5
