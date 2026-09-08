@@ -326,3 +326,78 @@ test("frames this build does not act on leave the state untouched", () => {
   );
   assert.equal(applyAgentRunLockEvent(engaged, frame("text.delta")), engaged);
 });
+
+/* A handoff opens an empty document. The subsequent turn does the designing. */
+function handoffOpener() {
+  return ["turn.accepted", "turn.started", "leg.opened", "turn.awaiting_input"]
+    .map((type) => frame(type, { turnId: "opener" }));
+}
+
+for (const terminal of [
+  "turn.failed", "turn.completed", "turn.cancelled", "leg.awaiting_user", "leg.closed",
+]) {
+  test(`an awaiting-input handoff does not pin the editor after Design ${terminal}`, () => {
+    const running = frames(...handoffOpener(), frame("turn.accepted"), frame("turn.started"));
+    assert.equal(lockFor(running).locked, true);
+    const settled = applyAgentRunLockEvent(running, frame(terminal));
+    assert.deepEqual(lockFor(settled, {
+      threadBusy: true,
+      designLeg: { kind: "open", running: true },
+    }), { locked: false, note: null });
+  });
+}
+
+test("cold replay can finish Design before replaying its older handoff opener", () => {
+  const settled = frames(
+    frame("turn.accepted"), frame("turn.started"),
+    frame("leg.awaiting_user"), frame("turn.failed"),
+    ...handoffOpener(),
+  );
+  assert.equal(lockFor(settled, { threadBusy: true }).locked, false);
+});
+
+test("an ordinary awaiting-input Design gate keeps the editor locked", () => {
+  const parked = frames(frame("turn.accepted"), frame("turn.awaiting_input"));
+  assert.equal(lockFor(parked).locked, true);
+});
+
+test("reopening a leg does not classify a turn as a new-document handoff", () => {
+  const parked = frames(frame("turn.accepted"), frame("leg.reopened"), frame("turn.awaiting_input"));
+  assert.equal(lockFor(parked).locked, true);
+});
+
+test("a late opener terminal cannot release a newer writer, including a parked writer", () => {
+  for (const last of ["turn.started", "turn.awaiting_input"]) {
+    const running = frames(
+      ...handoffOpener().slice(0, -1),
+      frame("turn.accepted"), frame(last),
+      ...handoffOpener().slice(-1),
+    );
+    assert.equal(lockFor(running).locked, true);
+    assert.equal(lockFor(applyAgentRunLockEvent(running, frame("turn.failed", { turnId: "opener" }))).locked, true);
+  }
+});
+
+test("an opener on another thread cannot classify this thread's awaiting-input turn", () => {
+  const state = frames(
+    frame("turn.accepted", { threadId: OTHER_THREAD }),
+    frame("leg.opened", { threadId: OTHER_THREAD }),
+    frame("turn.accepted"), frame("turn.awaiting_input"),
+  );
+  assert.equal(lockFor(state).locked, true);
+});
+
+for (const release of ["turn.completed", "turn.failed", "turn.cancelled", "leg.awaiting_user", "leg.closed", "turn.awaiting_input", "stream.reset"]) {
+  test(`${release} forgets the opener classification before another attempt`, () => {
+    const state = frames(
+      frame("turn.accepted"), frame("leg.opened"), frame(release),
+      frame("turn.started"), frame("turn.awaiting_input"),
+    );
+    assert.equal(lockFor(state).locked, true);
+  });
+}
+
+test("a handoff frame without an observed active turn cannot label a future writer", () => {
+  const state = frames(frame("leg.opened"), frame("turn.started"), frame("turn.awaiting_input"));
+  assert.equal(lockFor(state).locked, true);
+});

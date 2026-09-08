@@ -107,14 +107,16 @@ export interface AgentRunLockFrame {
  * What the surface has observed about the thread's design run.
  *
  * Folded frame by frame (`applyAgentRunLockEvent`) rather than held as a list:
- * the controller sees each frame exactly once, and a rolling three-field state
- * is the whole of what the decision below reads.
+ * the controller sees each frame through its stream attachment. Handoff markers
+ * live only while their turn is active, never as an accumulated turn history.
  */
 export interface AgentRunLockState {
   /** The thread these observations belong to; `null` before any frame. */
   threadId: string | null;
   /** Turns seen accepted/started with no terminal frame for them since. */
   activeTurnIds: ReadonlySet<string>;
+  /** Active turns whose own `leg.opened` identifies a non-writing handoff. */
+  handoffTurnIds: ReadonlySet<string>;
   /**
    * True once a TERMINAL frame settled the run and no engaging frame has
    * arrived since — the "the last frame I saw ended it" fact. It is what lets a
@@ -130,6 +132,7 @@ const NO_TURNS: ReadonlySet<string> = new Set();
 export const NO_AGENT_RUN: AgentRunLockState = {
   threadId: null,
   activeTurnIds: NO_TURNS,
+  handoffTurnIds: NO_TURNS,
   released: false,
 };
 
@@ -142,9 +145,10 @@ export const NO_AGENT_RUN: AgentRunLockState = {
  *  • `turn.completed` / `turn.failed` / `turn.cancelled` **release that turn** —
  *    a failed run must never leave a locked editor, which is why `turn.failed`
  *    is a release and not a hold;
- *  • `leg.awaiting_user` / `leg.closed` **release the whole run**: the design
- *    leg has handed back, so whatever turn is still finishing its own tail is
- *    no longer the design agent writing this document;
+ *  • `leg.awaiting_user` / `leg.closed` **release their own turn**: the design
+ *    leg has handed back, while a separately active writer must stay locked;
+ *  • `leg.opened` marks its active submitting turn as a handoff opener; only
+ *    that turn's `turn.awaiting_input` releases it;
  *  • `stream.reset` forgets everything — the backlog that follows re-derives it,
  *    and carrying a pre-reset run forward would assert a turn we can no longer
  *    prove.
@@ -152,8 +156,9 @@ export const NO_AGENT_RUN: AgentRunLockState = {
  * Any other frame (`design.checkpoint`, `text.delta`, the part frames) returns
  * the SAME object, so a busy stream costs no re-renders.
  *
- * `turn.awaiting_input` is deliberately NOT a release: the turn is parked on a
- * human gate but is still live, and the lock's direction of error is to hold.
+ * Other `turn.awaiting_input` frames are deliberately NOT releases: a Design
+ * turn parked on a human gate is still live. `leg.reopened` is not evidence of
+ * a new-document handoff and does not change that conservative rule.
  */
 export function applyAgentRunLockEvent(
   state: AgentRunLockState,
@@ -164,30 +169,34 @@ export function applyAgentRunLockEvent(
   const base: AgentRunLockState =
     state.threadId === event.threadId
       ? state
-      : { threadId: event.threadId, activeTurnIds: NO_TURNS, released: false };
+      : { ...NO_AGENT_RUN, threadId: event.threadId };
   switch (event.type) {
     case "turn.accepted":
     case "turn.started": {
       if (base.activeTurnIds.has(event.turnId) && !base.released) return base;
       const active = new Set(base.activeTurnIds);
       active.add(event.turnId);
-      return { threadId: event.threadId, activeTurnIds: active, released: false };
+      return { ...base, activeTurnIds: active, released: false };
     }
+    case "leg.opened": {
+      // The open-design-leg tool emits this under the Head-of-ABM turn that
+      // creates the handoff, before a later Design turn does any authoring.
+      // Ignore a late/missing-start marker: it has no active lock to retire,
+      // and retaining it could misclassify a later attempt of the same turn.
+      if (!base.activeTurnIds.has(event.turnId) || base.handoffTurnIds.has(event.turnId)) {
+        return base;
+      }
+      return { ...base, handoffTurnIds: new Set([...base.handoffTurnIds, event.turnId]) };
+    }
+    case "turn.awaiting_input":
     case "turn.completed":
     case "turn.failed":
-    case "turn.cancelled": {
-      const active = new Set(base.activeTurnIds);
-      active.delete(event.turnId);
-      return {
-        threadId: event.threadId,
-        activeTurnIds: active,
-        // Only when nothing is left running: a sibling turn still in flight is
-        // still the agent at work.
-        released: active.size === 0,
-      };
-    }
+    case "turn.cancelled":
     case "leg.awaiting_user":
     case "leg.closed": {
+      if (event.type === "turn.awaiting_input" && !base.handoffTurnIds.has(event.turnId)) {
+        return base;
+      }
       // Fix round 1, finding I2: release ONLY the turn this frame names.
       //
       // Clearing every active turn here was the second dangerous-direction
@@ -198,9 +207,12 @@ export function applyAgentRunLockEvent(
       // (`design_leg_wiring.py`), so a turn still releases itself.
       const active = new Set(base.activeTurnIds);
       active.delete(event.turnId);
+      const handoffs = new Set(base.handoffTurnIds);
+      handoffs.delete(event.turnId);
       return {
         threadId: event.threadId,
         activeTurnIds: active,
+        handoffTurnIds: handoffs,
         // Nothing left running: this is also what lifts the durable
         // `threadBusy` floor at a cold-loaded hand-back, where the turn was
         // never seen to start.
@@ -208,11 +220,7 @@ export function applyAgentRunLockEvent(
       };
     }
     case "stream.reset":
-      return {
-        threadId: event.threadId,
-        activeTurnIds: NO_TURNS,
-        released: false,
-      };
+      return { ...NO_AGENT_RUN, threadId: event.threadId };
     default:
       return base;
   }
