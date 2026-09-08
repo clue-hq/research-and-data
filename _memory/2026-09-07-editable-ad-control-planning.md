@@ -9,3 +9,11 @@
 - Linear request: separate Product Engineering team and Editable Ad Quality — Control Test project, via MCP, browser read-back. Ten issue bodies include acceptance, dependencies and evidence; planning keys are not external IDs.
 - Linear 5.0.1 package and correct hosted MCP URL verified locally. User reports installed/connected. Initial browser account differed; after user switched accounts, Linear appeared under Installed with Try in chat and action definitions. The active task still has no callable Linear MCP tools or tool-search loader. Do not infer that the plugin is uninstalled or reinstall it. No team/project/issues have been created; no browser write fallback was chosen.
 - Closing: only planning docs changed, reviewed for links and dependency consistency. The prior runtime/test baseline is unchanged; no creative runs or new application tests were performed. Resume by restoring Linear tool availability, publishing/read-back of the prepared plan, then executing the agreed control plan.
+
+## Linear setup completed after restart
+
+- User restarted Codex; Linear MCP tools then became callable and authenticated reads verified the intended Clue HQ workspace. Do not keep treating this as a connection blocker or reinstall the plugin.
+- Created Product Engineering (`PE`) through Linear settings because this MCP exposes only team reads. Used MCP for Editable Ad Quality — Control Test, four milestones, two planning documents and ten issues PE-1–PE-10 with blocking relations. Project dates September 7–8, Planned; all issues Todo/High/unassigned. No collaborators assigned or messaged.
+- Project URL: https://linear.app/deeppresence/project/editable-ad-quality-control-test-170a09e4cc95. Full mapping is in the ticket pack; ignored creation/read-back receipts are `.local-setup/linear-ad-control-{receipt,verification}.json`.
+- Verified all issue fields/dependencies and both complete document contents via MCP, allowing only Markdown normalization. Browser confirmed team, dates, milestone counts 2/5/2/1, both documents and all ten tickets. Project issue tab kept as deliverable.
+- Closing: Linear planning setup is complete; no creative generation or product implementation started. Continue with PE-1 ownership/input freeze and PE-2 per-run isolation before matched concurrent tests. Preserve the existing checkout and local-only commit policy.

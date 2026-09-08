@@ -1,11 +1,11 @@
 # Editable Ad Quality — Linear ticket pack
 
-Status: prepared locally; no team, project, milestone or issue has been created in Linear by this task. `CT-01`–`CT-10` below are planning keys, not Linear issue identifiers.
+Status: created and verified in Linear on September 7, 2026 (America/Los_Angeles). Product Engineering (`PE`) owns the [Editable Ad Quality — Control Test project](https://linear.app/deeppresence/project/editable-ad-quality-control-test-170a09e4cc95), with four milestones, two project documents and ten Todo issues. Implementation and creative runs have not started. `CT-01`–`CT-10` remain planning keys; the real issue mapping appears below.
 
 ## Project setup
 
 - Workspace: existing Clue HQ workspace; verify its ID through MCP before writing.
-- Team: Product Engineering. Preferred identifier `PE`, subject to availability. Check for an existing matching team before creating it.
+- Team: Product Engineering (`PE`), created after verifying no matching team existed.
 - Project: Editable Ad Quality — Control Test.
 - Summary: Compare four generation treatments, preserve editable copy/logo/button layers, and select a brand-directed creative harness using rendered and editing evidence.
 - Dates: September 7–8, 2026, America/Los_Angeles. First comparison on the first working night is a target; do not silently mark unfinished work complete when the date passes.
@@ -184,4 +184,27 @@ Use MCP to inspect workspace/team/project duplicates, then create the missing te
 
 Read back descriptions, dates, team membership of the project, priorities, milestone placement and dependency relations through MCP. Use browser control to verify Product Engineering, the project overview and the complete issue list. Team creation may require a UI operation if the connected MCP does not expose it; identify that capability gap before using a different write method.
 
-Connection evidence on September 7: Linear 5.0.1 exists in Codex's plugin cache and its manifest points to `https://mcp.linear.app/mcp`. The user confirms Installed and connected in Codex. An initial browser account showed Install plugin. After the user switched to the intended account, browser verification showed Linear under Installed, with Try in chat and issue/project/milestone action definitions. This supersedes the initial browser result. The task still exposes no callable Linear MCP tools; installation is verified, but an authenticated MCP invocation is not. No installation, credential change or external project write has been performed by the agent.
+Connection resolution on September 7: after the user restarted Codex, the Linear MCP tools became callable. Authenticated reads verified the Clue HQ workspace and the user's admin access. The installed connection provides team reads but no team-create tool, so only team creation used the browser; the project, milestones, documents, issues and relations used MCP. No plugin reinstallation or credential change was required.
+
+## Verified Linear delivery
+
+- Workspace: Clue HQ, ID `44905c59-33ec-4c9d-82db-1b23baad9109`.
+- Team: Product Engineering, ID `c31a2197-3c44-423c-b59f-0945116d9342`, key `PE`.
+- Project: `74fd833c-0187-4d3c-ac43-40fb31d471e6`, Planned, High priority, September 7–8, 2026.
+- Documents: [Architecture and acceptance](https://linear.app/deeppresence/document/editable-ad-control-architecture-and-acceptance-9ecc4acb4775) and [Implementation plan](https://linear.app/deeppresence/document/editable-ad-control-implementation-plan-42c3b50f9bc7).
+- All ten issues are Todo, High priority and unassigned. Milestone issue counts are 2 / 5 / 2 / 1 in the planned order.
+- MCP read-back verified every issue title, semantic description, team/project, state, priority, milestone and blocking relation. Both document contents matched after Linear's Markdown formatting normalization.
+- Browser verification showed the new team, project dates/resources/milestones and complete PE-1–PE-10 issue list. The project issue list was left open.
+
+| Planning key | Linear issue |
+|---|---|
+| CT-01 | [PE-1 — Freeze the control cases and verify Fleet dispatch readiness](https://linear.app/deeppresence/issue/PE-1/freeze-the-control-cases-and-verify-fleet-dispatch-readiness) |
+| CT-02 | [PE-2 — Freeze experiment policy per run through the existing Design envelope](https://linear.app/deeppresence/issue/PE-2/freeze-experiment-policy-per-run-through-the-existing-design-envelope) |
+| CT-03 | [PE-3 — Select relevant references from the pinned brand](https://linear.app/deeppresence/issue/PE-3/select-relevant-references-from-the-pinned-brand) |
+| CT-04 | [PE-4 — Add a concept and layer plan to the candidate Design policy](https://linear.app/deeppresence/issue/PE-4/add-a-concept-and-layer-plan-to-the-candidate-design-policy) |
+| CT-05 | [PE-5 — Generate artwork by role and preserve multiple variants](https://linear.app/deeppresence/issue/PE-5/generate-artwork-by-role-and-preserve-multiple-variants) |
+| CT-06 | [PE-6 — Add structural editability gates and a reference-aware review](https://linear.app/deeppresence/issue/PE-6/add-structural-editability-gates-and-a-reference-aware-review) |
+| CT-07 | [PE-7 — Run the matched four-treatment comparison through Fleet](https://linear.app/deeppresence/issue/PE-7/run-the-matched-four-treatment-comparison-through-fleet) |
+| CT-08 | [PE-8 — Prove editing, persistence and export in the Codex browser](https://linear.app/deeppresence/issue/PE-8/prove-editing-persistence-and-export-in-the-codex-browser) |
+| CT-09 | [PE-9 — Validate onboarding fallback, other brands and format adaptation](https://linear.app/deeppresence/issue/PE-9/validate-onboarding-fallback-other-brands-and-format-adaptation) |
+| CT-10 | [PE-10 — Record the decision and preserve the ABM-to-Design handoff](https://linear.app/deeppresence/issue/PE-10/record-the-decision-and-preserve-the-abm-to-design-handoff) |
