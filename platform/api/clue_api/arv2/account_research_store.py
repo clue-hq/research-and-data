@@ -43,6 +43,7 @@ __all__ = [
     "begin_job",
     "create_job",
     "create_run",
+    "find_contact_by_name",
     "finish_job",
     "job_link_audit",
     "job_spend",
@@ -626,6 +627,39 @@ async def read_person_catalog(conn: AsyncConnection) -> FieldCatalog:
         contact=tuple(sections["contact"]),
         facet=tuple(sections["facet"]),
     )
+
+
+async def find_contact_by_name(
+    conn: AsyncConnection, *, workspace_id: str, account_id: UUID, name: str
+) -> UUID | None:
+    """The one contact under this account whose name is ``name``, or ``None``.
+
+    ``contact.reports_to`` declares ``contact_id`` as its **required** key, but the agent knows the
+    manager by name — so the name is resolved here, against the entities this workspace actually
+    holds, rather than the agent being asked for an id it cannot know or the claim being written
+    with an invented one.
+
+    The match is exact on the trimmed, case-folded full name, and **two matches resolve to
+    nothing**: two people called "Dana Reyes" at one account is precisely the same-name trap this
+    lane exists to refuse, and picking either would be a guess. The caller records the skip.
+    """
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT id FROM contact_entity "
+                    "WHERE workspace_id = :workspace_id AND account_entity_id = :account_id "
+                    "  AND merged_into IS NULL "
+                    "  AND lower(btrim(full_name)) = lower(btrim(:name)) "
+                    "LIMIT 2"
+                ),
+                {"workspace_id": workspace_id, "account_id": account_id, "name": name},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return UUID(str(rows[0]["id"])) if len(rows) == 1 else None
 
 
 async def read_persona_documents(

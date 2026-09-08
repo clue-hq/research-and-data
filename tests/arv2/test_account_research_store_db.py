@@ -21,7 +21,7 @@ from clue_core import (
     new_run_id,
 )
 from clue_research.durable.project_run import ensure_project_run
-from clue_research.identity import insert_account_entity
+from clue_research.identity import insert_account_entity, insert_contact_entity
 from clue_research.profiling.committee.fields import load_committee_pack
 from clue_research.profiling.fields import load_deep_profiling_pack
 from tests._workspace import seed_project
@@ -627,5 +627,78 @@ def test_the_person_catalog_is_the_contact_menu_plus_the_work_email() -> None:
                 spec.key.startswith("contact.") and not spec.key.startswith("contact.facet.")
                 for spec in catalog.contact
             )
+
+    run_async(scenario())
+
+
+def test_find_contact_by_name_resolves_one_match_and_refuses_an_ambiguous_one() -> None:
+    """``contact.reports_to`` needs a contact id the agent cannot know, so the name is resolved.
+
+    Two people of the same name under one account is the very trap this lane exists to refuse, so
+    an ambiguous name resolves to nothing rather than to whichever row came back first.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await seed_project(conn, "ws_r2_reports_to")
+            account = await insert_account_entity(
+                conn,
+                canonical_name="Probook",
+                primary_domain="probook.ai",
+                workspace_id=project.workspace_id,
+            )
+            other = await insert_account_entity(
+                conn,
+                canonical_name="Sysdig",
+                primary_domain="sysdig.com",
+                workspace_id=project.workspace_id,
+            )
+            manager = await insert_contact_entity(
+                conn,
+                account_entity_id=account,
+                full_name="Dana Reyes",
+                linkedin_url="https://www.linkedin.com/in/dana-reyes",
+            )
+            await insert_contact_entity(
+                conn,
+                account_entity_id=other,
+                full_name="Ambiguous Twin",
+                linkedin_url="https://www.linkedin.com/in/twin-a",
+            )
+
+            found = await store.find_contact_by_name(
+                conn,
+                workspace_id=project.workspace_id,
+                account_id=UUID(str(account)),
+                name="  dana reyes ",
+            )
+            assert found == UUID(str(manager)), "the match folds case and surrounding whitespace"
+
+            # A contact under a *different* account of the same workspace is not this account's.
+            assert (
+                await store.find_contact_by_name(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    account_id=UUID(str(account)),
+                    name="Ambiguous Twin",
+                )
+                is None
+            )
+
+            await insert_contact_entity(
+                conn,
+                account_entity_id=account,
+                full_name="Dana Reyes",
+                linkedin_url="https://www.linkedin.com/in/dana-reyes-2",
+            )
+            assert (
+                await store.find_contact_by_name(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    account_id=UUID(str(account)),
+                    name="Dana Reyes",
+                )
+                is None
+            ), "two of the same name resolve to nobody; picking one would be a guess"
 
     run_async(scenario())

@@ -45,20 +45,34 @@ from pydantic import (
 
 from clue_api.arv2.account_research_claims import (
     COMMITTEE_FIELD,
+    PUBLIC_APPEARANCES_FIELD,
     ClaimInput,
     JobScope,
     agent_claims,
     ai_ark_company_claims,
+    ai_ark_person_claims,
     ats_posting_claims,
     committee_candidate_claims,
+    email_export_claim,
     fit_verdict_claims,
     media_index_claim,
     negative_claims,
+    person_finalization_claims,
     structured_claims,
     unconfirmed_candidates,
+    unique_insight_claims,
 )
-from clue_api.arv2.account_research_refusals import RefusalError, refusal_json
-from clue_api.arv2.account_research_store import AnnotationRow, record_annotations
+from clue_api.arv2.account_research_refusals import (
+    PERSON_REFUSAL_CODES,
+    REFUSAL_CODES,
+    RefusalError,
+    refusal_json,
+)
+from clue_api.arv2.account_research_store import (
+    AnnotationRow,
+    find_contact_by_name,
+    record_annotations,
+)
 from clue_api.arv2.ai_ark_client import AiArkClient
 from clue_api.arv2.ats_client import (
     BoardFetchFailed,
@@ -100,8 +114,10 @@ from clue_api.arv2.provider_ledger import (
 )
 from clue_api.arv2.sinks import LedgerSink
 from clue_api.arv2.structuring_client import (
+    UNIQUE_INSIGHT_MODE,
     AccountSubject,
     FieldCatalog,
+    PersonSubject,
     SourceBlock,
     StructuringClient,
     schema_hint,
@@ -120,11 +136,14 @@ __all__ = [
     "ACCOUNT_TOOL_NAMES",
     "EVIDENCE_RULES",
     "LOCK_TEMPLATE",
+    "PERSON_LOCK_TEMPLATE",
+    "PERSON_TOOL_NAMES",
     "ProviderClients",
     "SourceInput",
     "ToolRuntime",
     "WriteFailure",
     "build_account_tools",
+    "build_person_tools",
 ]
 
 #: The twelve tools, in the order the manual lists them — free instruments first, the paid deep
@@ -139,6 +158,25 @@ ACCOUNT_TOOL_NAMES: tuple[str, ...] = (
     "read_media_feeds",
     "research_deep",
     "structure_material",
+    "write_claims",
+    "verify_links",
+    "finalize_research",
+)
+
+#: The eleven tools one **person** job runs on, in the order its manual lists them. Four account
+#: tools are deliberately absent — ``read_account_state``, ``read_ats_board``, ``lookup_company``
+#: and ``lookup_people`` belong to the account job, whose results reach this one through its
+#: already-established block — and two are new: ``lookup_person`` (the identity lock plus the email
+#: export) and ``unique_insight`` (the one-question pass).
+PERSON_TOOL_NAMES: tuple[str, ...] = (
+    "read_person_state",
+    "fetch_page",
+    "search_web",
+    "lookup_person",
+    "read_media_feeds",
+    "research_deep",
+    "structure_material",
+    "unique_insight",
     "write_claims",
     "verify_links",
     "finalize_research",
@@ -202,6 +240,25 @@ TARGET LOCK
 Every same-name entity is excluded. When you meet one, name it and discard it with the reason: if
 a source is about a laptop line, a bookkeeping tool or a spice brand rather than this company, say
 so and drop it. Excluded same-name entities for this run: {exclusions}."""
+
+#: The person constitution's §2, as the deep call's system prompt. The lock is the **employment
+#: history**, not the name: two people share a name, but nobody shares a career, and same-name
+#: contamination is the single recurring failure of person research. The history is stated to the
+#: provider in its own words for the same reason the account lock is — left implicit in the query,
+#: it is the first thing a long dossier call forgets.
+PERSON_LOCK_TEMPLATE = """You research exactly ONE person and nothing else.
+
+TARGET LOCK
+  person: {name}
+  title: {title}
+  company: {company}
+  linkedin: {linkedin}
+  known roles:
+{history}
+Anyone with the same or a similar name whose employment history does not match this lock is a
+DIFFERENT person. When you meet one, name them, give the URL, and discard them with the reason.
+A company account's post about this person is a company source, not their voice. Excluded
+same-name people for this run: {exclusions}."""
 
 #: Constitution §3, as the deep call's evidence law. The sentence shape was chosen on the
 #: 2026-09-08 Exa experiment: a claims-shaped output schema lifted quote fidelity to 94-95% but
@@ -308,6 +365,13 @@ class ToolRuntime:
         #: happens on the loop's thread with no connection of its own, and the loop must not open
         #: one per round — so the rounds ride here until the job settles.
         self.model_ledger = BufferedLedger()
+
+        #: Every source block this job has structured, in the order it structured them. It is the
+        #: material ``unique_insight`` asks its one question over: the pass is a *second reading*
+        #: of what the job already retrieved, not a new retrieval, so it must not need the agent to
+        #: paste the same pages back in. Deduplicated on append, because the manual tells the agent
+        #: to resend the same material once after ``structuring_unparseable``.
+        self.person_sources: list[SourceBlock] = []
 
         self._refusals: dict[str, str] = {}
         self._semaphores: dict[str, asyncio.Semaphore] = {}
@@ -444,14 +508,39 @@ class ToolRuntime:
         return results
 
     async def job_claims(self) -> Sequence[Claim]:
-        """This job's own claims: written by this run, about this account."""
+        """This job's own claims: written by this run, about this job's subject.
+
+        The subject is the account on an account job and the person on a person job — the same
+        entity ``account_research_claims._draft`` stamps every draft to — so the state reader, the
+        media cap and the link audit all see exactly the claims this job wrote and no others.
+        """
+        subject = self.scope.person_subject_id or self.scope.account_id
         async with self._conn_factory() as conn:
             claims = await claims_for_runs(
                 conn,
                 [RunId(self.scope.run_id)],
                 scope=WorkspaceScope.for_workspace(self.scope.workspace_id),
             )
-        return [claim for claim in claims if claim.entity_id == self.scope.account_id]
+        return [claim for claim in claims if claim.entity_id == subject]
+
+    async def resolve_contact(self, name: str) -> UUID | None:
+        """The contact under this job's account that ``name`` resolves to, or ``None``."""
+        async with self._conn_factory() as conn:
+            return await find_contact_by_name(
+                conn,
+                workspace_id=self.scope.workspace_id,
+                account_id=UUID(str(self.scope.account_id)),
+                name=name,
+            )
+
+    def remember_sources(self, blocks: Sequence[SourceBlock]) -> None:
+        """Add this call's material to what ``unique_insight`` will read, without duplicates."""
+        seen = {(block.url, block.kind, block.text) for block in self.person_sources}
+        for block in blocks:
+            key = (block.url, block.kind, block.text)
+            if key not in seen:
+                seen.add(key)
+                self.person_sources.append(block)
 
     async def record_link_audit(self, rows: Sequence[AnnotationRow]) -> int:
         """Write one link-audit annotation per claim — verdict *and* the reason behind it. An
@@ -586,6 +675,12 @@ class ReadAccountStateArgs(_Args):
     )
 
 
+class ReadPersonStateArgs(_Args):
+    section: Literal[
+        "all", "claims", "open_fields", "icp", "persona", "already_established", "lock"
+    ] = "all"
+
+
 class ReadAtsBoardArgs(_Args):
     company_url: str = Field(min_length=4)
 
@@ -610,6 +705,30 @@ class LookupPeopleArgs(_Args):
     name_variants: list[str] = Field(min_length=1, max_length=4)
     domain: str = Field(min_length=3)
     size: int = Field(3, ge=1, le=3)
+
+
+class LookupPersonArgs(_Args):
+    """The one argument the person lookup takes: whose LinkedIn page this is.
+
+    The name to search and the account to scope the search to are the **job's**, not the model's:
+    a person job exists for exactly one person at exactly one account, and letting the call name a
+    different one would be a second, competing lock. The URL is what the record is matched against,
+    because it is the identity the committee step confirmed the person on.
+    """
+
+    linkedin_url: str = Field(min_length=4)
+
+
+class UniqueInsightArgs(_Args):
+    """``subject`` is the person the caller believes it is asking about.
+
+    It is recorded and echoed back, and it decides nothing: the subject of the call is the job's
+    locked person, so a name variant here can never repoint the pass at somebody else. The argument
+    exists because the manual and the dossier skill both call the tool ``unique_insight(subject)``,
+    and a closed schema without it would refuse the call the skills instruct.
+    """
+
+    subject: str | None = None
 
 
 class ReadMediaFeedsArgs(_Args):
@@ -703,6 +822,53 @@ class FinalizeResearchArgs(_Args):
     committee_candidates: list[CommitteeCandidate] = Field(default_factory=list)
 
 
+class Opener(_Args):
+    """One grounded opener: the sentence, the hook it rests on, and the evidence behind it."""
+
+    text: str = Field(min_length=1)
+    hook: str = ""
+    #: The verbatim quote the hook rests on. An opener without one is **dropped** at finalization
+    #: (dossier skill §3) rather than written unevidenced, and named in the receipt.
+    quote: str = ""
+    url: str | None = None
+
+
+class SameNameEntry(_Args):
+    """One same-name person met and discarded — the row that proves the identity lock held."""
+
+    name_or_url: str = Field(min_length=1)
+    why_excluded: str = Field(min_length=1)
+
+
+class ReportsTo(_Args):
+    """Who this person reports to, admitted only from an ATS reporting line or their own words.
+
+    ``quote`` and ``url`` are what make the claim admissible at all (founder ruling 2026-09-09);
+    without both, the reporting line is not written and the receipt says so. ``contact_id`` is the
+    registered field's *required* key — the agent rarely knows it, so ``finalize_research``
+    resolves the name against the account's own contacts when it is absent.
+    """
+
+    name: str = Field(min_length=1)
+    contact_id: str | None = None
+    quote: str = ""
+    url: str | None = None
+
+
+class FinalizePersonResearchArgs(_Args):
+    """The person receipt. No fit verdicts and no committee candidates: constitution rule 11 gives
+    both to the account job, and a schema that admitted them would invite the person job to
+    re-decide the account's ICP from one employee's material."""
+
+    summary: str = Field(min_length=20)
+    openers: list[Opener] = Field(default_factory=list)
+    hooks: list[str] = Field(default_factory=list)
+    not_found: list[str] = Field(default_factory=list)
+    same_name_log: list[SameNameEntry] = Field(default_factory=list)
+    reports_to: ReportsTo | None = None
+    gaps: list[str] = Field(default_factory=list)
+
+
 # -- the tool bodies ---------------------------------------------------------------------------
 
 
@@ -721,6 +887,41 @@ async def _read_account_state(runtime: ToolRuntime, args: ReadAccountStateArgs) 
         "icp": scope.icp_markdown,
         "persona": scope.persona_markdown,
         "already_established": scope.already_established,
+    }
+    if args.section == "all":
+        return state
+    return {args.section: state[args.section]}
+
+
+async def _read_person_state(runtime: ToolRuntime, args: ReadPersonStateArgs) -> dict[str, Any]:
+    """What this job knows about its person, in the sections ``read_account_state`` serves.
+
+    The one section the account reader has no equivalent of is ``lock``: the name, title, LinkedIn
+    URL and verified employment history that rule out every same-name person. It is served on
+    demand for the same reason the ICP is — the lock arrives in the system prompt, and a long job
+    is exactly where a model stops re-reading its own preamble.
+    """
+    scope = runtime.scope
+    claims = await runtime.job_claims()
+    written_keys = {claim.field_key for claim in claims}
+    state: dict[str, Any] = {
+        "account": {
+            "name": scope.account_name,
+            "domain": scope.account_domain,
+            "id": str(scope.account_id),
+        },
+        "claims": [_claim_json(claim) for claim in claims],
+        "open_fields": sorted(runtime.catalog.keys() - written_keys),
+        "icp": scope.icp_markdown,
+        "persona": scope.persona_markdown,
+        "already_established": scope.already_established,
+        "lock": {
+            "person_name": scope.person_name,
+            "person_title": scope.person_title,
+            "person_linkedin_url": scope.person_linkedin_url,
+            "contact_id": str(scope.contact_id) if scope.contact_id else None,
+            "employment_history": list(scope.employment_history),
+        },
     }
     if args.section == "all":
         return state
@@ -872,6 +1073,123 @@ async def _lookup_people(runtime: ToolRuntime, args: LookupPeopleArgs) -> dict[s
             for person in people.people
         ],
         "cost": _cost_json(people.cost),
+    }
+
+
+def _fold_identity(value: str) -> str:
+    """The form two URLs or two domains are compared in: lower-case, no scheme, no ``www.``, no
+    trailing slash.
+
+    One helper for both, because the two comparisons the person lock makes — "is this the LinkedIn
+    page the committee confirmed?" and "is this employer the account?" — differ only in what they
+    are handed. ``https://WWW.LinkedIn.com/in/Nick/`` and ``linkedin.com/in/nick`` are the same
+    page; ``www.probook.ai`` and ``probook.ai`` are the same company. Nothing else is folded: a
+    different path is a different person, and a different domain is a different employer.
+    """
+    folded = value.strip().lower().rstrip("/")
+    for scheme in ("https://", "http://"):
+        folded = folded.removeprefix(scheme)
+    return folded.removeprefix("www.")
+
+
+async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[str, Any]:
+    """One provider record for this job's person, their email export, and the claims behind both.
+
+    Two locks, in order, and neither is a scored match (law 10):
+
+    1. **The LinkedIn URL.** The name-scoped search returns up to three candidates; the one this
+       job is about is the one whose ``linkedin_url`` folds equal to the URL the committee step
+       confirmed. No candidate matching is ``subject_lock_failed``, and the refusal names the
+       companies the candidates *do* work for, so the agent can log them as lookalikes rather than
+       guess why the call failed.
+    2. **The employer, exact.** A record with the right LinkedIn URL whose
+       ``current_company_domain`` is not this account's domain is the same person at a *different*
+       employer — the account job's committee is stale, and researching them here would file
+       another company's employee under this account. That is ``subject_lock_failed`` too, and
+       it names both domains.
+
+    Only past both locks is the email export bought. An export that finds nothing is a **result**,
+    never a refusal: no mailbox is a fact about the mailbox, and the member is still researched.
+    """
+    scope = runtime.scope
+    wanted = _fold_identity(args.linkedin_url)
+
+    def hop(caller: ProviderCaller) -> Any:
+        return runtime.clients.ai_ark(caller).people_by_name(
+            [scope.person_name], scope.account_domain, size=3
+        )
+
+    people = await runtime.call_provider("ai_ark", hop)
+    record = next(
+        (
+            person
+            for person in people.people
+            if person.linkedin_url and _fold_identity(person.linkedin_url) == wanted
+        ),
+        None,
+    )
+    if record is None:
+        companies = [
+            f"{person.full_name or '?'} at {person.current_company or 'an unnamed company'}"
+            for person in people.people
+        ] or ["nobody at all"]
+        raise RefusalError(
+            "subject_lock_failed",
+            f"no candidate for {scope.person_name!r} at {scope.account_domain} carries the "
+            f"LinkedIn URL {args.linkedin_url}; the provider returned {companies}",
+        )
+    employer = _fold_identity(record.current_company_domain or "")
+    if employer != _fold_identity(scope.account_domain):
+        raise RefusalError(
+            "subject_lock_failed",
+            f"the record for {args.linkedin_url} says this person's current employer is "
+            f"{employer or 'not stated'}, and this job's account is "
+            f"{_fold_identity(scope.account_domain)}",
+        )
+
+    def export(caller: ProviderCaller) -> Any:
+        return runtime.clients.ai_ark(caller).export_email(args.linkedin_url)
+
+    exported = await runtime.call_provider("ai_ark", export)
+    drafts = list(ai_ark_person_claims(record, scope))
+    email_draft = email_export_claim(exported, scope)
+    if email_draft is not None:
+        drafts.append(email_draft)
+    # One transaction per draft: the record's fields and the email are independent facts, and a
+    # value the store will not take must cost its own claim rather than the whole lookup.
+    results = await runtime.write_each(drafts)
+    return {
+        "person": {
+            "full_name": record.full_name,
+            "title": record.title,
+            "headline": record.headline,
+            "linkedin_url": record.linkedin_url,
+            "current_company": record.current_company,
+            "current_company_domain": record.current_company_domain,
+        },
+        "email": (
+            {
+                "address": exported.address,
+                "verdict": exported.verdict,
+                "status": exported.status,
+                "domain_type": exported.domain_type,
+            }
+            if exported.found and exported.address
+            else None
+        ),
+        # A result field, never a refusal: the manual's row says the member is still researched.
+        "email_export_empty": not (exported.found and exported.address),
+        "written": [
+            _receipt_json(result, draft, runtime.catalog)
+            for result, draft in zip(results, drafts, strict=True)
+            if isinstance(result, WriteReceipt)
+        ],
+        "write_failures": [
+            {"field_key": result.field_key, "error": result.error}
+            for result in results
+            if isinstance(result, WriteFailure)
+        ],
+        "cost": [_cost_json(cost) for cost in (people.cost, exported.cost) if cost is not None],
     }
 
 
@@ -1031,6 +1349,21 @@ def _with_attempts(detail: str, attempts: Sequence[Mapping[str, str]]) -> str:
 
 
 async def _read_media_feeds(runtime: ToolRuntime, args: ReadMediaFeedsArgs) -> dict[str, Any]:
+    if runtime.scope.subject_kind == "person":
+        # The per-person item cap, counted off the claims this job actually wrote rather than off a
+        # counter in memory, so a resumed job cannot re-buy the items it already has. It is checked
+        # *before* any source is chosen: media is the most expensive thing in the job, and a cap of
+        # zero (media off for this workspace) must cost nothing at all.
+        cap = runtime.settings.arv2_person_media_max_items
+        held = sum(
+            1 for claim in await runtime.job_claims() if claim.field_key == PUBLIC_APPEARANCES_FIELD
+        )
+        if held >= cap:
+            raise RefusalError(
+                "media_cap_reached",
+                f"{runtime.scope.person_name} already has {held} media item(s) and the configured "
+                f"cap is {cap}",
+            )
     # The primary first (feed before watch page when both are given: a transcript beats indexed
     # page words), then the alternates in the order the model gave them. A source that will not
     # LOAD hands over to the next; a source that loaded and answered (no matching episode, over
@@ -1089,6 +1422,8 @@ async def _read_media_feeds(runtime: ToolRuntime, args: ReadMediaFeedsArgs) -> d
                 transcript_model=item.transcript_model,
                 speaker_verified=item.speaker_verified,
                 scope=runtime.scope,
+                title=item.title,
+                catalog=runtime.catalog,
             )
         ]
     )
@@ -1117,16 +1452,30 @@ async def _read_media_feeds(runtime: ToolRuntime, args: ReadMediaFeedsArgs) -> d
     }
 
 
+def _deep_lock(scope: JobScope, exclusions: str) -> str:
+    """The target lock this job's deep call runs under — one account, or one person."""
+    if scope.subject_kind == "person":
+        history = (
+            "\n".join(f"    - {line}" for line in scope.employment_history)
+            or "    - (none recorded; the account job confirmed them on the URL above)"
+        )
+        return PERSON_LOCK_TEMPLATE.format(
+            name=scope.person_name,
+            title=scope.person_title or "(not stated)",
+            company=scope.account_name,
+            linkedin=scope.person_linkedin_url or "(not stated)",
+            history=history,
+            exclusions=exclusions,
+        )
+    return LOCK_TEMPLATE.format(
+        name=scope.account_name, domain=scope.account_domain, exclusions=exclusions
+    )
+
+
 async def _research_deep(runtime: ToolRuntime, args: ResearchDeepArgs) -> dict[str, Any]:
     scope = runtime.scope
     exclusions = ", ".join(args.same_name_exclusions) or "none named"
-    system_prompt = (
-        LOCK_TEMPLATE.format(
-            name=scope.account_name, domain=scope.account_domain, exclusions=exclusions
-        )
-        + "\n\n"
-        + EVIDENCE_RULES
-    )
+    system_prompt = _deep_lock(scope, exclusions) + "\n\n" + EVIDENCE_RULES
     query_parts = [args.charter]
     if args.probes:
         query_parts.append("SPECIAL PROBES\n" + "\n".join(f"- {probe}" for probe in args.probes))
@@ -1165,39 +1514,74 @@ async def _research_deep(runtime: ToolRuntime, args: ResearchDeepArgs) -> dict[s
     }
 
 
-async def _structure_material(runtime: ToolRuntime, args: StructureMaterialArgs) -> dict[str, Any]:
-    if args.subject_kind == "person":
-        raise RefusalError(
-            "invalid_arguments",
-            "R2 researches one account: a person subject is admitted in R3, when contact entities "
-            "are composed. Structure the person's material as an account subject instead.",
-        )
-    subject = AccountSubject(
-        name=args.subject_name,
-        domain=args.subject_domain_or_company,
-        already_known=args.already_known,
-    )
-    blocks = tuple(
+def _source_blocks(sources: Sequence[SourceInput]) -> tuple[SourceBlock, ...]:
+    return tuple(
         SourceBlock(
             url=str(source.url) if source.url else None,
             kind=source.kind,
             text=source.text,
             title=source.title,
         )
-        for source in args.sources
+        for source in sources
     )
 
-    def hop(caller: ProviderCaller) -> Any:
+
+async def _structure_material(runtime: ToolRuntime, args: StructureMaterialArgs) -> dict[str, Any]:
+    """One structuring call, on whichever subject this job is about.
+
+    The **job** decides which subject kind is admitted, not the call: an account job that asked for
+    a person had no contact entity to stamp the claims to (R2's refusal, kept word for word), and a
+    person job that asks for an account would file company facts on one employee, where no reader
+    of the account looks. Either way it is ``invalid_arguments``, because the fix is one argument.
+    """
+    person_job = runtime.scope.subject_kind == "person"
+    if args.subject_kind == "person" and not person_job:
+        raise RefusalError(
+            "invalid_arguments",
+            "R2 researches one account: a person subject is admitted in R3, when contact entities "
+            "are composed. Structure the person's material as an account subject instead.",
+        )
+    if args.subject_kind == "account" and person_job:
+        raise RefusalError(
+            "invalid_arguments",
+            "a person job structures its person: every claim it writes is stamped to the contact, "
+            f"so an account subject would file {runtime.scope.account_name}'s facts on "
+            f"{runtime.scope.person_name}. Call it with subject_kind='person'.",
+        )
+    blocks = _source_blocks(args.sources)
+
+    def person_hop(caller: ProviderCaller) -> Any:
+        subject = PersonSubject(
+            name=runtime.scope.person_name,
+            company=runtime.scope.account_name,
+            linkedin_url=runtime.scope.person_linkedin_url,
+        )
+        return runtime.clients.structuring(caller).structure_person(
+            subject, "", runtime.catalog, mode=args.mode, sources=blocks, notes=args.notes
+        )
+
+    def account_hop(caller: ProviderCaller) -> Any:
         # The bundle is built inside the client from these blocks, so the fence, the quoting rule
         # and the post-parse attribution can never disagree; there is no free bundle to pass.
+        subject = AccountSubject(
+            name=args.subject_name,
+            domain=args.subject_domain_or_company,
+            already_known=args.already_known,
+        )
         return runtime.clients.structuring(caller).structure_account(
             subject, "", runtime.catalog, mode=args.mode, sources=blocks, notes=args.notes
         )
 
     try:
-        output = await runtime.call_provider("openrouter", hop)
+        output = await runtime.call_provider(
+            "openrouter", person_hop if person_job else account_hop
+        )
     except RawParseError as unparseable:
         raise RefusalError("structuring_unparseable", str(unparseable)) from unparseable
+    if person_job:
+        # What ``unique_insight`` will read. Kept only once the call came back, so material the
+        # provider never saw is not counted as a channel the one-question pass checked.
+        runtime.remember_sources(blocks)
 
     drafts = structured_claims(
         output, scope=runtime.scope, subject_url_hint=None, catalog=runtime.catalog
@@ -1234,6 +1618,69 @@ async def _structure_material(runtime: ToolRuntime, args: StructureMaterialArgs)
             {"field_key": failure.field_key, "error": failure.error} for failure in failures
         ],
         "mode": output.mode,
+        "cost": _cost_json(output.cost),
+    }
+
+
+async def _unique_insight(runtime: ToolRuntime, args: UniqueInsightArgs) -> dict[str, Any]:
+    """The one-question pass: what a generic enrichment tool would never surface about this person.
+
+    It is a **second reading of material this job already retrieved**, so it takes no sources of
+    its own — the runtime carries every block ``structure_material`` structured, and asking the
+    agent to paste them back would be paying twice for the same bytes. With nothing structured yet
+    there is nothing to read, and that is ``invalid_arguments`` with the call to make instead: it
+    is an ordering mistake, not a finding about the person.
+
+    An empty answer is ``insight_not_found``, which is a **finding** — the manual's row tells the
+    agent to record "thin public footprint" with the channels checked — so the refusal names the
+    source kinds it read, which is what "the channels checked" means here.
+    """
+    scope = runtime.scope
+    sources = tuple(runtime.person_sources)
+    if not sources:
+        raise RefusalError(
+            "invalid_arguments",
+            "unique_insight reads the material this job has already structured, and this job has "
+            "structured none. Call structure_material first, then ask this once.",
+        )
+    subject = PersonSubject(
+        name=scope.person_name,
+        company=scope.account_name,
+        linkedin_url=scope.person_linkedin_url,
+    )
+
+    def hop(caller: ProviderCaller) -> Any:
+        return runtime.clients.structuring(caller).structure_person(
+            subject, "", runtime.catalog, mode=UNIQUE_INSIGHT_MODE, sources=sources, notes=None
+        )
+
+    try:
+        output = await runtime.call_provider("openrouter", hop)
+    except RawParseError as unparseable:
+        raise RefusalError("structuring_unparseable", str(unparseable)) from unparseable
+
+    if not output.claims:
+        kinds = sorted({block.kind for block in sources})
+        raise RefusalError(
+            "insight_not_found",
+            f"nothing beyond a standard profile in the {len(sources)} source(s) this job has "
+            f"structured (kinds checked: {', '.join(kinds)})",
+        )
+    drafts = unique_insight_claims(output, scope=scope, catalog=runtime.catalog)
+    results = await runtime.write_each(drafts)
+    return {
+        "written": [
+            _receipt_json(result, draft, runtime.catalog)
+            for result, draft in zip(results, drafts, strict=True)
+            if isinstance(result, WriteReceipt)
+        ],
+        "write_failures": [
+            {"field_key": result.field_key, "error": result.error}
+            for result in results
+            if isinstance(result, WriteFailure)
+        ],
+        "sources_read": len(sources),
+        "dropped_rows": output.dropped_rows,
         "cost": _cost_json(output.cost),
     }
 
@@ -1497,7 +1944,93 @@ async def _finalize_research(runtime: ToolRuntime, args: FinalizeResearchArgs) -
     }
 
 
+async def _finalize_person_research(
+    runtime: ToolRuntime, args: FinalizePersonResearchArgs
+) -> dict[str, Any]:
+    """Finish one person job once: the openers, the hooks, the lock's proof, and the receipt.
+
+    Nothing here re-decides the account. There are no fit verdicts and no committee candidates
+    (constitution rule 11 — a human launched this person, and the account job owns the ICP), and
+    the only judgement the tool itself makes is the one the code owns: an opener with no quote
+    behind it is dropped and named.
+
+    ``insight_found`` is read off the **rows**, not off what the model says it did: any claim this
+    job wrote carrying the ``unique_insight`` marker means the one-question pass landed something.
+    """
+    if runtime.finalization is not None:
+        raise RefusalError("finalization_already_proposed", "this job is already finalized")
+
+    reports_to = args.reports_to.model_dump() if args.reports_to is not None else None
+    if reports_to is not None and not reports_to.get("contact_id"):
+        # ``contact_id`` is the registered field's required key and the agent has no way to know
+        # it, so the name it *does* know is resolved against this account's own contacts. An
+        # unresolved or ambiguous name leaves it absent, and the mapper skips the claim with the
+        # reason rather than inventing an id.
+        resolved = await runtime.resolve_contact(str(reports_to.get("name") or ""))
+        reports_to["contact_id"] = str(resolved) if resolved is not None else None
+
+    finalization = person_finalization_claims(
+        openers=[opener.model_dump() for opener in args.openers],
+        hooks=list(args.hooks),
+        same_name_log=[row.model_dump() for row in args.same_name_log],
+        reports_to=reports_to,
+        scope=runtime.scope,
+        catalog=runtime.catalog,
+    )
+    # One transaction per draft: this whole batch is model-produced, and a value the store will not
+    # take must not cost the job its only finalization.
+    results = await runtime.write_each(finalization.drafts)
+    insight_found = any(
+        (claim.write_markers or {}).get("unique_insight") is True
+        for claim in await runtime.job_claims()
+    )
+    receipt: dict[str, Any] = {
+        "summary": args.summary,
+        "openers_written": len(finalization.openers_written),
+        "openers_dropped": list(finalization.openers_dropped),
+        "hooks_written": finalization.hooks_written,
+        "not_found": list(args.not_found),
+        "same_name_log": [row.model_dump() for row in args.same_name_log],
+        "insight_found": insight_found,
+        "reports_to_written": finalization.reports_to_written,
+        "gaps": list(args.gaps),
+        "proposed_at": runtime.now().isoformat(),
+    }
+    runtime.finalization = receipt
+    return {
+        "accepted": True,
+        **{key: value for key, value in receipt.items() if key != "proposed_at"},
+        "lookalikes_written": finalization.lookalikes_written,
+        "reports_to_skipped": finalization.reports_to_skipped,
+        "claim_ids": [
+            str(result.claim_id) for result in results if isinstance(result, WriteReceipt)
+        ],
+        "write_failures": [
+            {"field_key": result.field_key, "error": result.error}
+            for result in results
+            if isinstance(result, WriteFailure)
+        ],
+    }
+
+
 # -- the governed wrapper ------------------------------------------------------------------------
+
+
+def _refusal_envelope(refused: RefusalError, codes: frozenset[str]) -> str:
+    """One refusal as the envelope the model reads, with the code checked against this belt's set.
+
+    The envelope carries the manual's ``reaction`` for the code, *in the same turn* — a more
+    proximate instruction than the manual itself. A code this agent's manual has no row for would
+    therefore hand the model a move its own manual never states, so it is asserted rather than
+    trusted. The assertion is a programming error, not a research outcome: the caller's outer
+    handler turns it into ``tool_error:AssertionError`` under the failure law, and the tool has
+    still written nothing and ended nothing.
+    """
+    base = refused.refusal.code.split(":", 1)[0]
+    assert base in codes, (  # noqa: S101 — surfaced as tool_error by the wrapper, never a crash
+        f"refusal code {base!r} is not one this agent's manual carries a row for"
+    )
+    return refusal_json(refused.refusal.code, refused.refusal.detail)
 
 
 def _governed(
@@ -1505,6 +2038,7 @@ def _governed(
     name: str,
     model: type[BaseModel],
     body: Callable[[ToolRuntime, Any], Awaitable[Mapping[str, Any]]],
+    codes: frozenset[str],
 ) -> Callable[..., Awaitable[str]]:
     """Wrap one tool body in the failure law: every exit is a JSON string, never an exception."""
 
@@ -1515,11 +2049,12 @@ def _governed(
             return previous
         runtime.tool_calls += 1
         try:
-            return json.dumps(await body(runtime, model(**args)), default=str)
-        except RefusalError as refused:
-            envelope = refusal_json(refused.refusal.code, refused.refusal.detail)
-        except ValidationError as invalid:
-            envelope = refusal_json("invalid_arguments", str(invalid)[:500])
+            try:
+                return json.dumps(await body(runtime, model(**args)), default=str)
+            except RefusalError as refused:
+                envelope = _refusal_envelope(refused, codes)
+            except ValidationError as invalid:
+                envelope = refusal_json("invalid_arguments", str(invalid)[:500])
         except Exception as error:  # noqa: BLE001 — the failure law: never a raise into the graph
             log.exception("arv2.account_tool_failed", tool=name)
             # Deliberately NOT remembered. The refusal memory exists to stop the model paying twice
@@ -1541,10 +2076,11 @@ def _tool(
     description: str,
     model: type[BaseModel],
     body: Callable[[ToolRuntime, Any], Awaitable[Mapping[str, Any]]],
+    codes: frozenset[str] = REFUSAL_CODES,
 ) -> StructuredTool:
     """One governed tool. An argument the schema rejects is a refusal, not a LangChain exception."""
     return StructuredTool.from_function(
-        coroutine=_governed(runtime, name, model, body),
+        coroutine=_governed(runtime, name, model, body, codes),
         name=name,
         description=description,
         args_schema=model,
@@ -1691,5 +2227,163 @@ def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             ),
             model=FinalizeResearchArgs,
             body=_finalize_research,
+        ),
+    ]
+
+
+def build_person_tools(runtime: ToolRuntime) -> list[StructuredTool]:
+    """The eleven tools for one person job, bound to that job's runtime.
+
+    Seven bodies are the account job's, unchanged — ``fetch_page``, ``search_web``,
+    ``read_media_feeds``, ``research_deep``, ``structure_material``, ``write_claims`` and
+    ``verify_links`` all read the job's subject off the scope rather than off the call, which is
+    what lets one body serve both agents without a second copy to drift. Four are this belt's own:
+    ``read_person_state`` (the account reader plus the identity lock), ``lookup_person``,
+    ``unique_insight`` and the person ``finalize_research``.
+
+    Every refusal is checked against :data:`PERSON_REFUSAL_CODES`, so a tool can never hand this
+    agent a reaction its own manual does not carry.
+    """
+
+    def person_tool(
+        *,
+        name: str,
+        description: str,
+        model: type[BaseModel],
+        body: Callable[[ToolRuntime, Any], Awaitable[Mapping[str, Any]]],
+    ) -> StructuredTool:
+        return _tool(
+            runtime,
+            name=name,
+            description=description,
+            model=model,
+            body=body,
+            codes=PERSON_REFUSAL_CODES,
+        )
+
+    return [
+        person_tool(
+            name="read_person_state",
+            description=(
+                "What is already known about this person: the claims this job has written, which "
+                "catalog fields are still open, the ICP charter, the persona map, the "
+                "already-established block, and the identity lock (name, title, LinkedIn URL and "
+                "verified employment history). Free. Sections: all, claims, open_fields, icp, "
+                "persona, already_established, lock."
+            ),
+            model=ReadPersonStateArgs,
+            body=_read_person_state,
+        ),
+        person_tool(
+            name="fetch_page",
+            description=(
+                "Fetch the verbatim text of a URL you already hold (their LinkedIn page as indexed "
+                "text, a personal site, a talk page, a byline). A known URL is fetched, never "
+                "searched for. Never a LinkedIn-native video."
+            ),
+            model=FetchPageArgs,
+            body=_fetch_page,
+        ),
+        person_tool(
+            name="search_web",
+            description=(
+                "One unrestricted sweep search (at most ten results) for this named person. Leave "
+                "include_domains empty: restricting the domain forces the engine to return "
+                "something from that domain, and that something is a same-name stranger."
+            ),
+            model=SearchWebArgs,
+            body=_search_web,
+        ),
+        person_tool(
+            name="lookup_person",
+            description=(
+                "Confirm this person's identity and pull their deterministic fields plus their "
+                "professional email, by their LinkedIn URL. The name and the account are the "
+                "job's, so this is never a roster pull. The record is accepted only if its "
+                "LinkedIn URL matches and its current employer is exactly this account; every "
+                "registered field it carries is written as a claim in code, and no email is ever "
+                "synthesised."
+            ),
+            model=LookupPersonArgs,
+            body=_lookup_person,
+        ),
+        person_tool(
+            name="read_media_feeds",
+            description=(
+                "Read this person's podcast episode (feed_url, by number or title fragment) or a "
+                "YouTube appearance (youtube_url, indexed page words — never a video download). A "
+                "podcast episode is transcribed, the speaker verified, and quotes mined only when "
+                "the speaker is verified. Give every other place the same appearance may load from "
+                "as alternate_urls. Bounded by the per-person item cap."
+            ),
+            model=ReadMediaFeedsArgs,
+            body=_read_media_feeds,
+        ),
+        person_tool(
+            name="research_deep",
+            description=(
+                "The one paid dossier call: your charter and special probes go in the query, the "
+                "person lock (name, title, company, LinkedIn, employment history) and the evidence "
+                "law in the system prompt, and what is already established is named so the "
+                "provider finds what is NOT there. Use it once."
+            ),
+            model=ResearchDeepArgs,
+            body=_research_deep,
+        ),
+        person_tool(
+            name="structure_material",
+            description=(
+                "Turn prose into typed claims against the contact field catalog and write them. "
+                "One subject per call, and on this job the subject_kind is 'person'. "
+                "mode='broad' sweeps everything the catalog can hold; mode='intent_sweep' pulls "
+                "only verbatim buying-intent statements."
+            ),
+            model=StructureMaterialArgs,
+            body=_structure_material,
+        ),
+        person_tool(
+            name="unique_insight",
+            description=(
+                "Ask one question over everything you have already structured: what is the one "
+                "thing about this person a generic enrichment tool would never surface? At most "
+                "one claim, written to the existing facet field the fact actually is, at priority "
+                "1. It registers no field. Ask it once, after the broad structuring pass, even "
+                "when that pass found nothing distinctive."
+            ),
+            model=UniqueInsightArgs,
+            body=_unique_insight,
+        ),
+        person_tool(
+            name="write_claims",
+            description=(
+                "Write up to fifty claims yourself, each with a verbatim quote and the URL it came "
+                "from. A missing URL, an unknown key or a schema miss is recorded as a marker "
+                "rather than refused; each claim is written on its own, so a value the store will "
+                "not take comes back in write_failures and the rest of the batch is still stored."
+            ),
+            model=WriteClaimsArgs,
+            body=_write_claims,
+        ),
+        person_tool(
+            name="verify_links",
+            description=(
+                "The fabrication audit: re-fetch the pages this job's claims cite and check every "
+                "quote against the page text, EXACT / PARTIAL / NOT_FOUND, written as an "
+                "annotation beside the claim."
+            ),
+            model=VerifyLinksArgs,
+            body=_verify_links,
+        ),
+        person_tool(
+            name="finalize_research",
+            description=(
+                "Finish the job once: the depth summary, the three grounded openers (each with its "
+                "hook, its verbatim quote and the URL), the hooks, the not-found list with the "
+                "channels you checked, the same-name log, who they report to if they said so, and "
+                "the honest gaps. An opener with no quote is dropped. Zero yield is a valid "
+                "outcome. It can be accepted only once."
+            ),
+            model=FinalizePersonResearchArgs,
+            body=_finalize_person_research,
         ),
     ]
