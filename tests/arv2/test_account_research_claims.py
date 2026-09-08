@@ -8,8 +8,10 @@ born as, and that a `fail` verdict with nothing behind it is downgraded rather t
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
+from typing import Any
 from uuid import uuid4
 
 from clue_api.arv2.account_research_claims import (
@@ -250,10 +252,11 @@ def test_negatives_are_reputation_risk_claims_born_unsafe_priority_two() -> None
 
     assert draft.field_key == "account.reputation_risk"
     assert draft.outreach_safe is False and draft.signal_priority == 2
+    # No ``"source_note": None``: an explicit null in a string-typed property would make this
+    # correctly-mapped claim land ``schema_valid=False``.
     assert draft.value_json == {
         "what": "Calcalist reported acquisition talks with Cisco",
         "status": "refuted",
-        "source_note": None,
     }
     assert draft.evidence_span == "Zafran denied…"
     assert draft.extraction_method is ExtractionMethod.LLM_SYNTHESIS
@@ -418,3 +421,145 @@ def test_media_index_claim_records_the_item_and_whether_the_speaker_was_verified
     assert draft.source_url == "https://example.com/ep/42.mp3"
     assert draft.extraction_method is ExtractionMethod.API
     assert draft.observed_at is None
+
+
+# -- no explicit nulls in a mapped value (the ``schema_valid`` truthfulness rule) -----------------
+#
+# A registered optional property is typed (``{"type": "string"}``) and the writer's schema gate is
+# an ``isinstance`` check, so an explicit ``null`` for something the record simply did not carry
+# lands a correct, deterministically-mapped claim with ``schema_valid=False`` — the one marker the
+# audit skill reads as "the extraction did not fit the field". Absent, not null.
+
+
+def _nulls(value: Any) -> list[str]:
+    """Every key path under ``value`` whose value is ``None``."""
+    found: list[str] = []
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            found.extend([key] if item is None else [f"{key}.{p}" for p in _nulls(item)])
+    elif isinstance(value, list):
+        for item in value:
+            found.extend(_nulls(item))
+    return found
+
+
+def test_an_ats_posting_that_carries_nothing_optional_writes_no_null_properties() -> None:
+    postings = BoardPostings(
+        board=AtsBoard(kind="greenhouse", slug="probook", source_url="https://probook.ai/careers"),
+        url="https://boards-api.greenhouse.io/v1/boards/probook/jobs",
+        postings=(
+            JobPosting(
+                title="Head of Growth",
+                department=None,
+                team=None,
+                location=None,
+                published_at=None,
+                days_open=None,
+                is_listed=True,
+                compensation=None,
+                description_plain=None,
+                url=None,
+                apply_url=None,
+            ),
+        ),
+        raw_ref="raw:x",
+        ledger_row_id="r",
+        cost=_cost(),
+    )
+
+    [draft] = ats_posting_claims(postings, SCOPE)
+
+    assert draft.value_json == [{"title": "Head of Growth", "still_listed": True}]
+    assert _nulls(draft.value_json) == []
+
+
+def test_a_negative_with_no_status_writes_no_null_properties() -> None:
+    [draft] = negative_claims(
+        [
+            NegativeOrRisk(
+                what="Two Glassdoor reviews describe a layoff round",
+                status=None,
+                evidence_span="laid off 20%",
+                source_url=None,
+                outreach_safe=True,
+            )
+        ],
+        SCOPE,
+    )
+
+    assert draft.value_json == {"what": "Two Glassdoor reviews describe a layoff round"}
+    assert _nulls(draft.value_json) == []
+
+
+def test_a_committee_candidate_writes_no_null_properties_but_a_vacant_seat_keeps_its_name() -> None:
+    thin, vacant = committee_candidate_claims(
+        [
+            {
+                "name": "Nick Fisher",
+                "persona": "champion",
+                "confirmed_by": "https://probook.ai/about",
+            },
+            {"persona": "economic_buyer", "vacant_seat": True},
+        ],
+        SCOPE,
+    )
+
+    assert thin.value_json == {
+        "name": "Nick Fisher",
+        "persona": "champion",
+        "confirmed_by": "https://probook.ai/about",
+        "vacant_seat": False,
+    }
+    assert _nulls(thin.value_json) == []
+    # ``name`` is a REQUIRED key of ``account.committee_candidate``: a vacant seat keeps it null
+    # rather than hiding a genuine schema mismatch behind a deleted key.
+    assert vacant.value_json == {"name": None, "persona": "economic_buyer", "vacant_seat": True}
+    assert _nulls(vacant.value_json) == ["name"]
+
+
+def test_a_media_item_with_no_duration_or_transcript_writes_no_null_properties() -> None:
+    draft = media_index_claim(
+        person="Nick Fisher",
+        item_url="https://example.com/ep/43",
+        kind="video",
+        duration_s=None,
+        transcript_model=None,
+        speaker_verified=False,
+        scope=SCOPE,
+    )
+
+    assert draft.value_json == [
+        {
+            "person": "Nick Fisher",
+            "url": "https://example.com/ep/43",
+            "kind": "video",
+            "speaker_verified": False,
+        }
+    ]
+    assert _nulls(draft.value_json) == []
+
+
+def test_a_fit_verdict_value_carries_no_null_properties() -> None:
+    [draft] = fit_verdict_claims([{"gate": "hq", "verdict": "pass"}], SCOPE)
+
+    assert _nulls(draft.value_json) == []
+
+
+def test_an_ai_ark_object_value_drops_the_keys_the_provider_answered_null() -> None:
+    company = AiArkCompany(
+        name="Probook",
+        domain="probook.ai",
+        linkedin=None,
+        industry=None,
+        employee_count=None,
+        revenue=None,
+        technologies=(),
+        location={"country": "US", "city": None, "region": None},
+        raw={},
+    )
+
+    [draft] = ai_ark_company_claims(company, SCOPE)
+
+    assert draft.field_key == "core.hq_location"
+    assert draft.value_json == {"country": "US"}
+    assert _nulls(draft.value_json) == []

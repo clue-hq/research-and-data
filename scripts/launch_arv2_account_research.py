@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.account_research_catalog import arv2_account_profile_sha256
 from clue_api.arv2.account_research_launch import (
     Arv2LaunchRequest,
+    enqueue_launched_jobs,
     launch_arv2_account_research,
 )
 from clue_api.arv2.answer_key_loader import ANSWER_KEY_USER_ID
@@ -203,7 +204,6 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
                 ),
                 settings=settings,
                 storage=storage,
-                queue=DbWorkQueue(),
                 profile_sha256=arv2_account_profile_sha256(),
             )
             await trans.commit()
@@ -213,11 +213,19 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         finally:
             await conn.close()
 
+        # The rows are committed, so every task now offered finds its job row. Offering inside the
+        # transaction is the race that silently drops an account: the queue commits its own row
+        # first, a worker claims it, finds no job, and finishes the task as done. A failed offer
+        # here raises with the job ids in the log — the rows exist, so re-running this command
+        # replays the same run and re-offers exactly the jobs whose task is missing.
+        enqueued = await enqueue_launched_jobs(DbWorkQueue(), receipt)
+
     return {
         "run_id": str(receipt.run_id),
         "project_run_id": str(receipt.project_run_id),
         "job_ids": [str(job_id) for job_id in receipt.job_ids],
         "replayed": receipt.replayed,
+        "enqueued": enqueued,
         "accounts": {
             domain: str(account_id) for domain, account_id in zip(domains, account_ids, strict=True)
         },

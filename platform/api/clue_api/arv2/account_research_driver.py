@@ -31,7 +31,7 @@ import os
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -117,6 +117,15 @@ PROFILE_PIN_MISMATCH = "profile_pin_mismatch"
 
 #: The failure code a job records when its task payload does not describe it.
 INVALID_TASK_PAYLOAD = "invalid_task_payload"
+
+#: What to do when a task names a job row that is not there *yet*. The launch commits its rows
+#: before it offers the tasks, so this should never happen — but a task with no row is the one
+#: failure that is silent and permanent (an unclaimable job reads as "already finished"), so the
+#: driver waits it out rather than trusting the ordering. Twelve attempts five seconds apart is a
+#: minute of patience, after which the row genuinely does not exist (a rolled-back launch) and the
+#: task fails loudly; there is no row to flag, so the log is the whole report.
+_JOB_ROW_RETRY_DELAY = timedelta(seconds=5)
+_JOB_ROW_RETRY_ATTEMPTS = 12
 
 #: Model call shape. The gateway's own timeout is the ceiling (the provider builder refuses a
 #: larger one), retries and temperature are deliberately modest: this agent's job is evidence, not
@@ -235,14 +244,28 @@ class Arv2AccountResearchWorkHandler:
                 message=f"task work id {context.work_id} disagrees with job id {scope.job_id}",
             )
             return WorkResult(outcome=status, references={"job_id": str(scope.job_id)})
+        ending: str | WorkResult
         try:
-            status = await self._run(scope)
+            ending = await self._run(scope, task_attempt=context.task_attempt)
+        except asyncio.CancelledError:
+            # The fleet CANCELS this task when the lease is lost, and ``CancelledError`` is a
+            # ``BaseException`` — so without this clause the ``except Exception`` below never runs,
+            # nothing parks the row, and the job stays ``in_progress`` forever (``begin_job``
+            # claims only ``not_started``/``suspended``, so the redelivery cannot revive it). The
+            # suspend is shielded because the task is already being cancelled: its own database
+            # write must survive the cancellation that provoked it.
+            await asyncio.shield(self._suspend(scope))
+            raise
         except Exception as error:  # noqa: BLE001 — containment: the job row is the only report
             log.exception("arv2.account_job_contained_failure", job_id=str(scope.job_id))
             code = _failure_code(error)
-            status = await self._contain(scope, code=code, message=str(error))
+            ending = await self._contain(scope, code=code, message=str(error))
+        if isinstance(ending, WorkResult):
+            # The one ending that is not a job status: the task arrived before (or without) its
+            # row, so there is nothing to settle and the fleet is told what to do with the task.
+            return ending
         return WorkResult(
-            outcome=status,
+            outcome=ending,
             references={"job_id": str(scope.job_id), "run_id": str(scope.run_id)},
         )
 
@@ -298,16 +321,47 @@ class Arv2AccountResearchWorkHandler:
             log.exception("arv2.account_contain_failed", job_id=str(scope.job_id))
         return "needs_review"
 
+    async def _not_claimable(
+        self, conn: AsyncConnection, scope: _Scope, *, task_attempt: int
+    ) -> str | WorkResult:
+        """``begin_job`` refused. Whether that is normal depends on the row *existing*.
+
+        A row that is terminal (or in progress under another worker) is an ordinary redelivery:
+        the fleet may deliver a task more than once, and re-running it would be the error. **No
+        row at all** is the opposite — treating it as finished is how an authorized account is
+        silently and permanently never researched — so the task is requeued while the launch's
+        commit could still be landing, and fails loudly only once waiting has stopped being
+        plausible.
+        """
+        row = await self._store.read_job(conn, job_id=scope.job_id)
+        if row is not None:
+            log.info("arv2.account_job_not_claimable", job_id=str(scope.job_id), status=row.status)
+            return "completed"
+        references: dict[str, Any] = {"job_id": str(scope.job_id), "run_id": str(scope.run_id)}
+        if task_attempt <= _JOB_ROW_RETRY_ATTEMPTS:
+            log.warning(
+                "arv2.account_job_row_not_visible",
+                job_id=str(scope.job_id),
+                task_attempt=task_attempt,
+            )
+            return WorkResult(
+                outcome="job_row_not_visible",
+                references=references,
+                requeue=True,
+                requeue_after=_JOB_ROW_RETRY_DELAY,
+            )
+        log.error(
+            "arv2.account_job_row_missing", job_id=str(scope.job_id), task_attempt=task_attempt
+        )
+        return WorkResult(outcome="failed", references=references, requeue=False)
+
     # -- the job -----------------------------------------------------------------------------
 
-    async def _run(self, scope: _Scope) -> str:
+    async def _run(self, scope: _Scope, *, task_attempt: int) -> str | WorkResult:
         async with self._connection() as conn:
             job = await self._store.begin_job(conn, job_id=scope.job_id)
             if job is None:
-                # A redelivery of a job another worker finished (or is driving). Not ours to run,
-                # and not an error: the fleet may deliver a task more than once.
-                log.info("arv2.account_job_not_claimable", job_id=str(scope.job_id))
-                return "completed"
+                return await self._not_claimable(conn, scope, task_attempt=task_attempt)
             if job.run_id != scope.run_id:
                 # The payload's run is checked against the row rather than trusted, because every
                 # pin this job runs under is read from that run — researching under a run nobody

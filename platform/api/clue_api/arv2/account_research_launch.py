@@ -92,10 +92,12 @@ __all__ = [
     "LaunchArv2AccountResearchInput",
     "LaunchArv2AccountResearchOutput",
     "LaunchArv2AccountResearchTool",
+    "QueuedJob",
     "ReadArv2AccountResearchRunInput",
     "ReadArv2AccountResearchRunOutput",
     "ReadArv2AccountResearchRunTool",
     "build_arv2_launch_tools",
+    "enqueue_launched_jobs",
     "launch_arv2_account_research",
 ]
 
@@ -160,13 +162,30 @@ class Arv2LaunchRefused(Arv2Error):
 
 
 @dataclass(frozen=True)
+class QueuedJob:
+    """One job the caller must offer to the fleet — **after** the launch transaction commits."""
+
+    job_id: UUID
+    run_id: UUID
+    workspace_id: str
+
+
+@dataclass(frozen=True)
 class Arv2LaunchReceipt:
-    """What the launch did: the run, its jobs, whether this was a replay, and the project run."""
+    """What the launch did: the run, its jobs, whether this was a replay, and the project run.
+
+    ``to_enqueue`` is the work the *caller* still owes the fleet. The launch deliberately does not
+    offer it: ``DbTaskQueue.enqueue`` commits in its own transaction, so an offer made inside the
+    launch's transaction is visible to a polling worker **before** the run and job rows it names
+    are — and that worker reads "no such job" as "already done" and finishes the task, dropping the
+    account's research permanently. Rows first, offer second (the O3 rule, ``onboarding_routes``).
+    """
 
     run_id: UUID
     job_ids: tuple[UUID, ...]
     replayed: bool
     project_run_id: UUID
+    to_enqueue: tuple[QueuedJob, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -188,14 +207,17 @@ async def launch_arv2_account_research(
     *,
     settings: Settings,
     storage: StorageBackend,
-    queue: WorkQueue,
     profile_sha256: str,
     now: Callable[[], datetime] = _utcnow,
 ) -> Arv2LaunchReceipt:
-    """Validate the request, write the run and its jobs, and queue one task per account.
+    """Validate the request and write the run and its jobs. **It queues nothing.**
 
     Checks run in cost order — the free ones first — so a launch that cannot happen refuses before
-    it reads an artifact or touches the queue. Nothing is written until every check has passed.
+    it reads an artifact. Nothing is written until every check has passed.
+
+    The fleet offer is the caller's, made through :func:`enqueue_launched_jobs` once this function's
+    transaction has committed. See :class:`Arv2LaunchReceipt` for why the ordering is the safety
+    property.
     """
     if not settings.arv2_account_research_enabled:
         raise Arv2LaunchRefused(
@@ -274,29 +296,12 @@ async def launch_arv2_account_research(
         )
         job_id = uuid5(_JOB_NS, f"{run_id}:{account_id}")
         job_ids.append(job_id)
-        queued = await create_job(
+        await create_job(
             conn,
             job_id=job_id,
             run_id=run_id,
             workspace_id=request.workspace_id,
             account_entity_id=account_id,
-        )
-        if not queued:
-            # The job already exists, so a task was already bought for it. Enqueuing again would
-            # be harmless at the queue (the dedup key refuses it) but dishonest here: this launch
-            # did not queue that account, and the receipt says so through ``replayed``.
-            continue
-        await queue.enqueue(
-            kind=FleetTaskKind.ARV2_ACCOUNT_RESEARCH,
-            work_id=arv2_account_work_id(job_id),
-            dedup_key=f"{ARV2_ACCOUNT_DEDUP_PREFIX}{job_id}",
-            priority=ARV2_ACCOUNT_TASK_PRIORITY,
-            payload={
-                "job_id": str(job_id),
-                "run_id": str(run_id),
-                "workspace_id": request.workspace_id,
-            },
-            reopen_terminal=False,
         )
 
     log.info(
@@ -311,7 +316,57 @@ async def launch_arv2_account_research(
         job_ids=tuple(job_ids),
         replayed=not inserted,
         project_run_id=project_run_id,
+        # *Every* job of the run is offered, not only the ones this call inserted. The queue's
+        # dedup key makes re-offering an already-queued job a no-op, so a relaunch is how a run
+        # whose offer failed (or was lost) after the commit is repaired — which it could not be if
+        # a replay reported nothing to enqueue. ``replayed`` still means "the run row existed".
+        to_enqueue=tuple(
+            QueuedJob(job_id=job_id, run_id=run_id, workspace_id=request.workspace_id)
+            for job_id in job_ids
+        ),
     )
+
+
+async def enqueue_launched_jobs(queue: WorkQueue, receipt: Arv2LaunchReceipt) -> int:
+    """Offer a committed launch's jobs to the fleet; returns how many offers the queue accepted.
+
+    Call this only once the launch's transaction has committed. An offer that fails is logged with
+    the job ids nothing is driving and re-raised: the rows exist, so the repair is to call this
+    again (or relaunch the same request, which replays to the same run and re-offers every job).
+    """
+    accepted = 0
+    for index, job in enumerate(receipt.to_enqueue):
+        try:
+            offered = await queue.enqueue(
+                kind=FleetTaskKind.ARV2_ACCOUNT_RESEARCH,
+                work_id=arv2_account_work_id(job.job_id),
+                dedup_key=f"{ARV2_ACCOUNT_DEDUP_PREFIX}{job.job_id}",
+                priority=ARV2_ACCOUNT_TASK_PRIORITY,
+                payload={
+                    "job_id": str(job.job_id),
+                    "run_id": str(job.run_id),
+                    "workspace_id": job.workspace_id,
+                },
+                reopen_terminal=False,
+            )
+        except Exception:
+            # Broad on purpose (the O3 shape): a transport error, a pool timeout and a bug in the
+            # queue are one fact here — these jobs were not offered — and the log has to name them
+            # or nobody can tell which accounts are waiting on a task that was never bought.
+            log.exception(
+                "arv2.account_research_enqueue_failed",
+                run_id=str(receipt.run_id),
+                job_ids=[str(pending.job_id) for pending in receipt.to_enqueue[index:]],
+            )
+            raise
+        accepted += 1 if offered else 0
+    log.info(
+        "arv2.account_research_enqueued",
+        run_id=str(receipt.run_id),
+        offered=len(receipt.to_enqueue),
+        accepted=accepted,
+    )
+    return accepted
 
 
 @dataclass(frozen=True)
@@ -470,15 +525,19 @@ class DbArv2LaunchService:
         # the human approved it — the driver re-checks them and refuses if they have since moved.
         profile_sha256 = arv2_account_profile_sha256()
         async with self._conn_factory() as conn:
-            return await launch_arv2_account_research(
+            receipt = await launch_arv2_account_research(
                 conn,
                 request,
                 settings=self._settings,
                 storage=self._storage,
-                queue=self._queue,
                 profile_sha256=profile_sha256,
                 now=self._now,
             )
+        # Outside the block, so the rows are committed: a task that reaches a worker always finds
+        # its job row. The reverse — rows with no task — is the recoverable half (relaunch and the
+        # jobs are re-offered); a task with no row is not, so it must never happen.
+        await enqueue_launched_jobs(self._queue, receipt)
+        return receipt
 
     async def read_run(self, *, workspace_id: str, run_id: UUID) -> Arv2RunView | None:
         async with self._conn_factory() as conn:

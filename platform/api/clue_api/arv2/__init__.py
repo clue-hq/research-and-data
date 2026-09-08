@@ -24,8 +24,10 @@ from clue_api.arv2.account_research_launch import (
     Arv2RunView,
     DbArv2LaunchService,
     LaunchArv2AccountResearchTool,
+    QueuedJob,
     ReadArv2AccountResearchRunTool,
     build_arv2_launch_tools,
+    enqueue_launched_jobs,
     launch_arv2_account_research,
 )
 from clue_api.arv2.ai_ark_client import (
@@ -194,6 +196,7 @@ __all__ = [
     "JobPosting",
     "JsonlLedger",
     "LaunchArv2AccountResearchTool",
+    "QueuedJob",
     "LedgerRow",
     "LedgerSink",
     "LoopReport",
@@ -235,6 +238,7 @@ __all__ = [
     "YouTubeMeta",
     "YouTubeWords",
     "build_arv2_launch_tools",
+    "enqueue_launched_jobs",
     "catalog_menu_text",
     "download_enclosure",
     "fetch_feed",

@@ -534,9 +534,25 @@ status is *derived* from its jobs in one statement rather than set by whoever fi
 ```python
 async def launch_arv2_account_research(
     conn, request: Arv2LaunchRequest, *, settings: Settings, storage: StorageBackend,
-    queue: WorkQueue, profile_sha256: str, now: Callable[[], datetime] = _utcnow,
+    profile_sha256: str, now: Callable[[], datetime] = _utcnow,
 ) -> Arv2LaunchReceipt
+
+async def enqueue_launched_jobs(queue: WorkQueue, receipt: Arv2LaunchReceipt) -> int
 ```
+
+**The rows land before the offer, and the launch itself queues nothing.** `DbTaskQueue.enqueue`
+commits in its *own* transaction, so a task offered from inside the launch's transaction can reach
+a worker before the run and job rows it names exist — and that worker's `begin_job` matches no row,
+reads it as "a job somebody else finished", and marks the task done. The account would then never
+be researched, silently and permanently (the dedup key is terminal, so no relaunch re-offers it).
+So the receipt carries `to_enqueue` and the caller offers it after the commit:
+`DbArv2LaunchService.launch` enqueues once the `conn_factory` block has exited, and the CLI
+enqueues after `trans.commit()` and reports `"enqueued": n`. `to_enqueue` names **every** job of
+the run, not only the newly inserted ones — the queue's dedup key makes re-offering a queued job a
+no-op, which is what makes relaunching the repair for a run whose offer failed after the commit.
+The driver has the matching defence: a task whose job row is not there returns
+`job_row_not_visible` and requeues after 5 s (up to 12 attempts, then a loud `failed`), and only a
+row that *exists* but is unclaimable is the idempotent `completed`.
 
 It needs **only** account rows, an ICP artifact ref (key + sha256) and a product-selection version
 — no `icp_spec`, no `account_research_directive`, no Stage-0 pin on the project run (standing rule
@@ -579,8 +595,10 @@ way.
 
 ### Known residual
 
-**A lease lost mid-hop can lose that hop's ledger rows.** The sinks buffer in the worker thread and
-drain on the async side; if the lease is lost (or the task is cancelled) between the provider
+**A lease lost mid-hop can lose that hop's ledger rows.** (The *job* is safe: the fleet cancels the
+handler, and `handle` catches the `CancelledError` and parks the row `suspended` under an
+`asyncio.shield` before re-raising, so the redelivery can claim it again.) The sinks buffer in the
+worker thread and drain on the async side; if the lease is lost (or the task is cancelled) between the provider
 answering and the drain, that hop's raw artifacts and `provider_call_ledger` rows are never
 written, so money that was spent is missing from the money trail. The runtime cap already waits,
 bounded, for in-flight hops; a lost lease does not get that courtesy, because the fleet cancels the

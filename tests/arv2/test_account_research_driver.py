@@ -13,7 +13,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
@@ -98,18 +98,31 @@ def _job_row(run: RunRow) -> JobRow:
     )
 
 
+#: "the row the driver would read back is the one ``begin_job`` was given" — the ordinary case.
+_SAME_ROW = object()
+
+
 class FakeStore:
     """The store's transitions, recorded in order, with no SQL behind them."""
 
-    def __init__(self, run: RunRow, job: JobRow | None) -> None:
+    def __init__(self, run: RunRow, job: JobRow | None, row: Any = _SAME_ROW) -> None:
         self.run = run
         self.job = job
+        #: What ``read_job`` answers. It is a separate fact from what ``begin_job`` claims: a job
+        #: that exists but is not claimable is an ordinary redelivery, while a job with NO row is
+        #: a task that outran its launch.
+        self.row: JobRow | None = job if row is _SAME_ROW else row
         self.events: list[tuple[str, dict[str, Any]]] = []
 
     async def begin_job(self, conn: Any, *, job_id: UUID) -> JobRow | None:
         del conn
         self.events.append(("begin_job", {"job_id": job_id}))
         return self.job
+
+    async def read_job(self, conn: Any, *, job_id: UUID) -> JobRow | None:
+        del conn
+        self.events.append(("read_job", {"job_id": job_id}))
+        return self.row
 
     async def read_run(self, conn: Any, *, run_id: UUID) -> RunRow | None:
         del conn
@@ -347,11 +360,12 @@ def _handler(
     return handler, conn_factory, writer, models
 
 
-def _context(job: JobRow, *, work_id: UUID | None = None) -> WorkContext:
+def _context(job: JobRow, *, work_id: UUID | None = None, task_attempt: int = 1) -> WorkContext:
     return WorkContext(
         task_id=uuid4(),
         work_id=arv2_account_work_id(work_id or job.job_id),
         worker_id="w1",
+        task_attempt=task_attempt,
         lease_generation=LeaseGeneration(1),
         payload={
             "job_id": str(job.job_id),
@@ -544,7 +558,8 @@ def test_a_redelivered_terminal_job_completes_idempotently(
 ) -> None:
     run = _run_row()
     job = _job_row(run)
-    store = FakeStore(run, None)  # begin_job refuses: the job is not this worker's to run
+    # begin_job refuses (the job is not this worker's to run), but the row is there.
+    store = FakeStore(run, None, row=job)
     _patch_reads(
         monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
     )
@@ -554,6 +569,85 @@ def test_a_redelivered_terminal_job_completes_idempotently(
 
     assert result.outcome == "completed"
     assert not store.named("finish_job"), "a redelivery never re-finishes a job"
+
+
+def test_a_task_whose_job_row_is_not_there_yet_is_requeued_rather_than_completed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The C1 defence: "no row" is NOT "already finished".
+
+    A task that reached a worker before its launch committed would otherwise be finished as done
+    while the job row lands ``not_started`` a moment later — no error, no ``needs_review``, and no
+    second offer ever, because the dedup key is terminal. So the task waits instead.
+    """
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, None, row=None)  # nothing claimable, and nothing there at all
+    _patch_reads(
+        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+    )
+    handler, _, _, _ = _handler(store)
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "job_row_not_visible"
+    assert result.requeue is True
+    assert result.requeue_after == timedelta(seconds=5)
+    assert result.references["job_id"] == str(job.job_id)
+    assert store.named("read_job") == [{"job_id": job.job_id}]
+    assert not store.named("finish_job"), "there is no row to flag"
+
+
+def test_a_job_row_that_never_appears_stops_waiting_and_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A genuinely rolled-back launch must not requeue forever."""
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, None, row=None)
+    _patch_reads(
+        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+    )
+    handler, _, _, _ = _handler(store)
+
+    result = asyncio.run(handler.handle(_context(job, task_attempt=13)))
+
+    assert result.outcome == "failed" and result.requeue is False
+    assert not store.named("finish_job")
+
+
+def test_a_cancelled_handle_suspends_the_job_before_the_cancellation_propagates() -> None:
+    """I1: the fleet CANCELS the handler on lease loss, and ``CancelledError`` is a BaseException.
+
+    Without the explicit clause the job would stay ``in_progress`` forever: the redelivery cannot
+    claim it, reads as a finished job, and the task is marked done.
+    """
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, job)
+    handler, _, _, _ = _handler(store)
+    started = asyncio.Event()
+
+    async def hang(scope: Any, *, task_attempt: int) -> str:
+        del scope, task_attempt
+        started.set()
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    handler._run = hang  # type: ignore[method-assign]  # the agent is not what is under test
+
+    async def scenario() -> None:
+        task = asyncio.create_task(handler.handle(_context(job)))
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(scenario())
+
+    assert store.named("suspend_job") == [{"job_id": job.job_id}], (
+        "a lease-lost job must be parked, or nothing can ever claim it again"
+    )
 
 
 def test_the_model_error_outcome_lands_needs_review_with_its_reason(

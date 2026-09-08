@@ -123,6 +123,22 @@ class ClaimInput(BaseModel):
     corrects_claim_id: str | None = None
 
 
+def _without_nones(row: Mapping[str, Any], *, keep: tuple[str, ...] = ()) -> dict[str, Any]:
+    """Drop the optional keys the record did not answer, keeping the field's required ones.
+
+    A registered property is typed (``{"type": "string"}``), and the schema check is
+    ``isinstance``, so writing an explicit ``null`` for "we saw no department" makes a correct,
+    deterministically-mapped claim land ``schema_valid=False`` — which is the marker the audit
+    skill and the display layer read as *"the extraction did not fit the field"*. Omitting the key
+    is also the more honest record: absent is not null.
+
+    ``keep`` names the field's **required** keys. They stay even when they are ``None``, because a
+    required key nothing answered really is a claim that does not fit its field, and the schema
+    marker should say so rather than be dodged by deleting the evidence of it.
+    """
+    return {key: value for key, value in row.items() if value is not None or key in keep}
+
+
 def _draft(
     scope: JobScope,
     *,
@@ -176,14 +192,17 @@ def ats_posting_claims(postings: BoardPostings, scope: JobScope) -> list[ClaimDr
     drafts: list[ClaimDraft] = []
     for index, posting in enumerate(postings.postings):
         published = posting.published_at.isoformat() if posting.published_at else None
-        row: JsonValue = {
-            "title": posting.title,
-            "dept": posting.department,
-            "published": published,
-            "days_open": posting.days_open,
-            "still_listed": posting.is_listed,
-            "url": posting.url,
-        }
+        row: JsonValue = _without_nones(
+            {
+                "title": posting.title,
+                "dept": posting.department,
+                "published": published,
+                "days_open": posting.days_open,
+                "still_listed": posting.is_listed,
+                "url": posting.url,
+            },
+            keep=("title",),
+        )
         span_parts = [
             part
             for part in (
@@ -330,7 +349,12 @@ def ai_ark_company_claims(company: AiArkCompany, scope: JobScope) -> list[ClaimD
         raw_value = getattr(company, attribute)
         if raw_value is None:
             continue
-        value: JsonValue = dict(raw_value) if isinstance(raw_value, Mapping) else raw_value
+        # A provider's own object (``location.headquarter``) carries explicit nulls for what it
+        # did not know; those keys are typed in the registered schema, so they are dropped here
+        # for the same reason as everywhere else in this module.
+        value: JsonValue = (
+            _without_nones(raw_value) if isinstance(raw_value, Mapping) else raw_value
+        )
         drafts.append(
             _draft(
                 scope,
@@ -369,14 +393,16 @@ def media_index_claim(
     run. ``speaker_verified`` is what decides whether anything may be quoted from it, and it is on
     the claim rather than in a comment.
     """
-    row: JsonValue = {
-        "person": person,
-        "url": item_url,
-        "kind": kind,
-        "duration_s": duration_s,
-        "transcript_model": transcript_model,
-        "speaker_verified": speaker_verified,
-    }
+    row: JsonValue = _without_nones(
+        {
+            "person": person,
+            "url": item_url,
+            "kind": kind,
+            "duration_s": duration_s,
+            "transcript_model": transcript_model,
+            "speaker_verified": speaker_verified,
+        }
+    )
     return _draft(
         scope,
         field_key=MEDIA_INDEX_FIELD,
@@ -406,11 +432,14 @@ def negative_claims(negatives: Sequence[NegativeOrRisk], scope: JobScope) -> lis
         _draft(
             scope,
             field_key=REPUTATION_RISK_FIELD,
-            value={
-                "what": negative.what,
-                "status": negative.status.lower() if negative.status else None,
-                "source_note": None,
-            },
+            value=_without_nones(
+                {
+                    "what": negative.what,
+                    "status": negative.status.lower() if negative.status else None,
+                    "source_note": None,
+                },
+                keep=("what",),
+            ),
             method=ExtractionMethod.LLM_SYNTHESIS,
             source_url=negative.source_url,
             evidence_span=negative.evidence_span or None,
@@ -519,12 +548,15 @@ def fit_verdict_claims(verdicts: Sequence[Mapping[str, Any]], scope: JobScope) -
         downgraded = stated == "fail" and not claim_ids
         if downgraded:
             stated, rationale = "unclear", f"{rationale}{DOWNGRADE_SUFFIX}"
-        value: JsonValue = {
-            "gate": str(verdict.get("gate") or ""),
-            "verdict": stated,
-            "rationale": rationale,
-            "claim_ids": list(claim_ids),
-        }
+        value: JsonValue = _without_nones(
+            {
+                "gate": str(verdict.get("gate") or ""),
+                "verdict": stated,
+                "rationale": rationale,
+                "claim_ids": list(claim_ids),
+            },
+            keep=("gate", "verdict"),
+        )
         drafts.append(
             _draft(
                 scope,
@@ -570,14 +602,17 @@ def committee_candidate_claims(
         confirmed_by = candidate.get("confirmed_by")
         if name and not confirmed_by:
             continue
-        value: JsonValue = {
-            "name": name,
-            "title": candidate.get("title"),
-            "persona": candidate.get("persona"),
-            "linkedin_url": candidate.get("linkedin_url"),
-            "confirmed_by": confirmed_by,
-            "vacant_seat": bool(candidate.get("vacant_seat")) or not name,
-        }
+        value: JsonValue = _without_nones(
+            {
+                "name": name,
+                "title": candidate.get("title"),
+                "persona": candidate.get("persona"),
+                "linkedin_url": candidate.get("linkedin_url"),
+                "confirmed_by": confirmed_by,
+                "vacant_seat": bool(candidate.get("vacant_seat")) or not name,
+            },
+            keep=("name", "persona"),
+        )
         drafts.append(
             _draft(
                 scope,

@@ -9,7 +9,9 @@ rule item 5 allows — account rows, an ICP artifact ref, and a product-selectio
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import inspect
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID, uuid4, uuid5
@@ -29,6 +31,8 @@ from clue_api.arv2.account_research_driver import (
 from clue_api.arv2.account_research_launch import (
     Arv2LaunchRefused,
     Arv2LaunchRequest,
+    DbArv2LaunchService,
+    enqueue_launched_jobs,
     launch_arv2_account_research,
 )
 from clue_api.arv2.account_research_store import list_jobs, read_run
@@ -76,9 +80,14 @@ ICP_BODY = "\n".join(
 
 @dataclass
 class _FakeQueue:
-    """Records every enqueue the launch makes; nothing else about the fleet is under test here."""
+    """Records every offer, and dedups by key the way the real queue does.
+
+    The launch itself never touches this: it is handed to ``enqueue_launched_jobs``, which the
+    caller runs *after* the launch transaction commits.
+    """
 
     calls: list[dict[str, Any]] = field(default_factory=list)
+    trace: list[str] | None = None
 
     async def enqueue(
         self,
@@ -90,6 +99,9 @@ class _FakeQueue:
         payload: dict[str, Any] | None = None,
         reopen_terminal: bool = False,
     ) -> bool:
+        if self.trace is not None:
+            self.trace.append("enqueue")
+        seen = any(call["dedup_key"] == dedup_key for call in self.calls)
         self.calls.append(
             {
                 "kind": kind,
@@ -100,7 +112,9 @@ class _FakeQueue:
                 "reopen_terminal": reopen_terminal,
             }
         )
-        return True
+        # A duplicate dedup key is a pure no-op at the real queue (``reopen_terminal=False``),
+        # which is what makes re-offering a replayed run's jobs safe.
+        return not seen
 
 
 @dataclass(frozen=True)
@@ -239,14 +253,22 @@ async def _launch(
     settings: Settings | None = None,
     profile_sha256: str | None = None,
 ) -> Any:
-    return await launch_arv2_account_research(
+    """Launch, then offer — the production order, with the offer OUTSIDE the launch call.
+
+    ``launch_arv2_account_research`` takes no queue at all; it reports what to offer and the
+    caller offers it once the rows are committed. The tests keep both halves so the receipt's
+    ``to_enqueue`` is exercised, and the queue argument is deliberately not reachable from the
+    launch.
+    """
+    receipt = await launch_arv2_account_research(
         conn,
         request,
         settings=settings or _settings(),
         storage=storage,
-        queue=queue,
         profile_sha256=profile_sha256 or arv2_account_profile_sha256(),
     )
+    await enqueue_launched_jobs(queue, receipt)
+    return receipt
 
 
 def test_launch_creates_run_jobs_lineage_and_enqueues_one_task_per_job(tmp_path: Any) -> None:
@@ -323,6 +345,9 @@ def test_launch_creates_run_jobs_lineage_and_enqueues_one_task_per_job(tmp_path:
             assert {row["added_via"] for row in memberships} == {"manual"}
 
             assert len(queue.calls) == 2
+            assert [job.job_id for job in receipt.to_enqueue] == list(receipt.job_ids)
+            assert {job.run_id for job in receipt.to_enqueue} == {receipt.run_id}
+            assert {job.workspace_id for job in receipt.to_enqueue} == {fixture.workspace_id}
             for job_id, call in zip(receipt.job_ids, queue.calls, strict=True):
                 assert call["kind"] is FleetTaskKind.ARV2_ACCOUNT_RESEARCH
                 assert UUID(str(call["work_id"])) == job_id
@@ -336,12 +361,16 @@ def test_launch_creates_run_jobs_lineage_and_enqueues_one_task_per_job(tmp_path:
                     "workspace_id": fixture.workspace_id,
                 }
 
-            # The same signed-off request is ONE run: replaying it enqueues nothing new.
+            # The same signed-off request is ONE run: replaying it writes no second job. It DOES
+            # re-offer both jobs, and the queue refuses both on their dedup key — which is how a
+            # run whose offer was lost after the commit is repaired by relaunching it.
             replay = await _launch(conn, storage, _request(fixture), queue)
             assert replay.run_id == receipt.run_id
             assert replay.job_ids == receipt.job_ids
             assert replay.replayed is True
-            assert len(queue.calls) == 2
+            assert len(replay.to_enqueue) == 2
+            assert len(queue.calls) == 4
+            assert await enqueue_launched_jobs(queue, replay) == 0, "already-queued: no-op"
             assert len(await list_jobs(conn, run_id=receipt.run_id)) == 2
 
             # A different request (one fewer account) is a DIFFERENT run, not a mutation.
@@ -352,7 +381,7 @@ def test_launch_creates_run_jobs_lineage_and_enqueues_one_task_per_job(tmp_path:
                 queue,
             )
             assert other.run_id != receipt.run_id
-            assert len(queue.calls) == 3
+            assert len(queue.calls) == 7
 
     run_async(scenario())
 
@@ -516,5 +545,57 @@ def test_the_run_id_is_the_digest_of_what_the_human_signed_off_on(tmp_path: Any)
                 conn, storage, _request(fixture), queue, profile_sha256="e" * 64
             )
             assert reprofiled.run_id not in {first.run_id, other.run_id}
+
+    run_async(scenario())
+
+
+def test_the_launch_itself_can_reach_no_queue_at_all() -> None:
+    """C1, structurally: the offer cannot be made inside the launch's transaction.
+
+    ``DbTaskQueue.enqueue`` commits in its **own** transaction, so a task offered while the run
+    and job rows are still uncommitted is visible to a worker before they are — and that worker
+    reads "no such job" as "already finished" and marks the task done, dropping that account's
+    research permanently and unrecoverably. The launch therefore takes no queue: the only way to
+    offer is ``enqueue_launched_jobs``, which the caller runs after the commit.
+    """
+    parameters = inspect.signature(launch_arv2_account_research).parameters
+    assert "queue" not in parameters
+    assert ".enqueue(" not in inspect.getsource(launch_arv2_account_research)
+
+
+def test_the_service_offers_the_tasks_only_after_the_launch_transaction_closes(
+    tmp_path: Any,
+) -> None:
+    """The production seam's ordering, pinned: rows committed, THEN the fleet is told."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            fixture = await _seed(conn, storage)
+            trace: list[str] = []
+            queue = _FakeQueue(trace=trace)
+
+            @asynccontextmanager
+            async def factory() -> AsyncIterator[AsyncConnection]:
+                trace.append("transaction_opened")
+                try:
+                    yield conn
+                finally:
+                    # The real ``transaction`` commits here; the test's connection rolls back at
+                    # the end of the case, so what is asserted is the ORDER, not the durability.
+                    trace.append("transaction_closed")
+
+            service = DbArv2LaunchService(_settings(), storage, queue=queue, conn_factory=factory)
+
+            receipt = await service.launch(_request(fixture))
+
+            assert trace == [
+                "transaction_opened",
+                "transaction_closed",
+                "enqueue",
+                "enqueue",
+            ]
+            assert len(receipt.job_ids) == 2
+            assert len(queue.calls) == 2
 
     run_async(scenario())
