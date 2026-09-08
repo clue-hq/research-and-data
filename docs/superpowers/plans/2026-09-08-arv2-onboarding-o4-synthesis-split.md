@@ -34,7 +34,7 @@ Runs `280cd8f5` and `54246e39` (Insight Health, 2026-09-08): synthesis 717 s and
 |---|---|
 | `alembic/versions/<hash>_arv2_onboarding_persona_step.py` | **Create.** Widen `onboarding_step_kind` to admit `'persona'`. |
 | `platform/api/clue_api/account_research_turn_wiring.py` | **Modify.** `DbCompiledContextCardReader.read` gains `object_type == "brand_knowledge_document"`. |
-| `platform/agents/catalog/prompts/onboarding-synthesis/v2/PROMPT.md` | **Create.** One task per turn. |
+| `platform/agents/catalog/prompts/onboarding-synthesis/v2/SYSTEM.md` | **Create.** One task per turn. |
 | `platform/agents/catalog/skills/icp-synthesis/v2/SKILL.md` | **Create.** Known-ICPs rule; product-file rule. |
 | `platform/agents/catalog/skills/audience-persona/v2/SKILL.md` | **Create.** One ICP per turn; `icp_version` from the user message. |
 | `platform/agents/catalog/profiles/onboarding-synthesis/v2/profile.yaml` | **Create.** Pins prompt v2 + skills v2; v1 → `status: retired`. |
@@ -72,7 +72,7 @@ Runs `280cd8f5` and `54246e39` (Insight Health, 2026-09-08): synthesis 717 s and
 ### Task 2: Prompt v2, skills v2, profile v2, the ICP surface
 
 **Files:**
-- Create: `platform/agents/catalog/prompts/onboarding-synthesis/v2/PROMPT.md`, `platform/agents/catalog/skills/icp-synthesis/v2/SKILL.md`, `platform/agents/catalog/skills/audience-persona/v2/SKILL.md`, `platform/agents/catalog/profiles/onboarding-synthesis/v2/profile.yaml`
+- Create: `platform/agents/catalog/prompts/onboarding-synthesis/v2/SYSTEM.md`, `platform/agents/catalog/skills/icp-synthesis/v2/SKILL.md`, `platform/agents/catalog/skills/audience-persona/v2/SKILL.md`, `platform/agents/catalog/profiles/onboarding-synthesis/v2/profile.yaml`
 - Modify: `platform/agents/catalog/profiles/onboarding-synthesis/v1/profile.yaml` (`status: retired`), `platform/api/clue_api/agent_registry_wiring.py`
 - Test: `tests/api/test_agent_registry_wiring.py`
 
@@ -80,7 +80,7 @@ Runs `280cd8f5` and `54246e39` (Insight Health, 2026-09-08): synthesis 717 s and
 - Produces: `ONBOARDING_ICP_SURFACE = "onboarding_icp"` and `AgentSurfacePolicy(surface=ONBOARDING_ICP_SURFACE, role=AgentRole.ONBOARDING_SYNTHESIS, withheld_tools=frozenset({"exa_search_evidence"}))` appended to `C6_SURFACE_POLICIES`. `profiles.resolve(AgentRole.ONBOARDING_SYNTHESIS, surface=ONBOARDING_ICP_SURFACE)` yields an effective tool set without the evidence tool and the same `profile_ref`/manifest digest.
 - The v2 texts are reviewed by the founder in this plan and copied **verbatim**. The format blocks (front matter shapes) are unchanged from v1 and are not repeated here — copy them from v1.
 
-**Prompt v2 (`PROMPT.md`, front matter as v1 with `version: v2`):**
+**Prompt v2 (`SYSTEM.md`, front matter as v1 with `version: v2`):**
 
 ```
 You are the onboarding synthesis agent for a B2B account-based marketing platform. Your client is
@@ -181,7 +181,7 @@ personas:
 
 **Steps:**
 - [ ] Write the registry test changes: `AgentRole.ONBOARDING_SYNTHESIS` digest re-pinned (measure off the tree after the resources exist — run the test once, copy the printed/asserted digest, never hand-derive); a new test that `resolve(..., surface=ONBOARDING_ICP_SURFACE)` withholds `exa_search_evidence` and keeps `profile_ref` and `aggregate_sha256` equal to the unnarrowed resolution.
-- [ ] Create the four resource files verbatim from this plan; compute the shas the way the catalog loader does (`sha256` of the file bytes — check `clue_agents.catalog` for the exact rule and reuse its helper if one is exposed); retire v1.
+- [ ] Create the four resource files verbatim from this plan; compute each sha as `hashlib.sha256(<file bytes>).hexdigest()`, which is what `clue_agents.catalog` does at load (`catalog.py:366`); retire v1.
 - [ ] Add the surface constant and policy; keep `ONBOARDING_SYNTHESIS_UNIT_SURFACE` as is.
 - [ ] Run: `uv run pytest tests/api/test_agent_registry_wiring.py tests/api/test_recipe_contracts.py -q`.
 - [ ] Commit: `feat(arv2 o4): onboarding-synthesis@v2 — one task per turn, known-ICPs rule, icp surface`
