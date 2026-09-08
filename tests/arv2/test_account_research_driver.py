@@ -655,6 +655,8 @@ def test_the_builder_composes_nothing_while_the_lane_is_off(
         Settings(_env_file=None, arv2_account_research_enabled=False),
         _live_secrets(),
         storage=object(),  # type: ignore[arg-type]
+        artifacts=FakeArtifacts(),
+        model_provider=FakeModels(_finalizes_at_once()),
     )
 
     assert handler is None
@@ -687,6 +689,8 @@ def test_the_builder_refuses_and_composes_nothing_when_configuration_is_missing(
         Settings(_env_file=None, arv2_account_research_enabled=True),
         Secrets(_env_file=None, **fields),
         storage=object(),  # type: ignore[arg-type]
+        artifacts=FakeArtifacts(),
+        model_provider=FakeModels(_finalizes_at_once()),
     )
 
     assert handler is None
@@ -697,11 +701,19 @@ def test_the_builder_composes_the_lane_when_everything_is_configured(
 ) -> None:
     monkeypatch.setenv("ARV2_ACCOUNT_AGENT_MODEL", "x-ai/grok-4.6")
 
+    artifacts, models = FakeArtifacts(), FakeModels(_finalizes_at_once())
+
     handler = build_arv2_account_research_handler(
         Settings(_env_file=None, arv2_account_research_enabled=True),
         _live_secrets(),
         storage=object(),  # type: ignore[arg-type]
+        artifacts=artifacts,
+        model_provider=models,
     )
 
     assert handler is not None
     assert handler.kind is FleetTaskKind.ARV2_ACCOUNT_RESEARCH
+    # The sink and the model provider are the caller's objects: the lane composes neither a second
+    # artifact write path nor its own gateway client.
+    assert handler._artifacts is artifacts  # noqa: SLF001 — the injection is the assertion
+    assert handler._models is models  # noqa: SLF001

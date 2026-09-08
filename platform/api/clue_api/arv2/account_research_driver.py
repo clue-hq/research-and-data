@@ -41,7 +41,6 @@ from pydantic import SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_agents.contracts import ArtifactRef
 from clue_agents.ports import AgentModelProvider
 from clue_api.arv2 import account_research_store as default_store
 from clue_api.arv2.account_research_agent import AgentOutcome, run_account_agent
@@ -73,18 +72,10 @@ from clue_db import ConnFactory, transaction
 from clue_fleet import FleetTaskKind
 from clue_fleet.lease import WorkId
 from clue_fleet.work_worker import WorkContext, WorkResult
-from clue_gateway import OpenRouterAgentModelProvider
 from clue_obs import get_logger
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.identity import get_account
-from clue_storage import (
-    ArtifactIntegrityError,
-    StorageBackend,
-    artifact_key,
-    content_address,
-    read_verified_artifact,
-    record_artifact,
-)
+from clue_storage import ArtifactIntegrityError, StorageBackend, read_verified_artifact
 
 log = get_logger("clue_api.arv2.account_research_driver")
 
@@ -701,46 +692,13 @@ class _LiveClients:
         )
 
 
-class _DurableArtifacts:
-    """The workspace content-addressed store, as the raw-body sink the ledger drain writes to.
-
-    The artifact **row is written before the blob**: the row is the lock that serializes this
-    writer against a concurrent DSAR erasure, so a crash between the two leaves a
-    body-unavailable (fail-closed) artifact rather than an unreferenced blob nobody can erase.
-    """
-
-    def __init__(self, *, storage: StorageBackend, conn_factory: ConnFactory) -> None:
-        self._storage = storage
-        self._conn_factory = conn_factory
-
-    async def persist_body(self, *, workspace_id: str, data: bytes, media_type: str) -> ArtifactRef:
-        digest = content_address(data)
-        key = artifact_key(workspace_id, digest)
-        async with self._conn_factory() as conn:
-            record = await record_artifact(
-                conn,
-                storage_key=key,
-                workspace_id=workspace_id,
-                content_sha256=digest,
-                media_type=media_type,
-                size_bytes=len(data),
-                source_key="arv2_provider_raw",
-            )
-        await self._storage.put(key, data, media_type=record.media_type)
-        return ArtifactRef(
-            workspace_id=workspace_id,
-            artifact_key=key,
-            sha256=record.content_sha256,
-            media_type=record.media_type,
-            byte_count=record.size_bytes,
-        )
-
-
 def build_arv2_account_research_handler(
     settings: Settings,
     secrets: Secrets,
     *,
     storage: StorageBackend,
+    artifacts: ArtifactSink,
+    model_provider: AgentModelProvider,
     conn_factory: ConnFactory = transaction,
 ) -> Arv2AccountResearchWorkHandler | None:
     """Compose the lane on this worker, or refuse loudly and compose nothing.
@@ -749,6 +707,14 @@ def build_arv2_account_research_handler(
     wait for a correctly-credentialed worker, which is the honest outcome. Failing the boot would
     take every other kind of work on this process down, and composing a keyless handler would
     fail each job at its first provider call — after it had already spent model rounds.
+
+    The **artifact sink and the model provider are injected from outside the lane** (the fleet
+    entrypoint passes the platform's own ``DurableAgentArtifactStore`` and agent model provider,
+    exactly as it does for onboarding). ARV2 may not open a second write path into the artifact
+    table — the production store owns the tombstone/erasure guards a DSAR erasure relies on — and
+    it may not reach the vendor SDK behind ``clue_gateway``. What stays here is what belongs to the
+    lane: which credentials a job needs, which model id it runs on, and the refusal when either is
+    missing.
     """
     if not settings.arv2_account_research_enabled:
         return None
@@ -774,11 +740,10 @@ def build_arv2_account_research_handler(
         )
         return None
 
-    gateway = _gateway_config(settings)
     return Arv2AccountResearchWorkHandler(
         settings=settings,
         conn_factory=conn_factory,
-        artifacts=_DurableArtifacts(storage=storage, conn_factory=conn_factory),
+        artifacts=artifacts,
         storage=storage,
         clients=_LiveClients(
             settings=settings,
@@ -786,31 +751,15 @@ def build_arv2_account_research_handler(
             ai_ark_api_key=_secret(keys["CLUE_AI_ARK_API_KEY"]),
             gemini_api_key=_secret(keys["CLUE_GEMINI_API_KEY"]),
             openrouter_api_key=_secret(keys["CLUE_OPENROUTER_API_KEY"]),
-            openrouter_base_url=gateway.base_url,
+            # The OpenRouter URL is gateway policy, read from the config's own default rather than
+            # spelled again here: the two ARV2 clients that speak to OpenRouter directly (media,
+            # structuring) must reach the same endpoint the gateway does.
+            openrouter_base_url=GatewayConfig().base_url,
         ),
-        model_provider=OpenRouterAgentModelProvider(
-            gateway, _secret(keys["CLUE_OPENROUTER_API_KEY"])
-        ),
+        model_provider=model_provider,
         model_id=model_id,
         writer=LenientClaimWriter(lenient=settings.claim_write_lenient),
     )
-
-
-def _gateway_config(settings: Settings) -> GatewayConfig:
-    """The gateway policy this lane's model is built under (``default_gateway_config``'s shape).
-
-    ``openrouter_chat_completions_fallback`` is on because the lane's model is not an OpenAI one,
-    and OpenRouter's ``/responses`` translation rejects the array-shaped tool-result content every
-    round of this loop produces.
-    """
-    fields: dict[str, Any] = {
-        "synthesis_model": settings.synthesis_model,
-        "timeout_s": settings.gateway_timeout_s,
-        "openrouter_chat_completions_fallback": True,
-    }
-    if settings.judge_model:
-        fields["judge_model"] = settings.judge_model
-    return GatewayConfig(**fields)
 
 
 def _present(value: SecretStr | None) -> bool:

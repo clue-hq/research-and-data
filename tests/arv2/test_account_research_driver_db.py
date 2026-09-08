@@ -24,6 +24,7 @@ from pydantic import PrivateAttr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2 import account_research_store as store
 from clue_api.arv2.account_research_catalog import (
     ARV2_ACCOUNT_PROFILE_REF,
@@ -115,11 +116,6 @@ class _Clients:
 
     def structuring(self, caller: Any) -> Any:
         raise AssertionError("no provider is reached in this test")
-
-
-class _Artifacts:
-    async def persist_body(self, *, workspace_id: str, data: bytes, media_type: str) -> Any:
-        raise AssertionError("no raw body is buffered in this test")
 
 
 def _finalizing_model() -> _ScriptedModel:
@@ -279,7 +275,13 @@ def test_one_job_runs_to_a_finalized_receipt_and_a_completed_run() -> None:
             handler = Arv2AccountResearchWorkHandler(
                 settings=Settings(_env_file=None),
                 conn_factory=conn_session_factory(conn),
-                artifacts=_Artifacts(),
+                # The production sink, injected from outside the lane exactly as ``fleet_main``
+                # will inject it. No provider hop runs here, so nothing is persisted through it —
+                # what the test pins is that the composed handler takes the platform's own store.
+                artifacts=DurableAgentArtifactStore(
+                    storage=storage,  # type: ignore[arg-type]
+                    conn_factory=conn_session_factory(conn),
+                ),
                 storage=storage,
                 clients=_Clients(),
                 model_provider=_Models(_finalizing_model()),
