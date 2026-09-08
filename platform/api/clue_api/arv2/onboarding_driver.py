@@ -1,10 +1,11 @@
 """The onboarding run on the fleet (ARV2-ONBOARDING-PLAN.md §2–§4; O3).
 
 One ``onboarding_run`` task = one run: fast recon (overview ∥ lineup ∥ reviews), catalog sync, the
-synthesis turn (through a seam O4 supplies), then the background per-product fan-out under
-``onboarding_max_parallel_runs``. Every provider call is R1's synchronous ``ProviderCaller`` run in
-``asyncio.to_thread`` with ONE caller per step, so a blocking HTTP poll loop never owns the event
-loop.
+synthesis turns (through a seam O4 supplies) — one ICP turn, then one persona turn per ICP it
+registered — and the background per-product fan-out, personas and products sharing the one
+``onboarding_max_parallel_runs`` cap. Every provider call is R1's synchronous ``ProviderCaller``
+run in ``asyncio.to_thread`` with ONE caller per step, so a blocking HTTP poll loop never owns the
+event loop.
 
 The failure law: a provider failure, timeout or empty answer is a **step outcome**, never an
 exception — the step lands ``failed``/``empty`` with its reason, its document is closed without a
@@ -73,10 +74,13 @@ log = get_logger("clue_api.arv2.onboarding_driver")
 
 __all__ = [
     "ONBOARDING_DEDUP_PREFIX",
+    "SYNTHESIS_TURN_HARD_TIMEOUT_S",
     "ArtifactSink",
     "ClientEntityBinder",
     "ExaAgentSurface",
     "ExaClientFactory",
+    "IcpRef",
+    "IcpSynthesisOutcome",
     "OnboardingRunWorkHandler",
     "SynthesisLauncher",
     "SynthesisOutcome",
@@ -121,6 +125,19 @@ _NO_SYNTHESIS = "synthesis agent not composed (O4)"
 #: Every ``failed`` step MUST name a code (the same CHECK, read the other way), so a launcher that
 #: refused without one still lands a legal row.
 _UNSPECIFIED = "unspecified"
+
+#: The driver's own containment for a synthesis turn that never returns. A pre-existing execution
+#: substrate defect — ``RecipeExecutor.execute`` spins forever when a governed tool call under the
+#: recipe gate is refused — can hang a launcher call, and a hung call would strand the run on
+#: ``running`` forever, which is exactly what the failure law exists to prevent. This is NOT an
+#: agent cap: the profile has its own 1200 s turn timeout, and this sits well above it so a turn
+#: that is merely slow is never cut short. Every ``launch_icps``/``launch_persona`` call is wrapped
+#: in it; a trip lands that step ``failed`` with :data:`_TURN_HUNG` and the run keeps going.
+SYNTHESIS_TURN_HARD_TIMEOUT_S = 1800.0
+
+#: The code a timed-out turn lands. Distinct from any launcher-supplied code: it says the turn
+#: never answered, not that it answered badly.
+_TURN_HUNG = "turn_hung"
 
 
 def onboarding_work_id(run_id: UUID) -> WorkId:
@@ -191,8 +208,12 @@ class ClientEntityBinder(Protocol):
 
 @dataclass(frozen=True)
 class SynthesisOutcome:
-    """What the synthesis turn settled its step with. ``failure_code`` may be ``None`` even on
-    ``failed`` — the driver substitutes :data:`_UNSPECIFIED` rather than write an illegal row."""
+    """What one synthesis turn settled its step with. ``failure_code`` may be ``None`` even on
+    ``failed`` — the driver substitutes :data:`_UNSPECIFIED` rather than write an illegal row.
+
+    ``cost_usd`` is that ONE turn's cost. Each step lands its own; the store's ``finish_run`` sums
+    the steps, so the driver never adds two turns together.
+    """
 
     status: Literal["completed", "empty", "failed"]
     failure_code: str | None
@@ -200,9 +221,39 @@ class SynthesisOutcome:
     cost_usd: Decimal
 
 
+@dataclass(frozen=True)
+class IcpRef:
+    """One ICP profile the ICP turn registered — the driver's whole view of it.
+
+    Deliberately the driver's own type rather than O4's ``RegisteredIcp``: the lane may not import
+    the synthesis wiring (it composes the agent substrate), so the composition root copies the four
+    fields across the seam in both directions.
+    """
+
+    document_id: UUID
+    icp_key: str
+    version: int
+    path: str
+
+
+@dataclass(frozen=True)
+class IcpSynthesisOutcome:
+    """The ICP turn's outcome: a step outcome plus the profiles the persona turns fan out over."""
+
+    status: Literal["completed", "empty", "failed"]
+    failure_code: str | None
+    failure_message: str | None
+    cost_usd: Decimal
+    icps: tuple[IcpRef, ...]
+
+
 class SynthesisLauncher(Protocol):
-    async def launch(
+    async def launch_icps(
         self, *, workspace_id: str, brand_id: str, run_id: UUID, step_id: UUID
+    ) -> IcpSynthesisOutcome: ...
+
+    async def launch_persona(
+        self, *, workspace_id: str, brand_id: str, run_id: UUID, step_id: UUID, icp: IcpRef
     ) -> SynthesisOutcome: ...
 
 
@@ -366,8 +417,8 @@ class OnboardingRunWorkHandler:
         results = await asyncio.gather(*fast)
         links: tuple[ProductLink, ...] = results[1]
 
-        # The synthesis turn reads what the fast lane published and does not wait for the
-        # per-product reports, so it starts alongside the fan-out rather than after it.
+        # The ICP turn reads what the fast lane published and does not wait for the per-product
+        # reports, so it starts alongside the fan-out rather than after it.
         synthesis_task = asyncio.create_task(self._synthesis_step(scope))
         background = [
             self._product_research(scope, link) for link in links if link.product_id is not None
@@ -380,10 +431,20 @@ class OnboardingRunWorkHandler:
             async with semaphore:
                 await work
 
+        # Ordering ruling: the product fan-out is started FIRST (as tasks, so it runs while the
+        # ICP turn does), then the ICP turn is awaited, then the persona turns are created. A
+        # persona turn therefore begins the moment its ICP exists rather than after every product
+        # report has landed — and both fan-outs queue on the one semaphore, so the cap still counts
+        # them together. The ``finally`` keeps the original containment: whatever happens to the
+        # turns, the product tasks are awaited before the run is settled, so none is left orphaned.
+        products = [asyncio.create_task(bounded(work)) for work in background]
         try:
-            await asyncio.gather(*(bounded(work) for work in background))
+            icps = await synthesis_task
+            await asyncio.gather(
+                *(asyncio.create_task(bounded(self._persona_step(scope, icp))) for icp in icps)
+            )
         finally:
-            await synthesis_task
+            await asyncio.gather(*products)
         async with self._connection() as conn:
             return str(await self._store.finish_run(conn, run_id=scope.run_id))
 
@@ -697,9 +758,15 @@ class OnboardingRunWorkHandler:
             await self._store.finish_step(conn, step_id=step_id, status="completed")
         return tuple(links)
 
-    async def _synthesis_step(self, scope: _Scope) -> None:
-        """The step O4 fills. Until it is composed the step is honestly ``empty``, never skipped —
-        a run with no synthesis must show that on the page rather than look complete."""
+    async def _synthesis_step(self, scope: _Scope) -> tuple[IcpRef, ...]:
+        """The ICP turn — the step O4 fills. Until it is composed the step is honestly ``empty``,
+        never skipped: a run with no synthesis must show that on the page rather than look
+        complete. Returns the ICPs the turn registered, which is the persona fan-out's work list;
+        anything but ``completed`` returns none, so no persona turn is opened without a profile.
+
+        The ``empty``-because-uncomposed case belongs to THIS step alone: with no launcher there is
+        nothing to fan out over, so no persona step is opened to be empty in its own right.
+        """
         step_id = self._step_id(scope, "synthesis")
         async with self._connection() as conn:
             await self._store.start_step(
@@ -715,13 +782,97 @@ class OnboardingRunWorkHandler:
                 await self._store.finish_step(
                     conn, step_id=step_id, status="empty", failure_message=_NO_SYNTHESIS
                 )
-            return
+            return ()
         try:
-            outcome = await self._synthesis.launch(
-                workspace_id=scope.workspace_id,
-                brand_id=scope.brand_id,
-                run_id=scope.run_id,
+            outcome = await asyncio.wait_for(
+                self._synthesis.launch_icps(
+                    workspace_id=scope.workspace_id,
+                    brand_id=scope.brand_id,
+                    run_id=scope.run_id,
+                    step_id=step_id,
+                ),
+                timeout=SYNTHESIS_TURN_HARD_TIMEOUT_S,
+            )
+        except TimeoutError:
+            log.error(
+                "onboarding.synthesis_turn_hung",
+                run_id=str(scope.run_id),
+                step_id=str(step_id),
+                turn="icp",
+                timeout_s=SYNTHESIS_TURN_HARD_TIMEOUT_S,
+            )
+            outcome = IcpSynthesisOutcome(
+                status="failed",
+                failure_code=_TURN_HUNG,
+                failure_message=_hung_message("the ICP turn"),
+                cost_usd=Decimal(0),
+                icps=(),
+            )
+        except Exception as error:
+            outcome = IcpSynthesisOutcome(
+                status="failed",
+                failure_code=type(error).__name__,
+                failure_message=str(error)[:500],
+                cost_usd=Decimal(0),
+                icps=(),
+            )
+        await self._land_turn_step(
+            step_id, outcome.status, outcome.failure_code, outcome.failure_message, outcome.cost_usd
+        )
+        if outcome.status != "completed":
+            return ()
+        # The work list must be unique by ICP key: a persona step's identity IS
+        # ``(run, 'persona', icp_key)`` (the step id, and the O1 identity index), so two ICPs
+        # arriving under one key would collide on the row rather than fan out — and that write
+        # happens before the per-step containment, where it would fail the whole run.
+        return _unique_by_key(outcome.icps, run_id=scope.run_id)
+
+    async def _persona_step(self, scope: _Scope, icp: IcpRef) -> None:
+        """One persona turn for one registered ICP: its own background step, keyed by the ICP key.
+
+        Contained exactly like the ICP turn — one persona that fails, refuses or hangs takes only
+        its own step down, and neither its siblings nor the ICP step that registered the profiles
+        is walked back off ``completed``.
+        """
+        launcher = self._synthesis
+        if launcher is None:  # unreachable: no launcher means no ICPs to fan out over
+            return
+        step_id = self._step_id(scope, "persona", icp.icp_key)
+        async with self._connection() as conn:
+            await self._store.start_step(
+                conn,
                 step_id=step_id,
+                run_id=scope.run_id,
+                workspace_id=scope.workspace_id,
+                kind="persona",
+                phase="background",
+                subject_ref=icp.icp_key,
+            )
+        try:
+            outcome = await asyncio.wait_for(
+                launcher.launch_persona(
+                    workspace_id=scope.workspace_id,
+                    brand_id=scope.brand_id,
+                    run_id=scope.run_id,
+                    step_id=step_id,
+                    icp=icp,
+                ),
+                timeout=SYNTHESIS_TURN_HARD_TIMEOUT_S,
+            )
+        except TimeoutError:
+            log.error(
+                "onboarding.synthesis_turn_hung",
+                run_id=str(scope.run_id),
+                step_id=str(step_id),
+                turn="persona",
+                icp_key=icp.icp_key,
+                timeout_s=SYNTHESIS_TURN_HARD_TIMEOUT_S,
+            )
+            outcome = SynthesisOutcome(
+                status="failed",
+                failure_code=_TURN_HUNG,
+                failure_message=_hung_message(f"the persona turn for {icp.icp_key}"),
+                cost_usd=Decimal(0),
             )
         except Exception as error:
             outcome = SynthesisOutcome(
@@ -730,15 +881,31 @@ class OnboardingRunWorkHandler:
                 failure_message=str(error)[:500],
                 cost_usd=Decimal(0),
             )
-        code = (outcome.failure_code or _UNSPECIFIED) if outcome.status == "failed" else None
+        await self._land_turn_step(
+            step_id, outcome.status, outcome.failure_code, outcome.failure_message, outcome.cost_usd
+        )
+
+    async def _land_turn_step(
+        self,
+        step_id: UUID,
+        status: Literal["completed", "empty", "failed"],
+        failure_code: str | None,
+        failure_message: str | None,
+        cost_usd: Decimal,
+    ) -> None:
+        """Settle a synthesis-family step (no document of its own: the launcher registers those).
+
+        ``cost_usd`` is the one turn's own cost — ``finish_run`` sums the steps.
+        """
+        code = (failure_code or _UNSPECIFIED) if status == "failed" else None
         async with self._connection() as conn:
             await self._store.finish_step(
                 conn,
                 step_id=step_id,
-                status=outcome.status,
-                cost_usd=outcome.cost_usd,
+                status=status,
+                cost_usd=cost_usd,
                 failure_code=code,
-                failure_message=outcome.failure_message,
+                failure_message=failure_message,
             )
 
     # -- settlement --------------------------------------------------------------------------
@@ -786,6 +953,30 @@ class OnboardingRunWorkHandler:
                     failure_code=code,
                     failure_message=outcome.failure_message,
                 )
+
+
+def _unique_by_key(icps: Sequence[IcpRef], *, run_id: UUID) -> tuple[IcpRef, ...]:
+    """The first ICP registered under each key wins; a repeat is dropped loudly."""
+    kept: dict[str, IcpRef] = {}
+    for icp in icps:
+        if icp.icp_key in kept:
+            log.warning(
+                "onboarding.duplicate_icp_key",
+                run_id=str(run_id),
+                icp_key=icp.icp_key,
+                kept_document_id=str(kept[icp.icp_key].document_id),
+                dropped_document_id=str(icp.document_id),
+            )
+            continue
+        kept[icp.icp_key] = icp
+    return tuple(kept.values())
+
+
+def _hung_message(what: str) -> str:
+    return (
+        f"{what} did not return within the driver's hard timeout of "
+        f"{SYNTHESIS_TURN_HARD_TIMEOUT_S:g} s and was cancelled"
+    )
 
 
 def _searches(run: ExaAgentRun) -> int:

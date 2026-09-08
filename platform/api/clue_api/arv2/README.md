@@ -104,8 +104,9 @@ The Agent surface is synchronous like the rest of R1: the onboarding driver (O3)
 
 `onboarding_driver.py` is one fleet work handler (`FleetTaskKind.ONBOARDING_RUN`) that runs one
 `onboarding_run` end to end: the fast recon lane (overview ∥ lineup ∥ reviews) in parallel, then
-the catalog sync, then the synthesis turn — through the `SynthesisLauncher` seam O4 fills — running
-alongside the capped per-product background fan-out (`onboarding_max_parallel_runs`).
+the catalog sync, then the synthesis turns — through the `SynthesisLauncher` seam O4 fills: one ICP
+turn, then one persona turn per ICP it registered — running alongside the per-product background
+fan-out, personas and products sharing the one cap (`onboarding_max_parallel_runs`).
 
 Three rules it exists to keep:
 
@@ -143,19 +144,40 @@ seam, so the model reuses an existing spelling instead of inventing a near-miss 
 One `onboarding_run` task is one run, in this order:
 
 ```
-  mark_run_running          overview ────────────────┐        synthesis ──────────────┐
+  mark_run_running          overview ────────────────┐   synthesis ─→ persona ×ICPs ──┐
   + bind the client  ─→     lineup ─→ catalog_sync ──┼─→                              ├─→ finish_run
-                            reviews ─────────────────┘        product_research ×N ────┘
+                            reviews ─────────────────┘   product_research ×N ─────────┘
                                     (fast lane, concurrent)      (background, capped)
 ```
 
+Every step the run can open:
+
+| kind | phase | subject_ref | how many |
+|---|---|---|---|
+| `overview` | `fast` | — | one |
+| `lineup` | `fast` | — | one |
+| `catalog_sync` | `fast` | — | one (only if the lineup found products) |
+| `reviews` | `fast` or `background` | — | one (`CLUE_ONBOARDING_REVIEWS_PHASE` moves it) |
+| `synthesis` | `fast` | — | one — the ICP turn |
+| `persona` | `background` | the ICP key | one per registered ICP |
+| `product_research` | `background` | the product id | one per synchronized product |
+
 The fast lane runs its steps concurrently; the lineup's two passes are merged and handed straight
 to `catalog_sync` inside the same step branch, which mints or reuses the product rows over the
-artifact-keyed `onboarding_product_lineage`. The synthesis turn reads what the fast lane published
-and does not wait for the per-product reports, so it runs *alongside* the background fan-out, which
-is capped at `onboarding_max_parallel_runs`. `finish_run` settles the run `completed` or
-`completed_with_gaps` from the steps' own statuses and sums their cost — a run with a failed or
-empty step still finishes, it just says so.
+artifact-keyed `onboarding_product_lineage`. The ICP turn reads what the fast lane published and
+does not wait for the per-product reports, so it runs *alongside* the background fan-out. Its
+persona turns are opened the moment it returns — never after the product reports finish — and they
+queue on the same `onboarding_max_parallel_runs` semaphore as those reports, so the cap counts both
+fan-outs together. An ICP turn that ends anything but `completed` hands over no profiles, so no
+persona step is opened at all. `finish_run` settles the run `completed` or `completed_with_gaps`
+from the steps' own statuses and sums their cost — a run with a failed or empty step still
+finishes, it just says so.
+
+Both launcher calls are wrapped in `asyncio.wait_for(..., SYNTHESIS_TURN_HARD_TIMEOUT_S)` (1800 s).
+That is containment, not an agent cap — the profile has its own 1200 s turn timeout — because a
+governed tool call refused under the recipe gate can leave `RecipeExecutor.execute` spinning
+forever, and a launcher call that never returns would strand the run on `running`. A trip lands
+that one step `failed` with `turn_hung`; every other step and the run itself keep going.
 
 `CLUE_ONBOARDING_REVIEWS_PHASE` moves the reviews step between the fast lane and the background
 lane without changing anything else; every other flag in the lane (`_OVERVIEW_EFFORT`,
@@ -175,9 +197,13 @@ them:
   readiness decision and no Stage-0 run pin** — the standing rule that no old-lane gate may block
   this lane (`_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md`). Composed without a
   binder the run still produces every document: they are brand-scoped and need no client entity.
-- **`SynthesisLauncher`** — O4's `build_onboarding_synthesis_launcher`, supplied at the merge. The
-  fleet composes `synthesis=None` until then, and the synthesis step settles `empty` with
-  "synthesis agent not composed (O4)" rather than pretending it ran.
+- **`SynthesisLauncher`** — O4's `build_onboarding_synthesis_launcher`, supplied at the merge, with
+  two calls: `launch_icps` (the ICP turn, which returns the `IcpRef`s it registered) and
+  `launch_persona` (one per ICP). The driver keeps its own `IcpRef`/`IcpSynthesisOutcome` rather
+  than importing O4's types — the lane may not import the synthesis wiring — so `fleet_main
+  ._SynthesisSeam` copies the four fields across in both directions. Composed `synthesis=None`, the
+  `synthesis` step settles `empty` with "synthesis agent not composed (O4)" rather than pretending
+  it ran, and no persona step is opened.
 
 ### Composition on the fleet
 
@@ -510,8 +536,9 @@ the lane may not import, so the module lives beside the other `clue_api` wiring 
 finished output's front matter and answers *what document is this*.
 
 The shape is the account-research unit runner with the account scope swapped for the **brand**
-scope. `OnboardingSynthesisLauncher.launch` materializes the brand's current servable knowledge
-documents read-only under `inputs/brand/knowledge/`, runs one C5-governed turn inside the promoted
+scope. Each call — `launch_icps` for the ICP turn, `launch_persona` once per registered ICP —
+materializes the brand's current servable knowledge documents read-only under
+`inputs/brand/knowledge/`, runs one C5-governed turn inside the promoted
 `onboarding-synthesis-unit@1` recipe under a per-brand system `project` row (born `archived` — a
 scope anchor, never a motion a marketer opens), and registers each `outputs/` file whose front
 matter identifies it as a versioned `brand_knowledge_document` (`icp-definition` → `proposed`,

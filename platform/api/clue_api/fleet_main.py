@@ -71,6 +71,8 @@ from clue_api.arv2.account_research_driver import (
 )
 from clue_api.arv2.account_research_launch import DbArv2LaunchService
 from clue_api.arv2.onboarding_driver import (
+    IcpRef,
+    IcpSynthesisOutcome,
     OnboardingRunWorkHandler,
     SynthesisLauncher,
     SynthesisOutcome,
@@ -124,6 +126,7 @@ from clue_api.official_site_crawl_wiring import build_official_site_crawl_fleet
 from clue_api.onboarding_client_binding import Stage0ClientEntityBinder
 from clue_api.onboarding_synthesis_wiring import (
     OnboardingSynthesisLauncher,
+    RegisteredIcp,
     build_onboarding_synthesis_launcher,
 )
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
@@ -555,16 +558,51 @@ class _SynthesisSeam:
     returns those four plus the document ids it registered. Nothing else differs, so the join is a
     field-for-field copy here rather than a shared type either lane would have had to import from
     the other before it existed.
+
+    Both turns cross here. The ICP turn's ``RegisteredIcp`` rows become the driver's ``IcpRef``s on
+    the way out, and each one comes back as its own ``RegisteredIcp`` when the driver opens that
+    ICP's persona turn — the same four fields, copied in both directions.
     """
 
     def __init__(self, launcher: OnboardingSynthesisLauncher) -> None:
         self._launcher = launcher
 
-    async def launch(
+    async def launch_icps(
         self, *, workspace_id: str, brand_id: str, run_id: UUID, step_id: UUID
-    ) -> SynthesisOutcome:
-        result = await self._launcher.launch(
+    ) -> IcpSynthesisOutcome:
+        result = await self._launcher.launch_icps(
             workspace_id=workspace_id, brand_id=brand_id, run_id=run_id, step_id=step_id
+        )
+        return IcpSynthesisOutcome(
+            status=result.status,
+            failure_code=result.failure_code,
+            failure_message=result.failure_message,
+            cost_usd=result.cost_usd,
+            icps=tuple(
+                IcpRef(
+                    document_id=icp.document_id,
+                    icp_key=icp.icp_key,
+                    version=icp.version,
+                    path=icp.path,
+                )
+                for icp in result.icps
+            ),
+        )
+
+    async def launch_persona(
+        self, *, workspace_id: str, brand_id: str, run_id: UUID, step_id: UUID, icp: IcpRef
+    ) -> SynthesisOutcome:
+        result = await self._launcher.launch_persona(
+            workspace_id=workspace_id,
+            brand_id=brand_id,
+            run_id=run_id,
+            step_id=step_id,
+            icp=RegisteredIcp(
+                document_id=icp.document_id,
+                icp_key=icp.icp_key,
+                version=icp.version,
+                path=icp.path,
+            ),
         )
         return SynthesisOutcome(
             status=result.status,
