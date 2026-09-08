@@ -137,6 +137,7 @@ from .design_store import (
     resolve_workspace_id,
 )
 from .font_library import manifest as font_library_manifest
+from .font_library import shared_library_font_bytes
 from .dto import (
     brand_compatibility_dto,
     brand_governance_dto,
@@ -7654,7 +7655,14 @@ def create_app(
         # D4: a pure-Python read straight from durable storage — resolved BY DIGEST, so the
         # three historical `opaque_ref` shapes (and their three provider labels) all serve, and
         # no stored ref is ever interpreted as a filesystem path.
-        stored = repo.require_asset_record(asset_id)
+        try:
+            stored = repo.require_asset_record(asset_id)
+        except NotFoundError:
+            shared_font = shared_library_font_bytes(asset_id, app.state.storage)
+            if shared_font is None:
+                raise
+            media_type, data = shared_font
+            return Response(content=data, media_type=media_type)
         record = stored["asset"]
         media = record.get("media") or {}
         digest = location_digest(media.get("location"))
