@@ -80,3 +80,4 @@ worktree (storage root repointed to `san-salvador/.artifacts`; answer key reload
   ~30-40% (LinkedIn/dynamic pages; separate fetch_failed); **model token spend is not in
   provider_call_ledger** (gateway logs cost_cents 0 for grok-4.6 agent completions) — money-truth gap;
   one job per worker at a time; context ~97k tokens by round 13 (no model_error).
+- PR #49 MERGED into integration/design-improvement (a758b5b1f, 2026-09-08). New branch track-r2-v1 for R2 close.
