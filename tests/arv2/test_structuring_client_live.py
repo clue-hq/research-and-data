@@ -317,8 +317,17 @@ def test_probook_intent_sweep_parses_and_keeps_only_registered_keys(
     )
 
     _report("probook-intent-sweep", output, bundle)
+    print(f"  dropped_rows={output.dropped_rows}")
     assert output.mode == "intent_sweep"
     assert len(output.claims) <= 4, "the sweep is capped at four rows, best first"
+    # The cap is enforced in code, so it can no longer be the thing that proves the mode works —
+    # a drifted answer would be silently truncated to four and look identical to a real sweep.
+    # ``dropped_rows`` is where that drift now shows: non-zero means the model answered a sweep
+    # request with a broad answer, which is exactly the defect the two-turn prompt swap fixes.
+    assert output.dropped_rows == 0, (
+        f"the model returned {len(output.claims) + output.dropped_rows} rows for a 4-row sweep: "
+        "the sweep prompt is drifting broad again"
+    )
     _assert_closed_catalog(output, poc_catalog)
     assert all(claim.priority in {1, 2, 3} for claim in output.claims)
     assert all(claim.evidence_span.strip() for claim in output.claims), (
