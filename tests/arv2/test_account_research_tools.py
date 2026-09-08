@@ -18,6 +18,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Coroutine, Mapping, Sequence
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -322,9 +323,24 @@ class FakeStructuring:
         )
 
     def structure_account(
-        self, subject: Any, bundle: str, catalog: FieldCatalog, *, mode: str = "broad"
+        self,
+        subject: Any,
+        bundle: str,
+        catalog: FieldCatalog,
+        *,
+        mode: str = "broad",
+        sources: Any = None,
+        notes: str | None = None,
     ) -> StructuredOutput:
-        self.account_calls.append({"subject": subject, "bundle": bundle, "mode": mode})
+        self.account_calls.append(
+            {
+                "subject": subject,
+                "bundle": bundle,
+                "mode": mode,
+                "sources": list(sources or []),
+                "notes": notes,
+            }
+        )
         if self.raise_with is not None:
             raise self.raise_with
         return self.output
@@ -405,8 +421,12 @@ class FakeWriter:
 
     def __init__(self) -> None:
         self.drafts: list[ClaimDraft] = []
+        #: field keys this writer refuses, the way the real gate raises on an unwritable value.
+        self.raise_on: set[str] = set()
 
     async def write(self, conn: Any, draft: ClaimDraft) -> WriteReceipt:
+        if draft.field_key in self.raise_on:
+            raise ValueError(f"cannot write {draft.field_key}")
         self.drafts.append(draft)
         return WriteReceipt(
             claim_id=ClaimId(uuid4()),
@@ -794,6 +814,7 @@ def test_write_claims_refuses_a_named_committee_candidate_with_no_confirming_url
 
 
 MATERIAL = "Probook's customers page names Acme. " * 5
+SOURCES = [{"url": "https://probook.ai/customers", "kind": "page", "text": MATERIAL}]
 
 
 def test_structure_material_writes_claims_negatives_and_returns_ids() -> None:
@@ -805,7 +826,8 @@ def test_structure_material_writes_claims_negatives_and_returns_ids() -> None:
         subject_kind="account",
         subject_name="Probook",
         subject_domain_or_company="probook.ai",
-        material=MATERIAL,
+        sources=SOURCES,
+        notes="my own read: they are scaling",
         mode="intent_sweep",
     )
 
@@ -828,6 +850,135 @@ def test_structure_material_writes_claims_negatives_and_returns_ids() -> None:
     assert risk.outreach_safe is False
 
 
+def test_structure_material_hands_the_client_the_blocks_and_the_notes_apart() -> None:
+    runtime, clients, _, _ = _runtime()
+
+    _call(
+        runtime,
+        "structure_material",
+        subject_kind="account",
+        subject_name="Probook",
+        subject_domain_or_company="probook.ai",
+        sources=[
+            {"url": "https://probook.ai/customers", "kind": "page", "text": MATERIAL},
+            {"kind": "provider", "text": "AI Ark holds 36 staff for probook.ai. " * 2},
+        ],
+        notes="my own read: dispatch is the wedge",
+    )
+
+    [call] = clients.structuring_client.account_calls
+    assert [block.kind for block in call["sources"]] == ["page", "provider"]
+    assert call["sources"][0].url == "https://probook.ai/customers"
+    assert call["sources"][1].url is None
+    assert call["notes"] == "my own read: dispatch is the wedge"
+
+
+def test_structure_material_refuses_the_old_free_material_argument() -> None:
+    runtime, clients, _, _ = _runtime()
+
+    refused = _call(
+        runtime,
+        "structure_material",
+        subject_kind="account",
+        subject_name="Probook",
+        subject_domain_or_company="probook.ai",
+        material=MATERIAL,
+    )
+
+    assert refused["code"] == "invalid_arguments"
+    assert clients.structuring_client.account_calls == []
+
+
+def test_structure_material_needs_at_least_one_source() -> None:
+    runtime, _, _, _ = _runtime()
+
+    refused = _call(
+        runtime,
+        "structure_material",
+        subject_kind="account",
+        subject_name="Probook",
+        subject_domain_or_company="probook.ai",
+        sources=[],
+    )
+
+    assert refused["code"] == "invalid_arguments"
+
+
+def test_structure_material_reports_a_failed_draft_instead_of_losing_the_batch() -> None:
+    runtime, _, writer, _ = _runtime()
+    writer.raise_on = {"account.pricing_shape"}
+
+    structured = _call(
+        runtime,
+        "structure_material",
+        subject_kind="account",
+        subject_name="Probook",
+        subject_domain_or_company="probook.ai",
+        sources=SOURCES,
+    )
+
+    assert [w["field_key"] for w in structured["written"]] == ["account.named_customers"]
+    assert structured["write_failures"] == [
+        {"field_key": "account.pricing_shape", "error": "cannot write account.pricing_shape"}
+    ]
+    # the draft after the failure still landed: one transaction per draft
+    assert {d.field_key for d in writer.drafts} == {
+        "account.named_customers",
+        "account.reputation_risk",
+    }
+
+
+def test_structure_material_reports_the_rows_a_mode_cap_dropped() -> None:
+    runtime, clients, _, _ = _runtime()
+    clients.structuring_client.output = replace(
+        clients.structuring_client.output, dropped_rows=3, mode="intent_sweep"
+    )
+
+    structured = _call(
+        runtime,
+        "structure_material",
+        subject_kind="account",
+        subject_name="Probook",
+        subject_domain_or_company="probook.ai",
+        sources=SOURCES,
+        mode="intent_sweep",
+    )
+
+    assert structured["dropped_rows"] == 3
+
+
+def test_write_each_isolates_every_draft_in_its_own_transaction() -> None:
+    runtime, _, writer, conn_factory = _runtime()
+    writer.raise_on = {"account.gtm_tooling_stack"}
+    drafts = [
+        _draft_for("account.named_customers"),
+        _draft_for("account.gtm_tooling_stack"),
+        _draft_for("core.industry"),
+    ]
+
+    results = _run(runtime.write_each(drafts))
+
+    assert isinstance(results[0], WriteReceipt)
+    assert results[1] == tools.WriteFailure(
+        field_key="account.gtm_tooling_stack", error="cannot write account.gtm_tooling_stack"
+    )
+    assert isinstance(results[2], WriteReceipt)
+    assert conn_factory.opened == 3, "one transaction per draft"
+
+
+def _draft_for(field_key: str) -> ClaimDraft:
+    return ClaimDraft(
+        entity_id=ACCOUNT_ID,
+        entity_type=EntityType.ACCOUNT,
+        field_key=field_key,
+        value_json=["Acme"],
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        run_id=RunId(RUN_ID),
+        research_mode=ResearchMode.ACCOUNT_PROFILING,
+        workspace_id="ws-1",
+    )
+
+
 def test_structure_material_refuses_a_person_subject_until_r3() -> None:
     runtime, clients, _, _ = _runtime()
 
@@ -837,7 +988,7 @@ def test_structure_material_refuses_a_person_subject_until_r3() -> None:
         subject_kind="person",
         subject_name="Nick Fisher",
         subject_domain_or_company="Probook",
-        material=MATERIAL,
+        sources=SOURCES,
     )
 
     assert refused["code"] == "invalid_arguments" and "person" in refused["detail"]
@@ -854,7 +1005,7 @@ def test_structure_material_refuses_structuring_unparseable() -> None:
         subject_kind="account",
         subject_name="Probook",
         subject_domain_or_company="probook.ai",
-        material=MATERIAL,
+        sources=SOURCES,
     )
 
     assert refused["code"] == "structuring_unparseable"
@@ -1188,7 +1339,7 @@ def test_a_halt_met_inside_one_hop_also_latches_the_wire_provider() -> None:
         subject_kind="account",
         subject_name="Probook",
         subject_domain_or_company="probook.ai",
-        material=MATERIAL,
+        sources=SOURCES,
     )
 
     assert refused["code"] == "provider_halted:openrouter"

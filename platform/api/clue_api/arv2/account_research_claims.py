@@ -26,10 +26,12 @@ to :meth:`ToolRuntime.write`, which is the one write path.
 
 from __future__ import annotations
 
+import hashlib
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, JsonValue
@@ -37,8 +39,24 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, JsonValue
 from clue_api.arv2.ai_ark_client import AiArkCompany
 from clue_api.arv2.ats_client import BoardPostings
 from clue_api.arv2.claim_writer import ClaimDraft
-from clue_api.arv2.structuring_client import NegativeOrRisk, StructuredOutput
-from clue_core import EntityId, EntityType, ExtractionMethod, ResearchMode, RunId
+from clue_api.arv2.structuring_client import (
+    FieldCatalog,
+    NegativeOrRisk,
+    StructuredClaim,
+    StructuredOutput,
+    check_value_schema,
+)
+from clue_core import (
+    EntityId,
+    EntityType,
+    ExtractionMethod,
+    ResearchMode,
+    RunId,
+    is_valid_field_key,
+)
+from clue_obs import get_logger
+
+log = get_logger("clue_api.arv2.account_research_claims")
 
 __all__ = [
     "ALWAYS_UNSAFE_FIELDS",
@@ -51,10 +69,12 @@ __all__ = [
     "agent_claims",
     "ai_ark_company_claims",
     "ats_posting_claims",
+    "coerce_scalar",
     "committee_candidate_claims",
     "fit_verdict_claims",
     "media_index_claim",
     "negative_claims",
+    "normalise_proposed_key",
     "revenue_band_bucket",
     "structured_claims",
     "unconfirmed_candidates",
@@ -230,15 +250,100 @@ def ats_posting_claims(postings: BoardPostings, scope: JobScope) -> list[ClaimDr
     return drafts
 
 
-#: The **only** AI Ark company fields that become claims, each with the exact path the value was
-#: read from in the provider record (``ai_ark_client.company_from_record``). Everything else stays
-#: in ``raw`` and is returned to the model as context, never written as a typed fact.
+#: The AI Ark company fields that are read off the mapped :class:`AiArkCompany` attributes, each
+#: with the exact path the value was read from in the provider record
+#: (``ai_ark_client.company_from_record``).
 _AI_ARK_COMPANY_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("linkedin", "core.company_linkedin_url", "link.linkedin"),
     ("industry", "core.industry", "summary.industry"),
     ("employee_count", "core.employee_count", "summary.staff.total"),
     ("location", "core.hq_location", "location.headquarter"),
 )
+
+#: Everything **else** the company record carries that a registered ``core.*`` field can hold, as
+#: (field key, record path). Founder ruling 2026-09-08, after the recall baseline: the record was
+#: being read for five fields and returned to the model as context for the rest, so a dozen
+#: deterministic, tier-1 provider facts (the legal name, the founding year, the industries list,
+#: the languages, the socials, the contact email, the technologies) reached the model as prose it
+#: could only re-type — and the answer keys duly read ``missing``. A provider fact belongs in code.
+#:
+#: A path that is not in the record yields nothing, a value that does not fit the field's
+#: registered schema is not claimed, and a field this deployment has not registered is not claimed:
+#: an unmapped field is simply absent, never guessed at.
+_AI_ARK_WIDE_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("core.account_name", ("summary", "name")),
+    ("core.primary_domain", ("link", "domain")),
+    ("core.legal_name", ("summary", "legal_name")),
+    ("core.company_about", ("summary", "description")),
+    ("core.founded_year", ("summary", "founded_year")),
+    ("core.company_type", ("summary", "type")),
+    ("core.industries_all", ("industries",)),
+    ("core.company_languages", ("languages",)),
+    ("core.company_crunchbase_url", ("link", "crunchbase")),
+    ("core.company_twitter_url", ("link", "twitter")),
+    ("core.company_email", ("contact", "email")),
+)
+
+
+def _dig(value: object, *path: str) -> object:
+    """Walk a nested mapping, yielding ``None`` the moment the path stops existing.
+
+    Mirrors ``ai_ark_client._dig``: this module is pure and imports no client internals, and one
+    four-line walk written twice is cheaper than a public path helper nobody else wants.
+    """
+    for key in path:
+        if not isinstance(value, Mapping):
+            return None
+        value = value.get(key)
+    return value
+
+
+def _provider_value(raw: object) -> JsonValue | None:
+    """One record value as something a claim can hold: a non-blank string, a real integer, or a
+    list of non-blank strings. Anything else (a nested object, a float id, a mixed list) has no
+    registered home in the widened table and is left in ``raw``."""
+    if isinstance(raw, str):
+        return raw if raw.strip() else None
+    if isinstance(raw, int) and not isinstance(raw, bool):
+        return raw
+    if isinstance(raw, list):
+        items: list[JsonValue] = [item for item in raw if isinstance(item, str) and item.strip()]
+        return items or None
+    return None
+
+
+def _employee_range(raw: Mapping[str, Any]) -> JsonValue | None:
+    """``summary.staff.range`` as the registered ``{label, min, max}`` shape.
+
+    The label is the range the provider actually stated (``"51-200"``), rendered rather than
+    invented: the registered field requires a label, and a band with no label is a band nobody can
+    read back. A range missing either end is not a band, so it is not claimed.
+    """
+    start, end = (
+        _dig(raw, "summary", "staff", "range", "start"),
+        _dig(raw, "summary", "staff", "range", "end"),
+    )
+    if not isinstance(start, int) or not isinstance(end, int):
+        return None
+    if isinstance(start, bool) or isinstance(end, bool):
+        return None
+    return {"label": f"{start}-{end}", "min": start, "max": end}
+
+
+def _categorised_technologies(raw: Mapping[str, Any]) -> JsonValue | None:
+    """``technologies`` as the registered ``list[object]``: the provider's name/category pairs."""
+    technologies = raw.get("technologies")
+    if not isinstance(technologies, list):
+        return None
+    rows: list[JsonValue] = [
+        _without_nones(
+            {"name": _dig(item, "name"), "category": _dig(item, "category")}, keep=("name",)
+        )
+        for item in technologies
+        if isinstance(_dig(item, "name"), str)
+    ]
+    return rows or None
+
 
 #: ``core.revenue_band`` is an **enum** field (``packs.py``:
 #: ``under_1m|1m_10m|10m_50m|50m_100m|100m_500m|500m_1b|1b_plus``), and AI Ark answers a numeric
@@ -332,17 +437,49 @@ def _revenue_band_draft(company: AiArkCompany, scope: JobScope) -> ClaimDraft | 
     )
 
 
-def ai_ark_company_claims(company: AiArkCompany, scope: JobScope) -> list[ClaimDraft]:
-    """The five mapped firmographic fields, cited by raw path rather than by a fake URL.
+def _ai_ark_draft(
+    scope: JobScope, *, field_key: str, value: JsonValue, json_path: str
+) -> ClaimDraft:
+    """One AI Ark company claim: tier-1, provider-cited, never URL-cited."""
+    return _draft(
+        scope,
+        field_key=field_key,
+        value=value,
+        method=ExtractionMethod.API,
+        source_url=None,
+        evidence_span=None,
+        priority=2,
+        outreach_safe=True,
+        confidence=0.9,
+        source_key="ai_ark:company",
+        markers={"json_path": json_path, "provider_record": "ai_ark"},
+    )
+
+
+def ai_ark_company_claims(
+    company: AiArkCompany, scope: JobScope, *, catalog: FieldCatalog
+) -> list[ClaimDraft]:
+    """Every registered field the company record carries, cited by raw path, never by a fake URL.
 
     ``https://api.ai-ark.com/v1/companies?domain=…`` is not a page a human can open, so writing it
     as ``source_url`` would manufacture provenance. The claim cites the record instead: the
     ``json_path`` of the value plus ``provider_record='ai_ark'``, which is what a replay actually
     needs. The lenient writer marks the missing URL, and the display layer renders the provider.
 
-    Four fields go straight through; ``core.revenue_band`` is translated into the registered enum
-    by :func:`revenue_band_bucket`, and is simply absent when the provider's range does not sit
-    inside exactly one bucket.
+    Three groups, in one order:
+
+    * the four mapped attributes and ``core.revenue_band`` — unchanged, and deliberately not
+      schema-gated: they are the shipped mapping, and the band is already the one honest
+      translation of a provider vocabulary into a registered one (:func:`revenue_band_bucket`);
+    * the widened table (:data:`_AI_ARK_WIDE_FIELDS`) plus the two derived values —
+      ``core.employee_range`` from the staff band and the two technology fields;
+    * nothing else. ``financial.revenue.annual`` in particular has **no** honest home in
+      ``core.annual_revenue``, which requires one amount, a currency, an as-of date and an
+      estimate kind, where the record answers a range and names no currency at all.
+
+    Every widened value is checked against the field's own registered ``value_schema`` before a
+    draft exists. A value that does not fit is logged and not claimed, because a claim that lands
+    ``schema_valid=false`` is a fact the display layer cannot show and the audit has to explain.
     """
     drafts: list[ClaimDraft] = []
     for attribute, field_key, json_path in _AI_ARK_COMPANY_FIELDS:
@@ -355,24 +492,36 @@ def ai_ark_company_claims(company: AiArkCompany, scope: JobScope) -> list[ClaimD
         value: JsonValue = (
             _without_nones(raw_value) if isinstance(raw_value, Mapping) else raw_value
         )
-        drafts.append(
-            _draft(
-                scope,
-                field_key=field_key,
-                value=value,
-                method=ExtractionMethod.API,
-                source_url=None,
-                evidence_span=None,
-                priority=2,
-                outreach_safe=True,
-                confidence=0.9,
-                source_key="ai_ark:company",
-                markers={"json_path": json_path, "provider_record": "ai_ark"},
-            )
-        )
+        drafts.append(_ai_ark_draft(scope, field_key=field_key, value=value, json_path=json_path))
     band = _revenue_band_draft(company, scope)
     if band is not None:
         drafts.append(band)
+
+    raw = company.raw if isinstance(company.raw, Mapping) else {}
+    widened: list[tuple[str, JsonValue | None, str]] = [
+        (field_key, _provider_value(_dig(raw, *path)), ".".join(path))
+        for field_key, path in _AI_ARK_WIDE_FIELDS
+    ]
+    widened.append(("core.employee_range", _employee_range(raw), "summary.staff.range"))
+    widened.append(
+        ("core.primary_tech_stack", list(company.technologies) or None, "technologies[].name")
+    )
+    widened.append(("core.tech_stack_categorised", _categorised_technologies(raw), "technologies"))
+    for field_key, value, json_path in widened:
+        if value is None:
+            continue
+        spec = catalog.spec(field_key)
+        if spec is None:
+            continue  # not registered in this deployment: not a field, so not a claim
+        if check_value_schema(value, spec.value_schema) is False:
+            log.info(
+                "arv2.ai_ark_value_does_not_fit_its_field",
+                field_key=field_key,
+                json_path=json_path,
+                account_domain=scope.account_domain,
+            )
+            continue
+        drafts.append(_ai_ark_draft(scope, field_key=field_key, value=value, json_path=json_path))
     return drafts
 
 
@@ -418,6 +567,102 @@ def media_index_claim(
     )
 
 
+# -- what a model said, made writable -------------------------------------------------------------
+
+#: Everything a field key may not contain. The registry's own rule is lowercase dotted segments of
+#: ``[a-z][a-z0-9_]*``, so a space, a dash, a capital or a bracket is what has to go.
+_KEY_STRIPPABLE = re.compile(r"[^a-z0-9_.]")
+_KEY_SEPARATORS = re.compile(r"[\s\-/]+")
+
+
+def normalise_proposed_key(key: str, subject: Literal["account", "contact"]) -> str:
+    """The writable field key a model's suggested key means.
+
+    A proposed field is a real observation with real evidence; the only thing wrong with
+    ``"Recent Funding"`` is its spelling. The lenient gate registers an unknown key, but it calls
+    ``classify_field_key`` first, which *raises* on a malformed one — so before this existed, one
+    badly-spelled suggested key took the whole write down and the evidence with it.
+
+    Spaces, dashes and slashes become underscores, everything outside ``[a-z0-9_.]`` is dropped, a
+    key with no namespace gets the subject's, and a ``core_``-prefixed key is read as the ``core.``
+    namespace it was reaching for. Whatever still fails the registry's rule becomes
+    ``<subject>.proposed_<digest>`` — a valid, stable, obviously-machine-made key — rather than an
+    exception: the claim keeps its value and its quote, and a human can see what happened.
+    """
+    slug = _KEY_SEPARATORS.sub("_", key.strip().lower())
+    slug = _KEY_STRIPPABLE.sub("", slug)
+    if slug.startswith("core_"):
+        slug = "core." + slug.removeprefix("core_")
+    if "." not in slug:
+        slug = f"{subject}.{slug}"
+    if not is_valid_field_key(slug):
+        digest = hashlib.sha256(key.encode()).hexdigest()[:8]
+        return f"{subject}.proposed_{digest}"
+    return slug
+
+
+#: The keys a model wraps a scalar in when it wants to say more than the field can hold
+#: (``{"count": 36, "semantics": "linkedin_estimate"}`` for ``core.employee_count``). Exactly one
+#: of them may be present: two carriers is an object with real structure, not a wrapped scalar.
+_CARRIER_KEYS: frozenset[str] = frozenset(
+    {"value", "count", "year", "amount", "n", "total", "text", "name"}
+)
+_NUMERIC_TYPES: frozenset[str] = frozenset({"integer", "number"})
+
+
+def _declared_type(field_key: str, catalog: FieldCatalog) -> str | None:
+    """The single scalar ``type`` a registered field declares, or ``None``."""
+    spec = catalog.spec(field_key)
+    schema = spec.value_schema if spec else None
+    declared = schema.get("type") if schema else None
+    if declared in {"integer", "number", "string", "boolean"}:
+        return str(declared)
+    return None
+
+
+def coerce_scalar(field_key: str, value: JsonValue, catalog: FieldCatalog) -> JsonValue:
+    """A model's value, read as the scalar its registered field actually declares.
+
+    Two shapes, both measured on the R2 run: a scalar wrapped in an object with one carrier key
+    plus commentary (``{"count": 36, "semantics": …}`` on an integer field), and a number written
+    as a string (``"2024"`` on a year field). Both are the right fact in the wrong shape, and both
+    otherwise land ``schema_valid=false`` — which reads, wrongly, as "the extraction did not fit
+    the field" rather than "the model added a note".
+
+    Nothing else is touched. A digit string on a *string* field stays a string, a list on a list
+    field stays a list, an object with two carrier keys keeps its structure, and an unregistered
+    key is left exactly as it arrived. Coercing beyond what the field declares would be this
+    module deciding what a value means, which is the one thing it must not do.
+    """
+    declared = _declared_type(field_key, catalog)
+    if declared is None:
+        return value
+    if isinstance(value, Mapping):
+        carriers = [name for name in value if name in _CARRIER_KEYS]
+        if len(carriers) == 1:
+            unwrapped = value[carriers[0]]
+            return coerce_scalar(field_key, unwrapped, catalog)
+        return value
+    if declared in _NUMERIC_TYPES and isinstance(value, str):
+        text = value.strip()
+        if text.lstrip("-").isdigit():
+            return int(text)
+        if declared == "number":
+            try:
+                return float(text)
+            except ValueError:
+                return value
+    return value
+
+
+def _coerced(
+    field_key: str, value: JsonValue, catalog: FieldCatalog
+) -> tuple[JsonValue, Mapping[str, JsonValue]]:
+    """The value to write, plus the ``coerced_from`` marker when the shape actually changed."""
+    coerced = coerce_scalar(field_key, value, catalog)
+    return coerced, {} if coerced == value else {"coerced_from": value}
+
+
 # -- what the structuring pass produced -----------------------------------------------------------
 
 
@@ -452,84 +697,143 @@ def negative_claims(negatives: Sequence[NegativeOrRisk], scope: JobScope) -> lis
     ]
 
 
+def _structured_claim_draft(
+    claim: StructuredClaim,
+    *,
+    output: StructuredOutput,
+    scope: JobScope,
+    hint: str | None,
+    catalog: FieldCatalog,
+) -> ClaimDraft:
+    """One kept structuring claim, with the extraction's own annotations as write markers."""
+    value, coercion = _coerced(claim.field_key, cast(JsonValue, claim.value), catalog)
+    markers: dict[str, JsonValue] = {
+        "evidence_verbatim": claim.evidence_verbatim,
+        "schema_valid": claim.schema_valid,
+        "source_kind": claim.source_kind,
+        "media_timestamp": claim.media_timestamp,
+        "structuring_mode": output.mode,
+        **coercion,
+    }
+    if claim.source_kind_block is not None:
+        markers["source_kind_block"] = claim.source_kind_block
+    if claim.source_url_corrected:
+        markers["source_url_corrected"] = True
+    if claim.quoted_context:
+        markers["quoted_context"] = True
+    return _draft(
+        scope,
+        field_key=claim.field_key,
+        value=value,
+        method=ExtractionMethod.LLM_SYNTHESIS,
+        source_url=claim.source_url or hint,
+        evidence_span=claim.evidence_span or None,
+        priority=claim.priority,
+        outreach_safe=False if claim.field_key in ALWAYS_UNSAFE_FIELDS else claim.outreach_safe,
+        confidence=_CONFIDENCE_WORDS.get((claim.confidence or "").strip().lower(), 0.5),
+        source_key="structuring",
+        markers=markers,
+    )
+
+
 def structured_claims(
-    output: StructuredOutput, *, scope: JobScope, subject_url_hint: str | None
+    output: StructuredOutput,
+    *,
+    scope: JobScope,
+    subject_url_hint: str | None,
+    catalog: FieldCatalog,
 ) -> list[ClaimDraft]:
     """The structuring pass's claims and proposed fields, annotations intact.
 
     The annotations travel as write markers because they are facts *about the extraction* — was the
-    quote really in the material, did the value fit the field's schema, which mode asked for it —
-    and the audit skill reads them off the claim rather than re-deriving them.
+    quote really in the material, did the value fit the field's schema, which block the quote came
+    out of, whether the URL had to be corrected, which mode asked for it — and the audit skill
+    reads them off the claim rather than re-deriving them.
 
     ``subject_url_hint`` fills a claim whose ``source_url`` the model omitted (a page fetched by
     ``fetch_page`` is often the whole material). It is a *fallback*, never an override.
+
+    A proposed field's key is normalised (:func:`normalise_proposed_key`) before it is written, and
+    the raw spelling is kept on the claim: an unwritable key must never cost the observation.
     """
     drafts = [
-        _draft(
-            scope,
-            field_key=claim.field_key,
-            value=claim.value,  # type: ignore[arg-type]  # a parsed JSON value is a JsonValue
-            method=ExtractionMethod.LLM_SYNTHESIS,
-            source_url=claim.source_url or subject_url_hint,
-            evidence_span=claim.evidence_span or None,
-            priority=claim.priority,
-            outreach_safe=False if claim.field_key in ALWAYS_UNSAFE_FIELDS else claim.outreach_safe,
-            confidence=_CONFIDENCE_WORDS.get((claim.confidence or "").strip().lower(), 0.5),
-            source_key="structuring",
-            markers={
-                "evidence_verbatim": claim.evidence_verbatim,
-                "schema_valid": claim.schema_valid,
-                "source_kind": claim.source_kind,
-                "media_timestamp": claim.media_timestamp,
-                "structuring_mode": output.mode,
-            },
+        _structured_claim_draft(
+            claim, output=output, scope=scope, hint=subject_url_hint, catalog=catalog
         )
         for claim in output.claims
     ]
-    drafts.extend(
-        _draft(
-            scope,
-            field_key=proposed.suggested_key,
-            value=proposed.value,  # type: ignore[arg-type]  # a parsed JSON value is a JsonValue
-            method=ExtractionMethod.LLM_SYNTHESIS,
-            source_url=proposed.source_url or subject_url_hint,
-            evidence_span=proposed.evidence_span or None,
-            priority=3,
-            outreach_safe=True,
-            confidence=0.5,
-            source_key="structuring",
-            markers={"proposed_origin": proposed.origin, "structuring_mode": output.mode},
-            field_description=proposed.why or None,
+    for proposed in output.proposed:
+        if not proposed.suggested_key:
+            continue
+        field_key = normalise_proposed_key(proposed.suggested_key, "account")
+        markers: dict[str, JsonValue] = {
+            "proposed_origin": proposed.origin,
+            "structuring_mode": output.mode,
+        }
+        if field_key != proposed.suggested_key:
+            markers["proposed_key_raw"] = proposed.suggested_key
+        value, coercion = _coerced(field_key, cast(JsonValue, proposed.value), catalog)
+        drafts.append(
+            _draft(
+                scope,
+                field_key=field_key,
+                value=value,
+                method=ExtractionMethod.LLM_SYNTHESIS,
+                source_url=proposed.source_url or subject_url_hint,
+                evidence_span=proposed.evidence_span or None,
+                priority=3,
+                outreach_safe=True,
+                confidence=0.5,
+                source_key="structuring",
+                markers={**markers, **coercion},
+                field_description=proposed.why or None,
+            )
         )
-        for proposed in output.proposed
-        if proposed.suggested_key
-    )
     return drafts
 
 
 # -- what the agent itself decided ----------------------------------------------------------------
 
 
-def agent_claims(items: Sequence[ClaimInput], scope: JobScope) -> list[ClaimDraft]:
-    """The claims the model wrote itself, tiered as synthesis whatever it says its source was."""
-    return [
-        _draft(
-            scope,
-            field_key=item.field_key,
-            value=item.value,
-            method=ExtractionMethod.LLM_SYNTHESIS,
-            source_url=str(item.source_url) if item.source_url else None,
-            evidence_span=item.evidence_span,
-            priority=item.priority,
-            outreach_safe=False if item.field_key in ALWAYS_UNSAFE_FIELDS else item.outreach_safe,
-            confidence=item.confidence,
-            source_key="agent",
-            markers={"corrects_claim_id": item.corrects_claim_id}
-            if item.corrects_claim_id
-            else None,
+def agent_claims(
+    items: Sequence[ClaimInput], scope: JobScope, *, catalog: FieldCatalog
+) -> list[ClaimDraft]:
+    """The claims the model wrote itself, tiered as synthesis whatever it says its source was.
+
+    The key it named is normalised and its value is read as the shape the field declares, exactly
+    as for a structuring claim: the agent hand-writes claims through the same registry, so a
+    wrapped scalar or a spelled-out key must not mean two different things depending on who typed
+    it.
+    """
+    drafts: list[ClaimDraft] = []
+    for item in items:
+        field_key = (
+            item.field_key
+            if is_valid_field_key(item.field_key)
+            else normalise_proposed_key(item.field_key, "account")
         )
-        for item in items
-    ]
+        value, coercion = _coerced(field_key, item.value, catalog)
+        markers: dict[str, JsonValue] = dict(coercion)
+        if item.corrects_claim_id:
+            markers["corrects_claim_id"] = item.corrects_claim_id
+        if field_key != item.field_key:
+            markers["proposed_key_raw"] = item.field_key
+        drafts.append(
+            _draft(
+                scope,
+                field_key=field_key,
+                value=value,
+                method=ExtractionMethod.LLM_SYNTHESIS,
+                source_url=str(item.source_url) if item.source_url else None,
+                evidence_span=item.evidence_span,
+                priority=item.priority,
+                outreach_safe=(False if field_key in ALWAYS_UNSAFE_FIELDS else item.outreach_safe),
+                confidence=item.confidence,
+                source_key="agent",
+                markers=markers or None,
+            )
+        )
+    return drafts
 
 
 def fit_verdict_claims(verdicts: Sequence[Mapping[str, Any]], scope: JobScope) -> list[ClaimDraft]:
@@ -611,7 +915,10 @@ def committee_candidate_claims(
                 "confirmed_by": confirmed_by,
                 "vacant_seat": bool(candidate.get("vacant_seat")) or not name,
             },
-            keep=("name", "persona"),
+            # ``persona`` alone identifies the row (``catalog_seed``): a vacant seat has no name,
+            # and writing ``"name": null`` into a string-typed property would make the correctly
+            # recorded vacancy land ``schema_valid=false``.
+            keep=("persona",),
         )
         drafts.append(
             _draft(

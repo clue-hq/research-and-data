@@ -53,11 +53,11 @@ The base code before the colon is the row key and decides the reaction.
 | `read_ats_board(company_url)` | `ats_client.find_board` + `fetch_postings` | Open requisitions from the company's own board (Ashby / Greenhouse / Lever), full descriptions |
 | `fetch_page(url, max_chars)` | `ExaClient.contents` | Verbatim page text for a URL you already hold (own site, careers page, funding wire, a case study) |
 | `search_web(query, num_results, include_domains, start_published_date)` | `ExaClient.search` | Bounded gap searches (≤ 10 results) for a named fact or a named person |
-| `lookup_company(domain)` | `AiArkClient.company_by_domain` | Deterministic firmographics, funding rounds, technologies (claims written in code, JSON path recorded) |
+| `lookup_company(domain)` | `AiArkClient.company_by_domain` | Deterministic firmographics, funding rounds, technologies — every registered field the record carries is claimed in code, JSON path recorded |
 | `lookup_people(name_variants, domain, size)` | `AiArkClient.people_by_name` (name-scoped, STRICT, size ≤ 3) | Identity confirmation of a *named* person at *this* account; never roster discovery |
 | `read_media_feeds(person_name, person_role, feed_url, youtube_url, episode_title_contains, episode_number)` | `media_feeds_client` + `gemini_media_client` | Podcast / YouTube appearances by named leaders; transcripts, verified quotes |
 | `research_deep(charter, probes, same_name_exclusions, num_results)` | `ExaClient.deep_reasoning` (max 2 attempts, silent-fail guard) | The one dossier call: charter + probes in the query, lock + rules in the system prompt, a report schema |
-| `structure_material(subject_kind, subject_name, subject_domain_or_company, linkedin_url, material, mode, already_known)` | `StructuringClient.structure_account` | Prose to typed claims against the code-validated catalog; unknown keys become proposed fields; `mode` is `broad` or the narrow `intent_sweep` |
+| `structure_material(subject_kind, subject_name, subject_domain_or_company, linkedin_url, sources[{url, kind, text, title}], notes, mode, already_known)` | `StructuringClient.structure_account` | Prose to typed claims against the code-validated catalog; unknown keys become proposed fields; `mode` is `broad` or the narrow `intent_sweep` |
 | `write_claims(claims[...])` | `LenientClaimWriter` | **The one gate.** Bulk; born unverified; the sensitivity floor runs after |
 | `verify_links(claim_ids)` | `ExaClient.contents` + `text.substring_verdict` | The fabrication audit: EXACT / PARTIAL / NOT_FOUND per cited quote, written as an annotation |
 | `finalize_research(summary, fit_verdicts, gaps, committee_candidates)` | coverage + finalization receipt | Honest-empty is a valid outcome |
@@ -67,6 +67,13 @@ Notes that decide calls, not style:
 - `structure_material` takes one subject per call and writes the claims it extracts. In R2 the only
   admitted `subject_kind` is `account`; `person` is refused `invalid_arguments` until R3 composes
   contact entities.
+- `structure_material` takes its material as `sources` (one to twelve), never as one string: each
+  source is a page, posting, report, transcript or provider record, with the URL it came from. A
+  quote may only come from inside a source, and the claim cites that source's URL. Your own reading
+  of the material goes in `notes`, which is background and can never be quoted — a claim quoting it
+  is written with its quote marked NOT FOUND. Its result adds `dropped_rows` (rows the mode's cap
+  discarded) and `write_failures` (`field_key` + `error` for any draft the claim store refused; the
+  rest of the batch still landed, so re-write only what is named there).
 - `write_claims` takes at most fifty claims in one call, and a named `account.committee_candidate`
   needs a `confirmed_by` URL. `account.reputation_risk` and `account.icp_fit_verdict` are always
   written `outreach_safe = false`.

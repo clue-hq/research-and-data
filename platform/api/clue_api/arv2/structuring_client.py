@@ -87,6 +87,18 @@ BUNDLE_MARKER_PREFIX = "====="
 NEUTRALISED_MARKER = "[marker removed]"
 
 
+#: The fence around ONE source inside a bundle, and around the caller's own notes. Three equals
+#: rather than the bundle fence's five, so the two levels can never be confused, and so a bundle
+#: that has already been through :func:`neutralise_bundle_markers` still carries its source fences.
+SOURCE_MARKER_PREFIX = "==="
+CONTEXT_BEGIN = "=== CONTEXT — NOT EVIDENCE (do not quote)"
+CONTEXT_END = "=== END CONTEXT"
+
+#: What the caller says about a block it has no URL for. Rendered rather than omitted, so a model
+#: reading the fence cannot mistake the *next* block's URL for this one's.
+NO_URL = "(no url)"
+
+
 def neutralise_bundle_markers(bundle: str) -> str:
     """Strip the fence's own vocabulary out of untrusted text before the text is fenced.
 
@@ -103,6 +115,17 @@ def neutralise_bundle_markers(bundle: str) -> str:
     cleaned = bundle.replace(BUNDLE_BEGIN, NEUTRALISED_MARKER)
     cleaned = cleaned.replace(BUNDLE_END, NEUTRALISED_MARKER)
     return cleaned.replace(BUNDLE_MARKER_PREFIX, NEUTRALISED_MARKER)
+
+
+def neutralise_source_markers(text: str) -> str:
+    """Strip the *source* fence's vocabulary out of one block's text before the block is fenced.
+
+    Same law as :func:`neutralise_bundle_markers`, one level down: a page that contains
+    ``=== END SOURCE 1`` would otherwise close its own block and let everything after it read as a
+    second, differently-attributed source — which is how a quote ends up citing a URL that never
+    carried it. Both fences are replaced with the same inert, visible literal.
+    """
+    return neutralise_bundle_markers(text).replace(SOURCE_MARKER_PREFIX, NEUTRALISED_MARKER)
 
 
 # -- the catalog the model is allowed to name -------------------------------------------------
@@ -164,6 +187,70 @@ def catalog_menu_text(catalog: FieldCatalog) -> str:
     return "\n\n".join(blocks)
 
 
+# -- the material, as sources rather than as one string ---------------------------------------
+
+#: What one block of material is. The kind is descriptive (it rides onto the claim as
+#: ``source_kind_block``) and never grants or withholds trust — that is the tier's job.
+SourceKind = Literal["page", "posting", "report", "transcript", "provider"]
+
+
+@dataclass(frozen=True)
+class SourceBlock:
+    """One retrieved thing — a page, a posting, a report, a transcript, a provider record.
+
+    A structuring call used to take the whole material as one free string, and the R2 run showed
+    what that costs: the caller's own framing sat in the same string as the evidence, so the model
+    could quote the framing back as a verbatim span and the resulting claim cited a URL that never
+    carried those words. A block is the unit that fixes it — the text *and* the URL it came from,
+    kept together, so the span a claim quotes decides which URL the claim cites.
+    """
+
+    url: str | None
+    kind: SourceKind
+    text: str
+    title: str | None = None
+
+
+def build_bundle(sources: Sequence[SourceBlock], notes: str | None) -> str:
+    """Render the fenced bundle: every source as its own numbered block, the notes as CONTEXT.
+
+    The two fences say two different things, and the difference is the point: text inside a SOURCE
+    block is evidence and may be quoted; text inside CONTEXT is the caller's own reading and may
+    never be. Each block's text is passed through :func:`neutralise_source_markers` first, so no
+    block can write another block's fence.
+    """
+    parts: list[str] = []
+    for index, block in enumerate(sources, start=1):
+        where = block.url or NO_URL
+        title = f" — {block.title}" if block.title else ""
+        parts.append(
+            f"=== SOURCE {index} ({block.kind}) {where}{title}\n"
+            f"{neutralise_source_markers(block.text)}\n"
+            f"=== END SOURCE {index}"
+        )
+    if notes and notes.strip():
+        parts.append(f"{CONTEXT_BEGIN}\n{neutralise_source_markers(notes)}\n{CONTEXT_END}")
+    return "\n\n".join(parts)
+
+
+def source_of_span(sources: Sequence[SourceBlock], span: str) -> SourceBlock | None:
+    """The block whose text really carries ``span``, or ``None``.
+
+    The comparison is the lane's own verbatim test (:func:`~clue_api.arv2.text.substring_verdict`
+    at ``EXACT``), so a quote that differs only in punctuation or whitespace still finds its block
+    while a paraphrase does not. First match wins: two blocks carrying the same sentence are two
+    sources for the same fact, and the earlier one is the one the caller ranked first.
+
+    The notes are not a block, so they are never returned — which is what makes "this span came
+    from my own framing" a *detectable* state rather than a mis-attributed claim.
+    """
+    if not span.strip():
+        return None
+    return next(
+        (block for block in sources if substring_verdict(span, block.text) == "EXACT"), None
+    )
+
+
 # -- subjects ---------------------------------------------------------------------------------
 
 
@@ -208,6 +295,16 @@ class StructuredClaim:
     media_timestamp: str | None
     evidence_verbatim: MatchVerdict
     schema_valid: bool | None
+    #: The ``kind`` of the source block the span was actually found in, when the call was given
+    #: sources. ``None`` means the span sat in no block (or the call was given a free bundle).
+    source_kind_block: str | None = None
+    #: True when ``source_url`` was replaced with the URL of the block the span came from, because
+    #: the model named a different one or named none.
+    source_url_corrected: bool = False
+    #: True when the span was found in the caller's own notes rather than in any source. The claim
+    #: is still recorded — with ``evidence_verbatim="NOT_FOUND"`` — because "the model quoted the
+    #: framing" is a finding about the run, and deleting it would hide it.
+    quoted_context: bool = False
 
 
 @dataclass(frozen=True)
@@ -448,6 +545,15 @@ when nothing qualifies. Do not describe the company and do not fill the catalog.
 #: prompt: a model that ignores the cap must not be able to turn a sweep into a broad pass.
 INTENT_SWEEP_MAX_ROWS = 4
 
+#: The rule a bundle built from :func:`build_bundle` adds to the user turn. It is asked for here
+#: *and* enforced after the parse (:func:`source_of_span`), because the R2 run showed a model will
+#: quote the framing it was handed when the framing sits in the same string as the evidence.
+SOURCED_EVIDENCE_RULE = """SOURCES — where a quote may come from.
+  * Quote only from inside a SOURCE block. `source_url` is that block's URL, and nothing else.
+  * Anything under CONTEXT is background the caller wrote; it is not evidence, it names no source,
+    and it must never appear in evidence_span. If the only text for a claim is in CONTEXT, drop
+    the claim."""
+
 
 def account_user_prompt(
     subject: AccountSubject,
@@ -455,6 +561,7 @@ def account_user_prompt(
     catalog: FieldCatalog,
     *,
     mode: StructuringMode = BROAD_MODE,
+    sourced: bool = False,
 ) -> str:
     """The user turn for one account: the locked subject, the menu, the shape, then the bundle.
 
@@ -464,8 +571,12 @@ def account_user_prompt(
     ``mode`` swaps the *task* and the closing reminder only. Everything that makes the answer
     readable and attributable — the subject lock, the catalog menu, the JSON shape, the fence — is
     identical in both modes, which is why one parser reads both.
+
+    ``sourced`` says the bundle came from :func:`build_bundle`, which adds the rule about where a
+    quote may come from. It is a fact about the bundle, so the caller that built it decides.
     """
     bundle = neutralise_bundle_markers(bundle)
+    sourcing = f"\n{SOURCED_EVIDENCE_RULE}\n" if sourced else ""
     task = _SWEEP_TASK if mode == INTENT_SWEEP_MODE else _BROAD_TASK
     closing = _SWEEP_CLOSING_REMINDER if mode == INTENT_SWEEP_MODE else _CLOSING_REMINDER
     known = (
@@ -483,7 +594,7 @@ Every claim in this call is about that account, or about a named person who work
 {catalog_menu_text(catalog)}
 
 {_JSON_SHAPE}
-
+{sourcing}
 {task}
 
 {BUNDLE_BEGIN}
@@ -499,6 +610,7 @@ def person_user_prompt(
     catalog: FieldCatalog,
     *,
     mode: StructuringMode = BROAD_MODE,
+    sourced: bool = False,
 ) -> str:
     """The user turn for one person. A fact about somebody else in the bundle is not a claim.
 
@@ -508,6 +620,7 @@ def person_user_prompt(
     buying-intent rows in the same turn is asking for two different answers.
     """
     bundle = neutralise_bundle_markers(bundle)
+    sourcing = f"\n{SOURCED_EVIDENCE_RULE}\n" if sourced else ""
     sweeping = mode == INTENT_SWEEP_MODE
     task = _SWEEP_TASK if sweeping else f"{_PERSON_COVERAGE}\n\n{_BROAD_TASK}"
     closing = _SWEEP_CLOSING_REMINDER if sweeping else _CLOSING_REMINDER
@@ -522,7 +635,7 @@ bundle is NOT a claim here — leave it out entirely.
 {catalog_menu_text(catalog)}
 
 {_JSON_SHAPE}
-
+{sourcing}
 {task}
 
 {BUNDLE_BEGIN}
@@ -663,6 +776,14 @@ def _rows(reply: Mapping[str, object], key: str) -> list[Mapping[str, object]]:
     return [row for row in value if isinstance(row, Mapping)]
 
 
+def _sits_in_notes(span: str, notes: str | None) -> bool:
+    """Did the model quote the caller's own framing? A near-miss counts: framing rephrased is
+    still framing, and the point of the flag is to see the behaviour, not to grade the copying."""
+    if not notes or not span.strip():
+        return False
+    return substring_verdict(span, notes) != "NOT_FOUND"
+
+
 def parse_reply_text(text: str, *, raw_ref: str | None) -> Mapping[str, object]:
     """The model's message text as a JSON object, or :class:`RawParseError` naming the raw record.
 
@@ -689,6 +810,8 @@ def read_structured_reply(
     raw_ref: str | None = None,
     cost: CallCost | None = None,
     mode: str = BROAD_MODE,
+    sources: Sequence[SourceBlock] = (),
+    notes: str | None = None,
 ) -> StructuredOutput:
     """Partition a parsed reply against the catalog and annotate every kept claim.
 
@@ -705,8 +828,19 @@ def read_structured_reply(
     bundle with seventeen broad-style rows. The surplus is dropped from the tail (the prompt orders
     best first) and counted on ``dropped_rows``; negatives and proposed fields pass through
     untouched, because the cap is a rule about the sweep's claims and about nothing else.
+
+    When ``sources`` is given, three further facts are computed here rather than believed:
+
+    * the **evidence** is the source blocks, not the whole bundle — so a span copied out of the
+      caller's ``notes`` is ``NOT_FOUND``, which is the truth about it, plus ``quoted_context``;
+    * a claim's ``source_url`` is the URL of the block its span was actually found in, whenever the
+      model named a different one or named none (``source_url_corrected``);
+    * the block's ``kind`` rides onto the claim as ``source_kind_block``, beside the model's own
+      ``source_kind``, so "the model called this a company page and it came out of a job posting"
+      is answerable.
     """
     registered = catalog.keys()
+    evidence = "\n".join(block.text for block in sources) if sources else bundle
     claims: list[StructuredClaim] = []
     proposed: list[ProposedField] = []
 
@@ -726,22 +860,28 @@ def read_structured_reply(
             )
             continue
         spec = catalog.spec(field_key)
+        claimed_url = _optional_text(row, "source_url")
+        block = source_of_span(sources, evidence_span)
+        corrected = block is not None and block.url is not None and claimed_url != block.url
         claims.append(
             StructuredClaim(
                 field_key=field_key,
                 value=row.get("value"),
                 evidence_span=evidence_span,
-                source_url=_optional_text(row, "source_url"),
+                source_url=block.url if corrected and block else claimed_url,
                 source_kind=_optional_text(row, "source_kind"),
                 confidence=_optional_text(row, "confidence"),
                 use_class=_optional_text(row, "use_class"),
                 outreach_safe=coerce_outreach_safe(row.get("outreach_safe")),
                 priority=coerce_priority(row.get("priority")),
                 media_timestamp=_optional_text(row, "media_timestamp"),
-                evidence_verbatim=substring_verdict(evidence_span, bundle),
+                evidence_verbatim=substring_verdict(evidence_span, evidence),
                 schema_valid=check_value_schema(
                     row.get("value"), spec.value_schema if spec else None
                 ),
+                source_kind_block=block.kind if block else None,
+                source_url_corrected=corrected,
+                quoted_context=block is None and _sits_in_notes(evidence_span, notes),
             )
         )
 
@@ -810,21 +950,33 @@ class StructuringClient:
         catalog: FieldCatalog,
         *,
         mode: StructuringMode = BROAD_MODE,
+        sources: Sequence[SourceBlock] | None = None,
+        notes: str | None = None,
     ) -> StructuredOutput:
         """Structure one account's prose bundle. One account per call, by signature.
 
         ``mode`` swaps the system prompt only: the subject lock, the catalog menu, the JSON shape
         and the fence are identical in both modes, so a sweep row is read by exactly the same
         parser and carries exactly the same annotations as a broad row.
+
+        ``sources`` is the material as retrieved blocks, and ``notes`` is the caller's own reading
+        of it. Given them, the bundle is built **here** (:func:`build_bundle`) rather than by the
+        caller, so the fence, the quoting rule and the post-parse attribution can never disagree
+        about where a quote was allowed to come from; ``bundle`` is then ignored.
         """
-        bundle = neutralise_bundle_markers(bundle)
+        blocks = tuple(sources or ())
+        bundle = build_bundle(blocks, notes) if blocks else neutralise_bundle_markers(bundle)
         return self._structure(
-            user_prompt=account_user_prompt(subject, bundle, catalog, mode=mode),
+            user_prompt=account_user_prompt(
+                subject, bundle, catalog, mode=mode, sourced=bool(blocks)
+            ),
             label=f"structure-account-{subject.domain or subject.name}",
             bundle=bundle,
             catalog=catalog,
             mode=mode,
             subject_kind="account",
+            sources=blocks,
+            notes=notes,
             extras={
                 "subject_kind": "account",
                 "subject": subject.domain or subject.name,
@@ -839,16 +991,27 @@ class StructuringClient:
         catalog: FieldCatalog,
         *,
         mode: StructuringMode = BROAD_MODE,
+        sources: Sequence[SourceBlock] | None = None,
+        notes: str | None = None,
     ) -> StructuredOutput:
-        """Structure one person's prose bundle. One person per call, by signature."""
-        bundle = neutralise_bundle_markers(bundle)
+        """Structure one person's prose bundle. One person per call, by signature.
+
+        ``sources`` and ``notes`` mean exactly what they mean on
+        :meth:`structure_account` — the material as blocks, and the caller's own reading of it.
+        """
+        blocks = tuple(sources or ())
+        bundle = build_bundle(blocks, notes) if blocks else neutralise_bundle_markers(bundle)
         return self._structure(
-            user_prompt=person_user_prompt(subject, bundle, catalog, mode=mode),
+            user_prompt=person_user_prompt(
+                subject, bundle, catalog, mode=mode, sourced=bool(blocks)
+            ),
             label=f"structure-person-{subject.name}",
             bundle=bundle,
             catalog=catalog,
             mode=mode,
             subject_kind="person",
+            sources=blocks,
+            notes=notes,
             extras={"subject_kind": "person", "subject": subject.name, "mode": mode},
         )
 
@@ -862,6 +1025,8 @@ class StructuringClient:
         mode: StructuringMode,
         subject_kind: str,
         extras: Mapping[str, object],
+        sources: Sequence[SourceBlock] = (),
+        notes: str | None = None,
     ) -> StructuredOutput:
         """Build the request, send it through the wrapper, then annotate what came back."""
         messages: list[Mapping[str, Any]] = [
@@ -902,4 +1067,6 @@ class StructuringClient:
             raw_ref=result.raw_ref,
             cost=result.call_cost,
             mode=mode,
+            sources=sources,
+            notes=notes,
         )

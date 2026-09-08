@@ -127,7 +127,10 @@ ARV2_PACK: tuple[SeedField, ...] = (
         "object",
         {
             "type": "object",
-            "required": ["name", "persona"],
+            # Only the persona identifies the row. A **vacant seat** is a finding about the
+            # account ("nobody holds this role") and carries no name, so requiring one would make
+            # every recorded vacancy land ``schema_valid=false``.
+            "required": ["persona"],
             "properties": {
                 "name": _STR,
                 "title": _STR,

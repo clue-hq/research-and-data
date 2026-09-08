@@ -101,6 +101,7 @@ from clue_api.arv2.sinks import LedgerSink
 from clue_api.arv2.structuring_client import (
     AccountSubject,
     FieldCatalog,
+    SourceBlock,
     StructuringClient,
 )
 from clue_api.arv2.text import substring_verdict
@@ -118,7 +119,9 @@ __all__ = [
     "EVIDENCE_RULES",
     "LOCK_TEMPLATE",
     "ProviderClients",
+    "SourceInput",
     "ToolRuntime",
+    "WriteFailure",
     "build_account_tools",
 ]
 
@@ -201,6 +204,18 @@ class ProviderClients(Protocol):
     def media(self, caller: ProviderCaller, ledger: LedgerSink) -> GeminiMediaClient: ...
 
     def structuring(self, caller: ProviderCaller) -> StructuringClient: ...
+
+
+@dataclass(frozen=True)
+class WriteFailure:
+    """One draft the claim gate would not take, reported beside the ones it did.
+
+    It is a *result*, not an exception, because the alternative was losing a whole model-produced
+    batch to one unwritable value (see :meth:`ToolRuntime.write_each`).
+    """
+
+    field_key: str
+    error: str
 
 
 def _utcnow() -> datetime:
@@ -366,6 +381,30 @@ class ToolRuntime:
             return []
         async with self._conn_factory() as conn:
             return [await self._writer.write(conn, draft) for draft in drafts]
+
+    async def write_each(self, drafts: Sequence[ClaimDraft]) -> list[WriteReceipt | WriteFailure]:
+        """Write every draft in a transaction of its own, and report the ones that failed.
+
+        :meth:`write` is one transaction for the batch, which is right for a batch the *code*
+        built (an ATS board, a provider record): those drafts stand or fall together. It is wrong
+        for a batch a **model** produced. One unwritable value there — a key the registry refuses,
+        a value the store rejects — aborts the transaction and takes every other claim in the call
+        with it, so a run loses fifteen good claims to one bad one and the model is told only that
+        the tool errored.
+
+        Here each draft gets its own transaction, and a failure becomes a :class:`WriteFailure` in
+        the result rather than an exception: the model sees exactly which field did not land, and
+        the rest of the batch is already written.
+        """
+        results: list[WriteReceipt | WriteFailure] = []
+        for draft in drafts:
+            try:
+                async with self._conn_factory() as conn:
+                    results.append(await self._writer.write(conn, draft))
+            except Exception as error:  # noqa: BLE001 — one draft's failure is a row, never a stop
+                log.warning("arv2.claim_write_failed", field_key=draft.field_key, error=str(error))
+                results.append(WriteFailure(field_key=draft.field_key, error=str(error)[:300]))
+        return results
 
     async def job_claims(self) -> Sequence[Claim]:
         """This job's own claims: written by this run, about this account."""
@@ -542,12 +581,34 @@ class ResearchDeepArgs(_Args):
     num_results: int = Field(20, ge=10, le=25)
 
 
+class SourceInput(_Args):
+    """One retrieved thing, with the URL it came from.
+
+    ``text`` is the material as retrieved; it is never the model's summary of it, because a
+    summary quoted verbatim is a quote of the model, not of the source.
+    """
+
+    url: HttpUrl | None = None
+    kind: Literal["page", "posting", "report", "transcript", "provider"] = "page"
+    text: str = Field(min_length=20, max_length=60_000)
+    title: str | None = None
+
+
 class StructureMaterialArgs(_Args):
+    """One structuring call's arguments.
+
+    The free ``material`` string this used to take is **gone**, deliberately and breakingly: one
+    string held the evidence and the caller's own framing together, so the model could quote the
+    framing as a verbatim span and the claim then cited whichever URL was nearest. Sources carry
+    their URLs; ``notes`` is the framing, and nothing in it may ever be quoted.
+    """
+
     subject_kind: Literal["account", "person"]
     subject_name: str = Field(min_length=2)
     subject_domain_or_company: str = Field(min_length=2)
     linkedin_url: str | None = None
-    material: str = Field(min_length=50, max_length=120_000)
+    sources: list[SourceInput] = Field(min_length=1, max_length=12)
+    notes: str | None = None
     mode: Literal["broad", "intent_sweep"] = "broad"
     already_known: str | None = None
 
@@ -702,7 +763,9 @@ async def _lookup_company(runtime: ToolRuntime, args: LookupCompanyArgs) -> dict
     if company is None:
         raise RefusalError("company_not_found", f"AI Ark holds no record for {args.domain}")
 
-    receipts = await runtime.write(ai_ark_company_claims(company, runtime.scope))
+    receipts = await runtime.write(
+        ai_ark_company_claims(company, runtime.scope, catalog=runtime.catalog)
+    )
     raw = company.raw if isinstance(company.raw, Mapping) else {}
     financial = raw.get("financial") if isinstance(raw.get("financial"), Mapping) else {}
     funding = financial.get("funding") if isinstance(financial, Mapping) else None
@@ -996,10 +1059,21 @@ async def _structure_material(runtime: ToolRuntime, args: StructureMaterialArgs)
         domain=args.subject_domain_or_company,
         already_known=args.already_known,
     )
+    blocks = tuple(
+        SourceBlock(
+            url=str(source.url) if source.url else None,
+            kind=source.kind,
+            text=source.text,
+            title=source.title,
+        )
+        for source in args.sources
+    )
 
     def hop(caller: ProviderCaller) -> Any:
+        # The bundle is built inside the client from these blocks, so the fence, the quoting rule
+        # and the post-parse attribution can never disagree; there is no free bundle to pass.
         return runtime.clients.structuring(caller).structure_account(
-            subject, args.material, runtime.catalog, mode=args.mode
+            subject, "", runtime.catalog, mode=args.mode, sources=blocks, notes=args.notes
         )
 
     try:
@@ -1007,13 +1081,20 @@ async def _structure_material(runtime: ToolRuntime, args: StructureMaterialArgs)
     except RawParseError as unparseable:
         raise RefusalError("structuring_unparseable", str(unparseable)) from unparseable
 
-    drafts = structured_claims(output, scope=runtime.scope, subject_url_hint=None)
+    drafts = structured_claims(
+        output, scope=runtime.scope, subject_url_hint=None, catalog=runtime.catalog
+    )
     negatives = negative_claims(output.negatives, runtime.scope)
-    receipts = await runtime.write([*drafts, *negatives])
+    # One transaction per draft: a value the store will not take costs its own claim and nothing
+    # else. ``write_each`` returns one result per draft, in order, so the two halves stay aligned.
+    results = await runtime.write_each([*drafts, *negatives])
+    claim_results, negative_results = results[: len(drafts)], results[len(drafts) :]
     written = [
-        _receipt_json(receipt, draft)
-        for receipt, draft in zip(receipts[: len(drafts)], drafts, strict=False)
+        _receipt_json(result, draft)
+        for result, draft in zip(claim_results, drafts, strict=True)
+        if isinstance(result, WriteReceipt)
     ]
+    failures = [result for result in results if isinstance(result, WriteFailure)]
     return {
         "written": written,
         "proposed": [
@@ -1024,7 +1105,16 @@ async def _structure_material(runtime: ToolRuntime, args: StructureMaterialArgs)
             }
             for proposed in output.proposed
         ],
-        "negatives_written": len(negatives),
+        "negatives_written": sum(
+            1 for result in negative_results if isinstance(result, WriteReceipt)
+        ),
+        # Rows the mode's cap discarded after the parse, and drafts the claim gate would not take:
+        # both are things that happened to this call's output, and both are reported rather than
+        # swallowed (a sweep that keeps drifting broad, or a value that has no writable home).
+        "dropped_rows": output.dropped_rows,
+        "write_failures": [
+            {"field_key": failure.field_key, "error": failure.error} for failure in failures
+        ],
         "mode": output.mode,
         "cost": _cost_json(output.cost),
     }
@@ -1045,7 +1135,7 @@ async def _write_claims(runtime: ToolRuntime, args: WriteClaimsArgs) -> dict[str
             f"a named {COMMITTEE_FIELD} needs a confirmed_by URL naming the person "
             f"({len(unconfirmed)} claim(s) in this call have none)",
         )
-    drafts = agent_claims(args.claims, runtime.scope)
+    drafts = agent_claims(args.claims, runtime.scope, catalog=runtime.catalog)
     receipts = await runtime.write(drafts)
     return {
         "written": [
@@ -1238,8 +1328,9 @@ def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             name="lookup_company",
             description=(
                 "Deterministic firmographics for one exact domain from the company database: "
-                "industry, headcount, revenue band, HQ, LinkedIn, technologies and funding. The "
-                "five mapped fields are written as claims in code, with the record path recorded."
+                "legal name, founding year, industry, headcount and band, revenue band, HQ, "
+                "LinkedIn, socials, languages, technologies and funding. Every registered field "
+                "the record carries is written as a claim in code, with the record path recorded."
             ),
             model=LookupCompanyArgs,
             body=_lookup_company,

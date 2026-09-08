@@ -93,6 +93,11 @@ yours.
 
 ## Structuring, and the second pass
 
+0. **Give it sources, not a wall of text.** Every page, posting, report or transcript goes in as its
+   own source with the URL it came from; your own reading of the material goes in `notes`. Quotes may
+   only come from inside a source, and a claim cites the URL of the source its quote is actually in —
+   so a quote can never end up attributed to a page that did not carry it. Nothing in `notes` can be
+   quoted: it names no source, and a claim quoting it is recorded with the quote marked NOT FOUND.
 1. One broad `structure_material` call per subject (the account; each committee member) against the
    catalog. The structuring client owns the prompt: verbatim spans, catalog-only keys with proposed
    fields, `outreach_safe` and `use_class` rules, no birth date / age / health / religion / politics /
@@ -106,7 +111,9 @@ yours.
    never a placeholder. This pass found the run's best claim after two broad passes missed it.
 3. `structure_material` **writes** the claims it extracts and returns them to you with their claim
    ids and markers — nothing is echoed back through you for re-typing, because re-typing a verbatim
-   span is the fabrication risk the structuring pass exists to remove. Your review of **field
+   span is the fabrication risk the structuring pass exists to remove. Each claim is written on its
+   own, so one value the store will not take is reported back as a `write_failures` row and costs
+   the rest of the batch nothing. Your review of **field
    meaning** therefore happens on what came back: "Open Positions (14)" is not a headcount band; open
    engineering roles are not total open positions. A value that validates but does not mean what the
    field means is corrected by writing a new claim with `write_claims` carrying
