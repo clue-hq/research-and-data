@@ -123,3 +123,8 @@ Zafran `core` 16/29, `account` 13/26, `account.resonance` 1/11.
 ### Task 7 re-run: founder-triggered, pending
 The re-run against the same two accounts, graded with the same script into a `recall-after`
 directory, is the close's exit gate. Nothing in tasks 1–6 has been exercised live.
+
+## R3 rulings (founder, 2026-09-08)
+- Contact selection: every confirmed committee member gets a person agent, up to committee_cap; a human can also launch research for any particular contact on demand.
+- Email export: every member.
+- Media per person: on by default.
