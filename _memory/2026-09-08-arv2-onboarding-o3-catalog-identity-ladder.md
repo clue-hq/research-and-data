@@ -181,3 +181,6 @@ Brief's greps, 2026-09-09:
   `alembic merge -m "merge be9f4984729a+ae4a5dfb3943" <head1> <head2>` — never a hand-renumber.
 - **How `model_unsure` renders in the product-set gate is O6's**, not fixed here; the frontend
   contract pointer (`apps/frontend/docs/api-contracts/projects.md`) says so explicitly.
+
+## Merge addendum (2026-09-09)
+Merged into `integration/design-improvement` (merge commits f5d506196 ladder, a3e8a1355 split; one hand-resolved conflict in `tests/arv2/test_onboarding_driver.py` — both lanes had appended tests, both sets kept, 22 pass). Alembic join `850fcace722a` (be9f4984729a + ae4a5dfb3943), up/down/up smoked on `clue_o4_split`; `clue_semarang` upgraded to the join. `.env` gained the two reconcile keys. Live proofs (both plans' Task 6) still owed, founder-triggered; the fleet worker on this box must be restarted (reproduce `.env`, never pkill) before either.

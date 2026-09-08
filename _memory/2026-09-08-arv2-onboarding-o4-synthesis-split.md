@@ -176,3 +176,6 @@ Confirmed present at `6ed8a4642` before any lane commit:
   test_agent_platform_wiring.py, test_agent_registry_wiring.py, test_fleet_wiring.py}`,
   `tests/arv2/test_onboarding_driver.py`, `tests/agents/test_catalog.py`,
   `tests/db/test_arv2_onboarding_persona_step_migration.py`
+
+## Merge addendum (2026-09-09)
+Merged into `integration/design-improvement` (merge commits f5d506196 ladder, a3e8a1355 split; one hand-resolved conflict in `tests/arv2/test_onboarding_driver.py` — both lanes had appended tests, both sets kept, 22 pass). Alembic join `850fcace722a` (be9f4984729a + ae4a5dfb3943), up/down/up smoked on `clue_o4_split`; `clue_semarang` upgraded to the join. `.env` gained the two reconcile keys. Live proofs (both plans' Task 6) still owed, founder-triggered; the fleet worker on this box must be restarted (reproduce `.env`, never pkill) before either.
