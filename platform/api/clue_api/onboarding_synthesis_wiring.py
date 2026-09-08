@@ -13,11 +13,19 @@ and the turn's ``outputs/`` become new ``brand_knowledge_document`` rows stamped
 **One turn is one task.** :meth:`OnboardingSynthesisLauncher.launch_icps` runs the ICP turn — it
 writes the client's profiles from the brand's own knowledge documents and returns the
 :class:`RegisteredIcp` rows it registered. :meth:`OnboardingSynthesisLauncher.launch_persona` then
-runs one turn per registered ICP. The split is not cosmetic: a single turn that had to write every
-ICP *and* every persona ran out of room and wrote thin documents, and the two tasks want different
-authority — the ICP turn resolves the ``onboarding_icp`` surface, where the evidence tool is
-**not installed**, while a persona turn keeps the role's full surface because its per-role
-evidence pass is what that tool is for.
+runs one turn per registered ICP.
+
+The split is not cosmetic. Two things were measured on the live runs of the single turn that wrote
+every ICP *and* every persona. First, the ICPs were finished early and then sat unregistered for
+8–10 minutes while the rest of the turn ran, because a turn's outputs only become documents once
+the whole turn ends — so nothing downstream could see a profile the agent had already written.
+Second, the three personas queued behind each other inside that one turn, when they share no state
+and could have been written at the same time. Splitting the work registers each ICP as soon as its
+own turn ends and lets the persona turns run concurrently.
+
+The split also lets the two tasks carry different authority: the ICP turn resolves the
+``onboarding_icp`` surface, where the evidence tool is **not installed**, while a persona turn
+keeps the role's full surface because its per-role evidence pass is what that tool is for.
 
 The documents a turn needs most also ride the **opening context** (L5 focus), not only the disk:
 each selected document is a ``brand_knowledge_document`` focus ref, compiled to its own verified
