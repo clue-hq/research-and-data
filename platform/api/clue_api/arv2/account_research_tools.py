@@ -202,7 +202,10 @@ Every same-name entity is excluded. When you meet one, name it and discard it wi
 a source is about a laptop line, a bookkeeping tool or a spice brand rather than this company, say
 so and drop it. Excluded same-name entities for this run: {exclusions}."""
 
-#: Constitution §3, as the deep call's evidence law.
+#: Constitution §3, as the deep call's evidence law. The sentence shape was chosen on the
+#: 2026-09-08 Exa experiment: a claims-shaped output schema lifted quote fidelity to 94-95% but
+#: cost two-thirds of the assertions, so asking the *report* for quote-first sentences keeps the
+#: budget on coverage while still giving the structuring pass clean spans.
 EVIDENCE_RULES = """EVIDENCE LAW
   * Every factual assertion carries a VERBATIM quote and the URL it came from.
   * NOT FOUND is a correct answer. Never estimate, never infer a number, never fill a gap with a
@@ -213,7 +216,12 @@ EVIDENCE_RULES = """EVIDENCE LAW
   * Prefer primary sources: the company's own pages, its job postings, the funding wire release,
     the investors' announcement posts, the founders' own writing.
   * For any acquisition, rumour or contested item, state explicitly whether it is CONFIRMED,
-    DENIED or UNRESOLVED, by whom, with the quote."""
+    DENIED or UNRESOLVED, by whom, with the quote.
+  * One assertion per sentence: the verbatim quote first, then the URL in parentheses, then at
+    most one clause of your own reading. A sentence never carries two facts, and a quote never
+    supports more than the sentence it sits in.
+  * A NOT FOUND item is its own sentence naming exactly what was looked for (the tool, the
+    person, the number), so that absence is recorded as precisely as presence."""
 
 
 class ProviderClients(Protocol):

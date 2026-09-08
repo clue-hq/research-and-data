@@ -1155,6 +1155,15 @@ def test_research_deep_passes_a_short_established_block_through_untouched() -> N
     )
 
 
+def test_the_deep_call_evidence_law_asks_for_one_assertion_per_sentence_quote_first() -> None:
+    runtime, clients, _, _ = _runtime()
+    _call(runtime, "research_deep", charter=CHARTER)
+    system_prompt = clients.exa_client.deep_calls[-1]["system_prompt"]  # the fake's attribute
+    assert "One assertion per sentence" in system_prompt
+    assert "the verbatim quote first, then the URL in parentheses" in system_prompt
+    assert "A NOT FOUND item is its own sentence" in system_prompt
+
+
 # -- read_media_feeds -----------------------------------------------------------------------------
 
 
