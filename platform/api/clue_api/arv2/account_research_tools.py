@@ -103,6 +103,7 @@ from clue_api.arv2.structuring_client import (
     FieldCatalog,
     SourceBlock,
     StructuringClient,
+    schema_hint,
 )
 from clue_api.arv2.text import substring_verdict
 from clue_api.arv2.transport import HttpxTransport, Transport
@@ -494,8 +495,10 @@ def _claim_json(claim: Claim) -> dict[str, Any]:
     }
 
 
-def _receipt_json(receipt: WriteReceipt, draft: ClaimDraft) -> dict[str, Any]:
-    return {
+def _receipt_json(
+    receipt: WriteReceipt, draft: ClaimDraft, catalog: FieldCatalog
+) -> dict[str, Any]:
+    row: dict[str, Any] = {
         "claim_id": str(receipt.claim_id),
         "field_key": receipt.field_key,
         "value": draft.value_json,
@@ -505,6 +508,16 @@ def _receipt_json(receipt: WriteReceipt, draft: ClaimDraft) -> dict[str, Any]:
         "outreach_safe": draft.outreach_safe,
         "markers": receipt.markers,
     }
+    if receipt.markers.get("schema_valid") is False:
+        # The claim is stored and visible with its marker (founder ruling 2026-09-08); the receipt
+        # is the one place the model learns, in the same turn, what shape the field wanted.
+        spec = catalog.spec(receipt.field_key)
+        row["expected_shape"] = schema_hint(spec.value_schema if spec else None)
+        row["hint"] = (
+            "rewrite the value in this shape and write it again with "
+            f"corrects_claim_id={receipt.claim_id}"
+        )
+    return row
 
 
 def _head(text: str | None, limit: int) -> str:
@@ -1090,7 +1103,7 @@ async def _structure_material(runtime: ToolRuntime, args: StructureMaterialArgs)
     results = await runtime.write_each([*drafts, *negatives])
     claim_results, negative_results = results[: len(drafts)], results[len(drafts) :]
     written = [
-        _receipt_json(result, draft)
+        _receipt_json(result, draft, runtime.catalog)
         for result, draft in zip(claim_results, drafts, strict=True)
         if isinstance(result, WriteReceipt)
     ]
@@ -1143,7 +1156,7 @@ async def _write_claims(runtime: ToolRuntime, args: WriteClaimsArgs) -> dict[str
     results = await runtime.write_each(drafts)
     return {
         "written": [
-            _receipt_json(result, draft)
+            _receipt_json(result, draft, runtime.catalog)
             for result, draft in zip(results, drafts, strict=True)
             if isinstance(result, WriteReceipt)
         ],

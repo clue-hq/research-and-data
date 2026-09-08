@@ -169,21 +169,61 @@ class FieldCatalog:
         return None
 
 
+def schema_hint(schema: Mapping[str, object] | None) -> str:
+    """One line of the shape a field's ``value_schema`` declares, for a model to read.
+
+    ``object{raw: string, city?: string}`` — required keys bare, optional keys marked ``?``;
+    ``array<…>`` for lists; ``one of a | b`` for enums; the bare JSON type otherwise. This is
+    rendering, not validation: :func:`check_value_schema` decides; this only says what it will
+    decide against, in fewer characters than the schema itself. ``None`` (no schema) is ``any``.
+    """
+    if not schema:
+        return "any"
+    enum = schema.get("enum")
+    if isinstance(enum, list) and enum:
+        return "one of " + " | ".join(str(value) for value in enum)
+    declared = schema.get("type")
+    if declared == "object":
+        properties = schema.get("properties")
+        if not isinstance(properties, Mapping) or not properties:
+            return "object"
+        required = schema.get("required")
+        required_keys = {str(key) for key in required} if isinstance(required, list) else set()
+        parts = [
+            f"{name}{'' if name in required_keys else '?'}: "
+            f"{schema_hint(sub if isinstance(sub, Mapping) else None)}"
+            for name, sub in properties.items()
+        ]
+        return "object{" + ", ".join(parts) + "}"
+    if declared == "array":
+        items = schema.get("items")
+        return f"array<{schema_hint(items if isinstance(items, Mapping) else None)}>"
+    return str(declared) if isinstance(declared, str) else "any"
+
+
 def catalog_menu_text(catalog: FieldCatalog) -> str:
     """Render the menu the model sees: three headed sections of ``key — description`` lines.
 
     A faithful port of ``z7_structure.py``'s ``CATALOG``. The rendering is the contract: the model
     is told the catalog is closed, so the menu is the only place a legal key can come from.
+
+    A field that declares a ``value_schema`` also shows it, as ``[shape: …]`` (:func:`schema_hint`).
+    The R2 re-run left 37 ``schema_valid=false`` claims — strings written into object fields,
+    objects carrying the model's own keys — every one of them written by a model that had been
+    shown the key and the description and never the shape.
     """
     sections = (
         ("ACCOUNT FIELD KEYS:", catalog.account),
         ("CONTACT FIELD KEYS:", catalog.contact),
         ("CONTACT FACET (personal) FIELD KEYS:", catalog.facet),
     )
-    blocks = [
-        "\n".join([heading, *(f"  {spec.key} — {spec.description}" for spec in specs)])
-        for heading, specs in sections
-    ]
+
+    def line(spec: FieldSpec) -> str:
+        if spec.value_schema is None:
+            return f"  {spec.key} — {spec.description}"
+        return f"  {spec.key} — {spec.description} [shape: {schema_hint(spec.value_schema)}]"
+
+    blocks = ["\n".join([heading, *(line(spec) for spec in specs)]) for heading, specs in sections]
     return "\n\n".join(blocks)
 
 

@@ -129,3 +129,6 @@ yours.
    field means is corrected by writing a new claim with `write_claims` carrying
    `corrects_claim_id` — the id of the claim it replaces. Signal priority (P1 / P2 / P3) is emitted
    by the structuring pass, never asked of you as a separate step.
+   The catalog names each field's shape (`[shape: …]`), and a `write_claims` receipt whose
+   `schema_valid` is false carries `expected_shape` and a `hint` — rewrite the value in that shape
+   and write it again with `corrects_claim_id`; never leave a value you can reshape.

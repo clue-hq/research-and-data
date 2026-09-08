@@ -49,6 +49,7 @@ from clue_api.arv2.structuring_client import (
     parse_reply_text,
     person_user_prompt,
     read_structured_reply,
+    schema_hint,
     source_of_span,
 )
 from clue_api.arv2.transport import HttpResponse, ScriptedTransport
@@ -118,9 +119,75 @@ def test_the_menu_renders_three_headed_sections_of_key_and_description() -> None
     assert "ACCOUNT FIELD KEYS:" in menu
     assert "CONTACT FIELD KEYS:" in menu
     assert "CONTACT FACET (personal) FIELD KEYS:" in menu
-    assert "  core.account_name — Canonical account name." in menu
-    assert "  contact.facet.alma_mater — Schools attended." in menu
+    assert "  core.account_name — Canonical account name. [shape: string]" in menu
+    assert "  contact.facet.alma_mater — Schools attended. [shape: array<string>]" in menu
     assert menu.index("ACCOUNT FIELD KEYS:") < menu.index("CONTACT FIELD KEYS:")
+
+
+def test_schema_hint_renders_scalars_enums_objects_and_arrays_compactly() -> None:
+    assert schema_hint(None) == "any"
+    assert schema_hint({"type": "string"}) == "string"
+    assert schema_hint({"type": "integer"}) == "integer"
+    assert (
+        schema_hint({"type": "string", "enum": ["champion", "blocker"]})
+        == "one of champion | blocker"
+    )
+    assert schema_hint({"type": "object"}) == "object"
+    assert (
+        schema_hint(
+            {
+                "type": "object",
+                "required": ["raw"],
+                "properties": {"raw": {"type": "string"}, "city": {"type": "string"}},
+            }
+        )
+        == "object{raw: string, city?: string}"
+    )
+    assert (
+        schema_hint(
+            {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["frustration"],
+                    "properties": {
+                        "frustration": {"type": "string"},
+                        "summary": {"type": "string"},
+                    },
+                },
+            }
+        )
+        == "array<object{frustration: string, summary?: string}>"
+    )
+
+
+def test_catalog_menu_text_shows_the_shape_beside_every_field_that_declares_one() -> None:
+    catalog = FieldCatalog(
+        account=(
+            FieldSpec("account.gtm_tooling_stack", "GTM tools present and absent."),
+            FieldSpec(
+                "account.total_funding",
+                "Total raised.",
+                {
+                    "type": "object",
+                    "required": ["amount_usd", "estimate_kind"],
+                    "properties": {
+                        "amount_usd": {"type": "number"},
+                        "estimate_kind": {
+                            "type": "string",
+                            "enum": ["reported", "provider_estimate", "third_party_estimate"],
+                        },
+                    },
+                },
+            ),
+        )
+    )
+    menu = catalog_menu_text(catalog)
+    assert "  account.gtm_tooling_stack — GTM tools present and absent.\n" in menu + "\n"
+    assert (
+        "  account.total_funding — Total raised. [shape: object{amount_usd: number, "
+        "estimate_kind: one of reported | provider_estimate | third_party_estimate}]"
+    ) in menu
 
 
 # -- the partition -----------------------------------------------------------------------------

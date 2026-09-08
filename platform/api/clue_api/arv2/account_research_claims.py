@@ -738,6 +738,16 @@ def _declared_type(field_key: str, catalog: FieldCatalog) -> str | None:
     return None
 
 
+def _required_keys(field_key: str, catalog: FieldCatalog) -> tuple[str, ...] | None:
+    """The required keys of an object-typed field, or ``None`` when the field is not an object."""
+    spec = catalog.spec(field_key)
+    schema = spec.value_schema if spec else None
+    if not schema or schema.get("type") != "object":
+        return None
+    required = schema.get("required")
+    return tuple(str(key) for key in required) if isinstance(required, list) else ()
+
+
 def coerce_scalar(field_key: str, value: JsonValue, catalog: FieldCatalog) -> JsonValue:
     """A model's value, read as the scalar its registered field actually declares.
 
@@ -921,7 +931,9 @@ def agent_claims(
     The key it named is normalised and its value is read as the shape the field declares, exactly
     as for a structuring claim: the agent hand-writes claims through the same registry, so a
     wrapped scalar or a spelled-out key must not mean two different things depending on who typed
-    it.
+    it. On an object-shaped field the optional keys it wrote as ``null`` are dropped, exactly as
+    the deterministic mappers drop them (:func:`_without_nones`) — absent is not null, and a
+    *required* key stays so the schema marker can still say the value does not fit.
     """
     drafts: list[ClaimDraft] = []
     for item in items:
@@ -932,6 +944,17 @@ def agent_claims(
         )
         value, coercion = _coerced(field_key, item.value, catalog)
         markers: dict[str, JsonValue] = dict(coercion)
+        required = _required_keys(field_key, catalog)
+        if required is not None and isinstance(value, Mapping):
+            # The mapper path already drops the optional keys a record did not answer
+            # (``_without_nones``); the agent path did not, and the re-run's two vacant seats
+            # landed ``schema_valid=false`` on ``"name": null`` alone. Same rule, same helper:
+            # absent is not null, and a required key stays so the marker can say it is missing.
+            kept = _without_nones(value, keep=required)
+            dropped = [key for key in value if key not in kept]
+            if dropped:
+                markers["dropped_null_keys"] = dropped
+            value = kept
         if item.corrects_claim_id:
             markers["corrects_claim_id"] = item.corrects_claim_id
         if field_key != item.field_key:

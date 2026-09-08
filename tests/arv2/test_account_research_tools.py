@@ -435,15 +435,21 @@ class FakeWriter:
         self.drafts: list[ClaimDraft] = []
         #: field keys this writer refuses, the way the real gate raises on an unwritable value.
         self.raise_on: set[str] = set()
+        #: field keys this writer stores but marks ``schema_valid=False``, as the real gate does
+        #: when the value misses the field's registered schema.
+        self.schema_invalid: set[str] = set()
 
     async def write(self, conn: Any, draft: ClaimDraft) -> WriteReceipt:
         if draft.field_key in self.raise_on:
             raise ValueError(f"cannot write {draft.field_key}")
+        markers = dict(draft.markers)
+        if draft.field_key in self.schema_invalid:
+            markers["schema_valid"] = False
         self.drafts.append(draft)
         return WriteReceipt(
             claim_id=ClaimId(uuid4()),
             field_key=draft.field_key,
-            markers=dict(draft.markers),
+            markers=markers,
             registered_field=False,
         )
 
@@ -855,6 +861,34 @@ def test_write_claims_refuses_a_named_committee_candidate_with_no_confirming_url
 
     assert refused["code"] == "invalid_arguments" and "confirmed_by" in refused["detail"]
     assert writer.drafts == []
+
+
+def test_write_claims_reports_the_expected_shape_when_a_value_missed_its_schema() -> None:
+    """The model wrote a string into an object field; the receipt says what shape was wanted."""
+    runtime, _, writer, _ = _runtime()
+    writer.schema_invalid = {"core.hq_location"}
+    claim = _claim_input(0)
+    claim["field_key"] = "core.hq_location"
+    claim["value"] = "New York, NY"
+
+    result = _call(runtime, "write_claims", claims=[claim])
+
+    (row,) = result["written"]
+    assert row["markers"]["schema_valid"] is False
+    assert row["expected_shape"] == "object{raw: string, city?: string}"
+    assert row["hint"].startswith(
+        "rewrite the value in this shape and write it again with corrects_claim_id="
+    )
+    assert row["claim_id"] in row["hint"]
+
+
+def test_write_claims_receipts_carry_no_shape_when_the_value_fit() -> None:
+    runtime, _, _, _ = _runtime()
+
+    result = _call(runtime, "write_claims", claims=[_claim_input(0)])
+
+    (row,) = result["written"]
+    assert "expected_shape" not in row and "hint" not in row
 
 
 # -- structure_material ---------------------------------------------------------------------------

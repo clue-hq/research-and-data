@@ -1066,6 +1066,50 @@ def test_agent_claims_coerce_the_same_way() -> None:
     assert draft.markers["coerced_from"] == "2022"
 
 
+def test_agent_claims_drop_null_optional_keys_on_an_object_field_and_keep_required_ones() -> None:
+    items = [
+        ClaimInput(
+            field_key="core.employee_range",
+            value={"label": "51-200", "min": None, "max": 200},
+            evidence_span="51-200 employees",
+            source_url="https://example.test/about",
+            priority=2,
+        ),
+        ClaimInput(
+            field_key="core.employee_range",
+            value={"label": None, "min": 51, "max": 200},
+            evidence_span="51-200 employees",
+            source_url="https://example.test/about",
+            priority=2,
+        ),
+    ]
+
+    first, second = agent_claims(items, SCOPE, catalog=CATALOG)
+
+    assert first.value_json == {"label": "51-200", "max": 200}
+    assert first.markers["dropped_null_keys"] == ["min"]
+    # A required key nothing answered stays, so the schema marker can say the value does not fit.
+    assert second.value_json == {"label": None, "min": 51, "max": 200}
+    assert "dropped_null_keys" not in second.markers
+
+
+def test_agent_claims_leave_non_object_values_and_unschemad_fields_alone() -> None:
+    items = [
+        ClaimInput(
+            field_key="core.industries_all",
+            value=["saas", None],
+            evidence_span="saas",
+            source_url="https://example.test/about",
+            priority=3,
+        ),
+    ]
+
+    (draft,) = agent_claims(items, SCOPE, catalog=CATALOG)
+
+    assert draft.value_json == ["saas", None]
+    assert "dropped_null_keys" not in draft.markers
+
+
 # -- vacant seats ---------------------------------------------------------------------------------
 
 
