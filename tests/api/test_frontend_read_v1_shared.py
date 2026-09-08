@@ -16,12 +16,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import Any, get_args
 
 import pytest
-from sqlalchemy import bindparam, text
+from sqlalchemy import bindparam, event, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.account_research_store import JobStatus
 from clue_api.arv2.catalog_seed import load_arv2_pack
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
 from clue_api.frontend_read.contract_v1 import (
@@ -30,6 +31,7 @@ from clue_api.frontend_read.contract_v1 import (
     AccountSocial,
     ClueActor,
     PersonActor,
+    ResearchStatus,
 )
 from clue_api.frontend_read.v1_shared import (
     EMPTY_BAND,
@@ -40,6 +42,7 @@ from clue_api.frontend_read.v1_shared import (
     RESEARCH_STATUS_LABELS,
     activity_for,
     arv2_display_allowed,
+    arv2_research_status_for,
     band_for_headcount,
     contact_last_modified,
     current_position_start,
@@ -78,7 +81,9 @@ from clue_core import (
 from clue_research.claimstore.packs import load_core_pack
 from clue_research.compliance import WorkspacePolicy
 from clue_research.identity import insert_account_entity, insert_contact_entity
-from tests._workspace import seed_workspace
+from clue_spine import Project
+from tests._workspace import seed_project, seed_workspace
+from tests.arv2.account_research_job_helpers import seed_arv2_job
 from tests.db.conftest import run_async
 from tests.profiling.conftest import rollback_conn
 
@@ -183,6 +188,18 @@ def test_a_contact_claim_with_no_use_class_is_treated_as_professional_public() -
 
 
 # --- the label maps ---------------------------------------------------------------------------
+
+
+def test_the_arv2_job_statuses_are_the_wire_statuses_verbatim() -> None:
+    """Why :func:`arv2_research_status_for` may serve ``arv2_research_job.status`` unmapped.
+
+    The R2 store's ``JobStatus`` is the code's source of truth for that column (the migration's
+    CHECK mirrors it); ``ResearchStatus`` is the contract's. They are the same five strings, so the
+    read layer has no lifecycle to reinterpret — and if either side ever grows a sixth state, this
+    is where it is noticed, rather than in a payload that fails Zod at the browser.
+    """
+    assert set(get_args(JobStatus)) == set(get_args(ResearchStatus))
+    assert set(get_args(JobStatus)) == set(RESEARCH_STATUS_LABELS)
 
 
 def test_the_research_status_labels_cover_the_five_states() -> None:
@@ -994,5 +1011,181 @@ def test_research_evidence_maps_the_provider_and_drops_an_unsafe_source_url() ->
             assert by_id[unsafe].source_url is None
             assert [ref.claim_id for ref in refs] == sorted(by_id)
             assert await research_evidence_for(conn, workspace_id=ws, claim_ids=[]) == []
+
+    run_async(scenario())
+
+
+# --- research status ------------------------------------------------------------------------------
+
+
+async def _researched(
+    conn: AsyncConnection, workspace_id: str = _WS
+) -> tuple[Project, dict[str, EntityId]]:
+    """A project and five accounts, one per R2 job status, plus one that was never researched."""
+    await _base(conn, workspace_id)
+    project = await seed_project(conn, workspace_id, name="Research project")
+    accounts = {
+        name: await insert_account_entity(
+            conn, canonical_name=name, primary_domain=f"{name}.test", workspace_id=workspace_id
+        )
+        for name in ("queued", "running", "flagged", "done", "paused", "untouched")
+    }
+    planted: tuple[tuple[str, JobStatus], ...] = (
+        ("queued", "not_started"),
+        ("running", "in_progress"),
+        ("flagged", "needs_review"),
+        ("done", "completed"),
+        ("paused", "suspended"),
+    )
+    for name, status in planted:
+        await seed_arv2_job(conn, project=project, account_id=accounts[name], status=status)
+    return project, accounts
+
+
+@pytest_db
+def test_every_arv2_job_status_is_served_verbatim_and_no_job_is_absent() -> None:
+    """The five states come back unmapped, and an account with no job does not appear at all —
+    the callers spell "never researched" once, at the row."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            _project, accounts = await _researched(conn)
+
+            served = await arv2_research_status_for(
+                conn, workspace_id=_WS, account_ids=list(accounts.values())
+            )
+
+            assert served[accounts["queued"]] == ("not_started", False)
+            assert served[accounts["running"]] == ("in_progress", False)
+            assert served[accounts["flagged"]] == ("needs_review", False)
+            assert served[accounts["done"]] == ("completed", False)
+            assert served[accounts["paused"]] == ("suspended", False)
+            assert accounts["untouched"] not in served
+
+    run_async(scenario())
+
+
+@pytest_db
+def test_a_job_newer_than_a_completed_one_is_a_refresh() -> None:
+    """``refreshing`` is "researched, and being re-researched right now": a non-terminal job newer
+    than a ``completed`` one. The status itself is the newer job's."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _base(conn)
+            project = await seed_project(conn, _WS, name="Research project")
+            account = await insert_account_entity(
+                conn, canonical_name="Zafran", primary_domain="zafran.io", workspace_id=_WS
+            )
+            await seed_arv2_job(
+                conn,
+                project=project,
+                account_id=account,
+                status="completed",
+                created_at=_NOW - timedelta(hours=1),
+            )
+            await seed_arv2_job(
+                conn, project=project, account_id=account, status="in_progress", created_at=_NOW
+            )
+
+            served = await arv2_research_status_for(conn, workspace_id=_WS, account_ids=[account])
+            assert served[account] == ("in_progress", True)
+
+    run_async(scenario())
+
+
+@pytest_db
+def test_a_completed_job_after_an_older_in_flight_one_is_not_a_refresh() -> None:
+    """The reverse order: the finished job is the latest, so the account is researched and still,
+    not refreshing. A stale in-flight row older than the result must not light the spinner."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _base(conn)
+            project = await seed_project(conn, _WS, name="Research project")
+            account = await insert_account_entity(
+                conn, canonical_name="Zafran", primary_domain="zafran.io", workspace_id=_WS
+            )
+            await seed_arv2_job(
+                conn,
+                project=project,
+                account_id=account,
+                status="in_progress",
+                created_at=_NOW - timedelta(hours=1),
+            )
+            await seed_arv2_job(
+                conn, project=project, account_id=account, status="completed", created_at=_NOW
+            )
+
+            served = await arv2_research_status_for(conn, workspace_id=_WS, account_ids=[account])
+            assert served[account] == ("completed", False)
+
+    run_async(scenario())
+
+
+@pytest_db
+def test_another_workspaces_job_is_never_served() -> None:
+    """The job row carries its own ``workspace_id`` and the read is scoped by it — which is why the
+    helper needs no join to ``arv2_research_run`` to stay tenant-safe.
+
+    This is the *only* place the cross-tenant case can be put: ``arv2_research_job``'s composite FK
+    pins ``(account_entity_id, workspace_id)`` to ``account_entity``, so another workspace's job is
+    necessarily another workspace's account — which the endpoints' own page scan never lists.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _base(conn)
+            await _base(conn, _OTHER_WS)
+            project = await seed_project(conn, _OTHER_WS, name="Their project")
+            theirs = await insert_account_entity(
+                conn, canonical_name="Theirs", primary_domain="theirs.test", workspace_id=_OTHER_WS
+            )
+            await seed_arv2_job(conn, project=project, account_id=theirs, status="completed")
+
+            assert (
+                await arv2_research_status_for(conn, workspace_id=_WS, account_ids=[theirs]) == {}
+            )
+            assert await arv2_research_status_for(
+                conn, workspace_id=_OTHER_WS, account_ids=[theirs]
+            ) == {theirs: ("completed", False)}
+
+    run_async(scenario())
+
+
+@pytest_db
+def test_the_whole_page_costs_exactly_one_statement() -> None:
+    """N accounts, one read. A per-row lookup here would be an N+1 over a 200-row page, which is
+    the defect the endpoints' own statement-count guards exist to catch."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            _project, accounts = await _researched(conn)
+            statements = 0
+
+            def count(*_args: object) -> None:
+                nonlocal statements
+                statements += 1
+
+            event.listen(conn.sync_connection, "before_cursor_execute", count)
+            try:
+                served = await arv2_research_status_for(
+                    conn, workspace_id=_WS, account_ids=list(accounts.values())
+                )
+            finally:
+                event.remove(conn.sync_connection, "before_cursor_execute", count)
+
+            assert len(served) == 5, "the six accounts really were read"
+            assert statements == 1
+
+    run_async(scenario())
+
+
+@pytest_db
+def test_an_empty_page_reads_nothing_at_all() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _base(conn)
+            assert await arv2_research_status_for(conn, workspace_id=_WS, account_ids=[]) == {}
 
     run_async(scenario())

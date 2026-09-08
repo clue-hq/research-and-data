@@ -34,7 +34,7 @@ import os
 import uuid
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import httpx
 import pytest
@@ -50,7 +50,9 @@ from clue_api.frontend_read.contract_v1 import (
     AccountDetailV1,
     AccountV1,
     AccountWorkspaceV1,
+    ResearchStatus,
 )
+from clue_api.frontend_read.v1_shared import RESEARCH_STATUS_LABELS
 from clue_api.projections_app import create_projections_app
 from clue_config import load_settings
 from tests.api.contract_v1.oracle import zod_validate
@@ -273,8 +275,15 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
 
             zafran_row = rows["Zafran Security"]
             assert zafran_row["id"] == str(account_id)
-            assert zafran_row["researchStatus"] == "completed"
-            assert zafran_row["researchStatusLabel"] == "Researched"
+            # The D1 loader writes the *legacy* research row, and the v1 row now reads ARV2's own
+            # ``arv2_research_job`` (D4-b Task 1) — so the walk asserts a valid enum value rather
+            # than a state no ARV2 row backs. D4-b **Task 6** teaches the loader to write an ARV2
+            # job for Zafran; when it lands, this goes back to ``== "completed"``.
+            assert zafran_row["researchStatus"] in set(get_args(ResearchStatus))
+            assert (
+                zafran_row["researchStatusLabel"]
+                == RESEARCH_STATUS_LABELS[zafran_row["researchStatus"]]
+            )
             assert zafran_row["websiteUrl"] == "https://zafran.io"
             for name in _UNRESEARCHED:
                 assert rows[name]["researchStatus"] == "not_started", name

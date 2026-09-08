@@ -29,7 +29,7 @@ import uuid
 from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -38,6 +38,7 @@ from pydantic import JsonValue
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.account_research_store import JobStatus
 from clue_api.arv2.catalog_seed import load_arv2_pack
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
 from clue_api.arv2.display.blocks import insert_block, supersede_blocks
@@ -116,6 +117,7 @@ from clue_spine import Project
 from clue_storage import artifact_key, content_address, record_artifact
 from tests._workspace import seed_project, seed_workspace
 from tests.api.contract_v1.oracle import zod_validate
+from tests.arv2.account_research_job_helpers import seed_arv2_job
 from tests.db.conftest import run_async
 from tests.fleet.entity_research_r2_helpers import lifecycle_fixture
 from tests.profiling.conftest import conn_session_factory, rollback_conn
@@ -2067,10 +2069,9 @@ async def _build_v1(conn: AsyncConnection) -> _V1Fixture:
         icp_key="beta",
         icp_version=3,
     )
-    launch = await _launch_research_job(
-        conn, project_id=base.project_a.project_id, account_id=zafran
-    )
-    await _finalize_job(conn, launch["job_id"], outcome="completed")
+    # The v1 detail's research status comes from ARV2's own rows and nothing else (D4-b decision
+    # 1), so the seed is an ``arv2_research_job`` driven through the R2 store — not an M8D job.
+    await seed_arv2_job(conn, project=base.project_a, account_id=zafran, status="completed")
 
     # Dana's title claim carries a retained artifact from birth: the stored overview section
     # cites it, which is what makes the E7 union (FI-2 evidence ∪ v1 page citations) provable.
@@ -2247,6 +2248,81 @@ def test_the_v1_contract_serves_the_account_detail_for_a_fully_populated_account
             assert entry["occurredAt"].endswith("Z")
 
             zod_validate(detail, "AccountDetailSchema")
+
+    run_async(scenario())
+
+
+@pytest.mark.parametrize(
+    ("status", "label"),
+    [
+        ("not_started", "Not started"),
+        ("in_progress", "In progress"),
+        ("needs_review", "Needs review"),
+        ("completed", "Researched"),
+        ("suspended", "Paused"),
+    ],
+)
+def test_the_v1_detail_serves_the_latest_arv2_job_status_verbatim(status: str, label: str) -> None:
+    """All five R2 states, unmapped — and the same read the list row uses, so the table and the
+    page can never disagree about one account."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1(conn)
+            # ``_build_v1`` already researched Zafran. The two jobs would share the transaction's
+            # ``now()``, so the finished one is aged first: the status under test is the *latest*
+            # job's, and that must be a fact about the rows rather than about uuid ordering.
+            await conn.execute(
+                text(
+                    "UPDATE arv2_research_job SET created_at = created_at - interval '1 hour' "
+                    "WHERE account_entity_id = :id"
+                ),
+                {"id": fixture.zafran},
+            )
+            await seed_arv2_job(
+                conn,
+                project=fixture.base.project_a,
+                account_id=fixture.zafran,
+                status=cast(JobStatus, status),
+            )
+
+            detail = (await _get(conn, fixture.zafran, contract="v1")).json()["data"]
+            assert detail["researchStatus"] == status
+            assert detail["researchStatusLabel"] == label
+
+    run_async(scenario())
+
+
+def test_an_account_with_no_arv2_job_is_not_started_on_the_v1_detail() -> None:
+    """An unresearched account is honestly unresearched; nothing is invented for the missing row."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1(conn)
+
+            detail = (await _get(conn, fixture.base.acme, contract="v1")).json()["data"]
+            assert detail["researchStatus"] == "not_started"
+            assert detail["researchStatusLabel"] == "Not started"
+
+    run_async(scenario())
+
+
+def test_a_job_launched_by_a_non_primary_project_still_shows_on_the_v1_detail() -> None:
+    """Research is a fact about the *account*: the page reports its latest ARV2 job whichever
+    project launched it, rather than reporting a researched account as never researched."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1(conn)
+            await seed_arv2_job(
+                conn,
+                project=fixture.base.project_b,
+                account_id=fixture.base.acme,
+                status="needs_review",
+            )
+
+            detail = (await _get(conn, fixture.base.acme, contract="v1")).json()["data"]
+            assert detail["researchStatus"] == "needs_review"
 
     run_async(scenario())
 

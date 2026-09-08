@@ -39,7 +39,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -47,6 +47,7 @@ from httpx import ASGITransport
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.account_research_store import JobStatus
 from clue_api.arv2.catalog_seed import load_arv2_pack
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
 from clue_api.client_context_binding import bind_workspace_client
@@ -86,6 +87,7 @@ from clue_research.membership import ensure_project_account
 from clue_spine import Project
 from tests._workspace import seed_project, seed_workspace
 from tests.api.contract_v1.oracle import zod_validate
+from tests.arv2.account_research_job_helpers import seed_arv2_job
 from tests.db.conftest import run_async
 from tests.fleet.entity_research_r2_helpers import lifecycle_fixture
 from tests.profiling.conftest import conn_session_factory, rollback_conn
@@ -1415,13 +1417,9 @@ async def _build_v1(conn: AsyncConnection) -> tuple[_Fixture, EntityId]:
         icp_key="beta",
         icp_version=3,
     )
-    job_id = await _launch_one(
-        conn,
-        workspace_id=_WS,
-        project_id=fixture.project_a.project_id,
-        account_id=zafran,
-    )
-    await _finalize_job(conn, job_id, outcome="completed")
+    # The v1 row's research status comes from ARV2's own rows and nothing else (D4-b decision 1),
+    # so the seed is an ``arv2_research_job`` driven through the R2 store — not an M8D job.
+    await seed_arv2_job(conn, project=fixture.project_a, account_id=zafran, status="completed")
     return fixture, zafran
 
 
@@ -1524,27 +1522,71 @@ def test_an_unscored_membership_less_account_serves_nulls_and_unknown_bands() ->
     run_async(scenario())
 
 
+@pytest.mark.parametrize(
+    ("status", "label"),
+    [
+        ("not_started", "Not started"),
+        ("in_progress", "In progress"),
+        ("needs_review", "Needs review"),
+        ("completed", "Researched"),
+        ("suspended", "Paused"),
+    ],
+)
+def test_the_row_serves_the_latest_arv2_job_status_verbatim(status: str, label: str) -> None:
+    """All five R2 states, unmapped. ``arv2_research_job.status`` IS the wire vocabulary, so the
+    read layer has no lifecycle to reinterpret and nothing to invent."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            await seed_arv2_job(
+                conn,
+                project=fixture.project_a,
+                account_id=fixture.acme,
+                status=cast(JobStatus, status),
+            )
+
+            row = _rows((await _get(conn, contract="v1")).json())["Acme"]
+            assert row["researchStatus"] == status
+            assert row["researchStatusLabel"] == label
+            assert row["researchIsRefreshing"] is False
+
+    run_async(scenario())
+
+
+def test_an_account_with_no_arv2_job_is_not_started_and_not_refreshing() -> None:
+    """The absent row, spelled once at the row rather than invented by the read."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _build(conn)
+            row = _rows((await _get(conn, contract="v1")).json())["Acme"]
+
+            assert row["researchStatus"] == "not_started"
+            assert row["researchStatusLabel"] == "Not started"
+            assert row["researchIsRefreshing"] is False
+
+    run_async(scenario())
+
+
 def test_a_job_launched_after_a_completed_one_marks_the_row_refreshing() -> None:
     """``researchIsRefreshing`` is the honest "researched, and being re-researched right now" —
-    a non-terminal job newer than a terminal ``completed`` one on the primary project."""
+    a non-terminal ARV2 job newer than a ``completed`` one for the same account."""
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
             fixture, zafran = await _build_v1(conn)
-            # The seeded completed job and the new one would share a transaction ``now()``; age the
-            # finished one so "newer" is a fact about the rows, not about uuid ordering.
+            # ``_build_v1``'s completed job and this one would share a transaction ``now()``; ageing
+            # it makes "newer" a fact about the rows, not about uuid ordering.
             await conn.execute(
                 text(
-                    "UPDATE entity_research_job SET created_at = created_at - interval '1 hour' "
-                    "WHERE subject_entity_id = :id"
+                    "UPDATE arv2_research_job SET created_at = created_at - interval '1 hour' "
+                    "WHERE account_entity_id = :id"
                 ),
                 {"id": zafran},
             )
-            await _launch_one(
-                conn,
-                workspace_id=_WS,
-                project_id=fixture.project_a.project_id,
-                account_id=zafran,
+            await seed_arv2_job(
+                conn, project=fixture.project_a, account_id=zafran, status="in_progress"
             )
 
             row = _rows((await _get(conn, contract="v1")).json())["Zafran"]
@@ -1552,6 +1594,55 @@ def test_a_job_launched_after_a_completed_one_marks_the_row_refreshing() -> None
             # The latest job is the in-flight one, so the status is what that job says.
             assert row["researchStatus"] == "in_progress"
             assert row["researchStatusLabel"] == "In progress"
+
+    run_async(scenario())
+
+
+def test_a_completed_job_newer_than_an_in_flight_one_is_not_refreshing() -> None:
+    """The reverse order: a stale in-flight row older than the result must not light the spinner
+    on an account whose latest job actually finished."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            base = datetime(2026, 8, 2, 12, 0, tzinfo=UTC)
+            await seed_arv2_job(
+                conn,
+                project=fixture.project_a,
+                account_id=fixture.acme,
+                status="in_progress",
+                created_at=base,
+            )
+            await seed_arv2_job(
+                conn,
+                project=fixture.project_a,
+                account_id=fixture.acme,
+                status="completed",
+                created_at=base + timedelta(hours=1),
+            )
+
+            row = _rows((await _get(conn, contract="v1")).json())["Acme"]
+            assert row["researchStatus"] == "completed"
+            assert row["researchIsRefreshing"] is False
+
+    run_async(scenario())
+
+
+def test_a_job_launched_by_a_non_primary_project_still_shows_on_the_row() -> None:
+    """Research is a fact about the *account*: an ARV2 run pins its project, but the row reports
+    the account's latest job whichever project launched it. Hiding project B's finished research
+    because project A leads the row would report a researched account as never researched."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            await seed_arv2_job(
+                conn, project=fixture.project_b, account_id=fixture.acme, status="completed"
+            )
+
+            row = _rows((await _get(conn, contract="v1")).json())["Acme"]
+            assert row["primaryProjectId"] == fixture.project_a.project_id
+            assert row["researchStatus"] == "completed"
 
     run_async(scenario())
 

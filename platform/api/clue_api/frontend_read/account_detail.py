@@ -74,12 +74,10 @@ from clue_api.client_context_binding import workspace_client_entity_id
 from clue_api.frontend_read.accounts_list import (
     SCORE_FIELD_KEYS,
     V1_NEUTRAL_FIELD_KEYS,
-    AccountResearchStatusValue,
     ProjectScore,
     WireModel,
     _primary_project_fit,
     _read_scores,
-    _read_v1_research,
     as_int,
     as_str,
     group_score_claims,
@@ -110,6 +108,7 @@ from clue_api.frontend_read.v1_shared import (
     EMPTY_BAND,
     RESEARCH_STATUS_LABELS,
     activity_for,
+    arv2_research_status_for,
     custom_fields_for,
     employee_range_label,
     fit_band,
@@ -827,14 +826,10 @@ async def read_account_detail_v1(
     # can never report a different status for one account. Its refresh flag is dropped here: the
     # detail contract has no ``researchIsRefreshing`` slot (the Zod schema is the arbiter of that
     # split), and a second query for the status alone is how the two surfaces would start to drift.
-    research = await _read_v1_research(conn, workspace_id=workspace_id, entity_ids=[account_uuid])
-    status, _refreshing = (
-        research.get(account_uuid, {}).get(
-            primary_project_id, (AccountResearchStatusValue.NOT_STARTED, False)
-        )
-        if primary_project_id is not None
-        else (AccountResearchStatusValue.NOT_STARTED, False)
+    research = await arv2_research_status_for(
+        conn, workspace_id=workspace_id, account_ids=[canonical]
     )
+    status, _refreshing = research.get(canonical, ("not_started", False))
 
     spine = (
         await conn.execute(_ACCOUNT_SPINE, {"workspace_id": workspace_id, "entity_id": canonical})
@@ -899,8 +894,8 @@ async def read_account_detail_v1(
             logo_path=None,
             website_url=website_url(account.primary_domain),
             website_label=website_label(account.primary_domain) or EMPTY_BAND,
-            research_status=status.value,
-            research_status_label=RESEARCH_STATUS_LABELS[status.value],
+            research_status=status,
+            research_status_label=RESEARCH_STATUS_LABELS[status],
             owner=owners.get(owner_user_id) if owner_user_id else None,
             created_by=owners.get(created_by_user_id) if created_by_user_id else None,
             industry_labels=tuple(

@@ -70,6 +70,7 @@ __all__ = [
     "EmailFacts",
     "activity_for",
     "arv2_display_allowed",
+    "arv2_research_status_for",
     "band_for_headcount",
     "contact_last_modified",
     "current_position_start",
@@ -874,6 +875,78 @@ async def activity_for(
             )
         )
     return feed
+
+
+# --- research status ------------------------------------------------------------------------------
+
+#: The latest ARV2 job per account, plus the one extra fact the accounts table shows: is this
+#: account *being re-researched right now*?
+#:
+#: One statement, one table. ``arv2_research_job`` carries its own ``workspace_id`` (and its
+#: composite FK pins that to the account's own), so joining ``arv2_research_run`` would buy a
+#: second table and no extra scoping. The run's ``project_id`` is deliberately not consulted
+#: either: an account's research status is the status of *its* latest job, whichever project
+#: launched it — an account researched under one project is not unresearched when read under
+#: another (D4-b decision 1).
+#:
+#: ``refreshing`` is true when a **non-terminal** job (``not_started``/``in_progress`` — a
+#: ``suspended`` job is halted, not running) is newer than a ``completed`` one for the same
+#: account. The ``(created_at, job_id)`` row comparison is the same total order the ``DISTINCT ON``
+#: sorts by, so "newer" means one thing in both halves of the row.
+_ARV2_RESEARCH_STATUS = text(
+    """
+    SELECT DISTINCT ON (j.account_entity_id)
+        j.account_entity_id,
+        j.status,
+        EXISTS (
+            SELECT 1
+            FROM arv2_research_job live
+            JOIN arv2_research_job done
+              ON done.workspace_id = live.workspace_id
+             AND done.account_entity_id = live.account_entity_id
+             AND done.status = 'completed'
+             AND (done.created_at, done.job_id) < (live.created_at, live.job_id)
+            WHERE live.workspace_id = j.workspace_id
+              AND live.account_entity_id = j.account_entity_id
+              AND live.status IN ('not_started', 'in_progress')
+        ) AS refreshing
+    FROM arv2_research_job j
+    WHERE j.workspace_id = :workspace_id
+      AND j.account_entity_id IN :account_ids
+    ORDER BY j.account_entity_id, j.created_at DESC, j.job_id DESC
+    """
+).bindparams(bindparam("account_ids", expanding=True, type_=PgUUID(as_uuid=True)))
+
+
+async def arv2_research_status_for(
+    conn: AsyncConnection, *, workspace_id: str, account_ids: Sequence[EntityId]
+) -> dict[EntityId, tuple[ResearchStatus, bool]]:
+    """``{account: (status, refreshing)}`` from the R2 rows — ARV2's own truth, nothing else.
+
+    The status is served **verbatim**. ``arv2_research_job.status`` is the seam-1 vocabulary
+    (``not_started``/``in_progress``/``needs_review``/``completed``/``suspended``), which is
+    character-for-character the contract's
+    :data:`~clue_api.frontend_read.contract_v1.ResearchStatus` — so there is no mapping here to
+    drift, and no lifecycle to reinterpret. The two vocabularies are pinned equal by a test rather
+    than by this comment.
+
+    An account with **no** job is simply absent from the result: "never researched" is a fact
+    about a missing row, and the callers spell it ``("not_started", False)`` at the one place they
+    build the row. Returning it here would make an unresearched account indistinguishable from one
+    holding a genuine ``not_started`` job.
+    """
+    if not account_ids:
+        return {}
+    rows = (
+        await conn.execute(
+            _ARV2_RESEARCH_STATUS,
+            {"workspace_id": workspace_id, "account_ids": list(account_ids)},
+        )
+    ).all()
+    return {
+        EntityId(uuid.UUID(str(account_id))): (cast(ResearchStatus, str(status)), bool(refreshing))
+        for account_id, status, refreshing in rows
+    }
 
 
 # --- research evidence ----------------------------------------------------------------------------

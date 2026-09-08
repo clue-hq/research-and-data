@@ -68,6 +68,7 @@ from clue_api.frontend_read.contract_v1 import (
 from clue_api.frontend_read.v1_shared import (
     EMPTY_BAND,
     RESEARCH_STATUS_LABELS,
+    arv2_research_status_for,
     custom_fields_for,
     employee_band,
     fit_band,
@@ -424,48 +425,6 @@ _ACCOUNT_PEOPLE = text(
     WHERE workspace_id = :workspace_id AND id IN :entity_ids
     """
 ).bindparams(bindparam("entity_ids", expanding=True, type_=PgUUID(as_uuid=True)))
-
-# The FI-2 latest-job read plus the one extra fact the v1 row needs: is this (account, project)
-# *being re-researched*? That is true when a job is still in flight and a ``completed`` terminal
-# job precedes it — "researched, and refreshing right now", which is a different statement from
-# the status of the latest job alone. The ``(created_at, job_id)`` row comparison is the same total
-# order the ``DISTINCT ON`` uses, so "newer" means the same thing in both halves of the row.
-_RESEARCH_JOBS_V1 = text(
-    """
-    SELECT DISTINCT ON (j.subject_entity_id, j.project_id)
-        j.subject_entity_id,
-        j.project_id,
-        j.state,
-        j.finalization_outcome,
-        jc.admission_state,
-        f.state AS fleet_state,
-        EXISTS (
-            SELECT 1
-            FROM entity_research_job live
-            JOIN entity_research_job done
-              ON done.workspace_id = live.workspace_id
-             AND done.subject_type = 'account'
-             AND done.subject_entity_id = live.subject_entity_id
-             AND done.project_id = live.project_id
-             AND done.state = 'terminal'
-             AND done.finalization_outcome = 'completed'
-             AND (done.created_at, done.job_id) < (live.created_at, live.job_id)
-            WHERE live.workspace_id = j.workspace_id
-              AND live.subject_type = 'account'
-              AND live.subject_entity_id = j.subject_entity_id
-              AND live.project_id = j.project_id
-              AND live.state <> 'terminal'
-        ) AS refreshing
-    FROM entity_research_job j
-    LEFT JOIN entity_research_account_fleet_job_control jc ON jc.job_id = j.job_id
-    LEFT JOIN entity_research_account_fleet f ON f.research_run_id = j.research_run_id
-    WHERE j.workspace_id = :workspace_id
-      AND j.subject_type = 'account'
-      AND j.subject_entity_id IN :entity_ids
-    ORDER BY j.subject_entity_id, j.project_id, j.created_at DESC, j.job_id DESC
-    """
-).bindparams(bindparam("entity_ids", expanding=True, type_=PgUUID(as_uuid=True)))
-
 
 # --- composition helpers ----------------------------------------------------------------------
 
@@ -862,31 +821,6 @@ async def list_accounts(
 # --- contract v1 (ARV2 D3, E1) ----------------------------------------------------------------
 
 
-async def _read_v1_research(
-    conn: AsyncConnection, *, workspace_id: str, entity_ids: Sequence[uuid.UUID]
-) -> dict[uuid.UUID, dict[str, tuple[AccountResearchStatusValue, bool]]]:
-    """``{account: {project: (status, refreshing)}}`` — the FI-2 mapping plus the refresh flag."""
-    if not entity_ids:
-        return {}
-    rows = (
-        await conn.execute(
-            _RESEARCH_JOBS_V1, {"workspace_id": workspace_id, "entity_ids": list(entity_ids)}
-        )
-    ).all()
-    research: dict[uuid.UUID, dict[str, tuple[AccountResearchStatusValue, bool]]] = defaultdict(
-        dict
-    )
-    for entity_id, project_id, state, outcome, admission_state, fleet_state, refreshing in rows:
-        status = research_status_for(
-            job_state=str(state),
-            finalization_outcome=None if outcome is None else str(outcome),
-            admission_state=None if admission_state is None else str(admission_state),
-            fleet_state=None if fleet_state is None else str(fleet_state),
-        )
-        research[uuid.UUID(str(entity_id))][str(project_id)] = (status, bool(refreshing))
-    return research
-
-
 def _primary_project_fit(
     scores: tuple[AccountProjectScore, ...], primary_project_id: str | None
 ) -> float | None:
@@ -928,7 +862,10 @@ async def list_accounts_v1(
     :func:`_read_spine_page`); what differs is the row. The v1 row is the *screen's* row: bands and
     labels the backend computes so the browser cannot disagree with it, the account's own chrome
     (industries, socials, location, custom fields, owner), and exactly one research status and one
-    fit — the **primary project's** — because the table has one column for each.
+    fit, because the table has one column for each. The two are scoped differently and on purpose:
+    the fit is the **primary project's** (a score is ``project_relative``, so serving another
+    project's would be a category error), while the research status is the account's own latest
+    ARV2 job, whichever project launched it.
 
     Every source is read in a fixed number of batched statements over the whole page: a per-row
     lookup here would be an N+1 over a 200-row page, which is what the suite's statement-count
@@ -964,7 +901,9 @@ async def list_accounts_v1(
         conn, workspace_id=workspace_id, account_ids=account_ids
     )
     scores = await _read_scores(conn, workspace_id=workspace_id, entity_ids=account_ids)
-    research = await _read_v1_research(conn, workspace_id=workspace_id, entity_ids=account_ids)
+    research = await arv2_research_status_for(
+        conn, workspace_id=workspace_id, account_ids=entity_ids
+    )
     names = await project_names(
         conn,
         workspace_id=workspace_id,
@@ -1004,17 +943,13 @@ async def list_accounts_v1(
         account_memberships = memberships.get(account_id, ())
         # The recorded FI-2 §2 policy: element 0 of the membership read is the primary project. A
         # membership-less account (a seed, a legacy import) simply has none, and its row is served
-        # unresearched and unscored rather than attributed to a project it does not belong to.
+        # unscored rather than attributed to a project it does not belong to.
         primary_project_id = account_memberships[0].project_id if account_memberships else None
-        # No membership → no project to report a status *for*; the row is honestly unresearched
-        # rather than showing whichever project happened to research it.
-        status, refreshing = (
-            research.get(account_id, {}).get(
-                primary_project_id, (AccountResearchStatusValue.NOT_STARTED, False)
-            )
-            if primary_project_id is not None
-            else (AccountResearchStatusValue.NOT_STARTED, False)
-        )
+        # The account's own latest ARV2 job, whichever project launched it. The row still leads
+        # with the primary project's *name*, but research is a fact about the account: an ARV2 run
+        # pins its project, and hiding a finished research job because the account's primary
+        # membership happens to be another project would report it as never researched.
+        status, refreshing = research.get(entity_id, ("not_started", False))
         fit = _primary_project_fit(scores.get(account_id, ()), primary_project_id)
         location = location_label(neutral_value(entity_id, "core.hq_location"))
         owner_user_id, created_by_user_id = people.get(account_id, (None, None))
@@ -1028,11 +963,11 @@ async def list_accounts_v1(
                 # No logo pipeline exists (D0 ruling S2): explicitly null, never a guessed URL.
                 logo_path=None,
                 website_url=website_url(primary_domain),
-                # ``AccountResearchStatusValue`` is the FI-2 enum over the same five strings the
-                # v1 ``ResearchStatus`` literal declares (D0 ruling S11), so its value *is* the
-                # wire value and the label map is keyed by it.
-                research_status=status.value,
-                research_status_label=RESEARCH_STATUS_LABELS[status.value],
+                # ``arv2_research_job.status`` is the seam-1 vocabulary, which is character-for-
+                # character the ``ResearchStatus`` literal (D0 ruling S11): the row's status *is*
+                # the job's status, and the label map is keyed by it.
+                research_status=status,
+                research_status_label=RESEARCH_STATUS_LABELS[status],
                 research_is_refreshing=refreshing,
                 overall_fit=fit_band(fit, settings=settings),
                 fit_score=fit_score_100(fit),
