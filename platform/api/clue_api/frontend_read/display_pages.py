@@ -29,13 +29,18 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.arv2.display.blocks import compose_display_block, live_blocks, stale_sections
+from clue_api.arv2.display.blocks import (
+    LiveBlock,
+    compose_display_block,
+    live_blocks,
+    stale_sections,
+)
 from clue_api.arv2.display.gather import (
     PERSONA_KEY,
     TITLE_KEY,
@@ -349,7 +354,7 @@ async def _expansion(
     return [subject_id, *(member.id for member in members)]
 
 
-def _cited(recipes: Sequence[SectionRecipe], blocks: dict[str, Any]) -> tuple[str, ...]:
+def _cited(recipes: Sequence[SectionRecipe], blocks: Mapping[str, LiveBlock]) -> tuple[str, ...]:
     """Every claim the composed page cites, in recipe order, deduped."""
     return tuple(
         dict.fromkeys(
