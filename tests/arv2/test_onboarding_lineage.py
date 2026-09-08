@@ -15,8 +15,6 @@ from clue_api.arv2.onboarding_lineage import CatalogProduct, _fingerprint, norma
 SAME = [
     ("Aura AI Scribe", "Aura™ AI Scribe"),
     ("Aura Anywhere", "Aura™ Anywhere"),
-    ("AI Front Desk", "AI FrontDesk Agent"),
-    ("Phone Triage AI Agent", "AI Phone Triage"),
     ("MagicFlow", "magic flow"),
 ]
 
@@ -38,14 +36,6 @@ def test_distinct_offerings_keep_distinct_keys(left: str, right: str) -> None:
     """These pairs differ by a real word, not by decoration. They stay separate rows on purpose —
     whether two of them are one product is the product-set gate's call, not the key's."""
     assert normalize_identity(left) != normalize_identity(right)
-
-
-def test_a_name_made_only_of_generic_tokens_keeps_them() -> None:
-    """Dropping every token would collapse "AI Agent" onto the empty key — and onto every other
-    all-generic name. It keeps its own tokens instead, and still folds case and spacing."""
-    assert normalize_identity("AI Agent")
-    assert normalize_identity("AI Agent") == normalize_identity("ai agent")
-    assert normalize_identity("AI Agent") != normalize_identity("Aura AI Scribe")
 
 
 def test_the_fingerprint_is_over_the_raw_entry_not_the_normalized_one() -> None:

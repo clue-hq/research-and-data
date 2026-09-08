@@ -134,11 +134,7 @@ be.
 
 Two things keep a re-run from re-minting products it already has. The synchronizer's comparison key
 (`normalize_identity`) strips the `™®©℠` marks *before* NFKC (which would otherwise turn `™` into
-the letters `tm`), folds case, drops the generic `ai`/`agent`/`agents` tokens unless a name is
-nothing but those, and joins what is left with nothing — so `Aura™ AI Scribe`, `AI FrontDesk Agent`
-and `magic flow` land on the same key as `Aura AI Scribe`, `AI Front Desk` and `MagicFlow`, while a
-name that differs by a real word (`AI Front Desk for Clinics`) stays its own row for the product-set
-gate to judge. And on a re-run the lineup *query* — never the system prompt or the schema, which the
+the letters `tm`), folds case, keeps every word (no stoplist — a one-company heuristic would silently merge distinct products elsewhere), And on a re-run the lineup *query* — never the system prompt or the schema, which the
 catalog contract fixes — names the brand's products already on file through the `known_products`
 seam, so the model reuses an existing spelling instead of inventing a near-miss of it.
 

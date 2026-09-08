@@ -51,24 +51,19 @@ _MARKS = str.maketrans("", "", "™®©℠")
 #: product rows from 19 to 28 because the lineup called the same offering "AI Front Desk" once and
 #: "AI FrontDesk Agent" the next time. Dropping them is a comparison aid only — a normalized hit
 #: still has to survive the resolution ladder, and nothing here renames or merges anything.
-_GENERIC_TOKENS = frozenset({"ai", "agent", "agents"})
-
 _TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
 
 
 def normalize_identity(value: str) -> str:
-    """A comparison key for a product name: mark-free, case-free, spacing- and punctuation-free,
-    with the generic ``ai``/``agent`` tokens dropped.
+    """A comparison key for a product name: mark-free, case-free, spacing- and punctuation-free.
 
     Whitespace and punctuation are not identity ("Front Desk" and "FrontDesk" are one product), so
-    the surviving tokens are joined with nothing. A name made ENTIRELY of generic tokens (a product
-    literally called "AI Agent") keeps them — dropping every token would collapse it onto every
-    other all-generic name, and onto the empty key.
+    the tokens are joined with nothing. No word is ever dropped: a stoplist of "generic" tokens is a
+    one-company heuristic that would silently merge distinct products elsewhere (founder ruling
+    2026-09-08). Identity beyond spelling is the resolver ladder's job, not this key's.
     """
     folded = unicodedata.normalize("NFKC", value.translate(_MARKS)).casefold()
-    tokens = _TOKEN.findall(folded)
-    kept = [token for token in tokens if token not in _GENERIC_TOKENS]
-    return "".join(kept or tokens)
+    return "".join(_TOKEN.findall(folded))
 
 
 def _fingerprint(entry: CatalogProduct) -> str:
