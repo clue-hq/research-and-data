@@ -45,7 +45,7 @@ frontend never sends a workspace id from browser state; the same-origin BFF adds
 | E3 | `GET /frontend/v1/accounts/{accountId}/workspace` | **no** | **Account workspace** (insights display block, evidence, artifacts, activity, `insightSummary`) | new route in a new module `frontend_read/account_workspace.py` |
 | E4 | `GET /frontend/v1/accounts/{accountId}/contacts` | yes (`contacts.py:541`) | **Contacts list** rows | rows re-shaped to the §6 contact row (§3.5) |
 | E5 | `GET /frontend/v1/accounts/{accountId}/contacts/{contactId}` | yes (`contacts.py:555`) | **Contact detail** (rail + contact display block + evidence) | adds the §6 fields (§3.6) |
-| E6 | `GET /frontend/v1/accounts/{accountId}/activity` | yes (`account_activity.py:282`) | not read by the new screens; `activity[]` rides E2 and E3 | unchanged; retired after D4 if nothing reads it |
+| ~~E6~~ | ~~`GET /frontend/v1/accounts/{accountId}/activity`~~ | **DELETED 2026-09-09 (D4-b Task 5)** | — | nothing read it; `activity[]` rides E2 and E3. `frontend_read/account_activity.py` (314 LOC) and `tests/api/test_frontend_read_account_activity.py` (535 LOC) are gone |
 | E7 | `GET /frontend/v1/accounts/{accountId}/evidence/{claimId}` and the contact variant | yes (`account_detail.py:705`, `contacts.py:578`) | streams the snapshot behind a claim | unchanged; the new evidence hover links to `sourceUrl`, the artifact stream is the fallback for a claim with `sourceUrl: null` |
 
 **Envelopes.** E1 returns `{ data: [...], meta: {...} }`. E2, E3, E5 return `{ data: {...} }` (the
@@ -80,6 +80,20 @@ There are **no FI-2 field renames** in D3. An earlier plan draft had E1/E2 renam
 backend and 33 frontend usages; the per-request ruling above voided that work, so those names do
 not change anywhere and no `apps/frontend` file was edited for them.
 
+**As built (D4-b, 2026-09-09) — one contract.** The `?contract=v1` selector described above is
+**removed**. `/frontend/v1` now serves exactly one contract (ARV2 v1) on every route: the FI-2
+readers, their wire models, their SQL and the modules that existed only for them are deleted
+(`f96f99530`), the `apps/frontend` adapters no longer send the parameter (`c424b7827`), and an
+unrecognised `?contract=` value is **ignored** rather than 422'd (a request that names a contract
+that no longer exists is not an error; there is only one). `ContractMode` / `contract_mode` /
+`ContractDep` no longer exist on `frontend_read.app` — asserted by
+`tests/api/test_frontend_read_arv2_only_guard.py`. The v1 readers took the plain names
+(`list_accounts`, `read_account_detail`, `read_account_contacts`, `read_contact_profile`). The
+"cost if this was the wrong call: one query parameter to remove at D4" above was paid, as
+predicted, in one commit. **E6 is deleted** (row above); **E7 survives** and now authorises against
+the display page's `cited_claim_ids` plus, on the contact variant, the email/location claim ids the
+v1 profile serves.
+
 **Envelopes, as built.** E1 `{data, meta{total, nextCursor}}`; E2/E3/E5 `{data}`; E4
 `{data, meta{total}}` — `meta.total` is a D3 addition to the dummy's `AccountContactsResponse`
 (additive; the dummy's envelope Zod is not strict). The **FI-2** detail and contact profile remain
@@ -100,17 +114,27 @@ unenveloped, which is why the two contracts cannot be told apart by envelope alo
 | `project_account` | which projects target the account | `workspace_id, project_id, account_entity_id, added_via, added_at` |
 | `project` | project names | `project_id, workspace_id, name, status` |
 | `field_definition`, `workspace_field_definition` | the field registry (labels, descriptions, custom variables) | `field_key, description, value_schema, active, pack` |
-| `entity_research_run`, `entity_research_job` | research status per account | `job.state, job.finalization_outcome, job.subject_entity_id, job.project_id, job.created_at, job.terminal_at` |
-| `entity_research_account_coverage` | the confirmed buying committee | `research_run_id, account_entity_id, committee_member_ids, committee_status, created_at` |
+| ~~`entity_research_run`, `entity_research_job`~~ | ~~research status per account~~ | **STRUCK 2026-09-09 (D4-b Task 1).** Research status is now one statement over **`arv2_research_job`** (`v1_shared.arv2_research_status_for`): the account's latest job by `(created_at, job_id)`, `status` served verbatim, `refreshing` = a non-terminal job newer than a `completed` one. No read of the old lane's job tables survives on this surface. |
+| ~~`entity_research_account_coverage`~~ | ~~the confirmed buying committee~~ | **STRUCK 2026-09-09 (D4-b Task 2).** The committee is **the account's contacts that hold at least one live claim** (`arv2/display/gather.committee_members`), scope-predicated, merged losers excluded, ordered by persona rank then name then id. The coverage-row branch and `_COVERAGE_SQL` are deleted. |
 | `artifact` | the snapshot behind a claim (E7) | `storage_key, workspace_id, content_sha256, media_type, size_bytes, erased_at, purged_at` |
 | `platform_user`, `workspace_membership` | account owner / creator display | `user_id, display_name`; membership confirms the user belongs to the workspace |
 | `agent_artifact_subject`, `agent_artifact_project`, `artifact` | generated artifacts bound to an account (E3 `artifacts[]`) | `subject_entity_id, artifact_key, binding_kind, created_at`; see §3.7 for the open ruling |
-| `research_subject_activity` | the old lane's activity ledger | read by E6 only; **not** a source for the new `activity[]` (§3.8) |
+| ~~`research_subject_activity`~~ | ~~the old lane's activity ledger~~ | **STRUCK 2026-09-09 (D4-b Task 5).** Its only reader was E6, which is deleted with the FI-2 surface (`frontend_read/account_activity.py`, 314 LOC). `activity[]` on E2/E3 is composed by `v1_shared.activity_for` over the ARV2 `account_activity_event` table. |
 
-The ARV2 lane (Track R) and the D1 loader write to the same substrate tables the old lane used
-for **run state**: one `entity_research_run` per launch, one `entity_research_job` per account,
-one `entity_research_account_coverage` row per finished account (master plan §5.1 reverse edge).
-They do not import any quarantined module; they write rows.
+**SUPERSEDED 2026-09-09 (founder ruling; D4-b Tasks 1, 2, 6).** ~~The ARV2 lane (Track R) and the
+D1 loader write to the same substrate tables the old lane used for **run state**: one
+`entity_research_run` per launch, one `entity_research_job` per account, one
+`entity_research_account_coverage` row per finished account (master plan §5.1 reverse edge).~~
+
+ARV2's own rows are the only truth. The lane writes **`arv2_research_run` + `arv2_research_job`**
+through `arv2/account_research_store.py`, and the D1 answer-key loader now does the same
+(`ceb82f841`): its four legacy INSERTs are gone, and it drives `create_run` → `create_job` →
+`begin_job` → `finish_job` exactly as R2's driver does. No module under `clue_api/arv2` or
+`clue_api/frontend_read` names an `entity_research_*` table any more — pinned by
+`tests/api/test_frontend_read_arv2_only_guard.py`, whose file allowlist is now **empty**. The one
+remaining name is the column `provider_call_ledger.entity_research_job_id`, an ARV2 column that
+holds an `arv2_research_job.job_id` under an inherited name. The old lane's own tables are
+inventoried for deletion in `docs/specs/ARV2-PHASE6-LEGACY-DELETION-INVENTORY.md`.
 
 ### 2.2 Tables and columns added by the D1 migration (master plan §4)
 
@@ -145,12 +169,12 @@ the derivation that the served field replaces (file:line in `clue-frontend` @ `8
 | company name | `name` | `account_entity.canonical_name` | — |
 | logo | `logoPath` | **ruling S2.** No logo pipeline exists (`accounts_list.py:204-206`). Recommendation: contract change to `logoPath: string \| null`; frontend renders its building glyph on `null`. Until ruled, the backend serves `null` | dummy requires a `/`-prefixed path |
 | website | `websiteUrl` | `'https://' + account_entity.primary_domain`; `null` when no domain (contract change: nullable) | table computes hostname from URL (`accounts-table.tsx:104-106`) → served `websiteLabel` on detail; the list column shows `websiteUrl` as-is |
-| research status | `researchStatus` | existing rule `research_status_for(...)` over `entity_research_job` + fleet control (`accounts_list.py:383-402`), evaluated for **the account's primary project** (§3.1 `primaryProjectId`); `not_started` when no job. **The wire enum becomes the backend's five values** `not_started \| in_progress \| needs_review \| completed \| suspended` (contract change; the dummy's `fully_enriched`/`failed` are replaced) | — |
+| research status | `researchStatus` | **As built (D4-b, 2026-09-09)** — `v1_shared.arv2_research_status_for`: ONE statement over **`arv2_research_job`**, `DISTINCT ON (account_entity_id) ORDER BY account_entity_id, created_at DESC, job_id DESC`, scoped by `workspace_id`. The job's `status` is served **verbatim** (R2's `JobStatus` and the wire's `ResearchStatus` are the same five strings, pinned by a vocabulary-equality test), `not_started` when the account has no job. **The status is per account, not per project** — the primary-project attribution is gone; whichever project launched the job, the account is researched. ~~existing rule `research_status_for(...)` over `entity_research_job` + fleet control~~ | — |
 | research status label | `researchStatusLabel` | served text from one backend map: `not_started→"Not started"`, `in_progress→"In progress"`, `needs_review→"Needs review"`, `completed→"Researched"`, `suspended→"Paused"` | three independent relabel maps in the dummy (`accounts-table.tsx:82-87`, `accounts-filter-panel.tsx:57-62`, `account-detail-primitives.tsx:35-40`) |
-| spinner | `researchIsRefreshing` | `true` when a **later** `entity_research_job` for this account is non-terminal while an earlier one is terminal `completed` (a re-run); else `false` | — |
+| spinner | `researchIsRefreshing` | **As built (D4-b, 2026-09-09)** — `true` when a **later** `arv2_research_job` for the same `(workspace_id, account_entity_id)` is non-terminal (`not_started` / `in_progress`; a `suspended` job is halted, not running) than a `completed` one, on the same `(created_at, job_id)` total order the status read uses; else `false` | — |
 | overall fit | `overallFit` | `claim[account.scoring.fit]` attributed to the primary project via `run_lineage`; band from `value_json.value` (0–1): `≥ 0.70 → High`, `≥ 0.40 → Medium`, else `Low`; `null` when no claim. **Thresholds are ruling S3** | `createLocalAccount` invents `"Medium"` (`create-account.ts:15`) |
 | fit score | `fitScore` | `round(100 × claim[account.scoring.fit].value_json.value)`; `null` when no claim | `createLocalAccount` invents `0` (`create-account.ts:7`) |
-| revenue | `revenueBand` | `claim[core.revenue_band].value_json` served through `v1_shared.revenue_band_label` — `10m_50m` → `"$10M–50M"`, `1b_plus` → `"$1B+"`, `under_1m` → `"under $1M"`; an unparseable token passes through as written; `"Unknown"` when absent. **As built (D4-b, 2026-09-09)** — the raw token used to reach the screen | — |
+| revenue | `revenueBand` | `claim[core.revenue_band].value_json` served through `v1_shared.revenue_band_label` — `10m_50m` → `"$10M–50M"`, `1b_plus` → `"$1B+"`, `under_1m` → `"under $1M"`; an unparseable token passes through as written; `"Unknown"` when absent. **As built (D4-b, 2026-09-09)** — the raw token used to reach the screen. `revenue_band_label` covers all seven `REVENUE_BAND_OPTIONS` members and a test refuses any member that would be served as its own token | — |
 | headcount | `employeeBand` | `claim[core.employee_range].value_json` (string, e.g. `"51-200"`); when absent but `claim[core.employee_count]` exists, the band computed by one backend function `band_for_headcount(n)`; `"Unknown"` when neither | — |
 | locations | `locationCount`, `locationsLabel` | `locationsLabel = claim[core.hq_location].value_json` (string); `locationCount = 1` when that claim exists else `0`. Additional office locations are not modelled in v1 | table falls back to the count when the label is absent (`accounts-table.tsx:342`) — kept, but the backend always serves the label when it serves a count ≥ 1 |
 | owner | `owner` | `account_entity.owner_user_id → platform_user.display_name`; `{id: user_id, name: display_name}`; `null` when unassigned. **No `avatarUrl`** (no avatar store) | viewer substituted for the owner (`account-owner.ts:16`) — **removed** (ruling R6) |
@@ -229,7 +253,8 @@ Everything in §3.1 is repeated on the detail object, plus:
 | intro paragraphs | `sections[].intro[]` | `display_block.body_json.intro[]` — `{text, claimIds[], segments[]}` as the model emitted them | — |
 | items | `sections[].items[]` | `display_block.body_json.items[]`; `priority = MIN(claim.signal_priority) over the item's cited claim ids` (computed at generation time and stored in `body_json`); `newSinceLastVisit = false` (D5) | client localStorage computation (`research-content.tsx:642`) — allowed to stay (D5 resolved frontend-side) |
 | overall fit badge | `overallFit` (detail field) | §3.1 | regex on the "Why they fit" heading (`research-content.tsx:787`) — **removed** |
-| buying committee table | `buyingCommittee[]` | members = `entity_research_account_coverage.committee_member_ids` of the **latest** coverage row for the account (`ORDER BY created_at DESC, coverage_id DESC LIMIT 1`), each resolved through `contact_entity` (survivor). Per member: `contactId = contact_entity.id`; `name = contact_entity.full_name`; `title = claim[contact.current_title]`; `persona = claim[contact.persona].value_json`; `email = claim[core.work_email].value_json.address`, `emailClaimId = that claim's id` (both `null` when absent); `linkedinUrl = contact_entity.linkedin_url`; `whyTheyMatter = claim[contact.role_on_committee].value_json.rationale` | avatar without `src` (`research-content.tsx:963`) — presentation, unchanged |
+| buying committee table | `buyingCommittee[]` | **As built (D4-b, 2026-09-09)** — members = **every contact under the account holding ≥1 live claim**: `contact.account_entity_id = :account_id AND contact.workspace_id = :workspace_id AND contact.merged_into IS NULL AND EXISTS (live claim on the contact under `WorkspaceScope.for_workspace(...).predicate()`)`. There is **no coverage-row branch** — `arv2/display/gather.committee_members` is the one rule, ordered `(persona_rank(persona), name, id)` so D2 and D3 share one order and two namesakes come back the same way every read. Per member: `contactId = contact_entity.id`; `name = contact_entity.full_name`; `title = claim[contact.current_title]`; `persona =` `claim[contact.persona]` as **display text**; `email = claim[core.work_email].value_json.address`, `emailClaimId = that claim's id` (both `null` when absent); `linkedinUrl = contact_entity.linkedin_url`; `whyTheyMatter` per the rule below | avatar without `src` (`research-content.tsx:963`) — presentation, unchanged |
+| "why they matter" | `buyingCommittee[].whyTheyMatter` | **As built (D4-b, 2026-09-09)** — a **researched** rationale is served verbatim (`claim[contact.role_on_committee].value_json.rationale`). A role claim written by the derived-role path counts as having **no** rationale — recognised by either the `derived_role_from_persona` write marker (durable, machine-readable) or the phrase `"role derived from the committee persona"` in the rationale (survives a row that lost its markers). With no rationale the served text is `"{title} · {persona label}"` when both are known, else the `"Committee member"` placeholder. A member with a title and no role claim at all therefore reads `"Head of RevOps · Champion"`, not `"Committee member"` | — |
 | evidence for every chip | `researchEvidence[]` | §3.9, for the union of claim ids cited by `overviewDisplay` + `buyingCommittee[].emailClaimId` | — |
 
 **As built (D4-b, 2026-09-09).** `revenueLabel` and `fundingLabel` read their registry **objects**
@@ -246,11 +271,11 @@ turn an undenominated figure into a dollar figure. The band fall-through goes th
 served as **display text** — `"Economic buyer"`, never `economic_buyer`; the vocabulary value still
 drives `personaTone`, `influence` and the committee ordering behind it.
 
-**As built (D3, 2026-09-08).** `buyingCommittee[]` is not a second implementation of the
-coverage query: it is D2's `committee_members` behind `display_pages.committee()` — the latest
-coverage row's `committee_member_ids` when one exists, **else every contact under the account with
-≥1 live claim** (D2 decision 5), so an account researched before coverage rows existed still shows
-its people. Two contract points follow from real data: `linkedinUrl` is **nullable** on
+**As built (D3, 2026-09-08; the first sentence SUPERSEDED by D4-b above).** `buyingCommittee[]` is
+not a second implementation of the committee query: it is D2's `committee_members` behind
+`display_pages.committee()` — ~~the latest coverage row's `committee_member_ids` when one exists,
+**else** every contact under the account with ≥1 live claim (D2 decision 5)~~ **now: only the
+contacts-with-live-claims rule, always** (D4-b Task 2, founder ruling 2026-09-09). Two contract points follow from real data: `linkedinUrl` is **nullable** on
 `BuyingCommitteeMember` (D3 ruling — a member resolved from a coverage row may have no LinkedIn
 URL, and the dummy renders the link only when present), and a member with no title/rationale claim
 is served the placeholders `"—"` and `"Committee member"` rather than being dropped, because the
@@ -272,8 +297,10 @@ committee is the research's answer about who matters and an unnamed role does no
 
 ### 3.5 Contacts tab — `/accounts/{id}/contacts` (E4)
 
-Rows = the committee members of §3.3 (same coverage query), ordered by persona rank
-(`economic_buyer, champion, technical_evaluator, user, blocker`) then `full_name`.
+Rows = the committee members of §3.3 (**one rule, no coverage query** — D4-b), ordered by persona
+rank (`economic_buyer, champion, technical_evaluator, user, blocker`, unranked personas last) then
+`full_name` then `contact_entity.id`. The ordering lives in `committee_members` itself, so E2's
+card and E4's table cannot disagree about who is first.
 
 | Element | Wire field | Source and rule | Replaces |
 |---|---|---|---|
@@ -282,7 +309,7 @@ Rows = the committee members of §3.3 (same coverage query), ordered by persona 
 | title | `title` | `claim[contact.current_title].value_json`; `"—"` when absent (the dummy requires a non-empty string; **ruling S7**: make `title` nullable) | — |
 | persona | `persona`, `personaTone` | `persona = claim[contact.persona].value_json` (the ICP `persona_map` vocabulary, master plan §5.2); `personaTone` from one backend map `economic_buyer→olive, champion→orange, technical_evaluator→blue, user→cyan, blocker→red` | — |
 | influence | `influence` | `claim[contact.role_on_committee].value_json.influence ∈ High\|Medium\|Low`; when the claim lacks it, from persona: `economic_buyer→High, champion→High, technical_evaluator→Medium, user→Medium, blocker→Medium` (**ruling S8**) | — |
-| email | `emailStatus`, `emailLabel` | `claim[core.work_email]` exists with `value_json.status ∈ (verified_smtp, catch_all_valid)` → `emailStatus: "available"`, `emailLabel: value_json.address`; else `emailStatus: "lookup"`, no label | row branches on `emailLabel` presence (`contact-row.tsx:118`) — the two are served consistently, so either works; the re-lift branches on `emailStatus` |
+| email | `emailStatus`, `emailLabel` | **As built (D4-b, 2026-09-09)** — `core.work_email` is registered an **object** (`{"address", "status", "checked_at"?}`; `status` in `verified_smtp \| catch_all_valid \| invalid \| unknown \| unverified`; migration `7332ac974920`). `status ∈ (verified_smtp, catch_all_valid)` → `emailStatus: "available"`, `emailLabel: value_json.address`; every other verdict, and a legacy **bare-string** value, → `emailStatus: "lookup"` with the claim id kept and no label. An unrecognised provider verdict is graded `unknown`, never stored raw, so the enum stays closed; `checked_at` is **omitted**, not null, when the provider sent none | row branches on `emailLabel` presence (`contact-row.tsx:118`) — the two are served consistently, so either works; the re-lift branches on `emailStatus` |
 | socials | `socials[]` | `["linkedin"]` when `contact_entity.linkedin_url` is set; `"x"` appended when `claim[contact.x_url]` exists (not produced by the lane in v1) | — |
 | open action | `profileAction` | `"page"` when the contact has ≥1 live claim or ≥1 display block; else `"none"`. `"preview"` is not served in v1 (the dummy's featured-contact drawer is a fixture behaviour, `contacts/page.tsx:26-28`) | — |
 | lookup button | — | the dummy's `LookupEmailButton` is a `setTimeout` stub (`use-email-lookup-controller.ts:20-25`). Production wires it to the existing `POST .../contacts/{id}/email-lookup` + poll (`contacts.py:711, 740`) in D4 | — |
@@ -324,13 +351,17 @@ string left anywhere still reads `lookup` — the reader never invents a verdict
 
 The row of §3.5, plus:
 
+**As built (D4-b, 2026-09-09).** E5 inherits §3.5's two corrections unchanged: `persona` is the
+display label (`"Economic buyer"`), and the email verdict object drives `emailStatus` / `emailLabel` /
+`emailVerifiedAt`. `reports[]` carries the same display-text persona.
+
 | Element | Wire field | Source and rule | Replaces |
 |---|---|---|---|
 | account link | `accountId`, `accountName`, `accountLogoPath` | `contact_entity.account_entity_id`, `account_entity.canonical_name`, logo as §3.1 ruling S2 | — |
 | "Research" row | `recentSignalsLabel` | `"{k} signals"` where `k = COUNT(claim) for the contact with signal_priority ≤ 2 and outreach_safe`; `"No signals yet"` when 0 | — |
 | LinkedIn | `linkedinUrl`, `linkedinLabel` | `contact_entity.linkedin_url`; label = the URL path's last segment (`/in/nicholastfisher` → `nicholastfisher`) computed by the backend | — |
 | X | `xUrl`, `xLabel` | absent in v1 (no field produced) | — |
-| email verified date | `emailVerifiedAt` | `date(claim[core.work_email].value_json.checked_at)` when `status = verified_smtp`, falling back to `date(observed_at)` when the provider sent no check time | — |
+| email verified date | `emailVerifiedAt` | **As built (D4-b, 2026-09-09)** — `date(claim[core.work_email].value_json.checked_at)` when it parses, else `date(observed_at or collected_at)`. It is the **provider's own check date**, not the day the claim was written: Nick Fisher reads `2026-08-31` (AI Ark's SMTP check), not `2026-09-02` (D1's load). The provider's timestamp is carried verbatim and no timezone is invented | — |
 | location | `locationLabel`, `locationClaimId` | `claim[contact.current_location].value_json` and that claim's id | evidence array scanned twice by id (`contact-profile-content.tsx:178-179`) — fine; the id is served |
 | email evidence chip | (client) | the chip resolves `emailClaimId` → `researchEvidence`; **`emailClaimId` is added to the contact detail** (contract change, ruling R5) | substring search over evidence text (`contact-profile-content.tsx:91-95`) — **removed** |
 | best channel | `bestFirstChannelLabel` | `claim[contact.facet.best_channel].value_json` when the lane writes it (registered as a new field in D1); absent otherwise | — |
@@ -440,6 +471,17 @@ surface adds exactly two things to D2's rows: `sourceUrl` passes through
 above. Every timestamp on the v1 wire is `iso_utc` — UTC with a trailing `Z` — because Zod 4's
 `datetime()` rejects `+00:00`; that applies to `verifiedAt`/`publishedAt` here and to
 `createdAt`/`lastModifiedAt`/`activity[].occurredAt` everywhere else.
+
+**As built (D4-b, 2026-09-09) — unchanged.** No rule in this section moved. Two mechanical notes:
+`safe_public_url` now lives in the dependency-free `platform/api/clue_api/url_safety.py` (C7's
+`research_view_governance` re-exports it under its old public name), because the read surface may
+no longer import a `research_view` module — pinned by
+`tests/api/test_frontend_read_arv2_only_guard.py`. And `frontend_read/evidence.py` was deleted with
+the FI-2 surface; the three functions E7 still needs moved to `frontend_read/evidence_stream.py`.
+`arv2_display_allowed` remains the read surface's one display predicate — the contact email-lookup
+route was switched onto it too (it had been gating the very `core.work_email` addresses the screens
+render behind C7's STRONG-binding `display_allowed`; two predicates over one claim is two answers to
+"may this address be shown").
 
 ---
 
