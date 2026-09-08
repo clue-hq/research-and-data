@@ -1,20 +1,34 @@
-"""The onboarding synthesis turn (ARV2-ONBOARDING-PLAN.md §5; O4).
+"""The onboarding synthesis turns (ARV2-ONBOARDING-PLAN.md §5; O4).
 
 This module lives outside ``clue_api.arv2`` because it composes the agent/execution substrate:
-one governed deepagent turn per onboarding run, executed inside the promoted
-``onboarding-synthesis-unit@1`` recipe, under a per-brand system project row.
+governed deepagent turns executed inside the promoted ``onboarding-synthesis-unit@1`` recipe,
+under a per-brand system project row.
 
 The shape is the account-research unit runner (``account_research_wiring`` +
 ``account_research_turn_wiring``) with the account scope replaced by the **brand** scope: the
 brand's current knowledge documents are materialized read-only under ``inputs/brand/knowledge/``,
 and the turn's ``outputs/`` become new ``brand_knowledge_document`` rows stamped with
 ``produced_by_turn_id``.
+
+**One turn is one task.** :meth:`OnboardingSynthesisLauncher.launch_icps` runs the ICP turn — it
+writes the client's profiles from the brand's own knowledge documents and returns the
+:class:`RegisteredIcp` rows it registered. :meth:`OnboardingSynthesisLauncher.launch_persona` then
+runs one turn per registered ICP. The split is not cosmetic: a single turn that had to write every
+ICP *and* every persona ran out of room and wrote thin documents, and the two tasks want different
+authority — the ICP turn resolves the ``onboarding_icp`` surface, where the evidence tool is
+**not installed**, while a persona turn keeps the role's full surface because its per-role
+evidence pass is what that tool is for.
+
+The documents a turn needs most also ride the **opening context** (L5 focus), not only the disk:
+each selected document is a ``brand_knowledge_document`` focus ref, compiled to its own verified
+markdown by :class:`DbCompiledContextCardReader`. The same bytes stay seeded under
+``inputs/brand/knowledge/`` so the model can cite a stable path, which is what the prompt asks for.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -43,6 +57,7 @@ from clue_agents import (
     ContextLayer,
     DeepAgentTurnRuntime,
     DeterministicAgentContextAssembler,
+    DomainObjectRef,
     LayerBudget,
     ResolvedAgentProfile,
     WorkspaceSeedFile,
@@ -58,6 +73,7 @@ from clue_api.agent_platform_wiring import (
     AgentPlatformComponents,
     build_agent_context_assembler,
 )
+from clue_api.agent_registry_wiring import ONBOARDING_ICP_SURFACE
 from clue_api.agent_runtime_wiring import (
     AgentFinalizationAuthority,
     DurableDeepAgentTurnRunner,
@@ -97,9 +113,11 @@ __all__ = [
     "INPUT_PREFIX",
     "SYNTHESIS_CARD_MEDIA_TYPE",
     "TURN_NAMESPACE",
+    "IcpSynthesisResult",
     "OnboardingSynthesisLauncher",
     "OnboardingSynthesisResult",
     "OnboardingSynthesisStepPinProvider",
+    "RegisteredIcp",
     "build_onboarding_synthesis_context",
     "build_onboarding_synthesis_launcher",
     "ensure_onboarding_project",
@@ -131,6 +149,16 @@ _SERVABLE_STATUSES = ("ready", "proposed", "confirmed")
 #: Synthesis needs both halves of the brand's story: who the company is, and what it sells.
 _REQUIRED_INPUT_KINDS = frozenset({"company-overview", "product-catalog"})
 
+#: The documents every synthesis turn opens with, in the order the model should meet them: who the
+#: company is, what it sells, then what its customers say. They are small, they are the client's
+#: own story, and no task is honest without them — so they ride the opening context, not the disk
+#: alone. (``customer-reviews`` is optional; a brand without one simply has no row.)
+_CORE_INPUT_KINDS = ("company-overview", "product-catalog", "customer-reviews")
+_ICP_KIND = "icp-definition"
+#: Per-product research: deep, numerous, and only some of it belongs to a given ICP. It is seeded
+#: under ``inputs/`` for the model to read by path, never pushed into the opening context.
+_PRODUCT_RESEARCH_KIND = "product-research"
+
 #: The two document kinds this turn may produce, and the durable status each is born with. An ICP
 #: is a *proposal* a human confirms; a persona is a derived reading of a confirmed-or-proposed ICP
 #: and is simply ready.
@@ -150,7 +178,7 @@ _PERSONA_VOCABULARY = (
     "blocker",
 )
 
-_USER_MESSAGE = "Write the ICP documents, then one persona document per ICP, then finalize_turn."
+_ICP_OBJECTIVE = "Task: icp. Write the ICP documents, then finalize_turn."
 
 
 async def _no_crash(
@@ -202,13 +230,162 @@ async def ensure_onboarding_project(
 
 @dataclass(frozen=True, slots=True)
 class OnboardingSynthesisResult:
-    """The step outcome the onboarding driver records — structurally O3's ``SynthesisOutcome``."""
+    """One persona turn's outcome — structurally O3's ``SynthesisOutcome``, plus its documents."""
 
     status: Literal["completed", "empty", "failed"]
     failure_code: str | None
     failure_message: str | None
     cost_usd: Decimal
     documents: tuple[UUID, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RegisteredIcp:
+    """One ICP document the ICP turn actually registered — the persona turns' work list.
+
+    ``path`` is the document's own path (``audience/icp-<key>.md``), not the workspace path: the
+    caller prefixes :data:`INPUT_PREFIX` when it wants the file the model reads.
+    """
+
+    document_id: UUID
+    icp_key: str
+    version: int
+    path: str
+
+
+@dataclass(frozen=True, slots=True)
+class IcpSynthesisResult:
+    """The ICP turn's outcome. ``icps`` is empty unless the status is ``completed``."""
+
+    status: Literal["completed", "empty", "failed"]
+    failure_code: str | None
+    failure_message: str | None
+    cost_usd: Decimal
+    icps: tuple[RegisteredIcp, ...]
+
+
+class _InputSelectionError(Exception):
+    """An input the task cannot run without is not there — a typed step failure, never a crash."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+def _failure_code(error: BaseException) -> str:
+    return error.code if isinstance(error, _InputSelectionError) else type(error).__name__
+
+
+@dataclass(frozen=True, slots=True)
+class _TurnInputs:
+    """What one turn gets: ``focus`` rides the opening context, ``seeds`` land under ``inputs/``.
+
+    ``seeds`` is always a superset of ``focus`` — a document in context is also on disk, so the
+    model can cite it by the path the prompt names instead of by a context hash.
+    """
+
+    focus: tuple[dict[str, Any], ...]
+    seeds: tuple[dict[str, Any], ...]
+
+
+def _row_front_matter(row: Mapping[str, Any]) -> dict[str, Any] | None:
+    body = row.get("body")
+    if body is None:
+        return None
+    try:
+        front, _ = parse_front_matter(body.decode() if isinstance(body, bytes) else str(body))
+    except (UnicodeDecodeError, ValueError):
+        return None
+    return front
+
+
+def _document_product_ids(row: Mapping[str, Any]) -> frozenset[str] | None:
+    """The product ids a knowledge document declares, or ``None`` when it declares none readably.
+
+    ``None`` is the honest answer for an unparseable document *and* for one whose front matter
+    simply has no product id: in both cases the selection below cannot tell whether the document
+    belongs to an ICP, and the rule is to keep it rather than to silently starve the turn.
+    """
+
+    front = _row_front_matter(row)
+    if front is None:
+        return None
+    ids = {
+        value
+        for value in (
+            front.get("product_id"),
+            *(front.get("product_ids") or () if isinstance(front.get("product_ids"), list) else ()),
+        )
+        if isinstance(value, str) and value
+    }
+    return frozenset(ids) or None
+
+
+def _row_icp_key(row: Mapping[str, Any]) -> str:
+    """The ICP key of an ``icp-definition`` row: its front matter, or its path as the fallback."""
+
+    front = _row_front_matter(row)
+    if front is not None:
+        _, key = document_identity(front)
+        if key is not None:
+            return key
+    return str(row["path"]).removeprefix("audience/icp-").removesuffix(".md")
+
+
+def _select_inputs(
+    rows: Sequence[dict[str, Any]],
+    *,
+    task: Literal["icp", "persona"],
+    icp: RegisteredIcp | None = None,
+    product_ids_of: Callable[[dict[str, Any]], frozenset[str] | None] = _document_product_ids,
+) -> _TurnInputs:
+    """Choose one turn's context documents and one turn's disk documents.
+
+    Both tasks open on the core three (company overview, product catalog, customer reviews). The
+    ICP task then sees **every** ICP on file — that is what makes a re-run refine a profile instead
+    of renaming it — and gets every product-research file on disk, because it decides for itself
+    which products a profile sells. A persona task sees exactly **one** ICP, and only the
+    product-research files that ICP's ``product_ids`` name; a file whose own product id cannot be
+    read is kept, because dropping it would silently hide research from the one turn that writes
+    about the buyer.
+
+    ``audience-persona`` rows are never selected either way: a persona document is this surface's
+    *output*, and feeding the previous one back would let a re-run copy itself.
+    """
+
+    core = sorted(
+        (row for row in rows if str(row["kind"]) in _CORE_INPUT_KINDS),
+        key=lambda row: (_CORE_INPUT_KINDS.index(str(row["kind"])), str(row["path"])),
+    )
+    icp_rows = sorted(
+        (row for row in rows if str(row["kind"]) == _ICP_KIND),
+        key=lambda row: str(row["path"]),
+    )
+    products = sorted(
+        (row for row in rows if str(row["kind"]) == _PRODUCT_RESEARCH_KIND),
+        key=lambda row: str(row["path"]),
+    )
+
+    if task == "icp":
+        focus = (*core, *icp_rows)
+        return _TurnInputs(focus=focus, seeds=(*focus, *products))
+
+    if icp is None:
+        raise ValueError("a persona turn selects its inputs against one registered ICP")
+    chosen = next((row for row in icp_rows if row["document_id"] == icp.document_id), None)
+    if chosen is None:
+        raise _InputSelectionError(
+            "icp_document_missing",
+            f"the ICP document for {icp.icp_key!r} is not a current brand knowledge document",
+        )
+    wanted = product_ids_of(chosen)
+    focus = (*core, chosen)
+
+    def belongs(row: dict[str, Any]) -> bool:
+        own = product_ids_of(row)
+        return wanted is None or own is None or bool(own & wanted)
+
+    return _TurnInputs(focus=focus, seeds=(*focus, *(row for row in products if belongs(row))))
 
 
 class OnboardingSynthesisStepPinProvider(StepPinProvider):
@@ -248,22 +425,27 @@ class _NoMemoryContext:
 
 
 def onboarding_synthesis_context_policy() -> ContextAssemblyPolicy:
-    """The opening-context budget for onboarding-synthesis@v1.
+    """The opening-context budget for onboarding-synthesis@v2.
 
     L3 (project) is generous because the brand card, the budget envelope and the synthesis card
     all land there; L4 (memory) and L6 (conversation) are zero because this surface has neither.
-    The brand's knowledge documents are **not** context candidates — they are workspace input
-    files, materialized under ``inputs/`` and read with the framework's ``read_file``.
+
+    L5 (focus) is large — 256 KiB under the utf8-byte counter — because the turn's core knowledge
+    documents ride it as their own markdown. v1 budgeted 8 KiB there and expected the model to
+    ``read_file`` its way to the same bytes; a company overview alone exceeds that, so the layer's
+    real job was impossible and every input arrived only as a path. An over-budget candidate is
+    *excluded*, silently, so the honest fix is a budget that fits the documents rather than a
+    smaller set of documents.
     """
 
     return ContextAssemblyPolicy(
-        version="onboarding-synthesis-context-v1",
+        version="onboarding-synthesis-context-v2",
         token_counter_version="utf8-bytes-v1",
         budgets=tuple(
             LayerBudget(layer=layer, max_tokens=budget)
             for layer, budget in zip(
                 tuple(ContextLayer),
-                (24_000, 8_000, 64_000, 0, 8_000, 0, 12_000),
+                (24_000, 8_000, 64_000, 0, 262_144, 0, 12_000),
                 strict=True,
             )
         ),
@@ -312,7 +494,8 @@ async def _current_input_documents(
     rows = (
         await conn.execute(
             text(
-                "SELECT DISTINCT ON (path) path, kind, version, artifact_key, artifact_sha256 "
+                "SELECT DISTINCT ON (path) document_id, path, kind, version, artifact_key, "
+                "  artifact_sha256 "
                 "FROM brand_knowledge_document "
                 "WHERE workspace_id = :workspace_id AND brand_id = :brand_id "
                 "  AND status = ANY(:statuses) AND artifact_key IS NOT NULL "
@@ -328,8 +511,59 @@ async def _current_input_documents(
     return tuple(dict(row) for row in rows.all())
 
 
+def _objective(
+    *,
+    task: Literal["icp", "persona"],
+    icp: RegisteredIcp | None,
+    focus: Sequence[dict[str, Any]],
+) -> str:
+    """The turn's one instruction, in the exact phrasing onboarding-synthesis@v2 was written for.
+
+    The ICP turn is told which ICPs are already on file and where to read them, because the skill's
+    rule is that a re-run *refines* a profile under its existing key rather than renaming it — and
+    the model can only honour that if the keys are named in the instruction, not merely present
+    somewhere in its context.
+    """
+
+    if task == "icp" or icp is None:
+        known = [row for row in focus if str(row["kind"]) == _ICP_KIND]
+        if not known:
+            return _ICP_OBJECTIVE
+        listed = "; ".join(
+            f"{_row_icp_key(row)} ({INPUT_PREFIX}{row['path']}, version {int(row['version'])})"
+            for row in known
+        )
+        return f"{_ICP_OBJECTIVE} ICPs already on file: {listed}."
+    return (
+        f"Task: persona:{icp.icp_key}. The ICP is {INPUT_PREFIX}{icp.path}, "
+        f"version {icp.version}. Write outputs/audience/persona-{icp.icp_key}.md, "
+        "then finalize_turn."
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _TaskOutcome:
+    """One governed turn's result, before its outputs are read as documents."""
+
+    status: Literal["completed", "empty", "failed"]
+    failure_code: str | None
+    failure_message: str | None
+    cost_usd: Decimal
+    turn_id: UUID | None
+    finalization_ref: ArtifactRef | None
+
+
+@dataclass(frozen=True, slots=True)
+class _RegisteredDocument:
+    document_id: UUID
+    kind: str
+    icp_key: str
+    path: str
+    version: int
+
+
 class OnboardingSynthesisLauncher:
-    """Prepare every trusted input, then run one governed synthesis turn and register its output."""
+    """Prepare every trusted input, then run the governed synthesis turns and register outputs."""
 
     def __init__(
         self,
@@ -364,21 +598,21 @@ class OnboardingSynthesisLauncher:
         self._checkpointer_factory = checkpointer_factory
         self._conn_factory = conn_factory
 
-    async def launch(
+    async def launch_icps(
         self,
         *,
         workspace_id: str,
         brand_id: str,
         run_id: UUID,
         step_id: UUID,
-    ) -> OnboardingSynthesisResult:
-        """Run the turn.
+    ) -> IcpSynthesisResult:
+        """Run the ICP turn and register the profiles it wrote.
 
         The driver's failure law: every failure is a step outcome, never a raise.
         """
 
         try:
-            return await self._launch(
+            return await self._launch_icps(
                 workspace_id=workspace_id,
                 brand_id=brand_id,
                 run_id=run_id,
@@ -387,33 +621,190 @@ class OnboardingSynthesisLauncher:
         except Exception as error:  # noqa: BLE001 -- a contained step outcome, never a raise
             log.exception(
                 "onboarding_synthesis.contained_failure",
+                task="icp",
                 run_id=str(run_id),
                 step_id=str(step_id),
                 workspace_id=workspace_id,
             )
-            return OnboardingSynthesisResult(
+            return IcpSynthesisResult(
                 "failed",
-                type(error).__name__,
+                _failure_code(error),
                 str(error)[:500],
                 Decimal(0),
                 (),
             )
 
-    async def _launch(
+    async def launch_persona(
         self,
         *,
         workspace_id: str,
         brand_id: str,
         run_id: UUID,
         step_id: UUID,
+        icp: RegisteredIcp,
     ) -> OnboardingSynthesisResult:
-        # Resolved WITHOUT a surface, deliberately. A surface is a *narrowing*, and the registry
-        # refuses one that withholds nothing ("it is not a restriction"). This role's whole
-        # reviewed authority is already ``exa_search_evidence@1`` — the unit surface and the full
-        # surface are the same set — so `ONBOARDING_SYNTHESIS_UNIT_SURFACE` names the place this
-        # role runs (the recipe slot, which is the real second ceiling) rather than a tool ceiling
-        # the profile does not need.
-        resolved = self._components.profiles.resolve(AgentRole.ONBOARDING_SYNTHESIS)
+        """Run one persona turn for one registered ICP, and register the document it wrote."""
+
+        try:
+            return await self._launch_persona(
+                workspace_id=workspace_id,
+                brand_id=brand_id,
+                run_id=run_id,
+                step_id=step_id,
+                icp=icp,
+            )
+        except Exception as error:  # noqa: BLE001 -- a contained step outcome, never a raise
+            log.exception(
+                "onboarding_synthesis.contained_failure",
+                task="persona",
+                icp_key=icp.icp_key,
+                run_id=str(run_id),
+                step_id=str(step_id),
+                workspace_id=workspace_id,
+            )
+            return OnboardingSynthesisResult(
+                "failed",
+                _failure_code(error),
+                str(error)[:500],
+                Decimal(0),
+                (),
+            )
+
+    async def _launch_icps(
+        self,
+        *,
+        workspace_id: str,
+        brand_id: str,
+        run_id: UUID,
+        step_id: UUID,
+    ) -> IcpSynthesisResult:
+        outcome = await self._run_task(
+            workspace_id=workspace_id,
+            brand_id=brand_id,
+            run_id=run_id,
+            step_id=step_id,
+            task="icp",
+            icp=None,
+        )
+        if outcome.status == "empty":
+            return IcpSynthesisResult("empty", None, outcome.failure_message, outcome.cost_usd, ())
+        if outcome.turn_id is None or outcome.finalization_ref is None:
+            return IcpSynthesisResult(
+                "failed",
+                outcome.failure_code or "turn_not_completed",
+                outcome.failure_message,
+                outcome.cost_usd,
+                (),
+            )
+        registered = await self._register_documents(
+            workspace_id=workspace_id,
+            brand_id=brand_id,
+            turn_id=outcome.turn_id,
+            finalization_ref=outcome.finalization_ref,
+            task="icp",
+            icp=None,
+        )
+        icps = tuple(
+            RegisteredIcp(
+                document_id=document.document_id,
+                icp_key=document.icp_key,
+                version=document.version,
+                path=document.path,
+            )
+            for document in registered
+            if document.kind == _ICP_KIND
+        )
+        if not icps:
+            return IcpSynthesisResult(
+                "empty",
+                None,
+                "the agent wrote no ICP documents",
+                outcome.cost_usd,
+                (),
+            )
+        return IcpSynthesisResult("completed", None, None, outcome.cost_usd, icps)
+
+    async def _launch_persona(
+        self,
+        *,
+        workspace_id: str,
+        brand_id: str,
+        run_id: UUID,
+        step_id: UUID,
+        icp: RegisteredIcp,
+    ) -> OnboardingSynthesisResult:
+        outcome = await self._run_task(
+            workspace_id=workspace_id,
+            brand_id=brand_id,
+            run_id=run_id,
+            step_id=step_id,
+            task="persona",
+            icp=icp,
+        )
+        if outcome.status == "empty":
+            return OnboardingSynthesisResult(
+                "empty", None, outcome.failure_message, outcome.cost_usd, ()
+            )
+        if outcome.turn_id is None or outcome.finalization_ref is None:
+            return OnboardingSynthesisResult(
+                "failed",
+                outcome.failure_code or "turn_not_completed",
+                outcome.failure_message,
+                outcome.cost_usd,
+                (),
+            )
+        registered = await self._register_documents(
+            workspace_id=workspace_id,
+            brand_id=brand_id,
+            turn_id=outcome.turn_id,
+            finalization_ref=outcome.finalization_ref,
+            task="persona",
+            icp=icp,
+        )
+        if not registered:
+            return OnboardingSynthesisResult(
+                "empty",
+                None,
+                "the agent wrote no documents",
+                outcome.cost_usd,
+                (),
+            )
+        return OnboardingSynthesisResult(
+            "completed",
+            None,
+            None,
+            outcome.cost_usd,
+            tuple(document.document_id for document in registered),
+        )
+
+    async def _run_task(
+        self,
+        *,
+        workspace_id: str,
+        brand_id: str,
+        run_id: UUID,
+        step_id: UUID,
+        task: Literal["icp", "persona"],
+        icp: RegisteredIcp | None,
+    ) -> _TaskOutcome:
+        """Run one governed turn for one task. Both public entry points share this whole body."""
+
+        # The ICP turn resolves the `onboarding_icp` surface, which withholds `exa_search_evidence`
+        # — that turn writes from the brand's own documents, and the rule is governed by a tool
+        # that is not installed rather than by a sentence in a skill. A persona turn resolves the
+        # role unnarrowed: its per-role evidence pass is the whole point of the tool.
+        if task == "icp":
+            resolved = self._components.profiles.resolve(
+                AgentRole.ONBOARDING_SYNTHESIS, surface=ONBOARDING_ICP_SURFACE
+            )
+            identity_key = f"{run_id}:icp"
+            thread_id = f"onboarding-synthesis-{run_id}-icp"
+        elif icp is None:
+            raise ValueError("a persona turn needs the ICP it writes about")
+        else:
+            resolved = self._components.profiles.resolve(AgentRole.ONBOARDING_SYNTHESIS)
+            identity_key = f"{run_id}:persona:{icp.icp_key}"
+            thread_id = f"onboarding-synthesis-{run_id}-persona-{icp.icp_key}"
 
         # 1. inputs -----------------------------------------------------------------------------
         async with self._conn_factory() as conn:
@@ -447,28 +838,32 @@ class OnboardingSynthesisLauncher:
             if not {str(row["kind"]) for row in rows} >= _REQUIRED_INPUT_KINDS:
                 log.warning(
                     "onboarding_synthesis.no_inputs",
+                    task=task,
                     run_id=str(run_id),
                     step_id=str(step_id),
                     workspace_id=workspace_id,
                     brand_id=brand_id,
                 )
-                return OnboardingSynthesisResult("empty", None, "no inputs", Decimal(0), ())
-            input_seeds: list[WorkspaceSeedFile] = []
+                return _TaskOutcome("empty", None, "no inputs", Decimal(0), None, None)
+            # Every row's bytes are read once, here: the seeds need them, and the selection below
+            # reads the product ids out of a document's own front matter.
             for row in rows:
-                _, body = await read_verified_artifact(
+                _, row["body"] = await read_verified_artifact(
                     conn,
                     self._storage,
                     storage_key=str(row["artifact_key"]),
                     workspace_id=workspace_id,
                 )
-                input_seeds.append(
-                    WorkspaceSeedFile(
-                        path=INPUT_PREFIX + str(row["path"]),
-                        content=body,
-                        sha256=str(row["artifact_sha256"]),
-                        media_type="text/markdown",
-                    )
+            selected = _select_inputs(rows, task=task, icp=icp)
+            input_seeds = tuple(
+                WorkspaceSeedFile(
+                    path=INPUT_PREFIX + str(row["path"]),
+                    content=row["body"],
+                    sha256=str(row["artifact_sha256"]),
+                    media_type="text/markdown",
                 )
+                for row in selected.seeds
+            )
             # 2. the per-brand system project the turn and its execution belong to.
             project_id = await ensure_onboarding_project(
                 conn,
@@ -478,7 +873,7 @@ class OnboardingSynthesisLauncher:
             )
 
         # 3. the durable C5 execution -----------------------------------------------------------
-        execution_id = ExecutionId(operation_id_from_key(str(run_id), EXECUTION_NAMESPACE_KEY))
+        execution_id = ExecutionId(operation_id_from_key(identity_key, EXECUTION_NAMESPACE_KEY))
         revision = await self._recipes.get_by_identity(
             scope_type=RecipeScopeType.SYSTEM,
             workspace_id=None,
@@ -516,17 +911,31 @@ class OnboardingSynthesisLauncher:
             workspace_id,
             SYNTHESIS_CARD_MEDIA_TYPE,
             {
-                "schema_version": "1",
+                "schema_version": "2",
                 "brand_id": brand_id,
                 "company_domain": company_domain,
+                "task": task,
+                "icp": (
+                    None
+                    if icp is None
+                    else {
+                        "key": icp.icp_key,
+                        "document_id": str(icp.document_id),
+                        "version": icp.version,
+                    }
+                ),
                 "inputs": [
                     {
                         "path": str(row["path"]),
                         "kind": str(row["kind"]),
                         "version": int(row["version"]),
                     }
-                    for row in rows
+                    for row in selected.seeds
                 ],
+                # Two honest lists rather than one: what the model is already holding, and what it
+                # can open. Both are `inputs/` paths, because that is the path it must cite.
+                "context_paths": [INPUT_PREFIX + str(row["path"]) for row in selected.focus],
+                "seeded_paths": [INPUT_PREFIX + str(row["path"]) for row in selected.seeds],
                 "persona_vocabulary": list(_PERSONA_VOCABULARY),
             },
             project_id,
@@ -548,19 +957,19 @@ class OnboardingSynthesisLauncher:
             "application/vnd.clue.agent-turn-input+json",
             {
                 "schema_version": "1",
-                "objective": _USER_MESSAGE,
+                "objective": _objective(task=task, icp=icp, focus=selected.focus),
                 "onboarding_run_id": str(run_id),
                 "onboarding_step_id": str(step_id),
-                "input_paths": [INPUT_PREFIX + str(row["path"]) for row in rows],
+                "input_paths": [INPUT_PREFIX + str(row["path"]) for row in selected.seeds],
             },
             project_id,
         )
 
         # 6. the turn request --------------------------------------------------------------------
-        turn_id = uuid5(TURN_NAMESPACE, f"{run_id}")
+        turn_id = uuid5(TURN_NAMESPACE, identity_key)
         request = AgentTurnRequest(
             turn_id=turn_id,
-            thread_id=f"onboarding-synthesis-{run_id}",
+            thread_id=thread_id,
             constitution=AgentConstitution(
                 workspace_id=workspace_id,
                 project_id=project_id,
@@ -576,6 +985,18 @@ class OnboardingSynthesisLauncher:
                 resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
             ),
             user_message_artifact_ref=user_message_ref,
+            # L5: the documents the task cannot be done without, as their own markdown. The exact
+            # version is pinned, so a document that moved under us fails loudly instead of
+            # serving the model a different text than the one this card names.
+            focus_refs=tuple(
+                DomainObjectRef(
+                    workspace_id=workspace_id,
+                    object_type="brand_knowledge_document",
+                    object_id=str(row["document_id"]),
+                    version=int(row["version"]),
+                )
+                for row in selected.focus
+            ),
             requested_at=requested_at,
         )
         await self._components.turns.create(request=request, profile=resolved.profile)
@@ -590,7 +1011,7 @@ class OnboardingSynthesisLauncher:
                 request=request,
                 resolved=resolved,
                 lease=lease,
-                input_seeds=tuple(input_seeds),
+                input_seeds=input_seeds,
             )
 
         # 8. close the durable recipe ------------------------------------------------------------
@@ -598,30 +1019,15 @@ class OnboardingSynthesisLauncher:
 
         cost_usd = await self._cost_usd(execution_id=execution_id, workspace_id=workspace_id)
         if outcome.status is not AgentExecutionStatus.COMPLETED or outcome.finalization_ref is None:
-            return OnboardingSynthesisResult(
+            return _TaskOutcome(
                 "failed",
                 outcome.failure_code or "turn_not_completed",
                 f"the synthesis turn ended {outcome.status.value}",
                 cost_usd,
-                (),
-            )
-
-        # 9. outputs -> documents ----------------------------------------------------------------
-        documents = await self._register_documents(
-            workspace_id=workspace_id,
-            brand_id=brand_id,
-            turn_id=turn_id,
-            finalization_ref=outcome.finalization_ref,
-        )
-        if not documents:
-            return OnboardingSynthesisResult(
-                "empty",
                 None,
-                "the agent wrote no documents",
-                cost_usd,
-                (),
+                None,
             )
-        return OnboardingSynthesisResult("completed", None, None, cost_usd, documents)
+        return _TaskOutcome("completed", None, None, cost_usd, turn_id, outcome.finalization_ref)
 
     # --- the turn ------------------------------------------------------------------------------
 
@@ -636,7 +1042,12 @@ class OnboardingSynthesisLauncher:
         contexts = build_onboarding_synthesis_context(
             resolved_profile=resolved,
             artifacts=self._components.artifacts,
-            cards=DbCompiledContextCardReader(conn_factory=self._conn_factory),
+            # The focus layer compiles each `brand_knowledge_document` from its verified artifact,
+            # so this reader needs storage; without it that object type serves nothing at all.
+            cards=DbCompiledContextCardReader(
+                conn_factory=self._conn_factory,
+                storage=self._storage,
+            ),
             conn_factory=self._conn_factory,
         )
         context = await contexts.assemble(
@@ -782,12 +1193,19 @@ class OnboardingSynthesisLauncher:
         brand_id: str,
         turn_id: UUID,
         finalization_ref: ArtifactRef,
-    ) -> tuple[UUID, ...]:
+        task: Literal["icp", "persona"],
+        icp: RegisteredIcp | None,
+    ) -> tuple[_RegisteredDocument, ...]:
         """Turn each finalized output into a versioned ``brand_knowledge_document``.
 
         An output whose front matter is unreadable, whose ``kind`` is not one this surface may
         produce, or which carries no ``icp_key`` is skipped and logged. It is never a failure: the
         turn's other documents are real, and an unidentifiable file is honestly not a document.
+
+        A persona turn is scoped to exactly one ICP, so two more outputs are skipped there: an
+        ``icp-definition`` (the ICP turn is the only authority that registers one — a persona turn
+        that writes a profile would silently version over the profile it was asked to write *about*)
+        and a persona for some other ICP key. Both are logged and dropped, never registered.
 
         A re-synthesis at the same path is a new version that **names** the document it replaces
         (``supersedes_document_id``) and then retires it, so the chain is walkable in both
@@ -797,7 +1215,7 @@ class OnboardingSynthesisLauncher:
         envelope = AgentFinalizeEnvelope.model_validate_json(
             await self._components.artifacts.read(finalization_ref)
         )
-        registered: list[UUID] = []
+        registered: list[_RegisteredDocument] = []
         for ref in envelope.output_refs:
             body = await self._components.artifacts.read(ref)
             try:
@@ -819,6 +1237,23 @@ class OnboardingSynthesisLauncher:
                     artifact_key=ref.artifact_key,
                     kind=kind,
                     icp_key=icp_key,
+                )
+                continue
+            if task == "persona" and kind == _ICP_KIND:
+                log.warning(
+                    "onboarding_synthesis.persona_wrote_icp",
+                    turn_id=str(turn_id),
+                    artifact_key=ref.artifact_key,
+                    icp_key=icp_key,
+                )
+                continue
+            if task == "persona" and icp is not None and icp_key != icp.icp_key:
+                log.warning(
+                    "onboarding_synthesis.persona_wrote_other_icp",
+                    turn_id=str(turn_id),
+                    artifact_key=ref.artifact_key,
+                    icp_key=icp_key,
+                    expected_icp_key=icp.icp_key,
                 )
                 continue
             prefix, status = naming
@@ -908,7 +1343,29 @@ class OnboardingSynthesisLauncher:
                         "statuses": list(_SERVABLE_STATUSES),
                     },
                 )
-            registered.append(document_id)
+                # Read the version back rather than trusting the one we just computed: on a
+                # replayed launch the INSERT was a no-op, and the row's own version is the truth a
+                # persona turn will cite.
+                stored_version = int(
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT version FROM brand_knowledge_document "
+                                "WHERE document_id = :document_id"
+                            ),
+                            {"document_id": document_id},
+                        )
+                    ).scalar_one()
+                )
+            registered.append(
+                _RegisteredDocument(
+                    document_id=document_id,
+                    kind=kind,
+                    icp_key=icp_key,
+                    path=path,
+                    version=stored_version,
+                )
+            )
         return tuple(registered)
 
     # --- cost ----------------------------------------------------------------------------------
