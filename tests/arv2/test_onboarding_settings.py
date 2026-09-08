@@ -72,7 +72,11 @@ def test_every_onboarding_env_name_is_documented_with_its_default() -> None:
         documented = re.search(rf"^{_env_name(field_name)}=(.*)$", text, re.MULTILINE)
         assert documented is not None, f"absent from .env.example: {_env_name(field_name)}"
         shipped = str(default).lower() if isinstance(default, bool) else str(default)
-        assert documented.group(1).strip() == shipped, field_name
+        # dotenv semantics: one pair of matching surrounding quotes is not part of the value.
+        value = documented.group(1).strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        assert value == shipped, field_name
 
 
 def test_the_synthesis_agent_model_lines_are_documented() -> None:
