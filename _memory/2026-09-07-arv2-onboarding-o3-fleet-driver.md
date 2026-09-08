@@ -121,3 +121,19 @@ unconditional stamp → the already-stamped run is repointed; no stamp at all �
   sink) the swap is at that one composition site; nothing above the sink protocol changes.
 - The route is mounted behind `CLUE_ONBOARDING_V2_ENABLED` in `projections_app`; a deployment must
   turn the same flag on for **both** the web process (the route) and the fleet worker (the drain).
+
+## Addendum — name-drift duplicates (2026-09-08, founder ruling)
+Four live runs on one workspace grew the product rows 19 → 23 → 28 because Exa spells the same
+offering differently run to run (`Aura™ AI Scribe`, `AI FrontDesk Agent`, `AI Phone Triage`) and the
+sync reused a row only on an exact normalized match. Commit `a5bdf0ea2`: `normalize_identity` now
+strips ™/®/©/℠ before NFKC, casefolds, drops the generic tokens `ai`/`agent`/`agents` (kept when a
+name is entirely generic), and joins the rest with nothing (spacing/punctuation-insensitive); the
+observed pairs are pinned as tests, including the pairs that must STAY separate (`… for Clinics`,
+`Referral Management …`, `… AI Intake`). The lineup query names the brand's known products on a
+re-run through an injectable `known_products` reader (default: `clue_spine.list_products`); a
+failing reader degrades to the bare query. Fingerprints unchanged, so existing lineage still
+replays. Not done: the 28 existing rows are neither merged nor renamed (append-only; the
+product-set gate prunes). Residual: a real DB error inside the lineup's connection block aborts
+that transaction, so the run then fails at the next write — reading the names on their own
+connection is a composition change, recorded not done. The semarang fleet worker was restarted on
+this code.
