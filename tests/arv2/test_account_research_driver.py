@@ -174,7 +174,7 @@ class FakeStore:
     async def job_link_audit(self, conn: Any, *, job_id: UUID) -> dict[str, int]:
         del conn
         self.events.append(("job_link_audit", {"job_id": job_id}))
-        return {"EXACT": 3, "PARTIAL": 1, "NOT_FOUND": 0}
+        return {"EXACT/on_page": 3, "PARTIAL/partial_on_page": 1, "NOT_FOUND/not_on_page": 2}
 
     def named(self, name: str) -> list[dict[str, Any]]:
         return [payload for event, payload in self.events if event == name]
@@ -415,7 +415,13 @@ def test_handle_marks_job_completed_with_a_receipt_and_never_raises(
     assert receipt["claims_written"] == 0
     assert receipt["by_field"] == {}
     assert receipt["proposed_fields"] == []
-    assert receipt["link_audit"] == {"EXACT": 3, "PARTIAL": 1, "NOT_FOUND": 0}
+    # The audit reaches the receipt keyed by *reason*, so a reader of the terminal row learns
+    # whether the job's misses were dead links, empty pages or quotes off the wrong page.
+    assert receipt["link_audit"] == {
+        "EXACT/on_page": 3,
+        "NOT_FOUND/not_on_page": 2,
+        "PARTIAL/partial_on_page": 1,
+    }
     assert receipt["halted_providers"] == {}
     assert receipt["profile_sha256"] == arv2_account_profile_sha256()
     assert len(receipt["manifest_sha256"]) == 64

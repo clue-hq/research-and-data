@@ -654,6 +654,11 @@ def _receipt(
     The finalization the agent proposed is carried verbatim; everything else is *derived from the
     rows* (the claims it wrote, the audit annotations, the halt latches) rather than from what the
     model said it did.
+
+    ``link_audit`` arrives keyed ``"<verdict>/<reason>"`` (from
+    ``account_research_store.job_link_audit``) and is carried through unchanged: a receipt saying
+    ``fetch_failed/page_unreachable: 4`` names a link problem, where a bare ``fetch_failed: 4``
+    would leave the reader to guess at one.
     """
     finalization = runtime.finalization or {}
     by_field: dict[str, int] = {}

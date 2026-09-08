@@ -29,6 +29,7 @@ import pytest
 
 from clue_api.arv2 import account_research_tools as tools
 from clue_api.arv2.account_research_claims import JobScope
+from clue_api.arv2.account_research_store import AnnotationRow
 from clue_api.arv2.account_research_tools import (
     ACCOUNT_TOOL_NAMES,
     ToolRuntime,
@@ -520,7 +521,14 @@ def test_an_argument_the_schema_forbids_comes_back_as_an_invalid_arguments_refus
 # -- read_account_state ---------------------------------------------------------------------------
 
 
-def _claim(field_key: str, *, url: str | None, span: str | None) -> Claim:
+def _claim(
+    field_key: str,
+    *,
+    url: str | None,
+    span: str | None,
+    source_key: str | None = None,
+    markers: Mapping[str, Any] | None = None,
+) -> Claim:
     return Claim(
         entity_id=ACCOUNT_ID,
         entity_type=EntityType.ACCOUNT,
@@ -535,6 +543,8 @@ def _claim(field_key: str, *, url: str | None, span: str | None) -> Claim:
         workspace_id="ws-1",
         source_url=url,
         evidence_span=span,
+        source_key=source_key,
+        write_markers=dict(markers) if markers else None,
     )
 
 
@@ -1215,24 +1225,30 @@ def test_read_media_feeds_takes_the_youtube_words_path_without_transcribing(
 # -- verify_links ---------------------------------------------------------------------------------
 
 
+def _recorder(monkeypatch: pytest.MonkeyPatch) -> list[AnnotationRow]:
+    """Capture the annotation rows ``verify_links`` writes, instead of writing them."""
+    recorded: list[AnnotationRow] = []
+
+    async def _record(conn: Any, *, job_id: UUID, rows: Sequence[AnnotationRow]) -> int:
+        recorded.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(tools, "record_annotations", _record)
+    return recorded
+
+
 def test_verify_links_records_annotations_per_verdict(monkeypatch: pytest.MonkeyPatch) -> None:
     runtime, clients, _, _ = _runtime()
     exact = _claim("account.named_customers", url="https://probook.ai/a", span="page text about")
     missing = _claim("account.named_customers", url="https://probook.ai/b", span="never written")
     _stub_claims(monkeypatch, [exact, missing])
-    recorded: list[Mapping[str, Sequence[UUID]]] = []
-
-    async def _record(conn: Any, *, job_id: UUID, claim_ids_by_verdict: Any) -> int:
-        recorded.append(dict(claim_ids_by_verdict))
-        return sum(len(v) for v in claim_ids_by_verdict.values())
-
-    monkeypatch.setattr(tools, "record_annotations", _record)
+    recorded = _recorder(monkeypatch)
 
     audit = _call(runtime, "verify_links")
 
     assert audit["EXACT"] == 1
     assert audit["NOT_FOUND"] == [str(missing.id)]
-    assert recorded and set(recorded[0]) <= {"EXACT", "PARTIAL", "NOT_FOUND"}
+    assert {row.verdict for row in recorded} == {"EXACT", "NOT_FOUND"}
     assert len(clients.exa_client.contents_calls) == 2
 
 
@@ -1243,7 +1259,7 @@ def test_verify_links_reports_a_failed_fetch_rather_than_refusing(
     _stub_claims(
         monkeypatch, [_claim("account.named_customers", url="https://probook.ai/a", span="Acme")]
     )
-    monkeypatch.setattr(tools, "record_annotations", _no_annotations)
+    _recorder(monkeypatch)
     clients.exa_client.raise_on_contents = RuntimeError("boom")
 
     audit = _call(runtime, "verify_links")
@@ -1252,8 +1268,105 @@ def test_verify_links_reports_a_failed_fetch_rather_than_refusing(
     assert audit["EXACT"] == 0
 
 
-async def _no_annotations(conn: Any, *, job_id: UUID, claim_ids_by_verdict: Any) -> int:
-    return 0
+_PARTIAL_PAGE = "The company runs an account-based marketing programme across Europe."
+_PARTIAL_SPAN = "The company runs an account-based marketing programme across Mars."
+
+
+def test_verify_links_records_why_each_claim_got_its_verdict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Five claims, five different reasons — the audit says *why*, not only *what*.
+
+    A verdict alone cannot be acted on: ``fetch_failed`` on a page that returned no text is a
+    broken source, ``fetch_failed`` on a page that would not load is a dead link, and NOT_FOUND on
+    a quote the model took from a *report about* the account is second-hand rather than invented.
+    Each of those wants a different repair, so each is recorded under its own reason.
+    """
+    runtime, clients, _, _ = _runtime()
+    exa = clients.exa_client
+    exa.text_by_url["https://probook.ai/exact"] = "page text about Probook and its customers"
+    exa.text_by_url["https://probook.ai/partial"] = _PARTIAL_PAGE
+    exa.text_by_url["https://probook.ai/empty"] = ""
+    exa.text_by_url["https://probook.ai/report"] = "a page that never says any of that"
+    delegate = exa.contents
+
+    def _contents(urls: Sequence[str], **kwargs: Any) -> Any:
+        if "https://probook.ai/dead" in urls:
+            raise RuntimeError("connection reset")
+        return delegate(urls, **kwargs)
+
+    monkeypatch.setattr(exa, "contents", _contents)
+
+    on_page = _claim(
+        "account.named_customers",
+        url="https://probook.ai/exact",
+        span="page text about Probook",
+        source_key="exa_contents",
+    )
+    partial = _claim(
+        "account.named_customers", url="https://probook.ai/partial", span=_PARTIAL_SPAN
+    )
+    empty = _claim("account.named_customers", url="https://probook.ai/empty", span="Acme")
+    dead = _claim("account.named_customers", url="https://probook.ai/dead", span="Acme")
+    second_hand = _claim(
+        "account.named_customers",
+        url="https://probook.ai/report",
+        span="Probook counts Acme among its customers",
+        markers={"source_kind_block": "report"},
+    )
+    _stub_claims(monkeypatch, [on_page, partial, empty, dead, second_hand])
+    recorded = _recorder(monkeypatch)
+
+    audit = _call(runtime, "verify_links")
+
+    assert audit["by_reason"] == {
+        "EXACT/on_page": 1,
+        "PARTIAL/partial_on_page": 1,
+        "fetch_failed/page_empty": 1,
+        "fetch_failed/page_unreachable": 1,
+        "NOT_FOUND/second_hand_from_report": 1,
+    }
+    assert audit["EXACT"] == 1 and audit["PARTIAL"] == 1
+    assert audit["NOT_FOUND"] == [str(second_hand.id)]
+    assert sorted(audit["fetch_failed"]) == ["https://probook.ai/dead", "https://probook.ai/empty"]
+
+    by_claim = {str(row.claim_id): row for row in recorded}
+    assert len(by_claim) == 5, "every claim carries its own annotation"
+    assert by_claim[str(on_page.id)].detail == {
+        "reason": "on_page",
+        "url": "https://probook.ai/exact",
+        "origin": "exa_contents",
+        "structuring_mode": None,
+    }
+    assert by_claim[str(second_hand.id)].detail["structuring_mode"] == "report"
+    assert by_claim[str(dead.id)].verdict == "fetch_failed"
+    assert by_claim[str(dead.id)].detail["reason"] == "page_unreachable"
+
+
+def test_verify_links_marks_a_quote_from_the_agents_own_notes_without_fetching(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A quote that sat in the agent's notes rather than in a source cannot be on any page.
+
+    Fetching to prove that would spend a contents call to learn nothing, so the claim is recorded
+    NOT_FOUND with the reason that already explains it.
+    """
+    runtime, clients, _, _ = _runtime()
+    noted = _claim(
+        "account.named_customers",
+        url="https://probook.ai/a",
+        span="page text about Probook",
+        markers={"quoted_context": True},
+    )
+    _stub_claims(monkeypatch, [noted])
+    recorded = _recorder(monkeypatch)
+
+    audit = _call(runtime, "verify_links")
+
+    assert audit["by_reason"] == {"NOT_FOUND/quoted_context": 1}
+    assert audit["NOT_FOUND"] == [str(noted.id)]
+    assert clients.exa_client.contents_calls == [], "no page is bought to check a note"
+    assert recorded[0].detail["reason"] == "quoted_context"
 
 
 # -- finalize_research ----------------------------------------------------------------------------

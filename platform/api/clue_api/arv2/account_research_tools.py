@@ -58,7 +58,7 @@ from clue_api.arv2.account_research_claims import (
     unconfirmed_candidates,
 )
 from clue_api.arv2.account_research_refusals import RefusalError, refusal_json
-from clue_api.arv2.account_research_store import record_annotations
+from clue_api.arv2.account_research_store import AnnotationRow, record_annotations
 from clue_api.arv2.ai_ark_client import AiArkClient
 from clue_api.arv2.ats_client import (
     BoardFetchFailed,
@@ -416,13 +416,11 @@ class ToolRuntime:
             )
         return [claim for claim in claims if claim.entity_id == self.scope.account_id]
 
-    async def record_link_audit(self, claim_ids_by_verdict: Mapping[str, Sequence[UUID]]) -> int:
-        """Write one link-audit annotation per claim. An annotation is a check result beside the
-        claim, never an edit to append-only history."""
+    async def record_link_audit(self, rows: Sequence[AnnotationRow]) -> int:
+        """Write one link-audit annotation per claim — verdict *and* the reason behind it. An
+        annotation is a check result beside the claim, never an edit to append-only history."""
         async with self._conn_factory() as conn:
-            return await record_annotations(
-                conn, job_id=self.scope.job_id, claim_ids_by_verdict=claim_ids_by_verdict
-            )
+            return await record_annotations(conn, job_id=self.scope.job_id, rows=rows)
 
     def now(self) -> datetime:
         """The job's clock, injected so a finalization timestamp is testable."""
@@ -1147,17 +1145,64 @@ async def _write_claims(runtime: ToolRuntime, args: WriteClaimsArgs) -> dict[str
 
 
 async def _verify_links(runtime: ToolRuntime, args: VerifyLinksArgs) -> dict[str, Any]:
+    """Check every cited quote against the page it cites, and record *why* each verdict is what
+    it is.
+
+    A verdict on its own is not something a reader can act on. ``fetch_failed`` covers both a page
+    that returned no text and a page that would not load; ``NOT_FOUND`` covers both a quote the
+    model invented and a quote it lifted verbatim from a *report about* the account (real words,
+    wrong page). Those want different repairs, so each claim's annotation carries the reason —
+    ``on_page`` / ``partial_on_page`` / ``page_empty`` / ``page_unreachable`` / ``not_on_page`` /
+    ``second_hand_from_report`` / ``quoted_context`` — beside the verdict the CHECK admits.
+    """
     claims = [claim for claim in await runtime.job_claims() if claim.source_url]
     if args.claim_ids is not None:
         wanted = set(args.claim_ids)
         claims = [claim for claim in claims if str(claim.id) in wanted]
 
-    verdicts: dict[str, list[UUID]] = {"EXACT": [], "PARTIAL": [], "NOT_FOUND": []}
+    rows: list[AnnotationRow] = []
+    by_reason: dict[str, int] = {}
+    not_found: list[str] = []
     failed: list[str] = []
+    unreachable_urls: set[str] = set()
+    counts = {"EXACT": 0, "PARTIAL": 0}
     costs: list[dict[str, Any] | None] = []
+
+    def record(claim: Claim, url: str, verdict: str, reason: str) -> None:
+        markers = claim.write_markers or {}
+        block = markers.get("source_kind_block")
+        rows.append(
+            AnnotationRow(
+                claim_id=UUID(str(claim.id)),
+                verdict=verdict,
+                detail={
+                    "reason": reason,
+                    "url": url,
+                    "origin": claim.source_key,
+                    "structuring_mode": block if isinstance(block, str) else None,
+                },
+            )
+        )
+        key = f"{verdict}/{reason}"
+        by_reason[key] = by_reason.get(key, 0) + 1
+        if verdict in counts:
+            counts[verdict] += 1
+        elif verdict == "NOT_FOUND":
+            not_found.append(str(claim.id))
+        elif url not in failed:
+            failed.append(url)
+
     for claim in claims:
         url = claim.source_url or ""
-        if url in failed:
+        markers = claim.write_markers or {}
+        if markers.get("quoted_context") is True:
+            # Task 3 saw this quote sitting in the agent's own notes rather than in any source
+            # block. No page can contain it, so buying a fetch to discover that spends a contents
+            # call to learn nothing already known.
+            record(claim, url, "NOT_FOUND", "quoted_context")
+            continue
+        if url in unreachable_urls:
+            record(claim, url, "fetch_failed", "page_unreachable")
             continue
         text = runtime.cached_page(url)
         if text is None:
@@ -1167,21 +1212,34 @@ async def _verify_links(runtime: ToolRuntime, args: VerifyLinksArgs) -> dict[str
                 raise
             except Exception as unreachable:  # noqa: BLE001 — a dead link is a finding, not a stop
                 log.info("arv2.verify_links_fetch_failed", url=url, error=str(unreachable))
-                failed.append(url)
+                unreachable_urls.add(url)
+                record(claim, url, "fetch_failed", "page_unreachable")
                 continue
         if not text.strip():
             # A page that came back empty proves nothing about the quote. Calling that NOT_FOUND
             # would report an unreadable link as a fabricated one, which is the wrong accusation.
-            failed.append(url)
+            record(claim, url, "fetch_failed", "page_empty")
             continue
-        verdicts[substring_verdict(claim.evidence_span or "", text)].append(UUID(str(claim.id)))
+        verdict = substring_verdict(claim.evidence_span or "", text)
+        if verdict == "EXACT":
+            reason = "on_page"
+        elif verdict == "PARTIAL":
+            reason = "partial_on_page"
+        elif markers.get("source_kind_block") == "report":
+            # The words are real and were read out of a report about this account; they are simply
+            # not on the page the claim points at. That is a citation to repair, not a fabrication.
+            reason = "second_hand_from_report"
+        else:
+            reason = "not_on_page"
+        record(claim, url, verdict, reason)
 
-    await runtime.record_link_audit(verdicts)
+    await runtime.record_link_audit(rows)
     return {
-        "EXACT": len(verdicts["EXACT"]),
-        "PARTIAL": len(verdicts["PARTIAL"]),
-        "NOT_FOUND": [str(claim_id) for claim_id in verdicts["NOT_FOUND"]],
+        "EXACT": counts["EXACT"],
+        "PARTIAL": counts["PARTIAL"],
+        "NOT_FOUND": not_found,
         "fetch_failed": failed,
+        "by_reason": by_reason,
         "cost": costs,
     }
 
