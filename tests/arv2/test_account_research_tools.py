@@ -18,6 +18,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Coroutine, Mapping, Sequence
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -28,6 +29,7 @@ import pytest
 
 from clue_api.arv2 import account_research_tools as tools
 from clue_api.arv2.account_research_claims import JobScope
+from clue_api.arv2.account_research_store import AnnotationRow
 from clue_api.arv2.account_research_tools import (
     ACCOUNT_TOOL_NAMES,
     ToolRuntime,
@@ -58,6 +60,7 @@ from clue_api.arv2.media_feeds_client import (
     AudioFile,
     EnclosureTooLarge,
     Episode,
+    MediaFetchError,
     Podcast,
     YouTubeMeta,
     YouTubeWords,
@@ -110,6 +113,17 @@ CATALOG = FieldCatalog(
         FieldSpec("account.named_customers", "Customers the company names.", {"type": "array"}),
         FieldSpec("account.gtm_tooling_stack", "GTM tools present and absent."),
         FieldSpec("core.industry", "Industry."),
+        # Registered with its real schema (``packs.py``): the HQ is translated into this shape and
+        # checked against it before a claim exists, so a menu without it writes no HQ claim.
+        FieldSpec(
+            "core.hq_location",
+            "Headquarters.",
+            {
+                "type": "object",
+                "required": ["raw"],
+                "properties": {"raw": {"type": "string"}, "city": {"type": "string"}},
+            },
+        ),
     )
 )
 
@@ -224,7 +238,7 @@ class FakeAiArk:
             employee_count=42,
             revenue="1000000-5000000",
             technologies=("HubSpot",),
-            location={"country": "US"},
+            location={"country": "US", "raw_address": "New York, New York, United States"},
             raw={
                 "financial": {
                     "revenue": {
@@ -322,9 +336,24 @@ class FakeStructuring:
         )
 
     def structure_account(
-        self, subject: Any, bundle: str, catalog: FieldCatalog, *, mode: str = "broad"
+        self,
+        subject: Any,
+        bundle: str,
+        catalog: FieldCatalog,
+        *,
+        mode: str = "broad",
+        sources: Any = None,
+        notes: str | None = None,
     ) -> StructuredOutput:
-        self.account_calls.append({"subject": subject, "bundle": bundle, "mode": mode})
+        self.account_calls.append(
+            {
+                "subject": subject,
+                "bundle": bundle,
+                "mode": mode,
+                "sources": list(sources or []),
+                "notes": notes,
+            }
+        )
         if self.raise_with is not None:
             raise self.raise_with
         return self.output
@@ -405,13 +434,23 @@ class FakeWriter:
 
     def __init__(self) -> None:
         self.drafts: list[ClaimDraft] = []
+        #: field keys this writer refuses, the way the real gate raises on an unwritable value.
+        self.raise_on: set[str] = set()
+        #: field keys this writer stores but marks ``schema_valid=False``, as the real gate does
+        #: when the value misses the field's registered schema.
+        self.schema_invalid: set[str] = set()
 
     async def write(self, conn: Any, draft: ClaimDraft) -> WriteReceipt:
+        if draft.field_key in self.raise_on:
+            raise ValueError(f"cannot write {draft.field_key}")
+        markers = dict(draft.markers)
+        if draft.field_key in self.schema_invalid:
+            markers["schema_valid"] = False
         self.drafts.append(draft)
         return WriteReceipt(
             claim_id=ClaimId(uuid4()),
             field_key=draft.field_key,
-            markers=dict(draft.markers),
+            markers=markers,
             registered_field=False,
         )
 
@@ -436,12 +475,14 @@ class MemoryConnFactory:
         yield object()
 
 
-def _runtime() -> tuple[ToolRuntime, FakeClients, FakeWriter, MemoryConnFactory]:
+def _runtime(
+    scope: JobScope = SCOPE,
+) -> tuple[ToolRuntime, FakeClients, FakeWriter, MemoryConnFactory]:
     clients = FakeClients()
     writer = FakeWriter()
     conn_factory = MemoryConnFactory()
     runtime = ToolRuntime(
-        scope=SCOPE,
+        scope=scope,
         settings=Settings(),
         clients=clients,  # type: ignore[arg-type]
         conn_factory=conn_factory,
@@ -489,7 +530,14 @@ def test_an_argument_the_schema_forbids_comes_back_as_an_invalid_arguments_refus
 # -- read_account_state ---------------------------------------------------------------------------
 
 
-def _claim(field_key: str, *, url: str | None, span: str | None) -> Claim:
+def _claim(
+    field_key: str,
+    *,
+    url: str | None,
+    span: str | None,
+    source_key: str | None = None,
+    markers: Mapping[str, Any] | None = None,
+) -> Claim:
     return Claim(
         entity_id=ACCOUNT_ID,
         entity_type=EntityType.ACCOUNT,
@@ -504,6 +552,8 @@ def _claim(field_key: str, *, url: str | None, span: str | None) -> Claim:
         workspace_id="ws-1",
         source_url=url,
         evidence_span=span,
+        source_key=source_key,
+        write_markers=dict(markers) if markers else None,
     )
 
 
@@ -748,6 +798,30 @@ def test_write_claims_caps_at_fifty_and_marks_the_rest_refused() -> None:
     assert len(writer.drafts) == 50, "nothing beyond the ceiling was written"
 
 
+def test_write_claims_writes_each_claim_alone_so_one_bad_value_costs_only_itself() -> None:
+    """A model-produced batch of fifty must not lose forty-nine claims to one unwritable value."""
+    runtime, _, writer, conn_factory = _runtime()
+    writer.raise_on = {"account.gtm_tooling_stack"}
+    claims = [_claim_input(0), _claim_input(1), _claim_input(2)]
+    claims[1]["field_key"] = "account.gtm_tooling_stack"
+
+    result = _call(runtime, "write_claims", claims=claims)
+
+    assert "code" not in result, "one refused value is a reported failure, never a tool_error"
+    assert len(result["written"]) == 2
+    assert result["write_failures"] == [
+        {
+            "field_key": "account.gtm_tooling_stack",
+            "error": "cannot write account.gtm_tooling_stack",
+        }
+    ]
+    assert [draft.field_key for draft in writer.drafts] == [
+        "account.named_customers",
+        "account.named_customers",
+    ], "the two writable claims landed"
+    assert conn_factory.opened == 3, "one transaction per claim"
+
+
 def test_write_claims_forces_the_two_never_outreach_safe_fields() -> None:
     runtime, _, writer, _ = _runtime()
 
@@ -790,10 +864,58 @@ def test_write_claims_refuses_a_named_committee_candidate_with_no_confirming_url
     assert writer.drafts == []
 
 
+def test_write_claims_reports_the_expected_shape_when_a_value_missed_its_schema() -> None:
+    """The model wrote a string into an object field; the receipt says what shape was wanted."""
+    runtime, _, writer, _ = _runtime()
+    writer.schema_invalid = {"core.hq_location"}
+    claim = _claim_input(0)
+    claim["field_key"] = "core.hq_location"
+    claim["value"] = "New York, NY"
+
+    result = _call(runtime, "write_claims", claims=[claim])
+
+    (row,) = result["written"]
+    assert row["markers"]["schema_valid"] is False
+    assert row["expected_shape"] == "object{raw: string, city?: string}"
+    assert row["hint"].startswith(
+        "rewrite the value in this shape and write it again with corrects_claim_id="
+    )
+    assert row["claim_id"] in row["hint"]
+
+
+def test_write_claims_receipts_carry_no_shape_when_the_value_fit() -> None:
+    runtime, _, _, _ = _runtime()
+
+    result = _call(runtime, "write_claims", claims=[_claim_input(0)])
+
+    (row,) = result["written"]
+    assert "expected_shape" not in row and "hint" not in row
+
+
+def test_write_claims_says_so_when_the_failing_field_is_not_in_this_jobs_catalog() -> None:
+    """The account job's catalog is account-only; a contact key can still fail its DB schema.
+
+    ``schema_hint(None)`` renders "any", which would tell the model any shape was fine about a
+    value that just failed a schema — and the rewrite hint would be unfollowable.
+    """
+    runtime, _, writer, _ = _runtime()
+    writer.schema_invalid = {"contact.facet.hobby"}
+    claim = _claim_input(0)
+    claim["field_key"] = "contact.facet.hobby"
+
+    result = _call(runtime, "write_claims", claims=[claim])
+
+    (row,) = result["written"]
+    assert row["markers"]["schema_valid"] is False
+    assert row["expected_shape"] == "not in this job's catalog"
+    assert "hint" not in row
+
+
 # -- structure_material ---------------------------------------------------------------------------
 
 
 MATERIAL = "Probook's customers page names Acme. " * 5
+SOURCES = [{"url": "https://probook.ai/customers", "kind": "page", "text": MATERIAL}]
 
 
 def test_structure_material_writes_claims_negatives_and_returns_ids() -> None:
@@ -805,7 +927,8 @@ def test_structure_material_writes_claims_negatives_and_returns_ids() -> None:
         subject_kind="account",
         subject_name="Probook",
         subject_domain_or_company="probook.ai",
-        material=MATERIAL,
+        sources=SOURCES,
+        notes="my own read: they are scaling",
         mode="intent_sweep",
     )
 
@@ -828,6 +951,135 @@ def test_structure_material_writes_claims_negatives_and_returns_ids() -> None:
     assert risk.outreach_safe is False
 
 
+def test_structure_material_hands_the_client_the_blocks_and_the_notes_apart() -> None:
+    runtime, clients, _, _ = _runtime()
+
+    _call(
+        runtime,
+        "structure_material",
+        subject_kind="account",
+        subject_name="Probook",
+        subject_domain_or_company="probook.ai",
+        sources=[
+            {"url": "https://probook.ai/customers", "kind": "page", "text": MATERIAL},
+            {"kind": "provider", "text": "AI Ark holds 36 staff for probook.ai. " * 2},
+        ],
+        notes="my own read: dispatch is the wedge",
+    )
+
+    [call] = clients.structuring_client.account_calls
+    assert [block.kind for block in call["sources"]] == ["page", "provider"]
+    assert call["sources"][0].url == "https://probook.ai/customers"
+    assert call["sources"][1].url is None
+    assert call["notes"] == "my own read: dispatch is the wedge"
+
+
+def test_structure_material_refuses_the_old_free_material_argument() -> None:
+    runtime, clients, _, _ = _runtime()
+
+    refused = _call(
+        runtime,
+        "structure_material",
+        subject_kind="account",
+        subject_name="Probook",
+        subject_domain_or_company="probook.ai",
+        material=MATERIAL,
+    )
+
+    assert refused["code"] == "invalid_arguments"
+    assert clients.structuring_client.account_calls == []
+
+
+def test_structure_material_needs_at_least_one_source() -> None:
+    runtime, _, _, _ = _runtime()
+
+    refused = _call(
+        runtime,
+        "structure_material",
+        subject_kind="account",
+        subject_name="Probook",
+        subject_domain_or_company="probook.ai",
+        sources=[],
+    )
+
+    assert refused["code"] == "invalid_arguments"
+
+
+def test_structure_material_reports_a_failed_draft_instead_of_losing_the_batch() -> None:
+    runtime, _, writer, _ = _runtime()
+    writer.raise_on = {"account.pricing_shape"}
+
+    structured = _call(
+        runtime,
+        "structure_material",
+        subject_kind="account",
+        subject_name="Probook",
+        subject_domain_or_company="probook.ai",
+        sources=SOURCES,
+    )
+
+    assert [w["field_key"] for w in structured["written"]] == ["account.named_customers"]
+    assert structured["write_failures"] == [
+        {"field_key": "account.pricing_shape", "error": "cannot write account.pricing_shape"}
+    ]
+    # the draft after the failure still landed: one transaction per draft
+    assert {d.field_key for d in writer.drafts} == {
+        "account.named_customers",
+        "account.reputation_risk",
+    }
+
+
+def test_structure_material_reports_the_rows_a_mode_cap_dropped() -> None:
+    runtime, clients, _, _ = _runtime()
+    clients.structuring_client.output = replace(
+        clients.structuring_client.output, dropped_rows=3, mode="intent_sweep"
+    )
+
+    structured = _call(
+        runtime,
+        "structure_material",
+        subject_kind="account",
+        subject_name="Probook",
+        subject_domain_or_company="probook.ai",
+        sources=SOURCES,
+        mode="intent_sweep",
+    )
+
+    assert structured["dropped_rows"] == 3
+
+
+def test_write_each_isolates_every_draft_in_its_own_transaction() -> None:
+    runtime, _, writer, conn_factory = _runtime()
+    writer.raise_on = {"account.gtm_tooling_stack"}
+    drafts = [
+        _draft_for("account.named_customers"),
+        _draft_for("account.gtm_tooling_stack"),
+        _draft_for("core.industry"),
+    ]
+
+    results = _run(runtime.write_each(drafts))
+
+    assert isinstance(results[0], WriteReceipt)
+    assert results[1] == tools.WriteFailure(
+        field_key="account.gtm_tooling_stack", error="cannot write account.gtm_tooling_stack"
+    )
+    assert isinstance(results[2], WriteReceipt)
+    assert conn_factory.opened == 3, "one transaction per draft"
+
+
+def _draft_for(field_key: str) -> ClaimDraft:
+    return ClaimDraft(
+        entity_id=ACCOUNT_ID,
+        entity_type=EntityType.ACCOUNT,
+        field_key=field_key,
+        value_json=["Acme"],
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        run_id=RunId(RUN_ID),
+        research_mode=ResearchMode.ACCOUNT_PROFILING,
+        workspace_id="ws-1",
+    )
+
+
 def test_structure_material_refuses_a_person_subject_until_r3() -> None:
     runtime, clients, _, _ = _runtime()
 
@@ -837,7 +1089,7 @@ def test_structure_material_refuses_a_person_subject_until_r3() -> None:
         subject_kind="person",
         subject_name="Nick Fisher",
         subject_domain_or_company="Probook",
-        material=MATERIAL,
+        sources=SOURCES,
     )
 
     assert refused["code"] == "invalid_arguments" and "person" in refused["detail"]
@@ -854,7 +1106,7 @@ def test_structure_material_refuses_structuring_unparseable() -> None:
         subject_kind="account",
         subject_name="Probook",
         subject_domain_or_company="probook.ai",
-        material=MATERIAL,
+        sources=SOURCES,
     )
 
     assert refused["code"] == "structuring_unparseable"
@@ -897,6 +1149,39 @@ def test_research_deep_refuses_only_when_the_report_is_empty() -> None:
     clients.exa_client.deep_report = ""
 
     assert _call(runtime, "research_deep", charter=CHARTER)["code"] == "deep_thin_response"
+
+
+def test_research_deep_clips_the_already_established_block_and_says_where_the_rest_is() -> None:
+    lines = "\n".join(f"- account.field_{i}: {'x' * 90} (https://s.test/{i})" for i in range(200))
+    scope = replace(SCOPE, already_established=lines)
+    runtime, clients, _, _ = _runtime(scope)
+
+    _call(runtime, "research_deep", charter=CHARTER)
+
+    query = clients.exa_client.deep_calls[-1]["query"]
+    established = query.split("ALREADY ESTABLISHED", 1)[1]
+    assert len(established) <= 6000 + 200, "whole lines up to the cap, plus the omission note"
+    assert "lines omitted" in established
+    assert 'read_account_state(section="already_established")' in established
+    assert "- account.field_0:" in established and "- account.field_199:" not in established
+
+
+def test_research_deep_passes_a_short_established_block_through_untouched() -> None:
+    runtime, clients, _, _ = _runtime()
+    _call(runtime, "research_deep", charter=CHARTER)
+    query = clients.exa_client.deep_calls[-1]["query"]
+    assert query.endswith(
+        "ALREADY ESTABLISHED (do not re-derive; find what is NOT here)\nFounded 2021."
+    )
+
+
+def test_the_deep_call_evidence_law_asks_for_one_assertion_per_sentence_quote_first() -> None:
+    runtime, clients, _, _ = _runtime()
+    _call(runtime, "research_deep", charter=CHARTER)
+    system_prompt = clients.exa_client.deep_calls[-1]["system_prompt"]  # the fake's attribute
+    assert "One assertion per sentence" in system_prompt
+    assert "the verbatim quote first, then the URL in parentheses" in system_prompt
+    assert "A NOT FOUND item is its own sentence" in system_prompt
 
 
 # -- read_media_feeds -----------------------------------------------------------------------------
@@ -1013,6 +1298,211 @@ def test_read_media_feeds_records_the_item_then_refuses_when_the_speaker_is_unve
     assert clients.media_client.quote_calls == [], "nothing is quoted off an unverified speaker"
 
 
+def test_read_media_feeds_falls_through_to_an_alternate_when_the_first_source_will_not_load(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Probook's YouTube page answered 429 and the run had nowhere to try next."""
+    _stub_podcast(monkeypatch, tmp_path)
+    good_feed = "https://pod.test/feed"
+    calls: list[str] = []
+    real_fetch = tools.fetch_feed
+
+    def fetch(url: str, caller: Any) -> Any:
+        calls.append(url)
+        if url == "https://dead.test/feed":
+            raise MediaFetchError(url, 429, None)
+        return real_fetch(url, caller)
+
+    monkeypatch.setattr(tools, "fetch_feed", fetch)
+    runtime, _, writer, _ = _runtime()
+
+    result = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        feed_url="https://dead.test/feed",
+        alternate_urls=[good_feed],
+        episode_number=42,
+    )
+
+    assert "code" not in result, result
+    assert calls == ["https://dead.test/feed", good_feed]
+    assert result["source_attempts"] == [
+        {
+            "url": "https://dead.test/feed",
+            "error": "https://dead.test/feed returned HTTP 429 (raw_ref=None)",
+        }
+    ]
+    assert result["item"]["kind"] == "podcast"
+    assert any(d.field_key == "account.media_layer_index" for d in writer.drafts)
+
+
+def test_read_media_feeds_refuses_feed_not_found_naming_every_url_it_tried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fetch(url: str, caller: Any) -> Any:
+        raise MediaFetchError(url, 404, None)
+
+    monkeypatch.setattr(tools, "fetch_feed", fetch)
+    runtime, _, writer, _ = _runtime()
+
+    refused = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        feed_url="https://a.test/feed",
+        alternate_urls=["https://b.test/feed"],
+    )
+
+    assert refused["code"] == "feed_not_found"
+    # The envelope's free-text field is ``detail`` (``refusal_json``); it must name both URLs.
+    assert "https://a.test/feed" in refused["detail"]
+    assert "https://b.test/feed" in refused["detail"]
+    assert writer.drafts == []
+
+
+def test_read_media_feeds_does_not_fall_through_past_a_feed_that_loaded_but_had_no_episode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A feed that loaded and has no matching episode is an answer, not a load failure."""
+    _stub_podcast(monkeypatch, tmp_path)
+    # ``_stub_podcast`` answers every URL with the same podcast, so the refusal code alone cannot
+    # tell a stop from a fall-through: the second candidate would refuse identically. The URLs
+    # fetched are what proves the loop stopped.
+    calls: list[str] = []
+    stubbed_fetch = tools.fetch_feed
+
+    def fetch(url: str, caller: Any) -> Any:
+        calls.append(url)
+        return stubbed_fetch(url, caller)
+
+    monkeypatch.setattr(tools, "fetch_feed", fetch)
+    runtime, _, _, _ = _runtime()
+    refused = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nobody",
+        feed_url="https://pod.test/feed",
+        alternate_urls=["https://never.test/feed"],
+        episode_title_contains="no such episode",
+    )
+    assert refused["code"] == "episode_not_found"
+    assert calls == ["https://pod.test/feed"], "the answered feed ended the loop"
+
+
+def test_read_media_feeds_refuses_a_walled_host_before_any_request_is_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Routing is by host, so the walled guard must run before the hop is chosen, not inside it.
+
+    A LinkedIn post URL handed in as ``youtube_url`` is not a YouTube URL, so it takes the podcast
+    hop — and would be fetched for real if ``reject_native_video`` only lived in the YouTube hop.
+    """
+
+    def never(url: str, caller: Any) -> Any:
+        raise AssertionError("must not fetch")
+
+    monkeypatch.setattr(tools, "fetch_feed", never)
+    runtime, _, writer, _ = _runtime()
+
+    refused = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        youtube_url="https://www.linkedin.com/posts/someone_activity-1",
+    )
+
+    assert refused["code"] == "native_video_rejected"
+    assert writer.drafts == []
+
+
+def test_read_media_feeds_prefers_the_feed_over_the_watch_page_when_both_are_given(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """New behaviour: ``youtube_url`` used to be ignored whenever ``feed_url`` was present."""
+    _stub_podcast(monkeypatch, tmp_path)
+    calls: list[str] = []
+    stubbed_fetch = tools.fetch_feed
+
+    def fetch(url: str, caller: Any) -> Any:
+        calls.append(url)
+        return stubbed_fetch(url, caller)
+
+    def never(url: str, caller: Any) -> Any:
+        raise AssertionError("the watch page is a fallback, not a second call")
+
+    monkeypatch.setattr(tools, "fetch_feed", fetch)
+    monkeypatch.setattr(tools, "youtube_metadata", never)
+    runtime, _, _, _ = _runtime()
+
+    found = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        feed_url="https://pod.test/feed",
+        youtube_url="https://www.youtube.com/watch?v=abcdefghijk",
+        episode_number=42,
+    )
+
+    assert found["item"]["kind"] == "podcast"
+    assert calls == ["https://pod.test/feed"]
+
+
+def test_read_media_feeds_fetches_a_url_repeated_in_alternate_urls_only_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _stub_podcast(monkeypatch, tmp_path)
+    calls: list[str] = []
+
+    def fetch(url: str, caller: Any) -> Any:
+        calls.append(url)
+        raise MediaFetchError(url, 404, None)
+
+    monkeypatch.setattr(tools, "fetch_feed", fetch)
+    runtime, _, _, _ = _runtime()
+
+    refused = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        feed_url="https://pod.test/feed",
+        alternate_urls=["https://pod.test/feed"],
+    )
+
+    assert refused["code"] == "feed_not_found"
+    assert calls == ["https://pod.test/feed"], "a repeated URL is one candidate, one fetch"
+
+
+def test_read_media_feeds_names_the_dead_earlier_sources_in_a_later_refusal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Candidate 1 would not load, candidate 2 answered: the agent must learn both facts."""
+    _stub_podcast(monkeypatch, tmp_path)
+    stubbed_fetch = tools.fetch_feed
+
+    def fetch(url: str, caller: Any) -> Any:
+        if url == "https://dead.test/feed":
+            raise MediaFetchError(url, 429, None)
+        return stubbed_fetch(url, caller)
+
+    monkeypatch.setattr(tools, "fetch_feed", fetch)
+    runtime, _, _, _ = _runtime()
+
+    refused = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        feed_url="https://dead.test/feed",
+        alternate_urls=["https://pod.test/feed"],
+        episode_title_contains="no such episode",
+    )
+
+    assert refused["code"] == "episode_not_found"
+    assert "earlier sources that would not load" in refused["detail"]
+    assert "https://dead.test/feed" in refused["detail"]
+    assert "429" in refused["detail"]
+
+
 def test_read_media_feeds_needs_one_of_the_two_urls() -> None:
     runtime, _, _, _ = _runtime()
     refused = _call(runtime, "read_media_feeds", person_name="Nick Fisher")
@@ -1053,24 +1543,30 @@ def test_read_media_feeds_takes_the_youtube_words_path_without_transcribing(
 # -- verify_links ---------------------------------------------------------------------------------
 
 
+def _recorder(monkeypatch: pytest.MonkeyPatch) -> list[AnnotationRow]:
+    """Capture the annotation rows ``verify_links`` writes, instead of writing them."""
+    recorded: list[AnnotationRow] = []
+
+    async def _record(conn: Any, *, job_id: UUID, rows: Sequence[AnnotationRow]) -> int:
+        recorded.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(tools, "record_annotations", _record)
+    return recorded
+
+
 def test_verify_links_records_annotations_per_verdict(monkeypatch: pytest.MonkeyPatch) -> None:
     runtime, clients, _, _ = _runtime()
     exact = _claim("account.named_customers", url="https://probook.ai/a", span="page text about")
     missing = _claim("account.named_customers", url="https://probook.ai/b", span="never written")
     _stub_claims(monkeypatch, [exact, missing])
-    recorded: list[Mapping[str, Sequence[UUID]]] = []
-
-    async def _record(conn: Any, *, job_id: UUID, claim_ids_by_verdict: Any) -> int:
-        recorded.append(dict(claim_ids_by_verdict))
-        return sum(len(v) for v in claim_ids_by_verdict.values())
-
-    monkeypatch.setattr(tools, "record_annotations", _record)
+    recorded = _recorder(monkeypatch)
 
     audit = _call(runtime, "verify_links")
 
     assert audit["EXACT"] == 1
     assert audit["NOT_FOUND"] == [str(missing.id)]
-    assert recorded and set(recorded[0]) <= {"EXACT", "PARTIAL", "NOT_FOUND"}
+    assert {row.verdict for row in recorded} == {"EXACT", "NOT_FOUND"}
     assert len(clients.exa_client.contents_calls) == 2
 
 
@@ -1081,7 +1577,7 @@ def test_verify_links_reports_a_failed_fetch_rather_than_refusing(
     _stub_claims(
         monkeypatch, [_claim("account.named_customers", url="https://probook.ai/a", span="Acme")]
     )
-    monkeypatch.setattr(tools, "record_annotations", _no_annotations)
+    _recorder(monkeypatch)
     clients.exa_client.raise_on_contents = RuntimeError("boom")
 
     audit = _call(runtime, "verify_links")
@@ -1090,8 +1586,105 @@ def test_verify_links_reports_a_failed_fetch_rather_than_refusing(
     assert audit["EXACT"] == 0
 
 
-async def _no_annotations(conn: Any, *, job_id: UUID, claim_ids_by_verdict: Any) -> int:
-    return 0
+_PARTIAL_PAGE = "The company runs an account-based marketing programme across Europe."
+_PARTIAL_SPAN = "The company runs an account-based marketing programme across Mars."
+
+
+def test_verify_links_records_why_each_claim_got_its_verdict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Five claims, five different reasons — the audit says *why*, not only *what*.
+
+    A verdict alone cannot be acted on: ``fetch_failed`` on a page that returned no text is a
+    broken source, ``fetch_failed`` on a page that would not load is a dead link, and NOT_FOUND on
+    a quote the model took from a *report about* the account is second-hand rather than invented.
+    Each of those wants a different repair, so each is recorded under its own reason.
+    """
+    runtime, clients, _, _ = _runtime()
+    exa = clients.exa_client
+    exa.text_by_url["https://probook.ai/exact"] = "page text about Probook and its customers"
+    exa.text_by_url["https://probook.ai/partial"] = _PARTIAL_PAGE
+    exa.text_by_url["https://probook.ai/empty"] = ""
+    exa.text_by_url["https://probook.ai/report"] = "a page that never says any of that"
+    delegate = exa.contents
+
+    def _contents(urls: Sequence[str], **kwargs: Any) -> Any:
+        if "https://probook.ai/dead" in urls:
+            raise RuntimeError("connection reset")
+        return delegate(urls, **kwargs)
+
+    monkeypatch.setattr(exa, "contents", _contents)
+
+    on_page = _claim(
+        "account.named_customers",
+        url="https://probook.ai/exact",
+        span="page text about Probook",
+        source_key="exa_contents",
+    )
+    partial = _claim(
+        "account.named_customers", url="https://probook.ai/partial", span=_PARTIAL_SPAN
+    )
+    empty = _claim("account.named_customers", url="https://probook.ai/empty", span="Acme")
+    dead = _claim("account.named_customers", url="https://probook.ai/dead", span="Acme")
+    second_hand = _claim(
+        "account.named_customers",
+        url="https://probook.ai/report",
+        span="Probook counts Acme among its customers",
+        markers={"source_kind_block": "report"},
+    )
+    _stub_claims(monkeypatch, [on_page, partial, empty, dead, second_hand])
+    recorded = _recorder(monkeypatch)
+
+    audit = _call(runtime, "verify_links")
+
+    assert audit["by_reason"] == {
+        "EXACT/on_page": 1,
+        "PARTIAL/partial_on_page": 1,
+        "fetch_failed/page_empty": 1,
+        "fetch_failed/page_unreachable": 1,
+        "NOT_FOUND/second_hand_from_report": 1,
+    }
+    assert audit["EXACT"] == 1 and audit["PARTIAL"] == 1
+    assert audit["NOT_FOUND"] == [str(second_hand.id)]
+    assert sorted(audit["fetch_failed"]) == ["https://probook.ai/dead", "https://probook.ai/empty"]
+
+    by_claim = {str(row.claim_id): row for row in recorded}
+    assert len(by_claim) == 5, "every claim carries its own annotation"
+    assert by_claim[str(on_page.id)].detail == {
+        "reason": "on_page",
+        "url": "https://probook.ai/exact",
+        "origin": "exa_contents",
+        "structuring_mode": None,
+    }
+    assert by_claim[str(second_hand.id)].detail["structuring_mode"] == "report"
+    assert by_claim[str(dead.id)].verdict == "fetch_failed"
+    assert by_claim[str(dead.id)].detail["reason"] == "page_unreachable"
+
+
+def test_verify_links_marks_a_quote_from_the_agents_own_notes_without_fetching(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A quote that sat in the agent's notes rather than in a source cannot be on any page.
+
+    Fetching to prove that would spend a contents call to learn nothing, so the claim is recorded
+    NOT_FOUND with the reason that already explains it.
+    """
+    runtime, clients, _, _ = _runtime()
+    noted = _claim(
+        "account.named_customers",
+        url="https://probook.ai/a",
+        span="page text about Probook",
+        markers={"quoted_context": True},
+    )
+    _stub_claims(monkeypatch, [noted])
+    recorded = _recorder(monkeypatch)
+
+    audit = _call(runtime, "verify_links")
+
+    assert audit["by_reason"] == {"NOT_FOUND/quoted_context": 1}
+    assert audit["NOT_FOUND"] == [str(noted.id)]
+    assert clients.exa_client.contents_calls == [], "no page is bought to check a note"
+    assert recorded[0].detail["reason"] == "quoted_context"
 
 
 # -- finalize_research ----------------------------------------------------------------------------
@@ -1131,6 +1724,163 @@ def test_finalize_writes_the_verdicts_and_the_confirmed_candidates_only() -> Non
     assert runtime.finalization is not None and runtime.finalization["gaps"] == [
         "no funding wire found"
     ]
+
+
+def test_a_verdict_on_a_gate_the_icp_never_named_is_refused_and_names_the_admitted_keys() -> None:
+    """Verdicts are keyed to the ICP's hard gates, so receipts compare across accounts."""
+    gated = replace(SCOPE, icp_gate_keys=("stage", "geography"))
+    runtime, _, writer, _ = _runtime(gated)
+
+    refused = _call(
+        runtime,
+        "finalize_research",
+        **{
+            **_finalize_args(),
+            "fit_verdicts": [{"gate": "vibes", "verdict": "pass", "rationale": "they feel right"}],
+        },
+    )
+
+    assert refused["code"] == "invalid_arguments"
+    assert "vibes" in refused["detail"]
+    assert "stage" in refused["detail"] and "geography" in refused["detail"]
+    assert runtime.finalization is None, "a refused finalization does not close the job"
+    assert writer.drafts == [], "nothing is written for a verdict the ICP cannot key"
+
+
+def test_an_icp_gate_the_agent_did_not_assess_is_filled_unclear_by_the_tool() -> None:
+    gated = replace(SCOPE, icp_gate_keys=("stage", "geography"))
+    runtime, _, writer, _ = _runtime(gated)
+
+    accepted = _call(
+        runtime,
+        "finalize_research",
+        **{
+            **_finalize_args(),
+            "fit_verdicts": [
+                {
+                    "gate": "stage",
+                    "verdict": "pass",
+                    "rationale": "Series A announced",
+                    "claim_ids": ["11111111-1111-1111-1111-111111111111"],
+                }
+            ],
+        },
+    )
+
+    assert accepted["accepted"] is True
+    assert runtime.finalization is not None
+    verdicts = runtime.finalization["fit_verdicts"]
+    assert [verdict["gate"] for verdict in verdicts] == ["stage", "geography"]
+    assert verdicts[1] == {
+        "gate": "geography",
+        "verdict": "unclear",
+        "rationale": "not assessed",
+        "claim_ids": [],
+    }
+    filled = [
+        draft
+        for draft in writer.drafts
+        if draft.field_key == "account.icp_fit_verdict" and draft.value_json["gate"] == "geography"
+    ]
+    assert len(filled) == 1
+    assert filled[0].markers == {"filled_by_tool": True}, "the claim says who wrote the verdict"
+
+
+def test_a_second_verdict_for_one_gate_is_dropped_and_reported_never_refused() -> None:
+    """A duplicate is noise, not a lie: the first answer stands and the call still lands."""
+    gated = replace(SCOPE, icp_gate_keys=("stage", "geography"))
+    runtime, _, writer, _ = _runtime(gated)
+
+    accepted = _call(
+        runtime,
+        "finalize_research",
+        **{
+            **_finalize_args(),
+            "fit_verdicts": [
+                {"gate": "stage", "verdict": "pass", "rationale": "Series A announced"},
+                {"gate": "stage", "verdict": "fail", "rationale": "on second thoughts"},
+                {"gate": "geography", "verdict": "pass", "rationale": "NYC HQ"},
+            ],
+        },
+    )
+
+    assert accepted["accepted"] is True
+    assert accepted["duplicate_gates"] == ["stage"]
+    assert runtime.finalization is not None
+    verdicts = runtime.finalization["fit_verdicts"]
+    assert [verdict["gate"] for verdict in verdicts] == ["stage", "geography"]
+    assert verdicts[0]["verdict"] == "pass", "the first answer for a gate is the one kept"
+    written = [d for d in writer.drafts if d.field_key == "account.icp_fit_verdict"]
+    assert len(written) == 2, "one claim per gate, whatever the model sent"
+
+
+def test_a_gate_label_differing_only_in_case_is_the_gate_the_icp_named() -> None:
+    """Folding a near-miss label costs nothing; refusing it costs the run its only finalization."""
+    gated = replace(SCOPE, icp_gate_keys=("stage", "geography"))
+    runtime, _, writer, _ = _runtime(gated)
+
+    accepted = _call(
+        runtime,
+        "finalize_research",
+        **{
+            **_finalize_args(),
+            "fit_verdicts": [
+                {"gate": "Geography", "verdict": "pass", "rationale": "NYC HQ", "claim_ids": []}
+            ],
+        },
+    )
+
+    assert accepted["accepted"] is True
+    assert runtime.finalization is not None
+    verdicts = runtime.finalization["fit_verdicts"]
+    assert [verdict["gate"] for verdict in verdicts] == ["geography", "stage"]
+    assert verdicts[0]["verdict"] == "pass", "the model's answer was kept, only its key rewritten"
+    geography = [
+        draft
+        for draft in writer.drafts
+        if draft.field_key == "account.icp_fit_verdict" and draft.value_json["gate"] == "geography"
+    ]
+    assert len(geography) == 1, "the claim carries the ICP's spelling of the key"
+    assert geography[0].markers == {}, "an answered gate is not marked filled_by_tool"
+
+
+def test_a_gate_label_with_trailing_whitespace_is_the_gate_the_icp_named() -> None:
+    gated = replace(SCOPE, icp_gate_keys=("stage", "geography"))
+    runtime, _, writer, _ = _runtime(gated)
+
+    accepted = _call(
+        runtime,
+        "finalize_research",
+        **{
+            **_finalize_args(),
+            "fit_verdicts": [
+                {"gate": "stage ", "verdict": "pass", "rationale": "Series A", "claim_ids": []}
+            ],
+        },
+    )
+
+    assert accepted["accepted"] is True
+    assert runtime.finalization is not None
+    assert [v["gate"] for v in runtime.finalization["fit_verdicts"]] == ["stage", "geography"]
+    assert [
+        draft.value_json["gate"]
+        for draft in writer.drafts
+        if draft.field_key == "account.icp_fit_verdict"
+    ] == ["stage", "geography"]
+
+
+def test_a_transient_tool_error_is_not_remembered_so_the_identical_retry_runs_again() -> None:
+    """``tool_error`` is the socket failing, not a judgement: it must not foreclose the retry."""
+    runtime, clients, _, _ = _runtime()
+    clients.exa_client.raise_on_contents = RuntimeError("the socket melted")
+
+    first = _call(runtime, "fetch_page", url="https://probook.ai/pricing")
+    clients.exa_client.raise_on_contents = None
+    second = _call(runtime, "fetch_page", url="https://probook.ai/pricing")
+
+    assert first["code"] == "tool_error:RuntimeError"
+    assert "code" not in second, "the identical retry runs rather than replaying the failure"
+    assert len(clients.exa_client.contents_calls) == 2
 
 
 def test_finalize_twice_is_refused_finalization_already_proposed() -> None:
@@ -1188,7 +1938,7 @@ def test_a_halt_met_inside_one_hop_also_latches_the_wire_provider() -> None:
         subject_kind="account",
         subject_name="Probook",
         subject_domain_or_company="probook.ai",
-        material=MATERIAL,
+        sources=SOURCES,
     )
 
     assert refused["code"] == "provider_halted:openrouter"

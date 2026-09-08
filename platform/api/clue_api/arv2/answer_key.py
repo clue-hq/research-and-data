@@ -119,7 +119,10 @@ _METHOD_FOR_KIND = {
 _PROPOSED_PREFIX = "PROPOSED::"
 _PROPOSED_ORIGIN = "structuring_pass"
 _NOT_FOUND = "NOT FOUND"
-_ZAFRAN_ANSWER_KEY = "zafran-2026-09-02"
+#: The marker every loaded Zafran answer-key claim carries, so a reader can find exactly the
+#: rows this mapping wrote (the recall measurement reads them back through it). Public
+#: because it is a join key, not an internal detail.
+ZAFRAN_ANSWER_KEY = "zafran-2026-09-02"
 _PEOPLE_ANSWER_KEY = "person-depth-2026-09-03"
 _ZAFRAN_OBSERVED_DEFAULT = "2026-09-02"
 #: The person-depth run date (``.context/arv2-person-depth/PERSON-DEPTH-REPORT.md``).
@@ -525,7 +528,7 @@ def map_zafran_rows(payload: Mapping[str, Any]) -> MappedRows:
 
         subject, entity_type = _zafran_subject(row, name_to_url)
         raw_key = str(row["field_key"])
-        markers: dict[str, JsonValue] = {"source_row_id": row_id, "answer_key": _ZAFRAN_ANSWER_KEY}
+        markers: dict[str, JsonValue] = {"source_row_id": row_id, "answer_key": ZAFRAN_ANSWER_KEY}
 
         description: str | None = None
         if raw_key.startswith(_PROPOSED_PREFIX):

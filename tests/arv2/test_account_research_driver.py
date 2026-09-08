@@ -36,12 +36,23 @@ from clue_api.arv2.account_research_driver import (
     Arv2AccountResearchWorkHandler,
     arv2_account_work_id,
     build_arv2_account_research_handler,
+    format_established,
 )
 from clue_api.arv2.account_research_store import JobRow, JobSpend, RunRow
 from clue_api.arv2.claim_writer import ClaimDraft, WriteReceipt
+from clue_api.arv2.provider_ledger import ledger_id_for
 from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
 from clue_config import Secrets, Settings
-from clue_core import ClaimId
+from clue_core import (
+    Claim,
+    ClaimId,
+    EntityId,
+    EntityType,
+    ExtractionMethod,
+    ResearchMode,
+    ReuseScope,
+    RunId,
+)
 from clue_fleet import FleetTaskKind
 from clue_fleet.lease import LeaseGeneration
 from clue_fleet.work_worker import WorkContext
@@ -49,6 +60,17 @@ from clue_fleet.work_worker import WorkContext
 WORKSPACE = "ws-r2-driver"
 ICP_SHA = "d" * 64
 ICP_BODY = b"---\nkind: icp-definition\nicp_key: clue-abm-buyers\n---\n\n# ICP\nSeries A SaaS.\n"
+#: The same ICP with the hard gates a real synthesized ICP carries — the keys every fit verdict is
+#: keyed to.
+GATED_ICP_BODY = (
+    b"---\n"
+    b"kind: icp-definition\n"
+    b"icp_key: clue-abm-buyers\n"
+    b"hard_gates:\n"
+    b"  - {key: series-a-saas, rule: Series A or later SaaS, test: funding wire}\n"
+    b"  - {key: us-hq, rule: US headquarters, test: the about page}\n"
+    b"---\n\n# ICP\nSeries A SaaS.\n"
+)
 PERSONA_BODY = (
     b"---\nkind: audience-persona\nicp_key: clue-abm-buyers\n---\n\n# Personas\nVP Marketing.\n"
 )
@@ -77,14 +99,14 @@ def _run_row(*, profile_sha256: str | None = None) -> RunRow:
     )
 
 
-def _job_row(run: RunRow) -> JobRow:
+def _job_row(run: RunRow, *, attempt: int = 1) -> JobRow:
     return JobRow(
         job_id=uuid4(),
         run_id=run.run_id,
         workspace_id=run.workspace_id,
         account_entity_id=uuid4(),
         status="in_progress",
-        attempt=1,
+        attempt=attempt,
         started_at=datetime(2026, 9, 8, tzinfo=UTC),
         finished_at=None,
         finalization=None,
@@ -173,7 +195,7 @@ class FakeStore:
     async def job_link_audit(self, conn: Any, *, job_id: UUID) -> dict[str, int]:
         del conn
         self.events.append(("job_link_audit", {"job_id": job_id}))
-        return {"EXACT": 3, "PARTIAL": 1, "NOT_FOUND": 0}
+        return {"EXACT/on_page": 3, "PARTIAL/partial_on_page": 1, "NOT_FOUND/not_on_page": 2}
 
     def named(self, name: str) -> list[dict[str, Any]]:
         return [payload for event, payload in self.events if event == name]
@@ -309,7 +331,11 @@ class FakeModels:
 
 
 def _patch_reads(
-    monkeypatch: pytest.MonkeyPatch, *, icp_sha: str = ICP_SHA, account: Any | None = None
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    icp_sha: str = ICP_SHA,
+    account: Any | None = None,
+    icp_body: bytes = ICP_BODY,
 ) -> None:
     """Patch the three composition reads the driver makes through other packages."""
 
@@ -323,7 +349,7 @@ def _patch_reads(
         del conn, storage, workspace_id
         if storage_key.endswith("persona"):
             return SimpleNamespace(content_sha256="e" * 64), PERSONA_BODY
-        return SimpleNamespace(content_sha256=icp_sha), ICP_BODY
+        return SimpleNamespace(content_sha256=icp_sha), icp_body
 
     async def fake_claims_for(conn: Any, entity_id: Any, *, scope: Any) -> Sequence[Any]:
         del conn, entity_id, scope
@@ -414,7 +440,13 @@ def test_handle_marks_job_completed_with_a_receipt_and_never_raises(
     assert receipt["claims_written"] == 0
     assert receipt["by_field"] == {}
     assert receipt["proposed_fields"] == []
-    assert receipt["link_audit"] == {"EXACT": 3, "PARTIAL": 1, "NOT_FOUND": 0}
+    # The audit reaches the receipt keyed by *reason*, so a reader of the terminal row learns
+    # whether the job's misses were dead links, empty pages or quotes off the wrong page.
+    assert receipt["link_audit"] == {
+        "EXACT/on_page": 3,
+        "NOT_FOUND/not_on_page": 2,
+        "PARTIAL/partial_on_page": 1,
+    }
     assert receipt["halted_providers"] == {}
     assert receipt["profile_sha256"] == arv2_account_profile_sha256()
     assert len(receipt["manifest_sha256"]) == 64
@@ -675,6 +707,34 @@ def test_the_model_error_outcome_lands_needs_review_with_its_reason(
     assert landed["finalization"]["reason"] == "model_error"
 
 
+def test_the_icp_hard_gates_key_the_receipt_and_an_unassessed_gate_is_filled_unclear(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The driver reads the pinned ICP's ``hard_gates`` keys and the tool keys the verdicts to them.
+
+    The scripted model answers on ``series-a-saas`` only; ``us-hq`` is the ICP's other gate, so the
+    receipt carries it as ``unclear`` rather than leaving a reviewer to wonder whether the gate was
+    checked and passed or never looked at.
+    """
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, job)
+    _patch_reads(
+        monkeypatch,
+        account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai"),
+        icp_body=GATED_ICP_BODY,
+    )
+    handler, _, writer, _ = _handler(store)
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "completed"
+    verdicts = store.named("finish_job")[0]["finalization"]["fit_verdicts"]
+    assert [verdict["gate"] for verdict in verdicts] == ["series-a-saas", "us-hq"]
+    assert verdicts[1]["verdict"] == "unclear" and verdicts[1]["rationale"] == "not assessed"
+    assert [draft.markers.get("filled_by_tool") for draft in writer.drafts] == [None, True]
+
+
 def test_the_enqueue_constants_are_the_ones_the_launcher_will_use() -> None:
     assert ARV2_ACCOUNT_DEDUP_PREFIX == "arv2-account-research:"
     assert ARV2_ACCOUNT_TASK_PRIORITY == -100
@@ -689,7 +749,9 @@ def test_the_system_prompt_carries_the_pinned_resources_and_the_job_context(
     job = _job_row(run)
     store = FakeStore(run, job)
     _patch_reads(
-        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+        monkeypatch,
+        account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai"),
+        icp_body=GATED_ICP_BODY,
     )
     seen: dict[str, Any] = {}
 
@@ -707,6 +769,9 @@ def test_the_system_prompt_carries_the_pinned_resources_and_the_job_context(
     assert "VP Marketing." in prompt, "the persona document reaches the model"
     assert "core.industry" in prompt, "the field catalog menu reaches the model"
     assert "focus on hiring signals" in prompt, "the launch directive reaches the model"
+    assert '"icp_gate_keys": ["series-a-saas", "us-hq"]' in prompt, (
+        "the gates the verdicts are keyed to reach the model, so it never guesses a label"
+    )
     assert json.loads(json.dumps(store.named("read_account_catalog"))) == [{}]
 
 
@@ -811,3 +876,117 @@ def test_the_builder_composes_the_lane_when_everything_is_configured(
     # artifact write path nor its own gateway client.
     assert handler._artifacts is artifacts  # noqa: SLF001 — the injection is the assertion
     assert handler._models is models  # noqa: SLF001
+
+
+# --- the agent's own model spend (R2-close task 2) ---------------------------------------------
+
+
+def _metered_finalizing_model() -> _ScriptedModel:
+    """The finalizing model, stamped the way the governed gateway stamps a real answer."""
+
+    base = _finalizes_at_once()
+
+    def respond(messages: list[BaseMessage]) -> AIMessage:
+        message = base._respond(messages)
+        return AIMessage(
+            content=message.content,
+            tool_calls=message.tool_calls,
+            usage_metadata={"input_tokens": 1_000, "output_tokens": 200, "total_tokens": 1_200},
+            response_metadata={
+                "clue_cost_cents": "0.5",
+                "clue_cost_source": "metered",
+                "clue_answering_model": "x-ai/grok-4.6",
+            },
+        )
+
+    return _ScriptedModel(respond)
+
+
+def test_the_model_rounds_are_drained_onto_the_ledger_before_the_job_spend_is_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row()
+    # Attempt 2: a job that was suspended once and re-driven. The row id the driver stamps must
+    # carry the row's own attempt, or this run's rounds would collide with the first attempt's and
+    # be dropped by the drain's ON CONFLICT.
+    job = _job_row(run, attempt=2)
+    store = FakeStore(run, job)
+    _patch_reads(
+        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+    )
+    handler, conn_factory, _, _ = _handler(store, model=_metered_finalizing_model())
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "completed"
+    ledger_rows = [
+        params
+        for statement, params in conn_factory.conn.statements
+        if "provider_call_ledger" in statement
+    ]
+    assert len(ledger_rows) == 1, "one model round, one ledger row"
+    landed = ledger_rows[0]
+    assert landed["provider"] == "openrouter"
+    assert landed["operation"] == "agent_completion"
+    assert landed["phase"] == "result"
+    assert landed["outcome"] == "ok"
+    assert landed["cost_usd"] == Decimal("0.005")
+    assert landed["job_id"] == job.job_id
+    assert landed["ledger_id"] == ledger_id_for(f"model:{job.job_id}:2:1")
+    assert json.loads(str(landed["extras_json"]))["prompt_tokens"] == 1_000
+
+    receipt = store.named("finish_job")[0]["finalization"]
+    assert receipt["model_spend"] == {
+        "usd": "0.005",
+        "calls": 1,
+        "prompt_tokens": 1_000,
+        "completion_tokens": 200,
+        "cached_prompt_tokens": 0,
+        "cost_source": "metered",
+    }
+
+
+# -- the "already established" block ---------------------------------------------------------------
+
+
+def _established_claim(
+    field_key: str,
+    *,
+    value: Any,
+    url: str | None,
+    source_key: str | None = None,
+) -> Claim:
+    """A live claim shaped the way ``claims_for`` hands them to ``_already_established``."""
+    return Claim(
+        entity_id=EntityId(uuid4()),
+        entity_type=EntityType.ACCOUNT,
+        field_key=field_key,
+        value_json=value,
+        source_tier=4,
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        run_id=RunId(uuid4()),
+        research_mode=ResearchMode.ACCOUNT_PROFILING,
+        confidence=0.6,
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
+        workspace_id=WORKSPACE,
+        source_url=url,
+        evidence_span="Probook was founded in 2022.",
+        source_key=source_key,
+    )
+
+
+def test_format_established_writes_compact_json_values_capped_per_line() -> None:
+    long_list = [{"title": f"Role {i}", "url": f"https://jobs.test/{i}"} for i in range(40)]
+    claims = [
+        _established_claim("account.open_requisitions", value=long_list, url="https://jobs.test"),
+        _established_claim("core.founded_year", value=2022, url=None, source_key="ai_ark:company"),
+    ]
+    text = format_established(claims)
+    lines = text.split("\n")
+    assert len(lines) == 2
+    assert lines[0].startswith('- account.open_requisitions: [{"title": "Role 0"')
+    assert lines[0].endswith("… (https://jobs.test)")
+    assert len(lines[0]) <= 240 + len("- account.open_requisitions: ") + len(
+        "… (https://jobs.test)"
+    )
+    assert lines[1] == "- core.founded_year: 2022 (ai_ark:company)"

@@ -20,13 +20,14 @@ from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResu
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from openai import APIStatusError
 from openai.types.responses import ResponseError
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, SecretStr, ValidationError
 
 from clue_config.gateway import GatewayConfig, ModelPrice
 from clue_gateway import OpenRouterAgentModelProvider
 from clue_gateway import agent_model as agent_model
 from clue_gateway.agent_model import (
     GovernedAgentChatModel,
+    OpenRouterGenerationCost,
     provider_compatible_tool_schema,
     transient_upstream_failure,
     unsupported_schema_pattern,
@@ -588,8 +589,11 @@ def _p32_provider(config: GatewayConfig, respond: Any) -> OpenRouterAgentModelPr
 def test_openrouter_extra_body_carries_provider_sort_and_usage_accounting() -> None:
     """The OpenRouter economics knobs are config, not code: `provider.sort` pins one
     replica (the design runtime's ~95% cached-prefill invariant) and `usage.include`
-    asks for the accounting block. Default config sends NEITHER — existing call sites
-    keep their exact wire shape."""
+    asks for the accounting block — including the credits the call actually cost.
+
+    `provider.sort` still defaults off, so a call site that never asked for one replica
+    ordering keeps its exact wire shape. `usage.include` defaults ON since the R2-close:
+    a metered cost is the only cost that is not a guess, so every call asks for one."""
     seen_payloads: list[dict[str, Any]] = []
 
     def respond(request: httpx.Request) -> httpx.Response:
@@ -617,6 +621,12 @@ def test_openrouter_extra_body_carries_provider_sort_and_usage_accounting() -> N
     )
     plain.invoke("hi")
     assert "provider" not in seen_payloads[-1]
+    assert seen_payloads[-1]["usage"] == {"include": True}
+
+    opted_out = _p32_provider(GatewayConfig(openrouter_usage_include=False), respond).build(
+        model_id="probe/model", timeout_s=10, max_retries=0, max_output_tokens=64, temperature=0
+    )
+    opted_out.invoke("hi")
     assert "usage" not in seen_payloads[-1] or seen_payloads[-1]["usage"] is None
 
 
@@ -664,7 +674,7 @@ def test_cached_prompt_tokens_survive_into_usage() -> None:
         model_id="probe/model", timeout_s=10, max_retries=0, max_output_tokens=64, temperature=0
     )
     response = model.invoke("hi")
-    usage, _served, _cost = model._usage_and_cost(response)
+    usage, _served, _cost, _source = model._usage_and_cost(response)
     assert usage.prompt_tokens == 40
     assert usage.cached_prompt_tokens == 33
 
@@ -897,3 +907,411 @@ def test_the_retry_bound_and_backoff_stay_small_enough_for_a_leased_agent_turn()
     assert agent_model._MAX_TRANSIENT_ATTEMPTS == 3
     assert len(agent_model._TRANSIENT_BACKOFF_S) == agent_model._MAX_TRANSIENT_ATTEMPTS - 1
     assert sum(agent_model._TRANSIENT_BACKOFF_S) <= 5.0
+
+
+# --- OpenRouter's own metered cost (R2-close task 2) -------------------------------------------
+#
+# ``usage.include`` makes OpenRouter answer with a ``usage`` block carrying the credits the call
+# actually cost. ``langchain_openai``'s chat-completions path hands that block back verbatim as
+# ``ChatResult.llm_output["token_usage"]``, so the governed wrapper prefers it over the local
+# price sheet and says which of the two it used.
+
+
+class _UsageChatModel(BaseChatModel):
+    """An inner model shaped like ``langchain_openai``'s chat-completions result.
+
+    ``llm_output["token_usage"]`` is the provider's raw usage block — including OpenRouter's
+    ``cost`` key when usage accounting was asked for.
+    """
+
+    _usage: dict[str, Any] = PrivateAttr()
+    _response_id: str | None = PrivateAttr()
+
+    def __init__(self, usage: dict[str, Any], *, response_id: str | None = None) -> None:
+        super().__init__()
+        self._usage = usage
+        self._response_id = response_id
+
+    @property
+    def _llm_type(self) -> str:
+        return "c6-usage-test-model"
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del messages, stop, run_manager, kwargs
+        message = AIMessage(
+            content="answered",
+            usage_metadata={
+                "input_tokens": int(self._usage.get("prompt_tokens", 0)),
+                "output_tokens": int(self._usage.get("completion_tokens", 0)),
+                "total_tokens": int(self._usage.get("total_tokens", 0)),
+            },
+        )
+        llm_output: dict[str, Any] = {
+            "token_usage": dict(self._usage),
+            "model_name": "x-ai/grok-4.6",
+        }
+        if self._response_id is not None:
+            llm_output["id"] = self._response_id
+        return ChatResult(generations=[ChatGeneration(message=message)], llm_output=llm_output)
+
+
+#: A price table is NOT how this deployment prices a model (founder ruling 2026-09-08: the cost is
+#: OpenRouter's number or nothing). ``GatewayConfig.prices`` survives as a pre-existing mechanism,
+#: so these tests still pin its branch — with a made-up model id, so nothing reads as a rate we
+#: maintain for a model we actually run.
+_LISTED_PRICES = {
+    "x-ai/grok-4.6": ModelPrice(
+        prompt_cents_per_1k=Decimal("0.2"), completion_cents_per_1k=Decimal("0.6")
+    )
+}
+
+
+class _RecordingLookup:
+    """A ``GenerationCostLookup`` double: records what it was asked, answers what it was given."""
+
+    def __init__(self, answer: Decimal | None) -> None:
+        self.answer = answer
+        self.asked: list[str] = []
+
+    def cost_cents(self, generation_id: str) -> Decimal | None:
+        self.asked.append(generation_id)
+        return self.answer
+
+    async def acost_cents(self, generation_id: str) -> Decimal | None:
+        return self.cost_cents(generation_id)
+
+
+def _governed(
+    usage: dict[str, Any],
+    *,
+    prices: dict[str, ModelPrice] | None = None,
+    lookup: Any | None = None,
+    response_id: str | None = None,
+) -> GovernedAgentChatModel:
+    return GovernedAgentChatModel(
+        models=(_UsageChatModel(usage, response_id=response_id),),
+        model_ids=("x-ai/grok-4.6",),
+        requested_model="x-ai/grok-4.6",
+        gateway_config=GatewayConfig(prices=prices or {}),
+        cost_lookup=lookup,
+    )
+
+
+def test_openrouter_reported_cost_is_preferred_over_the_price_sheet_and_labelled_metered() -> None:
+    model = _governed(
+        {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120, "cost": 0.0123},
+        prices=_LISTED_PRICES,
+    )
+
+    response = model.invoke("What did that cost?")
+
+    # $0.0123 is 1.23 cents — the provider's number, not the sheet's 0.032.
+    assert Decimal(response.response_metadata["clue_cost_cents"]) == Decimal("1.23")
+    assert response.response_metadata["clue_cost_source"] == "metered"
+
+
+def test_without_a_reported_cost_the_price_sheet_answers_and_says_so() -> None:
+    model = _governed(
+        {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120},
+        prices=_LISTED_PRICES,
+    )
+
+    response = model.invoke("What did that cost?")
+
+    # 100 prompt tokens at 0.2c/1k plus 20 completion tokens at 0.6c/1k.
+    assert Decimal(response.response_metadata["clue_cost_cents"]) == Decimal("0.032")
+    assert response.response_metadata["clue_cost_source"] == "estimate"
+
+
+def test_a_model_absent_from_the_price_sheet_reports_zero_as_unpriced_never_as_measured() -> None:
+    model = _governed({"prompt_tokens": 100, "completion_tokens": 20})
+
+    response = model.invoke("What did that cost?")
+
+    assert Decimal(response.response_metadata["clue_cost_cents"]) == Decimal(0)
+    assert response.response_metadata["clue_cost_source"] == "unpriced"
+
+
+def test_usage_accounting_is_asked_for_by_default_and_we_ship_no_price_table_of_our_own() -> None:
+    """The R2 live run logged zero for every model call because OpenRouter was never asked to
+    meter. Asking is now the default — and the answer to "what did this cost" is OpenRouter's,
+    never a rate sheet of ours (founder ruling 2026-09-08), so the table ships empty."""
+
+    config = GatewayConfig()
+
+    assert config.openrouter_usage_include is True
+    assert config.prices == {}
+
+
+def test_a_response_without_its_own_cost_is_priced_by_the_generation_endpoint_as_metered() -> None:
+    """The streaming and Responses paths drop OpenRouter's ``cost`` key, so the cost is fetched
+    from its meter rather than estimated from rates we would have to keep current."""
+
+    lookup = _RecordingLookup(Decimal("4.56"))
+    model = _governed(
+        {"prompt_tokens": 100, "completion_tokens": 20},
+        prices=_LISTED_PRICES,
+        lookup=lookup,
+        response_id="gen-abc123",
+    )
+
+    response = model.invoke("What did that cost?")
+
+    assert lookup.asked == ["gen-abc123"], "the response's own generation id, once"
+    assert Decimal(response.response_metadata["clue_cost_cents"]) == Decimal("4.56")
+    # OpenRouter's meter, reached by a second route — still metered, never an estimate, even
+    # though this model happens to be listed in the deployment's price table.
+    assert response.response_metadata["clue_cost_source"] == "metered"
+
+
+def test_a_response_that_already_carried_its_cost_is_never_looked_up() -> None:
+    """Lazy by construction: the lookup is a network hop and a metered answer needs no second."""
+
+    lookup = _RecordingLookup(Decimal("4.56"))
+    model = _governed(
+        {"prompt_tokens": 100, "completion_tokens": 20, "cost": 0.0123},
+        lookup=lookup,
+        response_id="gen-abc123",
+    )
+
+    response = model.invoke("What did that cost?")
+
+    assert lookup.asked == []
+    assert Decimal(response.response_metadata["clue_cost_cents"]) == Decimal("1.23")
+    assert response.response_metadata["clue_cost_source"] == "metered"
+
+
+def test_a_failed_generation_lookup_reports_unpriced_and_does_not_raise() -> None:
+    lookup = _RecordingLookup(None)
+    model = _governed(
+        {"prompt_tokens": 100, "completion_tokens": 20}, lookup=lookup, response_id="gen-abc123"
+    )
+
+    response = model.invoke("What did that cost?")
+
+    assert lookup.asked == ["gen-abc123"]
+    assert Decimal(response.response_metadata["clue_cost_cents"]) == Decimal(0)
+    assert response.response_metadata["clue_cost_source"] == "unpriced"
+
+
+def test_a_langchain_run_id_is_never_mistaken_for_a_generation_id() -> None:
+    """LangChain stamps its own run id on a message when the provider gave none. Asking OpenRouter
+    about one would be asking about a call it has never heard of."""
+
+    lookup = _RecordingLookup(Decimal("4.56"))
+    model = _governed(
+        {"prompt_tokens": 100, "completion_tokens": 20},
+        lookup=lookup,
+        response_id="lc_run-0000-0",
+    )
+
+    response = model.invoke("What did that cost?")
+
+    assert lookup.asked == []
+    assert response.response_metadata["clue_cost_source"] == "unpriced"
+
+
+def _generation_transport(
+    responses: list[httpx.Response],
+) -> tuple[httpx.Client, list[httpx.Request]]:
+    seen: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return responses[min(len(seen) - 1, len(responses) - 1)]
+
+    return httpx.Client(transport=httpx.MockTransport(respond)), seen
+
+
+def test_the_generation_lookup_reads_total_cost_and_converts_usd_to_cents() -> None:
+    client, seen = _generation_transport(
+        [httpx.Response(200, json={"data": {"id": "gen-abc123", "total_cost": 0.0456}})]
+    )
+    lookup = OpenRouterGenerationCost(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=SecretStr("test-openrouter-key"),
+        http_client=client,
+    )
+
+    assert lookup.cost_cents("gen-abc123") == Decimal("4.5600")
+    assert seen[0].url.path == "/api/v1/generation"
+    assert seen[0].url.params["id"] == "gen-abc123"
+    assert seen[0].headers["authorization"] == "Bearer test-openrouter-key"
+
+
+def test_the_generation_lookup_retries_an_upstream_fault_exactly_once() -> None:
+    client, seen = _generation_transport(
+        [
+            httpx.Response(503, text="upstream"),
+            httpx.Response(200, json={"data": {"total_cost": 0.01}}),
+        ]
+    )
+    lookup = OpenRouterGenerationCost(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=SecretStr("k"),
+        http_client=client,
+    )
+
+    assert lookup.cost_cents("gen-abc123") == Decimal("1.00")
+    assert len(seen) == 2
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(200, json={"data": {}}),
+        httpx.Response(200, text="not json"),
+    ],
+)
+def test_the_generation_lookup_never_raises_and_answers_none_when_it_cannot_price(
+    response: httpx.Response,
+) -> None:
+    """Pricing a call must never be able to fail the call it prices."""
+
+    client, _ = _generation_transport([response])
+    lookup = OpenRouterGenerationCost(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=SecretStr("k"),
+        http_client=client,
+    )
+
+    assert lookup.cost_cents("gen-abc123") is None
+
+
+def test_the_generation_lookup_swallows_a_transport_failure() -> None:
+    def explode(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("no route", request=request)
+
+    lookup = OpenRouterGenerationCost(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=SecretStr("k"),
+        http_client=httpx.Client(transport=httpx.MockTransport(explode)),
+    )
+
+    assert lookup.cost_cents("gen-abc123") is None
+
+
+def test_the_provider_injects_the_generation_lookup_so_a_built_model_can_price_itself() -> None:
+    provider = OpenRouterAgentModelProvider(GatewayConfig(), SecretStr("k"))
+
+    model = provider.build(
+        model_id="x-ai/grok-4.6",
+        timeout_s=10,
+        max_retries=1,
+        max_output_tokens=64,
+        temperature=0,
+    )
+
+    assert isinstance(model, GovernedAgentChatModel)
+    assert isinstance(model.cost_lookup, OpenRouterGenerationCost)
+
+
+def test_the_async_path_awaits_the_generation_lookup_rather_than_blocking_the_loop() -> None:
+    """The production path: the ARV2 account agent drives the graph with ``ainvoke``, so the
+    lookup it triggers must be the awaited one."""
+
+    class _AsyncOnlyLookup:
+        def __init__(self) -> None:
+            self.asked_async: list[str] = []
+
+        def cost_cents(self, generation_id: str) -> Decimal | None:
+            raise AssertionError("the async path must not call the blocking lookup")
+
+        async def acost_cents(self, generation_id: str) -> Decimal | None:
+            await asyncio.sleep(0)
+            self.asked_async.append(generation_id)
+            return Decimal("7.89")
+
+    lookup = _AsyncOnlyLookup()
+    model = _governed(
+        {"prompt_tokens": 100, "completion_tokens": 20}, lookup=lookup, response_id="gen-async-1"
+    )
+
+    response = asyncio.run(model.ainvoke("What did that cost?"))
+
+    assert lookup.asked_async == ["gen-async-1"]
+    assert Decimal(response.response_metadata["clue_cost_cents"]) == Decimal("7.89")
+    assert response.response_metadata["clue_cost_source"] == "metered"
+
+
+def _lagging_meter(*, backoff_s: float = 0.0, **kwargs: Any) -> OpenRouterGenerationCost:
+    return OpenRouterGenerationCost(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=SecretStr("test-openrouter-key"),
+        meter_lag_backoff_s=backoff_s,
+        **kwargs,
+    )
+
+
+def test_the_generation_lookup_retries_a_404_once_because_the_meter_can_lag_the_response() -> None:
+    """A 404 is the ordinary shape for a job's last round: the lookup runs the instant the
+    completion returns, and OpenRouter has not finished recording the generation yet."""
+
+    client, seen = _generation_transport(
+        [
+            httpx.Response(404, text="not found"),
+            httpx.Response(200, json={"data": {"total_cost": 0.0456}}),
+        ]
+    )
+
+    assert _lagging_meter(http_client=client).cost_cents("gen-abc123") == Decimal("4.5600")
+    assert len(seen) == 2, "asked once, waited, asked again"
+
+
+def test_a_meter_that_never_records_the_generation_gives_up_after_the_second_ask() -> None:
+    client, seen = _generation_transport(
+        [httpx.Response(404, text="not found"), httpx.Response(404, text="not found")]
+    )
+
+    assert _lagging_meter(http_client=client).cost_cents("gen-abc123") is None
+    assert len(seen) == 2, "exactly one retry — never a third ask"
+
+
+def test_a_lagging_meter_still_lands_a_metered_cost_on_the_message() -> None:
+    """End to end over the real lookup: the 404 the first ask gets must not cost the job its
+    money truth."""
+
+    client, _ = _generation_transport(
+        [
+            httpx.Response(404, text="not found"),
+            httpx.Response(200, json={"data": {"total_cost": 0.0456}}),
+        ]
+    )
+    model = _governed(
+        {"prompt_tokens": 100, "completion_tokens": 20},
+        lookup=_lagging_meter(http_client=client),
+        response_id="gen-abc123",
+    )
+
+    response = model.invoke("What did that cost?")
+
+    assert Decimal(response.response_metadata["clue_cost_cents"]) == Decimal("4.56")
+    assert response.response_metadata["clue_cost_source"] == "metered"
+
+
+def test_the_async_lookup_awaits_the_lag_rather_than_blocking_and_still_retries_once() -> None:
+    """The production path again: the ARV2 loop is async, so the second ask must come after an
+    awaited pause, not a blocking one."""
+
+    seen: list[httpx.Request] = []
+    responses = [
+        httpx.Response(404, text="not found"),
+        httpx.Response(200, json={"data": {"total_cost": 0.0456}}),
+    ]
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return responses[min(len(seen) - 1, len(responses) - 1)]
+
+    async def ask() -> Decimal | None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            return await _lagging_meter(http_async_client=client).acost_cents("gen-abc123")
+
+    assert asyncio.run(ask()) == Decimal("4.5600")
+    assert len(seen) == 2

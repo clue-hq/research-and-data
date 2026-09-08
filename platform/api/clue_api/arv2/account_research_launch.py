@@ -153,7 +153,7 @@ class Arv2LaunchRefused(Arv2Error):
 
     Codes: ``lane_disabled``, ``account_not_found:<id>``, ``account_not_in_workspace:<id>``,
     ``icp_artifact_not_found``, ``icp_artifact_not_confirmed``, ``icp_digest_mismatch``,
-    ``product_selection_version_unknown``, ``project_not_found``.
+    ``icp_front_matter_invalid``, ``product_selection_version_unknown``, ``project_not_found``.
     """
 
     def __init__(self, code: str, message: str) -> None:
@@ -437,11 +437,33 @@ async def _pinned_icp(
         storage_key=request.icp_artifact_key,
         workspace_id=request.workspace_id,
     )
-    front, _ = parse_front_matter(body.decode("utf-8"))
+    try:
+        front, _ = parse_front_matter(body.decode("utf-8"))
+    except ValueError as unreadable:
+        raise Arv2LaunchRefused(
+            "icp_front_matter_invalid",
+            f"document {row['path']!r} carries no readable YAML front matter: {unreadable}",
+        ) from unreadable
+    # The run pins the ICP by key and version, and both come from the document itself. A document
+    # missing either is a malformed pin, and a malformed pin must refuse the launch by name rather
+    # than raise a ``KeyError``/``ValueError`` out of the launcher at the operator.
+    icp_key = front.get("icp_key")
+    version = front.get("version")
+    if not isinstance(icp_key, str) or not icp_key.strip():
+        raise Arv2LaunchRefused(
+            "icp_front_matter_invalid",
+            f"document {row['path']!r} names no icp_key; a run is pinned to the ICP's own key",
+        )
+    if not isinstance(version, int) or isinstance(version, bool):
+        raise Arv2LaunchRefused(
+            "icp_front_matter_invalid",
+            f"document {row['path']!r} has version {version!r}, which is not an integer; a run is "
+            "pinned to the ICP version the human confirmed",
+        )
     return _PinnedIcp(
         brand_id=str(row["brand_id"]),
-        icp_key=str(front["icp_key"]),
-        icp_version=int(front["version"]),
+        icp_key=icp_key,
+        icp_version=version,
     )
 
 

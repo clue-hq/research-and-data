@@ -53,6 +53,27 @@ def test_r2_account_keys_are_registered_in_the_pack() -> None:
     assert len(ARV2_FIELD_KEYS) == 40
 
 
+def test_a_vacant_committee_seat_is_a_valid_committee_candidate() -> None:
+    """A vacant seat carries no name and needs no URL: "nobody holds this role" is a finding about
+    the account, not an assertion about a person. Only ``persona`` identifies the row."""
+    seed = next(s for s in ARV2_PACK if str(s.field_def.field_key) == "account.committee_candidate")
+    assert seed.value_schema is not None
+    assert seed.value_schema["required"] == ["persona"]
+
+    validate_value_against_schema(
+        {"persona": "economic_buyer", "title": "CFO", "vacant_seat": True}, seed.value_schema
+    )
+    validate_value_against_schema(
+        {
+            "name": "Nick Fisher",
+            "persona": "champion",
+            "confirmed_by": "https://probook.ai/about",
+            "vacant_seat": False,
+        },
+        seed.value_schema,
+    )
+
+
 def test_pack_does_not_redefine_an_existing_key() -> None:
     assert not (ARV2_FIELD_KEYS & _REGISTERED_ELSEWHERE)
 
