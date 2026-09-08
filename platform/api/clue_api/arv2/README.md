@@ -670,8 +670,8 @@ failure. An account that goes wrong takes only itself down, and the rest of the 
 
 | module | what it owns |
 | --- | --- |
-| `account_research_catalog.py` | the sha-pinned `arv2-account/v1` catalog (profile, prompt, three skills), the resource bundle, and the system prompt built from it |
-| `account_research_refusals.py` | the refusal codes and the envelope the model receives; each code's `reaction` sentence is the manual's row, word for word |
+| `account_research_catalog.py` | the sha-pinned `arv2-account/v1` and `arv2-person/v1` catalogs (profile, prompt, three skills each), the resource bundle, and the system prompt built from it |
+| `account_research_refusals.py` | the refusal codes and the envelope the model receives; each code's `reaction` sentence is the manual's row, word for word — `REFUSAL_CODES` for the account driver, `PERSON_REFUSAL_CODES` for the person driver |
 | `account_research_store.py` | one function per run/job transition, plus the annotation writer and the readers the driver composes from |
 | `provider_ledger.py` | the buffered raw/ledger sinks: `ProviderCaller` writes them from the worker thread, the async side drains raw bodies to artifacts and rows to `provider_call_ledger` right after the hop |
 | `account_research_claims.py` | the deterministic claim mappers (provider record → typed draft) and the prose-claim carry-across |

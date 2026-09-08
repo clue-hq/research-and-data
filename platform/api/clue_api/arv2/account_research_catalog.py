@@ -1,7 +1,8 @@
-"""The arv2-account catalog: sha-pinned resources and the system prompt they assemble into.
+"""The arv2 catalogs: sha-pinned resources and the system prompts they assemble into.
 
-The five markdown files beside this module are the agent's constitution, its two skills and its
-tool manual. They are **bytes that are hashed, never parsed**: a profile ref plus a sha256 is what
+Two agents load the same way — ``arv2-account`` (one company) and ``arv2-person`` (one confirmed
+committee member). Each has a folder of five markdown files: the profile, the constitution and the
+three skills. They are **bytes that are hashed, never parsed**: a profile ref plus a sha256 is what
 a job records, so a byte change is a new authorization — the job relaunches, it never resumes.
 """
 
@@ -14,31 +15,36 @@ from datetime import date
 from pathlib import Path
 from typing import Literal
 
+#: The two agents that load from this catalog. One folder each, five files each.
+Arv2Agent = Literal["arv2-account", "arv2-person"]
+
+#: The three skills, in the order they are stacked into the system prompt.
+_SKILL_NAMES: tuple[str, ...] = ("dossier", "audit", "manual")
+
 ARV2_ACCOUNT_CATALOG_VERSION = "v1"
 ARV2_ACCOUNT_PROFILE_REF = f"agent-profile:arv2-account:{ARV2_ACCOUNT_CATALOG_VERSION}"
-_PROMPT_REF = f"agent-prompt:arv2-account:{ARV2_ACCOUNT_CATALOG_VERSION}"
-_SKILL_FILES: tuple[tuple[str, str], ...] = (
-    ("dossier.md", f"agent-skill:arv2-account-dossier:{ARV2_ACCOUNT_CATALOG_VERSION}"),
-    ("audit.md", f"agent-skill:arv2-account-audit:{ARV2_ACCOUNT_CATALOG_VERSION}"),
-    ("manual.md", f"agent-skill:arv2-account-manual:{ARV2_ACCOUNT_CATALOG_VERSION}"),
-)
+ARV2_PERSON_CATALOG_VERSION = "v1"
+ARV2_PERSON_PROFILE_REF = f"agent-profile:arv2-person:{ARV2_PERSON_CATALOG_VERSION}"
+
+
+def arv2_catalog_root(agent: Arv2Agent, version: str) -> Path:
+    """The directory holding the five files of one agent's catalog version."""
+    # platform/api/clue_api/arv2/<this file> -> parents[3] == platform/
+    return Path(__file__).parents[3] / "agents" / "catalog" / "entity-research" / agent / version
 
 
 def arv2_account_catalog_root(version: str = ARV2_ACCOUNT_CATALOG_VERSION) -> Path:
-    """The directory holding the five files of one catalog version."""
-    # platform/api/clue_api/arv2/<this file> -> parents[3] == platform/
-    return (
-        Path(__file__).parents[3]
-        / "agents"
-        / "catalog"
-        / "entity-research"
-        / "arv2-account"
-        / version
-    )
+    """The directory holding the five files of one account catalog version."""
+    return arv2_catalog_root("arv2-account", version)
+
+
+def arv2_person_catalog_root(version: str = ARV2_PERSON_CATALOG_VERSION) -> Path:
+    """The directory holding the five files of one person catalog version."""
+    return arv2_catalog_root("arv2-person", version)
 
 
 def arv2_account_profile_sha256(root: Path | None = None) -> str:
-    """The digest a launched job records beside :data:`ARV2_ACCOUNT_PROFILE_REF`.
+    """The digest a launched account job records beside :data:`ARV2_ACCOUNT_PROFILE_REF`.
 
     Deliberately the *same* computation :func:`load_account_resources` makes, not a second one over
     the same file: the launch pins this value and the driver compares the bundle's against it, so
@@ -46,7 +52,20 @@ def arv2_account_profile_sha256(root: Path | None = None) -> str:
     profile written with CRLF line endings.
     """
     base = root or arv2_account_catalog_root()
-    return _resource("profile", ARV2_ACCOUNT_PROFILE_REF, base / "profile.md").sha256
+    return _resource(
+        "profile", ARV2_ACCOUNT_PROFILE_REF, base / "profile.md", ARV2_ACCOUNT_CATALOG_VERSION
+    ).sha256
+
+
+def arv2_person_profile_sha256(root: Path | None = None) -> str:
+    """The digest a launched person job records beside :data:`ARV2_PERSON_PROFILE_REF`.
+
+    Same one-computation rule as the account pin, for the same reason.
+    """
+    base = root or arv2_person_catalog_root()
+    return _resource(
+        "profile", ARV2_PERSON_PROFILE_REF, base / "profile.md", ARV2_PERSON_CATALOG_VERSION
+    ).sha256
 
 
 @dataclass(frozen=True)
@@ -61,8 +80,8 @@ class CatalogResource:
 
 
 @dataclass(frozen=True)
-class AccountResourceBundle:
-    """Everything the account agent runs on: the profile, the prompt and the three skills."""
+class ResourceBundle:
+    """Everything one arv2 agent runs on: the profile, the prompt and the three skills."""
 
     profile: CatalogResource
     prompt: CatalogResource
@@ -78,25 +97,47 @@ class AccountResourceBundle:
         return hashlib.sha256(canonical.encode()).hexdigest()
 
 
-def _resource(kind: Literal["profile", "prompt", "skill"], ref: str, path: Path) -> CatalogResource:
+#: The account bundle's historical name; kept so the R2 driver's annotations still read.
+AccountResourceBundle = ResourceBundle
+
+
+def _resource(
+    kind: Literal["profile", "prompt", "skill"], ref: str, path: Path, version: str
+) -> CatalogResource:
     body = path.read_text(encoding="utf-8")
     return CatalogResource(
         kind=kind,
         ref=ref,
-        version=ARV2_ACCOUNT_CATALOG_VERSION,
+        version=version,
         sha256=hashlib.sha256(body.encode()).hexdigest(),
         body=body,
     )
 
 
-def load_account_resources(root: Path | None = None) -> AccountResourceBundle:
-    """Read the five files and pin each one by digest."""
-    base = root or arv2_account_catalog_root()
-    return AccountResourceBundle(
-        profile=_resource("profile", ARV2_ACCOUNT_PROFILE_REF, base / "profile.md"),
-        prompt=_resource("prompt", _PROMPT_REF, base / "prompt.md"),
-        skills=tuple(_resource("skill", ref, base / name) for name, ref in _SKILL_FILES),
+def _load_resources(agent: Arv2Agent, version: str, root: Path | None) -> ResourceBundle:
+    """Read one agent's five files and pin each one by digest."""
+    base = root or arv2_catalog_root(agent, version)
+
+    def one(kind: Literal["profile", "prompt", "skill"], ref: str, name: str) -> CatalogResource:
+        return _resource(kind, ref, base / f"{name}.md", version)
+
+    return ResourceBundle(
+        profile=one("profile", f"agent-profile:{agent}:{version}", "profile"),
+        prompt=one("prompt", f"agent-prompt:{agent}:{version}", "prompt"),
+        skills=tuple(
+            one("skill", f"agent-skill:{agent}-{name}:{version}", name) for name in _SKILL_NAMES
+        ),
     )
+
+
+def load_account_resources(root: Path | None = None) -> ResourceBundle:
+    """Read the account agent's five files and pin each one by digest."""
+    return _load_resources("arv2-account", ARV2_ACCOUNT_CATALOG_VERSION, root)
+
+
+def load_person_resources(root: Path | None = None) -> ResourceBundle:
+    """Read the person agent's five files and pin each one by digest."""
+    return _load_resources("arv2-person", ARV2_PERSON_CATALOG_VERSION, root)
 
 
 @dataclass(frozen=True)
@@ -165,7 +206,7 @@ def _tag(resource: CatalogResource, tag: str) -> str:
     )
 
 
-def build_system_prompt(bundle: AccountResourceBundle, context: AccountContext) -> str:
+def build_system_prompt(bundle: ResourceBundle, context: AccountContext) -> str:
     """Stack the pinned resources and the job's context into the one system prompt."""
     sections = [
         _tag(bundle.profile, "profile"),
@@ -174,5 +215,83 @@ def build_system_prompt(bundle: AccountResourceBundle, context: AccountContext) 
         "The following runtime context is engine authority: the account, the ICP, the persona map, "
         "the field catalog and what is already established. Research the account in full.\n"
         f"<account_research_context>\n{context.block()}\n</account_research_context>",
+    ]
+    return "\n\n".join(sections)
+
+
+@dataclass(frozen=True)
+class PersonContext:
+    """The runtime context one person job carries — engine authority, not the model's to edit.
+
+    Mirrors :class:`AccountContext`, with the subject swapped: one confirmed committee member, the
+    account they belong to, and the ``lock`` — the verified employment history that rules out every
+    same-name person. The lock is in the head rather than left in prose because the constitution's
+    first rule is written against it, and a lock the model has to reconstruct is a lock it can drop.
+    """
+
+    person_name: str
+    person_title: str
+    person_linkedin_url: str
+    employment_history: tuple[str, ...]
+    account_name: str
+    account_domain: str
+    contact_id: str
+    account_id: str
+    workspace_id: str
+    today: date
+    icp_markdown: str
+    persona_markdown: str
+    catalog_menu: str
+    already_established: str
+    directive_text: str
+    media_max_items: int
+    stop_policy: dict[str, int]
+
+    def block(self) -> str:
+        """The context block: one JSON head, then the four context documents."""
+        head: dict[str, object] = {
+            "person": {
+                "name": self.person_name,
+                "title": self.person_title,
+                "linkedin_url": self.person_linkedin_url,
+                "contact_id": self.contact_id,
+            },
+            "account": {
+                "name": self.account_name,
+                "domain": self.account_domain,
+                "id": self.account_id,
+            },
+            "lock": {"employment_history": list(self.employment_history)},
+            "workspace_id": self.workspace_id,
+            "today": self.today.isoformat(),
+            "directive": self.directive_text,
+            "media_max_items": self.media_max_items,
+            "stop_policy": self.stop_policy,
+        }
+        return "\n\n".join(
+            [
+                # ``ensure_ascii=False``: the lock's history lines and the person's own name carry
+                # accents, em dashes and non-Latin scripts as a matter of course, and an escaped
+                # name is not the string the agent has to match against a page.
+                json.dumps(head, sort_keys=True, ensure_ascii=False),
+                "## context/icp.md\n" + self.icp_markdown.rstrip(),
+                "## context/persona.md\n" + self.persona_markdown.rstrip(),
+                "## context/catalog.md\n" + self.catalog_menu.rstrip(),
+                "## context/already-established.md\n"
+                + (self.already_established.rstrip() or "(nothing yet)"),
+            ]
+        )
+
+
+def build_person_system_prompt(bundle: ResourceBundle, context: PersonContext) -> str:
+    """Stack the pinned person resources and the job's context into the one system prompt."""
+    sections = [
+        _tag(bundle.profile, "profile"),
+        bundle.prompt.body.rstrip(),
+        "\n\n".join(_tag(skill, "skill") for skill in bundle.skills),
+        "The following runtime context is engine authority: the person, the identity lock, the "
+        "account they belong to, the ICP, the persona map, the field catalog and what is already "
+        "established. Research this one person in full.\n"
+        f"<person_research_context>\n{context.block()}\n</person_research_context>",
     ]
     return "\n\n".join(sections)
