@@ -86,7 +86,7 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # ``exa_search_evidence@1`` — withheld on ``onboarding_icp``, where the profiles are written
     # from the files alone; it delegates to nobody. Model per ruling O-D1: ``x-ai/grok-4.6`` at
     # the model's default reasoning effort.
-    AgentRole.ONBOARDING_SYNTHESIS: "v2",
+    AgentRole.ONBOARDING_SYNTHESIS: "v3",
 }
 
 
