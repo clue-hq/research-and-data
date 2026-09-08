@@ -39,7 +39,318 @@ Error envelope:
 }
 ```
 
+## Contract v1 — the accounts screens (ARV2 D3, 2026-09-08)
+
+**This is the current contract for the five accounts-screen payloads.** It supersedes both older
+sections below wherever they differ. Its presentation truth is the dummy frontend `clue-frontend`
+@ `84f8ee7` (`src/features/accounts/model/*.ts`); its authority is
+`docs/specs/ARV2-MASTER-PLAN.md` §6 and the D0 rulings, and *where each value is read from* —
+endpoint, SQL, table column or claim `field_key` — is `docs/specs/ARV2-DATA-SOURCE-MAP.md`.
+
+The contract is **executable**, not prose. The Zod schemas are vendored with their amendments at
+`tests/api/contract_v1/zod/`, the pydantic wire models are
+`platform/api/clue_api/frontend_read/contract_v1.py`, and
+`tests/api/contract_v1/test_contract_v1.py` proves the three agree: the field sets match, a golden
+payload of each shape parses through the real Zod, and **the field tables in this section list
+exactly the fields on the wire**. Editing a table here without editing the models fails the build.
+
+How to read the tables: `required` = the key is always present (its value may still be `null` when
+the type says so); `optional` = the key is **omitted** when the backend does not know it. That
+distinction is load-bearing — a Zod `.optional()` that is not `.nullable()` *rejects* an explicit
+`null`, so "unknown" is an absent key, never a null one. Band-2 discipline still holds for ids,
+enums and timestamps; the `*Label` fields are the deliberate, enumerated exceptions where the
+backend owns the wording (a label is served precisely so the browser never derives it).
+
+### Envelopes
+
+| Endpoint | Envelope |
+| --- | --- |
+| `GET /frontend/v1/accounts` | `{ "data": Account[], "meta": { "total": int, "nextCursor": string \| null } }` |
+| `GET /frontend/v1/accounts/{accountId}` | `{ "data": AccountDetail }` |
+| `GET /frontend/v1/accounts/{accountId}/workspace` | `{ "data": AccountWorkspace }` |
+| `GET /frontend/v1/accounts/{accountId}/contacts` | `{ "data": AccountContactSummary[], "meta": { "total": int } }` |
+| `GET /frontend/v1/accounts/{accountId}/contacts/{contactId}` | `{ "data": AccountContactDetail }` |
+
+The contacts envelope's `meta.total` is a v1 addition — the dummy's
+`AccountContactsResponseSchema` carries only `data`, and the screen's "N contacts" count was
+inferred. The payload schemas themselves are unchanged, which is why the parity test covers the
+five payloads and not the envelopes.
+
+**How a request selects contract v1.** These shapes are served when the request carries
+`?contract=v1`; without the parameter every route serves the FI-2 payloads documented further down
+this file, unchanged. The two contracts therefore live side by side on one route — no FI-2 field is
+renamed, wrapped or removed while the frontend adapters still read them — until the D4 re-lift
+re-points those adapters, after which the FI-2 branch and the `contract` parameter are both
+removed. A `contract` value other than `v1` is a `422 VALIDATION_ERROR` in the standard envelope
+rather than a silent fall back to FI-2. Timestamps are UTC and `Z`-suffixed (`2026-09-08T12:00:00Z`)
+because `z.string().datetime()` accepts an offset only with `{ offset: true }`, which these schemas
+do not set.
+
+### D0 amendments (rulings)
+
+The vendored Zod differs from `84f8ee7` in exactly these places, each marked in the file with a
+`// D0 ruling Rn/Sn` or `// D3 ruling` comment. `account-workspace.ts` is byte-identical.
+
+| Ruling | Change | Why |
+| --- | --- | --- |
+| S11 | `ResearchStatusSchema` = `not_started \| in_progress \| needs_review \| completed \| suspended` | the backend's five M8D states; `fully_enriched` and `failed` never existed |
+| S2 | `logoPath`, `accountLogoPath` become nullable | no logo pipeline exists in v1; the frontend renders its building glyph on `null`, and no third-party logo is fetched |
+| R7 | `overallFit` becomes nullable | an unscored account has no band; `fitScore: 0` / `overallFit: "Medium"` was invented by `createLocalAccount` |
+| S7 | contact `title` becomes nullable | no title claim → the row shows "—" rather than an invented title |
+| S5 | `summaryParagraphs`, `businessParagraphs`, `overviewParagraphs` relax from `.min(1)` to `.default([])`; `AccountDetailSchema.industryLabels` likewise | the backend never fabricates prose for a legacy slot |
+| R5 | `AccountContactDetailSchema` gains `emailClaimId` | the email chip resolves its evidence by claim id instead of substring-matching evidence text |
+| R8 | `AccountContactDetailSchema` gains `lastModifiedAt` | the contact header showed the **account's** stamp; it is now the contact's own latest `verifiedAt` |
+| D3 | `websiteUrl` becomes nullable | `'https://' + account_entity.primary_domain`, and an account may have no domain |
+| D3 | `BuyingCommitteeMember.linkedinUrl` becomes nullable | a member resolved from a coverage row may have no LinkedIn URL; the dummy renders the link only when present |
+
+### Backend-owned semantics
+
+The frontend never re-derives any of these (master plan §6).
+
+| Wire field | Backend rule |
+| --- | --- |
+| `ResearchEvidence` | one row per claim cited on the page; `claimId` = claim id; `quote` = the verbatim evidence span **or `null`** with `researchExcerpt` = the research sentence when no original-source quote exists (never a fabricated quotation); `sourceUrl` = source URL or `null` for private records (`verificationKind: "record"` — email checks, database rows); `verifiedAt` = `observed_at`; `publishedAt` = the source date when known; `mediaTimestamp` from the claim's media sub-fields; `outreachSafe` = the claim column; `sourceDomain` resolved server-side; `faviconUrl` may be `null` — the frontend resolves favicons by domain through its own proxy route; `title` = page title when captured |
+| `body[].segments` | the display model's output is split into clause-level segments, each with the claim ids supporting that clause; chips render after the clause, not the sentence |
+| `ResearchItem.priority` | the best (lowest number) `signal_priority` among the item's cited claims; the backend sorts P1 first |
+| `fitDisposition` | on "Why they fit" items: `support` when the fit claim is satisfied, `caveat` when it is the honest negative |
+| `intro[]` | narrative sections ("What they do", "Why they fit") carry their paragraphs as `intro`; items carry the evidence rows |
+| `ResearchSection.empty` / `emptyMessage` | `empty` when the recipe matched nothing and the display model was not called; `emptyMessage` is optional server text, else the client prints "No {section} information found for {name}." |
+| restricted sections | `do-not-mention` / `context-only` / `watch-outs` are the only sections that ever receive `outreachSafe=false` claims; the frontend shows them under an "Internal notes" control and the overview page omits `watch-outs` |
+| `sendLine` | contact page only; a separate field, never inside quotation marks; `channel` is served text |
+| `h1` / counts / overall fit | `h1` is the section's served vocabulary **without counts or parentheticals**; counts are `items.length`; the overall fit is `overallFit`, never text parsed out of an `h1` |
+| `insightSummary` | computed by the backend: `"{n} insights"` where n = items across non-restricted sections, and `"{m} people"` where m = committee members. The fixture's "42 reported in research" declared total is a fixture artifact and does not exist in production |
+| `newSinceLastVisit` | the **frontend** computes it from `ResearchEvidence.verifiedAt` against a locally stored last-visit stamp; the backend serves `false` and keeps no visit row (decision D5) |
+| `fitScore` / `overallFit` | both `null` when the account has not been scored (never `0`, never a guessed band); scoring writes both together (ruling R7 made `overallFit` nullable) |
+| `owner` / `createdBy` | workspace users (CRM data, never agent-written); `owner` nullable, `createdBy` recorded at creation; display precedence: assigned `owner`, else `createdBy`, else "Unassigned" (ruling R6) — never the current viewer |
+| `tenureLabel` / `employmentStartedAt` | the backend serves both; the frontend displays `tenureLabel` as-is and never computes tenure from the browser clock; `employmentStartedAt` exists for sorting and date display |
+| `artifacts[]` | the workspace endpoint projects account-associated generated artifacts with `accountId`; `updatedAt` comes from the artifact record; no invented dates. `[]` in v1 (ruling S9) |
+| `activity[]` | actor is `clue` for agent actions and `person {id,name}` for user actions; `occurredAt` is ISO-8601; an unattributed event carries no actor at all; `isSample` appears only in fixtures |
+| `customFields` | registry custom variables whose values are claims; `presentation` comes from the registry row; the first four active client-pack fields in registry order are `primary` (ruling S6) |
+| `BuyingCommitteeMember.email` + `emailClaimId` | from the `core.work_email` claim; verification state lives in the evidence hover, not inline |
+| `influence` | served; falls back to the persona-derived default table when the committee claim does not carry it (ruling S8) |
+| `previewTitle` | `= name` in v1 (ruling S4) |
+| display gating | E2–E5 select claims through `arv2_display_allowed` (ruling S10): use-class rules and the sensitive fail-close stay, but a `WEAK` identity binding no longer hides an `outreachSafe = true` claim |
+
+### Not on the wire
+
+By design, and not to be added without a ruling:
+
+- `field_key` — the claim's registry key. Generic field rendering exists only for `customFields`.
+- `use_class` — the compliance use-class of a claim.
+- `source_type` — the resolver/source species behind a claim.
+- **avatar images** for accounts and contacts beyond the optional `avatarUrl` asset path; no
+  third-party avatar or logo fetch happens in v1.
+- **dates on source chips and hover cards** (ruling R1): `verifiedAt` and `publishedAt` are served
+  but rendered nowhere. `verifiedAt` feeds the frontend's new-since-last-visit computation.
+
+The Next.js `/api/source-favicon` route and the accounts layout shell stay frontend-owned.
+
+### Shared shapes
+
+`ResearchEvidence`, referenced by E2, E3 and E5:
+
+| field | type | required | rule |
+| --- | --- | --- | --- |
+| `claimId` | string | required | the claim's id — the join key for every citation chip |
+| `sourceUrl` | url \| null | required (nullable) | `null` for private records |
+| `sourceDomain` | string \| null | required (nullable) | resolved server-side |
+| `faviconUrl` | url \| null | required (nullable) | the frontend may resolve its own |
+| `title` | string \| null | required (nullable) | page title when captured |
+| `quote` | string \| null | required (nullable) | the verbatim span, or `null` |
+| `researchExcerpt` | string | optional | the research sentence when there is no quote |
+| `publishedAt` | date (`YYYY-MM-DD`) \| null | required (nullable) | source date when known |
+| `verifiedAt` | date (`YYYY-MM-DD`) | required | the claim's `observed_at` |
+| `verificationKind` | `verified` \| `record` | optional (default `verified`) | `record` = a private record |
+| `mediaTimestamp` | string \| null | required (nullable) | from the claim's media sub-fields |
+| `provider` | string \| null | required (nullable) | the resolver that retrieved it |
+| `outreachSafe` | bool | required | the claim column |
+
+`ResearchDisplayBlock`, referenced by E2 (`overviewDisplay`), E3 (`insightsDisplay`) and E5
+(`contactDisplay`):
+
+```
+DisplayBlock { page ∈ insights|overview|contact, sections[] }
+  Section  { key, h1, empty, items[], intro[]?, restricted=false, defaultOpen=false, emptyMessage? }
+  Item     { id, h2, body[], sendLine|null, contactRefs[], inlineLead?, fitDisposition? ∈ support|caveat,
+             subject?, priority ∈ 1|2|3, newSinceLastVisit=false }
+  Sentence { text, claimIds[], segments[]? { text, claimIds[] } }
+  SendLine { channel, text, claimIds[] }
+  ContactRef { accountId, contactId, name, title?, persona?, emailState? ∈ verified|unverified|not_requested, avatarUrl? }
+```
+
+`BuyingCommitteeMember` (E2): `{ contactId, name, title, persona, email|null, emailClaimId|null,
+linkedinUrl|null, whyTheyMatter }`. `AccountOwner` (`owner`, `createdBy`, and the `person` actor):
+`{ id, name, avatarUrl? }`. `AccountActivity` (E2, E3): `{ id, kind ∈
+contacts|summary|created|artifact|updated, text, timeLabel, actor? ({type:"clue"} \| {type:"person",
+id, name, avatarUrl?}), action?, occurredAt?, isSample? }`.
+
+### E1 — Accounts list row (AccountSchema)
+
+`GET /frontend/v1/accounts` → `data[]`.
+
+| field | type | required | rule |
+| --- | --- | --- | --- |
+| `id` | string | required | opaque `account_entity` id |
+| `name` | string | required | the account's resolved name |
+| `logoPath` | path (`/…`) \| null | required (nullable) | `null` in v1 — no logo pipeline (S2) |
+| `websiteUrl` | url \| null | required (nullable) | `https://` + `primary_domain`; `null` when there is no domain |
+| `researchStatus` | enum (5) | required | the latest M8D job for this (account, project) |
+| `researchStatusLabel` | string | optional | served wording for the status chip |
+| `researchIsRefreshing` | bool | optional (default `false`) | a re-research run is in flight over an already-researched account |
+| `overallFit` | `High` \| `Medium` \| `Low` \| null | required (nullable) | `null` until scored (R7) |
+| `fitScore` | int 0–100 \| null | required (nullable) | `null` until scored; never `0` for unknown |
+| `revenueBand` | string | required | the `core.revenue_band` claim |
+| `employeeBand` | string | required | the `core.employee_count` claim, banded |
+| `locationCount` | int ≥ 0 | required | distinct known locations |
+| `locationsLabel` | string | optional | served wording for the locations cell |
+| `owner` | AccountOwner \| null | optional | `null` when unassigned — never the current viewer (R6) |
+| `createdBy` | AccountOwner \| null | optional | recorded at creation |
+| `industryLabels` | string[] | optional (default `[]`) | industry claims |
+| `socials` | AccountSocial[] | optional (default `[]`) | `{id, label ∈ LinkedIn\|Twitter\|Facebook\|Instagram, url}` |
+| `createdAt` | ISO-8601 datetime | optional | `account_entity.created_at` |
+| `lastModifiedAt` | ISO-8601 datetime | optional | the account's latest claim `observed_at` |
+| `primaryProjectId` | string \| null | optional | element 0 of the recorded membership policy |
+| `projects` | AccountProject[] | optional (default `[]`) | `{id, name}` per targeting project |
+| `customFields` | AccountCustomField[] | optional (default `[]`) | `{id, label, value, presentation ∈ text\|badge\|score, primary}` |
+
+**FI-2 fields kept until D4.** The existing `/frontend/v1/accounts` row still serves `domain`,
+`employeeCount`, `logoUrl`, `scores`, `projectResearchStatus`, `projectMemberships` and
+`updatedAt`. They are superseded by the table above and are removed when the frontend re-lift (D4)
+stops reading them.
+
+### E2 — Account detail (AccountDetailSchema)
+
+`GET /frontend/v1/accounts/{accountId}` → `data`. **Not a superset of E1**: the detail serves
+labels where the list serves bands, and drops the list-only membership fields.
+
+| field | type | required | rule |
+| --- | --- | --- | --- |
+| `id` | string | required | opaque `account_entity` id |
+| `name` | string | required | the account's resolved name |
+| `previewTitle` | string | required | `= name` in v1 (S4) |
+| `logoPath` | path (`/…`) \| null | required (nullable) | `null` in v1 (S2) |
+| `websiteUrl` | url \| null | required (nullable) | `null` when there is no domain |
+| `websiteLabel` | string | required | the hostname the header prints — served, not parsed in the browser |
+| `researchStatus` | enum (5) | required | latest M8D job for this (account, project) |
+| `researchStatusLabel` | string | optional | served wording for the status chip |
+| `owner` | AccountOwner \| null | optional | `null` when unassigned (R6) |
+| `createdBy` | AccountOwner \| null | optional | recorded at creation |
+| `industryLabels` | string[] | optional (default `[]`) | relaxed from `.min(1)` (S5) |
+| `headcountLabel` | string | required | the rail's headcount wording |
+| `locationsLabel` | string | required | the rail's locations wording |
+| `revenueLabel` | string | required | the rail's revenue wording |
+| `foundedLabel` | string | optional | omitted when the founding year is unknown |
+| `fundingLabel` | string | optional | omitted when funding is unknown |
+| `fitScore` | int 0–100 \| null | required (nullable) | `null` until scored |
+| `fitScoreLabel` | string | optional | served wording for the score |
+| `createdAt` | ISO-8601 datetime | required | `account_entity.created_at` |
+| `lastModifiedAt` | ISO-8601 datetime | required | the account's latest claim `observed_at` |
+| `socials` | AccountSocial[] | optional (default `[]`) | as E1 |
+| `customFields` | AccountCustomField[] | optional (default `[]`) | as E1 |
+| `overallFit` | `High` \| `Medium` \| `Low` \| null | required (nullable) | `null` until scored (R7) |
+| `summaryParagraphs` | string[] | optional (default `[]`) | legacy prose slot; never fabricated (S5) |
+| `businessParagraphs` | string[] | optional (default `[]`) | legacy prose slot; never fabricated (S5) |
+| `fitCriteria` | AccountFitCriterion[] | required | `{id, matched, title, evidence}`; legacy, may be `[]` |
+| `contacts` | AccountContact[] | required | `{id, name, avatarUrl?, title?, persona?, emailVerified?, hasDetail}` |
+| `insights` | AccountInsight[] | required | `{id, source ∈ link\|linkedin\|x, title, dateLabel, url}` |
+| `activity` | AccountActivity[] | required | see Shared shapes |
+| `headerMetadata` | string[] | optional (default `[]`) | the header's served chip strings |
+| `researchEvidence` | ResearchEvidence[] | optional (default `[]`) | one row per claim cited by `overviewDisplay` |
+| `overviewDisplay` | DisplayBlock (`page: "overview"`) | optional | omitted when the overview has not been generated |
+| `buyingCommittee` | BuyingCommitteeMember[] | optional (default `[]`) | `linkedinUrl` nullable (D3) |
+
+**FI-2 fields kept until D4.** `neutralFacts`, `projectSections`, `committee`, `coverage`,
+`summary`, `redirectedFrom`, `aliases`, `registryIds`, `hqGeo`, `domain`.
+
+### E3 — Account workspace (AccountWorkspaceSchema)
+
+`GET /frontend/v1/accounts/{accountId}/workspace` → `data`. The insights and artifacts tabs.
+
+| field | type | required | rule |
+| --- | --- | --- | --- |
+| `accountId` | string | required | echoes the path id |
+| `insights` | WorkspaceInsight[] | required | `{id, source ∈ link\|linkedin\|x, title, sourceLabel, url, summary}` |
+| `insightSummary` | string[] | optional (default `[]`) | computed: `"{n} insights"`, `"{m} people"` |
+| `researchEvidence` | ResearchEvidence[] | optional (default `[]`) | one row per claim cited by `insightsDisplay` |
+| `insightsDisplay` | DisplayBlock (`page: "insights"`) | optional | omitted when the insights page has not been generated |
+| `artifacts` | AccountArtifact[] | required | `{id, title, type ∈ presentation\|document\|web\|ad\|email, accountId?, projectName?, updatedAt?, thumbnailPath, lastEditedLabel}`; `[]` in v1 (S9) |
+| `activity` | AccountActivity[] | required | see Shared shapes |
+
+**FI-2 fields kept until D4.** None — this endpoint is new in v1.
+
+### E4 — Contacts list row (AccountContactSummarySchema)
+
+`GET /frontend/v1/accounts/{accountId}/contacts` → `data[]`.
+
+| field | type | required | rule |
+| --- | --- | --- | --- |
+| `id` | string | required | opaque `contact_entity` id |
+| `name` | string | required | the contact's resolved name |
+| `title` | string \| null | required (nullable) | `null` when no title claim exists; the row shows "—" (S7) |
+| `persona` | string | required | the committee persona |
+| `personaTone` | `olive`\|`orange`\|`blue`\|`cyan`\|`green`\|`pink`\|`red` | required | the served chip tone for that persona |
+| `influence` | `High` \| `Medium` \| `Low` | required | persona-derived default when the claim lacks it (S8) |
+| `avatarUrl` | url or path (`/…`) | optional | omitted when unknown; no third-party avatar fetch |
+| `emailStatus` | `available` \| `lookup` | required | whether a work-email claim exists |
+| `emailLabel` | email | optional | present only when `emailStatus = available` |
+| `socials` | (`linkedin`\|`x`\|`facebook`\|`instagram`\|`whatsapp`)[] | required | which social chips to render |
+| `profileAction` | `none` \| `preview` \| `page` | optional (default `none`) | replaces the dummy's hard-coded featured contact |
+
+**FI-2 fields kept until D4.** `titleRestricted`, `roleOnCommittee`, `signals`, `projectIds`,
+`emailLookup`, row-level `linkedinUrl`, `professionalFacts`, the FI-2-shaped `evidence`, and
+`redirectedFrom`.
+
+### E5 — Contact detail (AccountContactDetailSchema)
+
+`GET /frontend/v1/accounts/{accountId}/contacts/{contactId}` → `data`. The E4 row plus:
+
+| field | type | required | rule |
+| --- | --- | --- | --- |
+| `id` | string | required | as E4 |
+| `name` | string | required | as E4 |
+| `title` | string \| null | required (nullable) | as E4 (S7) |
+| `persona` | string | required | as E4 |
+| `personaTone` | enum (7) | required | as E4 |
+| `influence` | `High` \| `Medium` \| `Low` | required | as E4 |
+| `avatarUrl` | url or path (`/…`) | optional | as E4 |
+| `emailStatus` | `available` \| `lookup` | required | as E4 |
+| `emailLabel` | email | optional | as E4 |
+| `socials` | enum[] | required | as E4 |
+| `profileAction` | `none` \| `preview` \| `page` | optional (default `none`) | as E4 |
+| `accountId` | string | required | the owning account |
+| `accountName` | string | required | for the header crumb |
+| `accountLogoPath` | path (`/…`) \| null | required (nullable) | `null` in v1 (S2) |
+| `recentSignalsLabel` | string | required | the rail's recent-signals wording |
+| `linkedinLabel` | string | required | the rail's LinkedIn wording |
+| `linkedinUrl` | url | required | the contact's own profile URL |
+| `xLabel` | string | optional | omitted when there is no X handle |
+| `xUrl` | url | optional | omitted when there is no X handle |
+| `emailVerifiedAt` | date (`YYYY-MM-DD`) | optional | when the email check ran |
+| `emailClaimId` | string \| null | optional | the `core.work_email` claim behind the chip (R5) |
+| `locationLabel` | string | optional | the rail's location wording |
+| `bestFirstChannelLabel` | string | optional | the rail's channel recommendation |
+| `educationLabel` | string | optional | the rail's education wording |
+| `tenureLabel` | string | optional | served — never computed from the browser clock (R8) |
+| `employmentStartedAt` | date (`YYYY-MM-DD`) | optional | for sorting and date display |
+| `linkedinFollowers` | int ≥ 0 | optional | omitted when unknown |
+| `linkedinCreator` | bool | optional | omitted when unknown |
+| `locationClaimId` | string | optional | the claim behind the location row |
+| `reports` | ContactRef[] | optional (default `[]`) | who reports to this person |
+| `overviewParagraphs` | string[] | optional (default `[]`) | legacy prose slot; never fabricated (S5) |
+| `evidence` | ContactEvidence[] | required | `{id, source ∈ link\|linkedin\|x, title, dateLabel, url}` |
+| `researchEvidence` | ResearchEvidence[] | optional (default `[]`) | one row per claim cited by `contactDisplay` |
+| `contactDisplay` | DisplayBlock (`page: "contact"`) | optional | omitted when the contact page has not been generated |
+| `lastModifiedAt` | ISO-8601 datetime | required | the **contact's** own latest `verifiedAt` (R8) |
+
+The four non-Nick fixture contact pages synthesize an "Account context" section (ruling R10); that
+is fixture-only — a production page's sections come from `contactDisplay` and nothing else.
+
+**FI-2 fields kept until D4.** `titleRestricted`, `roleOnCommittee`, `signals`, `projectIds`,
+`emailLookup`, `professionalFacts`, the FI-2-shaped `evidence`, and `redirectedFrom`.
+
 ## Implemented frontend read contract
+
+> Superseded by “Contract v1 — the accounts screens (ARV2 D3, 2026-09-08)” above wherever the two differ; this frontend-authored proposal is kept as history.
 
 ### `GET /api/v1/accounts`
 
@@ -356,6 +667,8 @@ authored filter rules. Project IDs must remain opaque stable identifiers.
    the project-sort tie-breaker.
 
 ## As-built backend read API (FI-2 slice 1, 2026-08-08) — ratified deviations
+
+> Superseded by “Contract v1 — the accounts screens (ARV2 D3, 2026-09-08)” above wherever the two differ; the FI-2 shapes below remain served until the D4 re-lift retires them.
 
 The proposal above is unchanged and stays the frontend's authored view. This
 section records what the backend actually serves after FI-2 slice 1, so the Zod

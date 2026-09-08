@@ -388,31 +388,6 @@
   white-space: nowrap;
 }
 
-.documentModeControl {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 1px;
-}
-
-.documentModeControl .segment {
-  height: 34px;
-  gap: 4px;
-  border-radius: 4px;
-  padding: 0 12px;
-  color: var(--clue-ds-color-content-neutral);
-  font: 500 13px/18px "Satoshi", Arial, sans-serif;
-}
-
-.documentModeControl .segment:not(.segmentActive) {
-  opacity: 0.8;
-}
-
-.documentModeControl .segmentActive {
-  background: var(--clue-ds-color-bg-neutral-pressed);
-  color: var(--clue-ds-color-content-subtle);
-}
-
 .colorModeControl {
   display: inline-flex;
   align-items: center;
@@ -1349,31 +1324,6 @@
 
 .markdownPreview li + li {
   margin-top: 5px;
-}
-
-.markdownEditorShell {
-  min-height: 100%;
-  height: 100%;
-  background: var(--clue-ds-color-bg-neutral);
-}
-
-.markdownCodeEditor {
-  width: 100%;
-  min-height: 100%;
-  height: 100%;
-}
-
-.markdownCodeEditor :global(.cm-editor) {
-  min-height: 100%;
-}
-
-.markdownCodeEditor :global(.cm-activeLine),
-.markdownCodeEditor :global(.cm-activeLineGutter) {
-  background: transparent;
-}
-
-.markdownCodeEditor :global(.cm-foldGutter) {
-  display: none !important;
 }
 
 .emptyState {

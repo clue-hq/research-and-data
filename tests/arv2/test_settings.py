@@ -43,6 +43,9 @@ ARV2_SETTING_DEFAULTS: dict[str, object] = {
         "AI-native ABM: account and committee research, personalised content, "
         "brand-aligned artifacts, scaled per account"
     ),
+    "arv2_display_generate_on_read": True,
+    "arv2_fit_high_threshold": 0.70,
+    "arv2_fit_medium_threshold": 0.40,
 }
 
 ARV2_SECRET_FIELDS = ("ai_ark_api_key", "gemini_api_key")
@@ -108,8 +111,13 @@ def test_env_example_documents_each_setting_with_its_default() -> None:
     for field_name, default in ARV2_SETTING_DEFAULTS.items():
         documented = re.search(rf"^{_env_name(field_name)}=(.*)$", text, re.MULTILINE)
         assert documented is not None, field_name
+        # dotenv semantics: one pair of matching surrounding quotes is not part of the value
+        # (a value with spaces must be quoted for ``source .env`` to stay shell-sourceable).
+        value = documented.group(1).strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
         shipped = str(default).lower() if isinstance(default, bool) else str(default)
-        assert documented.group(1).strip() == shipped, field_name
+        assert value == shipped, field_name
 
 
 def test_the_on_off_checks_load_from_their_env_strings(monkeypatch: pytest.MonkeyPatch) -> None:

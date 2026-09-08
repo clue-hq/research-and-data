@@ -69,16 +69,35 @@ from pydantic import JsonValue
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.display.recipes import Page
 from clue_api.client_context_binding import workspace_client_entity_id
 from clue_api.frontend_read.accounts_list import (
     SCORE_FIELD_KEYS,
+    V1_NEUTRAL_FIELD_KEYS,
+    AccountResearchStatusValue,
     ProjectScore,
     WireModel,
+    _primary_project_fit,
+    _read_scores,
+    _read_v1_research,
+    as_int,
+    as_str,
     group_score_claims,
     project_names,
 )
-from clue_api.frontend_read.app import WorkspaceDep
+from clue_api.frontend_read.app import ContractDep, WorkspaceDep
 from clue_api.frontend_read.committee import read_governed_committee
+from clue_api.frontend_read.contract_v1 import (
+    AccountDetailResponseV1,
+    AccountDetailV1,
+    ResearchDisplayBlock,
+)
+from clue_api.frontend_read.display_pages import (
+    DisplayPages,
+    buying_committee,
+    committee,
+    rail_contacts,
+)
 from clue_api.frontend_read.evidence import (
     EvidenceReference,
     evidence_artifact_response,
@@ -87,6 +106,28 @@ from clue_api.frontend_read.evidence import (
     read_live_artifact,
 )
 from clue_api.frontend_read.prose import ACCOUNT_SUMMARY_FIELD, ProseRead, read_prose
+from clue_api.frontend_read.v1_shared import (
+    EMPTY_BAND,
+    RESEARCH_STATUS_LABELS,
+    activity_for,
+    custom_fields_for,
+    employee_range_label,
+    fit_band,
+    fit_score_100,
+    funding_label,
+    headcount_label,
+    industry_labels,
+    iso_utc,
+    last_modified_for,
+    location_label,
+    owners_for,
+    research_evidence_for,
+    revenue_label,
+    socials,
+    website_label,
+    website_url,
+)
+from clue_config import Settings
 from clue_core import (
     ClaimId,
     EntityId,
@@ -112,6 +153,7 @@ from clue_research.claimstore import (
     list_effective_fields,
     merge_claims,
 )
+from clue_research.compliance import load_workspace_policy
 from clue_research.identity import get_account, get_contacts, surviving_id
 from clue_research.membership import ProjectMembership, memberships_for_accounts
 from clue_storage import StorageBackend
@@ -671,6 +713,244 @@ async def read_account_detail(
     )
 
 
+# --- contract v1 (ARV2 D3, E2) ----------------------------------------------------------------
+
+#: The neutral fields the **contract-v1 detail** renders, read in ONE batched merge. A superset of
+#: the v1 *list* row's set (:data:`~clue_api.frontend_read.accounts_list.V1_NEUTRAL_FIELD_KEYS`,
+#: imported rather than restated so the two screens can never disagree about the account's chrome)
+#: plus the four the detail's rail adds: revenue, founding year, and the two funding facts.
+V1_DETAIL_FIELD_KEYS: tuple[str, ...] = (
+    *V1_NEUTRAL_FIELD_KEYS,
+    "core.annual_revenue",
+    "core.founded_year",
+    "account.recent_funding",
+    "account.total_funding",
+)
+
+#: The page the account detail serves. Named so the reader and the evidence route cannot drift.
+OVERVIEW_PAGE: Page = "overview"
+
+
+def founded_label(value: Any) -> str | None:
+    """``core.founded_year`` as the year a screen shows, or ``None`` when it is not a year.
+
+    A year is an integer. The claim may arrive as one, as a float that *is* one, or — through the
+    D1 lenient writer, which stores what the provider returned rather than what the registry
+    declares — as the string ``"2022"``. Anything else (``"founded in the nineties"``, an object)
+    yields ``None`` and the label is omitted: an unparseable year is not a year, and printing the
+    raw value would put prose in a rail slot that the frontend renders as a date.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return str(int(value)) if value.is_integer() else None
+    if isinstance(value, str):
+        try:
+            return str(int(value.strip()))
+        except ValueError:
+            return None
+    return None
+
+
+# The one account's own spine row. Not the list's ``_ACCOUNT_PEOPLE`` read: this branch needs the
+# two timestamps as well (``createdAt`` is required in contract v1 and the entity model does not
+# carry them), and widening a shared statement for one caller is how a batched read for a page
+# quietly becomes a wider read for every row of it.
+_ACCOUNT_SPINE = text(
+    """
+    SELECT owner_user_id, created_by_user_id, created_at, updated_at
+    FROM account_entity
+    WHERE workspace_id = :workspace_id AND id = :entity_id
+    """
+)
+
+
+async def read_account_detail_v1(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    account_id: uuid.UUID,
+    display: DisplayPages,
+    settings: Settings,
+    now: datetime,
+) -> AccountDetailResponseV1:
+    """The account detail in **contract v1** — the ARV2 account page and its preview.
+
+    Same account, same resolution rules as :func:`read_account_detail` (``surviving_id``, the
+    workspace check, the client-entity exclusion, the same :class:`AccountNotFound`); what differs
+    is everything served. The v1 detail is the *screen's* detail: the rail's labels, the account's
+    own chrome, the committee card, the generated overview page, and the evidence behind every
+    citation on it.
+
+    A merged loser is followed **silently** — the contract has no ``redirectedFrom`` slot, so the
+    survivor is simply served rather than a field being invented to announce the redirect.
+
+    Two properties are structural rather than incidental:
+
+    * **the fit and the research status are the primary project's**, exactly as the v1 list row's
+      are, because the page has one of each. An account with no membership has no project to
+      report a status for and is honestly ``not_started``, never attributed to whichever project
+      happened to research it;
+    * **the evidence drawer is the union of what the page cites and what the committee card
+      shows.** A committee email chip finds its evidence by claim id (ruling R5), so an
+      ``emailClaimId`` with no row in ``researchEvidence`` would be a chip that opens onto
+      nothing.
+
+    Every source is read in a fixed number of batched statements: a per-member or per-field lookup
+    here is what the suite's v1 statement-count guard exists to prevent.
+    """
+    requested = EntityId(account_id)
+    canonical = await surviving_id(conn, requested, EntityType.ACCOUNT)
+    account = await get_account(conn, canonical)
+    client_entity_id = await workspace_client_entity_id(conn, workspace_id=workspace_id)
+    if account is None or account.workspace_id != workspace_id or canonical == client_entity_id:
+        raise AccountNotFound(str(account_id))
+
+    account_uuid = uuid.UUID(str(canonical))
+    scope = WorkspaceScope.for_workspace(workspace_id)
+    neutral = await current_values(conn, [canonical], V1_DETAIL_FIELD_KEYS, scope=scope)
+
+    def value_of(field_key: str) -> Any:
+        current = neutral.get((canonical, field_key))
+        return None if current is None else current.value_json
+
+    memberships = (
+        await memberships_for_accounts(conn, workspace_id=workspace_id, account_ids=[account_uuid])
+    ).get(account_uuid, ())
+    # The recorded FI-2 §2 policy: element 0 of the membership read is the primary project.
+    primary_project_id = memberships[0].project_id if memberships else None
+
+    scores = await _read_scores(conn, workspace_id=workspace_id, entity_ids=[account_uuid])
+    # The v1 *list* row's research read, shared rather than re-written so the table and the page
+    # can never report a different status for one account. Its refresh flag is dropped here: the
+    # detail contract has no ``researchIsRefreshing`` slot (the Zod schema is the arbiter of that
+    # split), and a second query for the status alone is how the two surfaces would start to drift.
+    research = await _read_v1_research(conn, workspace_id=workspace_id, entity_ids=[account_uuid])
+    status, _refreshing = (
+        research.get(account_uuid, {}).get(
+            primary_project_id, (AccountResearchStatusValue.NOT_STARTED, False)
+        )
+        if primary_project_id is not None
+        else (AccountResearchStatusValue.NOT_STARTED, False)
+    )
+
+    spine = (
+        await conn.execute(_ACCOUNT_SPINE, {"workspace_id": workspace_id, "entity_id": canonical})
+    ).one()
+    owner_user_id, created_by_user_id, created_at, updated_at = spine
+    owners = await owners_for(
+        conn, user_ids=[user_id for user_id in (owner_user_id, created_by_user_id) if user_id]
+    )
+    custom_fields = await custom_fields_for(
+        conn, workspace_id=workspace_id, account_ids=[canonical]
+    )
+    last_modified = await last_modified_for(
+        conn, workspace_id=workspace_id, account_ids=[canonical]
+    )
+
+    policy = await load_workspace_policy(conn, workspace_id=workspace_id)
+    members = await committee(conn, workspace_id=workspace_id, account_id=str(canonical))
+    contacts = await rail_contacts(conn, workspace_id=workspace_id, members=members, policy=policy)
+    committee_rows = await buying_committee(
+        conn,
+        workspace_id=workspace_id,
+        account_id=str(canonical),
+        members=members,
+        policy=policy,
+    )
+    page = await display.page(
+        conn,
+        workspace_id=workspace_id,
+        subject_kind="account",
+        subject_id=str(canonical),
+        page=OVERVIEW_PAGE,
+    )
+    activity = await activity_for(conn, workspace_id=workspace_id, account_id=canonical, now=now)
+    # The drawer's ids: what the page cites, then what the committee's email chips point at,
+    # deduped in that order (``dict.fromkeys`` is order-preserving) so an id cited by both appears
+    # once and the page's own order leads.
+    evidence = await research_evidence_for(
+        conn,
+        workspace_id=workspace_id,
+        claim_ids=dict.fromkeys(
+            (
+                *page.cited_claim_ids,
+                *(row.email_claim_id for row in committee_rows if row.email_claim_id),
+            )
+        ),
+    )
+
+    # ``canonical_name`` is NOT NULL on the spine, but a blank one would fail the contract's
+    # ``min(1)``; the domain, then the id, keep the page honest and reachable.
+    name = str(account.canonical_name or account.primary_domain or account_uuid)
+    location = location_label(value_of("core.hq_location"))
+    fit = _primary_project_fit(scores.get(account_uuid, ()), primary_project_id)
+    return AccountDetailResponseV1(
+        data=AccountDetailV1(
+            id=str(account_uuid),
+            name=name,
+            # The preview and the page are the same subject; the dummy renders the two slots from
+            # different fields, and serving anything but the account's name in one of them would
+            # be a second name for one account.
+            preview_title=name,
+            # No logo pipeline exists (D0 ruling S2): explicitly null, never a guessed URL.
+            logo_path=None,
+            website_url=website_url(account.primary_domain),
+            website_label=website_label(account.primary_domain) or EMPTY_BAND,
+            research_status=status.value,
+            research_status_label=RESEARCH_STATUS_LABELS[status.value],
+            owner=owners.get(owner_user_id) if owner_user_id else None,
+            created_by=owners.get(created_by_user_id) if created_by_user_id else None,
+            industry_labels=tuple(
+                industry_labels(value_of("core.industry"), value_of("core.industries_all"))
+            ),
+            headcount_label=headcount_label(
+                as_int(value_of("core.employee_count")),
+                employee_range_label(value_of("core.employee_range")),
+            ),
+            # Required non-empty here (the list row may omit it), so an account with no location
+            # says "Unknown" rather than dropping the rail row entirely.
+            locations_label=location or EMPTY_BAND,
+            revenue_label=revenue_label(
+                value_of("core.annual_revenue"), as_str(value_of("core.revenue_band"))
+            ),
+            founded_label=founded_label(value_of("core.founded_year")),
+            funding_label=funding_label(
+                value_of("account.recent_funding"), value_of("account.total_funding")
+            ),
+            fit_score=fit_score_100(fit),
+            # Omitted: the band IS the label the header shows, and a second rendering of one score
+            # is a second place for the two to disagree.
+            fit_score_label=None,
+            overall_fit=fit_band(fit, settings=settings),
+            created_at=iso_utc(created_at),
+            last_modified_at=iso_utc(last_modified.get(canonical, updated_at)),
+            socials=tuple(
+                socials(value_of("core.company_linkedin_url"), value_of("core.company_twitter_url"))
+            ),
+            custom_fields=tuple(custom_fields.get(canonical, ())),
+            # The four slots the display layer replaced. Served as empty lists, not omitted: the
+            # contract requires them, and "this page has none" is the honest answer while the
+            # dummy's legacy prose/criteria/insight surfaces have no backend owner (D0 rulings
+            # S5/S9). ``overviewDisplay`` is where this account's prose actually lives.
+            summary_paragraphs=(),
+            business_paragraphs=(),
+            header_metadata=(),
+            fit_criteria=(),
+            insights=(),
+            contacts=tuple(contacts),
+            activity=tuple(activity),
+            research_evidence=tuple(evidence),
+            # Always present, even when every section is empty: an all-empty block is still a
+            # block, and the frontend renders the page grammar from it.
+            overview_display=ResearchDisplayBlock.model_validate(page.display_block),
+            buying_committee=tuple(committee_rows),
+        )
+    )
+
+
 # --- the route --------------------------------------------------------------------------------
 
 
@@ -678,16 +958,34 @@ def register_account_detail_routes(
     router: APIRouter,
     *,
     conn_factory: ConnFactory,
+    settings: Settings,
+    display: DisplayPages,
     evidence_storage: StorageBackend | None = None,
 ) -> None:
-    """Register ``GET /accounts/{account_id}`` on the workspace-scoped `/frontend/v1` router."""
+    """Register ``GET /accounts/{account_id}`` on the workspace-scoped `/frontend/v1` router.
+
+    One route, two contracts (the D3 ruling): ``?contract=v1`` selects the ARV2 detail, its
+    absence keeps the FI-2 payload byte-for-byte. ``display`` is the D3 display seam the
+    composition root shares across every endpoint that serves a generated page — one instance, so
+    two screens looking at the same account schedule one rewrite between them — and ``settings``
+    reaches the v1 branch because the fit bands are configured thresholds, not code (ruling S3).
+    """
 
     @router.get("/accounts/{account_id}")
     async def get_account_detail(
-        workspace_id: WorkspaceDep, account_id: uuid.UUID
-    ) -> AccountDetail:
+        workspace_id: WorkspaceDep, account_id: uuid.UUID, mode: ContractDep
+    ) -> AccountDetail | AccountDetailResponseV1:
         async with conn_factory() as conn:
             try:
+                if mode == "v1":
+                    return await read_account_detail_v1(
+                        conn,
+                        workspace_id=workspace_id,
+                        account_id=account_id,
+                        display=display,
+                        settings=settings,
+                        now=datetime.now(UTC),
+                    )
                 return await read_account_detail(
                     conn,
                     workspace_id=workspace_id,
@@ -708,7 +1006,17 @@ def register_account_detail_routes(
         account_id: uuid.UUID,
         claim_id: uuid.UUID,
     ) -> Response:
-        """Stream retained evidence only when the current Account read actually exposes it."""
+        """Stream retained evidence only when the current Account read actually exposes it.
+
+        "The current Account read" is the **union** of both contracts while both are served: the
+        FI-2 body's ``neutralFacts``/``projectSections`` evidence, and the claim ids the v1
+        overview page cites. The two expose genuinely different sets — the FI-2 body names no
+        contact claim at all, and an overview section legitimately speaks about the committee — so
+        authorising against one of them would make an evidence chip the ARV2 page renders open
+        onto a 404. The v1 half is consulted only after the FI-2 half declines, so an FI-2-only
+        deployment pays nothing for it — and it is consulted with ``generate=False``, so
+        authorising a request can neither write a page nor schedule one.
+        """
 
         if evidence_storage is None:
             raise HTTPException(
@@ -737,10 +1045,25 @@ def register_account_detail_routes(
                 for section in detail.project_sections
                 for fact in (*section.narratives, *section.insights)
             )
-            if not any(
+            authorized = any(
                 reference.claim_id == str(claim_id) and reference.protected_artifact_available
                 for reference in references
-            ):
+            )
+            if not authorized:
+                # ``detail.id`` is the survivor, so a merged-loser url authorises against the page
+                # the caller would actually be looking at. ``generate=False`` is load-bearing: an
+                # authorisation check must never be a spend path, so this asks only what the
+                # **stored** blocks cite and neither writes a section nor schedules a rewrite.
+                page = await display.page(
+                    conn,
+                    workspace_id=workspace_id,
+                    subject_kind="account",
+                    subject_id=str(detail.id),
+                    page=OVERVIEW_PAGE,
+                    generate=False,
+                )
+                authorized = str(claim_id) in page.cited_claim_ids
+            if not authorized:
                 raise HTTPException(
                     status_code=404,
                     detail={

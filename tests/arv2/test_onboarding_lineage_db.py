@@ -295,3 +295,33 @@ def test_an_unknown_document_is_refused() -> None:
                 )
 
     run_async(scenario())
+
+
+def test_a_trademark_marked_rerun_of_a_known_product_reuses_its_row() -> None:
+    """The live drift that grew one workspace's product rows from 19 to 28: a later run spelled the
+    same offering ``Aura™ AI Scribe``. The fingerprint differs (it is over the raw entry), so this
+    resolves on the normalized name — one product, no second row."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            ws = "ws-o3-lineage-marks"
+            brand_id, doc_id = await _catalog_document(conn, ws)
+            existing = await create_product(
+                conn, brand_id=brand_id, workspace_id=ws, name="Aura AI Scribe", aliases=()
+            )
+            links = await synchronize_catalog(
+                conn,
+                workspace_id=ws,
+                brand_id=brand_id,
+                document_id=doc_id,
+                products=[CatalogProduct("Aura™ AI Scribe", "Ambient documentation.", ())],
+            )
+            assert (links[0].resolution_state, links[0].product_id) == (
+                "alias_reused",
+                existing.product_id,
+            )
+            assert [p.product_id for p in await list_products(conn, brand_id)] == [
+                existing.product_id
+            ]
+
+    run_async(scenario())

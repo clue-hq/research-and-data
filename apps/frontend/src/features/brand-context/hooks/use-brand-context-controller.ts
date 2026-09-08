@@ -9,7 +9,6 @@ import type {
   BrandContextInitialState,
   BrandContextSection,
   BrandContextWorkspace,
-  BrandDocumentMode,
   BrandTextStyle,
 } from "../model/brand-context";
 import { parseKnowledgeMarkdown } from "../model/brand-context";
@@ -49,15 +48,7 @@ export function useBrandContextController({
   const [section, setSection] = useState(initial.section);
   const [colorMode, setColorModeState] = useState(initial.colorMode);
   const [assetView, setAssetViewState] = useState(initial.assetView);
-  const [documentMode, setDocumentModeState] = useState(initial.documentMode);
   const [selectedDocumentId, setSelectedDocumentId] = useState(defaultDocument?.id ?? "");
-  const [documentBodies, setDocumentBodies] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      workspace.knowledgeFolders.flatMap((folder) =>
-        folder.documents.map((document) => [document.id, document.body]),
-      ),
-    ),
-  );
   const [openFolderIds, setOpenFolderIds] = useState<Set<string>>(
     () => new Set(defaultDocument ? [defaultDocument.folderId] : []),
   );
@@ -140,12 +131,11 @@ export function useBrandContextController({
   const selectedDocument =
     allDocuments.find((document) => document.id === selectedDocumentId)
     ?? allDocuments[0];
-  const documentBody = selectedDocument
-    ? documentBodies[selectedDocument.id] ?? selectedDocument.body
-    : "";
+  // The body is the document the store served, full stop — there is no local
+  // draft to prefer over it now that the page cannot be edited.
   const markdownBlocks = useMemo(
-    () => parseKnowledgeMarkdown(documentBody),
-    [documentBody],
+    () => parseKnowledgeMarkdown(selectedDocument?.body ?? ""),
+    [selectedDocument?.body],
   );
   const selectedAsset = selectedAssetId
     ? workspace.assets.find((asset) => asset.id === selectedAssetId) ?? null
@@ -181,7 +171,6 @@ export function useBrandContextController({
     assetId?: string | null;
     assetView?: BrandAssetView;
     colorMode?: BrandColorMode;
-    documentMode?: BrandDocumentMode;
     filePath?: string;
     section?: BrandContextSection;
   }) {
@@ -202,7 +191,6 @@ export function useBrandContextController({
         ? allDocuments.find((item) => item.path === next.filePath)
         : selectedDocument;
       if (document) params.set("file", document.path);
-      params.set("mode", next.documentMode ?? documentMode);
     }
 
     router.replace(`/brand-context?${params.toString()}`, { scroll: false });
@@ -354,8 +342,6 @@ export function useBrandContextController({
     customFontName,
     dialog,
     deleteAsset,
-    documentBody,
-    documentMode,
     filteredAssets,
     filteredTypefaces,
     fontSearch,
@@ -405,17 +391,6 @@ export function useBrandContextController({
     setColorMode(nextMode: BrandColorMode) {
       setColorModeState(nextMode);
       syncRoute({ colorMode: nextMode, section: "colors" });
-    },
-    setDocumentBody(value: string) {
-      if (!selectedDocument) return;
-      setDocumentBodies((current) => ({
-        ...current,
-        [selectedDocument.id]: value,
-      }));
-    },
-    setDocumentMode(nextMode: BrandDocumentMode) {
-      setDocumentModeState(nextMode);
-      syncRoute({ documentMode: nextMode, section: "knowledge" });
     },
     setFontSearch,
     setNewStyle<K extends keyof BrandTextStyle>(field: K, value: BrandTextStyle[K]) {
