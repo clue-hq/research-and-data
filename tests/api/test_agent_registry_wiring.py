@@ -109,7 +109,8 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         ),
         AgentRole.REVIEWER: "1cd0fc4e5c8276983c5e0b8d9a83904be82a95ed57f27c9c1dfd9f5a3887df46",
         # ARV2 Track O, O4: onboarding-synthesis@v3 — prompt v2, icp-synthesis v3 (batched
-        # product-file reads) and audience-persona v2 skills, and the single `exa_search_evidence@1` grant. v2 is the
+        # product-file reads) and audience-persona v2 skills, and the single
+        # `exa_search_evidence@1` grant. v2 is the
         # synthesis split: one task per turn, the known-ICPs reuse rule in the ICP skill, and a
         # persona skill that writes the one document for the one ICP its user message names.
         # Digest measured off this tree.
