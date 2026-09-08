@@ -1,12 +1,9 @@
 import type { AccountProject } from "../model/account";
 import {
-  isNumericAccountFilterField,
   type AccountFilterField,
   type AccountFilterOperator,
   type AccountFilterRule,
 } from "../model/account-query";
-import { formatResearchStatus } from "../model/formatting";
-import { ResearchStatusSchema } from "../model/vocabulary";
 import { useAccountsFilterController } from "../hooks/use-accounts-toolbar-controller";
 import { AccountFilterSelect } from "./account-filter-select";
 import readability from "./account-readability.module.css";
@@ -16,9 +13,11 @@ const fieldOptions: Array<{ label: string; value: AccountFilterField }> = [
   { label: "Account name", value: "name" },
   { label: "Project", value: "project" },
   { label: "Research status", value: "researchStatus" },
+  { label: "Overall fit", value: "overallFit" },
   { label: "Fit score", value: "fitScore" },
   { label: "Revenue", value: "revenueBand" },
-  { label: "Employees", value: "employeeCount" },
+  { label: "Size", value: "employeeBand" },
+  { label: "Locations", value: "locationCount" },
 ];
 
 const operatorLabels: Record<AccountFilterOperator, string> = {
@@ -32,7 +31,7 @@ const operatorLabels: Record<AccountFilterOperator, string> = {
 
 function operatorOptions(field: AccountFilterField) {
   const operators: AccountFilterOperator[] =
-    isNumericAccountFilterField(field)
+    field === "fitScore" || field === "locationCount"
       ? ["greater-than", "is", "less-than"]
       : field === "name"
         ? ["contains", "is", "does-not-contain"]
@@ -49,21 +48,23 @@ function valueOptions(
   projects: AccountProject[],
 ) {
   if (field === "project") {
-    // A project with no resolvable name is not offered as a filter option: its
-    // id is not a label, and rendering one would leak an opaque identifier.
-    return projects
-      .filter((project) => project.name !== null)
-      .map((project) => ({
-        label: project.name as string,
-        value: project.projectId,
-      }));
+    return projects.map((project) => ({
+      label: project.name,
+      value: project.id,
+    }));
   }
   if (field === "researchStatus") {
-    // The backend vocabulary as-built, including `not_launchable`, which is
-    // ratified ahead of the launch surface that will emit it.
-    return ResearchStatusSchema.options.map((status) => ({
-      label: formatResearchStatus(status),
-      value: status,
+    return [
+      { label: "Not started", value: "not_started" },
+      { label: "In progress", value: "in_progress" },
+      { label: "Fully enriched", value: "fully_enriched" },
+      { label: "Failed", value: "failed" },
+    ];
+  }
+  if (field === "overallFit") {
+    return ["High", "Medium", "Low"].map((value) => ({
+      label: value,
+      value,
     }));
   }
   return null;
@@ -91,7 +92,7 @@ function RuleValue({
     );
   }
 
-  const numeric = isNumericAccountFilterField(rule.field);
+  const numeric = rule.field === "fitScore" || rule.field === "locationCount";
   return (
     <input
       aria-label={`${fieldOptions.find((field) => field.value === rule.field)?.label} value`}

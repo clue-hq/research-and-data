@@ -1,7 +1,7 @@
 import {
   ContactEmailLookupSchema,
   type ContactEmailLookup,
-} from "../model/account-contact";
+} from "../model/contact-email-lookup";
 import { fetchMutation } from "./frontend-mutation";
 
 export async function startContactEmailLookup(

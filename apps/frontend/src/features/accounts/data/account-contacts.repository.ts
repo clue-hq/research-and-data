@@ -1,10 +1,18 @@
 import {
-  AccountContactDetailSchema,
+  AccountContactDetailResponseSchema,
   AccountContactsResponseSchema,
   type AccountContactDetail,
   type AccountContactSummary,
 } from "../model/account-contact";
-import { fetchRead } from "./frontend-api";
+import {
+  deniseDresserFixture,
+  openAiContactsFixture,
+} from "./account-contacts.fixture";
+import {
+  zafranContactDetails,
+  zafranContactsFixture,
+} from "./zafran/contacts";
+import { accountsFixtureMode } from "./repository-mode";
 
 export interface AccountContactsRepository {
   list(accountId: string): Promise<AccountContactSummary[]>;
@@ -14,43 +22,89 @@ export interface AccountContactsRepository {
   ): Promise<AccountContactDetail | null>;
 }
 
-/**
- * Both contact endpoints follow a merged account silently and serve the
- * survivor's committee. An empty committee is a `200` with an empty list, not a
- * `404` — the governed committee reads M8D research references whose production
- * writer can legitimately produce no eligible members, so live data may be
- * empty and is proven through backend contract tests rather than UI fixtures.
- */
+export const fixtureAccountContactsRepository: AccountContactsRepository = {
+  async list(accountId) {
+    const contacts =
+      accountId === "openai"
+        ? openAiContactsFixture
+        : accountId === "zafran-security"
+          ? zafranContactsFixture
+          : null;
+    if (!contacts) return [];
+    return AccountContactsResponseSchema.parse({
+      data: contacts,
+    }).data;
+  },
+  async get(accountId, contactId) {
+    const contact =
+      accountId === "openai" && contactId === deniseDresserFixture.id
+        ? deniseDresserFixture
+        : accountId === "zafran-security"
+          ? zafranContactDetails[contactId]
+          : null;
+    if (!contact) return null;
+    return AccountContactDetailResponseSchema.parse({
+      data: contact,
+    }).data;
+  },
+};
+
 export function createHttpAccountContactsRepository(
-  read: typeof fetchRead = fetchRead,
+  apiBaseUrl: string,
 ): AccountContactsRepository {
+  const base = `${apiBaseUrl.replace(/\/$/, "")}/`;
   return {
     async list(accountId) {
-      // The contacts list has no domain 404 either: an account with no
-      // committee is a 200 with an empty list. An unknown account id is the one
-      // record-level case, so it is allowed to resolve to an empty table.
-      const body = await read(
-        `/accounts/${encodeURIComponent(accountId)}/contacts`,
-        { recordNotFoundAllowed: true },
+      const url = new URL(
+        `/api/v1/accounts/${encodeURIComponent(accountId)}/contacts`,
+        base,
       );
-      if (body === null) return [];
-      return AccountContactsResponseSchema.parse(body).data;
+      const response = await fetch(url, {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) {
+        throw new Error(`Account contacts API returned ${response.status}`);
+      }
+      return AccountContactsResponseSchema.parse(await response.json()).data;
     },
     async get(accountId, contactId) {
-      const body = await read(
-        `/accounts/${encodeURIComponent(accountId)}/contacts/${encodeURIComponent(contactId)}`,
-        { recordNotFoundAllowed: true },
+      const url = new URL(
+        `/api/v1/accounts/${encodeURIComponent(accountId)}/contacts/${encodeURIComponent(contactId)}`,
+        base,
       );
-      // A single resource: the profile object itself, no `data` wrapper.
-      return body === null ? null : AccountContactDetailSchema.parse(body);
+      const response = await fetch(url, {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      if (response.status === 404) return null;
+      if (!response.ok) {
+        throw new Error(`Contact details API returned ${response.status}`);
+      }
+      return AccountContactDetailResponseSchema.parse(await response.json())
+        .data;
     },
   };
 }
 
+function repository(): AccountContactsRepository {
+  return accountsFixtureMode()
+    ? fixtureAccountContactsRepository
+    : liveRepository();
+}
+
 export function getAccountContacts(accountId: string) {
-  return createHttpAccountContactsRepository().list(accountId);
+  return repository().list(accountId);
 }
 
 export function getAccountContact(accountId: string, contactId: string) {
-  return createHttpAccountContactsRepository().get(accountId, contactId);
+  return repository().get(accountId, contactId);
+}
+
+/**
+ * The live adapter lands in D4 Task 4 (the amended read contract). Until then
+ * the live path refuses loudly: it must never silently fall back to fixtures.
+ */
+function liveRepository(): never {
+  throw new Error("accounts live adapter lands in D4 Task 4");
 }

@@ -43,8 +43,10 @@ export function ColumnResizeHandle({
     >
       <span
         aria-hidden="true"
-        className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors group-hover/resize:bg-[#87a8ff] group-focus-visible/resize:bg-[#567ee8] ${
-          resize.resizing ? "bg-[#567ee8]" : "bg-transparent"
+        className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors group-hover/resize:bg-[var(--clue-ds-color-components-button-focus-ring)] group-focus-visible/resize:bg-[var(--clue-ds-color-components-button-focus-ring)] ${
+          resize.resizing
+            ? "bg-[var(--clue-ds-color-components-button-focus-ring)]"
+            : "bg-transparent"
         }`}
       />
     </button>

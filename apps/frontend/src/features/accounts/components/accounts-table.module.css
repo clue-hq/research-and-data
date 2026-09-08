@@ -1,0 +1,31 @@
+.viewport {
+  container: accounts-table / inline-size;
+}
+
+.cell {
+  align-items: center;
+  display: flex;
+  min-width: 0;
+  width: 100%;
+}
+
+/* Constrain content, not the header itself: resize handles straddle its edge. */
+.cell .badge {
+  flex: 0 1 auto;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.pinnedCompany {
+  left: 56px;
+  position: sticky;
+}
+
+/* A frozen company column must not consume the entire reading area on phones. */
+@container accounts-table (max-width: 600px) {
+  .pinnedCompany {
+    left: auto;
+    position: relative;
+    z-index: auto;
+  }
+}

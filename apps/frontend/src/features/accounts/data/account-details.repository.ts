@@ -1,28 +1,53 @@
 import {
-  AccountDetailSchema,
+  AccountDetailResponseSchema,
   type AccountDetail,
 } from "../model/account-detail";
-import { fetchRead } from "./frontend-api";
+import { openAiAccountDetailFixture } from "./account-detail.fixture";
+import { zafranAccountDetailFixture } from "./zafran/account";
+import { accountsFixtureMode } from "./repository-mode";
 
 export interface AccountDetailsRepository {
   get(accountId: string): Promise<AccountDetail | null>;
 }
 
-/**
- * The detail is a single resource: the backend returns the object itself, with
- * no `{data}` wrapper (only the two list endpoints use one). A merged loser's
- * id is followed to its survivor, with `redirectedFrom` naming what was asked
- * for; an unknown id is a `404`, which the transport turns into `null`.
- */
+export const fixtureAccountDetailsRepository: AccountDetailsRepository = {
+  async get(accountId) {
+    const account = [
+      openAiAccountDetailFixture,
+      zafranAccountDetailFixture,
+    ].find((candidate) => candidate.id === accountId);
+    if (!account) return null;
+
+    return AccountDetailResponseSchema.parse({
+      data: account,
+    }).data;
+  },
+};
+
 export function createHttpAccountDetailsRepository(
-  read: typeof fetchRead = fetchRead,
+  apiBaseUrl: string,
 ): AccountDetailsRepository {
   return {
     async get(accountId) {
-      const body = await read(`/accounts/${encodeURIComponent(accountId)}`, {
-        recordNotFoundAllowed: true,
+      const url = new URL(
+        `/api/v1/accounts/${encodeURIComponent(accountId)}`,
+        `${apiBaseUrl.replace(/\/$/, "")}/`,
+      );
+      const response = await fetch(url, {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
       });
-      return body === null ? null : AccountDetailSchema.parse(body);
+
+      if (response.status === 404) {
+        return null;
+      }
+      if (!response.ok) {
+        throw new Error(
+          `Account details API returned ${response.status} ${response.statusText}`,
+        );
+      }
+
+      return AccountDetailResponseSchema.parse(await response.json()).data;
     },
   };
 }
@@ -30,5 +55,17 @@ export function createHttpAccountDetailsRepository(
 export async function getAccountDetails(
   accountId: string,
 ): Promise<AccountDetail | null> {
-  return createHttpAccountDetailsRepository().get(accountId);
+  const repository = accountsFixtureMode()
+    ? fixtureAccountDetailsRepository
+    : liveRepository();
+
+  return repository.get(accountId);
+}
+
+/**
+ * The live adapter lands in D4 Task 4 (the amended read contract). Until then
+ * the live path refuses loudly: it must never silently fall back to fixtures.
+ */
+function liveRepository(): never {
+  throw new Error("accounts live adapter lands in D4 Task 4");
 }

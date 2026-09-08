@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ContactEmailLookupSchema } from "./account-contact";
+import { ContactEmailLookupSchema } from "./contact-email-lookup";
 
 export const BulkActionCapabilitySchema = z.object({
   allowed: z.boolean(),
