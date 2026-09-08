@@ -1,4 +1,4 @@
-"""ARV2 D3, the closing walk — the five contract-v1 payloads over the *real* Zafran data.
+"""The closing walk — the five contract-v1 payloads over the *real* Zafran data.
 
 Every other D3 suite proves one endpoint against a fixture it seeded itself: precise, and blind to
 the one question that matters at the end of the track — does the read surface serve the account the
@@ -19,9 +19,9 @@ Three properties make it safe to keep in the ordinary suite rather than behind a
   row behind even though it only ever issues ``SELECT``s.
 
 Both halves of every payload are checked: the pydantic model of contract v1 *and* the frontend's
-own vendored Zod, through ``tests/api/contract_v1/oracle.py``. And the same five requests are made
-**without** ``?contract=v1`` to prove the D3 ruling — the FI-2 payloads are still served untouched,
-except on ``/workspace``, which is a new endpoint and serves v1 in both modes.
+own vendored Zod, through ``tests/api/contract_v1/oracle.py``. The same five requests are also made
+**without** ``?contract=v1``, which since 2026-09-09 must serve the identical body: the selector is
+gone and there is only one contract to serve.
 
 The five v1 payloads are dumped to ``.artifacts/d3-zafran/`` (git-ignored) as the track's record;
 set ``CLUE_D3_DUMP=0`` to skip the write.
@@ -291,7 +291,7 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
             nick_id = await _contact(conn, account_id, name=_NICK)
 
             # --- E1: the accounts list ------------------------------------------------------
-            response = await _get(conn, _BASE, contract="v1", limit=200)
+            response = await _get(conn, _BASE, limit=200)
             assert response.status_code == 200, response.text
             accounts = response.json()
             _dump("accounts", accounts)
@@ -328,7 +328,7 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
                 zod_validate(row, "AccountSchema")
 
             # --- E2: the account detail -----------------------------------------------------
-            response = await _get(conn, f"{_BASE}/{account_id}", contract="v1")
+            response = await _get(conn, f"{_BASE}/{account_id}")
             assert response.status_code == 200, response.text
             detail_body = response.json()
             _dump("detail", detail_body)
@@ -386,7 +386,7 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
             zod_validate(detail, "AccountDetailSchema")
 
             # --- E3: the account workspace --------------------------------------------------
-            response = await _get(conn, f"{_BASE}/{account_id}/workspace", contract="v1")
+            response = await _get(conn, f"{_BASE}/{account_id}/workspace")
             assert response.status_code == 200, response.text
             workspace_body = response.json()
             _dump("workspace", workspace_body)
@@ -408,7 +408,7 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
             zod_validate(workspace, "AccountWorkspaceSchema")
 
             # --- E4: the contacts list ------------------------------------------------------
-            response = await _get(conn, f"{_BASE}/{account_id}/contacts", contract="v1")
+            response = await _get(conn, f"{_BASE}/{account_id}/contacts")
             assert response.status_code == 200, response.text
             contacts_body = response.json()
             _dump("contacts", contacts_body)
@@ -447,7 +447,7 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
                 zod_validate(row, "AccountContactSummarySchema")
 
             # --- E5: the contact page -------------------------------------------------------
-            response = await _get(conn, f"{_BASE}/{account_id}/contacts/{nick_id}", contract="v1")
+            response = await _get(conn, f"{_BASE}/{account_id}/contacts/{nick_id}")
             assert response.status_code == 200, response.text
             contact_body = response.json()
             _dump("contact-nick-fisher", contact_body)
@@ -477,8 +477,8 @@ def test_the_zafran_walk_serves_five_contract_v1_payloads_from_the_real_data() -
     run_async(scenario())
 
 
-def test_without_the_parameter_the_same_five_requests_still_serve_the_fi_2_shapes() -> None:
-    """The D3 ruling, proven on the real data: v1 is opt-in, and E3 is v1 either way."""
+def test_without_the_parameter_the_same_five_requests_serve_the_same_bodies() -> None:
+    """One contract: ``?contract=`` selects nothing, so the parameter cannot change a payload."""
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -486,28 +486,16 @@ def test_without_the_parameter_the_same_five_requests_still_serve_the_fi_2_shape
             account_id = await _zafran(conn)
             nick_id = await _contact(conn, account_id, name=_NICK)
 
-            accounts = (await _get(conn, _BASE, limit=200)).json()
-            row = next(item for item in accounts["data"] if item["id"] == str(account_id))
-            assert "scores" in row
-            assert "researchStatusLabel" not in row
-
-            # The FI-2 detail and profile are served unenveloped; only the two list endpoints
-            # carry `{data, meta}`. That asymmetry is FI-2's, and D3 left it exactly as it was.
-            detail = (await _get(conn, f"{_BASE}/{account_id}")).json()
-            assert "neutralFacts" in detail
-            assert "overviewDisplay" not in detail
-
-            contacts = (await _get(conn, f"{_BASE}/{account_id}/contacts")).json()["data"]
-            assert contacts, "the FI-2 contacts reader serves the same committee"
-            assert "roleOnCommittee" in contacts[0]
-
-            profile = (await _get(conn, f"{_BASE}/{account_id}/contacts/{nick_id}")).json()
-            assert "professionalFacts" in profile
-
-            # E3 is a new endpoint: no FI-2 shape exists beside it, so it serves v1 in both modes.
-            bare = (await _get(conn, f"{_BASE}/{account_id}/workspace")).json()
-            pinned = (await _get(conn, f"{_BASE}/{account_id}/workspace", contract="v1")).json()
-            assert bare == pinned
-            assert "insightsDisplay" in bare["data"]
+            for path, params in (
+                (_BASE, {"limit": 200}),
+                (f"{_BASE}/{account_id}", {}),
+                (f"{_BASE}/{account_id}/workspace", {}),
+                (f"{_BASE}/{account_id}/contacts", {}),
+                (f"{_BASE}/{account_id}/contacts/{nick_id}", {}),
+            ):
+                bare = await _get(conn, path, **params)
+                pinned = await _get(conn, path, **params, contract="v1")
+                assert bare.status_code == pinned.status_code == 200, path
+                assert bare.json() == pinned.json(), path
 
     run_async(scenario())

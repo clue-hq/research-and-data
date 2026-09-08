@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.exa_websets_submit import DEFAULT_EXA_WEBSETS_PRICING
 from clue_api.frontend_read.accounts_list import WireModel
-from clue_api.research_view_governance import display_allowed
+from clue_api.frontend_read.v1_shared import arv2_display_allowed
 from clue_config import STRICT_DEFAULT_REGIME, Jurisdiction, RetentionTtls
 from clue_core import (
     Claim,
@@ -608,12 +608,17 @@ async def _load_attempts(
         value: str | None = None
         if claim_id is not None:
             claim = live_claims.get(ClaimId(uuid.UUID(str(claim_id))))
+            # The ARV2 display predicate, not C7's: the address this view reports is the one the
+            # contact screens render from the same claim, and two predicates over one claim is two
+            # answers to "may this person's email be shown" (C7's also demands a STRONG identity
+            # binding, which the ARV2 lenient writer does not stamp — so it hid every ARV2 address
+            # the screens were happily showing).
             claim_is_currently_displayable = (
                 claim is not None
                 and claim.entity_id == EntityId(uuid.UUID(str(contact_id)))
                 and str(claim.field_key) == _FIELD_KEY
                 and claim.source_key == str(source_key)
-                and display_allowed(claim, policy)
+                and arv2_display_allowed(claim, policy)
             )
             if claim_is_currently_displayable and claim is not None:
                 value = _claim_address(claim.value_json)
@@ -1307,7 +1312,7 @@ class ContactEmailLookupService:
             retention=RetentionTtls(),
             third_party_collected=True,
         )
-        return claim.id, decision.usable_for_outreach and display_allowed(claim, policy)
+        return claim.id, decision.usable_for_outreach and arv2_display_allowed(claim, policy)
 
     async def _mark_failure(
         self,

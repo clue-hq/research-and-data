@@ -77,15 +77,13 @@ The contacts envelope's `meta.total` is a v1 addition — the dummy's
 inferred. The payload schemas themselves are unchanged, which is why the parity test covers the
 five payloads and not the envelopes.
 
-**How a request selects contract v1.** These shapes are served when the request carries
-`?contract=v1`; without the parameter every route serves the FI-2 payloads documented further down
-this file, unchanged. The two contracts therefore live side by side on one route — no FI-2 field is
-renamed, wrapped or removed while the frontend adapters still read them — until the D4 re-lift
-re-points those adapters, after which the FI-2 branch and the `contract` parameter are both
-removed. A `contract` value other than `v1` is a `422 VALIDATION_ERROR` in the standard envelope
-rather than a silent fall back to FI-2. Timestamps are UTC and `Z`-suffixed (`2026-09-08T12:00:00Z`)
-because `z.string().datetime()` accepts an offset only with `{ offset: true }`, which these schemas
-do not set.
+**The `?contract=v1` parameter was removed 2026-09-09 (D4-b): one contract.** It selected between
+these shapes and the FI-2 payloads while both were served; the FI-2 readers, their wire models and
+the selector were all deleted, so every route now serves contract v1 unconditionally. A `contract`
+query parameter is **ignored**, not refused — the adapters stopped sending it in the same change,
+and 422ing a request the route can answer would have made the two halves undeployable apart.
+Timestamps are UTC and `Z`-suffixed (`2026-09-08T12:00:00Z`) because `z.string().datetime()` accepts
+an offset only with `{ offset: true }`, which these schemas do not set.
 
 ### D4 as built (2026-09-09)
 
@@ -98,18 +96,16 @@ and the ones that went, and the three rendering rules the wire leaves to the cli
 
 The five repositories in `src/features/accounts/data/` are the only code that talks to these
 routes. Each one goes through `fetchRead` — the authenticated server request on a Server Component,
-the same-origin `/api/clue/frontend/v1/…` BFF in the browser — and each one sends `?contract=v1` on
-every request, including `/workspace`, which has only ever served v1 (the parameter is validated on
-every route of the surface, so sending it everywhere keeps one request shape and makes a typo'd
-value fail identically).
+the same-origin `/api/clue/frontend/v1/…` BFF in the browser. (They sent `?contract=v1` on every
+request until 2026-09-09; the surface serves one contract now, so no selector is sent.)
 
 | Repository | Request |
 | --- | --- |
-| `accounts.repository.ts` | `GET /accounts?contract=v1&limit=200[&cursor=…][&projectId=…]` |
-| `account-details.repository.ts` | `GET /accounts/{id}?contract=v1` |
-| `account-workspace.repository.ts` | `GET /accounts/{id}/workspace?contract=v1` |
-| `account-contacts.repository.ts` (list) | `GET /accounts/{id}/contacts?contract=v1` |
-| `account-contacts.repository.ts` (detail) | `GET /accounts/{id}/contacts/{contactId}?contract=v1` |
+| `accounts.repository.ts` | `GET /accounts?limit=200[&cursor=…][&projectId=…]` |
+| `account-details.repository.ts` | `GET /accounts/{id}` |
+| `account-workspace.repository.ts` | `GET /accounts/{id}/workspace` |
+| `account-contacts.repository.ts` (list) | `GET /accounts/{id}/contacts` |
+| `account-contacts.repository.ts` (detail) | `GET /accounts/{id}/contacts/{contactId}` |
 
 **The list read returns the whole list.** The accounts table keeps the design build's browser-side
 search, filter, sort and pagination, so `getAccounts()` follows `meta.nextCursor` at `limit=200`
@@ -189,12 +185,15 @@ disappears on reload. `POST /frontend/v1/accounts` is a recorded follow-up.
   wire value — the `"—"` placeholder exists on the wire only on E2's committee card.
 - **`BuyingCommitteeMember.linkedinUrl` is nullable**; the link renders only when present.
 
-#### Still owed on the backend
+#### Done on the backend (D4-b, 2026-09-09)
 
-The FI-2 branches on E1/E2/E4/E5 and the `contract` query parameter itself are **still live** — D4
-changed no backend code. Deleting them (the FI-2 readers, `AccountDetail`/`neutralFacts`/
-`projectSections`, `app.contract_mode`/`ContractDep`, and the FI-2 route tests) is a **follow-up
-backend PR**, at which point `?contract=v1` disappears from the adapters too.
+The FI-2 branches on E1/E2/E4/E5 and the `contract` query parameter are **deleted**: the FI-2
+readers and wire models (`AccountDetail`/`neutralFacts`/`projectSections`, `ContactProfile`,
+`AccountListRow`), `app.contract_mode`/`ContractDep`, the FI-2-only modules
+(`committee.py`'s governed reader, `evidence.py`'s `EvidenceReference`, `prose.py`,
+`account_activity.py` and the E6 route), the contact bulk email-lookup route, and the FI-2 route
+tests all went with them. `tests/api/test_frontend_read_arv2_only_guard.py` is the standing rule
+that keeps the old research lane off this path.
 
 ### D0 amendments (rulings)
 
@@ -457,11 +456,12 @@ The four non-Nick fixture contact pages synthesize an "Account context" section 
 is fixture-only — a production page's sections come from `contactDisplay` and nothing else.
 
 **FI-2 fields kept until D4.** `titleRestricted`, `roleOnCommittee`, `signals`, `projectIds`,
-`emailLookup`, `professionalFacts`, the FI-2-shaped `evidence`, and `redirectedFrom`.
+`emailLookup`, `professionalFacts`, the FI-2-shaped `evidence`, and `redirectedFrom`. *(Historical:
+all of these went with the FI-2 readers on 2026-09-09 — see "Done on the backend (D4-b)" above.)*
 
 ## Implemented frontend read contract
 
-> Superseded by “Contract v1 — the accounts screens (ARV2 D3, 2026-09-08)” above wherever the two differ; this frontend-authored proposal is kept as history.
+> **Historical.** This is the frontend-authored *proposal* that started the integration. Contract v1 above is what is served; nothing here is live. Kept because the rulings further down cite it.
 
 ### `GET /api/v1/accounts`
 
@@ -779,7 +779,7 @@ authored filter rules. Project IDs must remain opaque stable identifiers.
 
 ## As-built backend read API (FI-2 slice 1, 2026-08-08) — ratified deviations
 
-> Superseded by “Contract v1 — the accounts screens (ARV2 D3, 2026-09-08)” above wherever the two differ; the FI-2 shapes below remain served until the D4 re-lift retires them.
+> **Historical — the FI-2 shapes below are no longer served.** They were deleted with the FI-2 readers on 2026-09-09 (D4-b); contract v1 above is the whole read surface. Kept because the ratified deviations and rulings recorded here are cited by the memory notes and by later sections of this file.
 
 The proposal above is unchanged and stays the frontend's authored view. This
 section records what the backend actually serves after FI-2 slice 1, so the Zod

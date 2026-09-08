@@ -1,23 +1,16 @@
-"""FI-2 slice 1, Task 3 — the global-lens account detail (`GET /frontend/v1/accounts/{id}`).
+"""The account detail page (`GET /frontend/v1/accounts/{id}`) and its evidence stream.
 
 Same harness as the accounts-list suite: the real projections app driven in-process through
 ``httpx.ASGITransport`` on the test's rolled-back connection, so the endpoint reads exactly the
 rows the test seeded and nothing commits.
 
-The fixture is the slice-0 canonical shape — **two projects over one workspace, one shared
-account** — extended with the three shapes this endpoint's composition rules turn on:
-
-* a **neutral** fact written on project A's run (it must serve once, at the top level, in every
-  lens — species-conditional lineage);
-* **relative** claims per project (a score, a value narrative, and a registry-declared
-  ``project_relative`` pack field standing in for a campaign insight), so a section can be proven
-  to contain only its own project's work;
-* claims from runs that map to **no** project — one registered ``kind='manual'`` with a NULL
-  project (the ingestion shape) and one with no ``run_lineage`` row at all (the documented
-  exemption class) — which must surface in the honest ``unattributed`` section, not vanish.
-
-Plus the governed committee (through ``ContactEligibilityResolver``, never
-``identity.contact_ids_for_account``), the merged-loser redirect, and the enveloped 404s.
+``_build`` seeds the two-project workspace the resolution rules are proven against (the client
+binding that must not open as a target account, a foreign workspace's account, a merged loser).
+``_build_v1`` extends it with **Zafran** — every source the detail composes: the rail's neutral
+facts, an owner and a creator, memberships in both projects, a fit score under the primary project
+and a lower one under the other, a finished ARV2 research job, two committee members with their
+titles/personas/roles/emails, one stored overview section with retained evidence behind a citation,
+and one activity event.
 
 Every read is workspace-scoped: this suite shares a database with suites that commit.
 """
@@ -202,32 +195,22 @@ async def _get(
     *,
     workspace_id: str = _WS,
     evidence_storage: _MemoryStorage | None = None,
-    contract: str | None = None,
 ) -> httpx.Response:
-    """One detail request. ``contract=None`` is the FI-2 payload; ``"v1"`` selects contract v1."""
     async with _client(_app(conn, evidence_storage=evidence_storage)) as client:
         return await client.get(
             f"{_BASE}/{account_id}",
-            params={} if contract is None else {"contract": contract},
             headers={"X-Workspace-Id": workspace_id},
         )
 
 
-def _sections(payload: dict[str, Any]) -> dict[str | None, dict[str, Any]]:
-    """The project sections keyed by ``projectId`` — ``None`` is the unattributed section."""
-    return {section["projectId"]: section for section in payload["projectSections"]}
-
-
 async def _count_statements(
-    conn: AsyncConnection, account_id: uuid.UUID, *, contract: str | None = None
+    conn: AsyncConnection, account_id: uuid.UUID
 ) -> tuple[int, dict[str, Any]]:
     """``(statements issued, payload)`` for one detail request.
 
     The endpoint composes a fixed number of batched reads per account, so this count is a
     *constant* the tests can compare across fixtures of different shapes — which is how the N+1
-    guard proves a per-section lookup has not crept into the composition. Each contract has its
-    own constant: the v1 branch composes more sources than the FI-2 one, so the two counts are
-    compared against themselves, never against each other.
+    guard proves a per-member or per-field lookup has not crept into the composition.
     """
     statements = 0
 
@@ -237,19 +220,11 @@ async def _count_statements(
 
     event.listen(conn.sync_connection, "before_cursor_execute", count)
     try:
-        response = await _get(conn, account_id, contract=contract)
+        response = await _get(conn, account_id)
     finally:
         event.remove(conn.sync_connection, "before_cursor_execute", count)
     assert response.status_code == 200
     return statements, response.json()
-
-
-def _facts(payload: dict[str, Any]) -> dict[str, Any]:
-    return {fact["fieldKey"]: fact for fact in payload["neutralFacts"]}
-
-
-def _values(entries: list[dict[str, Any]]) -> list[Any]:
-    return [entry["value"] for entry in entries]
 
 
 # --- seeding --------------------------------------------------------------------------------
@@ -919,424 +894,7 @@ async def _build(conn: AsyncConnection) -> _Fixture:
     )
 
 
-# --- identity -------------------------------------------------------------------------------
-
-
-def test_the_identity_block_comes_from_the_entity_row() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            response = await _get(conn, fixture.acme)
-            assert response.status_code == 200
-            payload = response.json()
-            assert payload["id"] == str(fixture.acme)
-            assert payload["name"] == "Acme Detail"
-            assert payload["domain"] == "acme-detail.test"
-            assert payload["aliases"] == ["acme detail"]  # the mint-time normalized alias
-            assert payload["registryIds"] == {}
-            assert payload["redirectedFrom"] is None
-
-    run_async(scenario())
-
-
-# --- neutral vs relative --------------------------------------------------------------------
-
-
-def test_account_summary_is_a_typed_current_claim_not_a_generic_fact() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            await _account_summary_claim(
-                conn,
-                account_id=fixture.acme,
-                paragraphs=(
-                    "Acme operates a multi-site care network.",
-                    "Its current research record highlights expansion and staffing pressure.",
-                ),
-            )
-
-            payload = (await _get(conn, fixture.acme)).json()
-            assert payload["summary"] == {
-                "state": "available",
-                "paragraphs": [
-                    "Acme operates a multi-site care network.",
-                    "Its current research record highlights expansion and staffing pressure.",
-                ],
-                "researchOutcome": "completed",
-            }
-            assert ACCOUNT_SUMMARY not in _facts(payload)
-
-    run_async(scenario())
-
-
-def test_account_summary_distinguishes_not_composed_from_restricted() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            assert (await _get(conn, fixture.acme)).json()["summary"] == {
-                "state": "not_composed",
-                "paragraphs": [],
-                "researchOutcome": None,
-            }
-
-            await _account_summary_claim(
-                conn,
-                account_id=fixture.acme,
-                paragraphs=("This rejected prose must never be served.",),
-                status=VerificationStatus.REJECTED,
-            )
-            summary = (await _get(conn, fixture.acme)).json()["summary"]
-            assert summary == {
-                "state": "restricted",
-                "paragraphs": [],
-                "researchOutcome": None,
-            }
-            assert "rejected prose" not in str(summary)
-
-    run_async(scenario())
-
-
-def test_neutral_facts_are_served_once_not_once_per_project() -> None:
-    """A ``project_neutral`` field is workspace truth: it serves from the canonical merge, at the
-    top level, regardless of which project's run happened to write it."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            payload = (await _get(conn, fixture.acme)).json()
-
-            facts = _facts(payload)
-            assert facts["core.employee_count"]["value"] == 1200
-            assert facts["core.revenue_band"]["value"] == "100m_500m"
-            # Once each — not repeated per project.
-            assert [fact["fieldKey"] for fact in payload["neutralFacts"]].count(
-                "core.employee_count"
-            ) == 1
-            assert facts["core.employee_count"]["freshness"] in {"fresh", "stale"}
-            assert facts["core.employee_count"]["provider"] == "clearbit"
-            assert facts["core.employee_count"]["observedAt"].startswith("2026-08-01")
-            evidence = facts["core.employee_count"]["evidence"]
-            assert evidence["fieldKey"] == "core.employee_count"
-            assert evidence["sourceTitle"] == "clearbit"
-            assert evidence["sourceUrl"] == "https://example.test/facts"
-            assert evidence["evidenceSpan"] == "seeded"
-            assert evidence["confidence"] == pytest.approx(0.9)
-            assert evidence["freshness"] == facts["core.employee_count"]["freshness"]
-            assert evidence["protectedArtifactAvailable"] is True
-            assert evidence["claimId"]
-
-            # ...and no neutral field leaks into a project section.
-            for section in payload["projectSections"]:
-                keys = {entry["fieldKey"] for entry in section["insights"]}
-                assert "core.employee_count" not in keys
-                assert "core.revenue_band" not in keys
-
-    run_async(scenario())
-
-
-def test_retained_account_evidence_is_streamed_after_current_authorization_only() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            storage = _MemoryStorage({_EMPLOYEE_ARTIFACT_KEY: _EMPLOYEE_ARTIFACT_BODY})
-            payload = (await _get(conn, fixture.acme, evidence_storage=storage)).json()
-            evidence = _facts(payload)["core.employee_count"]["evidence"]
-            assert evidence["protectedArtifactAvailable"] is True
-            assert _EMPLOYEE_ARTIFACT_KEY not in str(payload)
-
-            path = f"{_BASE}/{fixture.acme}/evidence/{evidence['claimId']}"
-            async with _client(_app(conn, evidence_storage=storage)) as client:
-                response = await client.get(path, headers={"X-Workspace-Id": _WS})
-                crossed = await client.get(path, headers={"X-Workspace-Id": _OTHER_WS})
-                unknown = await client.get(
-                    f"{_BASE}/{fixture.acme}/evidence/{uuid.uuid4()}",
-                    headers={"X-Workspace-Id": _WS},
-                )
-
-            assert response.status_code == 200
-            assert response.content == _EMPLOYEE_ARTIFACT_BODY
-            assert response.headers["cache-control"] == "private, no-store"
-            assert response.headers["content-security-policy"].startswith("sandbox")
-            assert response.headers["x-content-type-options"] == "nosniff"
-            assert "signed" not in str(response.headers).lower()
-            assert crossed.status_code == 404
-            assert crossed.json()["error"]["code"] == "EVIDENCE_NOT_FOUND"
-            assert unknown.status_code == 404
-
-            await conn.execute(
-                text("UPDATE artifact SET erased_at=now() WHERE storage_key=:key"),
-                {"key": _EMPLOYEE_ARTIFACT_KEY},
-            )
-            async with _client(_app(conn, evidence_storage=storage)) as client:
-                erased = await client.get(path, headers={"X-Workspace-Id": _WS})
-            assert erased.status_code == 404
-            assert erased.json()["error"]["code"] == "EVIDENCE_NOT_FOUND"
-
-    run_async(scenario())
-
-
-def test_each_projects_relative_claims_stay_inside_its_own_section() -> None:
-    """The whole point of the lineage join: project B's narrative/insight/score can never be
-    rendered as project A's."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            payload = (await _get(conn, fixture.acme)).json()
-            sections = _sections(payload)
-
-            section_a = sections[fixture.project_a.project_id]
-            section_b = sections[fixture.project_b.project_id]
-
-            assert section_a["addedVia"] == "discovered"
-            assert section_b["addedVia"] == "imported"
-            # Each section names its own project (FI-1 §9 plan-owner addendum), from the same
-            # batched read the list row uses — so the two surfaces cannot disagree on a name.
-            assert section_a["name"] == "Detail project A"
-            assert section_b["name"] == "Detail project B"
-
-            assert _values(section_a["insights"]) == ["insight for A"]
-            assert _values(section_b["insights"]) == ["insight for B"]
-            for insight in (*section_a["insights"], *section_b["insights"]):
-                assert insight["evidence"]["fieldKey"] == _INSIGHT_FIELD
-                assert insight["evidence"]["sourceUrl"] == "https://example.test/facts"
-                assert insight["evidence"]["evidenceSpan"] == "seeded"
-
-            assert [entry["value"]["argument"] for entry in section_a["narratives"]] == [
-                "narrative for A"
-            ]
-            assert [entry["value"]["argument"] for entry in section_b["narratives"]] == [
-                "narrative for B"
-            ]
-
-            assert [score["icpKey"] for score in section_a["scores"]] == ["alpha"]
-            assert section_a["scores"][0]["fit"] == pytest.approx(0.81)
-            assert section_a["scores"][0]["intent"] == pytest.approx(0.40)
-            assert [score["icpKey"] for score in section_b["scores"]] == ["beta"]
-            assert section_b["scores"][0]["fit"] == pytest.approx(0.55)
-            # An unscored half is null, never a fabricated zero.
-            assert section_b["scores"][0]["intent"] is None
-
-    run_async(scenario())
-
-
-def test_claims_whose_run_maps_to_no_project_land_in_the_unattributed_section() -> None:
-    """Both exemption shapes — a registered run with a NULL project (ingestion/manual) and a run
-    with no ``run_lineage`` row at all — are reported, not silently dropped."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            payload = (await _get(conn, fixture.acme)).json()
-            sections = _sections(payload)
-
-            assert None in sections, "the unattributed section must exist when claims need it"
-            unattributed = sections[None]
-            assert unattributed["addedVia"] is None
-            assert unattributed["addedAt"] is None
-            # There is no project to name, so the slot is null — not the empty string, and not the
-            # id echoed back as a pseudo-name.
-            assert unattributed["name"] is None
-            assert sorted(_values(unattributed["insights"])) == [
-                "insight from a manual ingestion",
-                "insight from an unregistered run",
-            ]
-            # ...and those claims are in NO project's section.
-            for project_id in (fixture.project_a.project_id, fixture.project_b.project_id):
-                assert _values(sections[project_id]["insights"]) == [
-                    f"insight for {'A' if project_id == fixture.project_a.project_id else 'B'}"
-                ]
-
-    run_async(scenario())
-
-
-def test_a_lineage_derived_section_with_no_project_row_is_named_null_not_guessed() -> None:
-    """``run_lineage.project_id`` carries **no** FK to ``project``, so a section id can name a
-    project this workspace holds no row for — a stale id, or (the case this seeds) another
-    workspace's project. The section is still served, with its id, and its ``name`` is ``null``:
-    dropping it would hide the account's work, and resolving the name across the workspace boundary
-    would leak another tenant's label onto this response."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            await seed_workspace(conn, _OTHER_WS)
-            foreign = await seed_project(conn, _OTHER_WS, name="Another tenant's project")
-            await _account_claim(
-                conn,
-                account_id=fixture.acme,
-                field_key=_INSIGHT_FIELD,
-                value="insight attributed to a project row this workspace does not hold",
-                run_id=await _run(conn, kind="entity_research", project_id=foreign.project_id),
-                source_key="deep_research",
-                private=True,
-            )
-
-            sections = _sections((await _get(conn, fixture.acme)).json())
-            section = sections[foreign.project_id]
-            assert section["name"] is None
-            assert section["addedVia"] is None, "no membership either — it is not our project"
-            assert _values(section["insights"]) == [
-                "insight attributed to a project row this workspace does not hold"
-            ]
-            assert "Another tenant's project" not in str(sections)
-
-    run_async(scenario())
-
-
-def test_section_names_are_one_batched_read_not_one_query_per_section() -> None:
-    """The name join must not become a per-section lookup on the surface most likely to grow one.
-
-    Measured, not asserted in a comment: the endpoint's statement count is captured over the base
-    fixture and again after three more *lineage-derived* sections appear. Lineage ids are the
-    unbounded axis here — a project needs no membership row to attribute work to this account — so
-    a per-section name lookup would grow the count by three; a batched read costs the same either
-    way. Growth is deliberately seeded through lineage rather than membership, because the
-    committee composition already issues one documented ``latest_project_run_context`` query per
-    *membership* and would mask the signal this guard is watching for.
-    """
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            baseline, before = await _count_statements(conn, fixture.acme)
-
-            for ordinal in range(3):
-                ghost = await seed_project(conn, _WS, name=f"Lineage-only project {ordinal}")
-                await _account_claim(
-                    conn,
-                    account_id=fixture.acme,
-                    field_key=_INSIGHT_FIELD,
-                    value=f"insight attributed only through lineage {ordinal}",
-                    run_id=await _run(conn, kind="entity_research", project_id=ghost.project_id),
-                    source_key="deep_research",
-                    private=True,
-                )
-            widened, after = await _count_statements(conn, fixture.acme)
-
-            assert len(_sections(after)) == len(_sections(before)) + 3, "sections really did grow"
-            # Without the lower bound the guard is vacuous: a harness change that stops the
-            # listener firing would compare 0 == 0 and pass an endpoint full of per-section reads.
-            assert baseline > 0, "the listener really fired"
-            assert widened == baseline
-
-    run_async(scenario())
-
-
-def test_the_relative_field_set_is_read_from_the_registry_not_a_hardcoded_list() -> None:
-    """``fi2read.campaign_insight`` is an ordinary pack field; it reaches ``insights`` only
-    because the registry says it is ``project_relative``. A read layer with a hardcoded family
-    list could not do this."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            from clue_research.claimstore import get_field
-
-            fixture = await _build(conn)
-            field = await get_field(conn, _INSIGHT_FIELD)
-            assert field is not None and field.research_scope is ResearchScope.PROJECT_RELATIVE
-
-            payload = (await _get(conn, fixture.acme)).json()
-            assert _INSIGHT_FIELD not in _facts(payload)
-            assert _INSIGHT_FIELD in {
-                entry["fieldKey"]
-                for section in payload["projectSections"]
-                for entry in section["insights"]
-            }
-
-    run_async(scenario())
-
-
-# --- committee ------------------------------------------------------------------------------
-
-
-def test_the_committee_is_served_through_the_governed_reader_and_carries_its_projects() -> None:
-    """A strongly-bound member appears once with the projects that target them; a member whose
-    role/persona binding is WEAK is **absent** — governance blanks it rather than fabricating an
-    unbound person, and the endpoint does not crash on the gap."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            payload = (await _get(conn, fixture.acme)).json()
-
-            members = {member["contactId"]: member for member in payload["committee"]}
-            assert str(fixture.champion) in members
-            assert str(fixture.ghost) not in members
-
-            champion = members[str(fixture.champion)]
-            assert champion["name"] == "Dana Buyer"
-            assert champion["persona"] == Persona.ECONOMIC_BUYER.value
-            assert champion["roleOnCommittee"] == Persona.ECONOMIC_BUYER.value
-            # Only project A ran the committee research, so only A targets this member.
-            assert champion["projectIds"] == [fixture.project_a.project_id]
-
-    run_async(scenario())
-
-
-def test_a_workspace_that_will_not_display_professional_facts_has_an_empty_committee() -> None:
-    """The detail view's ``committee[]`` and the contacts endpoints render the same people from the
-    same resolver, so they must agree on the workspace display policy. Until the shared
-    ``committee_member_displayable`` gate landed they did not: this block listed names, personas and
-    roles for members whose very role/persona claims the policy refuses to display, while
-    `/accounts/{id}/contacts` correctly served nothing. Same data, two answers — the leak was here.
-    """
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            assert (await _get(conn, fixture.acme)).json()["committee"], (
-                "populated before the policy"
-            )
-
-            await conn.execute(
-                text(
-                    "INSERT INTO workspace_policy (policy_id, workspace_id, posture, "
-                    "display_professional_public, version) "
-                    "VALUES (:pid, :ws, 'conservative_default', false, 9)"
-                ),
-                {"pid": f"p-{uuid.uuid4()}", "ws": _WS},
-            )
-            payload = (await _get(conn, fixture.acme)).json()
-            assert payload["committee"] == []
-            # ...and the rest of the account is untouched: this is a contact-display policy, not a
-            # blackout.
-            assert _facts(payload)["core.employee_count"]["value"] == 1200
-
-    run_async(scenario())
-
-
-# --- redirect & 404 -------------------------------------------------------------------------
-
-
-def test_a_merged_loser_redirects_to_its_survivor() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            loser = await _account(conn, name="Acme Dup", domain="acme-dup.test")
-            await mark_merged(conn, EntityType.ACCOUNT, loser_id=loser, survivor_id=fixture.acme)
-
-            response = await _get(conn, loser)
-            assert response.status_code == 200
-            payload = response.json()
-            assert payload["id"] == str(fixture.acme)
-            assert payload["name"] == "Acme Detail"
-            assert payload["redirectedFrom"] == str(loser)
-
-    run_async(scenario())
-
-
-def test_an_unknown_id_is_an_enveloped_404() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            await _build(conn)
-            response = await _get(conn, uuid.uuid4())
-            assert response.status_code == 404
-            error = response.json()["error"]
-            assert error["code"] == "ACCOUNT_NOT_FOUND"
-            assert error["requestId"]
-
-    run_async(scenario())
+# --- resolution, refusal & wire hygiene ------------------------------------------------------
 
 
 def test_the_workspace_client_cannot_be_opened_as_a_target_account() -> None:
@@ -1376,174 +934,6 @@ def test_an_account_in_another_workspace_is_a_404_not_a_leak() -> None:
     run_async(scenario())
 
 
-# --- coverage & wire discipline ---------------------------------------------------------------
-
-
-def test_coverage_counts_the_fields_the_account_actually_holds() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            payload = (await _get(conn, fixture.acme)).json()
-            coverage = payload["coverage"]
-            # employee_count, revenue_band, scoring.fit, scoring.intent, value_narrative, insight
-            assert coverage["researchedFieldCount"] == 6
-            assert coverage["unresolvedFieldKeys"] == []
-
-    run_async(scenario())
-
-
-def test_coverage_reports_only_the_accounts_own_unresolved_fields() -> None:
-    """An **account** research result also carries the fields of every contact subject it
-    discovered (``_flatten_result_fields`` folds ``discovered_subjects`` into the account's result
-    row). A coverage read that filtered on the *result*'s subject alone would report a contact's
-    unsupported field as the account's — and it could never clear, because answering it writes a
-    contact claim that never enters this account's held-key set.
-    """
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            subject = await _account(conn, name="Coverage", domain="coverage.test")
-            await ensure_project_account(
-                conn,
-                workspace_id=_WS,
-                project_id=fixture.project_a.project_id,
-                account_entity_id=subject,
-                added_via="manual",
-            )
-            contact = await insert_contact_entity(
-                conn,
-                account_entity_id=subject,
-                full_name="Discovered Person",
-                linkedin_url="https://linkedin.com/in/discovered-person",
-                status=AccountStatus.ACTIVE,
-            )
-            await _plant_research_result_fields(
-                conn,
-                account_id=subject,
-                project_id=fixture.project_a.project_id,
-                fields=(
-                    (_REQUESTED_FIELD, "account", subject),
-                    ("contact.current_title", "contact", contact),
-                ),
-            )
-
-            coverage = (await _get(conn, subject)).json()["coverage"]
-            assert coverage["unresolvedFieldKeys"] == [_REQUESTED_FIELD]
-            assert "contact.current_title" not in coverage["unresolvedFieldKeys"]
-
-    run_async(scenario())
-
-
-def test_unresolved_pack_fields_carry_their_registry_description() -> None:
-    """A new industry-pack key needs no frontend label map: its registry row explains the gap."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            subject = await _account(conn, name="Pack gap", domain="pack-gap.test")
-            await ensure_project_account(
-                conn,
-                workspace_id=_WS,
-                project_id=fixture.project_a.project_id,
-                account_entity_id=subject,
-                added_via="manual",
-            )
-            await _plant_research_result_fields(
-                conn,
-                account_id=subject,
-                project_id=fixture.project_a.project_id,
-                fields=(("healthcare.npi", "account", subject),),
-            )
-
-            coverage = (await _get(conn, subject)).json()["coverage"]
-            assert coverage["unresolvedFieldKeys"] == ["healthcare.npi"]
-            assert coverage["unresolvedFields"] == [
-                {
-                    "fieldKey": "healthcare.npi",
-                    "description": (
-                        "National Provider Identifier (deterministic registry id; tier-1)."
-                    ),
-                }
-            ]
-
-    run_async(scenario())
-
-
-def test_an_unresolved_field_clears_once_the_account_holds_a_claim_for_it() -> None:
-    """``unresolvedFieldKeys`` is a live gap report, not a scar: a field research once failed on
-    is not unresolved after it is answered."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            subject = await _account(conn, name="Healed", domain="healed.test")
-            await _plant_research_result_fields(
-                conn,
-                account_id=subject,
-                project_id=fixture.project_a.project_id,
-                fields=((_REQUESTED_FIELD, "account", subject),),
-            )
-            assert (await _get(conn, subject)).json()["coverage"]["unresolvedFieldKeys"] == [
-                _REQUESTED_FIELD
-            ]
-
-            await _account_claim(
-                conn,
-                account_id=subject,
-                field_key=_REQUESTED_FIELD,
-                value={"round": "series_b", "amount_usd": 42000000},
-                run_id=await _run(conn, kind="enrichment", project_id=None),
-            )
-            assert (await _get(conn, subject)).json()["coverage"]["unresolvedFieldKeys"] == []
-
-    run_async(scenario())
-
-
-def test_a_deactivated_relative_field_keeps_its_species() -> None:
-    """Species is a property of the *declaration*, not of activation: deactivating a
-    ``project_relative`` pack field must not migrate its existing claims out of their project
-    section and into ``neutralFacts`` — a bucket change with no data change."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            await conn.execute(
-                text("UPDATE field_definition SET active = false WHERE field_key = :key"),
-                {"key": _INSIGHT_FIELD},
-            )
-            payload = (await _get(conn, fixture.acme)).json()
-
-            assert _INSIGHT_FIELD not in _facts(payload)
-            section_a = _sections(payload)[fixture.project_a.project_id]
-            assert _values(section_a["insights"]) == ["insight for A"]
-
-    run_async(scenario())
-
-
-def test_no_display_strings_reach_the_wire() -> None:
-    """Band-2: enums, numbers, ISO timestamps, opaque ids — no ``*Label`` / formatted text."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            payload = (await _get(conn, fixture.acme)).json()
-
-            def walk(node: Any, path: str = "") -> None:
-                if isinstance(node, dict):
-                    for key, value in node.items():
-                        assert not key.endswith("Label"), f"display string at {path}.{key}"
-                        assert key not in {"displayName", "formatted", "text"}
-                        walk(value, f"{path}.{key}")
-                elif isinstance(node, list):
-                    for index, value in enumerate(node):
-                        walk(value, f"{path}[{index}]")
-
-            walk(payload)
-
-    run_async(scenario())
-
-
 def test_the_detail_never_scopes_a_claim_read_by_claim_workspace_id() -> None:
     """The slice-0 trap: a DB CHECK forces ``claim.workspace_id`` NULL on public claims, so that
     predicate silently *empties* a read instead of narrowing it. A grep, because the failure mode
@@ -1555,15 +945,6 @@ def test_the_detail_never_scopes_a_claim_read_by_claim_workspace_id() -> None:
 
     source = Path(module.__file__).read_text()
     assert "claim.workspace_id" not in source.split('"""', 2)[2]
-
-
-def test_the_lineage_join_dispatches_on_project_id_never_on_kind() -> None:
-    """``run_lineage.run_id`` is a mixed id space and ``kind`` is advisory first-writer-wins."""
-
-    from clue_api.frontend_read import account_detail
-
-    assert "l.project_id" in account_detail.RELATIVE_CLAIMS_TEMPLATE
-    assert "kind" not in account_detail.RELATIVE_CLAIMS_TEMPLATE
 
 
 def test_a_workspace_header_is_structurally_required() -> None:
@@ -1585,90 +966,6 @@ def test_a_non_uuid_id_is_an_enveloped_validation_error() -> None:
             response = await _get(conn, "not-a-uuid")
             assert response.status_code == 422
             assert response.json()["error"]["code"] == "VALIDATION_ERROR"
-
-    run_async(scenario())
-
-
-def test_the_committee_reader_is_not_the_ungoverned_identity_helper() -> None:
-    """FI-1 §4.5 and Slice-3: Account detail delegates to the one governed committee seam."""
-
-    from pathlib import Path
-
-    import clue_api.frontend_read.account_detail as module
-    import clue_api.frontend_read.committee as committee
-
-    body = Path(module.__file__).read_text().split('"""', 2)[2]
-    committee_body = Path(committee.__file__).read_text().split('"""', 2)[2]
-    assert "contact_ids_for_account" not in body + committee_body
-    assert "read_governed_committee" in body
-    assert "ContactEligibilityResolver" in committee_body
-
-
-def test_the_unattributed_section_is_absent_when_everything_is_attributed() -> None:
-    """Honest, not decorative: no unattributable claim means no unattributed section."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            clean = await _account(conn, name="Tidy", domain="tidy.test")
-            await ensure_project_account(
-                conn,
-                workspace_id=_WS,
-                project_id=fixture.project_a.project_id,
-                account_entity_id=clean,
-                added_via="manual",
-            )
-            await _account_claim(
-                conn,
-                account_id=clean,
-                field_key=_INSIGHT_FIELD,
-                value="attributed insight",
-                run_id=await _run(
-                    conn, kind="entity_research", project_id=fixture.project_a.project_id
-                ),
-                private=True,
-            )
-            payload = (await _get(conn, clean)).json()
-            assert None not in _sections(payload)
-            assert list(_sections(payload)) == [fixture.project_a.project_id]
-
-    run_async(scenario())
-
-
-def test_a_membership_less_account_still_renders_its_neutral_facts() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            await _build(conn)
-            seedling = await _account(conn, name="Seedling", domain=None)
-            await _account_claim(
-                conn,
-                account_id=seedling,
-                field_key="core.employee_count",
-                value=17,
-                run_id=await _run(conn, kind="stage0", project_id=None),
-                source_key="stage0",
-            )
-            payload = (await _get(conn, seedling)).json()
-            assert payload["domain"] is None
-            assert _facts(payload)["core.employee_count"]["value"] == 17
-            assert payload["projectSections"] == []
-            assert payload["committee"] == []
-
-    run_async(scenario())
-
-
-def test_an_empty_account_is_a_valid_all_empty_detail() -> None:
-    """An empty, flagged field is a correct output — never a 500 and never a fabrication."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            await _build(conn)
-            bare = await _account(conn, name="Bare", domain=None)
-            payload = (await _get(conn, bare)).json()
-            assert payload["neutralFacts"] == []
-            assert payload["projectSections"] == []
-            assert payload["committee"] == []
-            assert payload["coverage"]["researchedFieldCount"] == 0
 
     run_async(scenario())
 
@@ -1701,7 +998,7 @@ def test_the_project_run_context_rule_is_latest_run_wins() -> None:
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
-            from clue_api.frontend_read.committee import latest_project_run_context
+            from clue_api.frontend_read.project_run_context import latest_project_run_context
 
             fixture = await _build(conn)
             newer = new_project_run_id()
@@ -1736,11 +1033,7 @@ def test_the_project_run_context_rule_is_latest_run_wins() -> None:
     run_async(scenario())
 
 
-# --- ARV2 D3 E2: the contract-v1 detail under ``?contract=v1`` ---------------------------------
-#
-# The D3 ruling: contract v1 is selected per request. Everything above this line is the FI-2
-# contract and keeps passing byte-for-byte — one route serves both until the D4 re-lift retires
-# the FI-2 branch, so no FI-2 field is renamed, wrapped or removed here.
+# --- the detail itself (ARV2 E2) ---------------------------------------------------------------
 #
 # Two fixture choices are deliberate and recorded rather than left to be re-derived:
 #
@@ -2138,14 +1431,14 @@ def _overview(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {section["key"]: section for section in payload["overviewDisplay"]["sections"]}
 
 
-def test_the_v1_contract_serves_the_account_detail_for_a_fully_populated_account() -> None:
+def test_the_detail_is_served_whole_for_a_fully_populated_account() -> None:
     """Every v1 field of the detail, composed from the sources decisions 5/8/9/15/16 name — and
     the whole body validated twice: by the strict pydantic model and by the frontend's own Zod."""
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
             fixture = await _build_v1(conn)
-            response = await _get(conn, fixture.zafran, contract="v1")
+            response = await _get(conn, fixture.zafran)
             assert response.status_code == 200
             body = response.json()
 
@@ -2264,7 +1557,7 @@ def test_the_v1_contract_serves_the_account_detail_for_a_fully_populated_account
         ("suspended", "Paused"),
     ],
 )
-def test_the_v1_detail_serves_the_latest_arv2_job_status_verbatim(status: str, label: str) -> None:
+def test_the_detail_serves_the_latest_arv2_job_status_verbatim(status: str, label: str) -> None:
     """All five R2 states, unmapped — and the same read the list row uses, so the table and the
     page can never disagree about one account."""
 
@@ -2288,28 +1581,28 @@ def test_the_v1_detail_serves_the_latest_arv2_job_status_verbatim(status: str, l
                 status=cast(JobStatus, status),
             )
 
-            detail = (await _get(conn, fixture.zafran, contract="v1")).json()["data"]
+            detail = (await _get(conn, fixture.zafran)).json()["data"]
             assert detail["researchStatus"] == status
             assert detail["researchStatusLabel"] == label
 
     run_async(scenario())
 
 
-def test_an_account_with_no_arv2_job_is_not_started_on_the_v1_detail() -> None:
+def test_an_account_with_no_arv2_job_is_not_started_on_the_detail() -> None:
     """An unresearched account is honestly unresearched; nothing is invented for the missing row."""
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
             fixture = await _build_v1(conn)
 
-            detail = (await _get(conn, fixture.base.acme, contract="v1")).json()["data"]
+            detail = (await _get(conn, fixture.base.acme)).json()["data"]
             assert detail["researchStatus"] == "not_started"
             assert detail["researchStatusLabel"] == "Not started"
 
     run_async(scenario())
 
 
-def test_a_job_launched_by_a_non_primary_project_still_shows_on_the_v1_detail() -> None:
+def test_a_job_launched_by_a_non_primary_project_still_shows_on_the_detail() -> None:
     """Research is a fact about the *account*: the page reports its latest ARV2 job whichever
     project launched it, rather than reporting a researched account as never researched."""
 
@@ -2323,37 +1616,18 @@ def test_a_job_launched_by_a_non_primary_project_still_shows_on_the_v1_detail() 
                 status="needs_review",
             )
 
-            detail = (await _get(conn, fixture.base.acme, contract="v1")).json()["data"]
+            detail = (await _get(conn, fixture.base.acme)).json()["data"]
             assert detail["researchStatus"] == "needs_review"
 
     run_async(scenario())
 
 
-def test_the_same_id_without_the_parameter_still_serves_the_fi2_detail() -> None:
-    """The ruling: no FI-2 field is renamed, wrapped or removed while both contracts are served."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build_v1(conn)
-            body = (await _get(conn, fixture.zafran)).json()
-
-            assert "neutralFacts" in body
-            assert "data" not in body
-            assert "projectSections" in body
-            assert "coverage" in body
-            assert "buyingCommittee" not in body
-            assert "overviewDisplay" not in body
-
-    run_async(scenario())
-
-
-def test_an_unknown_id_is_an_enveloped_404_in_v1_mode() -> None:
-    """The v1 branch resolves the account by exactly the FI-2 rules, refusal included."""
+def test_an_unknown_id_is_an_enveloped_404() -> None:
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
             await _build_v1(conn)
-            response = await _get(conn, uuid.uuid4(), contract="v1")
+            response = await _get(conn, uuid.uuid4())
 
             assert response.status_code == 404
             error = response.json()["error"]
@@ -2363,7 +1637,7 @@ def test_an_unknown_id_is_an_enveloped_404_in_v1_mode() -> None:
     run_async(scenario())
 
 
-def test_a_merged_loser_is_followed_silently_in_v1() -> None:
+def test_a_merged_loser_is_followed_silently() -> None:
     """The FI-2 body names the id the caller asked for; the v1 shape has no ``redirectedFrom``
     slot, so the survivor is simply served."""
 
@@ -2373,7 +1647,7 @@ def test_a_merged_loser_is_followed_silently_in_v1() -> None:
             loser = await _account(conn, name="Zafran Dup", domain="zafran-dup.test")
             await mark_merged(conn, EntityType.ACCOUNT, loser_id=loser, survivor_id=fixture.zafran)
 
-            detail = (await _get(conn, loser, contract="v1")).json()["data"]
+            detail = (await _get(conn, loser)).json()["data"]
             assert detail["id"] == str(fixture.zafran)
             assert detail["name"] == "Zafran"
             assert "redirectedFrom" not in detail
@@ -2381,7 +1655,7 @@ def test_a_merged_loser_is_followed_silently_in_v1() -> None:
     run_async(scenario())
 
 
-def test_the_v1_detail_is_a_constant_number_of_statements() -> None:
+def test_the_detail_is_a_constant_number_of_statements() -> None:
     """The v1 detail composes more sources than the FI-2 one; it must still cost a fixed number of
     batched reads, not one per committee member, owner or custom field.
 
@@ -2391,7 +1665,7 @@ def test_the_v1_detail_is_a_constant_number_of_statements() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             fixture = await _build_v1(conn)
-            baseline, before = await _count_statements(conn, fixture.zafran, contract="v1")
+            baseline, before = await _count_statements(conn, fixture.zafran)
 
             await _v1_contact(
                 conn,
@@ -2413,7 +1687,7 @@ def test_the_v1_detail_is_a_constant_number_of_statements() -> None:
                     added_via="manual",
                     added_at=datetime(2026, 8, 2, 12, ordinal, tzinfo=UTC),
                 )
-            widened, after = await _count_statements(conn, fixture.zafran, contract="v1")
+            widened, after = await _count_statements(conn, fixture.zafran)
 
             assert len(before["data"]["buyingCommittee"]) == 2
             assert len(after["data"]["buyingCommittee"]) == 3, "the committee really did grow"
@@ -2423,22 +1697,19 @@ def test_the_v1_detail_is_a_constant_number_of_statements() -> None:
     run_async(scenario())
 
 
-def test_a_claim_cited_only_by_the_v1_page_is_authorised_for_the_evidence_stream() -> None:
-    """E7 authorises against the union of both contracts' evidence.
+def test_a_claim_cited_by_the_page_is_authorised_for_the_evidence_stream() -> None:
+    """E7 authorises against what the account's own overview page cites — nothing wider.
 
-    The FI-2 detail exposes account claims through ``neutralFacts``/``projectSections`` and no
-    contact claim at all; the v1 page cites both. The stored overview section here cites Dana's
-    **title** claim — evidence this account's screen shows and the FI-2 body never names — so it
-    can only be authorised through the v1 half of the union."""
+    The stored section here cites Dana's **title** claim: a *contact* claim reached through the
+    account's page, which is exactly the case an account-shaped authorising set would refuse. The
+    page's citations are the set, so it is served; a claim the page does not cite is not.
+    """
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
             storage = _MemoryStorage({_TITLE_ARTIFACT_KEY: _TITLE_ARTIFACT_BODY})
             fixture = await _build_v1(conn)
             contact_claim_id = fixture.cited_claim_ids[1]
-            assert contact_claim_id not in str((await _get(conn, fixture.zafran)).json()), (
-                "the FI-2 body must not expose it, or this test proves nothing"
-            )
 
             path = f"{_BASE}/{fixture.zafran}/evidence/{contact_claim_id}"
             unknown = f"{_BASE}/{fixture.zafran}/evidence/{uuid.uuid4()}"
@@ -2450,15 +1721,13 @@ def test_a_claim_cited_only_by_the_v1_page_is_authorised_for_the_evidence_stream
             assert served.status_code == 200
             assert served.content == _TITLE_ARTIFACT_BODY
             assert crossed.status_code == 404
-            # The union widens authorisation, it does not remove it.
             assert uncited.status_code == 404
 
     run_async(scenario())
 
 
 def test_the_evidence_route_authorises_against_stored_display_blocks_only() -> None:
-    """The evidence stream has no ``?contract`` parameter — it serves both contracts' readers — and
-    its v1 half asks the display seam with ``generate=False``.
+    """The evidence stream asks the display seam with ``generate=False``.
 
     So authorisation follows what is **stored**: retire the section that cites the claim and the
     same request is refused, rather than the route rebuilding the page to find a reason to say yes.
@@ -2490,7 +1759,6 @@ def test_the_evidence_route_authorises_against_stored_display_blocks_only() -> N
                 uncited = await client.get(path, headers={"X-Workspace-Id": _WS})
                 detail = await client.get(
                     f"{_BASE}/{fixture.zafran}",
-                    params={"contract": "v1"},
                     headers={"X-Workspace-Id": _WS},
                 )
 

@@ -213,22 +213,16 @@ def test_load_writes_every_row_and_the_screen_prerequisites(tmp_path: Path) -> N
     run_async(_run())
 
 
-def test_committee_read_sees_the_five_members(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The existing governed committee read resolves the loaded rows (source map §3.3).
+def test_committee_read_sees_the_five_members(tmp_path: Path) -> None:
+    """D2's committee read resolves the loaded rows (source map §3.3).
 
-    The answer key's committee is five under the shipped R0 posture — verification off, per
-    ``.env.example`` — because two of the five ``contact.role_on_committee`` rows are the run's own
-    tier-4 synthesis, and ``active_merge_policy`` serves an unverified tier-4 claim as current truth
-    only in that posture. With verification on, those two members are hidden until their rows are
-    verified, and that is the platform's tier-4 eligibility rule, not a loader defect.
+    The ARV2 committee rule is the contacts under the account that hold at least one live claim
+    (founder ruling 2026-09-09), so the loaded answer key's five Zafran people are exactly what the
+    contacts table, the committee card and the generated pages all list. The manifest's people at
+    other domains hang under their own accounts and must not appear here.
     """
-    monkeypatch.setenv("CLUE_VERIFICATION_ENABLED", "false")
 
-    from clue_api.frontend_read.committee import read_governed_committee
-    from clue_core import EntityId
-    from clue_research.membership import memberships_for_accounts
+    from clue_api.arv2.display.gather import committee_members
 
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
@@ -239,22 +233,17 @@ def test_committee_read_sees_the_five_members(
                 context_root=REPO / ".context",
                 settings=_settings(),
             )
-            zafran = EntityId(uuid.UUID(report.accounts["zafran.io"]))
-            memberships = await memberships_for_accounts(
-                conn, workspace_id=report.workspace_id, account_ids=[zafran]
-            )
-            committee, _policy = await read_governed_committee(
+            members = await committee_members(
                 conn,
-                account_id=zafran,
                 workspace_id=report.workspace_id,
-                memberships=list(memberships[zafran]),
+                account_id=report.accounts["zafran.io"],
             )
-            # ``GovernedCommitteeContact`` carries ids, not names: the manifest is what names them.
+            # The committee rows carry ids and names; the manifest is what says who they are.
             name_by_id = {
                 report.contacts[person.linkedin_url]: person.name
                 for person in ZAFRAN_MANIFEST.people
             }
-            names = {name_by_id[str(member_id)] for member_id in committee.members}
+            names = {name_by_id[member.id] for member in members}
             assert names == {"Nick Fisher", "Sanaz Yashar", "Vari Kaur", "Tom Anthony", "Ben Seri"}
 
     run_async(_run())

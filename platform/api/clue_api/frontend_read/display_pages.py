@@ -59,7 +59,7 @@ from clue_api.arv2.display.recipes import Page, SectionRecipe, read_recipes
 from clue_api.arv2.errors import Arv2Error, ProviderHalted, ProviderTransportError
 from clue_api.frontend_read.contract_v1 import AccountContact, BuyingCommitteeMember
 from clue_api.frontend_read.v1_shared import arv2_display_allowed, email_facts
-from clue_api.research_view_governance import safe_public_url
+from clue_api.url_safety import safe_public_url
 from clue_config import Secrets, Settings
 from clue_core import Claim, EntityId
 from clue_db import ConnFactory

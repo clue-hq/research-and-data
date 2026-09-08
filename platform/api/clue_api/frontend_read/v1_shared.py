@@ -63,7 +63,7 @@ from clue_api.frontend_read.contract_v1 import (
     ResearchEvidence,
     ResearchStatus,
 )
-from clue_api.research_view_governance import safe_public_url
+from clue_api.url_safety import safe_public_url
 from clue_config import Settings
 from clue_core import Claim, EntityId, EntityType, UseClass, decode_jsonb_scalar
 from clue_research.claimstore import WorkspaceScope

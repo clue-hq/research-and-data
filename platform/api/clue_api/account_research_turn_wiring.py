@@ -42,8 +42,7 @@ from clue_api.agent_turn_wiring import (
     DbAgentTurnJournal,
     DurableAgentArtifactStore,
 )
-from clue_api.frontend_read.account_detail import AccountNotFound
-from clue_api.frontend_read.contacts import ContactNotFound, read_contact_profile
+from clue_api.arv2.display.gather import SubjectNotFound, resolve_subject
 from clue_config import Settings
 from clue_core import (
     AccountEntity,
@@ -285,16 +284,30 @@ class DbCompiledContextCardReader:
                 if contact is None or contact.workspace_id != workspace_id:
                     return None
                 try:
-                    profile = await read_contact_profile(
+                    subject = await resolve_subject(
                         conn,
                         workspace_id=workspace_id,
-                        account_id=UUID(str(contact.account_entity_id)),
-                        contact_id=UUID(str(contact.id)),
+                        kind="contact",
+                        subject_id=str(contact.id),
                     )
-                except (AccountNotFound, ContactNotFound):
+                except SubjectNotFound:
                     return None
                 value = None
-                body = profile.model_dump_json(exclude_none=False, by_alias=True)
+                # The same minimal typed summary the design-document branch above compiles: who
+                # this person is and which account they hang under. The card is opening context,
+                # not the research — the agent reads a contact's claims through the toolbelt, and
+                # inlining a whole profile here would put an unbounded, ungoverned copy of one
+                # person's personal data into every turn that mentions them.
+                body = json.dumps(
+                    {
+                        "name": subject.name,
+                        "title": subject.title,
+                        "persona": subject.persona,
+                        "account_name": subject.account_name,
+                        "account_domain": subject.account_domain,
+                    },
+                    sort_keys=True,
+                )
                 version = contact.canonical_version
             else:
                 return None
