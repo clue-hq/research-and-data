@@ -36,7 +36,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, JsonValue
 
-from clue_api.arv2.ai_ark_client import AiArkCompany
+from clue_api.arv2.ai_ark_client import AiArkCompany, AiArkEmailExport, AiArkPerson
 from clue_api.arv2.ats_client import BoardPostings
 from clue_api.arv2.claim_writer import ClaimDraft
 from clue_api.arv2.structuring_client import (
@@ -50,8 +50,10 @@ from clue_core import (
     EntityId,
     EntityType,
     ExtractionMethod,
+    IdentityBinding,
     ResearchMode,
     RunId,
+    UseClass,
     is_valid_field_key,
 )
 from clue_obs import get_logger
@@ -61,16 +63,22 @@ log = get_logger("clue_api.arv2.account_research_claims")
 __all__ = [
     "ALWAYS_UNSAFE_FIELDS",
     "COMMITTEE_FIELD",
+    "CURRENT_TITLE_FIELD",
     "FIT_VERDICT_FIELD",
     "MEDIA_INDEX_FIELD",
+    "PERSONA_FIELD",
     "REPUTATION_RISK_FIELD",
+    "ROLE_ON_COMMITTEE_FIELD",
     "ClaimInput",
     "JobScope",
     "agent_claims",
     "ai_ark_company_claims",
+    "ai_ark_person_claims",
     "ats_posting_claims",
     "coerce_scalar",
     "committee_candidate_claims",
+    "committee_member_claims",
+    "email_export_claim",
     "fit_verdict_claims",
     "media_index_claim",
     "negative_claims",
@@ -100,11 +108,16 @@ DOWNGRADE_SUFFIX = " (downgraded: no contrary evidence cited)"
 
 @dataclass(frozen=True)
 class JobScope:
-    """Everything a tool needs to know about the one account job it serves.
+    """Everything a tool needs to know about the one job it serves.
 
     It is engine authority: the model can read every part of it (through ``read_account_state``)
     and change none of it. Every claim written in the job is stamped from here, which is what makes
     "which run wrote this, for which workspace, about which account" a query rather than a guess.
+
+    A job has one **subject** (the migration's own ruling): an account, or one named person at that
+    account. The account fields are always populated — a person job is still *about* a person at
+    that account, and its context is the account's — and the ``person_*`` fields are populated only
+    on a person job, where they are what every claim is stamped to.
     """
 
     workspace_id: str
@@ -126,6 +139,33 @@ class JobScope:
     #: rather than against whatever labels each run's model invented. An ICP with no hard gates
     #: leaves this empty, and then any gate label is admitted — there is nothing to key to.
     icp_gate_keys: tuple[str, ...] = ()
+    #: Which subject this job researches. ``account`` is every R2 job and stays the default, so a
+    #: caller that predates the person lane keeps exactly the behaviour it had.
+    subject_kind: Literal["account", "person"] = "account"
+    #: The person a ``person`` job is about — the contact entity every one of its claims is
+    #: stamped to. ``None`` on an account job, and required on a person one (``__post_init__``).
+    contact_id: EntityId | None = None
+    person_name: str = ""
+    person_title: str = ""
+    person_linkedin_url: str = ""
+    #: The person's employment as the job already knows it, one rendered line per role. Context for
+    #: the prompts (so the model does not spend the job re-deriving where they have worked); never
+    #: evidence, and never the source of a claim.
+    employment_history: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.subject_kind == "person" and self.contact_id is None:
+            raise ValueError("a person job's scope must carry the contact_id it is about")
+
+    @property
+    def person_subject_id(self) -> EntityId | None:
+        """The contact every claim in this job is about, or ``None`` on an account job.
+
+        ``__post_init__`` already refused a person scope with no contact, so the ``None`` this
+        returns always means "this job's subject is the account", never "the id went missing".
+        """
+        contact_id = self.contact_id
+        return contact_id if self.subject_kind == "person" and contact_id is not None else None
 
 
 class ClaimInput(BaseModel):
@@ -164,6 +204,24 @@ def _without_nones(row: Mapping[str, Any], *, keep: tuple[str, ...] = ()) -> dic
     return {key: value for key, value in row.items() if value is not None or key in keep}
 
 
+def _use_class_for(hint: str | None) -> UseClass:
+    """The use class a contact claim is born with: the field's own declared hint, else the plain
+    professional-public class every non-facet contact fact belongs to.
+
+    Read from the registry's ``use_class_hint`` (:attr:`FieldSpec.use_class_hint`) rather than
+    decided here, because "is this personal or professional" is a property of the *field*, and a
+    key→class table in this module would be exactly the kind of meaning-by-spelling the mappers do
+    not do. An unreadable hint falls back rather than raising: a claim must not be lost to a typo
+    in a registry row, and the fallback is the stricter-to-use of the two public classes.
+    """
+    if hint:
+        try:
+            return UseClass(hint)
+        except ValueError:
+            log.info("arv2.unreadable_use_class_hint", use_class_hint=hint)
+    return UseClass.PROFESSIONAL_PUBLIC
+
+
 def _draft(
     scope: JobScope,
     *,
@@ -178,22 +236,45 @@ def _draft(
     source_key: str,
     markers: Mapping[str, JsonValue] | None = None,
     field_description: str | None = None,
+    contact_id: EntityId | None = None,
+    use_class_hint: str | None = None,
 ) -> ClaimDraft:
-    """One account claim, with everything the job (never the caller) decides already stamped."""
+    """One claim, with everything the job (never the caller) decides already stamped.
+
+    The subject is the **job's**: an account job stamps the account, and a person job stamps the
+    person it was launched for — entity, entity type and research mode together, so a person claim
+    can never land on the account by omission. ``contact_id`` names a person explicitly, for the
+    one case where an *account* job writes about one: the committee members it resolved.
+
+    A contact claim is additionally born governed. ``identity_binding`` is ``STRONG`` because the
+    lock is not this claim's to establish — the person was confirmed on a non-provider URL before
+    the job existed, and every claim in it is about that confirmed person. ``use_class`` is the
+    field's own declared hint (:func:`_use_class_for`). Both are stamped for every contact claim,
+    not only for the ``contact.facet.*`` ones the substrate requires them on: the writer would
+    otherwise default a facet to ``WEAK`` (which never promotes), and a plain contact claim
+    carrying one of the pair without the other is a claim the composed contact view refuses.
+    """
+    person_id = contact_id if contact_id is not None else scope.person_subject_id
     return ClaimDraft(
-        entity_id=scope.account_id,
-        entity_type=EntityType.ACCOUNT,
+        entity_id=person_id if person_id is not None else scope.account_id,
+        entity_type=EntityType.CONTACT if person_id is not None else EntityType.ACCOUNT,
         field_key=field_key,
         value_json=value,
         extraction_method=method,
         run_id=RunId(scope.run_id),
-        research_mode=ResearchMode.ACCOUNT_PROFILING,
+        research_mode=(
+            ResearchMode.CONTACT_PROFILING
+            if person_id is not None
+            else ResearchMode.ACCOUNT_PROFILING
+        ),
         workspace_id=scope.workspace_id,
         source_url=source_url,
         source_key=source_key,
         evidence_span=evidence_span,
         observed_at=None,
         confidence=confidence,
+        identity_binding=IdentityBinding.STRONG if person_id is not None else None,
+        use_class=_use_class_for(use_class_hint) if person_id is not None else None,
         signal_priority=priority,
         outreach_safe=outreach_safe,
         field_description=field_description,
@@ -329,6 +410,17 @@ def _provider_value(raw: object) -> JsonValue | None:
         items: list[JsonValue] = [item for item in raw if isinstance(item, str) and item.strip()]
         return items or None
     return None
+
+
+def _integer(raw: object) -> int | None:
+    """A record value as a real integer. ``bool`` is not a number, as in JSON."""
+    return raw if isinstance(raw, int) and not isinstance(raw, bool) else None
+
+
+def _string(raw: object) -> str | None:
+    """A record value as a non-blank string. A blank field is an absent field, never an empty
+    claim, and a value of some other shape has no home in a string-typed property."""
+    return raw if isinstance(raw, str) and raw.strip() else None
 
 
 def _hq_location(location: Mapping[str, Any] | None) -> JsonValue | None:
@@ -649,6 +741,178 @@ def ai_ark_company_claims(
     return drafts
 
 
+#: The person record's scalar fields, as (mapped attribute, field key, the record path it was read
+#: from). The attributes are ``ai_ark_client.person_from_record``'s own mapping, so the path here is
+#: a citation of where the value came from, never a second parse of the record.
+_AI_ARK_PERSON_FIELDS: tuple[tuple[str, str, str], ...] = (
+    ("title", "contact.current_title", "profile.title"),
+    ("headline", "contact.headline", "profile.headline"),
+    ("linkedin_url", "contact.linkedin_url", "link.linkedin"),
+)
+
+
+def _person_location(location: Mapping[str, Any] | None) -> JsonValue | None:
+    """``location`` as the registered ``contact.current_location`` shape.
+
+    The registry declares ``{raw?, country?}`` and the provider answers
+    ``default/short/country/state/city/position``. ``default`` is the person's own unabbreviated
+    location line, which is what ``raw`` means — the source's own unparsed string — and ``country``
+    is the provider's, never derived from the city. A record that answers neither is not a
+    location, so it is not a claim.
+    """
+    row = _without_nones(
+        {
+            "raw": _string(_dig(location, "default")),
+            "country": _string(_dig(location, "country")),
+        }
+    )
+    return row or None
+
+
+def _network_statistics(raw: Mapping[str, Any]) -> JsonValue | None:
+    """``statistics.network`` as the registered ``{followers, connections}`` counts.
+
+    Only the two counts the field declares, and only when the record states them as integers: the
+    provider's own block also carries ``influencer``/``followable``, which are not counts and have
+    no home here.
+    """
+    network = _dig(raw, "statistics", "network")
+    row = _without_nones(
+        {
+            "followers": _integer(_dig(network, "followers_count")),
+            "connections": _integer(_dig(network, "connections_count")),
+        }
+    )
+    return row or None
+
+
+def _member_badges(raw: Mapping[str, Any]) -> JsonValue | None:
+    """``member_badges`` as the registered object: the provider's own flags, nulls dropped."""
+    badges = raw.get("member_badges")
+    if not isinstance(badges, Mapping):
+        return None
+    row = _without_nones({str(name): flag for name, flag in badges.items()})
+    return row or None
+
+
+def _career_history(raw: Mapping[str, Any]) -> JsonValue | None:
+    """``position_groups[].profile_positions[]`` as the registered ``[{org, role, start, end}]``.
+
+    The provider's employment list is ``position_groups`` — one group per employer, one
+    ``profile_positions`` entry per role held there — so a promotion is its own row rather than a
+    tenure silently flattened into its latest title. The org is the position's own company name,
+    falling back to the group's; a row that names no org is dropped, because ``org`` is the
+    field's required key and a role at nobody is not a career-history row.
+
+    The dates are the position's own when it states them and the group's otherwise: a group whose
+    single position omits its dates is still one dated stint, and copying a *neighbouring*
+    position's dates would be this module inventing a tenure.
+    """
+    groups = raw.get("position_groups")
+    if not isinstance(groups, list):
+        return None
+    rows: list[JsonValue] = []
+    for group in groups:
+        if not isinstance(group, Mapping):
+            continue
+        positions = group.get("profile_positions")
+        for position in positions if isinstance(positions, list) else ():
+            if not isinstance(position, Mapping):
+                continue
+            org = _string(position.get("company")) or _string(_dig(group, "company", "name"))
+            if org is None:
+                continue
+            rows.append(
+                _without_nones(
+                    {
+                        "org": org,
+                        "role": _string(position.get("title")),
+                        "start": _string(_dig(position, "date", "start"))
+                        or _string(_dig(group, "date", "start")),
+                        "end": _string(_dig(position, "date", "end"))
+                        or _string(_dig(group, "date", "end")),
+                    },
+                    keep=("org",),
+                )
+            )
+    return rows or None
+
+
+def ai_ark_person_claims(person: AiArkPerson, scope: JobScope) -> list[ClaimDraft]:
+    """Every registered contact field the person record carries, cited by raw path.
+
+    The same law as :func:`ai_ark_company_claims`, one entity down: ``https://api.ai-ark.com/…`` is
+    not a page a human can open, so a person claim carries ``source_url=None`` plus the exact
+    ``json_path`` the value sits at, and the lenient writer marks the missing URL. Every claim is
+    stamped to the job's person (:func:`_draft`), which is why the mapper takes no entity of its
+    own: a person fact belongs to the person the job is about, and to nobody else.
+
+    A path the record does not answer yields nothing at all — an absent field is a correct output.
+    """
+    raw = person.raw if isinstance(person.raw, Mapping) else {}
+    mapped: list[tuple[str, JsonValue | None, str]] = [
+        (field_key, getattr(person, attribute), json_path)
+        for attribute, field_key, json_path in _AI_ARK_PERSON_FIELDS
+    ]
+    mapped.append(("contact.current_location", _person_location(person.location), "location"))
+    mapped.append(("contact.network_statistics", _network_statistics(raw), "statistics.network"))
+    mapped.append(("contact.member_badges", _member_badges(raw), "member_badges"))
+    mapped.append(("contact.facet.career_history", _career_history(raw), "position_groups"))
+    return [
+        _draft(
+            scope,
+            field_key=field_key,
+            value=value,
+            method=ExtractionMethod.API,
+            source_url=None,
+            evidence_span=None,
+            priority=2,
+            outreach_safe=True,
+            confidence=0.9,
+            source_key="ai_ark:person",
+            markers={"json_path": json_path, "provider_record": "ai_ark"},
+        )
+        for field_key, value, json_path in mapped
+        if value is not None
+    ]
+
+
+#: The one verdict that means the mailbox itself answered, so the address is provider-verified
+#: rather than merely accepted by a catch-all domain (``ai_ark_client.email_verdict``).
+_PROVIDER_VERIFIED_VERDICT = "verified_smtp"
+
+
+def email_export_claim(export: AiArkEmailExport, scope: JobScope) -> ClaimDraft | None:
+    """The person's work email as one tier-1 claim, or ``None`` when the export found none.
+
+    The verdict rides on the claim rather than deciding whether it is written: "we have an address
+    and the domain accepts everything" is a different, useful answer from "we have an address the
+    mailbox itself confirmed", and both are different from having no address. Collapsing the first
+    two would make an unproven mailbox indistinguishable from a proven one at read time, which is
+    exactly the distinction ``email_verdict`` exists to preserve.
+    """
+    if not export.found or not export.address:
+        return None
+    return _draft(
+        scope,
+        field_key="core.work_email",
+        value=export.address,
+        method=ExtractionMethod.API,
+        source_url=None,
+        evidence_span=None,
+        priority=2,
+        outreach_safe=True,
+        confidence=0.9,
+        source_key="ai_ark:email_export",
+        markers={
+            "json_path": "email.output[0].address",
+            "provider_record": "ai_ark",
+            "verdict": export.verdict,
+            "provider_verified": export.verdict == _PROVIDER_VERIFIED_VERDICT,
+        },
+    )
+
+
 def media_index_claim(
     *,
     person: str,
@@ -725,6 +989,15 @@ def normalise_proposed_key(key: str, subject: Literal["account", "contact"]) -> 
     return slug
 
 
+def _proposed_key_subject(scope: JobScope) -> Literal["account", "contact"]:
+    """Which namespace a suggested key with none of its own belongs to.
+
+    The job's subject decides it: a person job's ``"favourite band"`` is a fact about the person,
+    and giving it the ``account.`` namespace would file a personal observation under the company.
+    """
+    return "contact" if scope.person_subject_id is not None else "account"
+
+
 #: The keys a model wraps a scalar in when it wants to say more than the field can hold
 #: (``{"count": 36, "semantics": "linkedin_estimate"}`` for ``core.employee_count``). Exactly one
 #: of them may be present: two carriers is an object with real structure, not a wrapped scalar.
@@ -787,6 +1060,12 @@ def coerce_scalar(field_key: str, value: JsonValue, catalog: FieldCatalog) -> Js
             except ValueError:
                 return value
     return value
+
+
+def _hint(field_key: str, catalog: FieldCatalog) -> str | None:
+    """The use class the field itself declares, or ``None`` when the catalog does not carry it."""
+    spec = catalog.spec(field_key)
+    return spec.use_class_hint if spec else None
 
 
 def _coerced(
@@ -867,6 +1146,7 @@ def _structured_claim_draft(
         confidence=_CONFIDENCE_WORDS.get((claim.confidence or "").strip().lower(), 0.5),
         source_key="structuring",
         markers=markers,
+        use_class_hint=_hint(claim.field_key, catalog),
     )
 
 
@@ -896,10 +1176,11 @@ def structured_claims(
         )
         for claim in output.claims
     ]
+    subject = _proposed_key_subject(scope)
     for proposed in output.proposed:
         if not proposed.suggested_key:
             continue
-        field_key = normalise_proposed_key(proposed.suggested_key, "account")
+        field_key = normalise_proposed_key(proposed.suggested_key, subject)
         markers: dict[str, JsonValue] = {
             "proposed_origin": proposed.origin,
             "structuring_mode": output.mode,
@@ -921,6 +1202,7 @@ def structured_claims(
                 source_key="structuring",
                 markers={**markers, **coercion},
                 field_description=proposed.why or None,
+                use_class_hint=_hint(field_key, catalog),
             )
         )
     return drafts
@@ -946,7 +1228,7 @@ def agent_claims(
         field_key = (
             item.field_key
             if is_valid_field_key(item.field_key)
-            else normalise_proposed_key(item.field_key, "account")
+            else normalise_proposed_key(item.field_key, _proposed_key_subject(scope))
         )
         value, coercion = _coerced(field_key, item.value, catalog)
         markers: dict[str, JsonValue] = dict(coercion)
@@ -978,6 +1260,7 @@ def agent_claims(
                 confidence=item.confidence,
                 source_key="agent",
                 markers=markers or None,
+                use_class_hint=_hint(field_key, catalog),
             )
         )
     return drafts
@@ -1098,3 +1381,69 @@ def committee_candidate_claims(
             )
         )
     return drafts
+
+
+#: The three contact fields a confirmed committee member is written on, in the order they are
+#: written. ``contact.persona`` is the bare enum the ``(account, persona)`` addressing keys on;
+#: ``contact.role_on_committee`` is the same role plus the agent's reasoning about it; and
+#: ``contact.current_title`` is the professional fact behind both.
+PERSONA_FIELD = "contact.persona"
+ROLE_ON_COMMITTEE_FIELD = "contact.role_on_committee"
+CURRENT_TITLE_FIELD = "contact.current_title"
+
+
+def committee_member_claims(
+    candidate: Mapping[str, Any], *, scope: JobScope, contact_id: EntityId
+) -> list[ClaimDraft]:
+    """One confirmed committee member's persona, role and title, written onto their own contact.
+
+    The account job resolved the committee, so these are claims about a *person* written from a
+    job whose own subject is the account — which is why the contact entity is passed in rather
+    than inferred: the caller resolved the identity, and this module never guesses whose claim
+    this is. Everything else about a contact claim is stamped as usual by :func:`_draft` (contact
+    profiling, strong binding, the field's use class).
+
+    Only what the candidate actually states is written. No persona means no persona claim and no
+    role claim — ``role`` is the role field's required key and its closed enum, and a role with no
+    role in it is not a committee assessment. The confirming URL and the candidate's own quote
+    travel onto every one of the three, so a reader of any of them reaches the page that named
+    this person in this seat.
+    """
+    persona = candidate.get("persona")
+    title = candidate.get("title")
+    source_url = candidate.get("confirmed_by")
+    evidence_span = str(candidate.get("evidence_span") or "") or None
+    role: JsonValue | None = (
+        _without_nones(
+            {
+                "role": persona,
+                "rationale": candidate.get("rationale"),
+                "influence": candidate.get("influence"),
+            },
+            keep=("role",),
+        )
+        if persona
+        else None
+    )
+    values: tuple[tuple[str, JsonValue | None], ...] = (
+        (PERSONA_FIELD, _string(persona)),
+        (ROLE_ON_COMMITTEE_FIELD, role),
+        (CURRENT_TITLE_FIELD, _string(title)),
+    )
+    return [
+        _draft(
+            scope,
+            field_key=field_key,
+            value=value,
+            method=ExtractionMethod.LLM_SYNTHESIS,
+            source_url=str(source_url) if source_url else None,
+            evidence_span=evidence_span,
+            priority=2,
+            outreach_safe=True,
+            confidence=0.6,
+            source_key="agent",
+            contact_id=contact_id,
+        )
+        for field_key, value in values
+        if value is not None
+    ]

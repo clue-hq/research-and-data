@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2 import account_research_store as store
+from clue_api.arv2.catalog_seed import load_arv2_pack
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
 from clue_core import (
     EntityType,
@@ -21,6 +22,8 @@ from clue_core import (
 )
 from clue_research.durable.project_run import ensure_project_run
 from clue_research.identity import insert_account_entity
+from clue_research.profiling.committee.fields import load_committee_pack
+from clue_research.profiling.fields import load_deep_profiling_pack
 from tests._workspace import seed_project
 
 # The claim-store harness lives in a sibling test package; a fixture is only visible to a module
@@ -572,5 +575,67 @@ def test_a_subject_without_its_entity_is_unrepresentable() -> None:
                             "account": account,
                         },
                     )
+
+    run_async(scenario())
+
+
+def test_the_person_catalog_is_the_contact_menu_plus_the_account_fields_it_reads() -> None:
+    """Read from the registry, never enumerated in code: the person menu is every registered
+    ``contact.*`` field plus the handful of account/core fields a contact recipe composes from,
+    and a facet carries the ``use_class_hint`` the registry declares in its ``validation``."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=True) as conn:  # CORE_PACK → core.work_email
+            await load_deep_profiling_pack(conn)  # contact.facet.alma_mater
+            await load_committee_pack(conn)  # contact.current_title / persona / location
+            await load_arv2_pack(conn)  # contact.facet.hobby, with the personal hint
+
+            catalog = await store.read_person_catalog(conn)
+
+            keys = catalog.keys()
+            assert {
+                "contact.current_title",
+                "contact.persona",
+                "contact.role_on_committee",
+                "contact.current_location",
+                "contact.facet.alma_mater",
+                "contact.facet.hobby",
+                "core.work_email",
+                "account.open_requisitions",
+                "account.abm_program_maturity",
+                "account.hiring_velocity",
+                "account.gtm_tooling_stack",
+                "account.operational_pain",
+                "account.claimed_outcomes_metrics",
+                "account.named_customers",
+            } <= keys
+            # The account side is only what a contact recipe reads, never the whole account menu.
+            assert "core.revenue_band" not in keys and "account.reputation_risk" not in keys
+
+            hobby = catalog.spec("contact.facet.hobby")
+            assert hobby is not None and hobby.use_class_hint == "personal-public-non-sensitive"
+            career = catalog.spec("contact.facet.career_history")
+            assert career is not None and career.use_class_hint == "professional-public"
+            # A plain contact field declares no hint: the claim path's default decides.
+            title = catalog.spec("contact.current_title")
+            assert title is not None and title.use_class_hint is None
+            assert title.value_schema == {"type": "string"}
+
+            # The three menu sections are the three the model is shown.
+            assert {spec.key for spec in catalog.account} == {
+                "account.abm_program_maturity",
+                "account.claimed_outcomes_metrics",
+                "account.gtm_tooling_stack",
+                "account.hiring_velocity",
+                "account.named_customers",
+                "account.open_requisitions",
+                "account.operational_pain",
+                "core.work_email",
+            }
+            assert all(spec.key.startswith("contact.facet.") for spec in catalog.facet)
+            assert all(
+                spec.key.startswith("contact.") and not spec.key.startswith("contact.facet.")
+                for spec in catalog.contact
+            )
 
     run_async(scenario())

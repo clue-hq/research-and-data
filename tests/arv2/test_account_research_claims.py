@@ -9,10 +9,13 @@ born as, and that a `fail` verdict with nothing behind it is downgraded rather t
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
+
+import pytest
 
 from clue_api.arv2.account_research_claims import (
     ClaimInput,
@@ -20,9 +23,12 @@ from clue_api.arv2.account_research_claims import (
     _hq_location,
     agent_claims,
     ai_ark_company_claims,
+    ai_ark_person_claims,
     ats_posting_claims,
     coerce_scalar,
     committee_candidate_claims,
+    committee_member_claims,
+    email_export_claim,
     fit_verdict_claims,
     media_index_claim,
     negative_claims,
@@ -31,7 +37,12 @@ from clue_api.arv2.account_research_claims import (
     structured_claims,
     unconfirmed_candidates,
 )
-from clue_api.arv2.ai_ark_client import AiArkCompany
+from clue_api.arv2.ai_ark_client import (
+    AiArkCompany,
+    AiArkPerson,
+    email_export_from_record,
+    person_from_record,
+)
 from clue_api.arv2.ats_client import AtsBoard, BoardPostings, JobPosting
 from clue_api.arv2.calls import CallCost
 from clue_api.arv2.structuring_client import (
@@ -42,7 +53,15 @@ from clue_api.arv2.structuring_client import (
     StructuredClaim,
     StructuredOutput,
 )
-from clue_core import EntityId, EntityType, ExtractionMethod, ResearchMode, is_valid_field_key
+from clue_core import (
+    EntityId,
+    EntityType,
+    ExtractionMethod,
+    IdentityBinding,
+    ResearchMode,
+    UseClass,
+    is_valid_field_key,
+)
 
 SCOPE = JobScope(
     workspace_id="ws-1",
@@ -1142,3 +1161,342 @@ def test_a_vacant_seat_carries_no_name_key_at_all() -> None:
     assert "name" not in draft.value_json
     assert draft.value_json["vacant_seat"] is True
     assert draft.value_json["persona"] == "economic_buyer"
+
+
+# -- a person subject in the claim path -----------------------------------------------------------
+
+CONTACT_ID = EntityId(uuid4())
+
+PERSON_SCOPE = replace(
+    SCOPE,
+    subject_kind="person",
+    contact_id=CONTACT_ID,
+    person_name="Nick Fisher",
+    person_title="VP of Marketing",
+    person_linkedin_url="https://www.linkedin.com/in/nicholastfisher",
+    employment_history=("VP of Marketing @ Zafran Security (2024-04-01–)",),
+)
+
+#: The person-side menu as ``read_person_catalog`` serves it: the contact fields carry the
+#: ``use_class_hint`` the registry declares, and a facet's hint is what the claim is born with.
+PERSON_CATALOG = FieldCatalog(
+    contact=(
+        FieldSpec("contact.current_title", "Current professional title.", _STR),
+        FieldSpec("contact.headline", "LinkedIn headline.", _STR),
+    ),
+    facet=(
+        FieldSpec(
+            "contact.facet.hobby",
+            "Hobbies the person states publicly.",
+            _STR_LIST,
+            use_class_hint="personal-public-non-sensitive",
+        ),
+        FieldSpec(
+            "contact.facet.certifications",
+            "Certifications the person lists.",
+            _STR_LIST,
+            use_class_hint="professional-public",
+        ),
+    ),
+)
+
+#: One ``/v1/people`` record, at the paths the provider actually uses (recorded walk, Nick Fisher).
+PERSON_RECORD: Mapping[str, Any] = {
+    "id": "5669ed27-2388-effa-30a8-53bf21dee7d3",
+    "profile": {
+        "full_name": "Nick Fisher",
+        "title": "VP of Marketing",
+        "headline": "VP Marketing at Zafran Security",
+    },
+    "link": {"linkedin": "https://www.linkedin.com/in/nicholastfisher"},
+    "location": {
+        "default": "New York, New York, United States, North America",
+        "short": "New York, New York",
+        "country": "United States",
+        "state": "New York",
+        "city": "New York",
+        "position": None,
+    },
+    "member_badges": {"premium": True, "creator": True, "hiring": False, "influencer": None},
+    "statistics": {"network": {"followers_count": 6808, "connections_count": 4776}},
+    "position_groups": [
+        {
+            "company": {"name": "Zafran Security", "url": "https://www.linkedin.com/company/zaf"},
+            "date": {"start": "2024-04-01", "end": None},
+            "profile_positions": [
+                {
+                    "company": "Zafran Security",
+                    "title": "VP of Marketing",
+                    "date": {"start": "2024-04-01", "end": None},
+                }
+            ],
+        },
+        {
+            "company": {"name": "Sysdig"},
+            "date": {"start": "2021-09-01", "end": "2024-04-30"},
+            "profile_positions": [
+                {
+                    "company": "Sysdig",
+                    "title": "Senior Director, Product Marketing",
+                    "date": {"start": "2023-01-01", "end": "2024-04-30"},
+                },
+                {
+                    "company": "Sysdig",
+                    "title": "Director, Product Marketing",
+                    "date": {"start": "2021-09-01", "end": "2022-12-31"},
+                },
+            ],
+        },
+        {"company": {"url": "https://www.linkedin.com/company/nameless"}, "profile_positions": []},
+    ],
+    "department": {"seniority": "vp"},
+}
+
+
+def _person(record: Mapping[str, Any] = PERSON_RECORD) -> AiArkPerson:
+    return person_from_record(record)
+
+
+def test_a_person_scoped_draft_is_stamped_to_the_contact_not_the_account() -> None:
+    """The subject of the job decides the entity, the mode and the personal-data provenance."""
+    items = [
+        ClaimInput(
+            field_key="contact.facet.hobby",
+            value=["surfing"],
+            evidence_span="I surf every Sunday",
+            source_url="https://li.test/nick",
+            priority=2,
+        )
+    ]
+
+    (draft,) = agent_claims(items, PERSON_SCOPE, catalog=PERSON_CATALOG)
+
+    assert draft.entity_id == CONTACT_ID and draft.entity_type is EntityType.CONTACT
+    assert draft.research_mode is ResearchMode.CONTACT_PROFILING
+    assert draft.identity_binding is IdentityBinding.STRONG
+    assert draft.use_class is UseClass.PERSONAL_PUBLIC_NON_SENSITIVE
+
+
+def test_a_person_claim_on_a_field_with_no_hint_is_born_professional_public() -> None:
+    items = [
+        ClaimInput(
+            field_key="contact.current_title",
+            value="VP of Marketing",
+            evidence_span="VP of Marketing",
+            source_url="https://li.test/nick",
+            priority=2,
+        )
+    ]
+
+    (draft,) = agent_claims(items, PERSON_SCOPE, catalog=PERSON_CATALOG)
+
+    assert draft.use_class is UseClass.PROFESSIONAL_PUBLIC
+    assert draft.identity_binding is IdentityBinding.STRONG
+
+
+def test_an_account_scoped_draft_is_unchanged_by_the_person_subject() -> None:
+    """The account path stamps no binding and no use class: the writer's defaults still decide."""
+    items = [
+        ClaimInput(
+            field_key="core.industry",
+            value="Computer & Network Security",
+            evidence_span="Computer & Network Security",
+            source_url="https://zafran.io/about",
+            priority=2,
+        )
+    ]
+
+    (draft,) = agent_claims(items, SCOPE, catalog=CATALOG)
+
+    assert draft.entity_id == SCOPE.account_id and draft.entity_type is EntityType.ACCOUNT
+    assert draft.research_mode is ResearchMode.ACCOUNT_PROFILING
+    assert draft.identity_binding is None and draft.use_class is None
+
+
+def test_a_person_scope_without_a_contact_is_refused_at_construction() -> None:
+    with pytest.raises(ValueError, match="contact_id"):
+        replace(SCOPE, subject_kind="person")
+
+
+def test_the_ai_ark_person_record_maps_onto_its_registered_contact_fields() -> None:
+    drafts = {draft.field_key: draft for draft in ai_ark_person_claims(_person(), PERSON_SCOPE)}
+
+    assert drafts["contact.current_title"].value_json == "VP of Marketing"
+    assert drafts["contact.headline"].value_json == "VP Marketing at Zafran Security"
+    assert drafts["contact.linkedin_url"].value_json == (
+        "https://www.linkedin.com/in/nicholastfisher"
+    )
+    assert drafts["contact.current_location"].value_json == {
+        "raw": "New York, New York, United States, North America",
+        "country": "United States",
+    }
+    assert drafts["contact.network_statistics"].value_json == {
+        "followers": 6808,
+        "connections": 4776,
+    }
+    # An explicit provider null is dropped, exactly as everywhere else: absent is not null.
+    assert drafts["contact.member_badges"].value_json == {
+        "premium": True,
+        "creator": True,
+        "hiring": False,
+    }
+
+
+def test_every_ai_ark_person_claim_cites_its_raw_path_and_never_a_fabricated_url() -> None:
+    drafts = {draft.field_key: draft for draft in ai_ark_person_claims(_person(), PERSON_SCOPE)}
+
+    assert {key: draft.markers["json_path"] for key, draft in drafts.items()} == {
+        "contact.current_title": "profile.title",
+        "contact.headline": "profile.headline",
+        "contact.linkedin_url": "link.linkedin",
+        "contact.current_location": "location",
+        "contact.network_statistics": "statistics.network",
+        "contact.member_badges": "member_badges",
+        "contact.facet.career_history": "position_groups",
+    }
+    for draft in drafts.values():
+        assert draft.source_url is None and draft.source_key == "ai_ark:person"
+        assert draft.extraction_method is ExtractionMethod.API
+        assert draft.markers["provider_record"] == "ai_ark"
+        assert draft.entity_id == CONTACT_ID and draft.entity_type is EntityType.CONTACT
+        assert draft.identity_binding is IdentityBinding.STRONG
+
+
+def test_the_career_history_is_one_row_per_role_at_the_org_that_held_it() -> None:
+    """``position_groups[].profile_positions[]`` is the record's employment list; a promotion is
+    its own row, and a group naming no org is not a career-history row at all."""
+    (draft,) = [
+        draft
+        for draft in ai_ark_person_claims(_person(), PERSON_SCOPE)
+        if draft.field_key == "contact.facet.career_history"
+    ]
+
+    assert draft.value_json == [
+        {"org": "Zafran Security", "role": "VP of Marketing", "start": "2024-04-01"},
+        {
+            "org": "Sysdig",
+            "role": "Senior Director, Product Marketing",
+            "start": "2023-01-01",
+            "end": "2024-04-30",
+        },
+        {
+            "org": "Sysdig",
+            "role": "Director, Product Marketing",
+            "start": "2021-09-01",
+            "end": "2022-12-31",
+        },
+    ]
+    assert draft.use_class is UseClass.PROFESSIONAL_PUBLIC
+
+
+def test_a_person_record_that_answers_nothing_yields_no_claims() -> None:
+    assert ai_ark_person_claims(_person({"profile": {}}), PERSON_SCOPE) == []
+
+
+def test_an_email_export_that_found_nothing_is_no_claim_at_all() -> None:
+    export = email_export_from_record({"profile": {"full_name": "Kate"}, "email": {"output": []}})
+
+    assert export.found is False
+    assert email_export_claim(export, PERSON_SCOPE) is None
+
+
+def test_a_found_email_is_a_tier1_claim_carrying_its_verdict() -> None:
+    export = email_export_from_record(
+        {
+            "profile": {"full_name": "Kate Blumberg"},
+            "email": {
+                "output": [
+                    {
+                        "address": "kate@probook.ai",
+                        "status": "VALID",
+                        "domainType": "CATCH_ALL",
+                        "found": True,
+                    }
+                ]
+            },
+        }
+    )
+
+    draft = email_export_claim(export, PERSON_SCOPE)
+
+    assert draft is not None
+    assert draft.field_key == "core.work_email" and draft.value_json == "kate@probook.ai"
+    assert draft.entity_id == CONTACT_ID and draft.entity_type is EntityType.CONTACT
+    assert draft.extraction_method is ExtractionMethod.API
+    assert draft.source_key == "ai_ark:email_export"
+    assert draft.markers["verdict"] == "catch_all_valid"
+    # The domain accepts every address, so the mailbox itself is unproven.
+    assert draft.markers["provider_verified"] is False
+    assert draft.markers["json_path"] == "email.output[0].address"
+
+
+def test_only_an_smtp_verified_mailbox_is_recorded_as_provider_verified() -> None:
+    export = email_export_from_record(
+        {
+            "email": {
+                "output": [
+                    {
+                        "address": "nick@zafran.io",
+                        "status": "VALID",
+                        "domainType": "SMTP",
+                        "found": True,
+                    }
+                ]
+            }
+        }
+    )
+
+    draft = email_export_claim(export, PERSON_SCOPE)
+
+    assert draft is not None
+    assert draft.markers["verdict"] == "verified_smtp"
+    assert draft.markers["provider_verified"] is True
+
+
+def test_a_committee_member_is_written_onto_their_own_contact_entity() -> None:
+    """The account job resolved the committee, so the claims are about a person even though the
+    job's own subject is the account: the contact id is passed, never inferred."""
+    drafts = committee_member_claims(
+        {
+            "name": "Nick Fisher",
+            "title": "VP of Marketing",
+            "persona": "champion",
+            "rationale": "owns the ABM programme",
+            "influence": "high",
+            "confirmed_by": "https://www.linkedin.com/in/nicholastfisher",
+            "evidence_span": "VP Marketing at Zafran Security",
+        },
+        scope=SCOPE,
+        contact_id=CONTACT_ID,
+    )
+
+    by_key = {draft.field_key: draft for draft in drafts}
+    assert set(by_key) == {
+        "contact.persona",
+        "contact.role_on_committee",
+        "contact.current_title",
+    }
+    assert by_key["contact.persona"].value_json == "champion"
+    assert by_key["contact.role_on_committee"].value_json == {
+        "role": "champion",
+        "rationale": "owns the ABM programme",
+        "influence": "high",
+    }
+    assert by_key["contact.current_title"].value_json == "VP of Marketing"
+    for draft in drafts:
+        assert draft.entity_id == CONTACT_ID and draft.entity_type is EntityType.CONTACT
+        assert draft.research_mode is ResearchMode.CONTACT_PROFILING
+        assert draft.identity_binding is IdentityBinding.STRONG
+        assert draft.use_class is UseClass.PROFESSIONAL_PUBLIC
+        assert draft.source_url == "https://www.linkedin.com/in/nicholastfisher"
+        assert draft.evidence_span == "VP Marketing at Zafran Security"
+
+
+def test_a_committee_member_with_no_persona_or_title_writes_only_what_it_has() -> None:
+    drafts = committee_member_claims(
+        {"name": "Sanaz Yashar", "confirmed_by": "https://li.test/sanaz"},
+        scope=SCOPE,
+        contact_id=CONTACT_ID,
+    )
+
+    assert [draft.field_key for draft in drafts] == []

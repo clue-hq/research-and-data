@@ -30,6 +30,7 @@ from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
 from clue_core import decode_jsonb
 
 __all__ = [
+    "PERSON_ACCOUNT_FIELDS",
     "UNRECORDED_REASON",
     "UNSPECIFIED_FAILURE",
     "AnnotationRow",
@@ -48,6 +49,7 @@ __all__ = [
     "list_jobs",
     "read_account_catalog",
     "read_job",
+    "read_person_catalog",
     "read_persona_documents",
     "read_run",
     "record_annotations",
@@ -554,6 +556,81 @@ async def read_account_catalog(conn: AsyncConnection) -> FieldCatalog:
             )
             for row in rows
         )
+    )
+
+
+#: The account-side fields a *person* job may write against. Not the whole account menu: a person
+#: job researches one person, and the account facts it can add to are exactly the ones the contact
+#: display recipes compose a contact page from (``display/recipes.py``: the contact sections' own
+#: allowed account keys), plus the person's work email, which is a ``core.*`` contact channel.
+#: Enumerated rather than pattern-matched because "which account facts belong on a person job" is a
+#: product decision, not a namespace.
+PERSON_ACCOUNT_FIELDS: tuple[str, ...] = (
+    "account.abm_program_maturity",
+    "account.claimed_outcomes_metrics",
+    "account.gtm_tooling_stack",
+    "account.hiring_velocity",
+    "account.named_customers",
+    "account.open_requisitions",
+    "account.operational_pain",
+    "core.work_email",
+)
+
+
+async def read_person_catalog(conn: AsyncConnection) -> FieldCatalog:
+    """The person-side field menu one person job may write against.
+
+    Every registered ``contact.*`` field — plain facts in the contact section, personal hooks in
+    the facet section — plus :data:`PERSON_ACCOUNT_FIELDS`. Read from the registry for the same
+    reason :func:`read_account_catalog` is: a pack that adds a contact field is a row, and the menu
+    grows with it without a code change.
+
+    Each row also carries the field's declared ``use_class_hint``. The registry holds it in
+    ``field_definition.validation`` (``{"use_class_hint": …}``), and it is what a contact claim
+    written against that field is born with — so the difference between a professional fact and a
+    personal one is read off the field that declares it, never inferred from the key's spelling.
+    A field whose ``validation`` says nothing has no hint, and the claim path's default decides.
+    """
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT field_key, description, value_schema, "
+                    " validation->>'use_class_hint' AS use_class_hint "
+                    "FROM field_definition "
+                    "WHERE active AND (field_key LIKE 'contact.%' OR field_key = ANY(:extra)) "
+                    "ORDER BY field_key"
+                ),
+                {"extra": list(PERSON_ACCOUNT_FIELDS)},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    sections: dict[str, list[FieldSpec]] = {"account": [], "contact": [], "facet": []}
+    for row in rows:
+        key = str(row["field_key"])
+        section = (
+            "facet"
+            if key.startswith("contact.facet.")
+            else "contact"
+            if key.startswith("contact.")
+            else "account"
+        )
+        sections[section].append(
+            FieldSpec(
+                key=key,
+                description=str(row["description"] or ""),
+                value_schema=_schema(row["value_schema"]),
+                use_class_hint=(
+                    str(row["use_class_hint"]) if row["use_class_hint"] is not None else None
+                ),
+            )
+        )
+    return FieldCatalog(
+        account=tuple(sections["account"]),
+        contact=tuple(sections["contact"]),
+        facet=tuple(sections["facet"]),
     )
 
 
