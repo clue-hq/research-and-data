@@ -162,3 +162,12 @@ directory, is the close's exit gate. Nothing in tasks 1–6 has been exercised l
   one assertion per sentence"); claims mode only for narrow probes. `evaluation-claims-mode.md`.
 - Ops: the Exa key env var is `CLUE_EXA_API_KEY` (an unset `EXA_API_KEY` makes Exa answer 402 x402
   pay-per-call, not an auth error). `run.sh` fixed.
+
+## R2 follow-ups DONE (2026-09-09, plan docs/superpowers/plans/2026-09-09-arv2-r2-followups.md)
+- Catalog menu renders `[shape: …]` per schema'd field; `write_claims` receipts carry `expected_shape` + a
+  `corrects_claim_id` hint on a schema miss; `agent_claims` drops null optional keys (`dropped_null_keys`).
+- Established block: compact JSON, 240 chars/line; `research_deep` clips it to 6k chars with an omission note.
+- Deep-call EVIDENCE_RULES: one assertion per sentence, quote first; a sentence per NOT FOUND item.
+- `read_media_feeds(alternate_urls=[…])` falls through on load failures; `feed_not_found` names every URL.
+- AI Ark HQ shape emits `region` (state) and `country_code` when the record has one.
+- Not measured live (founder ruling): folds into R3's acceptance run.

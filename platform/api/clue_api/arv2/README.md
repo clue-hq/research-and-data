@@ -688,7 +688,7 @@ does not fit or when the field is not registered in this deployment.
 | `technologies[].name` | `core.primary_tech_stack` |
 | `technologies` | `core.tech_stack_categorised` (`[{name, category}, …]`) |
 | `financial.revenue.annual` | `core.revenue_band` (bucket translation) |
-| `location.headquarter` | `core.hq_location` — the **registered** shape `{raw: raw_address, city, country}`, null keys dropped; a headquarter with no `raw_address` writes no claim at all |
+| `location.headquarter` | `core.hq_location` — the **registered** shape `{raw: raw_address, city, region: state, country, country_code (only when the record carries one)}`, null keys dropped; a headquarter with no `raw_address` writes no claim at all |
 | `financial.funding.total_amount` | `account.total_funding` — `{amount_usd, estimate_kind: "reported"}` |
 | `financial.funding.rounds[newest]` | `account.recent_funding` — `{amount_usd, round}`, newest **by `announced_at`**, never by list position; no amount on the newest round means no claim |
 
