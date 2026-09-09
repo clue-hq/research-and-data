@@ -86,12 +86,14 @@ already hold, and each one becomes words in the prompt:
    into the prompt verbatim.
 3. **Reference images on the call.** When the turn has reference images,
    they condition the generation call automatically — you do not attach
-   them, and there is no parameter that turns them on or off. The
+   them. In the agent-facing `asset` tool, there is no parameter that turns them on or off. The
    platform already tells the model the references are STYLE references
    only: match their palette, texture, mood, and edge character, generate
    a new image, do not copy, crop, or edit them. So the prompt's job
-   changes. Record the few observed qualities that matter, then specify the new subject,
-   composition, tonal depth and quiet copy regions. Viewing a reference without
+   changes. Record the few observed qualities that matter, then specify the visual
+   content, composition, tonal depth and quiet copy regions the brief needs. An
+   abstract reference can remain abstract; a new image does not require a new
+   literal scene. Viewing a reference without
    calling generation does not produce reference-conditioned artwork. A source
    logo/UI asset is not sent as a reference merely because you viewed it.
 
@@ -148,7 +150,8 @@ Each type has a default recipe. Adapt the words, keep the shape.
   style; your prompt still owns content.
 - `brand_notes` and the prompt are joined into one instruction before the
   call, so both reach the model. `brand_notes` is the conventional home
-  for palette and mood; the prompt stays about the subject.
+  for palette and mood; the prompt can describe reference treatment as well as
+  visual content and composition. Keep the two consistent.
 - One generation, then look. `view("asset:<asset_id>")` what came back
   before placing it. Judge it with the same eyes you use on your own
   renders: palette right, composition right, nothing baked in that the

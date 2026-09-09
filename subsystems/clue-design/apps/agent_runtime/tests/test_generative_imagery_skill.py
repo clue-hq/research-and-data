@@ -267,11 +267,17 @@ def test_the_skill_is_honest_that_the_ratio_report_only_speaks_on_a_miss() -> No
     assert "silence means the ratio came back right" in body
 
 
-def test_the_skill_does_not_promise_a_reference_conditioning_parameter() -> None:
-    """`condition_on_references` exists on `LumenDesignTools.generate_image` but is
-    NOT a parameter of the `asset` tool the agent actually calls, so an agent told
-    to pass it burns a call on a schema rejection. Conditioning is automatic; the
-    skill must say so and must not name the kwarg."""
+@pytest.mark.parametrize(
+    "guide_path",
+    [SKILL_FILE, KNOWLEDGE_DOCS / "knowledge/images/prompts.md"],
+    ids=["skill", "linked-prompt-guide"],
+)
+def test_imagery_guides_do_not_promise_a_reference_conditioning_parameter(
+    guide_path: Path,
+) -> None:
+    """The linked prompt guide reaches the same agent as the skill. Both must
+    describe the public `asset` tool, not the internal generate_image helper's
+    opt-out or the separate HTTP API's reference_asset_ids input."""
 
     substrate = (RUNTIME_ROOT / "lumen_agent" / "tools" / "substrate.py").read_text(
         encoding="utf-8"
@@ -281,7 +287,7 @@ def test_the_skill_does_not_promise_a_reference_conditioning_parameter() -> None
         "the asset tool grew a reference-conditioning parameter — the skill can now name it"
     )
 
-    body = _body()
+    body = parse_frontmatter(guide_path.read_text(encoding="utf-8"))[1]
     assert "condition_on_references" not in body
     assert "there is no parameter that turns them on or off" in body
 
