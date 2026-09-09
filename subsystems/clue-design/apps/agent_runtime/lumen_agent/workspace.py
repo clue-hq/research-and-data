@@ -8,6 +8,7 @@ from typing import Optional
 
 from py_lumen_obs import get_logger
 
+from .frame import render_ad_dna_card_text, render_pregenerated_assets_text
 from .tools.substrate import LumenDesignTools
 from .tools.view import _reference_entries
 
@@ -135,6 +136,28 @@ def scaffold_workspace(tools: LumenDesignTools, prompt: str) -> Path:
     (workspace / "brand_card.json").write_text(
         json.dumps(tools.brand_card, indent=2), encoding="utf-8"
     )
+
+    # The author receives these in its frame; the Director needs the same current-turn
+    # discovery surface before choosing imagery. Reuse the renderers and the placement
+    # lookup so a missing/unready library record is never advertised as usable artwork.
+    ad_sections: list[str] = []
+    if tools.config.ad_dna_card:
+        ad_sections.append(render_ad_dna_card_text(tools.config.ad_dna_card))
+    library = {
+        asset_id: entry
+        for asset_id in (tools.config.asset_library or {})
+        if (entry := tools._library_asset_entry(asset_id)) is not None
+    }
+    grounds = render_pregenerated_assets_text(
+        tools.config.ad_pregenerated_assets or [], library
+    )
+    if grounds:
+        ad_sections.append("## Backgrounds already made for this brand\n\n" + grounds)
+    if ad_sections:
+        (workspace / "ad-assets.md").write_text(
+            "# Current-turn ad assets (advisory)\n\n" + "\n\n".join(ad_sections) + "\n",
+            encoding="utf-8",
+        )
 
     (workspace / "state.json").write_text(
         json.dumps(initial_turn_state(tools, prompt), indent=2), encoding="utf-8"

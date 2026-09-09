@@ -571,6 +571,7 @@ def create_design_deepagent(
         system_prompt=build_orchestrator_prompt(
             workspace_str,
             has_references=has_references,
+            has_ad_assets=(workspace_root(tools) / "ad-assets.md").is_file(),
             fast_loop=fast_loop,
             scene_reviewer=runtime_config.scene_reviewer_enabled,
             # §5.7: composed at assembly time so selecting a format skill costs

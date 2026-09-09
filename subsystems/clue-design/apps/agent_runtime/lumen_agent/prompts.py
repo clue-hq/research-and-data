@@ -911,6 +911,7 @@ def build_orchestrator_prompt(
     workspace: str,
     has_references: bool = False,
     *,
+    has_ad_assets: bool = False,
     fast_loop: bool = False,
     scene_reviewer: bool = True,
     skills: list[tuple[str, str]] | None = None,
@@ -947,6 +948,16 @@ def build_orchestrator_prompt(
         workspace=workspace,
         references_block=references_block,
     )
+    if has_ad_assets:
+        prompt = prompt.replace(
+            "2. Look before deciding:",
+            "1a. Read " + workspace + "/ad-assets.md with your initial brief/brand gather.\n"
+            "   It holds this turn's published-ad style context and any reachable backgrounds\n"
+            "   already made for the brand. View promising asset ids before choosing imagery\n"
+            "   and include suitable ids in the author's direction. This context is advisory;\n"
+            "   the brief and brand card govern the choice.\n"
+            "2. Look before deciding:",
+        )
     if not fast_loop:
         return prompt
 
