@@ -1,0 +1,28 @@
+2026-09-09 20:58:34 [info     ] storage.backend.configured     backend=fs fs_root=/Users/aryankeshri/conductor/workspaces/research-and-data/san-salvador/.artifacts
+2026-09-09 20:58:35 [info     ] arv2.person_research_launched  people=7 project_id=prj_arv2_answer_key replayed=False run_id=1e2edb26-6c86-5e14-9dfc-132ac16033e4
+2026-09-09 20:58:35 [info     ] arv2.account_research_enqueued accepted=7 offered=7 run_id=1e2edb26-6c86-5e14-9dfc-132ac16033e4
+{
+  "directive": "R3 acceptance",
+  "enqueued": 7,
+  "job_ids": [
+    "2d3f74ca-6b0e-5bf1-a550-53927af26fab",
+    "c013f842-1536-5e52-af61-cf8885eeb248",
+    "d91556be-b1e2-5def-a5c9-61e6564ffb24",
+    "4443097f-d3c1-53e8-953e-45766372b7b4",
+    "2e3803bb-628b-58b0-8871-5eeef1618644",
+    "2fc8981d-707c-5f57-a677-df805db14a58",
+    "c6fabe0f-1e16-5eb5-8348-3bcf64bb0b53"
+  ],
+  "people": {
+    "3acc1c9b-c33c-4e1c-aa36-084a420075a7": "Alastair Paterson",
+    "8d9eaa6b-d6c5-4def-8ee5-3085ee9149b8": "Vineet Edupuganti",
+    "a9b153a0-161e-45b5-a104-904a355a5253": "Alexander Semien",
+    "decb9929-176a-447e-b1da-16cc2e9b9f66": "Ana Corio",
+    "df3bfab4-473b-4621-a94a-fc8cf214014f": "Mandar Marathe",
+    "f6a8fb07-3bd4-4531-8adf-8da2d5e65f4b": "Cameron Coles",
+    "ff681c29-506c-4ef2-b3f9-08cc6d8cc7ef": "Tyler Chonoles"
+  },
+  "project_run_id": "0a2f18b6-1509-514a-8003-16397100c06b",
+  "replayed": false,
+  "run_id": "1e2edb26-6c86-5e14-9dfc-132ac16033e4"
+}
