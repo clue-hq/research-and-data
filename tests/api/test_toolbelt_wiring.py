@@ -223,6 +223,21 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # ARV2 O4: the default composition is handed no provider credentials (`build_toolbelt`'s
     # `secrets` defaults to None, fail-closed), so this SPEND tool's Exa path is never reached here.
     "exa_search_evidence": ("precondition", ("exa_not_configured",)),
+    # ARV2 R2/R3 (seam 1): the two account tools and R3's on-demand person launch register in
+    # EVERY process — the C6 authority audit is a strict set equality — but this matrix composes
+    # no `Arv2LaunchService`, so each refuses on composition before it reads a row.
+    "launch_arv2_account_research": (
+        "precondition",
+        ("arv2_account_research_not_composed",),
+    ),
+    "launch_arv2_person_research": (
+        "precondition",
+        ("arv2_account_research_not_composed",),
+    ),
+    "read_arv2_account_research_run": (
+        "precondition",
+        ("arv2_account_research_not_composed",),
+    ),
     "override_stage0_readiness": ("precondition", ("readiness_not_found",)),
     "start_confirmed_project_run": (
         "precondition",
@@ -274,6 +289,7 @@ _MATRIX: dict[str, tuple[str, object]] = {
         "precondition",
         ("design_runtime_not_configured",),
     ),
+    "design_set_web_noindex": ("precondition", ("design_runtime_not_configured",)),
     "design_start_agent_turn": ("precondition", ("design_runtime_not_configured",)),
     "design_start_web_turn": ("precondition", ("design_runtime_not_configured",)),
     "design_undo_document": ("precondition", ("design_runtime_not_configured",)),
@@ -565,6 +581,22 @@ def _bodies() -> dict[str, dict[str, object]]:
         # backend inputs, so stale v1 fields must not be smuggled into this audit fixture.
         "evaluate_stage0_readiness": {"gate": "icp_synthesis"},
         "exa_search_evidence": {"query": "how practice managers describe referral fax pain"},
+        # ARV2 R2/R3 seam 1. The workspace and the requesting human are AMBIENT authority, so
+        # neither launch body carries them; the account launch names the exact account set and the
+        # pinned ICP artifact it was signed off against, and R3's person launch names contacts that
+        # already exist plus the committee seat each one is given.
+        "launch_arv2_account_research": {
+            "project_id": "prj_matrix",
+            "account_entity_ids": (_UUID(),),
+            "icp_artifact_key": "icp/matrix.md",
+            "icp_artifact_sha256": "0" * 64,
+            "product_selection_version": 1,
+        },
+        "launch_arv2_person_research": {
+            "project_id": "prj_matrix",
+            "contact_entity_ids": (_UUID(),),
+        },
+        "read_arv2_account_research_run": {"run_id": _UUID()},
         "override_stage0_readiness": {
             "readiness_decision_id": _UUID(),
             "gate": "icp_synthesis",
@@ -647,6 +679,12 @@ def _bodies() -> dict[str, dict[str, object]]:
             "instructions": "Keep it on brand.",
         },
         "design_set_layout_managed_editing": {
+            "document_id": "doc_matrix",
+            "enabled": True,
+        },
+        # `enabled` has no default by ruling R-F1: a caller who does not name a value cannot
+        # reach the tool at all, so the matrix body names it too.
+        "design_set_web_noindex": {
             "document_id": "doc_matrix",
             "enabled": True,
         },
@@ -1287,7 +1325,11 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The part-iii merge registers the 49 design_* write envelopes and the two design-leg tools
     # in every composition (63 + 51 = 114). Brand Ad Assets v1 W2 adds the ad-assets lane's
     # four design_* envelopes — one ingestion enqueue and three lane writes (114 → 118).
-    assert len(registry.names()) == 118
+    # Track R (2026-09-09): the design subsystem's `design_set_web_noindex` (ruling R-F1) and
+    # the ARV2 lane's three seam-1 envelopes — `launch_arv2_account_research`,
+    # `read_arv2_account_research_run` (R2) and `launch_arv2_person_research` (R3) — register
+    # in every process alongside the rest (118 -> 123).
+    assert len(registry.names()) == 123
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1305,7 +1347,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # @1/@2/@3/@4 predecessors (still no new name).
     # The ARV2-R0 merge unions both lines' registrations; 136 is measured off the merged tree,
     # not derived from either side's arithmetic.
-    assert len(registry) == 136
+    # The four names Track R and the noindex ruling added each register at @1 only — they are
+    # new, so they retain no historical contract (136 -> 140).
+    assert len(registry) == 140
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1326,12 +1370,18 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # (103 -> 104). The part-iii integration merge unions this branch's own additions since the
     # common base (104 + 10 = 114 names). Brand Ad Assets v1 W2 adds the ad-assets lane's four
     # envelopes: one ingestion enqueue and three lane writes (114 -> 118).
-    assert len(registry.names()) == 118
+    # Track R (2026-09-09): the design subsystem's `design_set_web_noindex` (ruling R-F1) and
+    # the ARV2 lane's three seam-1 envelopes — `launch_arv2_account_research`,
+    # `read_arv2_account_research_run` (R2) and `launch_arv2_person_research` (R3) — register
+    # in every process alongside the rest (118 -> 123).
+    assert len(registry.names()) == 123
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
     # no name. 136 is measured off the merged tree (see the note at the first count above).
-    assert len(registry) == 136
+    # The four names Track R and the noindex ruling added each register at @1 only — they are
+    # new, so they retain no historical contract (136 -> 140).
+    assert len(registry) == 140
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

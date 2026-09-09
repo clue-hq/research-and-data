@@ -117,14 +117,14 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
         "design_publish_ad_dna_card",
         "design_link_ad_pregenerated_assets",
     }
-    assert AD_ASSETS_LANE <= set(design_grants)
+    assert set(design_grants) >= AD_ASSETS_LANE
     assert all(design_grants[name] == () for name in AD_ASSETS_LANE)
     # Clone-fidelity F4.3 / ruling R-F1: the second ungranted design write, and for a different
     # reason from the ad-assets lane's. That lane is machine-invoked and merely unplanned by any
     # model; this one is HUMAN-ONLY by ruling — clearing a published ABM page's robots meta is an
     # explicit act of the person, so no role may hold the tool that can do it.
     HUMAN_ONLY_DESIGN = {"design_set_web_noindex"}
-    assert HUMAN_ONLY_DESIGN <= set(design_grants)
+    assert set(design_grants) >= HUMAN_ONLY_DESIGN
     assert all(design_grants[name] == () for name in HUMAN_ONLY_DESIGN)
     assert all(
         roles == (AgentRole.DESIGN,)
