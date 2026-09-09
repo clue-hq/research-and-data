@@ -115,3 +115,17 @@ found and fixed live; four read-surface integration defects (W1–W4) remain and
 answer-key reproduction is **partial by ruling** (6 people run on the fixed code; Zafran's committee and
 Marathe/Fisher/Anthony dequeued) and the recall grader needs a facet-text mode before its number means what
 the master plan's exit gate asks.
+
+## After fix wave 2 (`353b55bcd`) and the second repair run
+
+- **W1–W4 fixed on the wire** (`pages/*.json` re-dumped): Cogent contacts list = 3 rows (Coles economic_buyer,
+  Edupuganti economic_buyer, Semien champion) with emails for Coles and Edupuganti; Coles's page shows
+  `cameron@cogent.com` verified 2026-09-09, tenure 10 months, title `VP of Marketing`; Semien's page shows tenure
+  1 year 1 month (email none — provider). Seating claims for Coles/Corio/Chonoles are written as
+  `ExtractionMethod.HUMAN` with the rationale "launched on demand by <user>".
+- Migration `7c4f1a2b9d63` moved `core.work_email` to `{address, status, checked_at}` and
+  `contact.facet.career_history` to the nested `date` shape; the two flag-off old-lane writers of
+  `core.work_email` only gained shape tolerance.
+- **Loader follow-up (D1):** the answer key's `core.work_email` rows carry the provider's raw block
+  (`status: "VALID"`), so the Zafran list's email chips stay empty and those rows now read `schema_valid=false`.
+- Repair-run cost: 6 × 1.5 credits (search + export) for the six re-exports.

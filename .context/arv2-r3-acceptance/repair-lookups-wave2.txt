@@ -1,0 +1,128 @@
+{
+  "account_domain": "cogent.com",
+  "claims_written": [
+    "contact.current_title",
+    "contact.headline",
+    "contact.current_location",
+    "contact.network_statistics",
+    "contact.member_badges",
+    "contact.facet.career_history",
+    "core.work_email"
+  ],
+  "compliance": [],
+  "email": "cameron@cogent.com",
+  "employer": "verified",
+  "job_id": "b02de1f9-a41d-5b25-a2a7-e92940617b9c",
+  "linkedin_url": "https://www.linkedin.com/in/cameroncoles",
+  "outcome": "repaired",
+  "person": "Cameron Coles",
+  "record_found": true,
+  "seat": "seated as economic_buyer",
+  "write_failures": []
+}
+{
+  "account_domain": "harmonic.security",
+  "claims_written": [
+    "contact.current_title",
+    "contact.headline",
+    "contact.current_location",
+    "contact.network_statistics",
+    "contact.member_badges",
+    "contact.facet.career_history",
+    "core.work_email"
+  ],
+  "compliance": [],
+  "email": "ana@harmonic.security",
+  "employer": "verified",
+  "job_id": "8d82aa56-bd62-53cd-a787-4f3fdd892c36",
+  "linkedin_url": "https://www.linkedin.com/in/anastasiacorio",
+  "outcome": "repaired",
+  "person": "Ana Corio",
+  "record_found": true,
+  "seat": "seated as champion",
+  "write_failures": []
+}
+{
+  "account_domain": "harmonic.security",
+  "claims_written": [
+    "contact.current_title",
+    "contact.headline",
+    "contact.current_location",
+    "contact.network_statistics",
+    "contact.member_badges",
+    "contact.facet.career_history",
+    "core.work_email"
+  ],
+  "compliance": [],
+  "email": "tyler@harmonic.security",
+  "employer": "verified",
+  "job_id": "2fc8981d-707c-5f57-a677-df805db14a58",
+  "linkedin_url": "https://www.linkedin.com/in/tyler-chonoles-106405a0",
+  "outcome": "repaired",
+  "person": "Tyler Chonoles",
+  "record_found": true,
+  "seat": "seated as user",
+  "write_failures": []
+}
+{
+  "account_domain": "cogent.com",
+  "claims_written": [
+    "contact.current_title",
+    "contact.headline",
+    "contact.current_location",
+    "contact.network_statistics",
+    "contact.member_badges",
+    "contact.facet.career_history"
+  ],
+  "compliance": [],
+  "email": null,
+  "employer": "verified",
+  "job_id": "d9cb39fb-a3eb-55a1-bace-a3a9afb7b500",
+  "linkedin_url": "https://www.linkedin.com/in/alexander-semien",
+  "outcome": "repaired",
+  "person": "Alexander Semien",
+  "record_found": true,
+  "write_failures": []
+}
+{
+  "account_domain": "cogent.com",
+  "claims_written": [
+    "contact.current_title",
+    "contact.headline",
+    "contact.current_location",
+    "contact.network_statistics",
+    "contact.member_badges",
+    "contact.facet.career_history",
+    "core.work_email"
+  ],
+  "compliance": [],
+  "email": "vineet@cogent.com",
+  "employer": "verified",
+  "job_id": "7baf1d48-4940-51b1-9913-f2ba7ca460a5",
+  "linkedin_url": "https://www.linkedin.com/in/vineetedupuganti",
+  "outcome": "repaired",
+  "person": "Vineet Edupuganti",
+  "record_found": true,
+  "write_failures": []
+}
+{
+  "account_domain": "harmonic.security",
+  "claims_written": [
+    "contact.current_title",
+    "contact.headline",
+    "contact.current_location",
+    "contact.network_statistics",
+    "contact.member_badges",
+    "contact.facet.career_history",
+    "core.work_email"
+  ],
+  "compliance": [],
+  "email": "alastair@harmonic.security",
+  "employer": "verified",
+  "job_id": "cd63348c-6dba-5d52-ac06-24aa18fdd992",
+  "linkedin_url": "https://www.linkedin.com/in/alastair-paterson-2586445",
+  "outcome": "repaired",
+  "person": "Alastair Paterson",
+  "record_found": true,
+  "write_failures": []
+}

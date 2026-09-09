@@ -15,6 +15,7 @@ PATHS = {
     "semien-page": "/accounts/{cogent}/contacts/a9b153a0-161e-45b5-a104-904a355a5253?contract=v1",
     "nick-fisher-page": "/accounts/74d83176-f407-4d35-a9c2-25ad0a8bbf91/contacts/034de76e-06e7-48b2-8141-11aa664da79c?contract=v1",
     "cogent-contacts": "/accounts/{cogent}/contacts?contract=v1",
+    "coles-page": "/accounts/{cogent}/contacts/f6a8fb07-3bd4-4531-8adf-8da2d5e65f4b?contract=v1",
 }
 
 async def main() -> None:
