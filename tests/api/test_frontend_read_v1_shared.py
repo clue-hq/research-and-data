@@ -27,7 +27,7 @@ from clue_api.arv2.account_research_claims import (
     ai_ark_person_claims,
     email_export_claim,
 )
-from clue_api.arv2.account_research_store import JobStatus
+from clue_api.arv2.account_research_store import JobStatus, create_job
 from clue_api.arv2.ai_ark_client import email_export_from_record, person_from_record
 from clue_api.arv2.catalog_seed import load_arv2_pack
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
@@ -1446,6 +1446,59 @@ def test_a_completed_job_after_an_older_in_flight_one_is_not_a_refresh() -> None
             )
             await seed_arv2_job(
                 conn, project=project, account_id=account, status="completed", created_at=_NOW
+            )
+
+            served = await arv2_research_status_for(conn, workspace_id=_WS, account_ids=[account])
+            assert served[account] == ("completed", False)
+
+    run_async(scenario())
+
+
+@pytest_db
+def test_a_person_job_newer_than_the_completed_account_job_leaves_the_account_researched() -> None:
+    """R3's person jobs share the table and the account column. Zafran's account job finished and
+    fanned four committee members out into person jobs that are queued and newer; the account is
+    researched, not ``not_started``, and not refreshing — a person being researched is not the
+    account being re-researched."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _base(conn)
+            project = await seed_project(conn, _WS, name="Research project")
+            account = await insert_account_entity(
+                conn, canonical_name="Zafran", primary_domain="zafran.io", workspace_id=_WS
+            )
+            account_job = await seed_arv2_job(
+                conn,
+                project=project,
+                account_id=account,
+                status="completed",
+                created_at=_NOW - timedelta(hours=1),
+            )
+            run_id = (
+                await conn.execute(
+                    text("SELECT run_id FROM arv2_research_job WHERE job_id = :job_id"),
+                    {"job_id": account_job},
+                )
+            ).scalar_one()
+            member = await insert_contact_entity(
+                conn, account_entity_id=account, full_name="Nick Fisher"
+            )
+            assert await create_job(
+                conn,
+                job_id=uuid.uuid4(),
+                run_id=run_id,
+                workspace_id=_WS,
+                account_entity_id=account,
+                subject_type="person",
+                subject_entity_id=uuid.UUID(str(member)),
+            )
+            await conn.execute(
+                text(
+                    "UPDATE arv2_research_job SET created_at = :now "
+                    "WHERE run_id = :run_id AND subject_type = 'person'"
+                ),
+                {"now": _NOW, "run_id": run_id},
             )
 
             served = await arv2_research_status_for(conn, workspace_id=_WS, account_ids=[account])

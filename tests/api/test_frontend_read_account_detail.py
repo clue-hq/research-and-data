@@ -1089,9 +1089,9 @@ async def _lenient_claim(
     the divergence as a marker. ``account.total_funding`` is declared an object and comes back
     ``"$130.5M"``. Writing this fixture strictly would therefore let the endpoint be proven
     against shapes the ARV2 lane never stores. (``core.work_email`` used to be the second example:
-    it was declared a string and came back ``{address, status}``. Migration ``7c4f1a2b9d63`` made
-    the field declare the pair the mapper writes and the chip reads, so it is no longer a
-    divergence — the example that remains is.)
+    it was declared a string and came back ``{address, status}``. D4-b's migration
+    ``7332ac974920`` made the field declare the pair the mapper writes and the chip reads, so it
+    is no longer a divergence — the example that remains is.)
     """
     receipt = await LenientClaimWriter(lenient=True).write(
         conn,

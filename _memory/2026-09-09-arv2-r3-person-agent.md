@@ -235,3 +235,19 @@ and its readers/loader follow its shapes):
   decide whether to append the example defaults.
 - `?contract=v1` is accepted and ignored on the target (v1 is the only contract), so the evidence
   script `.context/arv2-r3-acceptance/pages/dump_pages.py` still works unchanged.
+- **Second-pass (semantic) finding, fixed 2026-09-10:** D4-b's `arv2_research_status_for`
+  (`frontend_read/v1_shared.py`) took the latest ARV2 job per account *of any subject*. R3's person
+  jobs share the table and the account column and are created after the account job finishes, so
+  on the lane DB Zafran read `not_started` (its four queued person jobs were newest) although its
+  account job was `completed`. Fixed by reading `subject_type = 'account'` rows only (outer query
+  and both halves of the `refreshing` subquery); pinned by
+  `test_a_person_job_newer_than_the_completed_account_job_leaves_the_account_researched`. Every
+  other reader of `arv2_research_job` in the api layer is the store itself. The activity feed was
+  already right: a person job writes its own "Person research …" line.
+- Also checked on the second pass: no test that exists on the target was lost by the resolution
+  (the long list of "missing" read-surface tests are FI-2/contract-v1 tests D4-b itself deleted);
+  every file both lanes edited is now byte-identical to the target except the ones carrying R3
+  content (`arv2/README.md`, the master plan R3 row, `answer_key.py`'s `PEOPLE_ANSWER_KEY`, the
+  R3 tests); R3 inserts contact entities only in `committee_step` (confirmed, seated candidates)
+  and the answer-key loader, so D4-b's "holds a live claim" committee rule seats nobody R3 did not
+  confirm.
