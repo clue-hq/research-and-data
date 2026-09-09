@@ -938,6 +938,16 @@ By section — Probook `core` 5/13, `account` 7/9, `account.resonance` 0/2; Zafr
 `account` 13/26, `account.resonance` 1/11. That is the number the post-close re-run is measured
 against.
 
+**R3 — the same measurement, per person.** `--people` also grades every person the answer key
+covers who has claims in the graded runs: `people_keys` reads the loaded person-depth key back
+grouped by contact (122 keys over ten people), each person is matched to their contact entity by
+folded LinkedIn URL, and the run's claims on that contact are graded by exactly the account rules.
+Each one writes `recall-<slug>.md` (`recall-nick-fisher.md`) and lands in `recall.json` under
+`people`; the report carries `subject_kind: person` and `insight_found`, which is read off the
+rows — any claim the job wrote carrying the `unique_insight` marker — never off what the agent
+said it did. `--run-ids <a>,<b>` adds run ids to `--run-id` for every read, because a committee
+person is researched inside their account's run while an on-demand person launch is its own run.
+
 ### Configuration
 
 - `CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED` — the lane switch. Off: no fleet handler, no launch service,

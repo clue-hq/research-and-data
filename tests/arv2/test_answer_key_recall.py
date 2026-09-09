@@ -10,12 +10,15 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import UUID
 
+from pydantic import JsonValue
+
 from clue_api.arv2.answer_key_recall import (
     KeyClaim,
     as_number,
     leaf_values,
     match_claims,
     normalise_value,
+    person_report,
     probook_keys,
     values_agree,
 )
@@ -24,13 +27,16 @@ from clue_core import (
     EntityId,
     EntityType,
     ExtractionMethod,
+    IdentityBinding,
     ResearchMode,
     ReuseScope,
     RunId,
+    UseClass,
 )
 
 REPO = Path(__file__).resolve().parents[2]
 ACCOUNT_ID = EntityId(UUID("11111111-1111-4111-8111-111111111111"))
+CONTACT_ID = EntityId(UUID("33333333-3333-4333-8333-333333333333"))
 RUN_ID = RunId(UUID("22222222-2222-4222-8222-222222222222"))
 
 
@@ -47,6 +53,28 @@ def _claim(field_key: str, value: object) -> Claim:
         confidence=0.6,
         reuse_scope=ReuseScope.TENANT_PRIVATE,
         workspace_id="ws_arv2_answer_key",
+    )
+
+
+def _contact_claim(
+    field_key: str, value: object, *, markers: dict[str, JsonValue] | None = None
+) -> Claim:
+    """One claim a person job wrote — personal provenance is mandatory on a facet field."""
+    return Claim(
+        entity_id=CONTACT_ID,
+        entity_type=EntityType.CONTACT,
+        field_key=field_key,
+        value_json=value,  # type: ignore[arg-type]
+        source_tier=4,
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        run_id=RUN_ID,
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        confidence=0.6,
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
+        workspace_id="ws_arv2_answer_key",
+        identity_binding=IdentityBinding.STRONG,
+        use_class=UseClass.PROFESSIONAL_PUBLIC,
+        write_markers=markers,
     )
 
 
@@ -141,3 +169,47 @@ def test_by_section_keeps_the_two_part_resonance_prefix() -> None:
 def test_probook_keys_reads_only_account_rows() -> None:
     keys = probook_keys(REPO / ".context/arv2-clue-sample-v3/claims.json")
     assert len(keys) == 24 and all(k.field_key.startswith(("core.", "account.")) for k in keys)
+
+
+def test_an_account_report_says_account_and_claims_no_insight() -> None:
+    """The two R3 fields default to the R2 reading: an account, with no one-question pass."""
+    keys = [KeyClaim("core.hq_location", (), "New York", None)]
+    report = match_claims(keys, [], account="zafran")
+    assert report.subject_kind == "account" and report.insight_found is False
+    assert report.as_dict()["subject_kind"] == "account"
+    assert report.as_dict()["insight_found"] is False
+    assert "account **zafran**" in report.markdown()
+
+
+def test_a_person_report_is_graded_as_a_person_and_reads_the_insight_marker() -> None:
+    """R3's per-person grade: the same verdicts, plus whether the one-question pass landed."""
+    keys = [
+        KeyClaim("contact.facet.hobby", (), "cocktail chemistry", "nick_fisher-001"),
+        KeyClaim("contact.facet.recent_award", (), "Marketer of the Year", "nick_fisher-002"),
+    ]
+    run = [
+        _contact_claim("contact.facet.hobby", "makes cocktails on YouTube"),
+        _contact_claim(
+            "contact.facet.voice_quote", "why I joined Zafran", markers={"unique_insight": True}
+        ),
+    ]
+    report = person_report(keys, run, person="nick-fisher")
+    assert report.subject_kind == "person" and report.insight_found is True
+    assert [m.verdict for m in report.matches] == ["field_only", "missing"]
+    assert report.account == "nick-fisher"
+    markdown = report.markdown()
+    assert "person **Nick Fisher**" in markdown and "unique insight **found**" in markdown
+    payload = report.as_dict()
+    assert payload["account"] == "nick-fisher"
+    assert payload["subject_kind"] == "person" and payload["insight_found"] is True
+
+
+def test_a_person_whose_job_never_landed_an_insight_says_so() -> None:
+    run = [_contact_claim("contact.facet.hobby", "cocktail chemistry", markers={"schema_valid": 1})]
+    report = person_report(
+        [KeyClaim("contact.facet.hobby", (), "cocktail chemistry", "nick_fisher-001")],
+        run,
+        person="nick-fisher",
+    )
+    assert report.insight_found is False and report.recall() == 1.0
+    assert "unique insight **not found**" in report.markdown()
