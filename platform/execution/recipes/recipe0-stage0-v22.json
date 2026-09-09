@@ -56,6 +56,7 @@
           "open_product_set_selection_gate@1",
           "open_icp_confirmation_gate@2",
           "launch_arv2_account_research@1",
+          "launch_arv2_person_research@1",
           "read_arv2_account_research_run@1"
         ],
         "dynamic_pin_kinds": [
@@ -119,6 +120,7 @@
           {"kind": "tool", "key": "open_product_set_selection_gate", "version": "1"},
           {"kind": "tool", "key": "open_icp_confirmation_gate", "version": "2"},
           {"kind": "tool", "key": "launch_arv2_account_research", "version": "1"},
+          {"kind": "tool", "key": "launch_arv2_person_research", "version": "1"},
           {"kind": "tool", "key": "read_arv2_account_research_run", "version": "1"}
         ]
       },
@@ -161,6 +163,7 @@
       "open_product_set_selection_gate@1",
       "open_icp_confirmation_gate@2",
       "launch_arv2_account_research@1",
+      "launch_arv2_person_research@1",
       "read_arv2_account_research_run@1"
     ],
     "authority_allowlist": ["human"],
@@ -207,6 +210,7 @@
         {"kind": "tool", "key": "open_product_set_selection_gate", "version": "1"},
         {"kind": "tool", "key": "open_icp_confirmation_gate", "version": "2"},
         {"kind": "tool", "key": "launch_arv2_account_research", "version": "1"},
+        {"kind": "tool", "key": "launch_arv2_person_research", "version": "1"},
         {"kind": "tool", "key": "read_arv2_account_research_run", "version": "1"}
       ]
     }

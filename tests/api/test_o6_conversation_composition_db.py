@@ -10,7 +10,10 @@ and from the lease's own bytes, never from an in-memory convenience:
   four cards the old production envelope compiled;
 * the pinned documents are on the lease, read-only, under ``inputs/brand/knowledge/`` at the digest
   the pin recorded;
-* publishing a newer document after the pin cannot change what a retry of that turn seeds.
+* publishing a newer document after the pin cannot change what a retry of that turn seeds;
+* the resource manifest the turn committed to discloses the new lane's surface and not the old
+  one's — no ``account-deep-steering`` skill and none of the five old-research-lane tools, and the
+  person launch is there beside the account launch (founder rulings 2 and 3, 2026-09-10).
 """
 
 from __future__ import annotations
@@ -559,7 +562,31 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                 assert card.product_set is None
                 assert card.omitted_count == 0
 
-                # 5. a document published after the pin cannot change what a retry seeds.
+                # 5. the surface this turn committed to, read out of the manifest artifact the
+                # turn's own row names — not from an in-memory resolve.
+                manifest_key = (
+                    await conn.execute(
+                        text("SELECT resource_manifest_key FROM agent_turn WHERE id = :turn"),
+                        {"turn": submission.turn_id},
+                    )
+                ).scalar_one()
+                manifest = json.loads(await storage.get(str(manifest_key)))
+                assert [item["name"] for item in manifest["skills"]] == ["stage0-interview"]
+                surface = {f"{pin['name']}@{pin['version']}" for pin in manifest["tools"]}
+                assert "launch_arv2_account_research@1" in surface
+                assert "launch_arv2_person_research@1" in surface
+                assert "read_arv2_account_research_run@1" in surface
+                assert surface.isdisjoint(
+                    {
+                        "launch_account_research@1",
+                        "launch_selected_account_research@1",
+                        "launch_contact_research@1",
+                        "read_account_research_run@1",
+                        "read_contact_research_run@1",
+                    }
+                )
+
+                # 6. a document published after the pin cannot change what a retry seeds.
                 await _seed_document(
                     conn,
                     artifacts=artifacts,

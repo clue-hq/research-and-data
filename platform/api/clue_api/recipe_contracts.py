@@ -70,6 +70,10 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     "open_product_set_selection_gate@1",
     "open_icp_confirmation_gate@2",
     "launch_arv2_account_research@1",
+    # Founder ruling 3 (2026-09-10): the same launch for named people, granted to the Head of ABM
+    # at `head-of-abm@v44`. It declares the same ``project`` pin as its siblings, which is what
+    # this audit requires of every standing address.
+    "launch_arv2_person_research@1",
     "read_arv2_account_research_run@1",
 )
 

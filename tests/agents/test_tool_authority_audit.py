@@ -79,8 +79,9 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # has a reason to buy a deep-reasoning web search from inside a conversation.
     # ARV2 Track R, R2 adds the account-research lane's two toolbelt surfaces (120 -> 122), and
     # ARV2 Track R, R3 adds `launch_arv2_person_research` (122 -> 123), UNGRANTED on the same
-    # terms as the account launch was (a human act through `scripts/launch_arv2_person_research.py`),
-    # and ARV2 onboarding O6 adds the set-valued product gate (123 -> 124).
+    # terms as the account launch was (a human act through
+    # `scripts/launch_arv2_person_research.py`), and ARV2 onboarding O6 adds the set-valued
+    # product gate (123 -> 124).
     # R2 registered the launch pair UNGRANTED and said the grant was not a dict edit —
     # `build_agent_profile_registry` refuses to compose when a role's authority and its profile's
     # tool list disagree, so it needed a new head-of-abm profile version carrying both pins AND the
@@ -88,15 +89,21 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # `head-of-abm@v44` pins `launch_arv2_account_research@1`,
     # `read_arv2_account_research_run@1` and `open_product_set_selection_gate@1`, so all three are
     # granted to the Head of ABM here, and stage0-interview v21 §6 is the procedure that says what
-    # must be confirmed before the launch may be called.
+    # must be confirmed before the launch may be called. FOUNDER RULING 3 (2026-09-10) adds R3's
+    # person launch to that same bump: researching named people is the same act on the same lane,
+    # so it is granted here and pinned in v44 beside its account sibling.
     #
-    # The same slice moved twelve old-lane tools the other way, to `()`. They stay registered and
-    # audited — the complete-write-surface property is what this file is for — but no model surface
-    # names them: the new Stage-0 lane reads the brand's knowledge documents instead of recon-ing
-    # the company, has no readiness check, and confirms a product SET rather than one product.
+    # The same slice moved SEVENTEEN old-lane tools the other way, to `()` — the twelve
+    # recon/readiness/Client-KB/Product-KB tools, plus (FOUNDER RULING 2, 2026-09-10) the five
+    # old-research-lane tools `launch_account_research`, `launch_selected_account_research`,
+    # `launch_contact_research`, `read_account_research_run` and `read_contact_research_run`. They
+    # stay registered and audited — the complete-write-surface property is what this file is for —
+    # but no model surface names them: the new Stage-0 lane reads the brand's knowledge documents
+    # instead of recon-ing the company, has no readiness check, confirms a product SET rather than
+    # one product, and launches research on the ARV2 lane rather than the entity-research fleet.
     assert len(C6_AGENT_TOOL_AUTHORITY) == 124
-    assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_person_research"] == ()
-    assert c6_roles_for_tool("launch_arv2_person_research@1") == ()
+    assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_person_research"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("launch_arv2_person_research@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_account_research"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["read_arv2_account_research_run"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("launch_arv2_account_research@1") == (AgentRole.HEAD_OF_ABM,)
@@ -116,6 +123,15 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
         "start_recon",
         "submit_onboarding_input",
         "open_discovery_configuration_gate",
+        # FOUNDER RULING 2 (2026-09-10): the five old-research-lane tools. The new lane's
+        # launch/read pair replaces them, and `account-deep-steering@v8` — the skill that required
+        # all five — leaves v44 with them. A steering skill written against the ARV2 tools is a
+        # follow-up, not a re-grant of these.
+        "launch_account_research",
+        "launch_selected_account_research",
+        "launch_contact_research",
+        "read_account_research_run",
+        "read_contact_research_run",
     ):
         assert C6_AGENT_TOOL_AUTHORITY[dropped] == (), dropped
     # `open_icp_confirmation_gate` did not leave the role — its subject changed. `@2` presents the
@@ -204,11 +220,16 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert C6_AGENT_TOOL_AUTHORITY["confirm_account_research_directive"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["approve_contact_research_selection"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["launch_account_deep"] == ()
-    assert C6_AGENT_TOOL_AUTHORITY["launch_account_research"] == (AgentRole.HEAD_OF_ABM,)
-    assert C6_AGENT_TOOL_AUTHORITY["launch_selected_account_research"] == (AgentRole.HEAD_OF_ABM,)
-    assert C6_AGENT_TOOL_AUTHORITY["launch_contact_research"] == (AgentRole.HEAD_OF_ABM,)
-    assert C6_AGENT_TOOL_AUTHORITY["read_account_research_run"] == (AgentRole.HEAD_OF_ABM,)
-    assert C6_AGENT_TOOL_AUTHORITY["read_contact_research_run"] == (AgentRole.HEAD_OF_ABM,)
+    # Every version of each dropped old-lane tool, not just the one v43 pinned: an exact-address
+    # rule that granted one version would put the tool back on a model surface.
+    for address in (
+        "launch_account_research@1",
+        "launch_selected_account_research@1",
+        "launch_contact_research@1",
+        "read_account_research_run@1",
+        "read_contact_research_run@1",
+    ):
+        assert c6_roles_for_tool(address) == (), address
     assert C6_AGENT_TOOL_AUTHORITY["compose_contact_content_handoff"] == (
         AgentRole.CONTENT_DRAFTER,
         AgentRole.REVIEWER,

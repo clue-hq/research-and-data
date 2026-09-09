@@ -758,6 +758,11 @@ conversation surface's promoted-profile pin (`PROJECT_CONVERSATION_AGENT_PROFILE
 human act through the CLI or `launch_arv2_account_research` itself; seam 1 is unchanged either
 way.
 
+> **Resolved 2026-09-10 (O6, founder rulings 2 and 3).** `head-of-abm@v44` pins
+> `launch_arv2_account_research@1`, `launch_arv2_person_research@1` and
+> `read_arv2_account_research_run@1`, and all three are granted to `AgentRole.HEAD_OF_ABM`. See
+> "The v44 tool surface" at the end of this file for what left the surface at the same time.
+
 ### Structuring takes sources, and the framing is never evidence (R2 close)
 
 `structure_material` no longer takes one free `material` string. It takes **`sources[]`** (1–12),
@@ -1305,3 +1310,29 @@ The direction of the dependency is the point: the composition modules import the
 other way round. Nothing on any of these paths reads a Client-KB version, a readiness decision or a
 Stage-0 run pin (standing rule `_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md`); an ICP
 and a product catalog are files, and a file is pinned by ref and digest.
+
+### The v44 tool surface — what the Head of ABM gained, and what left with it
+
+Founder rulings 2 and 3 (2026-09-10) closed the grant this README deferred to O6, and they closed
+it on **both** sides. `head-of-abm@v44` now pins fourteen tools, and the whole research surface of
+the conversation is this lane's three:
+
+- **granted (this lane)** — `launch_arv2_account_research@1`, `launch_arv2_person_research@1`
+  (ruling 3: researching people a human named is the same act on the same lane as researching
+  accounts they named) and `read_arv2_account_research_run@1`.
+- **dropped (ruling 2)** — the five old-research-lane tools `launch_account_research@1`,
+  `launch_selected_account_research@1`, `launch_contact_research@1`,
+  `read_account_research_run@1` and `read_contact_research_run@1`, together with the skill that
+  required all five, `account-deep-steering@v8`. They stay registered and invocable by whatever
+  non-model surface still calls them, and `_RESERVED_REASON` records `superseded_by_onboarding_v2`
+  against each so the capability map states WHY the model cannot reach them. A steering skill
+  written against the ARV2 tools is a follow-up before O7 — dropping the old one is not a licence
+  to re-grant its tools.
+
+Mechanically: all three ARV2 tools declare `pin_requirements = ("project",)` — the execution row is
+the trusted project coordinate (`Stage0StepPinProvider._execution_project_pin`), never a
+model-authored body field, and the replay-safety audit refuses a standing recipe address that
+declares no pin at all. All three are in `RECIPE_0_TOOL_ADDRESSES` and in `recipe0-stage0@22`'s
+allowlist, slot requirements and node compatibility. The Stage-0 conversation *trial* withholds
+both launches and both gates (a dev harness must not queue real jobs or address a real gate); the
+run read stays installed there because it is read-only and addresses nobody.

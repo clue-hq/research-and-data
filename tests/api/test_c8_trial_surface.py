@@ -51,25 +51,26 @@ from tests.api.test_agent_registry_wiring import CATALOG_ROOT
 # applies the same fail-closed rule to the product-selection gate: the shared skill may explain the
 # procedure, but this trial cannot present a control whose answer it cannot compose.
 # ARV2 onboarding O6 shortened this set without relaxing it. `head-of-abm@v44` drops
-# `start_recon`, `submit_onboarding_input`, `synthesize_icps`, `open_product_selection_gate` and
-# `open_discovery_configuration_gate` from the ROLE, so there is nothing left for this surface to
-# withhold — and a policy may only narrow tools the profile pins. Ungranted on every surface is a
+# `start_recon`, `submit_onboarding_input`, `synthesize_icps`, `open_product_selection_gate`,
+# `open_discovery_configuration_gate` and — per founder ruling 2, 2026-09-10 — the five
+# old-research-lane tools from the ROLE, so there is nothing left for this surface to withhold on
+# any of them, and a policy may only narrow tools the profile pins. Ungranted on every surface is a
 # stronger statement than withheld on one, which is what the assertions below now say.
 _WITHHELD = {
-    "launch_account_research",
-    "launch_selected_account_research",
-    "launch_contact_research",
     # P3.4: the design delegation entry is withheld on the trial for the same sentence as
     # delegation itself — a leg opened from a dev CLI would durably reroute a thread no
     # design runtime here can serve.
     "open_design_leg",
     "open_directive_confirmation_gate",
-    # ARV2 onboarding O6: the new lane's launch and its two gates, for the same sentence. The
-    # launch queues real per-account jobs against external providers; each gate writes a real,
+    # ARV2 onboarding O6: the new lane's two launches and its two gates, for the same sentence.
+    # Each launch queues real research jobs against external providers; each gate writes a real,
     # durable, human-addressed decision control whose answer no surface here can act on.
     # `read_arv2_account_research_run` is deliberately NOT here — read-only, spends nothing,
-    # addresses nobody.
+    # addresses nobody. The three old-lane launches that used to head this set are gone from it
+    # because `head-of-abm@v44` no longer grants them at all (see `_ROLE_DROPPED`), which is the
+    # stronger statement.
     "launch_arv2_account_research",
+    "launch_arv2_person_research",
     "open_product_set_selection_gate",
     "open_icp_confirmation_gate",
 }
@@ -90,6 +91,13 @@ _ROLE_DROPPED = {
     "list_product_knowledge",
     "inspect_product_claim",
     "inspect_readiness_history",
+    # FOUNDER RULING 2 (2026-09-10): the five old-research-lane tools. The trial used to withhold
+    # the three launches; v44 drops all five from the ROLE, so there is nothing left to withhold.
+    "launch_account_research",
+    "launch_selected_account_research",
+    "launch_contact_research",
+    "read_account_research_run",
+    "read_contact_research_run",
 }
 
 # The production conversation's own subtraction, which D4 made genuinely different from the trial's:

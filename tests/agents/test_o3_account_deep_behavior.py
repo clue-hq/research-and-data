@@ -1,15 +1,27 @@
-"""M8B O3 scripted conversation contract over the promoted Head/research resources."""
+"""M8B O3 scripted conversation contract over the promoted Head/research resources.
+
+The steering card this file pins — ``skill:account-deep-steering@v8`` — left the Head-of-ABM
+profile at ``head-of-abm@v44`` (founder ruling 2, 2026-09-10): its frontmatter requires the five
+old-research-lane tools, and v44 grants none of them, so a profile that still disclosed it would be
+advertising a procedure whose every step is uncallable. The card itself is immutable reviewed
+evidence and its contract still governs every already-pinned execution that replays it, so this
+file now reads it from the folder catalog directly and asserts, first, that no current profile
+discloses it. A steering skill written against the ARV2 launch tools is a follow-up before O7.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from clue_agents import AgentRole
+from clue_agents.catalog import AgentCatalogError, FolderSkillCatalog
 from clue_api.agent_registry_wiring import build_agent_profile_registry
 from clue_api.toolbelt_wiring import build_toolbelt
 from tests.api.conftest import hermetic_flag_env
+from tests.api.test_agent_registry_wiring import CATALOG_ROOT
 
 _SCENARIOS = (
     Path(__file__).parents[1] / "fixtures" / "agents" / "o3_account_deep_conversations.yaml"
@@ -32,12 +44,17 @@ def test_scripted_o3_conversations_cover_the_non_linear_gate() -> None:
     with hermetic_flag_env():
         registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    # The promoted head-of-abm profile discloses the steering skill at exactly one version, so
-    # this pin follows the promotion: v4 → v8 across the Slice B waves (v5–v7 refined the
-    # research vocabulary and the budget-controls-off launch path; v8 pairs with
-    # ``draft_account_research_directive@5``'s omittable field list). Every guidance line this
-    # test asserts is carried forward unchanged by those revisions.
-    skill = head.open_skill("skill:account-deep-steering@v8")
+    # The promoted profile disclosed this steering skill at exactly one version through v43 (v4 →
+    # v8 across the Slice B waves). ``head-of-abm@v44`` discloses it at NO version, so the
+    # disclosure assertion is now the negative one, and the body is read from the reviewed folder
+    # catalog — where it stays immutable for the executions that replay it.
+    with pytest.raises(AgentCatalogError, match="not disclosed"):
+        head.open_skill("skill:account-deep-steering@v8")
+    skill = (
+        FolderSkillCatalog((CATALOG_ROOT / "skills").resolve(strict=True))
+        .get("account-deep-steering", "v8")
+        .body
+    )
 
     for scenario in scenarios:
         assert scenario["user_turns"]

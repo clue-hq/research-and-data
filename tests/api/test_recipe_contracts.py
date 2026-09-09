@@ -270,6 +270,9 @@ def test_o6_head_of_abm_mints_recipe_v22_without_rewriting_v19() -> None:
         "open_product_set_selection_gate@1",
         "open_icp_confirmation_gate@2",
         "launch_arv2_account_research@1",
+        # FOUNDER RULING 3 (2026-09-10): the person launch is the Head of ABM's own act on the same
+        # lane, so it is admitted to the conversation slot beside its account sibling.
+        "launch_arv2_person_research@1",
         "read_arv2_account_research_run@1",
     }
 

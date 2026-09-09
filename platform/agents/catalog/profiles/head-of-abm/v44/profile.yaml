@@ -5,8 +5,13 @@ version: v44
 status: active
 # v44 (ARV2 onboarding O6): the new-lane Stage-0 surface — prompt v8, stage0-interview v21; the
 # old recon/readiness/Client-KB/Product-KB/`icp_spec` tools are gone; the product-set gate, the
-# artifact-ref ICP gate and the ARV2 launch/read pair are granted. Model, workspace, delegation and
-# limits are v43's.
+# artifact-ref ICP gate and the ARV2 launch/read tools are granted. Founder rulings 2 and 3
+# (2026-09-10) finish the swap: the five old-research-lane tools (`launch_account_research`,
+# `launch_selected_account_research`, `launch_contact_research`, `read_account_research_run`,
+# `read_contact_research_run`) and the `account-deep-steering@v8` skill that required all five are
+# dropped, and `launch_arv2_person_research@1` — the same launch for named people — is pinned. A
+# steering skill written against the ARV2 tools is a follow-up before O7. Model, workspace,
+# delegation and limits are v43's.
 role: head_of_abm
 prompt:
   name: head-of-abm
@@ -16,9 +21,6 @@ skills:
   - name: stage0-interview
     version: v21
     sha256: b7601999240ad3677242eb6d212521fa99f6106afc5c92f0d5b2213820989c85
-  - name: account-deep-steering
-    version: v8
-    sha256: ff5deab70bd8fa7efb8c2d45bbeaf200f3be15779eb2f1cd1b479eb20fe8a505
 tools:
   - name: draft_account_research_directive
     version: "5"
@@ -32,10 +34,6 @@ tools:
     version: "1"
     input_schema_sha256: 886263cab48572d3779e9a7d7dbb1b72f636f1441d0cd2d50c0dd696592daac6
     output_schema_sha256: 6ce1ede45f5ab66f12b4530b58f1154df9f06167da45af785b4c11a5abf04875
-  - name: launch_account_research
-    version: "1"
-    input_schema_sha256: 0353c1ee6f11954e96dea5b243ce36313a6b447d93af49aa75476238350cd9a2
-    output_schema_sha256: 1d8c05f105846db02c980f9da60d83b25a22f84ec3224b7cffd4d02a49d2f960
   # ARV2 Track R, R2 / O6: the new research lane's launch, granted to the Head of ABM with the
   # skill (v21 §6) that says what must be confirmed first — a confirmed ICP document version and
   # a confirmed product set — and its read-only status sibling below.
@@ -43,14 +41,14 @@ tools:
     version: "1"
     input_schema_sha256: 57638dc151a30c67905105bfe4d0a86650ccb31dc9675e3880fe173e17d88c2e
     output_schema_sha256: 44180afee6410fe56bc94c928b5cbb543fa3bf175d4755b66b87f3abf690906a
-  - name: launch_selected_account_research
+  # ARV2 Track R, R3 / O6 (founder ruling 3, 2026-09-10): the same launch for named PEOPLE, on the
+  # same lane and the same preconditions. It researches contacts that already exist and never
+  # creates a person; the persona it names is the committee seat a person is given if they do not
+  # already hold one. Digests read off the live descriptor.
+  - name: launch_arv2_person_research
     version: "1"
-    input_schema_sha256: 9e4fa1021449e79ad4e0bb1851b445d896510fd0dc9ebbf2f63c769be74cfacc
-    output_schema_sha256: 1d8c05f105846db02c980f9da60d83b25a22f84ec3224b7cffd4d02a49d2f960
-  - name: launch_contact_research
-    version: "1"
-    input_schema_sha256: b3eed222972f43c1b46c49fe7c2aad74edb6674c6f80851b877e169441fe413c
-    output_schema_sha256: 564042e1d84be2e27e350c3acc1c123d936508430175584d16615c1cd3382b1d
+    input_schema_sha256: d968b9e07d39af88cab9ce8ec9aaa211fb5ba62396cbd8f96e5be53ad100cead
+    output_schema_sha256: 63313e7dfdb79fe60dea37eb0284d1295c08026e33893afec9878a97e8fed067
   # genad2 promotes the delegation entry to @4: a document-less doc_kind='scene' open now
   # births a ZERO-PAGE scene and the design agent authors the page itself, so the platform
   # owns no page geometry at all — ad_format/ad_width/ad_height are DELETED from the input
@@ -86,18 +84,10 @@ tools:
     version: "1"
     input_schema_sha256: 641252341ba5eab67aefcc7748a3cc27cac07a158418a1d9855c61fddc21ef5b
     output_schema_sha256: 708d9b5075c72103232daa51c12cbb83a5fe5bdf638bfa79659193f2324a851e
-  - name: read_account_research_run
-    version: "1"
-    input_schema_sha256: 7435881a205953298a535dde450a17634f5f86beaa18848f9a1f0a505056ed52
-    output_schema_sha256: 5a2e786ce447ab94f9c61545b4fae1cfd8d020275f8ba3cf2f6fb042b716ffd0
   - name: read_arv2_account_research_run
     version: "1"
     input_schema_sha256: 029dddd3db84fcdbb076aac5dd874d7e2cad14cdbefb945555b8e820a3b7d0ba
     output_schema_sha256: 5663712620131bc9019b80e535f021552f2fcef08e410400d65bea71ad606162
-  - name: read_contact_research_run
-    version: "1"
-    input_schema_sha256: 7435881a205953298a535dde450a17634f5f86beaa18848f9a1f0a505056ed52
-    output_schema_sha256: 5a2e786ce447ab94f9c61545b4fae1cfd8d020275f8ba3cf2f6fb042b716ffd0
   - name: record_interview_answer
     version: "1"
     input_schema_sha256: 6e597a939a364afc1774e32331256d02c14101d33b2641e3851d449eef7c7ecc

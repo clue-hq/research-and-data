@@ -108,8 +108,12 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # recon/readiness/Client-KB/Product-KB/`icp_spec` tools dropped, and
         # `open_product_set_selection_gate@1`, `open_icp_confirmation_gate@2`,
         # `launch_arv2_account_research@1` and `read_arv2_account_research_run@1` pinned in their
-        # place. Model, workspace, delegation and limits are v43's. Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("5468f0432f8c23e62e581cc5fc9d903ba2c5b88ab3efefe82e70eb283a1594aa"),
+        # place. Founder rulings 2 and 3 (2026-09-10) finish the swap: the five old-research-lane
+        # tools and the `account-deep-steering@v8` skill that required all five are dropped, and
+        # `launch_arv2_person_research@1` is pinned — so stage0-interview v21 is the profile's one
+        # skill and the ARV2 trio is its one research lane. Model, workspace, delegation and limits
+        # are v43's. Digest measured off this tree.
+        AgentRole.HEAD_OF_ABM: ("bd7893ddada9eb3c709bddc0c1264e6956a9e2d85415a2c6378a2bfeb8ed0a28"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -346,29 +350,42 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         assert by_address[address].status is AgentCapabilityStatus.ROLE_UNAVAILABLE, address
     # The whole model-invocable surface of the new Stage-0 lane. `open_icp_confirmation_gate@2`
     # replaces `@1` (a knowledge document instead of a draft `icp_spec` row),
-    # `open_product_set_selection_gate@1` replaces the single-product gate, and the ARV2
-    # launch/read pair — installed but ungranted since Track R R2 — is granted here for the first
-    # time, with stage0-interview v21 §6 stating what must be confirmed before it may be called.
+    # `open_product_set_selection_gate@1` replaces the single-product gate, and the ARV2 launch
+    # tools — installed but ungranted since Track R R2/R3 — are granted here for the first time,
+    # with stage0-interview v21 stating what must be confirmed before either may be called.
+    #
+    # FOUNDER RULING 2 (2026-09-10): the five old-research-lane tools are NOT here. There is one
+    # research lane on this surface now, and the launch/read pair above is it. `read_arv2_account_
+    # research_run@1` is the only run read; the old lane's two read tools resolve
+    # `account_research_run` rows the new lane never writes, so leaving them installed-and-granted
+    # would advertise a status surface that answers about nothing this agent can start.
     assert available == {
         "draft_account_research_directive@5",
         "get_research_view@1",
         "inspect_statement_history@1",
-        "launch_account_research@1",
         "launch_arv2_account_research@1",
-        "launch_selected_account_research@1",
-        "launch_contact_research@1",
+        "launch_arv2_person_research@1",
         "open_design_leg@4",
         "open_directive_confirmation_gate@1",
         "open_icp_confirmation_gate@2",
         "open_product_set_selection_gate@1",
         "propose_field@2",
         "propose_source@1",
-        "read_account_research_run@1",
         "read_arv2_account_research_run@1",
-        "read_contact_research_run@1",
         "record_interview_answer@1",
         "submit_ingestion@1",
     }
+    # Every dropped old-lane tool stays disclosed — the model seeing a capability it lacks is what
+    # stops it inventing a workaround — and every one of them names WHY.
+    for address in (
+        "launch_account_research@1",
+        "launch_selected_account_research@1",
+        "launch_contact_research@1",
+        "read_account_research_run@1",
+        "read_contact_research_run@1",
+    ):
+        assert by_address[address].status is AgentCapabilityStatus.ROLE_UNAVAILABLE, address
+        assert by_address[address].reason_code == "superseded_by_onboarding_v2", address
     assert by_address["confirm_project_product@1"].status is AgentCapabilityStatus.HUMAN_ONLY
     assert by_address["start_confirmed_project_run@1"].status is (
         AgentCapabilityStatus.ROLE_UNAVAILABLE
@@ -519,9 +536,11 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
     disclosures = head.skill_disclosures()
 
-    assert len(disclosures) == 2
+    # One skill, since founder ruling 2 (2026-09-10) dropped `account-deep-steering@v8` with the
+    # five old-lane tools its frontmatter required. A skill cannot grant a tool its profile does
+    # not pin, so keeping it would have disclosed a procedure whose every step is uncallable.
+    assert len(disclosures) == 1
     assert disclosures[0].resource.address == "skill:stage0-interview@v21"
-    assert disclosures[1].resource.address == "skill:account-deep-steering@v8"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one compact question" in body
@@ -662,9 +681,9 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
 
     head = narrowed.resolve(AgentRole.HEAD_OF_ABM)
     assert "record_interview_answer@1" not in {pin.address for pin in head.profile.tools}
-    assert [item.resource.address for item in head.skill_disclosures()] == [
-        "skill:account-deep-steering@v8"
-    ]
+    # v44 pins exactly one skill, so withdrawing that skill's tool leaves the profile with none —
+    # which is the ceiling doing its whole job rather than a weaker version of it.
+    assert [item.resource.address for item in head.skill_disclosures()] == []
 
 
 def test_resolved_snapshot_materializes_through_c61_backend(

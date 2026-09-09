@@ -235,7 +235,15 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "list_client_knowledge": (),
     "list_product_knowledge": (),
     "launch_account_deep": (),
-    "launch_account_research": (AgentRole.HEAD_OF_ABM,),
+    # ARV2 onboarding O6 / FOUNDER RULING 2 (2026-09-10): the five old-research-lane tools are
+    # dropped from the Head-of-ABM surface at v44. `head-of-abm@v44` runs one research lane, and it
+    # is the ARV2 pair below: these three launches start entity-research fleet jobs the new lane
+    # does not use, and the two run reads answer about `account_research_run` rows it never writes.
+    # They stay registered and invocable by whatever non-model surface still calls them; what
+    # changes is that no model surface names them. The skill that required all five —
+    # `account-deep-steering@v8` — leaves v44 with them; a steering skill written against the ARV2
+    # tools is a follow-up, and it is not a re-grant of these.
+    "launch_account_research": (),
     # ARV2 Track R, R2 (seam 1). Registered UNGRANTED, on the terms the ad-assets lane and the
     # pre-P3.3 design writes already established: the platform's write surface stays complete and
     # auditable, and the role decision lands with the profile version that teaches it. Granting is
@@ -254,10 +262,14 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # same reason. It researches contacts a human picked (or a committee step resolved). Registered
     # ungranted by R3 (a human act through `scripts/launch_arv2_person_research.py`); the O6 grant
     # to the Head of ABM lands with the v44 pin that teaches it.
-    "launch_arv2_person_research": (),
+    # ARV2 onboarding O6 / FOUNDER RULING 3 (2026-09-10): granted. Researching people a human
+    # named is the same act on the same lane as researching accounts they named, so it is granted
+    # on the same terms — `head-of-abm@v44` pins it, and the skill text that teaches it is
+    # stage0-interview v21's.
+    "launch_arv2_person_research": (AgentRole.HEAD_OF_ABM,),
     "read_arv2_account_research_run": (AgentRole.HEAD_OF_ABM,),
-    "launch_selected_account_research": (AgentRole.HEAD_OF_ABM,),
-    "launch_contact_research": (AgentRole.HEAD_OF_ABM,),
+    "launch_selected_account_research": (),
+    "launch_contact_research": (),
     # P3.4 (PD-part3 §1-D1/§2.3): delegating to Design is the Head of ABM's own act — the tool
     # validates the D5 pins, freezes the delegation bundle, and opens the durable leg whose
     # existence IS the routing rule. It spends nothing and dispatches nothing; the user's next
@@ -284,8 +296,8 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "profile_contact": (),
     "propose_field": (AgentRole.HEAD_OF_ABM,),
     "propose_source": (AgentRole.HEAD_OF_ABM,),
-    "read_account_research_run": (AgentRole.HEAD_OF_ABM,),
-    "read_contact_research_run": (AgentRole.HEAD_OF_ABM,),
+    "read_account_research_run": (),
+    "read_contact_research_run": (),
     "record_interview_answer": (AgentRole.HEAD_OF_ABM,),
     "recheck_research_view": (),
     "research_account_gaps": (),
@@ -367,9 +379,12 @@ ONBOARDING_ICP_SURFACE = "onboarding_icp"
 #: ARV2 onboarding O6 shortened this list without relaxing it. The registry refuses a policy that
 #: withholds a tool the role's profile does not pin, and ``head-of-abm@v44`` no longer pins
 #: ``start_recon``, ``submit_onboarding_input``, ``synthesize_icps``,
-#: ``open_product_selection_gate`` or ``open_discovery_configuration_gate`` at all — they are
-#: ungranted on *every* surface now, which is a stronger statement than withholding them on one.
-#: The trial's own reasons for withholding them are preserved in the authority map above.
+#: ``open_product_selection_gate``, ``open_discovery_configuration_gate`` or — per founder ruling
+#: 2, 2026-09-10 — ``launch_account_research``, ``launch_selected_account_research``,
+#: ``launch_contact_research``, ``read_account_research_run`` and ``read_contact_research_run`` at
+#: all. They are ungranted on *every* surface now, which is a stronger statement than withholding
+#: them on one. The trial's own reasons for withholding them are preserved in the authority map
+#: above.
 #:
 #: ``submit_ingestion`` is deliberately **kept**: it ingests an already-captured workspace artifact
 #: and performs no external research, so it does not cross this surface's boundary.
@@ -388,13 +403,10 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
         role=AgentRole.HEAD_OF_ABM,
         withheld_tools=frozenset(
             {
-                "launch_account_research",
-                "launch_selected_account_research",
-                "launch_contact_research",
-                # D4 added the gate tool to the role. The trial keeps it withheld with the launch
-                # tools it belongs to: a dev harness that could present a real, durable, addressed
-                # confirmation gate — but never act on the answer — would be inviting a human to
-                # approve spend that no surface here can perform.
+                # D4 added the gate tool to the role. The trial keeps it withheld alongside the
+                # launches below, which is where it belongs: a dev harness that could present a
+                # real, durable, addressed confirmation gate — but never act on the answer — would
+                # be inviting a human to approve spend that no surface here can perform.
                 "open_directive_confirmation_gate",
                 # P3.4 added the design delegation entry to the role. The trial withholds it for
                 # the same sentence as delegation itself: this surface is a manual conversation,
@@ -409,7 +421,10 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 # whose answer no surface here can act on — inviting a person to confirm a product
                 # set or an ICP that goes nowhere. `read_arv2_account_research_run` stays
                 # installed: it is read-only, spends nothing, and addresses nobody.
+                # `launch_arv2_person_research` joins for the same sentence as its account sibling
+                # (founder ruling 3, 2026-09-10) — it queues real per-person research jobs.
                 "launch_arv2_account_research",
+                "launch_arv2_person_research",
                 "open_product_set_selection_gate",
                 "open_icp_confirmation_gate",
             }
@@ -504,11 +519,11 @@ _RESERVED_REASON: dict[str, str] = {
     "reverse_profile": "superseded_by_governed_stage0_recon",
     "score_accounts": "post_stage0_not_admitted",
     "start_project_run": "legacy_unconfirmed_entry_forbidden",
-    # ARV2 onboarding O6: the twelve tools `head-of-abm@v44` dropped. They stay registered and
+    # ARV2 onboarding O6: the seventeen tools `head-of-abm@v44` dropped. They stay registered and
     # invocable by whatever non-model surface still calls them; what this records is WHY no model
     # surface names them any more — the new Stage-0 lane reads the brand's knowledge documents
-    # instead of the Client-KB/Product-KB claim surfaces, and its gates are the product-set gate
-    # and the artifact-ref ICP gate.
+    # instead of the Client-KB/Product-KB claim surfaces, its gates are the product-set gate and
+    # the artifact-ref ICP gate, and its research is launched on the ARV2 lane.
     "evaluate_stage0_readiness": "superseded_by_onboarding_v2",
     "inspect_readiness_history": "superseded_by_onboarding_v2",
     "list_client_knowledge": "superseded_by_onboarding_v2",
@@ -521,6 +536,14 @@ _RESERVED_REASON: dict[str, str] = {
     "start_recon": "superseded_by_onboarding_v2",
     "submit_onboarding_input": "superseded_by_onboarding_v2",
     "open_discovery_configuration_gate": "superseded_by_onboarding_v2",
+    # FOUNDER RULING 2 (2026-09-10): the five old-research-lane tools, on the same terms as the
+    # twelve above. The new lane's `launch_arv2_*` pair supersedes the three launches, and
+    # `read_arv2_account_research_run` supersedes the two run reads.
+    "launch_account_research": "superseded_by_onboarding_v2",
+    "launch_selected_account_research": "superseded_by_onboarding_v2",
+    "launch_contact_research": "superseded_by_onboarding_v2",
+    "read_account_research_run": "superseded_by_onboarding_v2",
+    "read_contact_research_run": "superseded_by_onboarding_v2",
 }
 
 
