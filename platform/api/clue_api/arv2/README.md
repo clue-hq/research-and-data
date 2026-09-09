@@ -1183,7 +1183,15 @@ removed from `display/gather.committee_members` (founder ruling 2026-09-09 — A
 the only truth for the accounts screens), and six legacy expectations were retired with dated
 reasons. `project_run_id` is deliberately unused: an ARV2 committee claim is a fact about a person
 at an account, not a per-project-run artifact, so **every project targeting the account reads the
-same seated people**. Everything below the source — product-exact filtering, the strong-binding
+same seated people**.
+
+**Two membership rules, on purpose (founder ruling 2026-09-10, after the rebase onto D4-b).** The
+*pages* seat a contact on the D4-b rule — any contact under the account holding at least one live
+claim (`display/gather.committee_members`, persona-ranked). The *governed chain* seats a contact on
+R3's stricter rule — a live persona claim plus a role claim, because a governed member needs both
+claim ids. They agree on live data: R3 creates contacts only through the committee step and the
+on-demand launch, and both seat the person with those two claims before anything else is written.
+Neither rule is to be bent toward the other. Everything below the source — product-exact filtering, the strong-binding
 rule, the merge, the use-decision gate, the sort — is the shared governance, so an ARV2 answer is
 governed exactly like a coverage-sourced one.
 

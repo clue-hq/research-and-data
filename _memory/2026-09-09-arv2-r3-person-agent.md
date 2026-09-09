@@ -251,3 +251,7 @@ and its readers/loader follow its shapes):
   R3 tests); R3 inserts contact entities only in `committee_step` (confirmed, seated candidates)
   and the answer-key loader, so D4-b's "holds a live claim" committee rule seats nobody R3 did not
   confirm.
+- **Founder ruling 2026-09-10 — committee membership rules stay as they are:** pages use D4-b's
+  "at least one live claim" rule (`display/gather.committee_members`); the governed chain uses R3's
+  "persona + role claims" rule (`Arv2CommitteeReferenceSource`). Cheapest, and consistent on live
+  data because every R3 contact is seated at creation. Do not align one to the other.
