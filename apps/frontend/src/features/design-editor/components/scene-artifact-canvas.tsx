@@ -371,8 +371,8 @@ export interface SceneArtifactCanvasProps {
    * document, for as long as it is non-null.
    *
    * The same substitution shape AD4.C's gesture `preview` already uses, and
-   * kept just as narrow: it reaches exactly one derivation — the artboard model
-   * the draw loop walks — and touches no state, no selection, no hit test and
+   * kept just as narrow: it supplies the artboard model and its image assets
+   * to the draw loop, and touches no state, no selection, no hit test and
    * no write path. Null (the default, and every route but the chat surface)
    * renders the document exactly as before.
    *
@@ -1954,7 +1954,7 @@ function SceneDocumentCanvas({
     >
       <ArtboardSurface
         artboard={artboard}
-        assets={scene?.assets}
+        assets={drawnScene?.assets}
         // Test/diagnostic hooks, not chrome: the honest engine + text
         // measurement state and the current selection, readable independently
         // of the approved visuals that now render them (Gates G-A / G-D).
