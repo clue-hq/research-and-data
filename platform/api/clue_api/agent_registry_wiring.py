@@ -512,6 +512,13 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
         return (AgentRole.HEAD_OF_ABM,) if address.endswith("@2") else ()
     if name == "synthesize_icps":
         return (AgentRole.HEAD_OF_ABM,) if address.endswith("@3") else ()
+    # ARV2 onboarding O6 (T4): ``@2`` presents the ICP knowledge document instead of a draft
+    # ``icp_spec`` row. It is installed but NOT yet granted, because a grant is not an edit here —
+    # ``build_agent_profile_registry`` refuses to compose when a role's authority and its profile's
+    # tool list disagree, and the active head-of-abm profile (v43) still pins ``@1``. O6's profile
+    # bump (v44, T6) moves this one line to ``@2`` and the pin with it.
+    if name == "open_icp_confirmation_gate":
+        return (AgentRole.HEAD_OF_ABM,) if address.endswith("@1") else ()
     if name == "start_confirmed_project_run":
         return (AgentRole.HEAD_OF_ABM,) if address.endswith("@3") else ()
     if name == "research_account_gaps":

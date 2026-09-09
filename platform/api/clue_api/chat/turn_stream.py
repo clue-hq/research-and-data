@@ -1122,8 +1122,14 @@ def _gate_subject_ref(view: GateView) -> dict[str, JsonValue]:
     """
 
     if view.kind == KIND_ICP_CONFIRMATION:
-        identifier = view.subject_snapshot.get("icp_key")
-        object_type = "icp_spec"
+        if view.subject_snapshot.get("subject_kind") == "brand_knowledge_document":
+            # ARV2 onboarding O6: the subject is a file the human can open, so the ref names the
+            # document rather than the ICP key — the key is one of the document's own facts.
+            identifier = view.subject_snapshot.get("document_id")
+            object_type = "brand_knowledge_document"
+        else:
+            identifier = view.subject_snapshot.get("icp_key")
+            object_type = "icp_spec"
     elif view.kind == KIND_PRODUCT_SET_SELECTION:
         # The subject is the brand's catalog as a whole — the candidates are its products — so the
         # ref names the brand, and the exact catalog document lives in the snapshot beside it.

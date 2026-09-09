@@ -60,6 +60,11 @@ from clue_api.agent_turn_submission import (
     turn_id_for_submission,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.arv2.icp_confirmation import (
+    IcpConfirmationStale,
+    confirm_icp_document,
+    current_icp_document,
+)
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import PrincipalDependency, principal_from_request
 from clue_api.chat.composer_context import (
@@ -190,6 +195,7 @@ from clue_research.icp import activate_icp_version
 from clue_spine import (
     confirm_project_product_set,
     create_project,
+    current_project_product_set,
     get_brand,
     get_project,
     get_project_for_workspace,
@@ -529,6 +535,17 @@ def _status_code_name(status_code: int) -> str:
 
 def _refuse(*, status_code: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"code": code, "message": message})
+
+
+def _is_knowledge_document_gate(gate: AgentGateRow) -> bool:
+    """Whether this ICP gate's subject is a knowledge document (``@2``) or a draft spec (``@1``).
+
+    The snapshot is immutable, so the shape a gate was opened with is the shape it is answered in
+    forever: an ``@1`` gate written before ARV2 onboarding O6 carries no ``subject_kind`` at all
+    and keeps the ``icp_spec`` path unchanged.
+    """
+
+    return gate.subject_snapshot.get("subject_kind") == "brand_knowledge_document"
 
 
 def _gate_response(body: SubmitTurnRequest) -> GateResponseRequest:
@@ -1913,7 +1930,39 @@ def build_chat_router(
             # A retry of the same answering turn is checked against its existing captured bytes
             # below. Its subject is active after an approval, so only a *new* answer revalidates the
             # still-draft snapshot before any receipt is written.
-            if view.answer is None:
+            if view.answer is None and _is_knowledge_document_gate(view.gate):
+                # ARV2 onboarding O6: the subject is a `brand_knowledge_document`, so the check is
+                # "is the brand's current ICP document for this key still the exact one the human
+                # was shown?" — same document, same bytes. A newer proposal published at that path
+                # since the gate opened is precisely what must refuse.
+                snapshot = view.gate.subject_snapshot
+                assert storage is not None  # the submit route exists only when storage does
+                brand_id = snapshot.get("brand_id")
+                icp_key = snapshot.get("icp_key")
+                if not isinstance(brand_id, str) or not isinstance(icp_key, str):
+                    raise _refuse(
+                        status_code=409,
+                        code="GATE_SUBJECT_STALE",
+                        message="the durable gate does not name a canonical ICP document",
+                    )
+                current = await current_icp_document(
+                    conn,
+                    storage,
+                    workspace_id=who.workspace_id,
+                    brand_id=brand_id,
+                    icp_key=icp_key,
+                )
+                if (
+                    current is None
+                    or str(current.document_id) != snapshot.get("document_id")
+                    or current.artifact_sha256 != snapshot.get("artifact_sha256")
+                ):
+                    raise _refuse(
+                        status_code=409,
+                        code="GATE_SUBJECT_STALE",
+                        message="the current ICP document differs from the reviewed one",
+                    )
+            elif view.answer is None:
                 scope = await resolve_stage0_project_scope_for_project(
                     conn,
                     workspace_id=who.workspace_id,
@@ -2511,6 +2560,55 @@ def build_chat_router(
                                     "a chosen product no longer belongs to this project's brand"
                                 ),
                             )
+                    elif (
+                        gate.kind == KIND_ICP_CONFIRMATION
+                        and response.decision == "approved"
+                        and _is_knowledge_document_gate(gate)
+                    ):
+                        # ARV2 onboarding O6: approving a knowledge-document ICP mints the
+                        # `confirmed` version of that same document path — human-only and
+                        # tool-free, with server-derived authority (the workspace, the project,
+                        # the ambient user and the gate's own digest), in the same transaction as
+                        # the immutable answer. Either both effects commit or neither does.
+                        assert storage is not None  # the submit route exists only when storage does
+                        snapshot = gate.subject_snapshot
+                        brand_id = str(snapshot["brand_id"])
+                        subject = await current_icp_document(
+                            conn,
+                            storage,
+                            workspace_id=who.workspace_id,
+                            brand_id=brand_id,
+                            icp_key=str(snapshot["icp_key"]),
+                        )
+                        product_set = await current_project_product_set(
+                            conn,
+                            workspace_id=who.workspace_id,
+                            project_id=project_id,
+                        )
+                        try:
+                            if subject is None:
+                                raise IcpConfirmationStale(
+                                    "the reviewed ICP document is no longer readable"
+                                )
+                            await confirm_icp_document(
+                                conn,
+                                storage,
+                                workspace_id=who.workspace_id,
+                                brand_id=brand_id,
+                                project_id=project_id,
+                                proposed=subject,
+                                expected_sha256=gate.expected_subject_sha256,
+                                confirmed_by_user_id=who.user_id,
+                                product_selection_version=(
+                                    None if product_set is None else product_set.selection_version
+                                ),
+                            )
+                        except IcpConfirmationStale as exc:
+                            raise _refuse(
+                                status_code=409,
+                                code="GATE_SUBJECT_STALE",
+                                message=str(exc),
+                            ) from exc
                     elif gate.kind == KIND_ICP_CONFIRMATION and response.decision == "approved":
                         icp_key = gate.subject_snapshot["icp_key"]
                         version = gate.subject_snapshot["version"]

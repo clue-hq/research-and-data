@@ -24,12 +24,22 @@ import pytest
 from sqlalchemy import text
 
 from clue_api.agent_gate import (
+    KIND_ICP_CONFIRMATION,
     KIND_PRODUCT_SET_SELECTION,
     gate_answer_for_turn,
+    icp_artifact_gate_id,
     insert_gate,
     product_set_selection_gate_id,
 )
-from clue_spine import create_product, get_project, list_project_product_sets
+from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.arv2.knowledge_frontmatter import parse_front_matter
+from clue_spine import (
+    confirm_project_product_set,
+    create_product,
+    get_project,
+    list_project_product_sets,
+)
+from tests.api.test_icp_artifact_gate_db import icp_body, seed_document
 from tests.api.test_lane_d4_gate_response_route_db import (
     USER_ID,
     _app,
@@ -38,6 +48,7 @@ from tests.api.test_lane_d4_gate_response_route_db import (
 )
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
+    conn_session_factory,
     migrated_db,  # noqa: F401 -- exposes the fixture to this test module
     rollback_conn,
 )
@@ -335,5 +346,326 @@ def test_the_set_gate_carries_no_spend_amount(tmp_path: Path) -> None:
                 )
             assert response.status_code == 422, response.text
             assert response.json()["error"]["code"] == "GATE_AMOUNT_UNEXPECTED"
+
+    run_async(scenario())
+
+
+# --- the ICP confirmation gate over a knowledge document (T4) ----------------------------------
+#
+# The `@2` gate's subject is a `brand_knowledge_document`, not a draft `icp_spec` row, so the
+# route revalidates the document against the immutable snapshot and — on approval — mints the
+# `confirmed` version of that same path in the same transaction as the answer. The old `icp_spec`
+# path (a snapshot with no `subject_kind`) is untouched and stays covered by its own suite.
+
+
+async def _seed_icp_document(
+    conn: Any,
+    seeded: Any,
+    *,
+    status: str = "proposed",
+    confirmed_for_project_id: str | None = None,
+    product_ids: list[str] | None = None,
+) -> Any:
+    project = await get_project(conn, seeded.project_id)
+    assert project is not None
+    seeded.brand_id = project.brand_id
+    artifacts = DurableAgentArtifactStore(
+        storage=seeded.storage,
+        conn_factory=conn_session_factory(conn),
+    )
+    document_id, artifact_key, artifact_sha256 = await seed_document(
+        conn,
+        artifacts=artifacts,
+        workspace_id=seeded.workspace_id,
+        brand_id=project.brand_id,
+        path="audience/icp-clinics.md",
+        kind="icp-definition",
+        version=1,
+        status=status,
+        body=icp_body(
+            key="clinics",
+            status=status,
+            product_ids=product_ids or [],
+            project_id=confirmed_for_project_id,
+        ),
+    )
+    return _Icp(
+        document_id=document_id,
+        artifact_key=artifact_key,
+        artifact_sha256=artifact_sha256,
+        brand_id=project.brand_id,
+    )
+
+
+class _Icp:
+    def __init__(self, **values: Any) -> None:
+        self.__dict__.update(values)
+
+
+async def _present_icp(conn: Any, seeded: Any, icp: Any, *, digest: str | None = None) -> Any:
+    subject_ref = f"brand-knowledge-document:{icp.document_id}:v1"
+    expected = digest or icp.artifact_sha256
+    gate_id = icp_artifact_gate_id(
+        workspace_id=seeded.workspace_id,
+        project_id=seeded.project_id,
+        subject_ref=subject_ref,
+        expected_subject_sha256=expected,
+    )
+    row, _ = await insert_gate(
+        conn,
+        gate_id=gate_id,
+        workspace_id=seeded.workspace_id,
+        project_id=seeded.project_id,
+        thread_id=seeded.thread_id,
+        turn_id=seeded.presenting_turn_id,
+        kind=KIND_ICP_CONFIRMATION,
+        subject_ref=subject_ref,
+        subject_revision=1,
+        expected_subject_sha256=expected,
+        subject_snapshot={
+            "subject_kind": "brand_knowledge_document",
+            "document_id": str(icp.document_id),
+            "brand_id": icp.brand_id,
+            "path": "audience/icp-clinics.md",
+            "icp_key": "clinics",
+            "version": 1,
+            "status": "proposed",
+            "artifact_key": icp.artifact_key,
+            "artifact_sha256": expected,
+            "product_ids": [],
+            "title": "Independent multi-site clinic groups",
+        },
+        max_spend_cents=None,
+        currency=None,
+        addressee_user_id=USER_ID,
+    )
+    return row
+
+
+async def _answer_icp(
+    client: httpx.AsyncClient,
+    seeded: Any,
+    *,
+    gate: Any,
+    key: str,
+    decision: str = "approved",
+    revision_request: str | None = None,
+) -> httpx.Response:
+    payload: dict[str, Any] = {
+        "gate_id": str(gate.gate_id),
+        "decision": decision,
+        "expected_subject_sha256": gate.expected_subject_sha256,
+    }
+    if revision_request is not None:
+        payload["revision_request"] = revision_request
+    return await client.post(
+        f"/api/v1/projects/{seeded.project_id}/threads/{seeded.thread_id}/turns",
+        json={"gate_response": payload},
+        headers={"X-Workspace-Id": seeded.workspace_id, "Idempotency-Key": key},
+    )
+
+
+async def _documents(conn: Any, seeded: Any) -> list[dict[str, Any]]:
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT document_id, version, status, artifact_key, artifact_sha256, "
+                " supersedes_document_id, produced_by_turn_id "
+                "FROM brand_knowledge_document WHERE workspace_id = :ws "
+                " AND path = 'audience/icp-clinics.md' ORDER BY version"
+            ),
+            {"ws": seeded.workspace_id},
+        )
+    ).mappings()
+    return [dict(row) for row in rows.all()]
+
+
+def test_approving_an_icp_document_mints_its_confirmed_version(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-o6-icp-ok", label="o6icpok")
+            products = await _seed_products(conn, seeded)
+            icp = await _seed_icp_document(conn, seeded)
+            confirmed_set = await confirm_project_product_set(
+                conn,
+                workspace_id=seeded.workspace_id,
+                project_id=seeded.project_id,
+                product_ids=[products[0]],
+                gate_id=uuid4(),
+                confirmed_by_user_id=USER_ID,
+            )
+            assert confirmed_set is not None
+            gate = await _present_icp(conn, seeded, icp)
+            app = _app(conn, storage=seeded.storage)
+            async with _client(app) as client:
+                response = await _answer_icp(client, seeded, gate=gate, key="k-o6-icp-ok")
+            assert response.status_code == 202, response.text
+            turn_id = UUID(response.json()["data"]["turn_id"])
+
+            answer = await gate_answer_for_turn(
+                conn, workspace_id=seeded.workspace_id, turn_id=turn_id
+            )
+            assert answer is not None and answer.decision == "approved"
+
+            rows = await _documents(conn, seeded)
+            assert [(row["version"], row["status"]) for row in rows] == [
+                (1, "superseded"),
+                (2, "confirmed"),
+            ]
+            minted = rows[1]
+            assert minted["supersedes_document_id"] == icp.document_id
+            # The answering turn's `agent_turn` row does not exist yet (the engine creates it when
+            # the turn runs), so the confirming human rides the front matter, not this column.
+            assert minted["produced_by_turn_id"] is None
+
+            body = await seeded.storage.get(str(minted["artifact_key"]))
+            front, _rest = parse_front_matter(body.decode())
+            assert front["status"] == "confirmed"
+            assert front["confirmed_by"] == USER_ID
+            assert front["confirmed_for_project_id"] == seeded.project_id
+            assert front["product_selection_version"] == 1
+            assert isinstance(front["confirmed_at"], str)
+
+    run_async(scenario())
+
+
+def test_a_confirmation_with_no_product_set_omits_the_selection_version(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-o6-icp-nosel", label="o6icpnosel")
+            icp = await _seed_icp_document(conn, seeded)
+            gate = await _present_icp(conn, seeded, icp)
+            app = _app(conn, storage=seeded.storage)
+            async with _client(app) as client:
+                response = await _answer_icp(client, seeded, gate=gate, key="k-o6-icp-nosel")
+            assert response.status_code == 202, response.text
+            rows = await _documents(conn, seeded)
+            body = await seeded.storage.get(str(rows[1]["artifact_key"]))
+            front, _rest = parse_front_matter(body.decode())
+            assert "product_selection_version" not in front
+            assert front["confirmed_for_project_id"] == seeded.project_id
+
+    run_async(scenario())
+
+
+def test_a_retried_approval_replays_and_mints_nothing_further(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-o6-icp-replay", label="o6icprep")
+            icp = await _seed_icp_document(conn, seeded)
+            gate = await _present_icp(conn, seeded, icp)
+            app = _app(conn, storage=seeded.storage)
+            async with _client(app) as client:
+                first = await _answer_icp(client, seeded, gate=gate, key="k-o6-icp-rep")
+                second = await _answer_icp(client, seeded, gate=gate, key="k-o6-icp-rep")
+            assert first.status_code == 202, first.text
+            assert second.status_code == 202, second.text
+            assert second.json()["data"]["replayed"] is True
+            assert first.json()["data"]["turn_id"] == second.json()["data"]["turn_id"]
+            rows = await _documents(conn, seeded)
+            assert [row["version"] for row in rows] == [1, 2]
+
+    run_async(scenario())
+
+
+def test_a_document_that_moved_since_the_gate_refuses_the_approval(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-o6-icp-stale", label="o6icpstale")
+            icp = await _seed_icp_document(conn, seeded)
+            gate = await _present_icp(conn, seeded, icp)
+            # Onboarding published a newer proposal at the same path after the gate was opened.
+            artifacts = DurableAgentArtifactStore(
+                storage=seeded.storage,
+                conn_factory=conn_session_factory(conn),
+            )
+            await conn.execute(
+                text(
+                    "UPDATE brand_knowledge_document SET status = 'superseded' "
+                    "WHERE document_id = :id"
+                ),
+                {"id": icp.document_id},
+            )
+            await seed_document(
+                conn,
+                artifacts=artifacts,
+                workspace_id=seeded.workspace_id,
+                brand_id=seeded.brand_id,
+                path="audience/icp-clinics.md",
+                kind="icp-definition",
+                version=2,
+                status="proposed",
+                body=icp_body(
+                    key="clinics",
+                    status="proposed",
+                    product_ids=[],
+                    title="A rewritten profile",
+                ),
+            )
+            app = _app(conn, storage=seeded.storage)
+            async with _client(app) as client:
+                response = await _answer_icp(client, seeded, gate=gate, key="k-o6-icp-stale")
+            assert response.status_code == 409, response.text
+            error = response.json()["error"]
+            assert error["code"] == "GATE_SUBJECT_STALE"
+            # The document check, not the legacy `icp_spec` scope check, is what refused.
+            assert error["message"] == "the current ICP document differs from the reviewed one"
+            assert (
+                await conn.execute(text("SELECT count(*) FROM agent_gate_answer"))
+            ).scalar_one() == 0
+            rows = await _documents(conn, seeded)
+            assert [row["version"] for row in rows] == [1, 2]
+
+    run_async(scenario())
+
+
+def test_revising_an_icp_document_requires_the_requested_changes(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-o6-icp-rev", label="o6icprev")
+            icp = await _seed_icp_document(conn, seeded)
+            gate = await _present_icp(conn, seeded, icp)
+            app = _app(conn, storage=seeded.storage)
+            async with _client(app) as client:
+                refused = await _answer_icp(
+                    client, seeded, gate=gate, key="k-o6-icp-rev", decision="revised"
+                )
+                assert refused.status_code == 422, refused.text
+                assert refused.json()["error"]["code"] == "GATE_REVISION_REQUEST_REQUIRED"
+
+                accepted = await _answer_icp(
+                    client,
+                    seeded,
+                    gate=gate,
+                    key="k-o6-icp-rev-2",
+                    decision="revised",
+                    revision_request="Split the clinics profile by group size.",
+                )
+            assert accepted.status_code == 202, accepted.text
+            rows = await _documents(conn, seeded)
+            assert [(row["version"], row["status"]) for row in rows] == [(1, "proposed")]
+
+    run_async(scenario())
+
+
+def test_a_rejected_icp_document_writes_no_confirmation(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-o6-icp-rej", label="o6icprej")
+            icp = await _seed_icp_document(conn, seeded)
+            gate = await _present_icp(conn, seeded, icp)
+            app = _app(conn, storage=seeded.storage)
+            async with _client(app) as client:
+                response = await _answer_icp(
+                    client, seeded, gate=gate, key="k-o6-icp-rej", decision="rejected"
+                )
+            assert response.status_code == 202, response.text
+            turn_id = UUID(response.json()["data"]["turn_id"])
+            answer = await gate_answer_for_turn(
+                conn, workspace_id=seeded.workspace_id, turn_id=turn_id
+            )
+            assert answer is not None and answer.decision == "rejected"
+            rows = await _documents(conn, seeded)
+            assert [(row["version"], row["status"]) for row in rows] == [(1, "proposed")]
 
     run_async(scenario())

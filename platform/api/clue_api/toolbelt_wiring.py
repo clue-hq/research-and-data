@@ -100,6 +100,7 @@ from clue_api.exa_targeted_enrichment import (
 )
 from clue_api.exa_websets_submit import DEFAULT_EXA_WEBSETS_PRICING
 from clue_api.fleet_wiring import enqueue_run_drive
+from clue_api.icp_artifact_gate_tools import build_icp_artifact_gate_tools
 from clue_api.independent_contact_research import IndependentContactResearchRunner
 from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
 from clue_api.locks import lazy_account_lock_factory
@@ -2870,6 +2871,13 @@ def build_toolbelt(
         conn_factory=conn_factory,
         budget_controls_enabled=resolved_settings.budget_controls_enabled,
     )
+    # ARV2 onboarding O6: the ICP gate over a knowledge document, registered here rather than in
+    # ``agent_gate_wiring`` because — unlike its ``@1`` sibling — its subject is an artifact, so it
+    # needs the storage the knowledge documents live in. NOT the default version: the active
+    # head-of-abm profile still pins ``@1``, and a default that outran its profile would make the
+    # registry disagree with the pin. O6's profile bump (v44) flips it.
+    for tool in build_icp_artifact_gate_tools(conn_factory=conn_factory, storage=storage):
+        registry.register(tool, make_default=False)
     # ARV2 onboarding O6: the set-valued sibling of the S5-F product gate. It reads the brand's own
     # product rows and knowledge documents (never a Client-KB version), so it needs the storage the
     # knowledge documents live in; without one it still presents every candidate, just without the
