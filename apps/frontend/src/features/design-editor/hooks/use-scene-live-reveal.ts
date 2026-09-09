@@ -300,6 +300,8 @@ export interface SceneRevealPumpOptions {
    * anchor asks exactly that. Defaults to available.
    */
   engineAvailable?: () => boolean;
+  /** Identity of the current engine; a remount must replay into its new instance. */
+  engineIdentity?: () => object | null;
   /** The display override. `null` hands the canvas back to the document. */
   onDisplayScene: (scene: Scene | null) => void;
   /** Defaults to the OS preference, read once when the pump is built. */
@@ -320,6 +322,7 @@ export interface SceneRevealPumpOptions {
 export class SceneRevealPump {
   private readonly apply: SceneRevealApply;
   private readonly engineAvailable: () => boolean;
+  private readonly engineIdentity?: () => object | null;
   private readonly emit: (scene: Scene | null) => void;
   private readonly reducedMotion: boolean;
 
@@ -342,10 +345,11 @@ export class SceneRevealPump {
    * load replays that same run's logged batches. Without this, the join would
    * hand the engine operations it already holds — an insert applied twice is
    * refused, the pump latches dirty, and every checkpoint from then on reloads
-   * a canvas that was in sync. A ledger position is per RUN, so `rebase` — and
-   * only `rebase` — forgets it.
+   * a canvas that was in sync. The position belongs to one RUN and one ENGINE;
+   * a new run or a join onto a replacement engine forgets it.
    */
   private appliedThrough: number | null = null;
+  private appliedEngineIdentity: object | null | undefined;
   private queue: RevealStep[] = [];
   private compression = 1;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -359,6 +363,7 @@ export class SceneRevealPump {
   constructor(options: SceneRevealPumpOptions) {
     this.apply = options.apply;
     this.engineAvailable = options.engineAvailable ?? (() => true);
+    this.engineIdentity = options.engineIdentity;
     this.emit = options.onDisplayScene;
     this.reducedMotion = options.reducedMotion ?? prefersReducedMotion();
   }
@@ -419,10 +424,11 @@ export class SceneRevealPump {
    *
    * Two things follow, and they are the whole method.
    *
-   * **The document under the pump is new.** Whatever it was holding — a queued
-   * batch, a scene held back mid-draw, a refusal it latched on — describes the
-   * document that was there BEFORE this load, so it is dropped exactly as a
-   * stale anchor drops it, and the canvas renders the document it just loaded.
+   * **The document load has settled.** Queued display work and refusal state
+   * are dropped, and the canvas renders the loaded document. An unchanged
+   * engine may already hold live operations applied before this join arrived;
+   * its watermark still prevents duplicates. A replacement engine owns only
+   * its loaded checkpoint, so the old instance's watermark must be forgotten.
    *
    * **What arrives next is backlog, not news.** A run that has been going for
    * five minutes has streamed five minutes of frames; a tab that opens into it
@@ -433,6 +439,11 @@ export class SceneRevealPump {
    */
   join(): void {
     if (!this.active) return;
+    // The pump can outlive the canvas (Gallery -> artifact). Its old engine's
+    // watermark cannot suppress replay into the newly loaded checkpoint.
+    if (this.engineIdentity && this.engineIdentity() !== this.appliedEngineIdentity) {
+      this.appliedThrough = null;
+    }
     this.reseat();
     this.joining = true;
   }
@@ -453,9 +464,8 @@ export class SceneRevealPump {
   rebase(): void {
     if (!this.active) return;
     this.reseat();
-    // A NEW run counts its operations from zero, so a position in the previous
-    // run's ledger says nothing about this one. A JOIN deliberately keeps it:
-    // same run, same ledger, and the engine still holds what it applied.
+    // A NEW run counts from zero. A join keeps this mark only when the engine
+    // instance still holds the operations, not merely because the run matches.
     this.appliedThrough = null;
   }
 
@@ -577,6 +587,7 @@ export class SceneRevealPump {
         }
       }
       this.appliedThrough = operationsTotal;
+      this.appliedEngineIdentity = this.engineIdentity?.();
     }
     if (operations.length === 0) return;
     if (this.queue.length > 0) {
@@ -851,6 +862,8 @@ export interface UseSceneLiveRevealOptions {
    * "assume yes", which is only right for a caller with no engine to lose.
    */
   engineAvailable?: () => boolean;
+  /** The mounted canvas's engine identity, independent of its controls object. */
+  engineIdentity?: () => object | null;
   /** Test seam; production reads the OS preference. */
   reducedMotion?: boolean;
 }
@@ -877,6 +890,7 @@ export function useSceneLiveReveal({
   actions,
   apply,
   engineAvailable,
+  engineIdentity,
   reducedMotion,
 }: UseSceneLiveRevealOptions): SceneLiveReveal {
   const [displayScene, setDisplayScene] = useState<Scene | null>(null);
@@ -886,9 +900,11 @@ export function useSceneLiveReveal({
   // over, so it must read the current one rather than the one it closed on.
   const applyRef = useRef(apply);
   const engineAvailableRef = useRef(engineAvailable);
+  const engineIdentityRef = useRef(engineIdentity);
   useEffect(() => {
     applyRef.current = apply;
     engineAvailableRef.current = engineAvailable;
+    engineIdentityRef.current = engineIdentity;
   });
 
   // ONE pump for the life of the surface, built in an effect. It holds a
@@ -902,6 +918,7 @@ export function useSceneLiveReveal({
     const pump = new SceneRevealPump({
       apply: (operations) => applyRef.current(operations),
       engineAvailable: () => engineAvailableRef.current?.() ?? true,
+      engineIdentity: () => engineIdentityRef.current?.() ?? null,
       onDisplayScene: setDisplayScene,
       reducedMotion,
     });

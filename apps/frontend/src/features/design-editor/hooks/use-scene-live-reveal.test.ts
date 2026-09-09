@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test, { mock } from "node:test";
 import type { SceneStreamActionRecord } from "../adapter/scene-stream-cursor";
+import { replaySceneStreamJoin } from "../adapter/scene-stream-cursor";
 import type { Operation, Scene } from "../engine/scene/contracts";
 import type { EngineApplyOutcome } from "../engine/scene/wasmEngine";
 import {
@@ -182,6 +183,7 @@ function harness(reducedMotion = false) {
   const pump = new SceneRevealPump({
     apply: (operations) => engine.apply(operations),
     engineAvailable: () => available.value,
+    engineIdentity: () => engine,
     onDisplayScene: (scene) => displays.push(scene),
     reducedMotion,
   });
@@ -969,6 +971,66 @@ test("another document's rebase never re-seats this canvas", () => {
 /* ---------------------------------------------------------------------------
  * Never twice (task 10, fix round 3).
  * ------------------------------------------------------------------------ */
+
+test("a remounted engine replays an asset registration before its next placement", () => {
+  onFakeClock(() => {
+    let engine = { assets: new Set<string>(), nodes: new Set(["checkpoint_node"]) };
+    const assetId = "asset_after_checkpoint";
+    const registration = { kind: "upsert_asset", asset: { id: assetId } } as Operation;
+    const placement = { kind: "place_asset_in_node", node_id: "image", asset_id: assetId } as Operation;
+    let refusals = 0;
+    const pump = new SceneRevealPump({
+      engineIdentity: () => engine,
+      reducedMotion: true,
+      onDisplayScene: () => {},
+      apply: (operations) => {
+        for (const operation of operations) {
+          if (operation.kind === "insert_node") {
+            if (engine.nodes.has(operation.node.id)) {
+              refusals += 1;
+              return null;
+            }
+            engine.nodes.add(operation.node.id);
+          }
+          if (operation.kind === "upsert_asset") engine.assets.add(operation.asset.id);
+          if (operation.kind === "place_asset_in_node" && !engine.assets.has(operation.asset_id)) {
+            refusals += 1;
+            return null;
+          }
+        }
+        return { accepted: true, scene: baseScene(), diagnostics: [], inverseOperations: null, appliedOperations: operations.length };
+      },
+    });
+    pump.start();
+    pump.enqueue([registration], 60);
+    pump.fastForward();
+    assert.ok(engine.assets.has(assetId));
+
+    // Gallery -> artifact creates a new engine from the last checkpoint,
+    // whose ledger position is 59. The chat-level pump survives that remount.
+    engine = { assets: new Set<string>(), nodes: new Set(["checkpoint_node"]) };
+    const replay = replaySceneStreamJoin({
+      documentId: "doc_1", turnId: "turn_1", position: 59,
+      actions: [
+        record(1, "doc_1", { action: "rebase", turnId: "turn_1" }),
+        record(2, "doc_1", appliedBatch([insertNode("checkpoint_node")], 59)),
+        record(3, "doc_1", appliedBatch([registration], 60)),
+      ],
+    });
+    assert.equal(replay.dirty, false);
+    assert.deepEqual(replay.operations, [registration], "replay excludes the committed insert at position 59");
+    consumeSceneStreamActions(pump, [
+      record(1, "doc_1", { action: "seed", position: 59, dirty: false }),
+      record(2, "doc_1", appliedBatch([...replay.operations], replay.position)),
+    ], "doc_1", 0);
+    pump.enqueue([placement], 61);
+    pump.fastForward();
+    assert.equal(refusals, 0, "the new engine must receive the replayed registration");
+    assert.ok(engine.assets.has(assetId));
+    assert.equal(pump.isDirty(), false);
+    pump.stop();
+  });
+});
 
 test("a join never re-applies a ledger range the pump has already drawn", () => {
   onFakeClock(() => {

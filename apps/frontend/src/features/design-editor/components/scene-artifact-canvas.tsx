@@ -275,6 +275,8 @@ export interface SceneCanvasControls {
    * applied, so nothing may be shown.
    */
   applyStreamedOperations(operations: Operation[]): EngineApplyOutcome | null;
+  /** Opaque identity for replay bookkeeping; never used to mutate the engine. */
+  streamEngineIdentity?(): object | null;
   /**
    * AD4.C-3 / ruling C-12: apply ONE structured edit to the live engine and
    * repaint — the same optimistic half as `applyOperations` above, for the one
@@ -908,6 +910,7 @@ function SceneDocumentCanvas({
       // mirror-up. See the declaration above for why both are absent.
       applyStreamedOperations: (operations) =>
         engine ? engine.applyOperations(operations) : null,
+      streamEngineIdentity: () => engine,
       applyStructuredEdit: (edit) => {
         if (!engine) {
           return null;

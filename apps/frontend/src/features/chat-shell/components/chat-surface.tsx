@@ -225,10 +225,15 @@ export function ChatSurface({
     () => sceneSession.canvasControls.current?.canApply() ?? false,
     [sceneSession.canvasControls],
   );
+  const engineIdentityForScene = useCallback(
+    () => sceneSession.canvasControls.current?.streamEngineIdentity?.() ?? null,
+    [sceneSession.canvasControls],
+  );
   const sceneReveal = useSceneLiveReveal({
     actions: chat.sceneStream.actions,
     apply: applyStreamedToEngine,
     engineAvailable: engineAvailableForScene,
+    engineIdentity: engineIdentityForScene,
     documentId: sceneSession.activeDocumentId,
     locked: sceneLocked,
   });
