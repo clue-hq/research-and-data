@@ -203,10 +203,12 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "finish_design_leg": ("precondition", ("design_leg_runtime_not_configured",)),
     "open_design_leg": ("precondition", ("design_leg_runtime_not_configured",)),
     "open_directive_confirmation_gate": ("precondition", ("gate_turn_not_found",)),
-    # Stage-0 hardening: ICP confirmation resolves the execution-bound project before it accepts a
-    # draft or a presenting turn. This matrix has no governed execution, so trusted scope is the
-    # first fail-closed boundary.
-    "open_icp_confirmation_gate": ("precondition", ("stage0_scope_not_found",)),
+    # ARV2 onboarding O6: the default ICP gate is `@2`, whose subject is a brand-knowledge document
+    # named by `icp_key`. It resolves the presenting turn before anything else, so with a random
+    # turn ref the first fail-closed boundary is the turn lookup — the same one the directive
+    # gate hits. (`@1` resolved the execution-bound Stage-0 scope first; it stays registered,
+    # non-default, for replay.)
+    "open_icp_confirmation_gate": ("precondition", ("gate_turn_not_found",)),
     "open_discovery_configuration_gate": (
         "precondition",
         ("stage0_turn_scope_not_found",),
@@ -245,9 +247,12 @@ _MATRIX: dict[str, tuple[str, object]] = {
         ("arv2_account_research_not_composed",),
     ),
     "override_stage0_readiness": ("precondition", ("readiness_not_found",)),
+    # The matrix composes no durable discovery execution router, and the tool checks for it
+    # before it reads the Stage-0 turn scope, so the router is its first fail-closed boundary
+    # here. (Old lane; ungranted on every model surface since head-of-abm@v44.)
     "start_confirmed_project_run": (
         "precondition",
-        ("stage0_turn_scope_not_found",),
+        ("confirmed_discovery_router_unavailable",),
     ),
     "draft_account_research_directive": (
         "precondition",
@@ -553,7 +558,6 @@ def _bodies() -> dict[str, dict[str, object]]:
         },
         "open_icp_confirmation_gate": {
             "icp_key": "matrix",
-            "icp_version": 1,
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
         "open_product_selection_gate": {
@@ -1337,8 +1341,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Track R (2026-09-09): the design subsystem's `design_set_web_noindex` (ruling R-F1) and
     # the ARV2 lane's three seam-1 envelopes — `launch_arv2_account_research`,
     # `read_arv2_account_research_run` (R2) and `launch_arv2_person_research` (R3) — register
-    # in every process alongside the rest (118 -> 123).
-    assert len(registry.names()) == 123
+    # in every process alongside the rest (118 -> 123). ARV2 onboarding O6 registers the
+    # set-valued product gate `open_product_set_selection_gate` (123 -> 124).
+    assert len(registry.names()) == 124
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1358,7 +1363,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # not derived from either side's arithmetic.
     # The four names Track R and the noindex ruling added each register at @1 only — they are
     # new, so they retain no historical contract (136 -> 140).
-    assert len(registry) == 140
+    # ARV2 onboarding O6 adds the set-valued product gate at @1 and the artifact-ref ICP gate
+    # at @2 beside its replayable @1 (140 -> 142).
+    assert len(registry) == 142
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1382,15 +1389,18 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Track R (2026-09-09): the design subsystem's `design_set_web_noindex` (ruling R-F1) and
     # the ARV2 lane's three seam-1 envelopes — `launch_arv2_account_research`,
     # `read_arv2_account_research_run` (R2) and `launch_arv2_person_research` (R3) — register
-    # in every process alongside the rest (118 -> 123).
-    assert len(registry.names()) == 123
+    # in every process alongside the rest (118 -> 123). ARV2 onboarding O6 registers the
+    # set-valued product gate `open_product_set_selection_gate` (123 -> 124).
+    assert len(registry.names()) == 124
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
     # no name. 136 is measured off the merged tree (see the note at the first count above).
     # The four names Track R and the noindex ruling added each register at @1 only — they are
     # new, so they retain no historical contract (136 -> 140).
-    assert len(registry) == 140
+    # ARV2 onboarding O6 adds the set-valued product gate at @1 and the artifact-ref ICP gate
+    # at @2 beside its replayable @1 (140 -> 142).
+    assert len(registry) == 142
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {
