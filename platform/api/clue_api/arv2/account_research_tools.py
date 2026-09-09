@@ -2036,6 +2036,9 @@ async def _finalize_person_research(
         "same_name_log": [row.model_dump() for row in args.same_name_log],
         "insight_found": insight_found,
         "reports_to_written": finalization.reports_to_written,
+        # The refusal rides the DURABLE receipt, not only the model's answer: "we did not write a
+        # reporting line, and here is why" is exactly what a reviewer of the job row needs.
+        "reports_to_skipped": finalization.reports_to_skipped,
         "gaps": list(args.gaps),
         # The whole job's compliance actions, in order — the finalization's own writes included,
         # because they went through the same pass a moment ago.
@@ -2047,7 +2050,6 @@ async def _finalize_person_research(
         "accepted": True,
         **{key: value for key, value in receipt.items() if key != "proposed_at"},
         "lookalikes_written": finalization.lookalikes_written,
-        "reports_to_skipped": finalization.reports_to_skipped,
         "claim_ids": [
             str(result.claim_id) for _, result in results if isinstance(result, WriteReceipt)
         ],

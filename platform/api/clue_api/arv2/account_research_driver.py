@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
+from langchain_core.tools import StructuredTool
 from pydantic import SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -48,11 +49,14 @@ from clue_api.arv2.account_research_agent import AgentOutcome, run_account_agent
 from clue_api.arv2.account_research_catalog import (
     AccountContext,
     AccountResourceBundle,
+    PersonContext,
     arv2_person_profile_sha256,
+    build_person_system_prompt,
     build_system_prompt,
     load_account_resources,
+    load_person_resources,
 )
-from clue_api.arv2.account_research_claims import JobScope
+from clue_api.arv2.account_research_claims import CURRENT_TITLE_FIELD, JobScope
 from clue_api.arv2.account_research_launch import (
     Arv2LaunchReceipt,
     enqueue_launched_jobs,
@@ -62,6 +66,7 @@ from clue_api.arv2.account_research_tools import (
     ProviderClients,
     ToolRuntime,
     build_account_tools,
+    build_person_tools,
 )
 from clue_api.arv2.ai_ark_client import AiArkClient
 from clue_api.arv2.calls import ProviderCaller
@@ -90,7 +95,7 @@ from clue_fleet import FleetTaskKind, WorkQueue
 from clue_fleet.work_worker import WorkContext, WorkResult
 from clue_obs import get_logger
 from clue_research.claimstore import WorkspaceScope, claims_for
-from clue_research.identity import get_account
+from clue_research.identity import get_account, get_contact
 from clue_storage import ArtifactIntegrityError, StorageBackend, read_verified_artifact
 
 log = get_logger("clue_api.arv2.account_research_driver")
@@ -107,6 +112,12 @@ __all__ = [
 #: agent-registry role, because R2 composes its own loop (facts-agent.md) — there is no profile
 #: version to bump when the model changes, which is exactly what the env-parity rule wants.
 ARV2_ACCOUNT_MODEL_ENV = "ARV2_ACCOUNT_AGENT_MODEL"
+
+#: The env var holding the model id the **person** lane runs on. Its own line rather than the
+#: account's, because the two agents are sized differently — a person job is one page of evidence
+#: and a short ladder — and an operator must be able to move one without moving the other. Left
+#: unset, a person job runs on the account model and the fallback is logged.
+ARV2_PERSON_MODEL_ENV = "ARV2_PERSON_AGENT_MODEL"
 
 #: How many already-established lines the model is shown. The block exists to stop the agent
 #: re-researching what is already recorded; past a page of it, it stops being read and starts
@@ -141,6 +152,53 @@ def format_established(claims: Sequence[Claim]) -> str:
     return "\n".join(lines)
 
 
+def employment_history_lines(value: Any) -> tuple[str, ...]:
+    """The identity lock's employment history: one line per role, ``role @ org (start–end)``.
+
+    The stored ``contact.facet.career_history`` value is the registered ``[{org, role, start,
+    end}]`` — one row per role held, so a promotion is its own row. This renders it for the lock
+    in the person's context head, where it exists to rule out every same-name stranger, so a
+    missing part is **omitted** rather than filled with a placeholder the model might match a page
+    against. A row naming neither a role nor an organisation is dropped: dates alone name nobody.
+    """
+    if not isinstance(value, list):
+        return ()
+    lines: list[str] = []
+    for entry in value:
+        if not isinstance(entry, Mapping):
+            continue
+        role = str(entry.get("role") or "").strip()
+        org = str(entry.get("org") or "").strip()
+        start = str(entry.get("start") or "").strip()
+        end = str(entry.get("end") or "").strip()
+        who = " @ ".join(part for part in (role, org) if part)
+        if not who:
+            continue
+        span = f"({start}–{end})" if start or end else ""
+        lines.append(" ".join(part for part in (who, span) if part))
+    return tuple(lines)
+
+
+def _newest_string(claims: Sequence[Claim], field_key: str) -> str:
+    """The newest live string value for one field, or ``""``.
+
+    ``claims_for`` returns the live claims newest first, so the first match is the current answer.
+    """
+    for claim in claims:
+        value = claim.value_json
+        if claim.field_key == field_key and isinstance(value, str) and value.strip():
+            return value
+    return ""
+
+
+def _newest_value(claims: Sequence[Claim], field_key: str) -> Any:
+    """The newest live value for one field, or ``None``."""
+    for claim in claims:
+        if claim.field_key == field_key:
+            return claim.value_json
+    return None
+
+
 #: What the model is asked to do. The *how* is the profile, the prompt and the three skills; this
 #: is only the job.
 TASK_INSTRUCTION = (
@@ -148,8 +206,25 @@ TASK_INSTRUCTION = (
     "then finalize once."
 )
 
+#: The same job, one entity down. The person agent's *how* is its own profile, prompt and skills.
+PERSON_TASK_INSTRUCTION = (
+    "Research this person in full: run the ladder, write every evidenced claim, run the audit, "
+    "then finalize once."
+)
+
+#: What separates the account's established block from the person's own inside one person job's
+#: context. Both are "already established", and without the line the model reads a fact about the
+#: company as a fact about the person.
+PERSON_CLAIMS_HEADING = "## the person's own claims"
+
 #: The failure code a job records when its pinned profile bytes no longer match the catalog.
 PROFILE_PIN_MISMATCH = "profile_pin_mismatch"
+
+#: The failure code a **person** job records when the contact it names has no row. It is named
+#: rather than swallowed for the same reason the pins are: a person job whose subject vanished is
+#: something a human resolves (the contact was merged away, or the launch raced an erasure), never
+#: something the driver can research around.
+CONTACT_MISSING = "contact_missing"
 
 #: The failure code a job records when its task payload does not describe it.
 INVALID_TASK_PAYLOAD = "invalid_task_payload"
@@ -170,6 +245,15 @@ _MODEL_MAX_RETRIES = 2
 _MODEL_MAX_OUTPUT_TOKENS = 8192
 _MODEL_TEMPERATURE = 0.2
 _MODEL_ROLE = "arv2_account"
+#: The person lane's own gateway role, so ``ARV2_PERSON_AGENT_MODEL_EFFORT`` actually applies to
+#: it (the effort override is read per role at the gateway) instead of the account lane's.
+_PERSON_MODEL_ROLE = "arv2_person"
+
+#: The contact fields the identity lock is read from. The LinkedIn URL is the contact entity's own
+#: column first — it is the strong key the member was resolved on; a claim on the same key is only
+#: consulted as a fallback, for a contact some other lane wrote before this one existed.
+_CAREER_HISTORY_FIELD = "contact.facet.career_history"
+_LINKEDIN_URL_FIELD = "contact.linkedin_url"
 
 
 def _utcnow() -> datetime:
@@ -199,7 +283,12 @@ class _Scope:
 
 @dataclass(frozen=True)
 class _Composition:
-    """Everything one job needs before the first model call, read in one connection."""
+    """Everything one job needs before the first model call, read in one connection.
+
+    The last four fields are what differs between the two subjects — the belt, the model, its
+    gateway role and the one instruction — so the run site drives an account job and a person job
+    through exactly the same code and neither subject is a branch inside the loop.
+    """
 
     job: JobRow
     run: RunRow
@@ -207,6 +296,10 @@ class _Composition:
     scope: JobScope
     catalog: FieldCatalog
     system_prompt: str
+    tools_builder: Callable[[ToolRuntime], list[StructuredTool]]
+    model_id: str
+    model_role: str
+    task_instruction: str
 
 
 class _ProfilePinMismatch(RuntimeError):
@@ -215,6 +308,10 @@ class _ProfilePinMismatch(RuntimeError):
 
 class _InvalidTaskPayload(RuntimeError):
     """The task payload does not describe the job it names."""
+
+
+class _ContactMissing(RuntimeError):
+    """A person job's subject has no contact row."""
 
 
 class Arv2AccountResearchWorkHandler:
@@ -233,9 +330,11 @@ class Arv2AccountResearchWorkHandler:
         model_provider: AgentModelProvider,
         model_id: str,
         writer: LenientClaimWriter,
+        person_model_id: str = "",
         queue: WorkQueue | None = None,
         store: Any = default_store,
         catalog_root: Path | None = None,
+        person_catalog_root: Path | None = None,
         clock: Callable[[], datetime] = _utcnow,
     ) -> None:
         self._settings = settings
@@ -245,6 +344,20 @@ class Arv2AccountResearchWorkHandler:
         self._clients = clients
         self._models = model_provider
         self._model_id = model_id
+        #: The person lane's model. Unset is not a refusal — a committee's people would then never
+        #: be researched over a missing env line — so it falls back to the account model and the
+        #: fallback is said out loud, once, where an operator reads the worker's boot.
+        self._person_model_id = person_model_id.strip() or model_id
+        if not person_model_id.strip():
+            log.info(
+                "arv2.person_model_fallback",
+                env=ARV2_PERSON_MODEL_ENV,
+                model_id=self._model_id,
+                detail=(
+                    f"{ARV2_PERSON_MODEL_ENV} is unset on this worker, so person research jobs "
+                    "run on the account lane's model"
+                ),
+            )
         self._writer = writer
         #: Where the committee step's person jobs are offered, once the settling transaction has
         #: committed. ``None`` composes the handler without a fan-out: the rows are still written
@@ -254,6 +367,7 @@ class Arv2AccountResearchWorkHandler:
         # transition in order without a database.
         self._store = store
         self._catalog_root = catalog_root
+        self._person_catalog_root = person_catalog_root
         self._clock = clock
         self._db_lock = asyncio.Lock()
         self._jobs = asyncio.Semaphore(settings.arv2_account_max_parallel_jobs)
@@ -421,23 +535,23 @@ class Arv2AccountResearchWorkHandler:
             now=self._clock,
         )
         model = self._models.build(
-            model_id=self._model_id,
+            model_id=composition.model_id,
             timeout_s=self._settings.gateway_timeout_s,
             max_retries=_MODEL_MAX_RETRIES,
             max_output_tokens=_MODEL_MAX_OUTPUT_TOKENS,
             temperature=_MODEL_TEMPERATURE,
-            role=_MODEL_ROLE,
+            role=composition.model_role,
         )
         async with self._jobs:
             outcome = await run_account_agent(
                 model=model,
                 system_prompt=composition.system_prompt,
-                tools=build_account_tools(runtime),
+                tools=composition.tools_builder(runtime),
                 runtime=runtime,
                 max_model_rounds=self._settings.arv2_account_max_model_rounds,
                 max_tool_calls_per_round=self._settings.arv2_account_max_tool_calls_per_round,
                 max_runtime_s=float(self._settings.arv2_account_max_runtime_s),
-                task_instruction=TASK_INSTRUCTION,
+                task_instruction=composition.task_instruction,
                 # The row's own attempt counter, incremented by ``begin_job`` on every claim: it
                 # keeps a re-driven job's model-spend rows distinct from its first attempt's.
                 attempt=job.attempt,
@@ -445,7 +559,18 @@ class Arv2AccountResearchWorkHandler:
         return await self._settle(composition, runtime, outcome)
 
     async def _compose(self, conn: AsyncConnection, job: JobRow) -> _Composition:
-        """Everything the agent runs on, read under the launch's pins."""
+        """Everything the agent runs on, read under the pins — dispatched on the job's subject.
+
+        The two subjects share every read that is about the *run* (the pinned ICP, the persona
+        map) and differ in what they are about: an account job composes the account, a person job
+        composes one confirmed committee member of it.
+        """
+        if job.subject_type == "person":
+            return await self._compose_person(conn, job)
+        return await self._compose_account(conn, job)
+
+    async def _compose_account(self, conn: AsyncConnection, job: JobRow) -> _Composition:
+        """Everything the account agent runs on, read under the launch's pins."""
         run = await self._store.read_run(conn, run_id=job.run_id)
         if run is None:
             raise RuntimeError(f"run row {job.run_id} is missing for job {job.job_id}")
@@ -510,6 +635,126 @@ class Arv2AccountResearchWorkHandler:
             scope=scope,
             catalog=catalog,
             system_prompt=build_system_prompt(bundle, context),
+            tools_builder=build_account_tools,
+            model_id=self._model_id,
+            model_role=_MODEL_ROLE,
+            task_instruction=TASK_INSTRUCTION,
+        )
+
+    async def _compose_person(self, conn: AsyncConnection, job: JobRow) -> _Composition:
+        """Everything one committee member's agent runs on, read under **the job's** own pins.
+
+        A person job is queued by the account job that confirmed the member, long after the launch
+        the run row records — so the profile it is checked against is the one stamped on the job,
+        not the run's account profile. Everything else mirrors the account composition: the same
+        pinned ICP, the same persona map, and an already-established block that is the account's
+        (the person works there) followed by the person's own claims under a heading, so a company
+        fact is never read as a fact about them.
+        """
+        run = await self._store.read_run(conn, run_id=job.run_id)
+        if run is None:
+            raise RuntimeError(f"run row {job.run_id} is missing for job {job.job_id}")
+        account = await get_account(conn, EntityId(job.account_entity_id))
+        if account is None:
+            raise RuntimeError(f"account row {job.account_entity_id} is missing")
+        contact = (
+            await get_contact(conn, EntityId(job.subject_entity_id))
+            if job.subject_entity_id is not None
+            else None
+        )
+        if contact is None:
+            raise _ContactMissing(
+                f"person job {job.job_id} names contact {job.subject_entity_id}, "
+                "which has no row in this workspace"
+            )
+        contact_id = EntityId(contact.id)
+
+        workspace = WorkspaceScope.for_workspace(run.workspace_id)
+        account_claims = await claims_for(conn, EntityId(job.account_entity_id), scope=workspace)
+        contact_claims = await claims_for(conn, contact_id, scope=workspace)
+        established = "\n".join(
+            (
+                format_established(account_claims),
+                PERSON_CLAIMS_HEADING,
+                format_established(contact_claims),
+            )
+        ).strip("\n")
+
+        icp, icp_gate_keys = await self._pinned_icp(conn, run)
+        persona = await self._persona(conn, run)
+        catalog = await self._store.read_person_catalog(conn)
+
+        bundle = load_person_resources(self._person_catalog_root)
+        if bundle.profile.sha256 != job.profile_sha256:
+            raise _ProfilePinMismatch(
+                "person profile digest differs from the job pin — relaunch: "
+                f"catalog {bundle.profile.sha256}, job {job.profile_sha256}"
+            )
+
+        today = self._clock().date()
+        person_name = contact.full_name or ""
+        person_title = _newest_string(contact_claims, CURRENT_TITLE_FIELD)
+        person_linkedin_url = contact.linkedin_url or _newest_string(
+            contact_claims, _LINKEDIN_URL_FIELD
+        )
+        history = employment_history_lines(_newest_value(contact_claims, _CAREER_HISTORY_FIELD))
+        scope = JobScope(
+            workspace_id=run.workspace_id,
+            project_id=run.project_id,
+            project_run_id=run.project_run_id,
+            run_id=run.run_id,
+            job_id=job.job_id,
+            account_id=EntityId(job.account_entity_id),
+            account_name=account.canonical_name,
+            account_domain=account.primary_domain or "",
+            icp_markdown=icp,
+            persona_markdown=persona,
+            already_established=established,
+            effort=run.effort,
+            committee_cap=run.committee_cap,
+            today=today,
+            icp_gate_keys=icp_gate_keys,
+            subject_kind="person",
+            contact_id=contact_id,
+            person_name=person_name,
+            person_title=person_title,
+            person_linkedin_url=person_linkedin_url,
+            employment_history=history,
+        )
+        context = PersonContext(
+            person_name=person_name,
+            person_title=person_title,
+            person_linkedin_url=person_linkedin_url,
+            employment_history=history,
+            account_name=scope.account_name,
+            account_domain=scope.account_domain,
+            contact_id=str(contact_id),
+            account_id=str(scope.account_id),
+            workspace_id=scope.workspace_id,
+            today=today,
+            icp_markdown=icp,
+            persona_markdown=persona,
+            catalog_menu=catalog_menu_text(catalog),
+            already_established=established,
+            directive_text=run.directive_text,
+            media_max_items=self._settings.arv2_person_media_max_items,
+            stop_policy={
+                "max_model_rounds": self._settings.arv2_account_max_model_rounds,
+                "max_tool_calls_per_round": (self._settings.arv2_account_max_tool_calls_per_round),
+                "max_runtime_s": self._settings.arv2_account_max_runtime_s,
+            },
+        )
+        return _Composition(
+            job=job,
+            run=run,
+            bundle=bundle,
+            scope=scope,
+            catalog=catalog,
+            system_prompt=build_person_system_prompt(bundle, context),
+            tools_builder=build_person_tools,
+            model_id=self._person_model_id,
+            model_role=_PERSON_MODEL_ROLE,
+            task_instruction=PERSON_TASK_INSTRUCTION,
         )
 
     async def _pinned_icp(self, conn: AsyncConnection, run: RunRow) -> tuple[str, tuple[str, ...]]:
@@ -608,14 +853,17 @@ class Arv2AccountResearchWorkHandler:
             )
             spend = await self._store.job_spend(conn, job_id=composition.job.job_id)
             link_audit = await self._store.job_link_audit(conn, job_id=composition.job.job_id)
-            finalization = _receipt(
+            build_receipt = (
+                _person_receipt if composition.job.subject_type == "person" else _receipt
+            )
+            finalization = build_receipt(
                 outcome=outcome,
                 runtime=runtime,
                 bundle=composition.bundle,
                 catalog=composition.catalog,
                 claims=claims,
                 link_audit=link_audit,
-                model_id=self._model_id,
+                model_id=composition.model_id,
             )
             status = "needs_review" if outcome.reason == "model_error" else "completed"
             await self._store.finish_job(
@@ -723,14 +971,19 @@ class Arv2AccountResearchWorkHandler:
         outcome: AgentOutcome,
         claims: int,
     ) -> None:
-        """One feed line per job, authored by Clue — what happened to this account, in one row."""
+        """One feed line per job, authored by Clue — what happened to this account, in one row.
+
+        A person job's line hangs on the same account (that is where the feed lives) and says what
+        it actually was: a person job that wrote three claims did not research the account.
+        """
+        subject = "Person" if composition.job.subject_type == "person" else "Account"
         await conn.execute(
             _ACTIVITY_SQL,
             {
                 "workspace_id": composition.run.workspace_id,
                 "account_id": composition.job.account_entity_id,
-                "text": f"Account research {outcome.reason}: {claims} claims",
-                "action": "account research",
+                "text": f"{subject} research {outcome.reason}: {claims} claims",
+                "action": f"{subject.lower()} research",
                 "occurred_at": self._clock(),
                 "project_id": composition.run.project_id,
             },
@@ -754,6 +1007,8 @@ def _failure_code(error: BaseException) -> str:
         return PROFILE_PIN_MISMATCH
     if isinstance(error, _InvalidTaskPayload):
         return INVALID_TASK_PAYLOAD
+    if isinstance(error, _ContactMissing):
+        return CONTACT_MISSING
     return type(error).__name__
 
 
@@ -779,6 +1034,86 @@ def _receipt(
     would leave the reader to guess at one.
     """
     finalization = runtime.finalization or {}
+    return {
+        "reason": outcome.reason,
+        "summary": finalization.get("summary", ""),
+        "fit_verdicts": finalization.get("fit_verdicts", []),
+        "gaps": finalization.get("gaps", []),
+        **_written_down(
+            outcome=outcome,
+            runtime=runtime,
+            bundle=bundle,
+            catalog=catalog,
+            claims=claims,
+            link_audit=link_audit,
+            model_id=model_id,
+        ),
+    }
+
+
+def _person_receipt(
+    *,
+    outcome: AgentOutcome,
+    runtime: ToolRuntime,
+    bundle: AccountResourceBundle,
+    catalog: FieldCatalog,
+    claims: Sequence[Claim],
+    link_audit: Mapping[str, int],
+    model_id: str,
+) -> dict[str, Any]:
+    """The durable account of one **person** job, in the same two halves the account receipt has.
+
+    The first half is the finalization the agent proposed, carried verbatim — the openers it wrote
+    and the ones the code dropped for want of a quote, the same-name people it met and discarded,
+    the compliance actions the coded pass took. Deliberately absent: fit verdicts and committee
+    candidates. Constitution rule 11 gives both to the account job, and a person receipt carrying
+    them would be one employee's material re-deciding the account's ICP.
+
+    The second half is the same rows-derived half the account receipt lands, so one reviewer reads
+    both kinds of job the same way.
+    """
+    finalization = runtime.finalization or {}
+    return {
+        "reason": outcome.reason,
+        "summary": finalization.get("summary", ""),
+        "openers_written": finalization.get("openers_written", 0),
+        "openers_dropped": finalization.get("openers_dropped", []),
+        "hooks_written": finalization.get("hooks_written", 0),
+        "not_found": finalization.get("not_found", []),
+        "same_name_log": finalization.get("same_name_log", []),
+        "insight_found": finalization.get("insight_found", False),
+        "reports_to_written": finalization.get("reports_to_written", False),
+        "reports_to_skipped": finalization.get("reports_to_skipped"),
+        "compliance_log": finalization.get("compliance_log", []),
+        "gaps": finalization.get("gaps", []),
+        **_written_down(
+            outcome=outcome,
+            runtime=runtime,
+            bundle=bundle,
+            catalog=catalog,
+            claims=claims,
+            link_audit=link_audit,
+            model_id=model_id,
+        ),
+    }
+
+
+def _written_down(
+    *,
+    outcome: AgentOutcome,
+    runtime: ToolRuntime,
+    bundle: AccountResourceBundle,
+    catalog: FieldCatalog,
+    claims: Sequence[Claim],
+    link_audit: Mapping[str, int],
+    model_id: str,
+) -> dict[str, Any]:
+    """The half of a receipt that is read off the rows rather than off what the model said.
+
+    Shared by both subjects on purpose: what a job wrote, what its links audited to, which
+    providers latched off, and exactly which bytes and model it ran on are the same questions
+    whether the subject was a company or a person.
+    """
     by_field: dict[str, int] = {}
     for claim in claims:
         by_field[claim.field_key] = by_field.get(claim.field_key, 0) + 1
@@ -792,10 +1127,6 @@ def _receipt(
         }
     )
     return {
-        "reason": outcome.reason,
-        "summary": finalization.get("summary", ""),
-        "fit_verdicts": finalization.get("fit_verdicts", []),
-        "gaps": finalization.get("gaps", []),
         "claims_written": len(claims),
         "by_field": dict(sorted(by_field.items())),
         "proposed_fields": proposed,
@@ -972,6 +1303,9 @@ def build_arv2_account_research_handler(
         ),
         model_provider=model_provider,
         model_id=model_id,
+        # Its own env line, and NOT a required credential: a worker with no person model still
+        # drains person jobs, on the account lane's model, and the handler logs the fallback.
+        person_model_id=os.environ.get(ARV2_PERSON_MODEL_ENV, "").strip(),
         writer=LenientClaimWriter(lenient=settings.claim_write_lenient),
         # The worker's own queue, so a committee resolved on this worker is offered through exactly
         # the machinery that will drain it. Composing without one still writes the person job rows
