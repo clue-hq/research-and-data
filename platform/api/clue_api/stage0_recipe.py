@@ -126,8 +126,9 @@ class Stage0StepPinProvider:
         execution with no project is pinned explicitly absent, so the tool's own preconditions
         refuse it rather than the plan failing to validate.
 
-        Used by the ARV2 launch tools (``launch_arv2_account_research@1`` /
-        ``read_arv2_account_research_run@1``) — wired in Task 5 of the O6 lane.
+        Used by the ARV2 lane's tools (``launch_arv2_account_research@1`` /
+        ``launch_arv2_person_research@1`` / ``read_arv2_account_research_run@1``) — wired in
+        Task 5 of the O6 lane, and extended to the person launch when v44 granted it.
         """
 
         absent = PinRequest(
@@ -431,13 +432,19 @@ class Stage0StepPinProvider:
         # Stage-0 scope path above, so the version is part of the condition.
         if step.tool_name == "open_icp_confirmation_gate" and step.tool_version == "2":
             requested.append(await self._presenting_turn_project_pin(body, ctx=ctx))
-        # --- ARV2 onboarding O6: the new-lane launch/read pair -----------------------------------
-        # Neither tool names a project in its body (the launch is authorized by its ICP artifact
-        # digest and product-selection version; the read names only a run id) and neither carries a
-        # presenting-turn ref, so the execution row is the trusted coordinate for their ``project``
-        # pin. An execution with no project pins explicitly absent and each tool's own
+        # --- ARV2 onboarding O6: the new-lane launches and their read --------------------------
+        # None of the three carries a presenting-turn ref, so the execution row is the trusted
+        # coordinate for their ``project`` pin. The account launch is authorized by its ICP
+        # artifact digest and product-selection version and the read names only a run id; the
+        # person launch names a project in its body, but a body field is model-authored and the
+        # execution's own project is not, so it is pinned from the same trusted coordinate as its
+        # siblings. An execution with no project pins explicitly absent and each tool's own
         # preconditions refuse it, rather than the plan failing to validate.
-        if step.tool_name in {"launch_arv2_account_research", "read_arv2_account_research_run"}:
+        if step.tool_name in {
+            "launch_arv2_account_research",
+            "launch_arv2_person_research",
+            "read_arv2_account_research_run",
+        }:
             requested.append(await self._execution_project_pin(ctx))
 
         if step.tool_name in {

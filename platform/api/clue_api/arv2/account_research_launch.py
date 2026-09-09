@@ -260,6 +260,17 @@ async def launch_arv2_account_research(
             "lane_disabled", "CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED is false on this deployment"
         )
 
+    # The project comes first, exactly as it does in the person launch. Every check after this one
+    # is a question *about* a project — which ICP it pinned, which product set it confirmed — so a
+    # launch naming a project that does not exist must be told THAT, rather than "you have pinned
+    # no ICP", which is true of a non-existent project and useless to the human reading it.
+    project = await get_project(conn, request.project_id)
+    if project is None or project.workspace_id != request.workspace_id:
+        raise Arv2LaunchRefused(
+            "project_not_found",
+            f"project {request.project_id!r} has no row in workspace {request.workspace_id!r}, "
+            "so there is no project run to research under",
+        )
     await _check_accounts(conn, request)
     icp = await _pinned_icp(conn, storage, request)
     await _check_product_selection(conn, request)
@@ -277,10 +288,10 @@ async def launch_arv2_account_research(
         icp_version=icp.icp_version,
         phase=ProjectPhase.DEEP,
     )
-    # ``ensure_project_run``'s INSERT selects the brand/workspace FROM ``project``, so an unknown
-    # project inserts nothing at all and says nothing about it. Read the row back rather than
-    # trusting the write: a launch under a project that does not exist would strand every job.
-    if await get_project_run(conn, ProjectRunId(project_run_id)) is None:
+    if await get_project_run(conn, ProjectRunId(project_run_id)) is None:  # pragma: no cover
+        # Guarded by the project read above; kept because ``ensure_project_run``'s INSERT selects
+        # the brand/workspace FROM ``project``, so an unknown project inserts nothing at all and
+        # says nothing about it — and a run with no project run would strand every job under it.
         raise Arv2LaunchRefused(
             "project_not_found",
             f"project {request.project_id!r} has no row in workspace {request.workspace_id!r}, "
@@ -1272,7 +1283,9 @@ class LaunchArv2PersonResearchTool(Tool):
         safe_display_fields=("project_id", "contact_entity_ids", "persona")
     )
     #: No Stage-0 pin, for the same reason the account launch has none (standing rule item 5).
-    pin_requirements = ()
+    #: ``project`` is the spine row the execution is bound to — a replay identity, not a Stage-0
+    #: pin — and it is what the recipe-safety audit requires of every standing address.
+    pin_requirements = ("project",)
 
     def __init__(self, service: Arv2LaunchService | None) -> None:
         self._service = service

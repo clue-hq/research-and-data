@@ -530,13 +530,12 @@ def test_launch_refuses_lane_disabled_unknown_account_unconfirmed_icp_and_digest
                 )
             assert unpinned_refusal.value.code == "project_icp_not_pinned"
 
+            # A project that does not exist is told THAT, not that it has pinned no ICP: the
+            # project-existence read runs before the pin read, so the first refusal a human sees
+            # names the thing that is actually wrong.
             with pytest.raises(Arv2LaunchRefused) as project:
                 await _launch(conn, storage, _request(fixture, project_id="prj_nope"), queue)
-            assert project.value.code in {
-                "project_icp_not_pinned",
-                "project_not_found",
-                "product_selection_version_unknown",
-            }
+            assert project.value.code == "project_not_found"
 
             # Not one refusal wrote a row or bought a task.
             assert queue.calls == []
