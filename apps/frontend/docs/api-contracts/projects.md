@@ -85,6 +85,41 @@ use the same-origin authenticated BFF and validate the corresponding wire
 schema. HTTP mode never falls back to fixtures after a refusal, parse error, or
 network failure. Presentation components do not call the API directly.
 
+### Product-set selection — as built (2026-09-09, O6)
+
+The pointer below is now implemented in the frontend model and card. What the client actually
+speaks:
+
+- **New gate kind `product_set_selection`.** It joins `directive_confirmation`,
+  `icp_confirmation` and `product_selection` in `SUPPORTED_GATE_KINDS`; its title is "Choose this
+  project's products". An unsupported kind still renders the existing "not available here yet"
+  notice, so an unknown kind can never be answered.
+- **Snapshot members the card reads** (`subject_snapshot`): `brand_id`, `catalog_document_id`
+  (nullable), `catalog_version`, `products[]`, `omitted_count`, `current_selection`
+  (`{selection_version, product_ids}` or null) and `suggested_product_ids[]`. Each product carries
+  `product_id`, `name`, `short_description` (`""` when the catalog does not describe it),
+  `aliases[]`, `status`, plus the nullable `resolution_state`, `reconcile_confidence`,
+  `reconcile_reason`, `offering_kind`, `family`, `lifecycle` and `official_url`. The boxes are
+  pre-checked from `current_selection.product_ids` when the project already has a set, else from
+  `suggested_product_ids`; an `archived` product is never pre-checked and cannot be checked.
+- **Answer transport.** The turn body's `gate_response` carries `selected_product_ids: string[]`
+  (≥ 1, unique, each a non-archived product of the immutable snapshot) and only with
+  `decision: "approved"`. It is mutually exclusive with `revision_request` and with the historical
+  `selected_product_id`. The backend refuses `revision_request` on this kind (422
+  `GATE_REVISION_REQUEST_UNEXPECTED`) and refuses `selected_product_id` (422), so the card offers
+  no revision textarea for it. The durable answer records
+  `decision_payload.selected_option_refs[]` with `selected_option_ref: null`, and the answered
+  card reads its receipt from there.
+- **The subject ref** is D10's `brand-product-catalog:{brand_id}:{catalog_document_id or 'none'}`
+  with the catalog document's version (or 1) as the revision — no Client-KB version appears in it.
+- **The `@2` ICP gate is unchanged for the client.** Its kind is still `icp_confirmation` and its
+  `subject_snapshot` still carries `icp_key`, so the existing ICP card, its revision textarea and
+  its summary render it without a single frontend change; what moved is the backend's subject —
+  `subject_kind: "brand_knowledge_document"`, the ICP knowledge document rather than the old
+  Stage-0 spec row.
+
+Full wire shapes and rendering rules: `docs/specs/ARV2-PRODUCT-CATALOG-CONTRACT.md` §6.3, §7.
+
 ### Product-set selection amendment (2026-09-07) — pointer
 
 Founder ruling P1 (Aryan, 2026-09-07): **a project targets a set of products, not one.** For new

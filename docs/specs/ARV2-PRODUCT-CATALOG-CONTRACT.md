@@ -286,8 +286,13 @@ New gate kind `product_set_selection` on the existing `agent_gate` substrate. Th
 
 - The candidate-membership check is the same database-trigger pattern the single-product kind
   uses (`064ad0f43519`), applied per array element.
-- Subject ref: `client-product-catalog:{client_entity_id}:v{company_client_kb_version}`;
-  subject snapshot: §7.1. Digest, addressee, permitted decisions, privacy bindings: unchanged
+- Subject ref (ruling D10, 2026-09-09): `brand-product-catalog:{brand_id}:{catalog_document_id}`,
+  where a brand with no catalog document yet names that absence literally —
+  `brand-product-catalog:{brand_id}:none`. The subject revision is the catalog document's own
+  version, or `1` when there is no document (the frontend refuses a revision below 1, and a brand
+  whose product rows exist without a catalog document is still a legitimate subject). The gate is
+  therefore anchored on the brand's catalog as it currently stands, never on a Client-KB version.
+  Subject snapshot: §7.1. Digest, addressee, permitted decisions, privacy bindings: unchanged
   from the combined human-gate amendment.
 - The tool that opens it is a new version of `open_product_selection_gate` pointed at the new
   kind. **It derives every candidate from the spine `product` rows for the workspace brand plus
@@ -341,8 +346,9 @@ All of the above are in the R0 quarantine ledger. Their deletion rides Phase 6.
 
 ```json
 {
-  "client_entity_id": "…",
-  "company_client_kb_version": 3,
+  "brand_id": "brd_…",
+  "catalog_document_id": "…",
+  "catalog_version": 3,
   "products": [
     {
       "product_id": "prd_…",
@@ -350,6 +356,9 @@ All of the above are in the R0 quarantine ledger. Their deletion rides Phase 6.
       "short_description": "Ambient clinical documentation with automated coding suggestions.",
       "aliases": [],
       "status": "active",
+      "resolution_state": "model_matched",
+      "reconcile_confidence": "high",
+      "reconcile_reason": null,
       "offering_kind": "product",
       "family": "Aura",
       "lifecycle": "active",
@@ -357,13 +366,27 @@ All of the above are in the R0 quarantine ledger. Their deletion rides Phase 6.
     }
   ],
   "omitted_count": 0,
-  "current_selection": { "selection_version": 1, "product_ids": ["prd_…"] }
+  "current_selection": { "selection_version": 1, "product_ids": ["prd_…"] },
+  "suggested_product_ids": ["prd_…"]
 }
 ```
 
-`current_selection` is null on a project with no set yet; on a re-selection it pre-checks the
-current members. `offering_kind`, `family`, `lifecycle`, `official_url` are optional; a reader
-treats a missing member as absent. Ids are server-minted.
+- `brand_id`, `catalog_document_id` and `catalog_version` identify the subject the digest was
+  taken over. `catalog_document_id` is null and `catalog_version` is `1` for a brand whose product
+  rows exist without a catalog document yet — the same absence the D10 subject ref names as
+  `none`.
+- `short_description` is the empty string `""`, never a fabricated sentence, for a product row the
+  catalog does not describe.
+- `resolution_state`, `reconcile_confidence` and `reconcile_reason` are the catalog lineage flags
+  (§6.2), null when the lineage says nothing. A candidate whose `resolution_state` is
+  `model_unsure` is the one the card flags as a possible duplicate, with `reconcile_reason` as the
+  flag's explanatory text; every other state renders no flag at all.
+- `current_selection` is null on a project with no set yet; on a re-selection it pre-checks the
+  current members. `suggested_product_ids` is the agent's suggestion and is what the card
+  pre-checks **only when there is no `current_selection`** — a saved human selection always wins
+  over a suggestion. Both are advisory: neither confines what may be chosen.
+- `offering_kind`, `family`, `lifecycle`, `official_url` are optional; a reader treats a missing
+  member as absent. Ids are server-minted.
 
 ### 7.2 Gate answer (`gate_response`)
 
@@ -384,7 +407,10 @@ mutually exclusive.
 ### 7.3 Rendering rules
 
 - Checkboxes, grouped by `offering_kind` in the fixed order product → platform → integration →
-  partner_program → service; each group has a plain-language heading.
+  partner_program → service → other; each group has a plain-language heading ("Products",
+  "Platforms", "Integrations", "Partner programs", "Services", "Other"). A candidate whose
+  `offering_kind` is missing — or is a kind this list does not name — falls into "Other" rather
+  than disappearing from the card.
 - `family` as a secondary label; `lifecycle` as a small label when not `active`; `official_url`
   as a source chip resolved server-side with no dates (ruling R1).
 - Primary action "Use these products", disabled until ≥ 1 is checked. The receipt lists every
@@ -392,9 +418,13 @@ mutually exclusive.
 - A snapshot with zero candidates renders the existing recovery notice.
 - `archived` products are shown unchecked and not selectable.
 
-The Zod model gains `offeringKind`, `family`, `lifecycle`, `officialUrl` as optional members of
-`ProductSelectionOption`, a `currentSelection` member, and a set-valued decision variant. The
-single-product variant stays for historical gate replay.
+A candidate flagged `model_unsure` renders a "Possible duplicate" chip carrying
+`reconcile_reason` as its title; the human decides whether it is really a distinct offering.
+
+The Zod model gains `offeringKind`, `family`, `lifecycle`, `officialUrl`, `possibleDuplicate` and
+`duplicateReason` as members of `ProductSelectionOption`, a `productSet` member on the card model
+(options, the pre-checked ids, the current selection version, and the answered ids), and a
+set-valued decision variant. The single-product variant stays for historical gate replay.
 
 ## 8. Non-goals and open items
 
