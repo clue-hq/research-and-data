@@ -25,6 +25,7 @@ from clue_api.fleet_main import (
     _start_orphan_sweep,
 )
 from clue_api.fleet_wiring import (
+    _SerializedHandler,
     build_account_lock_factory,
     build_fleet_deep_scheduler,
     build_fleet_run_driver,
@@ -46,9 +47,11 @@ from clue_core import (
 )
 from clue_fleet import (
     FleetTaskKind,
+    LeaseGeneration,
     ProjectRunWorker,
     QueueBackedScheduler,
     WorkContext,
+    WorkId,
     WorkResult,
     default_tier_priority,
     enqueue_drive,
@@ -155,6 +158,108 @@ def test_build_fleet_worker_threads_every_fleet_setting() -> None:
     assert worker._lease_ttl == timedelta(seconds=40.0)
     assert worker._heartbeat_interval == 5.0
     assert worker._task_stale_after == timedelta(seconds=80.0)
+
+
+def test_multi_work_worker_threads_the_per_worker_concurrency_setting() -> None:
+    """Founder ruling 2026-09-10: one process drives ``CLUE_FLEET_WORKER_CONCURRENCY`` tasks."""
+    graph = _CompositionHandler(FleetTaskKind.EXECUTE_GRAPH)
+    wide = build_multi_work_worker(
+        _settings(fleet_worker_concurrency=6),
+        driver=build_fleet_run_driver(),
+        graph_handler=graph,
+        worker_id="wide",
+    )
+    assert wide.concurrency == 6
+
+    default = build_multi_work_worker(
+        _settings(),
+        driver=build_fleet_run_driver(),
+        graph_handler=graph,
+        worker_id="narrow",
+    )
+    assert default.concurrency == 1
+    assert Settings.model_fields["fleet_worker_concurrency"].default == 1
+
+
+def test_the_project_run_drive_is_the_one_serialised_kind() -> None:
+    """Handler-safety audit (task 9d): ``drive_run`` is the one handler that is NOT safe under
+    concurrent ``handle()`` calls on one instance, so it gets a per-handler lock.
+
+    Two independent reasons, both established by reading the code:
+    ``ComposingRunDriver.composed`` keeps an LRU registry cache with no lock and an ``await``
+    between the miss and the fill (``run_composition.py``), and ``ProjectRun`` documents
+    single-driver-per-run as a precondition it does not enforce — which the fleet cannot fence
+    in-process either, because every slot claims under the SAME ``worker_id`` and
+    ``work_lease``'s acquire re-issues a live lease at the same generation to its own worker.
+    Serialising the kind restores exactly the invariant both were written under.
+    """
+    worker = build_multi_work_worker(
+        _settings(fleet_worker_concurrency=4),
+        driver=build_fleet_run_driver(),
+        graph_handler=_CompositionHandler(FleetTaskKind.EXECUTE_GRAPH),
+        agent_turn_handler=_CompositionHandler(FleetTaskKind.AGENT_TURN),
+        onboarding_handler=_CompositionHandler(FleetTaskKind.ONBOARDING_RUN),
+    )
+    drive = worker._handlers[FleetTaskKind.DRIVE_RUN]
+    assert isinstance(drive, _SerializedHandler)
+    assert drive.kind is FleetTaskKind.DRIVE_RUN
+    # Serialising is per kind, never per worker: every audited-safe kind still runs in parallel.
+    for kind in (
+        FleetTaskKind.EXECUTE_GRAPH,
+        FleetTaskKind.AGENT_TURN,
+        FleetTaskKind.ONBOARDING_RUN,
+    ):
+        assert not isinstance(worker._handlers[kind], _SerializedHandler)
+
+
+def test_a_serialised_handler_runs_one_handle_at_a_time_and_forwards_its_kind() -> None:
+    class _Overlapping:
+        kind = FleetTaskKind.DRIVE_RUN
+
+        def __init__(self) -> None:
+            self.in_flight = 0
+            self.peak = 0
+            self.release = asyncio.Event()
+            self.entered = asyncio.Event()
+
+        async def handle(self, context: WorkContext) -> WorkResult:
+            self.in_flight += 1
+            self.peak = max(self.peak, self.in_flight)
+            self.entered.set()
+            try:
+                await self.release.wait()
+            finally:
+                self.in_flight -= 1
+            return WorkResult(outcome="done", references={})
+
+    async def scenario() -> None:
+        inner = _Overlapping()
+        serialised = _SerializedHandler(inner)
+        assert serialised.kind is FleetTaskKind.DRIVE_RUN
+        # An inner handler that declares no R3-B capabilities still claims its whole kind.
+        assert serialised.task_capabilities == ()
+
+        context = WorkContext(
+            task_id=uuid4(),
+            work_id=WorkId(uuid4()),
+            worker_id="w",
+            lease_generation=LeaseGeneration(1),
+            payload={},
+            stop_requested=asyncio.Event(),
+            lease_lost=asyncio.Event(),
+        )
+        first = asyncio.create_task(serialised.handle(context))
+        second = asyncio.create_task(serialised.handle(context))
+        await asyncio.wait_for(inner.entered.wait(), timeout=2.0)
+        for _ in range(100):
+            await asyncio.sleep(0)
+        assert inner.peak == 1  # RED without the lock: the second call enters and peak is 2
+
+        inner.release.set()
+        await asyncio.wait_for(asyncio.gather(first, second), timeout=2.0)
+        assert inner.peak == 1
+
+    asyncio.run(scenario())
 
 
 class _CompositionHandler:

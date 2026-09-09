@@ -173,6 +173,13 @@ class Settings(BaseSettings):
     # --- fleet worker (PB-B1; append-only per the Phase B treaty §3.2) ----------------------
     # How often an idle worker polls the task queue. Env: ``CLUE_FLEET_POLL_INTERVAL_S``.
     fleet_poll_interval_s: float = 1.0
+    # How many tasks ONE worker process drives at once (founder ruling 2026-09-10). The worker
+    # runs this many independent drain loops over the same queue; each claims on its own (the
+    # claim is already ``FOR UPDATE SKIP LOCKED``, so two loops never get the same row) and each
+    # task keeps its own lease and heartbeat. Several worker processes still run against the same
+    # queue — this knob is per process. 1 is the single loop the fleet shipped with.
+    # Env: ``CLUE_FLEET_WORKER_CONCURRENCY``.
+    fleet_worker_concurrency: int = Field(default=1, ge=1)
     # Per-run driver-lease TTL: a killed driver's run is re-drivable after this long. Must be
     # comfortably larger than the heartbeat interval. Env: ``CLUE_FLEET_LEASE_TTL_S``.
     fleet_lease_ttl_s: float = 30.0
