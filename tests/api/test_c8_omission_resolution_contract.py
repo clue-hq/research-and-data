@@ -21,41 +21,50 @@ from clue_api.agent_registry_wiring import (
     STAGE0_CONVERSATION_TRIAL_SURFACE,
     build_agent_profile_registry,
 )
-from clue_api.client_knowledge_tools import CLIENT_KNOWLEDGE_CURSOR_KIND
 from clue_api.recipe_wiring import load_system_recipe_definitions
-from clue_api.stage0_inspection_tools import (
-    READINESS_CURSOR_KIND,
-    STATEMENT_CURSOR_KINDS,
-)
+from clue_api.stage0_inspection_tools import STATEMENT_CURSOR_KINDS
 from clue_api.stage0_trial import STAGE0_RECIPE_VERSION
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_execution import GateNode
 from clue_projections import Stage0CardOmissionKind
 from tests.api.conftest import hermetic_flag_env
 
-#: The card's cursor kind for each omission kind that carries one — mirrored from the compiler's
-#: own ``encode_card_cursor({"kind": …})`` calls (``clue_projections.stage0._omissions``).
+#: The card's cursor kind for each omission kind that carries one AND still has a resolver —
+#: mirrored from the compiler's own ``encode_card_cursor({"kind": …})`` calls
+#: (``clue_projections.stage0._omissions``).
 _CURSOR_KIND: dict[Stage0CardOmissionKind, str] = {
     Stage0CardOmissionKind.STATEMENTS_OVER_CAP: "statements",
     Stage0CardOmissionKind.EXCLUDED_STATEMENT_EVIDENCE_MISSING: "excluded_statement_evidence",
-    Stage0CardOmissionKind.READINESS_HISTORY: "readiness_history",
-    Stage0CardOmissionKind.CLIENT_KNOWLEDGE_OVER_CAP: "client_knowledge",
 }
 
 #: Cursor kind → the tool whose contract accepts it, read off the tools themselves rather than
 #: restated here, so a tool that narrows what it accepts fails this test instead of drifting.
-_ACCEPTED_BY: dict[str, str] = {
-    **dict.fromkeys(STATEMENT_CURSOR_KINDS, "inspect_statement_history"),
-    READINESS_CURSOR_KIND: "inspect_readiness_history",
-    CLIENT_KNOWLEDGE_CURSOR_KIND: "list_client_knowledge",
-}
+_ACCEPTED_BY: dict[str, str] = dict.fromkeys(STATEMENT_CURSOR_KINDS, "inspect_statement_history")
 
 #: Kinds with no resolving tool, each with the reason it is allowed to have none. An entry here is
 #: a *decision*, not an oversight — which is the whole point of making the walk exhaustive.
+#:
+#: Two species live here now. ``omissions_truncated`` carries no cursor at all. The other two
+#: carry a cursor the compiler still emits, but the tool that accepted it was retired; that is a
+#: recorded decision (ARV2 onboarding O6, decision D5), not a resolvable omission, and it is why
+#: ``test_the_self_describing_omission_kind_carries_no_cursor`` keeps stating which species it is
+#: talking about.
 _UNRESOLVABLE_BY_DESIGN: dict[Stage0CardOmissionKind, str] = {
     # Self-describing: it says "there were more omissions than the cap", which is complete on its
     # own. `test_the_self_describing_omission_kind_carries_no_cursor` holds it to that.
     Stage0CardOmissionKind.OMISSIONS_TRUNCATED: "carries a count only, never a cursor",
+    Stage0CardOmissionKind.READINESS_HISTORY: (
+        "ARV2 onboarding O6: the Stage-0 card is no longer composed on the production "
+        "conversation; the trial's card may still emit this kind, but its resolver "
+        "(inspect_readiness_history) was retired with the old recon lane — the trial is "
+        "quarantine-bound (master plan Phase 6)"
+    ),
+    Stage0CardOmissionKind.CLIENT_KNOWLEDGE_OVER_CAP: (
+        "ARV2 onboarding O6: the Stage-0 card is no longer composed on the production "
+        "conversation; the trial's card may still emit this kind, but its resolver "
+        "(list_client_knowledge) was retired with the old recon lane — the trial is "
+        "quarantine-bound (master plan Phase 6)"
+    ),
 }
 
 #: Every surface that is handed a Stage-0 project card. The trial is not an exception here: §7
@@ -159,9 +168,21 @@ def test_the_pinned_recipe_revision_allows_every_omission_resolving_tool(
 
 
 def test_the_self_describing_omission_kind_carries_no_cursor() -> None:
-    """`omissions_truncated` is exempt only because it never asks anyone to resume it."""
+    """`omissions_truncated` is the exemption that asks nobody to resume it.
+
+    The O6 exemptions above are a different species and must stay distinguishable from this one:
+    they carry a cursor the compiler still emits and are exempt because their *resolver* is gone.
+    This kind is exempt because it never had a cursor — it reports a count and is complete on its
+    own — so if the compiler ever gives it one, that is a new decision, not a stale reason string.
+    """
 
     assert Stage0CardOmissionKind.OMISSIONS_TRUNCATED not in _CURSOR_KIND
+    assert "never a cursor" in _UNRESOLVABLE_BY_DESIGN[Stage0CardOmissionKind.OMISSIONS_TRUNCATED]
+    for kind in (
+        Stage0CardOmissionKind.READINESS_HISTORY,
+        Stage0CardOmissionKind.CLIENT_KNOWLEDGE_OVER_CAP,
+    ):
+        assert "retired with the old recon lane" in _UNRESOLVABLE_BY_DESIGN[kind]
 
 
 def test_every_unresolvable_kind_is_named_with_its_reason() -> None:

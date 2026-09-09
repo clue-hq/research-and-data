@@ -401,6 +401,17 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 # and a leg opened from a dev CLI would durably reroute a thread no design
                 # runtime here can serve.
                 "open_design_leg",
+                # ARV2 onboarding O6: the new lane's launch and its two gates join the same
+                # sentence their predecessors are here for. `launch_arv2_account_research` queues
+                # real per-account research jobs against external providers, which is precisely
+                # what this surface promises it does not do; `open_product_set_selection_gate` and
+                # `open_icp_confirmation_gate` each write a real, durable, human-addressed gate
+                # whose answer no surface here can act on — inviting a person to confirm a product
+                # set or an ICP that goes nowhere. `read_arv2_account_research_run` stays
+                # installed: it is read-only, spends nothing, and addresses nobody.
+                "launch_arv2_account_research",
+                "open_product_set_selection_gate",
+                "open_icp_confirmation_gate",
             }
         ),
         withheld_delegation_roles=frozenset(

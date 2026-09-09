@@ -64,6 +64,14 @@ _WITHHELD = {
     # design runtime here can serve.
     "open_design_leg",
     "open_directive_confirmation_gate",
+    # ARV2 onboarding O6: the new lane's launch and its two gates, for the same sentence. The
+    # launch queues real per-account jobs against external providers; each gate writes a real,
+    # durable, human-addressed decision control whose answer no surface here can act on.
+    # `read_arv2_account_research_run` is deliberately NOT here — read-only, spends nothing,
+    # addresses nobody.
+    "launch_arv2_account_research",
+    "open_product_set_selection_gate",
+    "open_icp_confirmation_gate",
 }
 
 # The tools the trial used to withhold that `head-of-abm@v44` no longer grants at all. They must
@@ -150,7 +158,7 @@ def test_the_capability_map_names_the_surface_and_its_withheld_tools_honestly(
         # genweb slice 2 promoted the design delegation entry to @2 (web document birth at
         # leg-open), genad promoted it again to @3 (ad document birth) and genad2 to @4
         # (zero-page scene birth); the trial withholds it at whatever version the belt carries.
-        _promoted = {"open_design_leg": "4"}
+        _promoted = {"open_design_leg": "4", "open_icp_confirmation_gate": "2"}
         address = f"{name}@{_promoted.get(name, '1')}"
         disclosure = by_address[address]
         assert disclosure.status is AgentCapabilityStatus.PROFILE_UNAVAILABLE
@@ -260,24 +268,49 @@ def test_the_trial_surface_withholds_delegation_rather_than_crashing_on_it(
         registry.resolve_delegation(parent=trial, child_role=AgentRole.RESEARCH, current_depth=0)
 
 
-def test_the_stage0_skill_survives_the_narrowed_surface(
+def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
     registry: AgentProfileRegistry,
 ) -> None:
-    """The regression this design could most easily have shipped, silently.
+    """INVERTED by ARV2 onboarding O6 — deliberately, with the consequence stated out loud.
 
-    Skills are dropped when a required tool is not effective, so a skill that still *required*
-    ``start_recon``/``synthesize_icps``/``submit_onboarding_input`` would vanish from the trial
-    entirely — restricting three tools would quietly also remove all of Stage-0's routing
-    procedure, and nothing else in this file would have noticed.
+    This test was written to catch the regression this design could most easily have shipped
+    silently: skills are dropped when a required tool is not effective, so withholding tools can
+    quietly also remove all of Stage-0's routing procedure, and nothing else in this file would
+    notice. Under stage0-interview v20 the withheld set and the skill's required set were
+    disjoint, so the skill survived and this test said so.
+
+    stage0-interview v21 requires the product-set gate, the ICP gate and the ARV2 launch — which
+    are exactly the three tools this surface now withholds (fix round 1, coordinator ruling: a dev
+    harness must not present a real, durable, addressed gate or hold launch authority it cannot
+    act on). The consequence is that **the trial surface discloses no skill at all**: it keeps the
+    prompt, the constitution and its read/route tools, and has no Stage-0 procedure.
+
+    That is a genuine degradation of the trial, accepted because the trial is quarantine-bound
+    (master plan Phase 6). It is asserted here rather than discovered later — which is the job the
+    original guard was doing, and the reason this test is inverted instead of deleted.
     """
 
     trial = registry.resolve(AgentRole.HEAD_OF_ABM, surface=STAGE0_CONVERSATION_TRIAL_SURFACE)
-    disclosures = trial.skill_disclosures()
+    base = registry.resolve(AgentRole.HEAD_OF_ABM)
 
-    assert [item.resource.address for item in disclosures] == ["skill:stage0-interview@v21"]
-    required = {address.partition("@")[0] for address in disclosures[0].required_tool_addresses}
-    assert required & _WITHHELD == set()
-    body = trial.open_skill("skill:stage0-interview@v21")
+    assert trial.skill_disclosures() == ()
+    # The withholding is what removed it — not a catalog break, not a missing resource. The
+    # unnarrowed role still discloses the same skill from the same profile.
+    base_disclosures = {item.resource.address for item in base.skill_disclosures()}
+    assert "skill:stage0-interview@v21" in base_disclosures
+    assert trial.profile_ref == base.profile_ref
+
+    stage0 = next(
+        item for item in base.skill_disclosures() if item.resource.name == "stage0-interview"
+    )
+    required = {address.partition("@")[0] for address in stage0.required_tool_addresses}
+    assert required & _WITHHELD == {
+        "launch_arv2_account_research",
+        "open_product_set_selection_gate",
+        "open_icp_confirmation_gate",
+    }
+
+    body = base.open_skill("skill:stage0-interview@v21")
     assert "Ask one compact question" in body
     # The trial's framing lives on the surface policy, never in the shared skill.
     assert "manual-conversation-only" not in body
