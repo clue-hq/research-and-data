@@ -9,6 +9,7 @@ rule item 5 allows — account rows, an ICP artifact ref, and a product-selectio
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
@@ -40,12 +41,15 @@ from clue_api.arv2.account_research_launch import (
     launch_arv2_person_research,
 )
 from clue_api.arv2.account_research_store import list_jobs, read_run
+from clue_api.arv2.display.gather import committee_members
 from clue_auth.store import create_platform_user
 from clue_config import Settings
-from clue_core import EntityId
+from clue_core import EntityId, ExtractionMethod, Persona
 from clue_fleet import FleetTaskKind
 from clue_fleet.lease import WorkId
+from clue_research.claimstore import WorkspaceScope, claims_for, load_core_pack
 from clue_research.identity import insert_account_entity, insert_contact_entity
+from clue_research.profiling import load_committee_pack, load_deep_profiling_pack
 from clue_spine import confirm_project_product_set, create_product
 from clue_storage import artifact_key, content_address
 from clue_storage.artifacts import record_artifact
@@ -722,6 +726,125 @@ def test_person_launch_creates_a_run_of_its_own_with_one_job_per_person(tmp_path
             )
             assert replay.run_id == receipt.run_id and replay.replayed is True
             assert len(await list_jobs(conn, run_id=receipt.run_id)) == 2
+
+    run_async(scenario())
+
+
+def test_a_person_launched_on_demand_is_seated_on_their_account_committee(tmp_path: Any) -> None:
+    """Walk finding W2: the account's contact list *is* the committee claims, so a person launched
+    on demand with no persona claim was researched at cost and then invisible on the very screen
+    the research was for. The launch now writes the seat the requesting human named.
+
+    The seat is a human statement — tier 1, ``HUMAN`` extraction, no URL to cite — and the persona
+    is the closed platform vocabulary, so a launch can neither invent a role nor pretend a page
+    confirmed one.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await load_core_pack(conn)
+            await load_deep_profiling_pack(conn)
+            await load_committee_pack(conn)
+            storage = FsStorage(tmp_path)
+            fixture = await _seed(conn, storage)
+            dana = await insert_contact_entity(
+                conn,
+                account_entity_id=fixture.accounts[0],
+                full_name="Dana Reyes",
+                linkedin_url="https://www.linkedin.com/in/dana-reyes",
+            )
+
+            await launch_arv2_person_research(
+                conn,
+                Arv2PersonLaunchRequest(
+                    workspace_id=fixture.workspace_id,
+                    project_id=fixture.project_id,
+                    contact_entity_ids=(UUID(str(dana)),),
+                    requested_by_user_id=USER_ID,
+                    persona=Persona.CHAMPION,
+                ),
+                settings=_settings(),
+                storage=storage,
+                profile_sha256=arv2_person_profile_sha256(),
+            )
+
+            members = await committee_members(
+                conn, workspace_id=fixture.workspace_id, account_id=str(fixture.accounts[0])
+            )
+            assert [member.id for member in members] == [str(dana)]
+            assert members[0].persona == "champion"
+
+            claims = {
+                str(claim.field_key): claim
+                for claim in await claims_for(
+                    conn,
+                    EntityId(UUID(str(dana))),
+                    scope=WorkspaceScope.for_workspace(fixture.workspace_id),
+                )
+            }
+            assert claims["contact.persona"].value_json == "champion"
+            assert claims["contact.role_on_committee"].value_json == {
+                "role": "champion",
+                "rationale": f"launched on demand by {USER_ID}",
+            }
+            # A human named this person and this seat: tier 1, and honestly unevidenced by URL.
+            seat = claims["contact.persona"]
+            assert seat.extraction_method is ExtractionMethod.HUMAN and seat.source_tier == 1
+            assert seat.source_url is None
+            assert (seat.write_markers or {}).get("source_missing") is None
+
+    run_async(scenario())
+
+
+def test_a_launch_never_re_seats_a_person_who_already_holds_one(tmp_path: Any) -> None:
+    """The committee step's own assessment — read off a page that says so — outranks a launch's
+    default, and re-launching the same person must not write a second persona claim."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await load_core_pack(conn)
+            await load_deep_profiling_pack(conn)
+            await load_committee_pack(conn)
+            storage = FsStorage(tmp_path)
+            fixture = await _seed(conn, storage)
+            dana = await insert_contact_entity(
+                conn, account_entity_id=fixture.accounts[0], full_name="Dana Reyes"
+            )
+
+            request = Arv2PersonLaunchRequest(
+                workspace_id=fixture.workspace_id,
+                project_id=fixture.project_id,
+                contact_entity_ids=(UUID(str(dana)),),
+                requested_by_user_id=USER_ID,
+                persona=Persona.ECONOMIC_BUYER,
+            )
+            await launch_arv2_person_research(
+                conn,
+                request,
+                settings=_settings(),
+                storage=storage,
+                profile_sha256=arv2_person_profile_sha256(),
+            )
+            # A second launch at a *different* seat is a different request (and so a different
+            # run), and it still leaves the seat this person already holds alone.
+            await launch_arv2_person_research(
+                conn,
+                dataclasses.replace(request, persona=Persona.BLOCKER),
+                settings=_settings(),
+                storage=storage,
+                profile_sha256=arv2_person_profile_sha256(),
+            )
+
+            personas = [
+                claim
+                for claim in await claims_for(
+                    conn,
+                    EntityId(UUID(str(dana))),
+                    scope=WorkspaceScope.for_workspace(fixture.workspace_id),
+                )
+                if str(claim.field_key) == "contact.persona"
+            ]
+            assert [claim.value_json for claim in personas] == ["economic_buyer"]
 
     run_async(scenario())
 

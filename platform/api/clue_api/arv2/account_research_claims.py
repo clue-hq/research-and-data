@@ -779,6 +779,39 @@ _AI_ARK_PERSON_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("headline", "contact.headline", "profile.headline"),
 )
 
+#: The two ways the provider's ``profile.title`` carries the employer on the end of the job title
+#: ("Head of Growth | Cogent", "Head of Growth at Cogent"). Both are separators, never part of a
+#: title, which is why they can be cut at all.
+_TITLE_COMPANY_SEPARATORS: tuple[str, ...] = (" | ", " at ")
+
+
+def _fold_company(name: str) -> str:
+    """The form two company names are compared in: case-folded, whitespace-collapsed, no trailing
+    punctuation. Nothing else — ``Cogent`` and ``Cogent Security`` are deliberately *not* the same
+    string here, because cutting a title on a partial match would cut real titles."""
+    return " ".join(name.split()).strip(" .,").casefold()
+
+
+def _title_without_company(title: str | None, *, companies: tuple[str, ...]) -> tuple[str, str]:
+    """``("Head of Growth", "Head of Growth | Cogent")`` — the job title, and what the record said.
+
+    W4 (live walk 2026-09-09): AI Ark's ``profile.title`` is frequently the LinkedIn headline's
+    "role at employer" form, so ``contact.current_title`` was served as "Head of Growth | Cogent" —
+    a title carrying a fact the account row already states. The suffix is cut only when what
+    follows the separator **is** one of the employers this job already knows (the record's own
+    current company, or the account the job is about), so a genuine title that happens to contain
+    ``" at "`` ("Head of Security at Scale" at some other company) is left exactly as the record
+    wrote it. The raw string rides on the claim as ``title_raw`` whenever anything was cut, so the
+    provider's answer stays auditable.
+    """
+    raw = title or ""
+    known = {_fold_company(name) for name in companies if name and name.strip()}
+    for separator in _TITLE_COMPANY_SEPARATORS:
+        head, found, tail = raw.rpartition(separator)
+        if found and head.strip() and _fold_company(tail) in known:
+            return head.strip(), raw
+    return raw, raw
+
 
 def _person_location(location: Mapping[str, Any] | None) -> JsonValue | None:
     """``location`` as the registered ``contact.current_location`` shape.
@@ -825,7 +858,7 @@ def _member_badges(raw: Mapping[str, Any]) -> JsonValue | None:
 
 
 def _career_history(raw: Mapping[str, Any]) -> JsonValue | None:
-    """``position_groups[].profile_positions[]`` as the registered ``[{org, role, start, end}]``.
+    """``position_groups[].profile_positions[]`` as the registered ``[{org, role, date:{…}}]``.
 
     The provider's employment list is ``position_groups`` — one group per employer, one
     ``profile_positions`` entry per role held there — so a promotion is its own row rather than a
@@ -836,6 +869,14 @@ def _career_history(raw: Mapping[str, Any]) -> JsonValue | None:
     The dates are the position's own when it states them and the group's otherwise: a group whose
     single position omits its dates is still one dated stint, and copying a *neighbouring*
     position's dates would be this module inventing a tenure.
+
+    They sit **under ``date``** (W3, live walk 2026-09-09), which is the shape the answer keys
+    carry and the one the contact header's tenure reads
+    (``frontend_read.v1_shared.current_position_start`` looks for an entry with no ``date.end``
+    and takes its ``date.start``). The mapper wrote them flat, so every mapped person's tenure
+    read empty. A stint the record dates neither end of carries no ``date`` at all rather than an
+    empty object: absent is not null, and an entry with an empty ``date`` would read as a current
+    position with an unknown start.
     """
     groups = raw.get("position_groups")
     if not isinstance(groups, list):
@@ -851,15 +892,20 @@ def _career_history(raw: Mapping[str, Any]) -> JsonValue | None:
             org = _string(position.get("company")) or _string(_dig(group, "company", "name"))
             if org is None:
                 continue
+            span = _without_nones(
+                {
+                    "start": _string(_dig(position, "date", "start"))
+                    or _string(_dig(group, "date", "start")),
+                    "end": _string(_dig(position, "date", "end"))
+                    or _string(_dig(group, "date", "end")),
+                }
+            )
             rows.append(
                 _without_nones(
                     {
                         "org": org,
                         "role": _string(position.get("title")),
-                        "start": _string(_dig(position, "date", "start"))
-                        or _string(_dig(group, "date", "start")),
-                        "end": _string(_dig(position, "date", "end"))
-                        or _string(_dig(group, "date", "end")),
+                        "date": span or None,
                     },
                     keep=("org",),
                 )
@@ -877,16 +923,29 @@ def ai_ark_person_claims(person: AiArkPerson, scope: JobScope) -> list[ClaimDraf
     own: a person fact belongs to the person the job is about, and to nobody else.
 
     A path the record does not answer yields nothing at all — an absent field is a correct output.
+
+    ``contact.current_title`` is the one value not passed straight through: the record's title
+    often ends in the employer, and :func:`_title_without_company` cuts that suffix (W4).
     """
     raw = person.raw if isinstance(person.raw, Mapping) else {}
-    mapped: list[tuple[str, JsonValue | None, str]] = [
-        (field_key, getattr(person, attribute), json_path)
+    title, title_raw = _title_without_company(
+        person.title, companies=(person.current_company or "", scope.account_name)
+    )
+    mapped: list[tuple[str, JsonValue | None, str, dict[str, JsonValue]]] = [
+        (
+            field_key,
+            _string(title) if attribute == "title" else getattr(person, attribute),
+            json_path,
+            {"title_raw": title_raw} if attribute == "title" and title != title_raw else {},
+        )
         for attribute, field_key, json_path in _AI_ARK_PERSON_FIELDS
     ]
-    mapped.append(("contact.current_location", _person_location(person.location), "location"))
-    mapped.append(("contact.network_statistics", _network_statistics(raw), "statistics.network"))
-    mapped.append(("contact.member_badges", _member_badges(raw), "member_badges"))
-    mapped.append(("contact.facet.career_history", _career_history(raw), "position_groups"))
+    mapped.append(("contact.current_location", _person_location(person.location), "location", {}))
+    mapped.append(
+        ("contact.network_statistics", _network_statistics(raw), "statistics.network", {})
+    )
+    mapped.append(("contact.member_badges", _member_badges(raw), "member_badges", {}))
+    mapped.append(("contact.facet.career_history", _career_history(raw), "position_groups", {}))
     return [
         _draft(
             scope,
@@ -899,9 +958,9 @@ def ai_ark_person_claims(person: AiArkPerson, scope: JobScope) -> list[ClaimDraf
             outreach_safe=True,
             confidence=0.9,
             source_key="ai_ark:person",
-            markers={"json_path": json_path, "provider_record": "ai_ark"},
+            markers={"json_path": json_path, "provider_record": "ai_ark", **extra},
         )
-        for field_key, value, json_path in mapped
+        for field_key, value, json_path, extra in mapped
         if value is not None
     ]
 
@@ -919,13 +978,32 @@ def email_export_claim(export: AiArkEmailExport, scope: JobScope) -> ClaimDraft 
     mailbox itself confirmed", and both are different from having no address. Collapsing the first
     two would make an unproven mailbox indistinguishable from a proven one at read time, which is
     exactly the distinction ``email_verdict`` exists to preserve.
+
+    So the **value** is the pair, not the address alone (W1, live walk 2026-09-09): the field's
+    registered shape is ``{address, status, checked_at?}`` (D4-b decision 6, migration
+    ``7332ac974920``; the closed ``status`` vocabulary is ``claimstore.packs.WORK_EMAIL_STATUSES``),
+    and ``frontend_read.v1_shared.email_facts`` shows the address only for the two verdicts that
+    mean it is usable. Written as a bare string — as this mapper did — the address reached the
+    claim store with its verification stripped off, and the contact header's email chip read
+    ``lookup`` for everybody. Only a found export is written, so the ``status`` here is always one
+    of the two graded verdicts the registry admits (``verified_smtp`` / ``catch_all_valid``);
+    ``checked_at`` is the provider's own check timestamp (``email.output[0].date``), kept verbatim
+    and omitted when the record does not state one, which is what the chip's verification date
+    reads first.
     """
     if not export.found or not export.address:
         return None
     return _draft(
         scope,
         field_key="core.work_email",
-        value=export.address,
+        value=_without_nones(
+            {
+                "address": export.address,
+                "status": export.verdict,
+                "checked_at": export.checked_at,
+            },
+            keep=("address", "status"),
+        ),
         method=ExtractionMethod.API,
         source_url=None,
         evidence_span=None,
@@ -1463,7 +1541,12 @@ CURRENT_TITLE_FIELD = "contact.current_title"
 
 
 def committee_member_claims(
-    candidate: Mapping[str, Any], *, scope: JobScope, contact_id: EntityId, catalog: FieldCatalog
+    candidate: Mapping[str, Any],
+    *,
+    scope: JobScope,
+    contact_id: EntityId,
+    catalog: FieldCatalog,
+    method: ExtractionMethod = ExtractionMethod.LLM_SYNTHESIS,
 ) -> list[ClaimDraft]:
     """One confirmed committee member's persona, role and title, written onto their own contact.
 
@@ -1479,6 +1562,12 @@ def committee_member_claims(
     role in it is not a committee assessment. The confirming URL and the candidate's own quote
     travel onto every one of the three, so a reader of any of them reaches the page that named
     this person in this seat.
+
+    ``method`` is how the seat was decided, and it defaults to the account job's own answer: the
+    model read a page and assessed the committee. The on-demand person launch passes
+    :attr:`~clue_core.ExtractionMethod.HUMAN`, because there the persona is the requesting human's
+    own statement — recording that as synthesis would put a false provenance (and a tier-4 stamp)
+    on a tier-1 fact.
     """
     persona = candidate.get("persona")
     title = candidate.get("title")
@@ -1506,7 +1595,7 @@ def committee_member_claims(
             scope,
             field_key=field_key,
             value=value,
-            method=ExtractionMethod.LLM_SYNTHESIS,
+            method=method,
             source_url=str(source_url) if source_url else None,
             evidence_span=evidence_span,
             priority=2,

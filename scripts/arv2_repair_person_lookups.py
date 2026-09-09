@@ -21,6 +21,13 @@ state the employer.
 **It never calls a model.** The clients object it composes offers AI Ark and nothing else, so the
 structuring, media and search paths are not merely unused — they are absent.
 
+It is **idempotent by default**: a job that already carries the lookup's own ``ai_ark:person``
+claims is reported ``skipped_already_looked_up`` and costs nothing, because re-running a lookup
+that worked buys the same record a second time and leaves duplicate rows behind. ``--force``
+overrides that. ``--persona`` additionally seats each job's person on their account's committee
+when they hold no seat yet — the write a person launched on demand never got — which is how the
+people who have already been researched become visible on their account's contact list.
+
 ``--dry-run`` reads the rows and prints what each job would be asked for, without a provider call
 and without a write. The database is the one ``CLUE_DATABASE_URL`` names unless ``--database-url``
 overrides it, and the blob store is this deployment's configured storage unless ``--storage-root``
@@ -48,6 +55,7 @@ from clue_api.arv2.account_research_claims import (
     email_export_claim,
 )
 from clue_api.arv2.account_research_driver import person_scope_for
+from clue_api.arv2.account_research_launch import seat_person_on_committee
 from clue_api.arv2.account_research_tools import (
     ProviderClients,
     ToolRuntime,
@@ -62,13 +70,19 @@ from clue_api.arv2.provider_ledger import ArtifactSink
 from clue_api.arv2_wiring import register_arv2_wiring
 from clue_api.storage_wiring import build_storage_backend
 from clue_config import Secrets, Settings
+from clue_core import Persona
 from clue_db import db_lifespan, transaction
+from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_storage import StorageBackend
 from clue_storage.fs import FsStorage
 
 #: How many candidates the name-scoped search asks for — the same size ``lookup_person`` uses, so
 #: the repair sees exactly the candidate set the live call saw.
 _CANDIDATES = 3
+
+#: The source key every claim of a successful person lookup carries. A job that already holds one
+#: of these — written by the lookup itself, not by a previous repair — was never broken.
+_LOOKUP_SOURCE_KEY = "ai_ark:person"
 
 
 class Refused(SystemExit):
@@ -114,6 +128,24 @@ def _args() -> argparse.Namespace:
         "--dry-run",
         action="store_true",
         help="Read the rows and print the plan; spend nothing and write nothing.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Look the person up again even when the job already holds the lookup's own claims. "
+            "Without it such a job is skipped, because re-running it buys the same record twice."
+        ),
+    )
+    parser.add_argument(
+        "--persona",
+        default=None,
+        choices=[persona.value for persona in Persona],
+        help=(
+            "Seat every named job's person on their account's committee at this persona when "
+            "they hold no seat yet. Without a seat a finished person is invisible on their own "
+            "account's contact list, which is read from exactly those claims."
+        ),
     )
     parser.add_argument(
         "--database-url",
@@ -179,14 +211,33 @@ async def _repair_one(
     artifacts: ArtifactSink,
     api_key: SecretStr,
     dry_run: bool,
+    force: bool,
+    persona: Persona | None,
 ) -> dict[str, Any]:
-    """One job: rebuild its scope, re-run the two calls, write what the record answers."""
+    """One job: rebuild its scope, seat the person if asked, re-run the two calls, write.
+
+    Two things are decided before a single provider call is made, because both cost money to get
+    wrong. **The seat** (``--persona``) is written whether or not the lookup runs: a person whose
+    lookup already succeeded still needs a committee claim to appear on their account's contact
+    list, and that is a write this repair can make without buying anything. **The skip** is the
+    idempotency this script did not have on its first live run, where the two people whose lookup
+    had actually succeeded were looked up (and billed) a second time and ended up with duplicate
+    rows. A job that already carries the lookup's own claims — ``ai_ark:person`` written by
+    ``lookup_person`` rather than by a previous repair — was never broken, so it is skipped unless
+    ``--force`` says otherwise.
+    """
+    writer = LenientClaimWriter(lenient=settings.claim_write_lenient)
     async with transaction() as conn:
         # The job's own pins (workspace, project, run, account, contact) come off the rows. The
         # prompt half of the composition is left at its defaults on purpose: this repair runs no
         # model, so an ICP body and a persona map would be context nobody reads.
         scope = await person_scope_for(conn, job=job, run=run, today=datetime.now(UTC).date())
         catalog = await store.read_person_catalog(conn)
+        contact_id = scope.contact_id
+        assert contact_id is not None  # a person scope carries its contact (JobScope.__post_init__)
+        live = await claims_for(
+            conn, contact_id, scope=WorkspaceScope.for_workspace(scope.workspace_id)
+        )
 
     report: dict[str, Any] = {
         "job_id": str(job.job_id),
@@ -194,6 +245,33 @@ async def _repair_one(
         "linkedin_url": scope.person_linkedin_url,
         "account_domain": scope.account_domain,
     }
+
+    if persona is not None:
+        if dry_run:
+            report["seat"] = f"would seat as {persona.value} if they hold no seat"
+        else:
+            async with transaction() as conn:
+                wrote = await seat_person_on_committee(
+                    conn,
+                    scope=scope,
+                    persona=persona,
+                    requested_by_user_id=run.requested_by_user_id,
+                    writer=writer,
+                    catalog=catalog,
+                )
+            report["seat"] = f"seated as {persona.value}" if wrote else "already seated"
+
+    looked_up = [
+        claim
+        for claim in live
+        if claim.source_key == _LOOKUP_SOURCE_KEY
+        and not (claim.write_markers or {}).get("repaired")
+    ]
+    if looked_up and not force:
+        report["existing_lookup_claims"] = len(looked_up)
+        report["outcome"] = "skipped_already_looked_up"
+        return report
+
     if not scope.person_linkedin_url:
         report["outcome"] = "no confirmed LinkedIn URL on the contact — nothing to match on"
         return report
@@ -208,7 +286,7 @@ async def _repair_one(
         clients=clients,
         conn_factory=transaction,
         artifacts=artifacts,
-        writer=LenientClaimWriter(lenient=settings.claim_write_lenient),
+        writer=writer,
         catalog=catalog,
         media_budget=MediaBudget(settings.arv2_media_seconds_ceiling),
     )
@@ -304,6 +382,8 @@ async def _run(args: argparse.Namespace) -> list[dict[str, Any]]:
                     artifacts=artifacts,
                     api_key=key or SecretStr(""),
                     dry_run=args.dry_run,
+                    force=args.force,
+                    persona=Persona(args.persona) if args.persona else None,
                 )
             )
     return reports

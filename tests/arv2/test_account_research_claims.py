@@ -52,6 +52,7 @@ from clue_api.arv2.structuring_client import (
     ProposedField,
     StructuredClaim,
     StructuredOutput,
+    check_value_schema,
 )
 from clue_core import (
     EntityId,
@@ -62,6 +63,8 @@ from clue_core import (
     UseClass,
     is_valid_field_key,
 )
+from clue_research.claimstore.packs import CORE_PACK
+from clue_research.profiling.fields import DEEP_PROFILING_PACK, FACET_CAREER_HISTORY
 
 SCOPE = JobScope(
     workspace_id="ws-1",
@@ -1393,22 +1396,140 @@ def test_the_career_history_is_one_row_per_role_at_the_org_that_held_it() -> Non
         if draft.field_key == "contact.facet.career_history"
     ]
 
+    # W3: the dates nest under ``date`` — the shape the answer keys carry and the one the contact
+    # header's tenure reads. An open stint states no ``end`` at all.
     assert draft.value_json == [
-        {"org": "Zafran Security", "role": "VP of Marketing", "start": "2024-04-01"},
+        {
+            "org": "Zafran Security",
+            "role": "VP of Marketing",
+            "date": {"start": "2024-04-01"},
+        },
         {
             "org": "Sysdig",
             "role": "Senior Director, Product Marketing",
-            "start": "2023-01-01",
-            "end": "2024-04-30",
+            "date": {"start": "2023-01-01", "end": "2024-04-30"},
         },
         {
             "org": "Sysdig",
             "role": "Director, Product Marketing",
-            "start": "2021-09-01",
-            "end": "2022-12-31",
+            "date": {"start": "2021-09-01", "end": "2022-12-31"},
         },
     ]
     assert draft.use_class is UseClass.PROFESSIONAL_PUBLIC
+
+
+def test_a_career_history_the_record_dates_nowhere_carries_no_date_at_all() -> None:
+    """An empty ``date`` would read as a current position with an unknown start; absent is not
+    null, and the entry is still a real stint."""
+    (draft,) = [
+        draft
+        for draft in ai_ark_person_claims(
+            _person(
+                {
+                    **PERSON_RECORD,
+                    "position_groups": [
+                        {
+                            "company": {"name": "Sysdig"},
+                            "profile_positions": [{"company": "Sysdig", "title": "Director"}],
+                        }
+                    ],
+                }
+            ),
+            PERSON_SCOPE,
+        )
+        if draft.field_key == "contact.facet.career_history"
+    ]
+
+    assert draft.value_json == [{"org": "Sysdig", "role": "Director"}]
+
+
+def test_the_mapped_career_history_satisfies_the_field_registry_schema() -> None:
+    """The nested shape is what ``contact.facet.career_history`` declares (migration
+    ``7c4f1a2b9d63``), so the claim it produces is schema-valid rather than merely tolerated."""
+    (draft,) = [
+        draft
+        for draft in ai_ark_person_claims(_person(), PERSON_SCOPE)
+        if draft.field_key == "contact.facet.career_history"
+    ]
+    (registered,) = [
+        seed for seed in DEEP_PROFILING_PACK if seed.field_def.field_key == FACET_CAREER_HISTORY
+    ]
+
+    assert check_value_schema(draft.value_json, registered.value_schema) is True
+
+
+def test_the_ai_ark_title_loses_the_company_the_record_hung_on_the_end() -> None:
+    """W4: ``profile.title`` is frequently "role | employer", and the employer is a fact the
+    account row already states. The raw string stays on the claim as ``title_raw``."""
+    drafts = {
+        draft.field_key: draft
+        for draft in ai_ark_person_claims(
+            _person(
+                {
+                    **PERSON_RECORD,
+                    "profile": {**PERSON_RECORD["profile"], "title": "Head of Growth | Zafran"},
+                    "position_groups": [
+                        {
+                            "company": {"name": "Zafran"},
+                            "profile_positions": [{"company": "Zafran", "title": "Head of Growth"}],
+                        }
+                    ],
+                }
+            ),
+            PERSON_SCOPE,
+        )
+    }
+
+    assert drafts["contact.current_title"].value_json == "Head of Growth"
+    assert drafts["contact.current_title"].markers["title_raw"] == "Head of Growth | Zafran"
+
+
+def test_the_account_the_job_is_about_also_cuts_the_suffix() -> None:
+    """The record's own company is asked first, but the job already knows whose account this is —
+    which is what catches the live case, where the record spelled the employer a third way."""
+    (draft,) = [
+        draft
+        for draft in ai_ark_person_claims(
+            _person(
+                {
+                    **PERSON_RECORD,
+                    "profile": {
+                        **PERSON_RECORD["profile"],
+                        "title": "Head of Growth at Zafran Security ",
+                    },
+                }
+            ),
+            PERSON_SCOPE,
+        )
+        if draft.field_key == "contact.current_title"
+    ]
+
+    assert PERSON_SCOPE.account_name == "Zafran Security"
+    assert draft.value_json == "Head of Growth"
+
+
+def test_a_title_that_merely_contains_a_separator_is_passed_through_untouched() -> None:
+    """ "Head of Security at Scale" is a title, not a title plus an employer, and nothing this job
+    knows says otherwise. It is written exactly as the record wrote it, with no ``title_raw``."""
+    (draft,) = [
+        draft
+        for draft in ai_ark_person_claims(
+            _person(
+                {
+                    **PERSON_RECORD,
+                    "profile": {
+                        **PERSON_RECORD["profile"],
+                        "title": "Head of Security at Scale",
+                    },
+                }
+            ),
+            PERSON_SCOPE,
+        )
+        if draft.field_key == "contact.current_title"
+    ]
+
+    assert draft.value_json == "Head of Security at Scale"
+    assert "title_raw" not in draft.markers
 
 
 def test_a_person_record_that_answers_nothing_yields_no_claims() -> None:
@@ -1442,7 +1563,11 @@ def test_a_found_email_is_a_tier1_claim_carrying_its_verdict() -> None:
     draft = email_export_claim(export, PERSON_SCOPE)
 
     assert draft is not None
-    assert draft.field_key == "core.work_email" and draft.value_json == "kate@probook.ai"
+    # W1: the value is the address **with the verdict that graded it** — the pair the field
+    # declares and the contact header's email chip reads. The record stated no check date, so the
+    # key is absent rather than null.
+    assert draft.field_key == "core.work_email"
+    assert draft.value_json == {"address": "kate@probook.ai", "status": "catch_all_valid"}
     assert draft.entity_id == CONTACT_ID and draft.entity_type is EntityType.CONTACT
     assert draft.extraction_method is ExtractionMethod.API
     assert draft.source_key == "ai_ark:email_export"
@@ -1462,6 +1587,7 @@ def test_only_an_smtp_verified_mailbox_is_recorded_as_provider_verified() -> Non
                         "status": "VALID",
                         "domainType": "SMTP",
                         "found": True,
+                        "date": "2026-09-02T09:00:00",
                     }
                 ]
             }
@@ -1473,6 +1599,36 @@ def test_only_an_smtp_verified_mailbox_is_recorded_as_provider_verified() -> Non
     assert draft is not None
     assert draft.markers["verdict"] == "verified_smtp"
     assert draft.markers["provider_verified"] is True
+    assert draft.value_json == {
+        "address": "nick@zafran.io",
+        "status": "verified_smtp",
+        "checked_at": "2026-09-02T09:00:00",
+    }
+
+
+def test_the_mapped_work_email_satisfies_the_field_registry_schema() -> None:
+    """``core.work_email`` declares the object (migration ``7c4f1a2b9d63``), so what the export
+    mapper writes is schema-valid rather than stored under a ``schema_valid=false`` marker."""
+    export = email_export_from_record(
+        {
+            "email": {
+                "output": [
+                    {
+                        "address": "nick@zafran.io",
+                        "status": "VALID",
+                        "domainType": "SMTP",
+                        "found": True,
+                        "date": "2026-09-02T09:00:00",
+                    }
+                ]
+            }
+        }
+    )
+    draft = email_export_claim(export, PERSON_SCOPE)
+    (registered,) = [seed for seed in CORE_PACK if seed.field_def.field_key == "core.work_email"]
+
+    assert draft is not None
+    assert check_value_schema(draft.value_json, registered.value_schema) is True
 
 
 #: The three committee fields as a registry serves them. ``contact.role_on_committee``'s hint is

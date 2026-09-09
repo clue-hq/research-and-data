@@ -156,11 +156,17 @@ def format_established(claims: Sequence[Claim]) -> str:
 def employment_history_lines(value: Any) -> tuple[str, ...]:
     """The identity lock's employment history: one line per role, ``role @ org (start–end)``.
 
-    The stored ``contact.facet.career_history`` value is the registered ``[{org, role, start,
-    end}]`` — one row per role held, so a promotion is its own row. This renders it for the lock
-    in the person's context head, where it exists to rule out every same-name stranger, so a
-    missing part is **omitted** rather than filled with a placeholder the model might match a page
-    against. A row naming neither a role nor an organisation is dropped: dates alone name nobody.
+    The stored ``contact.facet.career_history`` value is the registered ``[{org, role,
+    date:{start, end}}]`` — one row per role held, so a promotion is its own row. This renders it
+    for the lock in the person's context head, where it exists to rule out every same-name
+    stranger, so a missing part is **omitted** rather than filled with a placeholder the model
+    might match a page against. A row naming neither a role nor an organisation is dropped: dates
+    alone name nobody.
+
+    The dates are read from ``date`` and, failing that, from the flat ``start``/``end`` the AI Ark
+    mapper wrote before W3 (2026-09-09). Claims are immutable, so the rows that lane already
+    stored keep the old spelling for good, and a lock that stopped rendering their dates would be
+    a second defect introduced by fixing the first.
     """
     if not isinstance(value, list):
         return ()
@@ -168,10 +174,11 @@ def employment_history_lines(value: Any) -> tuple[str, ...]:
     for entry in value:
         if not isinstance(entry, Mapping):
             continue
+        dates = entry.get("date") if isinstance(entry.get("date"), Mapping) else entry
         role = str(entry.get("role") or "").strip()
         org = str(entry.get("org") or "").strip()
-        start = str(entry.get("start") or "").strip()
-        end = str(entry.get("end") or "").strip()
+        start = str(dates.get("start") or "").strip()
+        end = str(dates.get("end") or "").strip()
         who = " @ ".join(part for part in (role, org) if part)
         if not who:
             continue

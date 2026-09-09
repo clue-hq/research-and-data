@@ -17,6 +17,10 @@ workspace does not hold is a refusal rather than a new row.
 the way the entity layer folds it, so the trailing slash and the capitals a real page carries do
 not matter). Every unresolvable one is named in a single refusal.
 
+``--persona`` is the committee seat each named person is given when they hold none yet (default
+``user``). Without a seat a person is researched and then invisible on their own account's contact
+list, which reads the committee off exactly those claims.
+
 The database is the one ``CLUE_DATABASE_URL`` names unless ``--database-url`` overrides it, and the
 blob store is this deployment's configured storage unless ``--storage-root`` overrides it.
 """
@@ -44,6 +48,7 @@ from clue_api.arv2.answer_key_loader import ANSWER_KEY_USER_ID
 from clue_api.arv2_wiring import register_arv2_wiring
 from clue_api.storage_wiring import build_storage_backend
 from clue_config import Settings
+from clue_core import Persona
 from clue_db import db_lifespan
 from clue_fleet import DbWorkQueue
 from clue_spine import get_project
@@ -78,6 +83,15 @@ def _args() -> argparse.Namespace:
         "--directive",
         default="",
         help="Free-text steer recorded on the run and shown to the agent.",
+    )
+    parser.add_argument(
+        "--persona",
+        default=Persona.USER.value,
+        choices=[persona.value for persona in Persona],
+        help=(
+            "The committee seat every named person is given if they do not already hold one. "
+            "It is what puts them on their account's contact list."
+        ),
     )
     parser.add_argument(
         "--project-run-id",
@@ -175,6 +189,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
                     contact_entity_ids=tuple(contact_ids),
                     requested_by_user_id=args.requested_by,
                     directive_text=args.directive,
+                    persona=Persona(args.persona),
                     project_run_id=(
                         UUID(args.project_run_id) if args.project_run_id is not None else None
                     ),
@@ -203,6 +218,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         "replayed": receipt.replayed,
         "enqueued": enqueued,
         "people": names,
+        "persona": args.persona,
         "directive": args.directive,
     }
 
