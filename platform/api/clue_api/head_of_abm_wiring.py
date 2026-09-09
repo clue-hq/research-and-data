@@ -172,6 +172,7 @@ class HeadOfAbmStage0Runtime:
         execution: C5AgentExecutionAdapter,
         completion_guard: CompletionGuard | None = None,
         stream: TurnStreamEmitter | None = None,
+        input_seeds: tuple[WorkspaceSeedFile, ...] = (),
     ) -> AgentTurnOutcome:
         """Run one Stage-0 turn.
 
@@ -183,6 +184,11 @@ class HeadOfAbmStage0Runtime:
         absent for one reason: attaching it is what makes *this* turn take the model's streaming
         path, so a surface that does not want a turn stream — the dev trial, every specialist and
         fleet turn — keeps byte-for-byte the behaviour it had before D3.
+
+        ``input_seeds`` (ARV2 onboarding O6) are read-only workspace files the *surface* pins for
+        this turn — today the brand's pinned knowledge documents under ``inputs/brand/knowledge/``.
+        They are materialized alongside the assembler's own context materializations and verified
+        with them, so a reclaimed turn re-proves its input bytes rather than trusting the directory.
         """
 
         resolved = self._profiles.resolve(AgentRole.HEAD_OF_ABM, surface=self._surface)
@@ -202,19 +208,34 @@ class HeadOfAbmStage0Runtime:
             raise ValueError("turn constitution crosses the isolated workspace lease")
         if context.manifest.execution_id != constitution.execution_id:
             raise ValueError("assembled context belongs to another execution")
-        if not lease.resources_frozen:
+        context_seeds = tuple(
+            WorkspaceSeedFile(
+                path=item.path,
+                content=item.data,
+                sha256=item.sha256,
+                media_type=item.media_type,
+            )
+            for item in context.materializations
+        )
+        # The canonical context paths are the assembler's; a surface input that lands on one of
+        # them would silently replace a context file with a knowledge document. Refuse loudly.
+        seed_paths = {*(item.path for item in context_seeds), *(item.path for item in input_seeds)}
+        if len(seed_paths) != len(context_seeds) + len(input_seeds):
+            raise ValueError("a knowledge-document input collided with a canonical context path")
+        seed_files = (*context_seeds, *input_seeds)
+        if lease.resources_frozen:
+            # A reclaimed turn re-verifies every immutable byte before the model resumes: the
+            # frozen tree is evidence, not an assumption.
+            self._materializer.verify_materialized(
+                lease=lease,
+                snapshot=resolved.resource_snapshot,
+                seed_files=seed_files,
+            )
+        else:
             self._materializer.materialize(
                 lease=lease,
                 snapshot=resolved.resource_snapshot,
-                seed_files=tuple(
-                    WorkspaceSeedFile(
-                        path=item.path,
-                        content=item.data,
-                        sha256=item.sha256,
-                        media_type=item.media_type,
-                    )
-                    for item in context.materializations
-                ),
+                seed_files=seed_files,
             )
         await self._turns.create(request=request, profile=resolved.profile)
         execution.bind_delegation_runtime(

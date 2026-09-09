@@ -1018,6 +1018,9 @@ async def _serve() -> None:
                 parameters=execution_parameters,
                 memory=memory_assembly_factory(settings, transaction),
                 queue=work_queue,
+                # ARV2 onboarding O6: the same backend the onboarding synthesis seam receives —
+                # the turn reads its pinned brand-knowledge documents from it.
+                storage=storage,
                 # P3.4: the design-leg lane. Same switch as the design_job handler below —
                 # a worker that drains design work can also drive a leg's design turns
                 # inline; one that does not composes the fail-loud unavailable lane.

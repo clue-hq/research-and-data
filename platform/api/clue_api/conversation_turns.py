@@ -37,6 +37,7 @@ from clue_agents import (
     DelegationResult,
     DeterministicAgentContextAssembler,
     ResolvedAgentProfile,
+    WorkspaceSeedFile,
 )
 from clue_api.account_research_turn_wiring import DbCompiledContextCardReader
 from clue_api.agent_execution_wiring import (
@@ -271,6 +272,7 @@ class ConversationTurnEngine:
         submitted_by_user_id: str | None = None,
         submitted_via_membership_id: str | None = None,
         stream: TurnStreamEmitter | None = None,
+        input_seeds: tuple[WorkspaceSeedFile, ...] = (),
     ) -> ConversationTurnResult:
         """Run one turn, honouring the committed-outcome replay short-circuit.
 
@@ -288,6 +290,10 @@ class ConversationTurnEngine:
         ``stream`` (FI Lane D D3, charter §3-P4) is the live projection of this turn onto the
         durable event outbox. It is optional and never authoritative: every emission is best-effort
         by construction, and a turn's committed outcome is identical whether anybody was watching.
+
+        ``input_seeds`` (ARV2 onboarding O6) are the surface's read-only workspace inputs for this
+        turn. The engine only forwards them: what they are, and how they were pinned, belongs to
+        the surface that composed them.
         """
 
         constitution = request.constitution
@@ -349,6 +355,7 @@ class ConversationTurnEngine:
                 execution=execution,
                 completion_guard=completion_guard,
                 stream=stream,
+                input_seeds=input_seeds,
             )
         else:
             outcome = committed
