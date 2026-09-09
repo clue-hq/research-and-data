@@ -191,3 +191,7 @@ Offline, **no `.env` sourced**, no `*_live.py` test, no `make check`:
 `uv run pytest tests/arv2 tests/api/test_toolbelt_wiring.py tests/agents/test_tool_authority_audit.py
 --ignore-glob='*_live.py' -p no:cacheprovider -q`; `ruff format --check` and `ruff check` on the two
 touched test files.
+
+## Addendum — scoped review of the live waves and fix wave 3 (2026-09-09, 360fe0756)
+- Findings fixed: grouped-space and contiguous phone forms are signals again (boundary-fenced so year runs stay negative); a job with no confirmed LinkedIn URL refuses `lookup_person` (`subject_lock_failed`, the dossier's rung 2 already says skip); employer name containment is token-aware (box/dropbox no longer match); the phone-word rule is scoped to ~30 chars of the candidate and the scan runs per leaf; migration swaps raise when neither shape is present; persona-only repair needs no provider key; one public error class; one `_marked` helper. Left by ruling: a persona never changes an existing seat.
+- Final gates (controller, first-hand): 821 offline tests passed (tests/arv2 + read-surface + toolbelt matrix); ruff clean on every file the slice touched; import contracts 26/0; single Alembic head 7c4f1a2b9d63.
