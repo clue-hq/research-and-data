@@ -65,7 +65,7 @@ async def main() -> None:
                 url = FRONTEND_READ_PREFIX + path.replace("{cogent}", str(cogent))
                 r = await client.get(url, headers={"X-Workspace-Id": WS})
                 (OUT / f"{name}.json").write_text(r.text)
-                print(name, r.status_code, len(r.text), "bytes")
+                print(name, r.status_code, len(r.text), "bytes")  # noqa: T201 — evidence script
 
 
 asyncio.run(main())
